@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agentic AI Research System</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  background: #ffffff;
+  color: #1a1a1a;
+  padding: 40px 48px 56px;
+  min-width: 860px;
+}
+
+/* ── HEADER ── */
+.header {
+  background: #1a4fa0;
+  border-radius: 14px;
+  text-align: center;
+  padding: 20px 32px 18px;
+  margin-bottom: 32px;
+}
+.header h1 { font-size: 22px; font-weight: 600; color: #fff; margin-bottom: 6px; }
+.header p  { font-size: 13px; color: #b0c8f0; }
+
+/* ── CoS ── */
+.cos-wrap { display: flex; justify-content: center; }
+.cos-box {
+  background: #eafaf3; border: 1.5px solid #2db87a;
+  border-radius: 12px; padding: 14px 40px; text-align: center;
+}
+.cos-box .dot { color: #1D9E75; margin-right: 4px; }
+.cos-box h2   { font-size: 18px; font-weight: 600; color: #0a3d27; display: inline; }
+.cos-box p    { font-size: 12px; color: #0f6e56; margin-top: 4px; }
+
+/* ── LABELS ── */
+.section-label {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.1em;
+  text-transform: uppercase; color: #999; margin: 28px 0 12px;
+}
+
+/* ── APP TIER ── */
+.app-tier { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+.app-box { border-radius: 14px; padding: 18px 20px 16px; }
+.app-box.purple { background: #f0effe; border: 1.5px solid #7c72d8; }
+.app-box.amber  { background: #fdf5e6; border: 1.5px solid #d4900a; }
+.app-box h3 { font-size: 20px; font-weight: 700; text-align: center; margin-bottom: 2px; }
+.purple h3 { color: #2d2480; } .amber h3 { color: #7a4200; }
+.app-subtitle { font-size: 13px; text-align: center; margin-bottom: 8px; }
+.purple .app-subtitle { color: #534AB7; } .amber .app-subtitle { color: #a05c0a; }
+.app-meta { font-size: 12px; text-align: center; margin-bottom: 10px; }
+.purple .app-meta { color: #7c72d8; } .amber .app-meta { color: #b07010; }
+.app-box hr { border: none; border-top: 1px solid rgba(0,0,0,0.1); margin: 8px 0 10px; }
+.bullet-list { list-style: none; }
+.bullet-list li { font-size: 13px; display: flex; align-items: center; gap: 7px; margin-bottom: 5px; }
+.bullet-list li::before { content:''; width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+.purple .bullet-list li { color: #2d2480; } .purple .bullet-list li::before { background: #1D9E75; }
+.amber  .bullet-list li { color: #7a4200; } .amber  .bullet-list li::before { background: #EF9F27; }
+.app-badge-row { text-align: center; margin-top: 12px; }
+.badge { display: inline-block; font-size: 12px; font-weight: 600; padding: 4px 18px; border-radius: 20px; }
+.badge-green { background: #1D9E75; color: #fff; }
+.badge-amber { background: #EF9F27; color: #fff; }
+
+/* ── INFRA / EXT GRIDS ── */
+.infra-grid, .ext-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; margin-top: 8px; }
+.infra-box { background: #eafaf3; border: 1px solid #2db87a; border-radius: 10px; padding: 12px 14px; text-align: center; }
+.infra-box h4 { font-size: 14px; font-weight: 600; color: #0a3d27; margin-bottom: 4px; }
+.infra-box p  { font-size: 12px; color: #0f6e56; line-height: 1.4; }
+.ext-box { background: #f2fdf7; border: 1px solid #5dd4a8; border-radius: 10px; padding: 10px 14px; text-align: center; }
+.ext-box h4 { font-size: 13px; font-weight: 600; color: #0a3d27; }
+.ext-box p  { font-size: 11px; color: #1D9E75; }
+
+/* ── FOOTER ── */
+.footer { display: flex; justify-content: space-between; align-items: center; margin-top: 20px; }
+.legend { display: flex; gap: 24px; }
+.legend-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #888; }
+.dot-g { width:10px; height:10px; border-radius:50%; background:#1D9E75; flex-shrink:0; }
+.dot-a { width:10px; height:10px; border-radius:50%; background:#EF9F27; flex-shrink:0; }
+.footer-meta { font-size: 12px; color: #aaa; }
+
+/* ── DIVIDER ── */
+.divider { border: none; border-top: 1px solid #e8e8e8; margin: 44px 0 32px; }
+
+/* ── ARCH COMPARISON ── */
+.arch-title { font-size: 15px; font-weight: 600; color: #555; text-align: center; margin-bottom: 24px; }
+.arch-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 14px; align-items: start; }
+.arch-col { display: flex; flex-direction: column; }
+
+.arch-header { padding: 12px 10px; text-align: center; border-radius: 8px 8px 0 0; }
+.arch-header h4 { font-size: 14px; font-weight: 700; margin-bottom: 2px; }
+.arch-header p  { font-size: 11px; opacity: 0.75; }
+
+.col-v1   .arch-header { background:#f5f5f5; border:1px solid #ccc; }
+.col-v1   .arch-header h4 { color:#333; } .col-v1 .arch-header p { color:#888; }
+.col-v2   .arch-header { background:#ede9ff; border:1px solid #7c72d8; }
+.col-v2   .arch-header h4 { color:#2d2480; } .col-v2 .arch-header p { color:#7c72d8; }
+.col-erep .arch-header { background:#e2f9ef; border:1px solid #2db87a; }
+.col-erep .arch-header h4 { color:#0a3d27; } .col-erep .arch-header p { color:#0f6e56; }
+.col-et   .arch-header { background:#fdf2dc; border:1px solid #d4900a; }
+.col-et   .arch-header h4 { color:#7a4200; } .col-et .arch-header p { color:#a05c0a; }
+
+.arch-step {
+  padding: 9px 12px; font-size: 12px; text-align: center;
+  border-left: 1px solid; border-right: 1px solid; border-bottom: 1px solid;
+}
+.arch-step strong { display: block; font-size: 12px; font-weight: 600; margin-bottom: 1px; }
+.arch-step span   { font-size: 11px; opacity: 0.6; }
+.arch-step.last   { border-radius: 0 0 8px 8px; }
+
+.col-v1   .arch-step { background:#fafafa; border-color:#ddd; color:#444; }
+.col-v2   .arch-step { background:#f5f2ff; border-color:#9890d8; color:#2d2480; }
+.col-erep .arch-step { background:#f0fbf6; border-color:#5dd4a8; color:#0a3d27; }
+.col-et   .arch-step { background:#fffaf0; border-color:#e8b060; color:#7a4200; }
+
+.arch-arrow {
+  height: 16px; display: flex; align-items: center; justify-content: center;
+  font-size: 13px; border-left: 1px solid; border-right: 1px solid;
+}
+.col-v1   .arch-arrow { border-color:#ddd; color:#bbb; }
+.col-v2   .arch-arrow { border-color:#9890d8; color:#9890d8; }
+.col-erep .arch-arrow { border-color:#5dd4a8; color:#5dd4a8; }
+.col-et   .arch-arrow { border-color:#e8b060; color:#e8b060; }
+
+.arch-fanout {
+  height: 20px; display: flex; align-items: center; justify-content: center;
+  font-size: 10px; font-style: italic; border-left: 1px solid; border-right: 1px solid;
+}
+.col-v2 .arch-fanout { border-color:#9890d8; color:#9890d8; }
+.col-et .arch-fanout { border-color:#e8b060; color:#c08020; }
+
+.parallel-block {
+  border-left:1px solid; border-right:1px solid; border-bottom:1px solid;
+  padding: 8px 10px; text-align: center;
+}
+.col-v2 .parallel-block { background:#f0ecff; border-color:#9890d8; }
+.parallel-label { font-size:10px; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; color:#9890d8; margin-bottom:5px; }
+.parallel-pills { display:flex; gap:4px; justify-content:center; flex-wrap:wrap; }
+.parallel-pill { font-size:10px; font-weight:500; background:#ede9ff; border:1px solid #9890d8; border-radius:4px; padding:2px 6px; color:#534AB7; }
+
+.hil-block {
+  border-left:1px solid #7c72d8; border-right:1px solid #7c72d8; border-bottom:1px solid #7c72d8;
+  background:#e8e2ff; padding:9px 12px; text-align:center;
+}
+.hil-block strong { display:block; font-size:12px; font-weight:600; color:#2d2480; margin-bottom:1px; }
+.hil-block span { font-size:11px; color:#7c72d8; }
+
+.loop-block {
+  border-left:1px solid; border-right:1px solid; border-bottom:1px solid;
+  padding:9px 12px; text-align:center; position:relative;
+}
+.col-v1 .loop-block { background:#fafafa; border-color:#ddd; color:#444; }
+.col-v2 .loop-block { background:#f5f2ff; border-color:#9890d8; color:#2d2480; }
+.loop-block strong { display:block; font-size:12px; font-weight:600; margin-bottom:1px; }
+.loop-block span { font-size:11px; opacity:0.6; }
+.loop-tag { position:absolute; right:7px; top:50%; transform:translateY(-50%); font-size:9px; font-weight:600; opacity:0.4; text-transform:uppercase; letter-spacing:0.05em; }
+
+.arch-count { text-align:center; font-size:11px; padding:6px 0 0; color:#bbb; }
+.col-v2   .arch-count { color:#9890d8; }
+.col-erep .arch-count { color:#5dd4a8; }
+.col-et   .arch-count { color:#e8b060; }
+
+/* ── PRINT ── */
+@media print {
+  body { padding: 24px 32px 36px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .divider { margin: 28px 0 22px; }
+  .arch-grid { break-inside: avoid; }
+  .app-tier  { break-inside: avoid; }
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Agentic AI Research System</h1>
+  <p>Running on Mac Mini, Docker and Tailscale</p>
+</div>
+
+<div class="cos-wrap">
+  <div class="cos-box">
+    <span class="dot">●</span><h2>Architecture Evaluation</h2>
+    <p>Cross-pipeline quality assessment · output scoring · comparative benchmarking · human review</p>
+  </div>
+</div>
+
+<div class="section-label">Application tier</div>
+<div class="app-tier">
+  <div class="app-box purple">
+    <h3>E2ER</h3>
+    <div class="app-subtitle">End-to-End Research</div>
+    <div class="app-meta">24 workers · 118 skills · 16 stages</div>
+    <hr>
+    <ul class="bullet-list">
+      <li>Paper auditing</li>
+      <li>Literature monitoring</li>
+      <li>Section drafting</li>
+    </ul>
+    <div class="app-badge-row"><span class="badge badge-green">deployed</span></div>
+  </div>
+  <div class="app-box purple">
+    <h3>E2EREP</h3>
+    <div class="app-subtitle">Empirical Pipeline</div>
+    <div class="app-meta">IV · DiD · RDD · panel data</div>
+    <hr>
+    <ul class="bullet-list">
+      <li>ID strategy audit</li>
+      <li>Econometric analysis</li>
+      <li>Robustness specs</li>
+    </ul>
+    <div class="app-badge-row"><span class="badge badge-green">deployed</span></div>
+  </div>
+  <div class="app-box amber">
+    <h3>E2ET</h3>
+    <div class="app-subtitle">End-to-End Theory</div>
+    <div class="app-meta">60+ personas · 8 tiers · bisociation</div>
+    <hr>
+    <ul class="bullet-list">
+      <li>Theory generation</li>
+      <li>Bisociation synthesis</li>
+      <li>Cross-disc. personas</li>
+    </ul>
+    <div class="app-badge-row"><span class="badge badge-amber">pilot</span></div>
+  </div>
+</div>
+
+<div class="section-label">Shared infrastructure</div>
+<div class="infra-grid">
+  <div class="infra-box"><h4>Knowledge Base</h4><p>295K chunks · pgvector</p></div>
+  <div class="infra-box"><h4>Research Database</h4><p>&gt;90 GB · financial &amp; blockchain · clear data governance</p></div>
+  <div class="infra-box"><h4>Evaluation Module</h4><p>Quality gates · human review</p></div>
+  <div class="infra-box"><h4>Fetcher</h4><p>Web access · injection guard</p></div>
+</div>
+
+<div class="section-label">External data sources</div>
+<div class="ext-grid">
+  <div class="ext-box"><h4>MCP: Allium</h4><p>DeFi · on-chain</p></div>
+  <div class="ext-box"><h4>Finance APIs</h4><p>Traditional markets</p></div>
+  <div class="ext-box"><h4>arXiv / Sem. Scholar</h4><p>Academic literature</p></div>
+  <div class="ext-box"><h4>FRED / WRDS</h4><p>Macro &amp; financial data</p></div>
+</div>
+
+<div class="footer">
+  <div class="legend">
+    <div class="legend-item"><div class="dot-g"></div>Deployed &amp; operational</div>
+    <div class="legend-item"><div class="dot-a"></div>Pilot / near-term</div>
+  </div>
+  <div class="footer-meta">86 files · ~15K LOC · 9 active projects · March 2026</div>
+</div>
+
+<hr class="divider">
+<div class="arch-title">Architecture comparison</div>
+
+<div class="arch-grid">
+
+  <div class="arch-col col-v1">
+    <div class="arch-header"><h4>E2ER v1</h4><p>Linear · 8 stages</p></div>
+    <div class="arch-step"><strong>Research input</strong><span>question + scope</span></div>
+    <div class="arch-arrow">↓</div>
+    <div class="arch-step"><strong>Literature fetch</strong><span>KB search + arXiv pull</span></div>
+    <div class="arch-arrow">↓</div>
+    <div class="arch-step"><strong>Relevance filter</strong><span>score &amp; select sources</span></div>
+    <div class="arch-arrow">↓</div>
+    <div class="arch-step"><strong>Summarize &amp; extract</strong><span>claims, methods, gaps</span></div>
+    <div class="arch-arrow">↓</div>
+    <div class="arch-step"><strong>Analytical modeling</strong><span>quantitative analysis</span></div>
+    <div class="arch-arrow">↓</div>
+    <div class="arch-step"><strong>Draft section</strong><span>prose generation</span></div>
+    <div class="arch-arrow">↓</div>
+    <div class="loop-block"><strong>Review &amp; revise</strong><span>critique → rewrite</span><div class="loop-tag">loop</div></div>
+    <div class="arch-arrow">↓</div>
+    <div class="arch-step last"><strong>Output</strong><span>LaTeX / markdown</span></div>
+    <div class="arch-count">sequential · no parallelism</div>
+  </div>
+
+  <div class="arch-col col-v2">
+    <div class="arch-header"><h4>E2ER v2</h4><p>Parallel workers + human gate</p></div>
+    <div class="arch-step"><strong>Research input</strong><span>question + scope</span></div>
+    <div class="arch-fanout">↙ parallel fan-out ↘</div>
+    <div class="parallel-block">
+      <div class="parallel-label">concurrent workers</div>
+      <div class="parallel-pills">
+        <span class="parallel-pill">Fetcher</span>
+        <span class="parallel-pill">Modeler</span>
+        <span class="parallel-pill">Analyzer</span>
+        <span class="parallel-pill">KB search</span>
+      </div>
+    </div>
+    <div class="arch-arrow">↓</div>
+    <div class="arch-step"><strong>Merge &amp; rank</strong><span>consolidate outputs</span></div>
+    <div class="arch-arrow">↓</div>
+    <div class="hil-block"><strong>Human review checkpoint</strong><span>approve / redirect / abort</span></div>
+    <div class="arch-arrow">↓</div>
+    <div class="arch-step"><strong>Draft section</strong><span>prose generation</span></div>
+    <div class="arch-arrow">↓</div>
+    <div class="loop-block"><strong>Review &amp; revise</strong><span>critique → rewrite</span><div class="loop-tag">loop</div></div>
+    <div class="arch-arrow">↓</div>
+    <div class="arch-step last"><strong>Output</strong><span>LaTeX / markdown</span></div>
+    <div class="arch-count">parallel workers · human gate · review loop</div>
+  </div>
+
+  <div class="arch-col col-erep">
+    <div class="arch-header"><h4>E2EREP</h4><p>Causal-first · 6 stages</p></div>
+    <div class="arch-step"><strong>Paper input</strong><span>target study + data</span></div>
+    <div class="arch-arrow">↓</div>
+    <div class="arch-step"><strong>ID strategy audit</strong><span>IV / DiD / RDD validity</span></div>
+    <div class="arch-arrow">↓</div>
+    <div class="arch-step"><strong>Data preparation</strong><span>clean, merge, panel build</span></div>
+    <div class="arch-arrow">↓</div>
+    <div class="arch-step"><strong>Econometric analysis</strong><span>estimate + diagnostics</span></div>
+    <div class="arch-arrow">↓</div>
+    <div class="arch-step"><strong>Robustness checks</strong><span>placebo, subgroup, alt. spec.</span></div>
+    <div class="arch-arrow">↓</div>
+    <div class="arch-step last"><strong>Replication report</strong><span>tables + verdict</span></div>
+    <div class="arch-count">structured · no open-ended search</div>
+  </div>
+
+  <div class="arch-col col-et">
+    <div class="arch-header"><h4>E2ET</h4><p>Divergent search · 6 stages</p></div>
+    <div class="arch-step"><strong>Research question</strong><span>domain + framing</span></div>
+    <div class="arch-fanout" style="border-left:1px solid #e8b060;border-right:1px solid #e8b060;color:#c08020">↙ 60+ persona fan-out ↘</div>
+    <div class="arch-step"><strong>Cross-disc. search</strong><span>per-persona lit. fetch</span></div>
+    <div class="arch-arrow">↓</div>
+    <div class="arch-step"><strong>Bisociation engine</strong><span>cross-domain linking</span></div>
+    <div class="arch-arrow">↓</div>
+    <div class="arch-step"><strong>Synthesis &amp; ranking</strong><span>novelty + feasibility score</span></div>
+    <div class="arch-arrow">↓</div>
+    <div class="arch-step last"><strong>Theory output</strong><span>propositions + agenda</span></div>
+    <div class="arch-count">max divergence → convergence</div>
+  </div>
+
+</div>
+
+</body>
+</html>

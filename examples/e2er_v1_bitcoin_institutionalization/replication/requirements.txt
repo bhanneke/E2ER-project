@@ -1,0 +1,8 @@
+pandas
+numpy
+statsmodels
+linearmodels
+matplotlib
+seaborn
+psycopg[binary]
+scipy

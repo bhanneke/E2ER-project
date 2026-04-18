@@ -1,0 +1,28 @@
+\begin{table}[htbp]
+  \centering
+  \caption{Power Analysis}\label{tab:power}
+  \begin{threeparttable}
+    \begin{tabular}{l S[table-format=2.3]}
+      \toprule
+      {Metric} & {Value} \\
+      \midrule
+      MDE at 80\% power (analytical, log pts) & 0.296 \\
+      MDE at 80\% power (\% RV decline) & 25.6 \\
+      MDE at 90\% power (analytical, log pts) & 0.343 \\
+      MDE at 90\% power (\% RV decline) & 29.0 \\
+      Actual $|\hat{\beta}|$ (log pts) & 0.047 \\
+      ICC & 0.9974 \\
+      Design effect & 73.9 \\
+      $G$ (clusters) & 10 \\
+      $N$ (total obs) & 741 \\
+      \bottomrule
+    \end{tabular}
+    \begin{tablenotes}[flushleft]
+      \small
+      \item \textit{Notes:} Analytical MDE computed as $\text{SE} \times (t_{\alpha/2} + t_{1-\kappa})$
+        with $\alpha = 0.05$ (two-sided), $t$-critical from $t(G-2)$. ICC = intraclass
+        correlation. Design effect = $1 + (\bar{n} - 1) \times \text{ICC}$.
+        The design is severely underpowered: the observed effect is 3--6$\times$ below the MDE.
+    \end{tablenotes}
+  \end{threeparttable}
+\end{table}
