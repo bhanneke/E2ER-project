@@ -1,4 +1,4 @@
-# E2ER: End-to-End Automated Research Pipelines
+# E2ER: End-to-End Automated Researcher
 
 [![Status](https://img.shields.io/badge/status-active%20development-blue)]()
 [![Papers](https://img.shields.io/badge/papers%20produced-133-green)]()
