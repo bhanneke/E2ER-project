@@ -5,147 +5,92 @@
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)]()
 [![Tests](https://img.shields.io/badge/tests-passing-brightgreen)]()
 
-**E2ER** is an open-source pipeline for generating peer-review-quality empirical research papers in information systems, economics, and finance. Given a research question and access to data, the system autonomously designs the study, acquires and validates data, runs econometric estimation, writes the paper in LaTeX, self-attacks its own draft, runs parallel peer review, and pushes everything to a GitHub repository compatible with Overleaf.
+**E2ER** is an open-source pipeline for producing peer-review-quality empirical research papers in information systems, economics, and finance. The researcher provides a research question and data access; the pipeline handles the rest — study design, data acquisition, econometric estimation, writing, review, and replication packaging.
 
-> **Disclaimer**: Papers produced by this pipeline have not been peer-reviewed or independently validated. Methodological errors, incorrect interpretations, and factual inaccuracies may be present. Do not cite pipeline outputs as established research findings without independent verification. E2ER is optimised for empirical research — it works best with structured data, clear identification strategies, and established econometric methods.
-
-This is v3 of the E2ER project, the first open-source release. It grew out of two years of internal pipeline development that produced 133 paper drafts across 157 runs, documented below.
+> **Scope**: E2ER is optimised for empirical papers. It works best with structured data, a clear identification strategy, and established econometric methods. It is not designed for purely theoretical work.
 
 ---
 
-## What it does
+## What the system produces
+
+For each paper, E2ER produces:
+
+| Artifact | Description |
+|----------|-------------|
+| `paper_plan.md` | Research design, propositions, identification strategy |
+| `literature_review.md` | Related work synthesis with citations |
+| `identification_strategy.md` | Causal identification argument and threats |
+| `econometric_spec.md` | Econometric specification with equations |
+| `data_dictionary.json` | Pre-specified minimal data footprint (fields, time filter, granularity) |
+| `paper_draft.tex` | Full LaTeX manuscript |
+| `abstract.tex` | Standalone abstract |
+| `self_attack_report.json` | Adversarial flaw-finding report with severity scores |
+| `review_*.md` | Structured reviews from 6 specialist reviewers |
+| `review_aggregation.json` | Mechanical aggregation verdict and scores |
+| `replication/estimation.py` | Main econometric estimation code |
+| `replication/data_queries.sql` | All data queries used in the paper |
+| `replication/audit_log.csv` | Complete data access audit trail |
+
+All artifacts are committed to a dedicated GitHub repository for the paper, structured for direct import into Overleaf.
+
+---
+
+## Pipeline stages
 
 ```
-Research Question
-       │
-       ▼
-  [Strategist] ──── decides ────► [Specialists] (parallel or sequential)
-       │                              │
-       │◄────── contributions ────────┘
-       │
-  [Ceiling Check] → [Self-Attack] → [Polish Stack] → [Review] → [Aggregation]
-       │
-  [GitHub Push] → paper repo (LaTeX + replication package)
+[Researcher input: RQ + optional BibTeX + optional data]
+          │
+          ▼
+    1. Study Design      idea_developer, literature_scanner, identification_strategist
+    2. Data              data_architect → Allium queries → human approval → data_analyst
+    3. Estimation        econometrics_specialist
+    4. Writing           section_writer, abstract_writer, latex_formatter
+          │
+          ▼  (iterative mode only)
+    5. Ceiling Check     Strategist assesses whether further iteration adds value
+    6. Self-Attack       Adversarial specialist finds critical flaws (severity 1–10)
+    7. Polish            5 parallel specialists: formula · numerics · institutions · bibliography · equilibria
+          │
+          ▼
+    8. Review            6 parallel reviewers: mechanism · technical · identification ·
+                         literature · data · writing
+    9. Aggregation       3-rule mechanical verdict (see below)
+   10. Revision          if MAJOR_REVISION verdict: revisor specialist addresses feedback
+   11. Replication       packages all queries, code, and audit trail
+   12. GitHub Push       LaTeX + replication package committed to paper repo
 ```
 
-1. **Design** — develops the paper plan, literature review, and identification strategy
-2. **Data** — queries Allium blockchain data through 5 guardrails + human approval
-3. **Analysis** — econometric specification and estimation
-4. **Writing** — full LaTeX paper draft by specialist agents
-5. **Self-attack** — adversarial agent finds critical flaws before external review
-6. **Polish** — parallel specialists target formula errors, numerics, institutions, bibliography, equilibria
-7. **Review** — 6 reviewers in parallel with mechanical 3-rule aggregation
-8. **Replication** — SQL queries, estimation code, and audit log packaged for reproducibility
-9. **GitHub** — LaTeX + replication package pushed to a paper repo (Overleaf-compatible)
+---
+
+## Review aggregation
+
+Reviews are aggregated by three deterministic rules applied in order:
+
+| Rule | Condition | Verdict |
+|------|-----------|---------|
+| 1 | Mechanism reviewer score < 5 | `MECHANISM_FAIL` — fundamental revision required |
+| 2 | Any reviewer score < 4 | `HARD_REJECT` — floor violation |
+| 3 | Weighted average (technical × 1.5, identification × 1.5, data × 1.25) | `ACCEPT` / `MINOR_REVISION` / `MAJOR_REVISION` / `HARD_REJECT` |
 
 ---
 
-## Project background
+## Data access — Allium
 
-Rigorous empirical research is slow, expensive, and difficult to scale. A single causal study on blockchain economics requires identifying a natural experiment, acquiring on-chain data, specifying an econometric model, running estimation with robustness checks, and producing a paper with replication materials. Each step requires domain expertise that is scarce and unevenly distributed.
+The data module uses [Allium](https://allium.so) for indexed blockchain data. Set `ALLIUM_API_KEY` in `.env` to enable it. The pipeline also runs without data (literature-only or with manually provided files).
 
-E2ER automates this pipeline. It has been developed and tested at the Chair of Information Systems, Goethe University Frankfurt, as part of ongoing PhD research. The system has been tested on Ethereum-specific data (NFT transactions, DeFi protocol data, token distributions) and general empirical economics questions.
+Every query passes through 5 guardrails before execution:
 
-### Internal pipeline statistics (v1, through April 2026)
+1. No `SELECT *` — all fields must be listed explicitly
+2. All requested fields must be declared in the paper's `data_dictionary.json`
+3. A time-bound `WHERE` clause is required on every query
+4. Transaction-level granularity requires written justification
+5. Production queries require a prior approved feasibility run on the same table
 
-| Metric | Count |
-|--------|-------|
-| Total pipeline runs | 157 |
-| Completed paper drafts | 133 |
-| Peer review simulations | 133 |
-| Technical methodology reviews | 133 |
-| Consistency checks | 133 |
-| Completed revisions | 133 |
-| Second-iteration drafts | 30 |
-| Total stage executions | 2,253 |
+**Two-phase workflow:**
+- **Feasibility** (1000-row sample) — auto-approved, executes immediately
+- **Production** (full dataset) — queued for researcher approval at `GET /api/papers/{id}/pending-queries`
 
----
-
-## Example outputs
-
-> All papers below were produced entirely by earlier versions of the E2ER pipeline without human intervention. No human selected the research question, wrote any text, ran any estimation, or reviewed the output. They are provided to demonstrate what the pipeline produces autonomously.
-
-### Example 1 — NFT Market Seasonality
-
-**Input**: One-sentence idea about calendar anomalies in NFT markets.
-
-**What the pipeline produced**: A 30+ page paper testing whether the Halloween effect extends to NFT markets. The pipeline autonomously identified the research gap, formulated five testable propositions, acquired 35.8 million Ethereum-based NFT trades across eight platforms, specified econometric models, ran estimation with robustness checks (bootstrap inference, permutation tests, jackknife analysis), generated all figures, and produced a complete LaTeX manuscript with bibliography.
-
-**Key result** (null finding): No statistically significant Halloween effect. Two-thirds of the raw seasonal differential in USD returns reflects ETH price seasonality rather than NFT-specific patterns. Day-of-week effects are significant, suggesting shorter-horizon calendar patterns dominate seasonal ones.
-
-[Full paper PDF](examples/e2er_v1_nft_seasonality/paper.pdf) · [LaTeX source](examples/e2er_v1_nft_seasonality/main.tex) · [Replication package](examples/e2er_v1_nft_seasonality/replication/)
-
-<p align="center">
-  <img src="examples/e2er_v1_nft_seasonality/figures/fig1_monthly_returns.png" alt="Monthly NFT Returns" width="680">
-</p>
-<p align="center"><em>Monthly return distribution — AI-generated, not peer-reviewed</em></p>
-
-### Example 2 — Institutionalisation of Bitcoin
-
-**Input**: One-sentence idea about Bitcoin volatility convergence toward traditional assets.
-
-**What the pipeline produced**: A paper examining whether Bitcoin's volatility has converged toward traditional asset levels following the January 2024 spot ETF approval. The pipeline acquired daily data on Bitcoin and seven traditional benchmarks (2020–2026), estimated GARCH and Markov-switching regime models, ran a difference-in-differences design around the ETF date, and executed full robustness checks (Mann-Kendall trend tests, Rambachan-Roth sensitivity, leave-one-out analysis).
-
-**Key result** (null finding): Bitcoin's unconditional GARCH volatility fell from 89% to 50% after ETF approval, and Markov-switching models identify a low-volatility regime at 32% (within commodity range). However, Bitcoin sustains this calm regime for only six days on average vs. 82 days for equities. No discrete structural break at the ETF date; convergence is gradual.
-
-[Full paper PDF](examples/e2er_v1_bitcoin_institutionalization/paper.pdf) · [LaTeX source](examples/e2er_v1_bitcoin_institutionalization/main.tex) · [Replication package](examples/e2er_v1_bitcoin_institutionalization/replication/)
-
-<p align="center">
-  <img src="examples/e2er_v1_bitcoin_institutionalization/figures/figure_2_event_study.pdf" alt="Event Study: ETF Approval" width="680">
-</p>
-<p align="center"><em>Event study around ETF approval date — AI-generated, not peer-reviewed</em></p>
-
----
-
-## Architecture
-
-### Key design decisions
-
-**Owns the tool-use loop** — no CLI subprocess. The pipeline runs the Anthropic/OpenRouter API directly and intercepts every tool call. This is what makes guardrails enforceable: the `AlliumToolHandler` validates all 5 rules before any query reaches the data provider.
-
-**BYOK** — Bring Your Own Keys. Supports Anthropic API (with prompt caching) and OpenRouter (200+ models via OpenAI-compatible format).
-
-**Human-in-the-loop data approval** — all production Allium queries require researcher sign-off via the REST API before execution. Feasibility queries (1000-row samples) are auto-approved.
-
-**Mechanical review aggregation** — three deterministic rules replace subjective editorial judgement:
-- Rule 1: mechanism reviewer score < 5 → `MECHANISM_FAIL` (hard gate)
-- Rule 2: any reviewer score < 4 → `HARD_REJECT`
-- Rule 3: weighted average (technical reviewer 1.5×, identification reviewer 1.5×)
-
-**Replication-ready by default** — all SQL queries, estimation code, and the full data access audit trail are saved as artifacts and pushed to the paper's GitHub repository.
-
-**Overleaf-compatible** — paper repos are created with `.gitignore` as the first commit (preventing LaTeX artifacts from polluting git history). Overleaf should always import *from* GitHub, never the other direction.
-
-### Architecture diagrams
-
-Detailed Mermaid diagrams in [`docs/diagrams/`](docs/diagrams/):
-
-| Diagram | Description |
-|---------|-------------|
-| [`pipeline_overview.md`](docs/diagrams/pipeline_overview.md) | Full pipeline from idea to completion |
-| [`specialist_dag.md`](docs/diagrams/specialist_dag.md) | Specialist execution dependencies and parallel groups |
-| [`data_module.md`](docs/diagrams/data_module.md) | Allium query flow through 5 guardrails + approval |
-| [`llm_tool_loop.md`](docs/diagrams/llm_tool_loop.md) | Owned tool-use loop (no CLI subprocess) |
-| [`system_architecture.md`](docs/diagrams/system_architecture.md) | Component overview |
-| [`review_aggregation.md`](docs/diagrams/review_aggregation.md) | 3-rule mechanical review aggregation |
-
----
-
-## Modules
-
-| Module | Description |
-|--------|-------------|
-| `src/modules/llm/` | Anthropic + OpenRouter backends, tool-use loop, file tools |
-| `src/modules/data/` | Allium HTTP client, 5 guardrails, audit log, approval workflow |
-| `src/modules/tracking/` | Token usage and USD cost tracking per specialist call |
-| `src/modules/literature/` | Paper search (OpenAlex, Semantic Scholar, arXiv), BibTeX, pgvector KB |
-| `src/modules/github/` | Repo creation, `.gitignore`-first workflow, artifact push |
-| `src/modules/fetch/` | SSRF-safe HTTP client |
-| `src/core/strategist/` | Strategist engine, ceiling detection, self-attack, review aggregation |
-| `src/core/specialists/` | Specialist runner, parallel dispatcher, work order contracts |
-| `src/core/pipeline/` | DAG (single-pass + iterative), state persistence |
-| `src/skills/` | Skill markdown files injected into specialist prompts |
-| `src/api/` | FastAPI REST API (papers, data approval, usage) |
+We gratefully acknowledge **[Allium](https://allium.so)** for supporting this research through data access and technical collaboration.
 
 ---
 
@@ -163,19 +108,22 @@ pip install -e ".[pgvector]"
 
 ```bash
 cp .env.example .env
-# Edit .env — at minimum set ANTHROPIC_API_KEY or OPENROUTER_API_KEY
+# Required: set ANTHROPIC_API_KEY or OPENROUTER_API_KEY
+# Optional: ALLIUM_API_KEY (data module), GITHUB_TOKEN (repo push)
 ```
 
-### 3. Start the database
+### 3. Start PostgreSQL
 
 ```bash
 cd docker && docker compose up -d db
 ```
 
-### 4. Run migrations
+### 4. Initialise the database
 
 ```bash
 python scripts/migrate.py
+# Runs sql/001 through sql/006 in order:
+# papers, llm_usage, data_queries + approvals, literature, contributions, events
 ```
 
 ### 5. Start the API
@@ -200,34 +148,10 @@ curl -X POST http://localhost:8280/api/papers \
 ### 7. Approve pending data queries
 
 ```bash
-# List queries awaiting approval
 curl http://localhost:8280/api/papers/{paper_id}/pending-queries
-
-# Approve
 curl -X POST http://localhost:8280/api/queries/{query_id}/approve \
-  -H "Content-Type: application/json" \
   -d '{"approved": true}'
 ```
-
----
-
-## Data module — Allium
-
-The data module uses [Allium](https://allium.so) for indexed blockchain data.
-Set `ALLIUM_API_KEY` in `.env` to enable it (optional — the pipeline runs without data too).
-
-**5 guardrails enforced on every query:**
-1. No `SELECT *` — explicit field list required
-2. All fields must be declared in the paper's `data_dictionary.json`
-3. Time-bound `WHERE` clause required on every query
-4. Transaction-level granularity requires written justification
-5. Production queries require a prior approved feasibility run on the same table
-
-**Two-phase workflow:**
-- **Feasibility** (1000-row sample) — auto-approved, runs immediately
-- **Production** (full dataset) — queued for researcher approval via `GET /api/papers/{id}/pending-queries`
-
-We gratefully acknowledge **[Allium](https://allium.so)** for supporting this research through data access and technical collaboration.
 
 ---
 
@@ -236,26 +160,44 @@ We gratefully acknowledge **[Allium](https://allium.so)** for supporting this re
 | Provider | Setting | Notes |
 |----------|---------|-------|
 | Anthropic | `LLM_BACKEND=anthropic` | Supports prompt caching — recommended |
-| OpenRouter | `LLM_BACKEND=openrouter` | 200+ models, OpenAI-compatible format |
+| OpenRouter | `LLM_BACKEND=openrouter` | 200+ models via OpenAI-compatible format |
 
 ---
 
-## Running tests
+## Architecture diagrams
 
-```bash
-pytest tests/ -v
-```
+Mermaid diagrams in [`docs/diagrams/`](docs/diagrams/):
 
-20 tests covering guardrails, review aggregation, and cost tracking — no network or LLM calls required.
+| Diagram | Description |
+|---------|-------------|
+| [`pipeline_overview.md`](docs/diagrams/pipeline_overview.md) | Full pipeline from idea to completion |
+| [`specialist_dag.md`](docs/diagrams/specialist_dag.md) | Specialist execution dependencies and parallel groups |
+| [`data_module.md`](docs/diagrams/data_module.md) | Allium query flow through guardrails and approval |
+| [`llm_tool_loop.md`](docs/diagrams/llm_tool_loop.md) | LLM API loop and tool call interception |
+| [`system_architecture.md`](docs/diagrams/system_architecture.md) | Component overview |
+| [`review_aggregation.md`](docs/diagrams/review_aggregation.md) | 3-rule mechanical review aggregation |
 
 ---
 
-## Contributing
+## Example outputs
 
-- **Research questions** — open an issue with a research question you think could be tested on on-chain data
-- **Data providers** — the data module is designed to be extended; Allium is the first example
-- **Skill files** — add domain expertise as markdown files in `skills/files/`; they are automatically loaded into specialist prompts
-- **Architectural ideas** — if you work on automated research pipelines, LLM tool-use, or causal inference tooling, discussion on design choices is welcome
+The following papers were produced by earlier versions of the E2ER pipeline. In each case the researcher selected the research question and participated in the review stage; all other steps (literature search, data acquisition, estimation, writing) were handled autonomously by the pipeline.
+
+> Results have not been submitted to a journal and should not be cited as peer-reviewed findings.
+
+### NFT Market Seasonality
+
+Tests whether the Halloween effect (systematically higher winter returns) extends to NFT markets. The pipeline acquired 35.8 million Ethereum-based NFT trades across eight platforms, specified econometric models, and ran robustness checks (bootstrap inference, permutation tests, jackknife analysis).
+
+**Key result (null finding):** No statistically significant Halloween effect. Two-thirds of the raw seasonal differential in USD returns reflects ETH price seasonality rather than NFT-specific patterns.
+
+### Institutionalisation of Bitcoin
+
+Examines whether Bitcoin's volatility converged toward traditional asset levels following the January 2024 spot ETF approval. The pipeline estimated GARCH and Markov-switching regime models, ran a difference-in-differences design around the ETF date, and executed robustness checks (Mann-Kendall trend tests, Rambachan-Roth sensitivity, leave-one-out analysis).
+
+**Key result (null finding):** Bitcoin's GARCH volatility fell from 89% to 50% after ETF approval, reaching a low-volatility regime at 32% (within commodity range). But Bitcoin sustains this regime for only 6 days on average vs. 82 days for equities — convergence is gradual, not structural.
+
+*Full paper PDFs and replication packages will be added to this repository as a separate release.*
 
 ---
 
@@ -281,25 +223,42 @@ Key advances over v1:
 - Tiered context management (Tier 0: paper identity; Tier 1: decision-specific; Tier 2: full artifacts)
 - Data pipeline isolation — only the Data specialist queries databases; all others work from exports
 - Human review gates at research design and post-draft stages
-- Ran on private 100xOS infrastructure (Claude Code CLI subprocess pattern)
 
 ### v3 — Open-Source Release (this repo)
 
-A ground-up redesign for open-source use. Retains the Strategist architecture from v2 and adds four major extensions inspired by the ZeroPaper architecture:
+A ground-up redesign for open-source use. Retains the Strategist architecture from v2 and adds four extensions adapted from [ZeroPaper](https://github.com/alejandroll10/zeropaper):
 
-- **Owns the tool-use loop** — replaced Claude Code CLI subprocess with direct Anthropic/OpenRouter API calls; enables intercepting every tool call for guardrails
 - **Ceiling detection** — Strategist assesses diminishing returns after each iteration and decides: continue, pivot (max once), or proceed to review
-- **Self-attack phase** — an adversarial specialist reads the draft and returns severity-scored findings (1–10) before external review
-- **Parallel polish stack** — five specialists run concurrently targeting specific pathologies (formula errors, numeric consistency, institutional context, bibliography, equilibrium conditions)
+- **Self-attack phase** — an adversarial specialist scores the draft's flaws by severity (1–10) before external review
+- **Parallel polish stack** — five specialists run concurrently targeting specific weaknesses: formula errors, numeric consistency, institutional context, bibliography, equilibrium conditions
 - **Mechanical review aggregation** — three deterministic rules replace subjective editorial judgement
-- **BYOK** — Anthropic API and OpenRouter supported; no dependency on private infrastructure
-- **Allium data module** — blockchain data access with 5 guardrails and human-in-the-loop approval built in from the start
+
+Additional v3 changes: BYOK (Anthropic and OpenRouter), built-in Allium data guardrails, token/cost tracking per specialist call, and GitHub integration with Overleaf-compatible repo structure.
+
+---
+
+## Running tests
+
+```bash
+pytest tests/ -v
+```
+
+20 tests covering guardrails, review aggregation, and cost tracking — no network or LLM calls required.
+
+---
+
+## Contributing
+
+- **Research questions** — open an issue with a research question you think could be tested on on-chain data
+- **Data providers** — the data module is designed to be extended; Allium is the first example
+- **Skill files** — add domain expertise as markdown in `skills/files/`; loaded automatically into specialist prompts
+- **Architectural ideas** — discussion on pipeline design, LLM tool-use patterns, and causal inference tooling is welcome
 
 ---
 
 ## Contact
 
-**Björn Hanneke** · [www.bjornhanneke.com](https://www.bjornhanneke.com) · hanneke@wiwi.uni-frankfurt.de
+**Björn Hanneke** · [bjornhanneke.com](https://www.bjornhanneke.com) · hanneke@wiwi.uni-frankfurt.de
 
 PhD Candidate, Goethe University Frankfurt
 Chair of Information Systems and Information Management (Prof. Dr. Oliver Hinz)
@@ -308,8 +267,4 @@ Chair of Information Systems and Information Management (Prof. Dr. Oliver Hinz)
 
 ---
 
-## License
-
-MIT — see [LICENSE](LICENSE).
-
-*This pipeline produces research assistance outputs. Human researcher review, validation, and editorial judgement are required before any manuscript is submitted for publication.*
+*MIT License — see [LICENSE](LICENSE).*
