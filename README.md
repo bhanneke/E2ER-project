@@ -297,8 +297,9 @@ E2ER v3 is in active development and we are looking for researchers who want to 
 
 We are particularly interested in:
 
-- **New empirical domains** — the pipeline has been tested on blockchain/DeFi data; we want to know how it performs on different research contexts (fintech, platform economics, digital markets, public finance, etc.)
+- **New empirical domains** — the pipeline has been tested on blockchain/DeFi data; we want to know how it performs on different research contexts (fintech, platform economics, digital markets, public finance, and more)
 - **New data sources** — if you have access to a structured dataset and want to explore adding it as a data module alongside Allium, we would like to collaborate
+- **Systematic evaluation** — we are building a quality evaluation framework (see [`docs/evaluation_framework.md`](docs/evaluation_framework.md)) and need runs across domains to establish baselines; testers who complete the human evaluation rubric contribute directly to the companion paper
 - **Edge cases and failure modes** — if the pipeline produces something clearly wrong or breaks in an interesting way, that feedback is valuable
 
 Contact: **hanneke@wiwi.uni-frankfurt.de** or open an issue on this repository.

@@ -1,0 +1,1 @@
+run_id,paper_id,pipeline_version,domain,rq_summary,score_identification,score_empirical,score_writing,score_literature,score_replication,score_novelty,human_overall,review_weighted_avg,review_verdict,self_attack_max_severity,revision_rounds,total_cost_usd,runtime_minutes,evaluator,evaluation_date,notes
