@@ -1,0 +1,40 @@
+cff-version: 1.2.0
+message: "If you use E2ER in your research, please cite it as below."
+type: software
+title: "E2ER: End-to-End Researcher"
+abstract: >
+  E2ER is an open-source pipeline for producing empirical research papers in
+  information systems, economics, and finance. Given a research question and
+  data access, the pipeline autonomously handles study design, data acquisition
+  (with human-in-the-loop approval), econometric estimation, writing, adversarial
+  self-review, parallel peer review, and replication packaging.
+version: "0.1.0"
+date-released: "2026-05-05"
+license: MIT
+repository-code: "https://github.com/bhanneke/E2ER-project"
+url: "https://github.com/bhanneke/E2ER-project"
+doi: "10.5281/zenodo.XXXXXXX"
+authors:
+  - family-names: Hanneke
+    given-names: Björn
+    orcid: "https://orcid.org/0009-0000-7466-9581"
+    affiliation: "Goethe University Frankfurt, Chair of Information Systems and Information Management"
+    email: hanneke@wiwi.uni-frankfurt.de
+keywords:
+  - empirical research automation
+  - large language models
+  - information systems
+  - econometrics
+  - causal inference
+  - blockchain data
+  - research pipeline
+preferred-citation:
+  type: software
+  title: "E2ER: End-to-End Researcher — An Open-Source Pipeline for Automated Empirical Research"
+  authors:
+    - family-names: Hanneke
+      given-names: Björn
+      orcid: "https://orcid.org/0009-0000-7466-9581"
+  year: 2026
+  url: "https://github.com/bhanneke/E2ER-project"
+  doi: "10.5281/zenodo.XXXXXXX"

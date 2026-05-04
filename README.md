@@ -249,6 +249,28 @@ Additional v3 changes: BYOK (Anthropic and OpenRouter), built-in Allium data gua
 
 ---
 
+## How to cite
+
+If you use E2ER in your research, please cite it as:
+
+```bibtex
+@software{hanneke2026e2er,
+  author       = {Hanneke, Björn},
+  title        = {{E2ER: End-to-End Researcher — An Open-Source Pipeline
+                   for Automated Empirical Research}},
+  year         = {2026},
+  version      = {0.1.0},
+  url          = {https://github.com/bhanneke/E2ER-project},
+  doi          = {10.5281/zenodo.XXXXXXX},
+  license      = {MIT},
+  institution  = {Goethe University Frankfurt},
+}
+```
+
+*The DOI will be updated once the Zenodo release is confirmed. A companion paper describing the system architecture and methodology is in preparation.*
+
+---
+
 ## Running tests
 
 ```bash
