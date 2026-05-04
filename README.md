@@ -291,6 +291,20 @@ pytest tests/ -v
 
 ---
 
+## Get involved — call for testers
+
+E2ER v3 is in active development and we are looking for researchers who want to test the pipeline on their own questions and domains. If you are working on an empirical question — in IS, economics, finance, or adjacent fields — and are interested in running the pipeline, please get in touch.
+
+We are particularly interested in:
+
+- **New empirical domains** — the pipeline has been tested on blockchain/DeFi data; we want to know how it performs on different research contexts (fintech, platform economics, digital markets, public finance, etc.)
+- **New data sources** — if you have access to a structured dataset and want to explore adding it as a data module alongside Allium, we would like to collaborate
+- **Edge cases and failure modes** — if the pipeline produces something clearly wrong or breaks in an interesting way, that feedback is valuable
+
+Contact: **hanneke@wiwi.uni-frankfurt.de** or open an issue on this repository.
+
+---
+
 ## Contributing
 
 - **Research questions** — open an issue with a research question you think could be tested on on-chain data
