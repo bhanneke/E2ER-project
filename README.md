@@ -191,13 +191,25 @@ Tests whether the Halloween effect (systematically higher winter returns) extend
 
 **Key result (null finding):** No statistically significant Halloween effect. Two-thirds of the raw seasonal differential in USD returns reflects ETH price seasonality rather than NFT-specific patterns.
 
+[Paper PDF](examples/e2er_v1_nft_seasonality/paper.pdf) · [LaTeX source](examples/e2er_v1_nft_seasonality/main.tex) · [Replication package](examples/e2er_v1_nft_seasonality/replication/)
+
+<p align="center">
+  <img src="examples/e2er_v1_nft_seasonality/figures/fig1_monthly_returns.png" alt="Monthly NFT Returns" width="680">
+</p>
+<p align="center"><em>Monthly return distribution by platform — pipeline-generated</em></p>
+
 ### Institutionalisation of Bitcoin
 
 Examines whether Bitcoin's volatility converged toward traditional asset levels following the January 2024 spot ETF approval. The pipeline estimated GARCH and Markov-switching regime models, ran a difference-in-differences design around the ETF date, and executed robustness checks (Mann-Kendall trend tests, Rambachan-Roth sensitivity, leave-one-out analysis).
 
 **Key result (null finding):** Bitcoin's GARCH volatility fell from 89% to 50% after ETF approval, reaching a low-volatility regime at 32% (within commodity range). But Bitcoin sustains this regime for only 6 days on average vs. 82 days for equities — convergence is gradual, not structural.
 
-*Full paper PDFs and replication packages will be added to this repository as a separate release.*
+[Paper PDF](examples/e2er_v1_bitcoin_institutionalization/paper.pdf) · [LaTeX source](examples/e2er_v1_bitcoin_institutionalization/main.tex) · [Replication package](examples/e2er_v1_bitcoin_institutionalization/replication/)
+
+<p align="center">
+  <img src="examples/e2er_v1_bitcoin_institutionalization/figures/figure_2_event_study.pdf" alt="Event Study: ETF Approval" width="680">
+</p>
+<p align="center"><em>Event study around ETF approval date — pipeline-generated</em></p>
 
 ---
 

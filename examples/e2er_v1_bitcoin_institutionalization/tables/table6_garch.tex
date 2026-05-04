@@ -1,0 +1,29 @@
+\begin{table}[htbp]
+\centering
+\caption{GARCH(1,1) Parameter Estimates}\label{tab:garch_results}
+\begin{tabular}{lcccccc}
+\toprule
+Asset & $\hat{\omega}$ & $\hat{\alpha}$ & $\hat{\beta}$ & Persistence & Uncond.\ vol (\%) & $N$ \\
+\midrule
+BTC   & 0.131 & 0.119 & 0.859 & 0.978 & 80.2 & 2,266 \\
+ETH   & 0.133 & 0.083 & 0.900 & 0.982 & 94.3 & 2,266 \\
+SOL   & 0.284 & 0.125 & 0.851 & 0.977 & 134.2 & 2,166 \\
+SPY   & 0.055 & 0.151 & 0.809 & 0.960 & 22.4 & 1,557 \\
+GLD   & 0.057 & 0.128 & 0.812 & 0.940 & 21.4 & 1,557 \\
+TLT   & 0.027 & 0.099 & 0.866 & 0.965 & 19.8 & 1,557 \\
+USO   & 0.168 & 0.179 & 0.784 & 0.963 & 53.1 & 1,557 \\
+HYG   & 0.001 & 0.119 & 0.872 & 0.991 & 11.7 & 1,557 \\
+IWM   & 0.152 & 0.112 & 0.824 & 0.936 & 29.9 & 1,557 \\
+QQQ   & 0.058 & 0.125 & 0.850 & 0.975 & 30.3 & 1,557 \\
+\midrule
+\multicolumn{7}{l}{\textit{BTC sub-period comparison:}} \\
+Pre-ETF  & --- & --- & --- & 0.976 & 89.0 & 1,430 \\
+Post-ETF & --- & --- & --- & 0.920 & 49.9 & 836 \\
+\bottomrule
+\end{tabular}
+
+\vspace{2mm}
+{\footnotesize\textit{Notes:} GARCH(1,1) estimated on daily log returns (percentage scale).
+Unconditional volatility: $\sqrt{\hat{\omega}/(1-\hat{\alpha}-\hat{\beta})} \times \sqrt{365}$.
+Pre/post-ETF split at January 10, 2024. Crypto assets (BTC, ETH, SOL) trade 24/7, yielding approximately 365 observations per year; traditional assets trade on business days only (~252 per year). Each model is estimated on the individual asset series, so differing $N$ does not affect cross-asset comparability.}
+\end{table}

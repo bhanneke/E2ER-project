@@ -1,0 +1,39 @@
+\begin{table}[htbp]
+  \centering
+  \caption{Robustness Checks: Alternative RV Windows and Leave-One-Out}\label{tab:robustness}
+  \begin{threeparttable}
+    \begin{tabular}{l S[table-format=-1.3] S[table-format=1.3]}
+      \toprule
+      {Specification} & {$\hat{\beta}$} & {$p$-value} \\
+      \midrule
+      \multicolumn{3}{l}{\textit{Panel A: Alternative RV windows}} \\[3pt]
+      21-day & -0.051 & 0.582 \\
+      30-day (primary) & -0.047 & 0.614 \\
+      60-day & -0.043 & 0.637 \\
+      90-day & -0.072 & 0.401 \\
+      \midrule
+      \multicolumn{3}{l}{\textit{Panel B: Leave-one-out}} \\[3pt]
+      Drop SPY & -0.056 & 0.596 \\
+      Drop GLD & 0.003 & 0.973 \\
+      Drop TLT & -0.060 & 0.564 \\
+      Drop USO & -0.053 & 0.614 \\
+      Drop HYG & -0.100 & 0.234 \\
+      Drop IWM & -0.044 & 0.674 \\
+      Drop QQQ & -0.052 & 0.624 \\
+      Drop LQD & -0.064 & 0.533 \\
+      Drop SHY & 0.005 & 0.948 \\
+      \midrule
+      \multicolumn{3}{l}{\textit{Panel C: Alternative events and placebos}} \\[3pt]
+      Grayscale ruling & -0.107 & 0.241 \\
+      Placebo (halving) & -0.088 & 0.349 \\
+      Permutation $p$ & & 0.776 \\
+      \bottomrule
+    \end{tabular}
+    \begin{tablenotes}[flushleft]
+      \small
+      \item \textit{Notes:} All specifications include asset and year-month fixed effects.
+        Standard errors clustered at asset level ($G = 10$). Primary treatment:
+        BTC $\times$ Post(Jan 2024). Permutation: 500 random treatment assignments.
+    \end{tablenotes}
+  \end{threeparttable}
+\end{table}
