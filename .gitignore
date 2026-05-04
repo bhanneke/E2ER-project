@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Environment
+.env
+*.env.local
+
+# Testing
+.coverage
+.pytest_cache/
+htmlcov/
+
+# Mypy
+.mypy_cache/
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Pipeline artifacts (large, generated)
+artifacts/
+repos/
+
+# Logs
+*.log
+logs/
+
+# Docker
+docker-compose.override.yml

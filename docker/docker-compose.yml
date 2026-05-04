@@ -1,0 +1,36 @@
+name: e2er-v3
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: e2er_v3
+      POSTGRES_USER: e2er
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-e2er_dev}
+    ports:
+      - "127.0.0.1:5439:5432"
+    volumes:
+      - ./data/pgdata:/var/lib/postgresql/data
+      - ./sql:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U e2er -d e2er_v3"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    ports:
+      - "127.0.0.1:8280:8280"
+    env_file: ../.env
+    environment:
+      DATABASE_URL: postgresql+psycopg://e2er:${POSTGRES_PASSWORD:-e2er_dev}@db:5432/e2er_v3
+    volumes:
+      - ../workspaces:/app/workspaces
+      - ../skills:/app/skills
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
