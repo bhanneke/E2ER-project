@@ -115,15 +115,16 @@ cp .env.example .env
 ### 3. Start PostgreSQL
 
 ```bash
-cd docker && docker compose up -d db
+# Run from the repo root
+docker compose -f docker/docker-compose.yml up -d db
 ```
 
 ### 4. Initialise the database
 
 ```bash
 python scripts/migrate.py
-# Runs sql/001 through sql/006 in order:
-# papers, llm_usage, data_queries + approvals, literature, contributions, events
+# Applies sql/001 through sql/006:
+# papers · llm_usage · data_queries + approvals · literature · contributions · events
 ```
 
 ### 5. Start the API
@@ -143,14 +144,21 @@ curl -X POST http://localhost:8280/api/papers \
     "datasets": ["uniswap_v3_swaps"],
     "mode": "iterative"
   }'
+# Returns: {"paper_id": "<uuid>", "status": "idea", ...}
 ```
 
 ### 7. Approve pending data queries
 
+Once the pipeline submits a production query, it pauses and waits for your approval:
+
 ```bash
-curl http://localhost:8280/api/papers/{paper_id}/pending-queries
-curl -X POST http://localhost:8280/api/queries/{query_id}/approve \
-  -d '{"approved": true}'
+# List queries awaiting approval
+curl http://localhost:8280/api/papers/<paper_id>/pending-queries
+
+# Approve or reject
+curl -X POST http://localhost:8280/api/queries/<query_id>/approve \
+  -H "Content-Type: application/json" \
+  -d '{"approved": true, "note": "Looks good"}'
 ```
 
 ---
@@ -166,7 +174,9 @@ curl -X POST http://localhost:8280/api/queries/{query_id}/approve \
 
 ## Architecture diagrams
 
-Mermaid diagrams in [`docs/diagrams/`](docs/diagrams/):
+An [interactive system architecture diagram](docs/architecture.html) (open in browser) is available in `docs/`.
+
+Individual Mermaid diagrams in [`docs/diagrams/`](docs/diagrams/) — rendered natively on GitHub:
 
 | Diagram | Description |
 |---------|-------------|
@@ -207,7 +217,7 @@ Examines whether Bitcoin's volatility converged toward traditional asset levels 
 [Paper PDF](examples/e2er_v1_bitcoin_institutionalization/paper.pdf) · [LaTeX source](examples/e2er_v1_bitcoin_institutionalization/main.tex) · [Replication package](examples/e2er_v1_bitcoin_institutionalization/replication/)
 
 <p align="center">
-  <img src="examples/e2er_v1_bitcoin_institutionalization/figures/figure_2_event_study.pdf" alt="Event Study: ETF Approval" width="680">
+  <img src="examples/e2er_v1_bitcoin_institutionalization/figures/figure_2_event_study.png" alt="Event Study: ETF Approval" width="680">
 </p>
 <p align="center"><em>Event study around ETF approval date — pipeline-generated</em></p>
 
