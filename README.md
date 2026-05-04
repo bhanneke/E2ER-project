@@ -261,7 +261,7 @@ pytest tests/ -v
 
 ## Version history
 
-### v1 — Linear Pipeline (2024)
+### v1 — Linear Pipeline
 
 A sequential pipeline of 14 specialised agents processing a research question through 16 fixed stages. Each agent handles one task (literature search, data acquisition, theory development, estimation, drafting, review) and passes artifacts forward. Quality gates between stages enforce minimum standards before downstream agents proceed.
 
@@ -272,7 +272,7 @@ idea → research design → [literature | data | theory] → merge → estimati
 
 24 workers, 118 skill files, 40+ skills across 9 domains. Fixed stage ordering; no editorial intelligence at runtime. Produced 133 paper drafts across 157 runs.
 
-### v2 — Strategist-Controlled Architecture (2025)
+### v2 — Strategist-Controlled Architecture
 
 A central Strategist agent (acting as first author) orchestrates 12 specialist agents (co-authors) through a work-order pattern. The Strategist operates in two modes: Mode 1 (lean orchestration, structured JSON decisions at pipeline checkpoints) and Mode 2 (full editorial control with access to the complete paper).
 
@@ -283,7 +283,7 @@ Key advances over v1:
 - Human review gates at research design and post-draft stages
 - Ran on private 100xOS infrastructure (Claude Code CLI subprocess pattern)
 
-### v3 — Open-Source Release (2026, this repo)
+### v3 — Open-Source Release (this repo)
 
 A ground-up redesign for open-source use. Retains the Strategist architecture from v2 and adds four major extensions inspired by the ZeroPaper architecture:
 
