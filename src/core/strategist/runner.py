@@ -77,6 +77,12 @@ class PipelineRunner:
             # Phase 6: Revision loop
             status = await self._run_revision_phase(status)
 
+            # Phase 7: Compile LaTeX → PDF (non-fatal)
+            await self._run_compile_phase()
+
+            # Phase 8: Push artifacts to GitHub (non-fatal)
+            await self._run_github_push_phase()
+
             return {"status": status.value, "contributions": len(self._contributions)}
 
         except Exception as e:
@@ -299,6 +305,28 @@ class PipelineRunner:
                 context_tier=getattr(wo, "context_tier", 1),
             ))
         return result
+
+    async def _run_compile_phase(self) -> None:
+        """Compile paper_draft.tex to PDF. Non-fatal — PDF is a bonus output."""
+        try:
+            from ..renderer.compiler import compile_latex
+            pdf = await compile_latex(self._workspace)
+            if pdf:
+                logger.info("Compiled PDF: %s", pdf)
+            else:
+                logger.debug("LaTeX compilation skipped (no compiler or no .tex)")
+        except Exception as e:
+            logger.warning("LaTeX compilation failed: %s", e)
+
+    async def _run_github_push_phase(self) -> None:
+        """Push LaTeX artifacts to GitHub. Non-fatal — skipped when token not configured."""
+        try:
+            from ...modules.github.push import push_latex_draft
+            result = await push_latex_draft(self._paper_id, self._workspace, "completion")
+            if result:
+                logger.info("GitHub push: %d files to %s", result.get("pushed_files", 0), result.get("repo", ""))
+        except Exception as e:
+            logger.warning("GitHub push failed: %s", e)
 
     async def _update_status(self, status: PaperStatus) -> None:
         try:

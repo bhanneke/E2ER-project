@@ -94,6 +94,30 @@ We gratefully acknowledge **[Allium](https://allium.so)** for supporting this re
 
 ---
 
+## Literature: bring your own BibTeX
+
+E2ER does **not** automatically retrieve papers from the internet. The recommended approach is to supply a `.bib` file of your own curated references.
+
+Set `LITERATURE_BIBTEX_FILE=/path/to/refs.bib` in your `.env`. When set, the pipeline:
+
+1. Parses all entries at startup (requires `bibtexparser` — included in `pip install -e .`)
+2. Injects a compact reference list into the prompts of: `literature_scanner`, `paper_drafter`, `section_writer`, `abstract_writer`, and `revisor`
+3. Copies the `.bib` file into the workspace so LaTeX can compile with `\bibliography{refs}`
+
+A typical BibTeX workflow:
+
+```bash
+# Export your references from Zotero / Mendeley as refs.bib
+# Add to .env:
+LITERATURE_BIBTEX_FILE=/home/researcher/my-project/refs.bib
+```
+
+The `literature_scanner` specialist will synthesise the provided references and flag gaps where additional literature search is needed. The `paper_drafter` will use `\cite{}` commands aligned with the BibTeX keys in your file.
+
+> **Planned extension**: Open-access paper fetching via OpenAlex, Semantic Scholar, and arXiv is implemented in `src/modules/literature/` but not yet wired into the pipeline. Contributions welcome — see `skills/CONTRIBUTING_SKILLS.md` for the extension pattern.
+
+---
+
 ## Quick start
 
 ### 1. Install

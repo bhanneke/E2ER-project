@@ -285,3 +285,136 @@ async def test_two_papers_workspace_isolated(tmp_path, mock_llm):
 
     # ws_b should only have manifest.json (nothing written by runner_b since it wasn't run)
     assert "paper_plan.md" not in files_b, "paper_plan.md leaked from paper_a workspace into paper_b"
+
+
+# ---------------------------------------------------------------------------
+# Context injection
+# ---------------------------------------------------------------------------
+
+def test_inject_context_tier0(tmp_path):
+    """Tier 0 produces minimal context: paper title + RQ only."""
+    import json
+    from src.core.specialists.contracts import WorkOrder
+    from src.core.specialists.dispatcher import _inject_context
+
+    ws = tmp_path / "paper-ctx"
+    ws.mkdir()
+    manifest = {"paper_id": "test-id", "title": "DeFi Liquidity", "research_question": "Does X affect Y?",
+                "datasets": [], "mode": "single_pass", "current_stage": "idea"}
+    (ws / "manifest.json").write_text(json.dumps(manifest))
+
+    wo = WorkOrder(paper_id="test-id", specialist="idea_developer", focus="Develop idea", context_tier=0)
+    enriched = _inject_context(wo, ws)
+
+    assert "DeFi Liquidity" in enriched.context
+    assert "Does X affect Y?" in enriched.context
+    # Tier 0 should NOT include paper plan (doesn't exist yet anyway)
+
+
+def test_inject_context_tier1_includes_paper_plan(tmp_path):
+    """Tier 1 injects paper_plan.md content into specialist context."""
+    import json
+    from src.core.specialists.contracts import WorkOrder
+    from src.core.specialists.dispatcher import _inject_context
+
+    ws = tmp_path / "paper-ctx1"
+    ws.mkdir()
+    manifest = {"paper_id": "test-id", "title": "Test Paper", "research_question": "RQ?",
+                "datasets": [], "mode": "single_pass", "current_stage": "idea"}
+    (ws / "manifest.json").write_text(json.dumps(manifest))
+    (ws / "paper_plan.md").write_text("# Paper Plan\n\nH1: X increases Y.")
+
+    wo = WorkOrder(paper_id="test-id", specialist="econometrics_specialist", focus="Specify model", context_tier=1)
+    enriched = _inject_context(wo, ws)
+
+    assert "H1: X increases Y." in enriched.context
+
+
+def test_inject_context_tier2_includes_draft(tmp_path):
+    """Tier 2 injects the current draft into reviewer context."""
+    import json
+    from src.core.specialists.contracts import WorkOrder
+    from src.core.specialists.dispatcher import _inject_context
+
+    ws = tmp_path / "paper-ctx2"
+    ws.mkdir()
+    manifest = {"paper_id": "test-id", "title": "Test Paper", "research_question": "RQ?",
+                "datasets": [], "mode": "single_pass", "current_stage": "review"}
+    (ws / "manifest.json").write_text(json.dumps(manifest))
+    (ws / "paper_draft.tex").write_text(r"\documentclass{article}\begin{document}The draft.\end{document}")
+
+    wo = WorkOrder(paper_id="test-id", specialist="mechanism_reviewer", focus="Review mechanism", context_tier=2)
+    enriched = _inject_context(wo, ws)
+
+    assert "The draft." in enriched.context
+
+
+def test_inject_context_skips_if_already_populated(tmp_path):
+    """Pre-populated context must not be overwritten."""
+    from src.core.specialists.contracts import WorkOrder
+    from src.core.specialists.dispatcher import _inject_context
+
+    wo = WorkOrder(paper_id="test-id", specialist="paper_drafter", focus="Draft",
+                   context="Already set by caller.", context_tier=2)
+    enriched = _inject_context(wo, tmp_path)
+
+    assert enriched.context == "Already set by caller."
+
+
+# ---------------------------------------------------------------------------
+# Compile + GitHub push phases
+# ---------------------------------------------------------------------------
+
+async def test_compile_phase_non_fatal(tmp_path, mock_llm):
+    """Compile phase must not crash the pipeline when no LaTeX compiler is present."""
+    paper_id = str(uuid.uuid4())
+    workspace = _make_workspace(tmp_path, paper_id, mode="single_pass")
+
+    from src.core.strategist.engine import StrategistEngine
+    from src.core.strategist.runner import PipelineRunner
+
+    with (
+        patch.object(StrategistEngine, "decide", return_value=_designing_decision(paper_id)),
+        patch("src.db.client.execute", new_callable=AsyncMock),
+        patch("src.modules.tracking.usage.save_usage", new_callable=AsyncMock),
+        patch("src.core.renderer.compiler.compile_latex", new_callable=AsyncMock, return_value=None),
+        patch("src.modules.github.push.push_latex_draft", new_callable=AsyncMock, return_value=None),
+    ):
+        runner = PipelineRunner(
+            paper_id=paper_id, workspace=workspace, backend=mock_llm,
+            model="claude-test", mode="single_pass",
+            extra_tools=[], extra_handlers=[], backend_name="mock",
+        )
+        result = await runner.run()
+
+    assert result["status"] not in ("failed",), "Compile/push phase must not abort the pipeline"
+
+
+async def test_github_push_called_on_completion(tmp_path, mock_llm):
+    """push_latex_draft must be called exactly once after a successful pipeline run."""
+    paper_id = str(uuid.uuid4())
+    workspace = _make_workspace(tmp_path, paper_id, mode="single_pass")
+
+    from src.core.strategist.engine import StrategistEngine
+    from src.core.strategist.runner import PipelineRunner
+
+    push_mock = AsyncMock(return_value={"pushed_files": 3, "stage": "completion", "repo": "test-repo"})
+
+    with (
+        patch.object(StrategistEngine, "decide", return_value=_designing_decision(paper_id)),
+        patch("src.db.client.execute", new_callable=AsyncMock),
+        patch("src.modules.tracking.usage.save_usage", new_callable=AsyncMock),
+        patch("src.core.renderer.compiler.compile_latex", new_callable=AsyncMock, return_value=None),
+        patch("src.modules.github.push.push_latex_draft", push_mock),
+    ):
+        runner = PipelineRunner(
+            paper_id=paper_id, workspace=workspace, backend=mock_llm,
+            model="claude-test", mode="single_pass",
+            extra_tools=[], extra_handlers=[], backend_name="mock",
+        )
+        await runner.run()
+
+    push_mock.assert_called_once()
+    call_args = push_mock.call_args
+    assert call_args.args[0] == paper_id
+    assert call_args.args[2] == "completion"
