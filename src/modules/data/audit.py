@@ -1,7 +1,7 @@
 """Data module — audit log for all Allium queries."""
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
@@ -146,7 +146,7 @@ async def write_data_queries_sql(paper_id: str, output_path: "Path") -> int:
     lines = [
         "-- E2ER v3 data queries for replication",
         f"-- paper_id: {paper_id}",
-        f"-- generated: {datetime.now(UTC).isoformat()}",
+        f"-- generated: {datetime.now(timezone.utc).isoformat()}",
         "",
     ]
     for i, row in enumerate(production, 1):

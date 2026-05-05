@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, List, Optional
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
@@ -28,9 +28,9 @@ app.add_middleware(
 class CreatePaperRequest(BaseModel):
     title: str
     research_question: str
-    datasets: list[str] = []
+    datasets: List[str] = []
     mode: str = "iterative"
-    bibtex_path: str | None = None
+    bibtex_path: Optional[str] = None
 
 
 class PaperResponse(BaseModel):

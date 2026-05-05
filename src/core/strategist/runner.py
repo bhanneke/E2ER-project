@@ -118,8 +118,9 @@ class PipelineRunner:
         except Exception as e:
             state.save(self._workspace)  # preserve progress on failure
             logger.error("Pipeline failed for paper %s: %s", self._paper_id, e)
-            await self._update_status(PaperStatus.FAILED)
-            return {"status": "failed", "error": str(e)}
+            error_msg = f"{type(e).__name__}: {e}"
+            await self._update_status(PaperStatus.FAILED, error=error_msg)
+            return {"status": "failed", "error": error_msg}
 
     async def _run_initial_phase(self) -> None:
         """Run the initial design + data collection specialists."""
@@ -310,7 +311,10 @@ class PipelineRunner:
 
         # HARD_REJECT or MECHANISM_FAIL
         logger.warning("Paper %s received %s", self._paper_id, result.verdict)
-        await self._update_status(PaperStatus.FAILED)
+        await self._update_status(
+            PaperStatus.FAILED,
+            error=f"{result.verdict}: {result.rationale}",
+        )
         return PaperStatus.FAILED
 
     async def _dispatch(self, decision: StrategistDecision) -> list[Contribution]:
@@ -400,13 +404,19 @@ class PipelineRunner:
         except Exception as e:
             logger.warning("GitHub push failed: %s", e)
 
-    async def _update_status(self, status: PaperStatus) -> None:
+    async def _update_status(self, status: PaperStatus, error: str | None = None) -> None:
         try:
             from ...db.client import execute
-            await execute(
-                "UPDATE papers SET status = %(s)s, updated_at = NOW() WHERE id = %(id)s",
-                {"s": status.value, "id": self._paper_id},
-            )
+            if error is not None:
+                await execute(
+                    "UPDATE papers SET status = %(s)s, last_error = %(e)s, updated_at = NOW() WHERE id = %(id)s",
+                    {"s": status.value, "e": error, "id": self._paper_id},
+                )
+            else:
+                await execute(
+                    "UPDATE papers SET status = %(s)s, updated_at = NOW() WHERE id = %(id)s",
+                    {"s": status.value, "id": self._paper_id},
+                )
         except Exception as e:
             logger.debug("Status update skipped (no DB?): %s", e)
 
