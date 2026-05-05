@@ -16,6 +16,7 @@ class PipelineState:
     iteration: int = 0
     pivot_count: int = 0
     contributions_count: int = 0
+    last_status: str = "in_progress"
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def mark_complete(self, stage: str) -> None:

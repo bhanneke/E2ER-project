@@ -418,3 +418,156 @@ async def test_github_push_called_on_completion(tmp_path, mock_llm):
     call_args = push_mock.call_args
     assert call_args.args[0] == paper_id
     assert call_args.args[2] == "completion"
+
+
+# ---------------------------------------------------------------------------
+# Replication phase
+# ---------------------------------------------------------------------------
+
+async def test_replication_phase_runs_packager(tmp_path, mock_llm):
+    """replication_packager must be called and estimation.py must be written."""
+    paper_id = str(uuid.uuid4())
+    workspace = _make_workspace(tmp_path, paper_id, mode="single_pass")
+
+    from src.core.strategist.engine import StrategistEngine
+    from src.core.strategist.runner import PipelineRunner
+
+    with (
+        patch.object(StrategistEngine, "decide", return_value=_designing_decision(paper_id)),
+        patch("src.db.client.execute", new_callable=AsyncMock),
+        patch("src.modules.tracking.usage.save_usage", new_callable=AsyncMock),
+        patch("src.core.renderer.compiler.compile_latex", new_callable=AsyncMock, return_value=None),
+        patch("src.modules.github.push.push_latex_draft", new_callable=AsyncMock, return_value=None),
+        patch("src.modules.data.audit.write_audit_csv", new_callable=AsyncMock, return_value=0),
+        patch("src.modules.data.audit.write_data_queries_sql", new_callable=AsyncMock, return_value=0),
+    ):
+        runner = PipelineRunner(
+            paper_id=paper_id, workspace=workspace, backend=mock_llm,
+            model="claude-test", mode="single_pass",
+            extra_tools=[], extra_handlers=[], backend_name="mock",
+        )
+        await runner.run()
+
+    assert "replication_packager" in set(mock_llm.specialist_calls)
+    assert (workspace / "replication" / "estimation.py").exists(), "replication/estimation.py must be written"
+
+
+async def test_replication_contributions_count(tmp_path, mock_llm):
+    """Contributions count must include replication_packager (≥14 total)."""
+    paper_id = str(uuid.uuid4())
+    workspace = _make_workspace(tmp_path, paper_id, mode="single_pass")
+
+    from src.core.strategist.engine import StrategistEngine
+    from src.core.strategist.runner import PipelineRunner
+
+    with (
+        patch.object(StrategistEngine, "decide", return_value=_designing_decision(paper_id)),
+        patch("src.db.client.execute", new_callable=AsyncMock),
+        patch("src.modules.tracking.usage.save_usage", new_callable=AsyncMock),
+        patch("src.core.renderer.compiler.compile_latex", new_callable=AsyncMock, return_value=None),
+        patch("src.modules.github.push.push_latex_draft", new_callable=AsyncMock, return_value=None),
+        patch("src.modules.data.audit.write_audit_csv", new_callable=AsyncMock, return_value=0),
+        patch("src.modules.data.audit.write_data_queries_sql", new_callable=AsyncMock, return_value=0),
+    ):
+        runner = PipelineRunner(
+            paper_id=paper_id, workspace=workspace, backend=mock_llm,
+            model="claude-test", mode="single_pass",
+            extra_tools=[], extra_handlers=[], backend_name="mock",
+        )
+        result = await runner.run()
+
+    assert result["contributions"] >= 14, (
+        f"Expected ≥14 contributions (7 core + 6 reviewers + 1 replication), got {result['contributions']}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# State persistence / resume
+# ---------------------------------------------------------------------------
+
+async def test_state_saved_after_each_phase(tmp_path, mock_llm):
+    """A .pipeline_state.json must exist after a successful run."""
+    paper_id = str(uuid.uuid4())
+    workspace = _make_workspace(tmp_path, paper_id, mode="single_pass")
+
+    from src.core.strategist.engine import StrategistEngine
+    from src.core.strategist.runner import PipelineRunner
+
+    with (
+        patch.object(StrategistEngine, "decide", return_value=_designing_decision(paper_id)),
+        patch("src.db.client.execute", new_callable=AsyncMock),
+        patch("src.modules.tracking.usage.save_usage", new_callable=AsyncMock),
+        patch("src.core.renderer.compiler.compile_latex", new_callable=AsyncMock, return_value=None),
+        patch("src.modules.github.push.push_latex_draft", new_callable=AsyncMock, return_value=None),
+        patch("src.modules.data.audit.write_audit_csv", new_callable=AsyncMock, return_value=0),
+        patch("src.modules.data.audit.write_data_queries_sql", new_callable=AsyncMock, return_value=0),
+    ):
+        runner = PipelineRunner(
+            paper_id=paper_id, workspace=workspace, backend=mock_llm,
+            model="claude-test", mode="single_pass",
+            extra_tools=[], extra_handlers=[], backend_name="mock",
+        )
+        await runner.run()
+
+    state_path = workspace / ".pipeline_state.json"
+    assert state_path.exists(), ".pipeline_state.json must be written"
+    state = json.loads(state_path.read_text())
+    assert "initial" in state["completed_stages"]
+    assert "review" in state["completed_stages"]
+    assert "revision" in state["completed_stages"]
+    assert "replication" in state["completed_stages"]
+    assert state["contributions_count"] >= 14
+
+
+async def test_resume_skips_completed_phases(tmp_path, mock_llm):
+    """A pipeline resuming with 'initial' and 'review' already complete must not re-dispatch those specialists."""
+    paper_id = str(uuid.uuid4())
+    workspace = _make_workspace(tmp_path, paper_id, mode="single_pass")
+
+    # Pre-write review files so _run_revision_phase workspace fallback finds scores
+    for reviewer in ["mechanism", "technical", "literature", "writing", "data", "identification"]:
+        (workspace / f"review_{reviewer}.md").write_text(f"# Review\n\nScore: 7/10\n\nLooks good.")
+
+    # Pre-write state: initial + review already done
+    pre_state = {
+        "paper_id": paper_id, "mode": "single_pass",
+        "completed_stages": ["initial", "review"],
+        "current_stage": "", "iteration": 0, "pivot_count": 0,
+        "contributions_count": 13, "last_status": "in_progress",
+        "metadata": {},
+    }
+    (workspace / ".pipeline_state.json").write_text(json.dumps(pre_state))
+
+    from src.core.strategist.engine import StrategistEngine
+    from src.core.strategist.runner import PipelineRunner
+
+    with (
+        patch.object(StrategistEngine, "decide", return_value=_designing_decision(paper_id)),
+        patch("src.db.client.execute", new_callable=AsyncMock),
+        patch("src.modules.tracking.usage.save_usage", new_callable=AsyncMock),
+        patch("src.core.renderer.compiler.compile_latex", new_callable=AsyncMock, return_value=None),
+        patch("src.modules.github.push.push_latex_draft", new_callable=AsyncMock, return_value=None),
+        patch("src.modules.data.audit.write_audit_csv", new_callable=AsyncMock, return_value=0),
+        patch("src.modules.data.audit.write_data_queries_sql", new_callable=AsyncMock, return_value=0),
+    ):
+        runner = PipelineRunner(
+            paper_id=paper_id, workspace=workspace, backend=mock_llm,
+            model="claude-test", mode="single_pass",
+            extra_tools=[], extra_handlers=[], backend_name="mock",
+        )
+        result = await runner.run()
+
+    called = set(mock_llm.specialist_calls)
+
+    # Initial specialists must NOT have been re-dispatched
+    assert "idea_developer" not in called, "idea_developer re-dispatched despite initial being complete"
+    assert "literature_scanner" not in called, "literature_scanner re-dispatched despite initial being complete"
+
+    # Reviewers must NOT have been re-dispatched (review already complete)
+    assert "mechanism_reviewer" not in called, "mechanism_reviewer re-dispatched despite review being complete"
+
+    # Replication packager MUST have run (was not in pre-state)
+    assert "replication_packager" in called
+
+    # Total count must include prior session's 13 contributions
+    assert result["contributions"] >= 14  # 13 prior + 1 replication

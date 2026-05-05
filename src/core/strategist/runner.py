@@ -10,7 +10,7 @@ from ...logging_config import get_logger
 from ...modules.llm.base import LLMBackend, ToolHandler
 from ..specialists.contracts import Contribution, WorkOrder
 from ..specialists.dispatcher import execute_parallel, execute_with_dependencies
-from ..specialists.registry import REVIEWER_SPECIALISTS, POLISH_SPECIALISTS
+from ..specialists.registry import REVIEWER_SPECIALISTS, POLISH_SPECIALISTS, SPECIALIST_ARTIFACTS
 from ..strategist.actions import CeilingCheckResult, SelfAttackReport, StrategistDecision
 from ..strategist.engine import StrategistEngine
 from ..strategist.review_aggregator import aggregate_reviews, parse_review_output
@@ -50,42 +50,73 @@ class PipelineRunner:
         self._pivot_count = 0
 
     async def run(self) -> dict[str, Any]:
-        """Run the full pipeline from idea to completion."""
+        """Run the full pipeline from idea to completion, with checkpoint/resume support."""
+        from ..pipeline.state import PipelineState
+
+        state = PipelineState.load(self._workspace, self._paper_id, self._mode)
+        self._iteration = state.iteration
+        self._pivot_count = state.pivot_count
+        prior_contributions = state.contributions_count
+
         status = PaperStatus.DESIGNING
         await self._update_status(status)
 
         try:
-            # Phase 1: Initial design + data + contributions
-            await self._run_initial_phase()
+            if not state.is_complete("initial"):
+                await self._run_initial_phase()
+                state.contributions_count = prior_contributions + len(self._contributions)
+                state.mark_complete("initial")
+                state.save(self._workspace)
             status = PaperStatus.IN_PROGRESS
 
-            if self._mode == "iterative":
-                # Phase 2: Iterative improvement with ceiling detection
+            if self._mode == "iterative" and not state.is_complete("iterative"):
                 status = await self._run_iterative_phase()
+                state.iteration = self._iteration
+                state.pivot_count = self._pivot_count
+                state.contributions_count = prior_contributions + len(self._contributions)
+                state.mark_complete("iterative")
+                state.save(self._workspace)
 
-            # Phase 3: Self-attack (V3 extension)
-            if self._mode == "iterative":
+            if self._mode == "iterative" and not state.is_complete("self_attack"):
                 status = await self._run_self_attack_phase()
+                state.mark_complete("self_attack")
+                state.save(self._workspace)
 
-            # Phase 4: Polish stack (V3 extension)
-            if self._mode == "iterative":
+            if self._mode == "iterative" and not state.is_complete("polish"):
                 status = await self._run_polish_phase()
+                state.mark_complete("polish")
+                state.save(self._workspace)
 
-            # Phase 5: Formal review
-            status = await self._run_review_phase()
+            if not state.is_complete("review"):
+                status = await self._run_review_phase()
+                state.mark_complete("review")
+                state.save(self._workspace)
 
-            # Phase 6: Revision loop
-            status = await self._run_revision_phase(status)
+            if not state.is_complete("revision"):
+                status = await self._run_revision_phase(status)
+                state.last_status = status.value
+                state.contributions_count = prior_contributions + len(self._contributions)
+                state.mark_complete("revision")
+                state.save(self._workspace)
+            else:
+                # Resuming past revision — restore saved verdict
+                status = PaperStatus(state.last_status)
 
-            # Phase 7: Compile LaTeX → PDF (non-fatal)
+            if not state.is_complete("replication"):
+                await self._run_replication_phase()
+                state.contributions_count = prior_contributions + len(self._contributions)
+                state.mark_complete("replication")
+                state.save(self._workspace)
+
+            # Non-fatal finalization phases (no checkpointing needed)
             await self._run_compile_phase()
-
-            # Phase 8: Push artifacts to GitHub (non-fatal)
             await self._run_github_push_phase()
 
-            return {"status": status.value, "contributions": len(self._contributions)}
+            total_contributions = prior_contributions + len(self._contributions)
+            return {"status": status.value, "contributions": total_contributions}
 
         except Exception as e:
+            state.save(self._workspace)  # preserve progress on failure
             logger.error("Pipeline failed for paper %s: %s", self._paper_id, e)
             await self._update_status(PaperStatus.FAILED)
             return {"status": "failed", "error": str(e)}
@@ -223,14 +254,23 @@ class PipelineRunner:
 
     async def _run_revision_phase(self, current_status: PaperStatus) -> PaperStatus:
         """Aggregate reviews and decide: accept, revise, or reject."""
-        from ..strategist.review_aggregator import ReviewScore
-
         scores = []
         for c in self._contributions:
             if c.specialist in REVIEWER_SPECIALISTS:
                 score = parse_review_output(c.specialist, c.output)
                 if score:
                     scores.append(score)
+
+        # Resume path: in-memory contributions empty but review files exist on disk
+        if not scores:
+            for reviewer in REVIEWER_SPECIALISTS:
+                artifact = SPECIALIST_ARTIFACTS.get(reviewer, "")
+                if artifact:
+                    path = self._workspace / artifact
+                    if path.exists():
+                        score = parse_review_output(reviewer, path.read_text(encoding="utf-8"))
+                        if score:
+                            scores.append(score)
 
         if not scores:
             logger.warning("No review scores extracted — proceeding to completion")
@@ -305,6 +345,38 @@ class PipelineRunner:
                 context_tier=getattr(wo, "context_tier", 1),
             ))
         return result
+
+    async def _run_replication_phase(self) -> None:
+        """Export audit trail and run replication_packager specialist."""
+        logger.info("Running replication phase for paper %s", self._paper_id)
+        replication_dir = self._workspace / "replication"
+        replication_dir.mkdir(exist_ok=True)
+
+        try:
+            from ...modules.data.audit import write_audit_csv, write_data_queries_sql
+            await write_audit_csv(self._paper_id, replication_dir / "audit_log.csv")
+            await write_data_queries_sql(self._paper_id, replication_dir / "data_queries.sql")
+        except Exception as e:
+            logger.warning("Could not export audit log: %s", e)
+
+        order = WorkOrder(
+            paper_id=self._paper_id,
+            specialist="replication_packager",
+            focus=(
+                "Write a complete, self-contained estimation script at replication/estimation.py. "
+                "Include: data loading, all estimation steps, and output of tables and figures to "
+                "replication/output/. Read the econometric specification from econometric_spec.md "
+                "and the data summary from data_summary.md. "
+                "Also write replication/README.md documenting how to reproduce the results."
+            ),
+            context_tier=2,
+        )
+        from ..specialists.dispatcher import execute_work_order
+        contribution = await execute_work_order(
+            order, self._backend, self._workspace, self._model,
+            self._extra_tools, self._extra_handlers, self._backend_name,
+        )
+        self._contributions.append(contribution)
 
     async def _run_compile_phase(self) -> None:
         """Compile paper_draft.tex to PDF. Non-fatal — PDF is a bonus output."""

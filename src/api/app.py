@@ -108,7 +108,20 @@ async def get_paper(paper_id: str) -> dict[str, Any]:
     row = await fetch_one("SELECT * FROM papers WHERE id = %(id)s", {"id": paper_id})
     if not row:
         raise HTTPException(status_code=404, detail="Paper not found")
-    return row
+    try:
+        usage = await fetch_one(
+            """
+            SELECT
+                COUNT(*)::int           AS specialist_calls,
+                COALESCE(SUM(input_tokens + output_tokens + cache_read_tokens), 0)::bigint AS total_tokens,
+                COALESCE(SUM(cost_usd), 0)::numeric AS total_cost_usd
+            FROM llm_usage WHERE paper_id = %(id)s
+            """,
+            {"id": paper_id},
+        )
+        return {**row, "usage": usage or {}}
+    except Exception:
+        return {**row, "usage": {}}
 
 
 @app.get("/api/papers/{paper_id}/artifacts")
@@ -193,7 +206,7 @@ async def _run_pipeline(paper_id: str, workspace: Path, mode: str) -> None:
     from ..config import get_settings
     from ..modules.llm.registry import get_backend
     from ..core.strategist.runner import PipelineRunner
-    from ..modules.data.tools import ALLIUM_TOOLS, AlliumToolHandler
+    from ..modules.data.tools import ALLIUM_TOOLS, DeferredAlliumToolHandler
 
     settings = get_settings()
     backend = get_backend(settings)
@@ -201,7 +214,7 @@ async def _run_pipeline(paper_id: str, workspace: Path, mode: str) -> None:
     extra_tools = ALLIUM_TOOLS if settings.data_module_enabled else []
     extra_handlers = []
     if settings.data_module_enabled and settings.allium_api_key:
-        extra_handlers = [AlliumToolHandler(paper_id, "pipeline", None)]
+        extra_handlers = [DeferredAlliumToolHandler(paper_id, "pipeline", workspace)]
 
     runner = PipelineRunner(
         paper_id=paper_id,

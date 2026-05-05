@@ -192,6 +192,34 @@ class AlliumToolHandler(ToolHandler):
             return f"Query execution failed: {e}"
 
 
+class DeferredAlliumToolHandler(AlliumToolHandler):
+    """AlliumToolHandler that reads data_dictionary.json from workspace on each call.
+
+    Unlike AlliumToolHandler (which takes a static dictionary at construction),
+    this variant re-reads the file before every tool call so guardrail rule 2
+    stays current as data_architect evolves the dictionary during the pipeline run.
+    """
+
+    def __init__(self, paper_id: str, specialist: str, workspace: "Path") -> None:
+        from pathlib import Path as _Path
+        super().__init__(paper_id, specialist, dictionary=None)
+        self._workspace = _Path(workspace)
+
+    async def handle(self, tool_name: str, tool_input: dict[str, Any]) -> str:
+        self._dictionary = self._read_dictionary()
+        return await super().handle(tool_name, tool_input)
+
+    def _read_dictionary(self):
+        path = self._workspace / "data_dictionary.json"
+        if not path.exists():
+            return None
+        try:
+            from .dictionary import DataDictionary
+            return DataDictionary.model_validate_json(path.read_text(encoding="utf-8"))
+        except Exception:
+            return None
+
+
 def _enforce_limit(sql: str, limit: int) -> str:
     """Add or replace LIMIT clause in SQL."""
     import re

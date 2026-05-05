@@ -67,14 +67,27 @@ async def save_usage(
     )
 
 
-async def get_paper_usage(paper_id: str) -> list[dict[str, Any]]:
-    """Get all usage records for a paper."""
-    from ...db.client import fetch_all
+async def get_paper_usage(paper_id: str) -> dict[str, Any]:
+    """Get aggregated usage totals and per-specialist breakdown for a paper."""
+    from ...db.client import fetch_one, fetch_all
 
-    return await fetch_all(
-        "SELECT * FROM llm_usage WHERE paper_id = %(id)s ORDER BY created_at",
+    totals = await fetch_one(
+        """
+        SELECT
+            COUNT(*)::int AS specialist_calls,
+            COALESCE(SUM(input_tokens), 0)::bigint AS input_tokens,
+            COALESCE(SUM(output_tokens), 0)::bigint AS output_tokens,
+            COALESCE(SUM(cache_read_tokens), 0)::bigint AS cache_read_tokens,
+            COALESCE(SUM(cost_usd), 0)::numeric AS total_cost_usd
+        FROM llm_usage WHERE paper_id = %(id)s
+        """,
         {"id": paper_id},
     )
+    breakdown = await fetch_all(
+        "SELECT specialist, SUM(cost_usd)::numeric AS cost_usd, SUM(input_tokens+output_tokens)::bigint AS tokens FROM llm_usage WHERE paper_id = %(id)s GROUP BY specialist ORDER BY cost_usd DESC",
+        {"id": paper_id},
+    )
+    return {"totals": totals or {}, "by_specialist": breakdown}
 
 
 async def get_usage_summary() -> dict[str, Any]:

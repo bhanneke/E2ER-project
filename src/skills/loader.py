@@ -34,7 +34,7 @@ _SPECIALIST_SKILLS: dict[str, list[str]] = {
     "polish_bibliography": ["bibtex", "context-builder"],
     "polish_equilibria": ["game-theory", "proof-strategies"],
     "revisor": ["paper-structure", "personal-style", "anti-slop"],
-    "replication_packager": ["cleaning", "researcher"],
+    "replication_packager": ["cleaning", "researcher", "replication-package"],
 }
 
 
