@@ -108,3 +108,53 @@ async def export_audit_log(paper_id: str) -> list[dict[str, Any]]:
         """,
         {"pid": paper_id},
     )
+
+
+async def write_audit_csv(paper_id: str, output_path: "Path") -> int:
+    """Write audit_log.csv to the replication package directory. Returns row count."""
+    import csv
+    from pathlib import Path as _Path
+
+    rows = await export_audit_log(paper_id)
+    output_path = _Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    fieldnames = [
+        "id", "query_type", "query_sql", "fields_requested", "aggregation_level",
+        "estimated_rows", "actual_rows", "validation_status", "approved_by",
+        "approved_at", "executed_at", "created_at",
+    ]
+    with open(output_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+
+    return len(rows)
+
+
+async def write_data_queries_sql(paper_id: str, output_path: "Path") -> int:
+    """Write data_queries.sql with all production queries used. Returns query count."""
+    from pathlib import Path as _Path
+
+    rows = await export_audit_log(paper_id)
+    production = [r for r in rows if r.get("query_type") == "production"]
+
+    output_path = _Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    lines = [
+        "-- E2ER v3 data queries for replication",
+        f"-- paper_id: {paper_id}",
+        f"-- generated: {datetime.now(UTC).isoformat()}",
+        "",
+    ]
+    for i, row in enumerate(production, 1):
+        lines.append(f"-- Query {i}: {row.get('query_type', '')} ({row.get('aggregation_level', '')})")
+        lines.append(f"-- Fields: {row.get('fields_requested', '')}")
+        lines.append(f"-- Status: {row.get('validation_status', '')} | Approved by: {row.get('approved_by', '')}")
+        lines.append(row.get("query_sql", "").strip())
+        lines.append("")
+
+    output_path.write_text("\n".join(lines), encoding="utf-8")
+    return len(production)

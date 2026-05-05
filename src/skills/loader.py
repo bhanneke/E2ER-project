@@ -3,7 +3,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-_SKILLS_DIR = Path(__file__).parent / "files"
+# Search in two locations: src/skills/files/ (installed package) and
+# project-root skills/files/ (development checkout, Docker mount).
+_SKILLS_DIRS = [
+    Path(__file__).parent / "files",
+    Path(__file__).parent.parent.parent / "skills" / "files",
+]
 
 _SPECIALIST_SKILLS: dict[str, list[str]] = {
     "idea_developer": ["economist", "researcher", "creative-ideation", "novelty"],
@@ -19,8 +24,8 @@ _SPECIALIST_SKILLS: dict[str, list[str]] = {
     "mechanism_reviewer": ["referee-simulation", "market-microstructure"],
     "technical_reviewer": ["technical-review", "consistency-check"],
     "literature_reviewer": ["referee-simulation", "context-builder"],
-    "writing_reviewer": ["anti-slop"],
-    "data_reviewer": ["cleaning"],
+    "writing_reviewer": ["writing-quality", "anti-slop"],
+    "data_reviewer": ["data-quality", "cleaning"],
     "identification_reviewer": ["sensitivity", "technical-review"],
     "self_attacker": ["referee-simulation", "argument-audit", "sensitivity"],
     "polish_formula": ["econ-model", "optimization-verification"],
@@ -45,18 +50,24 @@ def load_skills_for_specialist(specialist: str) -> str:
 
 
 def _load_skill(name: str) -> str:
-    """Try to load a skill file by name, searching all subdirectories."""
-    if not _SKILLS_DIR.exists():
-        return ""
-    for path in _SKILLS_DIR.rglob(f"{name}.md"):
-        try:
-            return path.read_text(encoding="utf-8")
-        except Exception:
-            pass
+    """Search all skills directories for a skill file by stem name."""
+    for skills_dir in _SKILLS_DIRS:
+        if not skills_dir.exists():
+            continue
+        for path in skills_dir.rglob(f"{name}.md"):
+            try:
+                return path.read_text(encoding="utf-8")
+            except Exception:
+                pass
     return ""
 
 
 def list_available_skills() -> list[str]:
-    if not _SKILLS_DIR.exists():
-        return []
-    return [p.stem for p in _SKILLS_DIR.rglob("*.md")]
+    """List all skill file stems found across all search directories."""
+    seen: set[str] = set()
+    for skills_dir in _SKILLS_DIRS:
+        if not skills_dir.exists():
+            continue
+        for p in skills_dir.rglob("*.md"):
+            seen.add(p.stem)
+    return sorted(seen)

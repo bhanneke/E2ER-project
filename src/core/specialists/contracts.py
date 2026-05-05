@@ -16,6 +16,8 @@ class WorkOrder(BaseModel):
     tools: list[str] = Field(default_factory=list)
     output_file: str = ""
     extra: dict[str, Any] = Field(default_factory=dict)
+    parallel_group: int = 0  # used by execute_with_dependencies for group ordering
+    context_tier: int = 1    # 0=minimal, 1=decision-relevant, 2=full artifacts
 
 
 class Contribution(BaseModel):

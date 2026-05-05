@@ -115,7 +115,7 @@ class PipelineRunner:
                 if ceiling.verdict == "pivot" and self._pivot_count < _MAX_PIVOTS:
                     self._pivot_count += 1
                     pivot_contributions = await execute_parallel(
-                        ceiling.suggested_pivots,
+                        self._to_contract_orders(ceiling.suggested_pivots),
                         self._backend, self._workspace, self._model,
                         self._extra_tools, self._extra_handlers, self._backend_name,
                     )
@@ -270,19 +270,35 @@ class PipelineRunner:
     async def _dispatch(self, decision: StrategistDecision) -> list[Contribution]:
         if not decision.work_orders:
             return []
-        if len(decision.work_orders) == 1:
+        # Convert strategist.actions.WorkOrder → specialists.contracts.WorkOrder
+        # (strategist work orders carry parallel_group/context_tier but not paper_id)
+        contract_orders = self._to_contract_orders(decision.work_orders)
+        if len(contract_orders) == 1:
             from ..specialists.dispatcher import execute_work_order
             c = await execute_work_order(
-                decision.work_orders[0],
+                contract_orders[0],
                 self._backend, self._workspace, self._model,
                 self._extra_tools, self._extra_handlers, self._backend_name,
             )
             return [c]
         return await execute_with_dependencies(
-            decision.work_orders,
+            contract_orders,
             self._backend, self._workspace, self._model,
             self._extra_tools, self._extra_handlers, self._backend_name,
         )
+
+    def _to_contract_orders(self, strategist_orders: list) -> list[WorkOrder]:
+        """Adapt strategist.actions.WorkOrder → specialists.contracts.WorkOrder."""
+        result = []
+        for wo in strategist_orders:
+            result.append(WorkOrder(
+                paper_id=self._paper_id,
+                specialist=wo.specialist,
+                focus=wo.focus,
+                parallel_group=getattr(wo, "parallel_group", 0),
+                context_tier=getattr(wo, "context_tier", 1),
+            ))
+        return result
 
     async def _update_status(self, status: PaperStatus) -> None:
         try:

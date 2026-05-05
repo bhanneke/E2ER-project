@@ -84,7 +84,7 @@ async def run_specialist(
         cost_usd=float(cost),
         duration_seconds=duration,
         success=result.success,
-        error=result.error,
+        error=result.error or "",
     )
 
 
