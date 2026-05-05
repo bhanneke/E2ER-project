@@ -1,5 +1,7 @@
 # IV and Natural Experiments Database: Blockchain Economy
 
+> **Draft — v0.1.** This database is a starting point, not a complete catalogue. Coverage is uneven across chains and years, many entries have not been validated against actual data availability, and several design assessments are preliminary. We plan to extend it systematically as the E2ER pipeline runs accumulate and as contributors add entries from their own research. Treat entries marked `Check data` with particular caution.
+
 A curated database of potential identification strategies for causal research in the blockchain economy. Each entry documents an event, protocol change, or discontinuity that can serve as an instrument or treatment in an econometric design, together with the identification assumptions it requires and the threats it faces.
 
 Contributions welcome: open a pull request or contact hanneke@wiwi.uni-frankfurt.de.
