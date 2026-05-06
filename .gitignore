@@ -37,6 +37,8 @@ Thumbs.db
 # Pipeline artifacts (large, generated)
 artifacts/
 repos/
+workspaces/
+docker/data/
 
 # Logs
 *.log
