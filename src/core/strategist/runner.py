@@ -45,7 +45,10 @@ class PipelineRunner:
         self._extra_tools = extra_tools or []
         self._extra_handlers = extra_handlers or []
         self._backend_name = backend_name
-        self._strategist = StrategistEngine(backend, workspace, paper_id, mode)
+        self._strategist = StrategistEngine(
+            backend, workspace, paper_id, mode,
+            model=model, backend_name=backend_name,
+        )
         self._contributions: list[Contribution] = []
         self._iteration = 0
         self._pivot_count = 0

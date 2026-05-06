@@ -97,16 +97,42 @@ Output JSON: {"findings": [...], "overall_severity": N}
 class StrategistEngine:
     """Owns the paper-level planning loop."""
 
-    def __init__(self, backend: LLMBackend, workspace: Path, paper_id: str, mode: str = "iterative") -> None:
+    def __init__(
+        self,
+        backend: LLMBackend,
+        workspace: Path,
+        paper_id: str,
+        mode: str = "iterative",
+        model: str = "",
+        backend_name: str = "anthropic",
+    ) -> None:
         from ...modules.llm.base import TokenUsage
         self._backend = backend
         self._workspace = workspace
         self._paper_id = paper_id
         self._mode = mode
+        self._model = model
+        self._backend_name = backend_name
         self._handler = FileToolHandler(workspace)
         # Cumulative usage across all backend calls — read by PipelineRunner
         # for the in-memory cost cap.
         self.total_usage: TokenUsage = TokenUsage()
+
+    async def _record_usage(self, kind: str, usage) -> None:
+        """Persist a strategist call to llm_usage so it shows up in audit/cost.
+        Without this, strategist tokens are invisible to GET /api/papers and
+        the audit bundle, leading to systematic cost under-reporting."""
+        from ...modules.tracking.usage import save_usage
+        try:
+            await save_usage(
+                paper_id=self._paper_id,
+                specialist=f"strategist:{kind}",
+                backend=self._backend_name,
+                model=self._model or "unknown",
+                usage=usage,
+            )
+        except Exception as e:
+            logger.debug("Strategist usage save skipped: %s", e)
 
     async def decide(self, current_status: str, iteration: int = 0) -> StrategistDecision:
         """Ask the Strategist what to do next, given current paper state."""
@@ -128,6 +154,7 @@ class StrategistEngine:
             max_turns=10,
         )
         self.total_usage = self.total_usage + result.usage
+        await self._record_usage("decide", result.usage)
 
         decision = _parse_decision(result.output)
         # If the model produced prose instead of JSON, retry once with a strict
@@ -150,6 +177,7 @@ class StrategistEngine:
                 max_turns=2,
             )
             self.total_usage = self.total_usage + retry.usage
+            await self._record_usage("decide_retry", retry.usage)
             decision = _parse_decision(retry.output)
 
         return decision
@@ -171,6 +199,7 @@ class StrategistEngine:
             max_turns=3,
         )
         self.total_usage = self.total_usage + result.usage
+        await self._record_usage("ceiling_check", result.usage)
 
         raw = json.loads(result.output) if result.output.startswith("{") else {}
         return CeilingCheckResult(
@@ -193,6 +222,7 @@ class StrategistEngine:
             max_turns=3,
         )
         self.total_usage = self.total_usage + result.usage
+        await self._record_usage("self_attack", result.usage)
 
         raw = json.loads(result.output) if result.output.startswith("{") else {}
         findings = [SelfAttackFinding(**f) for f in raw.get("findings", [])]
