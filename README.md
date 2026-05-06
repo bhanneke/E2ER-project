@@ -367,11 +367,12 @@ Contact: **hanneke@wiwi.uni-frankfurt.de** or open an issue on this repository.
 
 ## Contributing
 
-- **Research questions**: open an issue with a research question you think could be tested on on-chain data
-- **Data providers**: the data module is designed to be extended; Allium is the first example
-- **IV database**: add natural experiments and instrumental variables to [`docs/iv_database.md`](docs/iv_database.md)
-- **Skill files**: add domain expertise as markdown in `skills/files/`; loaded automatically into specialist prompts
-- **Architectural ideas**: discussion on pipeline design, LLM tool-use patterns, and causal inference tooling is welcome
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, the contribution paths (skills, specialists, data sources, LLM backends), and the PR process. Highlights:
+
+- **Skill files** (no code changes): add domain expertise as markdown in `skills/files/`; loaded automatically into specialist prompts. Detailed guide: [`skills/CONTRIBUTING_SKILLS.md`](skills/CONTRIBUTING_SKILLS.md).
+- **Data providers**: the data module is designed to be extended; Allium and the literature stack are the current examples.
+- **IV database**: add natural experiments and instrumental variables to [`docs/iv_database.md`](docs/iv_database.md).
+- **Research questions**: open an issue with a question you think could be tested.
 
 ---
 

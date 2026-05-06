@@ -67,3 +67,8 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+    "e2e: real-LLM end-to-end tests (skipped unless ANTHROPIC_API_KEY is set)",
+]
+# Skip e2e by default; run explicitly with `-m e2e`.
+addopts = "-m 'not e2e'"
