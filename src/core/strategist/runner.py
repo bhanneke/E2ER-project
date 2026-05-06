@@ -162,9 +162,26 @@ class PipelineRunner:
             return {"status": "failed", "error": error_msg}
 
     async def _run_initial_phase(self) -> None:
-        """Run the initial design + data collection specialists."""
+        """Run the initial design + data collection specialists.
+
+        The pipeline is useless if the strategist failed to plan the initial
+        phase (e.g. produced prose instead of JSON). Raise so the run is
+        marked FAILED rather than silently advancing to a review phase with
+        no draft to review.
+        """
         decision = await self._strategist.decide("designing", iteration=0)
+        if decision.action == "fail":
+            raise RuntimeError(
+                f"Strategist could not plan the initial phase: {decision.rationale}"
+            )
+        if not decision.work_orders:
+            raise RuntimeError(
+                "Strategist returned no work orders for the initial phase — cannot "
+                "proceed without specialist assignments."
+            )
         contributions = await self._dispatch(decision)
+        if not contributions:
+            raise RuntimeError("Initial phase produced no contributions.")
         self._contributions.extend(contributions)
 
     async def _run_iterative_phase(self) -> PaperStatus:

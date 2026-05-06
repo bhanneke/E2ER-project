@@ -30,18 +30,34 @@ Your role is to read the current paper state and decide what work to assign next
 You have deep expertise in academic research workflows for information systems, economics, and finance.
 You emit structured JSON decisions — you do NOT write paper content directly.
 
-Decision types you can emit:
-- dispatch_work_order: assign one specialist
-- dispatch_parallel: assign multiple specialists in parallel (list of work_orders)
-- ceiling_check: assess whether current iteration has hit diminishing returns
-- self_attack: adversarial review of the current draft
-- dispatch_polish_stack: targeted fixes for identified weaknesses
-- dispatch_review: formal review by reviewer specialists
-- request_revision: send back to specific specialists with revision instructions
-- complete: paper is ready
-- fail: unrecoverable problem
+## CRITICAL OUTPUT FORMAT
+Your entire response MUST be a single JSON object — nothing else.
+- Do NOT write any prose, analysis, headings, or markdown before or after the JSON.
+- Do NOT wrap the JSON in code fences (no ```json blocks).
+- Begin your response with `{` and end it with `}`.
+- If you write any text outside the JSON, the pipeline will fail.
 
-Always output your decision as a JSON object conforming to StrategistDecision.
+## JSON Schema (StrategistDecision)
+```
+{
+  "action": "dispatch_parallel" | "dispatch_work_order" | "complete" | "fail" | "ceiling_check" | "self_attack" | "dispatch_polish_stack" | "dispatch_review" | "request_revision",
+  "work_orders": [
+    {
+      "specialist": "<one of: idea_developer, literature_scanner, identification_strategist,
+                     data_architect, econometrics_specialist, data_analyst, paper_drafter,
+                     section_writer, abstract_writer, latex_formatter, revisor>",
+      "focus": "<one-paragraph specific instruction for this specialist>",
+      "parallel_group": <integer 0..N — same group runs in parallel; later groups depend on earlier>
+    }
+  ],
+  "rationale": "<short justification>"
+}
+```
+
+## Example for the initial design phase
+{"action":"dispatch_parallel","work_orders":[{"specialist":"idea_developer","focus":"Develop the research question into a structured paper plan with propositions and identification strategy.","parallel_group":0},{"specialist":"literature_scanner","focus":"Survey prior work and produce a literature review.","parallel_group":0},{"specialist":"identification_strategist","focus":"Propose the causal identification approach.","parallel_group":0},{"specialist":"econometrics_specialist","focus":"Specify the econometric model.","parallel_group":1},{"specialist":"paper_drafter","focus":"Draft the paper body.","parallel_group":2},{"specialist":"abstract_writer","focus":"Write the abstract.","parallel_group":2}],"rationale":"Initial design and writing pass."}
+
+Output ONLY the JSON object. No commentary.
 """
 
 _CEILING_CHECK_PROMPT = """\
@@ -99,16 +115,40 @@ class StrategistEngine:
             "Decide what to do next. Output a JSON StrategistDecision."
         )
 
+        msgs = [{"role": "user", "content": prompt}]
         result = await self._backend.tool_loop(
             system=_STRATEGIST_SYSTEM,
-            messages=[{"role": "user", "content": prompt}],
+            messages=msgs,
             tools=FILE_TOOLS,
             tool_handler=self._handler,
             max_turns=10,
         )
         self.total_usage = self.total_usage + result.usage
 
-        return _parse_decision(result.output)
+        decision = _parse_decision(result.output)
+        # If the model produced prose instead of JSON, retry once with a strict
+        # follow-up that includes its prior output. Smaller models (Haiku, etc.)
+        # often need this nudge.
+        if decision.action == "fail" and "Parse error" in (decision.rationale or ""):
+            retry_msgs = msgs + [
+                {"role": "assistant", "content": result.output[:4000]},
+                {"role": "user", "content": (
+                    "Your previous response was not valid JSON. "
+                    "Output ONLY a JSON object (begin with `{`, end with `}`, "
+                    "no prose, no fences) matching the StrategistDecision schema."
+                )},
+            ]
+            retry = await self._backend.tool_loop(
+                system=_STRATEGIST_SYSTEM,
+                messages=retry_msgs,
+                tools=[],
+                tool_handler=None,
+                max_turns=2,
+            )
+            self.total_usage = self.total_usage + retry.usage
+            decision = _parse_decision(retry.output)
+
+        return decision
 
     async def ceiling_check(self, iteration: int, pivot_count: int) -> CeilingCheckResult:
         """Assess whether the iteration has hit diminishing returns."""
