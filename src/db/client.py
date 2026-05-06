@@ -33,17 +33,19 @@ async def execute(sql: str, params: dict[str, Any] | None = None) -> None:
 
 
 async def fetch_one(sql: str, params: dict[str, Any] | None = None) -> dict[str, Any] | None:
+    from psycopg.rows import dict_row
     pool = await get_pool()
     async with pool.connection() as conn:
-        async with conn.cursor(row_factory=_dict_row) as cur:
+        async with conn.cursor(row_factory=dict_row) as cur:
             await cur.execute(sql, params or {})
             return await cur.fetchone()
 
 
 async def fetch_all(sql: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    from psycopg.rows import dict_row
     pool = await get_pool()
     async with pool.connection() as conn:
-        async with conn.cursor(row_factory=_dict_row) as cur:
+        async with conn.cursor(row_factory=dict_row) as cur:
             await cur.execute(sql, params or {})
             return await cur.fetchall()
 
@@ -53,11 +55,3 @@ async def close_pool() -> None:
     if _pool:
         await _pool.close()
         _pool = None
-
-
-def _dict_row(cursor, data):
-    """psycopg3 row factory that returns dict."""
-    if data is None:
-        return None
-    cols = [desc[0] for desc in cursor.description]
-    return dict(zip(cols, data))
