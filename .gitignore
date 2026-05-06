@@ -40,8 +40,10 @@ repos/
 workspaces/
 docker/data/
 
-# Local end-to-end test workspace (never commit; contains real API keys)
-Tests/
+# Local live-test workspace (never commit; contains real API keys, real
+# Allium queries, real workspaces). Renamed from "Tests" to "live_tests"
+# to avoid the case-insensitive collision with "tests/" on macOS HFS+/APFS.
+/live_tests/
 
 # Logs
 *.log

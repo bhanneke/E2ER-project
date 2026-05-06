@@ -264,3 +264,35 @@ def mock_db():
         patch("src.db.client.fetch_all", side_effect=_fetch_all),
     ):
         yield
+
+
+@pytest.fixture(autouse=True)
+def _block_real_db_pool(monkeypatch):
+    """Hard-fail on any unmocked DB helper.
+
+    The runner's _best_effort_finalize() (added to support graceful
+    degradation on partial breakdowns) calls write_audit_csv/
+    write_data_queries_sql in a finally block. Without mocks, those
+    helpers try to connect to a real Postgres pool and hang for 30s+
+    each, sometimes blocking the whole test process. This fixture
+    swaps in fast no-ops so tests that don't explicitly need the DB
+    don't pay that cost.
+
+    Tests that DO need DB behavior should patch over these (the
+    `with patch(...)` chain in those tests runs after this fixture
+    and takes precedence).
+    """
+    from unittest.mock import AsyncMock
+    monkeypatch.setattr("src.db.client.execute", AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        "src.db.client.fetch_one", AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        "src.db.client.fetch_all", AsyncMock(return_value=[]),
+    )
+    # Note: write_audit_csv / write_data_queries_sql intentionally NOT mocked
+    # here — they call the patched fetch_all internally and degrade to an
+    # empty CSV / SQL file, which is the right behavior for runner tests.
+    # Tests that exercise audit-module logic directly (test_audit.py) get
+    # the real fetch_all mock that returns canned rows.
+    yield
