@@ -1005,3 +1005,151 @@ def test_artifact_streaming_rejects_traversal(tmp_path, monkeypatch):
     # FastAPI may normalise the URL; either way the file must not be returned.
     assert bad.status_code in {400, 404}
     assert "nope" not in bad.text
+
+
+# ---------------------------------------------------------------------------
+# Bundle 4: Output completeness — literature tools, LaTeX assembly, BYOD
+# ---------------------------------------------------------------------------
+
+async def test_literature_handler_can_handle():
+    """LiteratureToolHandler advertises only its own tools."""
+    from src.modules.literature.tools import LiteratureToolHandler
+    h = LiteratureToolHandler(Path("/tmp"))
+    assert h.can_handle("search_papers") is True
+    assert h.can_handle("fetch_paper") is True
+    assert h.can_handle("save_bibtex") is True
+    assert h.can_handle("query_allium") is False
+
+
+async def test_save_bibtex_writes_to_workspace(tmp_path):
+    """save_bibtex with a literal entry appends to literature.bib in the workspace."""
+    from src.modules.literature.tools import LiteratureToolHandler
+    h = LiteratureToolHandler(tmp_path)
+    entry = (
+        "@article{smith2023,\n"
+        "  title = {A study},\n"
+        "  author = {Smith, Jane},\n"
+        "  year = {2023}\n"
+        "}"
+    )
+    out = json.loads(await h.handle("save_bibtex", {"bibtex_entry": entry}))
+    assert out["status"] == "saved"
+    assert out["key"] == "smith2023"
+    bib = (tmp_path / "literature.bib").read_text()
+    assert "smith2023" in bib
+
+    # Duplicate write is a no-op.
+    out2 = json.loads(await h.handle("save_bibtex", {"bibtex_entry": entry}))
+    assert out2["status"] == "already_present"
+
+
+def test_assemble_document_wraps_body():
+    """A bare body (no \\documentclass) gets wrapped with the standard preamble."""
+    from src.core.renderer.templates import assemble_document
+    body = r"\section{Introduction}" + "\nIt was a dark and stormy night.\n"
+    full = assemble_document(body)
+    assert r"\documentclass" in full
+    assert r"\begin{document}" in full
+    assert r"\end{document}" in full
+    assert r"\bibliography{refs}" in full
+    assert "stormy night" in full
+
+
+def test_assemble_document_preserves_full_doc():
+    """A body that already includes \\documentclass is left alone."""
+    from src.core.renderer.templates import assemble_document
+    full_body = r"\documentclass{article}" + "\n\\begin{document}\nHello.\n\\end{document}\n"
+    out = assemble_document(full_body)
+    # Exactly one \documentclass — no double wrapping.
+    assert out.count(r"\documentclass") == 1
+    assert "Hello." in out
+
+
+def test_assemble_refs_bib_merges_and_dedupes(tmp_path):
+    """literature.bib + user_refs.bib merge into refs.bib without duplicate keys."""
+    from src.core.renderer.templates import assemble_refs_bib
+    (tmp_path / "literature.bib").write_text(
+        "@article{a2023, title={A}, author={A}, year={2023}}\n"
+        "@article{shared2024, title={Shared}, author={X}, year={2024}}\n"
+    )
+    (tmp_path / "user_refs.bib").write_text(
+        "@article{b2022, title={B}, author={B}, year={2022}}\n"
+        "@article{shared2024, title={Shared dup}, author={Y}, year={2024}}\n"
+    )
+    refs = assemble_refs_bib(tmp_path)
+    assert refs is not None
+    text = refs.read_text()
+    # All three unique keys present.
+    assert "a2023" in text
+    assert "b2022" in text
+    assert "shared2024" in text
+    # Dedup: only one shared2024 entry (literature.bib version wins, written first).
+    assert text.count("shared2024,") == 1
+    assert "Shared dup" not in text  # the duplicate from user_refs lost
+
+
+def test_assemble_refs_bib_returns_none_when_no_sources(tmp_path):
+    from src.core.renderer.templates import assemble_refs_bib
+    assert assemble_refs_bib(tmp_path) is None
+
+
+def test_byod_upload_writes_to_data_dir(tmp_path, monkeypatch):
+    """POST /api/papers/{id}/files saves the upload under workspace/data/."""
+    paper_id = str(uuid.uuid4())
+    workspace = tmp_path / paper_id
+    workspace.mkdir()
+
+    monkeypatch.setattr(
+        "src.api.app.get_settings",
+        lambda: type("S", (), {"workspace_root": str(tmp_path)})(),
+    )
+    client = _api_client()
+    payload = b"a,b\n1,2\n3,4\n"
+    resp = client.post(
+        f"/api/papers/{paper_id}/files",
+        files={"file": ("data.csv", payload, "text/csv")},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["filename"] == "data.csv"
+    assert resp.json()["size"] == len(payload)
+    saved = workspace / "data" / "data.csv"
+    assert saved.exists() and saved.read_bytes() == payload
+
+
+def test_byod_upload_rejects_unknown_extension(tmp_path, monkeypatch):
+    """An .exe upload is rejected with 400."""
+    paper_id = str(uuid.uuid4())
+    workspace = tmp_path / paper_id
+    workspace.mkdir()
+    monkeypatch.setattr(
+        "src.api.app.get_settings",
+        lambda: type("S", (), {"workspace_root": str(tmp_path)})(),
+    )
+    client = _api_client()
+    resp = client.post(
+        f"/api/papers/{paper_id}/files",
+        files={"file": ("malware.exe", b"MZ", "application/octet-stream")},
+    )
+    assert resp.status_code == 400
+    assert "unsupported extension" in resp.json()["detail"]
+
+
+def test_tier1_context_includes_user_data(tmp_path):
+    """Tier-1 context surfaces files in workspace/data/ with a preview."""
+    from src.core.strategist.context import build_tier1_context
+
+    workspace = tmp_path
+    (workspace / "manifest.json").write_text(json.dumps({
+        "paper_id": "p", "title": "T", "research_question": "RQ",
+        "datasets": [], "current_stage": "designing",
+    }))
+    (workspace / "data").mkdir()
+    (workspace / "data" / "trades.csv").write_text(
+        "id,price,volume\n1,100.5,50\n2,101.0,75\n3,99.8,30\n"
+    )
+    ctx = build_tier1_context(workspace, "p")
+    assert "Researcher-Provided Data Files" in ctx
+    assert "data/trades.csv" in ctx
+    assert "id,price,volume" in ctx  # header preview
+    # And it tells the LLM not to use Allium for these.
+    assert "Do NOT" in ctx

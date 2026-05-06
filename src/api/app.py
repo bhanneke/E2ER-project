@@ -9,7 +9,7 @@ import tarfile
 from pathlib import Path
 from typing import Any, List, Optional
 
-from fastapi import FastAPI, Form, HTTPException, BackgroundTasks, Request
+from fastapi import FastAPI, File, Form, HTTPException, BackgroundTasks, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -501,6 +501,52 @@ async def stream_artifact(paper_id: str, path: str) -> FileResponse:
                         filename=target.name)
 
 
+# Accepted BYOD file extensions. Limits applied to keep workspace cheap to mount.
+_DATA_EXT_ALLOW = {".csv", ".tsv", ".parquet", ".xlsx", ".xls", ".json", ".jsonl", ".txt"}
+_DATA_FILE_MAX_BYTES = 200 * 1024 * 1024  # 200 MB per upload
+
+
+@app.post("/api/papers/{paper_id}/files")
+async def upload_data_file(paper_id: str, file: UploadFile = File(...)) -> dict[str, Any]:
+    """Upload a researcher-supplied data file into the paper's workspace/data/.
+
+    Specialists running with `DATA_MODULE_ENABLED=false` (no Allium key) can
+    use these files via the standard read_file tool — see the byod skill.
+    """
+    settings = get_settings()
+    workspace = Path(settings.workspace_root) / paper_id
+    if not workspace.exists():
+        raise HTTPException(status_code=404, detail="Workspace not found")
+
+    name = Path(file.filename or "").name  # strip any path components
+    if not name:
+        raise HTTPException(status_code=400, detail="filename is required")
+    suffix = Path(name).suffix.lower()
+    if suffix not in _DATA_EXT_ALLOW:
+        raise HTTPException(
+            status_code=400,
+            detail=f"unsupported extension {suffix!r}; allowed: {sorted(_DATA_EXT_ALLOW)}",
+        )
+
+    data_dir = workspace / "data"
+    data_dir.mkdir(exist_ok=True)
+    target = data_dir / name
+
+    written = 0
+    with target.open("wb") as out:
+        while chunk := await file.read(1024 * 1024):
+            written += len(chunk)
+            if written > _DATA_FILE_MAX_BYTES:
+                out.close()
+                target.unlink(missing_ok=True)
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"file too large (>{_DATA_FILE_MAX_BYTES // (1024*1024)} MB)",
+                )
+            out.write(chunk)
+    return {"filename": name, "size": written, "path": f"data/{name}"}
+
+
 # --- Background tasks ---
 
 async def _run_pipeline(paper_id: str, workspace: Path, mode: str, max_cost_usd: float) -> None:
@@ -508,14 +554,24 @@ async def _run_pipeline(paper_id: str, workspace: Path, mode: str, max_cost_usd:
     from ..modules.llm.registry import get_backend
     from ..core.strategist.runner import PipelineRunner
     from ..modules.data.tools import ALLIUM_TOOLS, DeferredAlliumToolHandler
+    from ..modules.literature.tools import LITERATURE_TOOLS, LiteratureToolHandler
 
     settings = get_settings()
     backend = get_backend(settings)
 
-    extra_tools = ALLIUM_TOOLS if settings.data_module_enabled else []
-    extra_handlers = []
-    if settings.data_module_enabled and settings.allium_api_key:
-        extra_handlers = [DeferredAlliumToolHandler(paper_id, "pipeline", workspace)]
+    # Tools are unioned across all enabled providers; specialists' skill files
+    # determine which they actually invoke.
+    extra_tools: list[dict] = []
+    extra_handlers: list = []
+
+    if settings.data_module_enabled:
+        extra_tools.extend(ALLIUM_TOOLS)
+        if settings.allium_api_key:
+            extra_handlers.append(DeferredAlliumToolHandler(paper_id, "pipeline", workspace))
+
+    # Literature tools are always on — OpenAlex needs no API key.
+    extra_tools.extend(LITERATURE_TOOLS)
+    extra_handlers.append(LiteratureToolHandler(workspace))
 
     runner = PipelineRunner(
         paper_id=paper_id,

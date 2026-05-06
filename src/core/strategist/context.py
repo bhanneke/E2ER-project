@@ -27,6 +27,14 @@ def build_tier1_context(workspace: Path, paper_id: str) -> str:
     tier0 = build_tier0_context(workspace, paper_id)
     sections = [tier0, ""]
 
+    user_data = _list_user_data(workspace)
+    if user_data:
+        sections.append(
+            "## Researcher-Provided Data Files (workspace/data/)\n"
+            "Use the read_file tool to load any of these. Do NOT try to query Allium "
+            "for these — they are supplied directly by the researcher.\n\n" + user_data
+        )
+
     paper_plan = _read_artifact(workspace, "paper_plan.md")
     if paper_plan:
         sections.append("## Paper Plan\n" + _truncate(paper_plan, 3000))
@@ -81,6 +89,39 @@ def build_self_attack_context(workspace: Path, paper_id: str) -> str:
     if econometrics:
         sections.append(f"## Econometric Specification\n{_truncate(econometrics, 2000)}")
     return "\n\n".join(sections)
+
+
+def _list_user_data(workspace: Path) -> str:
+    """List files under workspace/data/ with a short preview for csv/jsonl files."""
+    data_dir = workspace / "data"
+    if not data_dir.exists():
+        return ""
+    files = sorted(p for p in data_dir.iterdir() if p.is_file())
+    if not files:
+        return ""
+
+    lines: list[str] = []
+    for path in files:
+        size_kb = path.stat().st_size / 1024
+        line = f"- `data/{path.name}` ({size_kb:.1f} KB)"
+        # First 5 non-empty lines for readable text formats.
+        if path.suffix.lower() in {".csv", ".tsv", ".jsonl", ".txt"}:
+            try:
+                with path.open("r", encoding="utf-8", errors="replace") as f:
+                    head = []
+                    for raw in f:
+                        s = raw.rstrip("\n")
+                        if s.strip():
+                            head.append(s)
+                        if len(head) >= 5:
+                            break
+                if head:
+                    preview = "\n    ".join(h[:200] for h in head)
+                    line += f"\n    {preview}"
+            except Exception:
+                pass
+        lines.append(line)
+    return "\n".join(lines)
 
 
 def _read_artifact(workspace: Path, filename: str) -> str | None:
