@@ -27,7 +27,10 @@ class AnthropicBackend(LLMBackend):
         settings = get_settings()
         if not settings.anthropic_api_key:
             raise ValueError("ANTHROPIC_API_KEY is not set")
-        self._client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+        self._client = anthropic.AsyncAnthropic(
+            api_key=settings.anthropic_api_key,
+            max_retries=5,
+        )
         self._model = settings.anthropic_model
         self._caching = settings.enable_prompt_caching
 

@@ -571,3 +571,115 @@ async def test_resume_skips_completed_phases(tmp_path, mock_llm):
 
     # Total count must include prior session's 13 contributions
     assert result["contributions"] >= 14  # 13 prior + 1 replication
+
+
+# ---------------------------------------------------------------------------
+# Resilience: error surfacing + parallel dispatch failure handling
+# ---------------------------------------------------------------------------
+
+async def test_update_status_clears_last_error_on_non_failed(tmp_path, mock_llm):
+    """Any non-FAILED status update must NULL out last_error to avoid stale errors on resume."""
+    from src.core.strategist.runner import PipelineRunner
+    from src.core.strategist.state import PaperStatus
+
+    paper_id = str(uuid.uuid4())
+    workspace = _make_workspace(tmp_path, paper_id, mode="single_pass")
+
+    captured: list[tuple[str, dict]] = []
+
+    async def capture(sql, params=None):
+        captured.append((sql, params or {}))
+
+    with patch("src.db.client.execute", side_effect=capture):
+        runner = PipelineRunner(
+            paper_id=paper_id, workspace=workspace, backend=mock_llm,
+            model="m", mode="single_pass",
+            extra_tools=[], extra_handlers=[], backend_name="mock",
+        )
+        await runner._update_status(PaperStatus.IN_PROGRESS)
+        await runner._update_status(PaperStatus.COMPLETED)
+        await runner._update_status(PaperStatus.FAILED, error="boom")
+        # FAILED with no error message should also clear (treated like non-FAILED-with-error)
+        await runner._update_status(PaperStatus.FAILED)
+
+    assert len(captured) == 4
+    # First two: non-FAILED, must clear last_error
+    assert "last_error = NULL" in captured[0][0]
+    assert "last_error = NULL" in captured[1][0]
+    # Third: FAILED with error, must write the error
+    assert "last_error = %(e)s" in captured[2][0]
+    assert captured[2][1].get("e") == "boom"
+    # Fourth: FAILED without error, falls through to clearing branch
+    assert "last_error = NULL" in captured[3][0]
+
+
+async def test_execute_parallel_logs_aggregate_failure(tmp_path, caplog):
+    """One failing specialist surfaces in aggregate WARNING; others still succeed."""
+    import logging
+    from src.core.specialists.contracts import WorkOrder as ContractWorkOrder
+    from src.core.specialists.dispatcher import execute_parallel
+    from tests.conftest import MockLLMBackend
+
+    paper_id = str(uuid.uuid4())
+    workspace = tmp_path / paper_id
+    workspace.mkdir()
+
+    backend = MockLLMBackend(fail_specialists={"literature_scanner"})
+
+    orders = [
+        ContractWorkOrder(
+            paper_id=paper_id, specialist="idea_developer",
+            focus="develop", parallel_group=0, context_tier=0,
+        ),
+        ContractWorkOrder(
+            paper_id=paper_id, specialist="literature_scanner",
+            focus="scan", parallel_group=0, context_tier=0,
+        ),
+    ]
+
+    with (
+        patch("src.db.client.execute", new_callable=AsyncMock),
+        patch("src.modules.tracking.usage.save_usage", new_callable=AsyncMock),
+        caplog.at_level(logging.WARNING, logger="src.core.specialists.dispatcher"),
+    ):
+        contributions = await execute_parallel(
+            orders, backend, workspace, "m", [], [], "mock",
+        )
+
+    assert len(contributions) == 2
+    by_spec = {c.specialist: c for c in contributions}
+    assert by_spec["idea_developer"].success is True
+    assert by_spec["literature_scanner"].success is False
+    assert "1/2 specialists failed" in caplog.text
+    assert "literature_scanner" in caplog.text
+
+
+async def test_execute_parallel_raises_when_all_fail(tmp_path):
+    """If every specialist in the batch fails, execute_parallel must raise."""
+    from src.core.specialists.contracts import WorkOrder as ContractWorkOrder
+    from src.core.specialists.dispatcher import execute_parallel
+    from tests.conftest import MockLLMBackend
+
+    paper_id = str(uuid.uuid4())
+    workspace = tmp_path / paper_id
+    workspace.mkdir()
+
+    backend = MockLLMBackend(fail_specialists={"idea_developer", "literature_scanner"})
+
+    orders = [
+        ContractWorkOrder(
+            paper_id=paper_id, specialist="idea_developer",
+            focus="develop", parallel_group=0, context_tier=0,
+        ),
+        ContractWorkOrder(
+            paper_id=paper_id, specialist="literature_scanner",
+            focus="scan", parallel_group=0, context_tier=0,
+        ),
+    ]
+
+    with (
+        patch("src.db.client.execute", new_callable=AsyncMock),
+        patch("src.modules.tracking.usage.save_usage", new_callable=AsyncMock),
+    ):
+        with pytest.raises(RuntimeError, match="All specialists failed"):
+            await execute_parallel(orders, backend, workspace, "m", [], [], "mock")

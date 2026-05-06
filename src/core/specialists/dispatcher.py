@@ -65,8 +65,16 @@ async def execute_parallel(
     extra_handlers: list[ToolHandler] | None = None,
     backend_name: str = "anthropic",
 ) -> list[Contribution]:
-    """Execute multiple work orders concurrently, bounded by max_concurrent_specialists."""
+    """Execute multiple work orders concurrently, bounded by max_concurrent_specialists.
+
+    Per-specialist failures are caught inside execute_work_order and surface as
+    Contribution(success=False). This wrapper logs an aggregate failure summary
+    and raises if every specialist in the batch failed (so callers fail fast
+    rather than silently advancing to the next phase with no artifacts).
+    """
     from ...config import get_settings
+    if not work_orders:
+        return []
     logger.info("Parallel dispatch: %d specialists", len(work_orders))
     sem = asyncio.Semaphore(get_settings().max_concurrent_specialists)
 
@@ -77,7 +85,23 @@ async def execute_parallel(
                 extra_tools, extra_handlers, backend_name,
             )
 
-    return await asyncio.gather(*(_bounded(wo) for wo in work_orders))
+    contributions = await asyncio.gather(*(_bounded(wo) for wo in work_orders))
+
+    failed = [c for c in contributions if not c.success]
+    if failed:
+        logger.warning(
+            "execute_parallel: %d/%d specialists failed: %s",
+            len(failed),
+            len(contributions),
+            ", ".join(
+                f"{c.specialist}({(c.error or '?')[:60]})" for c in failed
+            ),
+        )
+    if failed and len(failed) == len(contributions):
+        details = "; ".join(f"{c.specialist}: {c.error}" for c in failed)
+        raise RuntimeError(f"All specialists failed in parallel batch: {details}")
+
+    return contributions
 
 
 async def execute_with_dependencies(

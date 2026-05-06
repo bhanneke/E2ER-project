@@ -407,14 +407,15 @@ class PipelineRunner:
     async def _update_status(self, status: PaperStatus, error: str | None = None) -> None:
         try:
             from ...db.client import execute
-            if error is not None:
+            if status == PaperStatus.FAILED and error is not None:
                 await execute(
                     "UPDATE papers SET status = %(s)s, last_error = %(e)s, updated_at = NOW() WHERE id = %(id)s",
                     {"s": status.value, "e": error, "id": self._paper_id},
                 )
             else:
+                # Any non-FAILED transition clears stale errors from prior runs.
                 await execute(
-                    "UPDATE papers SET status = %(s)s, updated_at = NOW() WHERE id = %(id)s",
+                    "UPDATE papers SET status = %(s)s, last_error = NULL, updated_at = NOW() WHERE id = %(id)s",
                     {"s": status.value, "id": self._paper_id},
                 )
         except Exception as e:

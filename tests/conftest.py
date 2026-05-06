@@ -132,9 +132,12 @@ class MockLLMBackend(LLMBackend):
     Strategist calls: returns JSON decisions without hitting any API.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, fail_specialists: set[str] | None = None) -> None:
         self.specialist_calls: list[str] = []
         self.strategist_calls: list[str] = []
+        # Names in this set will raise RuntimeError when invoked, simulating
+        # transient backend failures. Used by parallel-dispatch tests.
+        self._fail_specialists: set[str] = fail_specialists or set()
 
     async def tool_loop(
         self,
@@ -165,6 +168,8 @@ class MockLLMBackend(LLMBackend):
         # Specialist call
         specialist = self._detect_specialist(system)
         self.specialist_calls.append(specialist)
+        if specialist in self._fail_specialists:
+            raise RuntimeError(f"simulated failure for {specialist}")
         filename, content = _SPECIALIST_OUTPUTS.get(
             specialist, (f"{specialist}.md", f"# Output\n\nTest output for {specialist}.")
         )

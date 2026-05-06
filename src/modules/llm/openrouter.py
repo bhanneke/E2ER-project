@@ -34,6 +34,7 @@ class OpenRouterBackend(LLMBackend):
                 "HTTP-Referer": "https://github.com/bhanneke/E2ER-project",
                 "X-Title": "E2ER Research Pipeline",
             },
+            max_retries=5,
         )
         self._model = settings.openrouter_model
 
