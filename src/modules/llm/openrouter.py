@@ -69,6 +69,8 @@ class OpenRouterBackend(LLMBackend):
         msgs: list[dict[str, Any]] = [{"role": "system", "content": system}, *messages]
 
         for turn in range(max_turns):
+            t_call = time.monotonic()
+            logger.info("OpenRouter turn %d: calling %s (msgs=%d)", turn, self._model, len(msgs))
             try:
                 # OpenAI SDK requires omitting `tools` entirely when there are
                 # none — passing an empty list, None, or NOT_GIVEN can error
@@ -81,6 +83,11 @@ class OpenRouterBackend(LLMBackend):
                 if oai_tools:
                     create_kwargs["tools"] = oai_tools
                 response = await self._client.chat.completions.create(**create_kwargs)
+                logger.info(
+                    "OpenRouter turn %d: response in %.1fs (finish=%s)",
+                    turn, time.monotonic() - t_call,
+                    response.choices[0].finish_reason if response.choices else "?",
+                )
             except Exception as e:
                 logger.error("OpenRouter error on turn %d: %s", turn, e)
                 return ToolLoopResult(
@@ -102,6 +109,29 @@ class OpenRouterBackend(LLMBackend):
             choice = response.choices[0]
             finish_reason = choice.finish_reason
             msg = choice.message
+
+            # finish_reason="length" means the model was truncated by max_tokens.
+            # Looping is futile — the model will hit the same wall again. Return
+            # an error so the runner can fail this specialist and either retry
+            # at the orchestration level or surface a clear cap error.
+            if finish_reason == "length":
+                logger.warning(
+                    "OpenRouter turn %d: hit max_tokens=%d (finish=length). "
+                    "Bailing out to avoid infinite loop.",
+                    turn, self._max_tokens,
+                )
+                return ToolLoopResult(
+                    success=False,
+                    output=msg.content or "",
+                    error=(
+                        f"max_tokens={self._max_tokens} too low — model output truncated. "
+                        "Increase max_tokens_per_call in settings."
+                    ),
+                    tool_calls_made=tool_calls_made,
+                    usage=usage,
+                    duration_seconds=time.monotonic() - start,
+                    stop_reason="length",
+                )
 
             if finish_reason == "stop" or (finish_reason != "tool_calls" and not msg.tool_calls):
                 return ToolLoopResult(

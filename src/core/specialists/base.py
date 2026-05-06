@@ -49,7 +49,14 @@ async def run_specialist(
     handlers: list[ToolHandler] = list(extra_handlers or []) + [file_handler]
     handler = CompositeToolHandler(handlers)
 
-    messages = [{"role": "user", "content": _build_user_prompt(work_order)}]
+    user_prompt = _build_user_prompt(work_order)
+    messages = [{"role": "user", "content": user_prompt}]
+
+    logger.info(
+        "%s: starting tool_loop (system=%d chars, user=%d chars, %d tools, max_turns=%d)",
+        specialist, len(system), len(user_prompt), len(tools), _MAX_TURNS,
+    )
+    t_loop = time.time()
 
     result = await backend.tool_loop(
         system=system,
@@ -60,6 +67,11 @@ async def run_specialist(
     )
 
     duration = time.time() - t0
+    logger.info(
+        "%s: tool_loop returned in %.1fs (success=%s, tools_called=%d, tokens=%d)",
+        specialist, time.time() - t_loop, result.success,
+        result.tool_calls_made, result.usage.total_tokens,
+    )
 
     cost = compute_cost(model, result.usage)
     try:
