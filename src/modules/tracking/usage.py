@@ -67,6 +67,28 @@ async def save_usage(
     )
 
 
+async def check_budget(paper_id: str, max_cost_usd: float) -> None:
+    """Raise BudgetExceeded if cumulative cost has hit the per-paper cap.
+
+    Called at phase boundaries by the pipeline runner. Read-only; reuses the
+    same llm_usage rows that compute_cost has already populated.
+    """
+    from ...core.strategist.state import BudgetExceeded
+    from ...db.client import fetch_one
+
+    try:
+        row = await fetch_one(
+            "SELECT COALESCE(SUM(cost_usd), 0)::float AS spent FROM llm_usage WHERE paper_id = %(id)s",
+            {"id": paper_id},
+        )
+    except Exception:
+        # DB unavailable — skip the check rather than crash.
+        return
+    spent = float((row or {}).get("spent", 0.0))
+    if spent >= max_cost_usd:
+        raise BudgetExceeded(spent=spent, cap=max_cost_usd)
+
+
 async def get_paper_usage(paper_id: str) -> dict[str, Any]:
     """Get aggregated usage totals and per-specialist breakdown for a paper."""
     from ...db.client import fetch_one, fetch_all

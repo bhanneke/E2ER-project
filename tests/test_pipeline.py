@@ -1,6 +1,8 @@
 """Pipeline integration tests — exercises the full orchestration path with mocked LLM and DB."""
 from __future__ import annotations
 
+import asyncio
+import io
 import json
 import uuid
 from pathlib import Path
@@ -683,3 +685,172 @@ async def test_execute_parallel_raises_when_all_fail(tmp_path):
     ):
         with pytest.raises(RuntimeError, match="All specialists failed"):
             await execute_parallel(orders, backend, workspace, "m", [], [], "mock")
+
+
+# ---------------------------------------------------------------------------
+# Bundle 1: Safety & auditability
+# ---------------------------------------------------------------------------
+
+async def test_budget_exceeded_aborts_pipeline(tmp_path, mock_llm):
+    """If cumulative cost has hit the cap before a phase, runner must FAIL with a budget error."""
+    from src.core.strategist.engine import StrategistEngine
+    from src.core.strategist.runner import PipelineRunner
+
+    paper_id = str(uuid.uuid4())
+    workspace = _make_workspace(tmp_path, paper_id, mode="single_pass")
+
+    captured_status: list[tuple[str, str | None]] = []
+
+    async def capture_execute(sql, params=None):
+        if params and "s" in params and "id" in params:
+            captured_status.append((params.get("s"), params.get("e")))
+        return None
+
+    async def fetch_one_over_cap(sql, params=None):
+        # Simulate $99 already spent — any cap below this triggers the abort.
+        return {"spent": 99.0}
+
+    with (
+        patch.object(StrategistEngine, "decide", return_value=_designing_decision(paper_id)),
+        patch("src.db.client.execute", side_effect=capture_execute),
+        patch("src.db.client.fetch_one", side_effect=fetch_one_over_cap),
+        patch("src.modules.tracking.usage.save_usage", new_callable=AsyncMock),
+    ):
+        runner = PipelineRunner(
+            paper_id=paper_id, workspace=workspace, backend=mock_llm,
+            model="m", mode="single_pass",
+            extra_tools=[], extra_handlers=[], backend_name="mock",
+            max_cost_usd=10.0,  # under the $99 already spent
+        )
+        result = await runner.run()
+
+    assert result["status"] == "failed"
+    assert "Budget exceeded" in result["error"]
+    # The FAILED row write must include the budget error message.
+    assert any(s == "failed" and e and "Budget exceeded" in e for s, e in captured_status)
+
+
+async def test_cancellation_marks_paper_cancelled(tmp_path, mock_llm):
+    """Forcing a CancelledError mid-run must transition the paper to CANCELLED with a reason."""
+    from src.core.strategist.engine import StrategistEngine
+    from src.core.strategist.runner import PipelineRunner
+
+    paper_id = str(uuid.uuid4())
+    workspace = _make_workspace(tmp_path, paper_id, mode="single_pass")
+
+    captured_status: list[tuple[str, str | None]] = []
+
+    async def capture_execute(sql, params=None):
+        if params and "s" in params and "id" in params:
+            captured_status.append((params.get("s"), params.get("e")))
+        return None
+
+    # Make the very first phase raise CancelledError so we exercise the handler.
+    async def cancel_at_initial():
+        raise asyncio.CancelledError()
+
+    with (
+        patch.object(StrategistEngine, "decide", return_value=_designing_decision(paper_id)),
+        patch("src.db.client.execute", side_effect=capture_execute),
+        patch("src.db.client.fetch_one", new_callable=AsyncMock, return_value={"spent": 0.0}),
+        patch("src.modules.tracking.usage.save_usage", new_callable=AsyncMock),
+    ):
+        runner = PipelineRunner(
+            paper_id=paper_id, workspace=workspace, backend=mock_llm,
+            model="m", mode="single_pass",
+            extra_tools=[], extra_handlers=[], backend_name="mock",
+            max_cost_usd=100.0,
+        )
+        runner._run_initial_phase = cancel_at_initial  # type: ignore[assignment]
+        with pytest.raises(asyncio.CancelledError):
+            await runner.run()
+
+    # Paper must have been transitioned to CANCELLED with the reason recorded.
+    assert any(s == "cancelled" and e == "cancelled by user" for s, e in captured_status)
+
+
+async def test_log_event_writes_to_pipeline_events():
+    """log_event helper must INSERT into pipeline_events with the right columns."""
+    from src.db.events import log_event
+
+    captured: list[tuple[str, dict]] = []
+
+    async def capture(sql, params=None):
+        captured.append((sql, params or {}))
+
+    with patch("src.db.client.execute", side_effect=capture):
+        await log_event(
+            "paper-xyz",
+            "phase_start",
+            stage="initial",
+            specialist=None,
+            payload={"foo": "bar"},
+        )
+
+    assert len(captured) == 1
+    sql, params = captured[0]
+    assert "INSERT INTO pipeline_events" in sql
+    assert params["p"] == "paper-xyz"
+    assert params["t"] == "phase_start"
+    assert params["st"] == "initial"
+    assert json.loads(params["pl"]) == {"foo": "bar"}
+
+
+async def test_audit_bundle_contains_expected_files(tmp_path, monkeypatch):
+    """GET /api/papers/{id}/audit-bundle returns a tarball with manifest+events+contributions+replication."""
+    import tarfile
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+
+    paper_id = str(uuid.uuid4())
+    workspace = tmp_path / paper_id
+    (workspace / "replication").mkdir(parents=True)
+    (workspace / "replication" / "estimation.py").write_text("# replication script\n")
+    (workspace / "audit_log.csv").write_text("id,query\n1,SELECT 1\n")
+
+    # Point the API at this tmp workspace_root. Patch the binding inside
+    # src.api.app, not src.config, because app.py imports the symbol at the top.
+    fake_settings = type("S", (), {
+        "workspace_root": str(tmp_path),
+        "llm_backend": "mock", "default_model": "m",
+        "data_module_enabled": False, "literature_kb_enabled": False,
+        "github_enabled": False, "default_max_cost_usd": 25.0,
+    })()
+    monkeypatch.setattr("src.api.app.get_settings", lambda: fake_settings)
+
+    paper_row = {
+        "id": paper_id, "title": "Test", "research_question": "RQ",
+        "status": "completed", "max_cost_usd": 25.0, "last_error": None,
+        "github_repo": None, "created_at": "2026-05-06",
+    }
+
+    async def fake_fetch_one(sql, params=None):
+        if "FROM papers" in sql:
+            return paper_row
+        return None
+
+    async def fake_fetch_all(sql, params=None):
+        return []
+
+    async def fake_get_usage(paper_id):
+        return {"totals": {}, "by_specialist": []}
+
+    with (
+        patch("src.db.client.fetch_one", side_effect=fake_fetch_one),
+        patch("src.db.client.fetch_all", side_effect=fake_fetch_all),
+        patch("src.modules.tracking.usage.get_paper_usage", side_effect=fake_get_usage),
+    ):
+        from src.api.app import app
+        client = TestClient(app)
+        resp = client.get(f"/api/papers/{paper_id}/audit-bundle")
+
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "application/gzip"
+    tar = tarfile.open(fileobj=io.BytesIO(resp.content), mode="r:gz")
+    names = tar.getnames()
+    assert "manifest.json" in names
+    assert "contributions.json" in names
+    assert "events.json" in names
+    assert "usage.json" in names
+    assert "replication/estimation.py" in names
+    assert "audit_log.csv" in names

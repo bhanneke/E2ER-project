@@ -75,6 +75,31 @@ async def run_specialist(
 
     output_file = _find_output_file(workspace, specialist, work_order.output_file)
 
+    # Persist a row in `contributions` so the audit bundle has a permanent
+    # record of every specialist invocation (success or failure).
+    try:
+        from ...db.client import execute
+        await execute(
+            """
+            INSERT INTO contributions
+                (paper_id, specialist, output_file, success, error_msg,
+                 usage_tokens, cost_usd, duration_sec)
+            VALUES (%(p)s, %(sp)s, %(of)s, %(s)s, %(em)s, %(ut)s, %(cu)s, %(ds)s)
+            """,
+            {
+                "p": paper_id,
+                "sp": specialist,
+                "of": output_file,
+                "s": result.success,
+                "em": result.error or None,
+                "ut": result.usage.total_tokens,
+                "cu": str(cost),
+                "ds": round(duration, 2),
+            },
+        )
+    except Exception as e:
+        logger.debug("Contribution log skipped (no DB?): %s", e)
+
     return Contribution(
         paper_id=paper_id,
         specialist=specialist,

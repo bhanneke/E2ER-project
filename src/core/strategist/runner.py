@@ -35,6 +35,7 @@ class PipelineRunner:
         extra_tools: list[dict] | None = None,
         extra_handlers: list[ToolHandler] | None = None,
         backend_name: str = "anthropic",
+        max_cost_usd: float | None = None,
     ) -> None:
         self._paper_id = paper_id
         self._workspace = workspace
@@ -48,10 +49,16 @@ class PipelineRunner:
         self._contributions: list[Contribution] = []
         self._iteration = 0
         self._pivot_count = 0
+        if max_cost_usd is None:
+            from ...config import get_settings
+            max_cost_usd = get_settings().default_max_cost_usd
+        self._max_cost_usd = max_cost_usd
 
     async def run(self) -> dict[str, Any]:
         """Run the full pipeline from idea to completion, with checkpoint/resume support."""
         from ..pipeline.state import PipelineState
+        from ...db.events import log_event
+        from ...modules.tracking.usage import check_budget
 
         state = PipelineState.load(self._workspace, self._paper_id, self._mode)
         self._iteration = state.iteration
@@ -61,16 +68,24 @@ class PipelineRunner:
         status = PaperStatus.DESIGNING
         await self._update_status(status)
 
+        async def _phase(name: str, fn) -> Any:
+            """Run a phase with budget check, event logging, and state persistence."""
+            await check_budget(self._paper_id, self._max_cost_usd)
+            await log_event(self._paper_id, "phase_start", stage=name)
+            result = await fn()
+            await log_event(self._paper_id, "phase_end", stage=name)
+            return result
+
         try:
             if not state.is_complete("initial"):
-                await self._run_initial_phase()
+                await _phase("initial", self._run_initial_phase)
                 state.contributions_count = prior_contributions + len(self._contributions)
                 state.mark_complete("initial")
                 state.save(self._workspace)
             status = PaperStatus.IN_PROGRESS
 
             if self._mode == "iterative" and not state.is_complete("iterative"):
-                status = await self._run_iterative_phase()
+                status = await _phase("iterative", self._run_iterative_phase)
                 state.iteration = self._iteration
                 state.pivot_count = self._pivot_count
                 state.contributions_count = prior_contributions + len(self._contributions)
@@ -78,22 +93,26 @@ class PipelineRunner:
                 state.save(self._workspace)
 
             if self._mode == "iterative" and not state.is_complete("self_attack"):
-                status = await self._run_self_attack_phase()
+                status = await _phase("self_attack", self._run_self_attack_phase)
                 state.mark_complete("self_attack")
                 state.save(self._workspace)
 
             if self._mode == "iterative" and not state.is_complete("polish"):
-                status = await self._run_polish_phase()
+                status = await _phase("polish", self._run_polish_phase)
                 state.mark_complete("polish")
                 state.save(self._workspace)
 
             if not state.is_complete("review"):
-                status = await self._run_review_phase()
+                status = await _phase("review", self._run_review_phase)
                 state.mark_complete("review")
                 state.save(self._workspace)
 
             if not state.is_complete("revision"):
+                # _run_revision_phase needs the current status as an argument
+                await check_budget(self._paper_id, self._max_cost_usd)
+                await log_event(self._paper_id, "phase_start", stage="revision")
                 status = await self._run_revision_phase(status)
+                await log_event(self._paper_id, "phase_end", stage="revision")
                 state.last_status = status.value
                 state.contributions_count = prior_contributions + len(self._contributions)
                 state.mark_complete("revision")
@@ -103,7 +122,7 @@ class PipelineRunner:
                 status = PaperStatus(state.last_status)
 
             if not state.is_complete("replication"):
-                await self._run_replication_phase()
+                await _phase("replication", self._run_replication_phase)
                 state.contributions_count = prior_contributions + len(self._contributions)
                 state.mark_complete("replication")
                 state.save(self._workspace)
@@ -115,10 +134,19 @@ class PipelineRunner:
             total_contributions = prior_contributions + len(self._contributions)
             return {"status": status.value, "contributions": total_contributions}
 
+        except asyncio.CancelledError:
+            # User cancelled. Save state, mark CANCELLED, then re-raise so the
+            # task is genuinely cancelled.
+            state.save(self._workspace)
+            logger.warning("Pipeline cancelled for paper %s", self._paper_id)
+            await log_event(self._paper_id, "cancelled")
+            await self._update_status(PaperStatus.CANCELLED, error="cancelled by user")
+            raise
         except Exception as e:
             state.save(self._workspace)  # preserve progress on failure
             logger.error("Pipeline failed for paper %s: %s", self._paper_id, e)
             error_msg = f"{type(e).__name__}: {e}"
+            await log_event(self._paper_id, "failed", payload={"error": error_msg})
             await self._update_status(PaperStatus.FAILED, error=error_msg)
             return {"status": "failed", "error": error_msg}
 
@@ -407,13 +435,17 @@ class PipelineRunner:
     async def _update_status(self, status: PaperStatus, error: str | None = None) -> None:
         try:
             from ...db.client import execute
-            if status == PaperStatus.FAILED and error is not None:
+            terminal_with_reason = (
+                status in {PaperStatus.FAILED, PaperStatus.CANCELLED} and error is not None
+            )
+            if terminal_with_reason:
                 await execute(
                     "UPDATE papers SET status = %(s)s, last_error = %(e)s, updated_at = NOW() WHERE id = %(id)s",
                     {"s": status.value, "e": error, "id": self._paper_id},
                 )
             else:
-                # Any non-FAILED transition clears stale errors from prior runs.
+                # Non-terminal transitions (or terminal without an error message) clear
+                # stale errors from prior runs.
                 await execute(
                     "UPDATE papers SET status = %(s)s, last_error = NULL, updated_at = NOW() WHERE id = %(id)s",
                     {"s": status.value, "id": self._paper_id},

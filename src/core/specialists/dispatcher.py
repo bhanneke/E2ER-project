@@ -33,10 +33,15 @@ async def execute_work_order(
     backend_name: str = "anthropic",
 ) -> Contribution:
     """Execute a single work order."""
+    from ...db.events import log_event
+
     work_order = _inject_context(work_order, workspace)
     logger.info("Dispatching %s for paper %s", work_order.specialist, work_order.paper_id)
+    await log_event(
+        work_order.paper_id, "specialist_start", specialist=work_order.specialist,
+    )
     try:
-        return await run_specialist(
+        contribution = await run_specialist(
             work_order=work_order,
             backend=backend,
             workspace=workspace,
@@ -45,8 +50,22 @@ async def execute_work_order(
             extra_handlers=extra_handlers,
             backend_name=backend_name,
         )
+        await log_event(
+            work_order.paper_id, "specialist_end",
+            specialist=work_order.specialist,
+            payload={"success": contribution.success},
+        )
+        return contribution
+    except asyncio.CancelledError:
+        # Cancellation must propagate, not be swallowed as a specialist failure.
+        raise
     except Exception as e:
         logger.error("Specialist %s failed: %s", work_order.specialist, e)
+        await log_event(
+            work_order.paper_id, "specialist_failed",
+            specialist=work_order.specialist,
+            payload={"error": str(e)},
+        )
         return Contribution(
             paper_id=work_order.paper_id,
             specialist=work_order.specialist,

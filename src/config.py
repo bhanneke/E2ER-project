@@ -66,6 +66,7 @@ class Settings(BaseSettings):
     max_review_rounds: int = 3
     weak_accept_threshold: float = 7.0
     max_revision_iterations: int = 3
+    default_max_cost_usd: float = 25.0  # fallback per-paper cost cap
 
     # ── Server ────────────────────────────────────────────────────────────────
     host: str = "0.0.0.0"

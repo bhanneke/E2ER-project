@@ -17,6 +17,7 @@ class PaperStatus(str, Enum):
     REVISION = "revision"
     COMPLETED = "completed"
     FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 class PipelineMode(str, Enum):
@@ -24,19 +25,44 @@ class PipelineMode(str, Enum):
     ITERATIVE = "iterative"       # Mode 2 — full loop with ceiling detection + attack
 
 
+class BudgetExceeded(Exception):
+    """Raised when a paper's cumulative LLM cost reaches its per-paper cap."""
+
+    def __init__(self, spent: float, cap: float) -> None:
+        self.spent = spent
+        self.cap = cap
+        super().__init__(f"Budget exceeded: spent ${spent:.2f}, cap ${cap:.2f}")
+
+
+# Every state can transition to CANCELLED (user can cancel at any point).
+# CANCELLED is terminal except for restart back to IDEA.
+_NON_TERMINAL = {
+    PaperStatus.IDEA,
+    PaperStatus.DESIGNING,
+    PaperStatus.DATA_COLLECTION,
+    PaperStatus.DATA_APPROVAL,
+    PaperStatus.IN_PROGRESS,
+    PaperStatus.CEILING_CHECK,
+    PaperStatus.SELF_ATTACK,
+    PaperStatus.POLISH,
+    PaperStatus.REVIEW,
+    PaperStatus.REVISION,
+}
+
 VALID_TRANSITIONS: dict[PaperStatus, set[PaperStatus]] = {
-    PaperStatus.IDEA: {PaperStatus.DESIGNING, PaperStatus.FAILED},
-    PaperStatus.DESIGNING: {PaperStatus.DATA_COLLECTION, PaperStatus.IN_PROGRESS, PaperStatus.FAILED},
-    PaperStatus.DATA_COLLECTION: {PaperStatus.DATA_APPROVAL, PaperStatus.IN_PROGRESS, PaperStatus.FAILED},
-    PaperStatus.DATA_APPROVAL: {PaperStatus.IN_PROGRESS, PaperStatus.DATA_COLLECTION, PaperStatus.FAILED},
-    PaperStatus.IN_PROGRESS: {PaperStatus.CEILING_CHECK, PaperStatus.REVIEW, PaperStatus.FAILED},
-    PaperStatus.CEILING_CHECK: {PaperStatus.SELF_ATTACK, PaperStatus.REVIEW, PaperStatus.IN_PROGRESS, PaperStatus.FAILED},
-    PaperStatus.SELF_ATTACK: {PaperStatus.POLISH, PaperStatus.REVIEW, PaperStatus.FAILED},
-    PaperStatus.POLISH: {PaperStatus.REVIEW, PaperStatus.FAILED},
-    PaperStatus.REVIEW: {PaperStatus.REVISION, PaperStatus.COMPLETED, PaperStatus.FAILED},
-    PaperStatus.REVISION: {PaperStatus.REVIEW, PaperStatus.COMPLETED, PaperStatus.FAILED},
+    PaperStatus.IDEA: {PaperStatus.DESIGNING, PaperStatus.FAILED, PaperStatus.CANCELLED},
+    PaperStatus.DESIGNING: {PaperStatus.DATA_COLLECTION, PaperStatus.IN_PROGRESS, PaperStatus.FAILED, PaperStatus.CANCELLED},
+    PaperStatus.DATA_COLLECTION: {PaperStatus.DATA_APPROVAL, PaperStatus.IN_PROGRESS, PaperStatus.FAILED, PaperStatus.CANCELLED},
+    PaperStatus.DATA_APPROVAL: {PaperStatus.IN_PROGRESS, PaperStatus.DATA_COLLECTION, PaperStatus.FAILED, PaperStatus.CANCELLED},
+    PaperStatus.IN_PROGRESS: {PaperStatus.CEILING_CHECK, PaperStatus.REVIEW, PaperStatus.FAILED, PaperStatus.CANCELLED},
+    PaperStatus.CEILING_CHECK: {PaperStatus.SELF_ATTACK, PaperStatus.REVIEW, PaperStatus.IN_PROGRESS, PaperStatus.FAILED, PaperStatus.CANCELLED},
+    PaperStatus.SELF_ATTACK: {PaperStatus.POLISH, PaperStatus.REVIEW, PaperStatus.FAILED, PaperStatus.CANCELLED},
+    PaperStatus.POLISH: {PaperStatus.REVIEW, PaperStatus.FAILED, PaperStatus.CANCELLED},
+    PaperStatus.REVIEW: {PaperStatus.REVISION, PaperStatus.COMPLETED, PaperStatus.FAILED, PaperStatus.CANCELLED},
+    PaperStatus.REVISION: {PaperStatus.REVIEW, PaperStatus.COMPLETED, PaperStatus.FAILED, PaperStatus.CANCELLED},
     PaperStatus.COMPLETED: set(),
-    PaperStatus.FAILED: {PaperStatus.IDEA},  # allow restart
+    PaperStatus.FAILED: {PaperStatus.IDEA},
+    PaperStatus.CANCELLED: {PaperStatus.IDEA},
 }
 
 
