@@ -141,10 +141,6 @@ class PipelineRunner:
                 state.mark_complete("replication")
                 state.save(self._workspace)
 
-            # Non-fatal finalization phases (no checkpointing needed)
-            await self._run_compile_phase()
-            await self._run_github_push_phase()
-
             total_contributions = prior_contributions + len(self._contributions)
             return {"status": status.value, "contributions": total_contributions}
 
@@ -163,6 +159,55 @@ class PipelineRunner:
             await log_event(self._paper_id, "failed", payload={"error": error_msg})
             await self._update_status(PaperStatus.FAILED, error=error_msg)
             return {"status": "failed", "error": error_msg}
+        finally:
+            # Best-effort finalization — runs on completion, failure, AND
+            # cancellation. Lets a partially-completed paper still get its
+            # LaTeX compiled, audit log exported, and git push attempted.
+            # Each step swallows its own exceptions so finalize never raises.
+            await self._best_effort_finalize()
+
+    async def _best_effort_finalize(self) -> None:
+        """Run compile + audit-export + GitHub push, swallowing all errors.
+
+        This guarantees that even when the pipeline aborts mid-flight (cost
+        cap, OpenRouter 402, all-specialists-failed, user cancellation),
+        the partial artifacts on disk are still:
+          1. Compiled to PDF if a paper_draft.tex exists
+          2. Augmented with replication/audit_log.csv from the DB query
+             history (independent of whether replication_packager ran)
+          3. Pushed to GitHub if configured
+        """
+        try:
+            await self._run_compile_phase()
+        except Exception as e:
+            logger.warning("Finalize: compile skipped: %s", e)
+        try:
+            await self._export_audit_log_only()
+        except Exception as e:
+            logger.warning("Finalize: audit export skipped: %s", e)
+        try:
+            await self._run_github_push_phase()
+        except Exception as e:
+            logger.warning("Finalize: github push skipped: %s", e)
+
+    async def _export_audit_log_only(self) -> None:
+        """Write replication/audit_log.csv + data_queries.sql from the DB.
+
+        Standalone version of the audit-export step that's normally embedded
+        in _run_replication_phase. Runs even when the replication_packager
+        specialist didn't get to execute, so reviewers always have the
+        provenance trail of which queries ran (or were rejected).
+        """
+        from ...modules.data.audit import write_audit_csv, write_data_queries_sql
+        replication_dir = self._workspace / "replication"
+        replication_dir.mkdir(exist_ok=True)
+        audit_csv = replication_dir / "audit_log.csv"
+        queries_sql = replication_dir / "data_queries.sql"
+        # Only re-export if not already present (avoid clobbering a real run)
+        if not audit_csv.exists():
+            await write_audit_csv(self._paper_id, audit_csv)
+        if not queries_sql.exists():
+            await write_data_queries_sql(self._paper_id, queries_sql)
 
     async def _run_initial_phase(self) -> None:
         """Run the initial design + data collection specialists.
