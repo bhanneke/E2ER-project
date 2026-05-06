@@ -128,6 +128,23 @@ cd E2ER-project
 
 The script copies `.env.example` to `.env`, prompts once for your Anthropic API key, runs `docker compose up --build`, and opens the dashboard at <http://localhost:8280/>. Migrations run automatically on first start. Total time-to-first-paper: typically under 5 minutes for the build step plus your run time.
 
+### Verify your install
+
+Before configuring an API key, confirm the pipeline runs end-to-end with mocks:
+
+```bash
+make install   # pip install -e ".[dev]"
+make smoke     # full mocked test suite — no API key needed, ~15s
+```
+
+If `make smoke` reports `155 passed`, your install is good and the orchestration works.
+
+To run a real $0.50 end-to-end test on Claude Haiku (requires `ANTHROPIC_API_KEY`):
+
+```bash
+ANTHROPIC_API_KEY=sk-ant-... make smoke-paid
+```
+
 ### Dashboard
 
 Once running, the dashboard at `http://localhost:8280/` lets you:

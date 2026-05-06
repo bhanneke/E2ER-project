@@ -43,6 +43,8 @@ docker/data/
 # Local live-test workspace (never commit; contains real API keys, real
 # Allium queries, real workspaces). Renamed from "Tests" to "live_tests"
 # to avoid the case-insensitive collision with "tests/" on macOS HFS+/APFS.
+# Do NOT add `/Tests/` here: macOS treats it as identical to `tests/` and
+# would ignore the entire test suite.
 /live_tests/
 
 # Logs
