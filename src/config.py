@@ -67,8 +67,9 @@ class Settings(BaseSettings):
     weak_accept_threshold: float = 7.0
     max_revision_iterations: int = 3
     default_max_cost_usd: float = 25.0  # fallback per-paper cost cap
-    max_tokens_per_call: int = 8192      # per-API-call output cap; smaller models
-                                          # truncate mid-tool-call below this
+    max_tokens_per_call: int = 16384     # per-API-call output cap; needs to be
+                                          # large enough for full file content
+                                          # (Haiku supports up to 64K)
 
     # ── Server ────────────────────────────────────────────────────────────────
     host: str = "0.0.0.0"
