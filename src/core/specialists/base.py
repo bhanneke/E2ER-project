@@ -157,12 +157,24 @@ _BIB_SPECIALISTS = frozenset([
 
 
 def _build_user_prompt(work_order: WorkOrder) -> str:
+    from ..specialists.registry import REVIEWER_SPECIALISTS
     parts = [f"## Work Order\n{work_order.focus}"]
     if work_order.context:
         parts.append(f"\n## Context\n{work_order.context}")
     bib = _load_reference_summary(work_order.specialist)
     if bib:
         parts.append(f"\n{bib}")
+    # Reviewers get the full draft + supporting docs pre-loaded above.
+    # Stop them from re-reading via read_file (each tool result re-enters
+    # the conversation history on every subsequent turn — quadratic blow-up).
+    if work_order.specialist in REVIEWER_SPECIALISTS:
+        parts.append(
+            "\n## Reviewing Instructions\n"
+            "The full paper draft and all supporting documents are already "
+            "above in your Context. Do NOT call read_file or list_directory "
+            "— they are unnecessary and waste tokens. Review the material in "
+            "your context directly, then write your single review file."
+        )
     if work_order.output_file:
         parts.append(
             f"\n## Required Output\n"

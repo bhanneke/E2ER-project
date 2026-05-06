@@ -19,16 +19,29 @@ def _inject_context(work_order: WorkOrder, workspace: Path) -> WorkOrder:
     omitted it — without this, specialists freelance on filenames and
     write multiple uncanonical artifacts (a real failure mode on smaller
     models like Haiku).
+
+    Routes pure-text reviewer specialists through build_review_context,
+    which pre-loads the full paper draft + supporting docs into the
+    prompt. This eliminates the read_file-per-doc tool tour that
+    dominated review-phase token usage (each tool result re-sent on
+    every subsequent turn → quadratic input growth).
     """
-    from ..strategist.context import build_tier0_context, build_tier1_context, build_tier2_context
-    from .registry import SPECIALIST_ARTIFACTS
+    from ..strategist.context import (
+        build_tier0_context, build_tier1_context, build_tier2_context,
+        build_review_context,
+    )
+    from .registry import REVIEWER_SPECIALISTS, SPECIALIST_ARTIFACTS
 
     updates: dict[str, object] = {}
 
     if not work_order.context:
-        builders = {0: build_tier0_context, 1: build_tier1_context, 2: build_tier2_context}
-        builder = builders.get(work_order.context_tier, build_tier1_context)
-        updates["context"] = builder(workspace, work_order.paper_id)
+        if work_order.specialist in REVIEWER_SPECIALISTS:
+            # Reviewers are pure-text: pre-load full draft + supporting docs.
+            updates["context"] = build_review_context(workspace, work_order.paper_id)
+        else:
+            builders = {0: build_tier0_context, 1: build_tier1_context, 2: build_tier2_context}
+            builder = builders.get(work_order.context_tier, build_tier1_context)
+            updates["context"] = builder(workspace, work_order.paper_id)
 
     if not work_order.output_file:
         canonical = SPECIALIST_ARTIFACTS.get(work_order.specialist)

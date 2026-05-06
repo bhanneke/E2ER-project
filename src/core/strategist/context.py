@@ -66,13 +66,41 @@ def build_tier2_context(workspace: Path, paper_id: str) -> str:
 
 
 def build_review_context(workspace: Path, paper_id: str) -> str:
-    """Full paper context for review stage — includes everything."""
+    """Full paper context for the review stage.
+
+    Pre-loads the paper draft + key supporting artifacts at FULL size so the
+    reviewer doesn't need to make any read_file tool calls. Each tool call
+    re-sends the result on every subsequent turn, so eliminating those reads
+    cuts review-phase token usage by ~5x in practice.
+
+    Returns the assembled context block. The caller (dispatcher._inject_context)
+    routes pure-text reviewer specialists here.
+    """
     draft = _read_artifact(workspace, "paper_draft.tex") or _read_artifact(workspace, "paper_draft.md")
     if not draft:
+        # No draft yet — fall back so reviewers can at least see whatever
+        # design artifacts exist.
         return build_tier2_context(workspace, paper_id)
 
     header = build_tier0_context(workspace, paper_id)
-    return f"{header}\n\n## Full Paper Draft\n{draft}"
+    sections = [header, f"## Full Paper Draft\n{draft}"]
+
+    # Supporting documents loaded at full size so the reviewer doesn't need to
+    # re-read them via read_file. Keep this list in sync with the docs that
+    # reviewer skill files actually reference.
+    for fname, label in [
+        ("identification_strategy.md", "Identification Strategy"),
+        ("econometric_spec.md", "Econometric Specification"),
+        ("literature_review.md", "Literature Review"),
+        ("data_dictionary.json", "Data Dictionary"),
+        ("data_summary.md", "Data Summary"),
+        ("paper_plan.md", "Paper Plan"),
+    ]:
+        content = _read_artifact(workspace, fname)
+        if content:
+            sections.append(f"## {label}\n{content}")
+
+    return "\n\n".join(sections)
 
 
 def build_self_attack_context(workspace: Path, paper_id: str) -> str:

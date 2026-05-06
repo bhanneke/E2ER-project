@@ -735,6 +735,40 @@ def test_parse_decision_returns_fail_on_prose():
     assert "Parse error" in (d.rationale or "")
 
 
+async def test_reviewer_gets_full_draft_in_context(tmp_path):
+    """Reviewer specialists should receive build_review_context (full draft +
+    supporting docs), not the truncated tier-2 context. This eliminates the
+    read_file tour that blew up review-phase token usage."""
+    from src.core.specialists.contracts import WorkOrder as ContractWorkOrder
+    from src.core.specialists.dispatcher import _inject_context
+
+    paper_id = str(uuid.uuid4())
+    workspace = tmp_path
+    (workspace / "manifest.json").write_text(json.dumps({
+        "paper_id": paper_id, "title": "T", "research_question": "RQ",
+        "datasets": [], "current_stage": "review",
+    }))
+    # A draft long enough that tier-2 truncation would lose information.
+    long_draft = (
+        "\\section{Introduction}\nThis is the paper draft. "
+        + ("Lorem ipsum dolor sit amet. " * 500)
+    )
+    (workspace / "paper_draft.tex").write_text(long_draft)
+    (workspace / "identification_strategy.md").write_text("# ID strategy\n" + "X" * 3000)
+
+    wo = ContractWorkOrder(
+        paper_id=paper_id, specialist="technical_reviewer",
+        focus="Audit the methods.", context_tier=2,
+    )
+    out = _inject_context(wo, workspace)
+
+    # Full draft (not truncated to 2000 chars) must appear in the context.
+    assert "Lorem ipsum dolor sit amet." in out.context
+    assert len(out.context) > 10_000  # tier-2 would cap each section at 2000 chars
+    # Identification strategy at full size, not truncated.
+    assert "X" * 3000 in out.context
+
+
 async def test_dispatcher_auto_fills_output_file(tmp_path):
     """When the strategist omits output_file, the dispatcher must fill it from
     SPECIALIST_ARTIFACTS so the specialist gets a deterministic filename."""
