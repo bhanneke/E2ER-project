@@ -78,11 +78,15 @@ class StrategistEngine:
     """Owns the paper-level planning loop."""
 
     def __init__(self, backend: LLMBackend, workspace: Path, paper_id: str, mode: str = "iterative") -> None:
+        from ...modules.llm.base import TokenUsage
         self._backend = backend
         self._workspace = workspace
         self._paper_id = paper_id
         self._mode = mode
         self._handler = FileToolHandler(workspace)
+        # Cumulative usage across all backend calls — read by PipelineRunner
+        # for the in-memory cost cap.
+        self.total_usage: TokenUsage = TokenUsage()
 
     async def decide(self, current_status: str, iteration: int = 0) -> StrategistDecision:
         """Ask the Strategist what to do next, given current paper state."""
@@ -102,6 +106,7 @@ class StrategistEngine:
             tool_handler=self._handler,
             max_turns=10,
         )
+        self.total_usage = self.total_usage + result.usage
 
         return _parse_decision(result.output)
 
@@ -121,6 +126,7 @@ class StrategistEngine:
             tool_handler=None,
             max_turns=3,
         )
+        self.total_usage = self.total_usage + result.usage
 
         raw = json.loads(result.output) if result.output.startswith("{") else {}
         return CeilingCheckResult(
@@ -142,6 +148,7 @@ class StrategistEngine:
             tool_handler=None,
             max_turns=3,
         )
+        self.total_usage = self.total_usage + result.usage
 
         raw = json.loads(result.output) if result.output.startswith("{") else {}
         findings = [SelfAttackFinding(**f) for f in raw.get("findings", [])]

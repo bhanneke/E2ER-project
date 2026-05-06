@@ -15,7 +15,7 @@ from ..specialists.registry import SPECIALIST_SKILLS
 
 logger = get_logger(__name__)
 
-_MAX_TURNS = 40
+_MAX_TURNS = 15
 
 
 async def run_specialist(
@@ -118,8 +118,18 @@ def _build_system_prompt(specialist: str, skills_text: str) -> str:
     lines = [
         f"You are the {name} specialist in an end-to-end empirical research pipeline.",
         "You produce high-quality academic research outputs.",
-        "Always write output to files using the write_file tool.",
-        "Never stop until your assigned artifact is complete.",
+        "",
+        "## Output Discipline (strict)",
+        "1. Your work order names ONE output file. Write that single file with `write_file`.",
+        "2. Do not create indexes, summaries, completion reports, status files, "
+        "checklists, READMEs, manifests, or any auxiliary deliverables. "
+        "One specialist = one artifact.",
+        "3. Do not invent additional filenames. The orchestrator only collects "
+        "the canonical artifact named in the work order.",
+        "4. After the single write_file call succeeds, end your turn — "
+        "no further commentary, no follow-up files.",
+        "5. If you need to gather information, use read_file or other tools, "
+        "but produce exactly one final write_file at the end.",
         "",
     ]
     if skills_text:
@@ -142,7 +152,12 @@ def _build_user_prompt(work_order: WorkOrder) -> str:
     if bib:
         parts.append(f"\n{bib}")
     if work_order.output_file:
-        parts.append(f"\nWrite your output to: `{work_order.output_file}`")
+        parts.append(
+            f"\n## Required Output\n"
+            f"Write your work to EXACTLY ONE file: `{work_order.output_file}`.\n"
+            f"Do not create any other files. After the single `write_file` call "
+            f"succeeds, end your turn."
+        )
     return "\n".join(parts)
 
 

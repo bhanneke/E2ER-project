@@ -1,0 +1,10 @@
+{
+  "paper_id": "4e0a06ff-bf53-469a-9665-e029d8e682d1",
+  "title": "DeFi Liquidity Provision",
+  "research_question": "How does concentrated liquidity affect price discovery?",
+  "datasets": [
+    "uniswap_v3_swaps"
+  ],
+  "mode": "single_pass",
+  "current_stage": "idea"
+}

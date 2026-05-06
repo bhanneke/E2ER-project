@@ -33,6 +33,7 @@ class AnthropicBackend(LLMBackend):
         )
         self._model = settings.anthropic_model
         self._caching = settings.enable_prompt_caching
+        self._max_tokens = settings.max_tokens_per_call
 
     async def tool_loop(
         self,
@@ -79,7 +80,7 @@ class AnthropicBackend(LLMBackend):
             try:
                 response = await self._client.messages.create(
                     model=self._model,
-                    max_tokens=8192,
+                    max_tokens=self._max_tokens,
                     system=system_content,  # type: ignore[arg-type]
                     messages=msgs,
                     tools=tools,  # type: ignore[arg-type]

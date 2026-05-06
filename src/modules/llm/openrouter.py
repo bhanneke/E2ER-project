@@ -37,6 +37,7 @@ class OpenRouterBackend(LLMBackend):
             max_retries=5,
         )
         self._model = settings.openrouter_model
+        self._max_tokens = settings.max_tokens_per_call
 
     def _convert_tools(self, tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Convert Anthropic-format tools to OpenAI function-calling format."""
@@ -73,7 +74,7 @@ class OpenRouterBackend(LLMBackend):
                     model=self._model,
                     messages=msgs,  # type: ignore[arg-type]
                     tools=oai_tools if oai_tools else openai_NOT_GIVEN,  # type: ignore[arg-type]
-                    max_tokens=8192,
+                    max_tokens=self._max_tokens,
                 )
             except Exception as e:
                 logger.error("OpenRouter error on turn %d: %s", turn, e)

@@ -54,6 +54,17 @@ class PipelineRunner:
             max_cost_usd = get_settings().default_max_cost_usd
         self._max_cost_usd = max_cost_usd
 
+    def _in_memory_spent(self) -> float:
+        """Sum of all specialist contribution costs + strategist usage cost.
+
+        Used as a fallback when the llm_usage DB table is unavailable so the
+        cost cap still trips. Authoritative on whichever side is larger.
+        """
+        from ...modules.tracking.costs import compute_cost
+        spec_cost = sum(c.cost_usd or 0.0 for c in self._contributions)
+        strat_cost = float(compute_cost(self._model, self._strategist.total_usage))
+        return spec_cost + strat_cost
+
     async def run(self) -> dict[str, Any]:
         """Run the full pipeline from idea to completion, with checkpoint/resume support."""
         from ..pipeline.state import PipelineState
@@ -70,7 +81,7 @@ class PipelineRunner:
 
         async def _phase(name: str, fn) -> Any:
             """Run a phase with budget check, event logging, and state persistence."""
-            await check_budget(self._paper_id, self._max_cost_usd)
+            await check_budget(self._paper_id, self._max_cost_usd, self._in_memory_spent())
             await log_event(self._paper_id, "phase_start", stage=name)
             result = await fn()
             await log_event(self._paper_id, "phase_end", stage=name)
@@ -109,7 +120,7 @@ class PipelineRunner:
 
             if not state.is_complete("revision"):
                 # _run_revision_phase needs the current status as an argument
-                await check_budget(self._paper_id, self._max_cost_usd)
+                await check_budget(self._paper_id, self._max_cost_usd, self._in_memory_spent())
                 await log_event(self._paper_id, "phase_start", stage="revision")
                 status = await self._run_revision_phase(status)
                 await log_event(self._paper_id, "phase_end", stage="revision")

@@ -67,24 +67,38 @@ async def save_usage(
     )
 
 
-async def check_budget(paper_id: str, max_cost_usd: float) -> None:
-    """Raise BudgetExceeded if cumulative cost has hit the per-paper cap.
+async def check_budget(
+    paper_id: str,
+    max_cost_usd: float,
+    in_memory_spent: float = 0.0,
+) -> None:
+    """Raise BudgetExceeded when cumulative cost has hit the per-paper cap.
 
-    Called at phase boundaries by the pipeline runner. Read-only; reuses the
-    same llm_usage rows that compute_cost has already populated.
+    Called at phase boundaries by the pipeline runner.
+
+    Two cost sources are combined:
+      1. ``llm_usage`` table (durable, populated by ``save_usage``).
+      2. ``in_memory_spent`` — the runner's running total of specialist
+         + strategist costs since startup. This makes the cap robust when
+         the database is unavailable (otherwise spent=0 and the cap never
+         trips). The greater of the two values is treated as authoritative
+         to avoid double-counting when both sources see the same call.
     """
     from ...core.strategist.state import BudgetExceeded
     from ...db.client import fetch_one
 
+    db_spent = 0.0
     try:
         row = await fetch_one(
             "SELECT COALESCE(SUM(cost_usd), 0)::float AS spent FROM llm_usage WHERE paper_id = %(id)s",
             {"id": paper_id},
         )
+        db_spent = float((row or {}).get("spent", 0.0))
     except Exception:
-        # DB unavailable — skip the check rather than crash.
-        return
-    spent = float((row or {}).get("spent", 0.0))
+        # DB unavailable — fall back to in-memory tracking only.
+        db_spent = 0.0
+
+    spent = max(db_spent, float(in_memory_spent))
     if spent >= max_cost_usd:
         raise BudgetExceeded(spent=spent, cap=max_cost_usd)
 

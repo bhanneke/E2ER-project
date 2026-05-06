@@ -691,6 +691,46 @@ async def test_execute_parallel_raises_when_all_fail(tmp_path):
 # Bundle 1: Safety & auditability
 # ---------------------------------------------------------------------------
 
+async def test_check_budget_uses_in_memory_when_db_unavailable():
+    """Without a DB, check_budget must still trip on the in-memory total."""
+    from src.modules.tracking.usage import check_budget
+    from src.core.strategist.state import BudgetExceeded
+
+    async def db_down(sql, params=None):
+        raise RuntimeError("no db")
+
+    with patch("src.db.client.fetch_one", side_effect=db_down):
+        # Under cap — passes.
+        await check_budget("p", max_cost_usd=10.0, in_memory_spent=4.0)
+        # Over cap via in-memory only — must raise even with DB down.
+        with pytest.raises(BudgetExceeded) as exc:
+            await check_budget("p", max_cost_usd=10.0, in_memory_spent=12.5)
+        assert exc.value.spent == 12.5
+        assert exc.value.cap == 10.0
+
+
+async def test_dispatcher_auto_fills_output_file(tmp_path):
+    """When the strategist omits output_file, the dispatcher must fill it from
+    SPECIALIST_ARTIFACTS so the specialist gets a deterministic filename."""
+    from src.core.specialists.contracts import WorkOrder as ContractWorkOrder
+    from src.core.specialists.dispatcher import _inject_context
+
+    wo = ContractWorkOrder(
+        paper_id="p",
+        specialist="idea_developer",
+        focus="develop the idea",
+        # output_file deliberately omitted
+        context_tier=0,
+    )
+    # Workspace has a manifest so context-builder doesn't fail.
+    (tmp_path / "manifest.json").write_text(
+        '{"paper_id": "p", "title": "T", "research_question": "RQ",'
+        ' "datasets": [], "current_stage": "designing"}'
+    )
+    out = _inject_context(wo, tmp_path)
+    assert out.output_file == "paper_plan.md"
+
+
 async def test_budget_exceeded_aborts_pipeline(tmp_path, mock_llm):
     """If cumulative cost has hit the cap before a phase, runner must FAIL with a budget error."""
     from src.core.strategist.engine import StrategistEngine
