@@ -97,22 +97,57 @@ LITERATURE_TOOLS: list[dict[str, Any]] = [
 
 
 class LiteratureToolHandler(ToolHandler):
-    """Intercepts literature tool calls. Cheap to construct; one per specialist run."""
+    """Intercepts literature tool calls. One handler instance per specialist run.
+
+    Enforces a per-specialist call budget so models like Sonnet 4.6 don't go
+    on a search-and-save spree. A single literature_scanner run on Sonnet
+    burned 522K tokens with 36 tool calls before this cap was added.
+    """
+
+    # Per-specialist hard caps. After these the tool returns a budget-exceeded
+    # message instructing the model to stop searching and write its output.
+    _MAX_SEARCHES = 8
+    _MAX_FETCHES = 12
+    _MAX_SAVES = 30
 
     def __init__(self, workspace: Path) -> None:
         self._workspace = Path(workspace)
         self._bib_path = self._workspace / "literature.bib"
+        self._search_calls = 0
+        self._fetch_calls = 0
+        self._save_calls = 0
 
     def can_handle(self, tool_name: str) -> bool:
         return tool_name in {"search_papers", "fetch_paper", "save_bibtex"}
 
     async def handle(self, tool_name: str, tool_input: dict[str, Any]) -> str:
+        # Budget guard — return a stop signal rather than execute the call.
+        if tool_name == "search_papers" and self._search_calls >= self._MAX_SEARCHES:
+            return json.dumps({
+                "error": f"search budget exhausted ({self._MAX_SEARCHES} calls). "
+                "Stop searching and write your output now using the references "
+                "you have already found.",
+            })
+        if tool_name == "fetch_paper" and self._fetch_calls >= self._MAX_FETCHES:
+            return json.dumps({
+                "error": f"fetch budget exhausted ({self._MAX_FETCHES} calls). "
+                "Stop fetching and proceed with what you have.",
+            })
+        if tool_name == "save_bibtex" and self._save_calls >= self._MAX_SAVES:
+            return json.dumps({
+                "error": f"save_bibtex budget exhausted ({self._MAX_SAVES} entries). "
+                "Use what's saved and write your output.",
+            })
+
         try:
             if tool_name == "search_papers":
+                self._search_calls += 1
                 return await self._search(tool_input)
             if tool_name == "fetch_paper":
+                self._fetch_calls += 1
                 return await self._fetch(tool_input)
             if tool_name == "save_bibtex":
+                self._save_calls += 1
                 return await self._save(tool_input)
         except Exception as e:
             logger.warning("Literature tool %s failed: %s", tool_name, e)

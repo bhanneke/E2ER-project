@@ -85,7 +85,11 @@ class Settings(BaseSettings):
             return self.openrouter_model
         return self.anthropic_model
 
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+    model_config = {
+        "env_file": ".env",
+        "env_file_encoding": "utf-8",
+        "extra": "ignore",  # tolerate extra env vars (e.g. POSTGRES_PASSWORD for docker)
+    }
 
 
 @lru_cache(maxsize=1)

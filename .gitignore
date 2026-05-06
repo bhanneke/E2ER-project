@@ -40,6 +40,9 @@ repos/
 workspaces/
 docker/data/
 
+# Local end-to-end test workspace (never commit; contains real API keys)
+Tests/
+
 # Logs
 *.log
 logs/
