@@ -39,7 +39,10 @@ async def run_specialist(
     specialist = work_order.specialist
 
     skills_text = load_skills_for_specialist(specialist)
-    system = _build_system_prompt(specialist, skills_text)
+    has_allium = any(
+        (t.get("name") == "query_allium") for t in (extra_tools or [])
+    )
+    system = _build_system_prompt(specialist, skills_text, has_allium=has_allium)
 
     tools = list(FILE_TOOLS)
     if extra_tools:
@@ -125,7 +128,10 @@ async def run_specialist(
     )
 
 
-def _build_system_prompt(specialist: str, skills_text: str) -> str:
+_DATA_SPECIALISTS = frozenset(["data_analyst", "data_architect", "econometrics_specialist"])
+
+
+def _build_system_prompt(specialist: str, skills_text: str, has_allium: bool = False) -> str:
     name = specialist.replace("_", " ").title()
     lines = [
         f"You are the {name} specialist in an end-to-end empirical research pipeline.",
@@ -144,6 +150,24 @@ def _build_system_prompt(specialist: str, skills_text: str) -> str:
         "but produce exactly one final write_file at the end.",
         "",
     ]
+    if specialist == "data_analyst" and has_allium:
+        lines.extend([
+            "## Mandatory Data Sourcing — DO NOT SYNTHESIZE",
+            "The Allium tool `query_allium` is wired into your tool list. You MUST use it.",
+            "- Do NOT write \"synthetic\", \"calibrated\", \"plausible\", \"illustrative\", \"hypothetical\" "
+            "or \"representative\" numbers. Inventing data is a hard failure.",
+            "- Workflow:",
+            "  1. Call `list_allium_tables` once to confirm the table you'll query.",
+            "  2. Submit a `query_allium` call with `query_type='feasibility'` (auto-approved, "
+            "samples 1000 rows). Inspect the result.",
+            "  3. Submit production queries with `query_type='production'`. These return a "
+            "`query_id` and require human approval — poll `check_approval` until status='approved' "
+            "(typically takes minutes; do NOT give up). Once approved, query_allium returns the rows.",
+            "  4. Build the data_summary.md from the actual returned rows. Cite the query_ids.",
+            "- If a query is rejected or never approves within reasonable time, report this in "
+            "data_summary.md as a transparent failure — do NOT fall back to invented data.",
+            "",
+        ])
     if skills_text:
         lines.append("## Your Expertise\n")
         lines.append(skills_text)
