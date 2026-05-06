@@ -214,6 +214,10 @@ The following papers were produced by earlier versions of the E2ER pipeline. In 
 
 > Results have not been submitted to a journal and should not be cited as peer-reviewed findings.
 
+### v3 smoke test (Haiku 4.5, no data)
+
+A full v3 single-pass run against `claude-haiku-4.5` via OpenRouter, with the data module disabled, in ~11 minutes for ~$1.50. Numbers in the paper draft are model-imagined since no real data was queried — the run validates pipeline plumbing, not findings. See [`examples/e2er_v3_haiku_smoke/`](examples/e2er_v3_haiku_smoke/) for the full artifact set and a candid quality assessment.
+
 ### NFT Market Seasonality
 
 Tests whether the Halloween effect (systematically higher winter returns) extends to NFT markets. The pipeline acquired 35.8 million Ethereum-based NFT trades across eight platforms, specified econometric models, and ran robustness checks including bootstrap inference, permutation tests, and jackknife analysis.

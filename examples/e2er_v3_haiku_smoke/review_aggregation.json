@@ -1,0 +1,6 @@
+{
+  "verdict": "MAJOR_REVISION",
+  "weighted_avg": 5.7,
+  "rule_triggered": "Rule 3: weighted average",
+  "rationale": "Weighted average score: 5.70/10. Verdict: MAJOR_REVISION. Breakdown: mechanism_reviewer=5.5, literature_reviewer=5.9"
+}

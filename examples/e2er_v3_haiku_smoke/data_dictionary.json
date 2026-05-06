@@ -1,0 +1,408 @@
+{
+  "pipeline_name": "Ethereum Block Height vs. Elapsed Time Analysis",
+  "research_question": "What is the empirical relationship between Ethereum block height and wall-clock elapsed time on Ethereum mainnet since the merge?",
+  "analysis_period": {
+    "start_date": "2022-09-15",
+    "start_block": 15537394,
+    "rationale": "Post-Merge (The Merge occurred on block 15537393, 2022-09-15 13:42:42 UTC). Before this, Ethereum used Proof-of-Work with variable block times."
+  },
+  "data_sources": {
+    "primary": {
+      "source_name": "Allium (recommended for production)",
+      "endpoint": "https://mcp.allium.so",
+      "authentication": "X-API-KEY",
+      "chains": ["ethereum-mainnet"],
+      "schema": "ethereum.core.blocks",
+      "rationale": "Allium provides decoded, cross-chain data with SQL interface. Ethereum mainnet blocks are fully indexed post-merge with high uptime.",
+      "rate_limits": "Plan-dependent; recommend caching daily aggregates to minimize API calls",
+      "cost": "Enterprise pricing; free tier may require tiered approach (sample first)"
+    },
+    "secondary": {
+      "source_name": "Flipside Crypto (alternative)",
+      "endpoint": "https://api.flipside.tools/queries",
+      "schema": "ethereum.core.blocks",
+      "rationale": "Excellent for Ethereum data; slightly more latency than Allium but comparable quality. Public SQL editor for exploration.",
+      "authentication": "x-api-key header"
+    },
+    "tertiary": {
+      "source_name": "Etherscan API (fallback for spot checks)",
+      "endpoint": "https://api.etherscan.io/api",
+      "rationale": "Block-level data available via ethBlockNumber and eth_getBlockByNumber. Limited for large-scale extraction due to rate limits and no direct SQL.",
+      "rate_limits": "5 calls/second (free tier)",
+      "use_case": "Validation of pipeline output; not suitable for primary extraction"
+    },
+    "archive_node": {
+      "source_name": "Full archive node (via Infura, Alchemy, or self-hosted)",
+      "endpoint": "Infura: https://mainnet.infura.io/v3/{PROJECT_ID} or local geth/erigon",
+      "method": "eth_getBlockByNumber (JSON-RPC)",
+      "rationale": "Direct access to immutable block data; lower latency but requires operational overhead. Useful for real-time monitoring or validation.",
+      "trade_off": "High infrastructure cost vs. no API rate limits"
+    }
+  },
+  "schema": {
+    "table_name": "ethereum_block_data",
+    "grain": "one row per block",
+    "fields": [
+      {
+        "field_name": "block_number",
+        "data_type": "INTEGER",
+        "description": "Block height on Ethereum mainnet. Deterministic, immutable identifier.",
+        "nullable": false,
+        "primary_key": true,
+        "source_field": "block_number or blockNumber (JSON-RPC)"
+      },
+      {
+        "field_name": "block_timestamp",
+        "data_type": "TIMESTAMP (UTC)",
+        "description": "Unix timestamp (seconds since 1970-01-01 00:00:00 UTC) of the block. Set by the proposer; subject to validator hardware clock.",
+        "nullable": false,
+        "notes": "Post-Merge blocks have ~12-second average spacing but are not perfectly regular. Timestamps are monotonically increasing per Ethereum protocol rules."
+      },
+      {
+        "field_name": "block_timestamp_unix",
+        "data_type": "BIGINT",
+        "description": "Unix timestamp in seconds (alternative representation for clarity).",
+        "nullable": false
+      },
+      {
+        "field_name": "block_datetime_utc",
+        "data_type": "VARCHAR/STRING",
+        "description": "ISO 8601 human-readable datetime (YYYY-MM-DD HH:MM:SS UTC). Derived from block_timestamp.",
+        "nullable": false,
+        "example": "2022-09-15 13:42:47"
+      },
+      {
+        "field_name": "elapsed_seconds_from_genesis",
+        "data_type": "BIGINT",
+        "description": "Seconds elapsed since Ethereum genesis block (block 0, timestamp 1438269973, 2015-07-30 03:26:13 UTC). Derived field: block_timestamp - 1438269973.",
+        "nullable": false,
+        "derivation": "block_timestamp - GENESIS_TIMESTAMP",
+        "genesis_timestamp": 1438269973,
+        "genesis_datetime": "2015-07-30 03:26:13 UTC"
+      },
+      {
+        "field_name": "elapsed_days_from_merge",
+        "data_type": "DECIMAL(10, 4)",
+        "description": "Days elapsed since The Merge (block 15537393). Derived: (block_timestamp - merge_timestamp) / 86400.",
+        "nullable": false,
+        "derivation": "(block_timestamp - 1663340827) / 86400",
+        "merge_timestamp": 1663340827,
+        "merge_datetime": "2022-09-15 13:42:07 UTC"
+      },
+      {
+        "field_name": "blocks_since_genesis",
+        "data_type": "BIGINT",
+        "description": "Block count since genesis (block 0). Derived: block_number.",
+        "nullable": false,
+        "notes": "Equivalent to block_number for post-genesis blocks. Useful for calculating average block time."
+      },
+      {
+        "field_name": "blocks_since_merge",
+        "data_type": "BIGINT",
+        "description": "Block count since The Merge. Derived: block_number - 15537393.",
+        "nullable": false
+      },
+      {
+        "field_name": "time_since_previous_block_seconds",
+        "data_type": "BIGINT",
+        "description": "Seconds between this block and the previous block. Derived: block_timestamp - LAG(block_timestamp) OVER (ORDER BY block_number).",
+        "nullable": true,
+        "notes": "Null for block 0 and block 15537394 (first block in sample). Post-Merge Ethereum targets 12 seconds; actual values range 0–20+ due to validator randomness and network conditions."
+      },
+      {
+        "field_name": "gas_used",
+        "data_type": "BIGINT",
+        "description": "Total gas consumed by all transactions in the block.",
+        "nullable": true,
+        "use_case": "Control variable for block complexity; heavier blocks may see minor timestamp adjustments"
+      },
+      {
+        "field_name": "gas_limit",
+        "data_type": "BIGINT",
+        "description": "Maximum gas allowed in the block. Adjusts dynamically based on network congestion.",
+        "nullable": true
+      },
+      {
+        "field_name": "transaction_count",
+        "data_type": "INTEGER",
+        "description": "Number of transactions included in the block.",
+        "nullable": true,
+        "use_case": "Descriptor of block activity; may correlate with minor timestamp drift"
+      },
+      {
+        "field_name": "miner_address",
+        "data_type": "VARCHAR(42)",
+        "description": "Address of the block proposer (validator). Anonymized address.",
+        "nullable": true,
+        "notes": "Post-Merge, this field represents the block proposer; not relevant for consensus but useful for validator clustering analysis."
+      },
+      {
+        "field_name": "base_fee_per_gas",
+        "data_type": "BIGINT",
+        "description": "Base fee in wei per unit gas (EIP-1559). Burned by the protocol.",
+        "nullable": true,
+        "introduced": "block 12965000 (EIP-1559, 2021-08-05)"
+      },
+      {
+        "field_name": "difficulty",
+        "data_type": "BIGINT",
+        "description": "Proof-of-Work difficulty. Post-Merge (block 15537394+), this field is set to 0 (PoS consensus).",
+        "nullable": true,
+        "notes": "Not useful for post-Merge analysis; retained for historical completeness"
+      },
+      {
+        "field_name": "parent_hash",
+        "data_type": "VARCHAR(66)",
+        "description": "Keccak-256 hash of the parent block header. Verifies chain continuity.",
+        "nullable": true,
+        "use_case": "Validation: confirm each block's parent is the prior block"
+      },
+      {
+        "field_name": "block_hash",
+        "data_type": "VARCHAR(66)",
+        "description": "Keccak-256 hash of the block header. Immutable identifier.",
+        "nullable": true,
+        "use_case": "Deduplication; cross-chain validation"
+      },
+      {
+        "field_name": "extraction_timestamp",
+        "data_type": "TIMESTAMP",
+        "description": "Metadata: when this record was extracted from the data source. Useful for version control and replication audits.",
+        "nullable": false
+      }
+    ]
+  },
+  "data_quality_checks": {
+    "block_completeness": {
+      "check_name": "Sequential block numbering",
+      "description": "Verify no blocks are skipped. For the period [start_block, end_block], expected_row_count = (end_block - start_block + 1).",
+      "sql_template": "SELECT COUNT(*) as actual_count, (MAX(block_number) - MIN(block_number) + 1) as expected_count FROM ethereum_block_data WHERE block_number >= 15537394;",
+      "failure_action": "Alert: Missing block(s). Investigate data source outage or API lag.",
+      "threshold": "actual_count == expected_count"
+    },
+    "timestamp_monotonicity": {
+      "check_name": "Timestamps are strictly increasing",
+      "description": "block_timestamp must increase with block_number. No duplicate or out-of-order timestamps.",
+      "sql_template": "SELECT COUNT(*) as violations FROM ethereum_block_data WHERE LAG(block_timestamp) OVER (ORDER BY block_number) >= block_timestamp;",
+      "failure_action": "Alert: Protocol violation or data corruption. Investigate data source.",
+      "threshold": "violations == 0",
+      "rationale": "Ethereum protocol enforces monotonic timestamps (EIP-1559). Violations indicate data integrity issues."
+    },
+    "timestamp_realism": {
+      "check_name": "Block timestamps are reasonable",
+      "description": "Timestamps should fall within [genesis_time, current_time] and not deviate by >1 hour from expected drift.",
+      "sql_template": "SELECT block_number, block_timestamp, ABS(block_timestamp - (1438269973 + (block_number * 12))) as drift_seconds FROM ethereum_block_data WHERE ABS(block_timestamp - (1438269973 + (block_number * 12))) > 3600;",
+      "failure_action": "Alert: Large timestamp anomalies. Possible data corruption or validator attack (timestomping).",
+      "threshold": "drift_seconds < 3600 for 99.9% of blocks",
+      "rationale": "Post-Merge target block time is 12 seconds. Drift >1 hour is unrealistic."
+    },
+    "block_time_distribution": {
+      "check_name": "Inter-block times are within expected range",
+      "description": "Calculate time_since_previous_block_seconds. Post-Merge mean ~12s, min 0s (uncle blocks), max ~20–30s (validator randomness).",
+      "sql_template": "SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY time_since_previous_block_seconds) as median_time, PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY time_since_previous_block_seconds) as p99_time FROM ethereum_block_data WHERE block_number > 15537394;",
+      "expected_values": {
+        "median": "~12 seconds",
+        "p99": "~20–25 seconds",
+        "max_observed": "60+ seconds (rare, due to validator queue dynamics)"
+      },
+      "failure_action": "Alert if p99 > 60s consistently. Investigate validator participation or data source lag.",
+      "threshold": "median_time between 10–14 seconds"
+    },
+    "derived_field_consistency": {
+      "check_name": "Derived fields are correctly calculated",
+      "description": "Verify elapsed_seconds_from_genesis and elapsed_days_from_merge match expectations.",
+      "sql_template": "SELECT COUNT(*) as consistency_failures FROM ethereum_block_data WHERE ABS((block_timestamp - 1438269973) - elapsed_seconds_from_genesis) > 0 OR ABS(((block_timestamp - 1663340827) / 86400) - elapsed_days_from_merge) > 0.0001;",
+      "failure_action": "Alert: Calculation errors in ETL pipeline. Review derivation logic.",
+      "threshold": "consistency_failures == 0"
+    },
+    "null_value_analysis": {
+      "check_name": "Identify unexpected nulls",
+      "description": "Check for nulls in non-nullable fields and unexpected nulls in optional fields.",
+      "sql_template": "SELECT COUNT(*) as null_block_numbers FROM ethereum_block_data WHERE block_number IS NULL; SELECT COUNT(*) as null_timestamps FROM ethereum_block_data WHERE block_timestamp IS NULL;",
+      "failure_action": "Alert: Null values in mandatory fields. Data source outage or schema mismatch.",
+      "threshold": "null_block_numbers == 0 AND null_timestamps == 0"
+    },
+    "duplicate_detection": {
+      "check_name": "No duplicate blocks",
+      "description": "Verify block_number is unique. Each block appears exactly once.",
+      "sql_template": "SELECT block_number, COUNT(*) as cnt FROM ethereum_block_data GROUP BY block_number HAVING cnt > 1;",
+      "failure_action": "Alert: Duplicate rows. Rerun extraction with deduplication.",
+      "threshold": "No rows returned"
+    },
+    "schema_validation": {
+      "check_name": "Data types and ranges are correct",
+      "description": "Confirm block_number is non-negative integer, block_timestamp is in valid Unix range.",
+      "sql_template": "SELECT COUNT(*) as invalid_blocks FROM ethereum_block_data WHERE block_number < 0 OR block_timestamp < 1438269973 OR block_timestamp > UNIX_TIMESTAMP();",
+      "failure_action": "Alert: Invalid data types or out-of-range values. Data corruption or parsing error.",
+      "threshold": "invalid_blocks == 0"
+    },
+    "lag_detection": {
+      "check_name": "Data freshness / extraction lag",
+      "description": "Confirm latest block is within 100 blocks of current network tip. Current tip can be fetched via eth_blockNumber RPC call.",
+      "sql_template": "SELECT MAX(block_number) as latest_extracted_block FROM ethereum_block_data; COMPARE TO eth_blockNumber RPC endpoint.",
+      "failure_action": "Alert: Data is stale. Data source may be behind network tip.",
+      "threshold": "MAX(block_number) >= current_tip - 100"
+    }
+  },
+  "sample_size_and_time_period": {
+    "observation_period": {
+      "start_date": "2022-09-15",
+      "end_date": "2024-12-31",
+      "duration_days": 843,
+      "rationale": "Post-Merge period captures PoS consensus behavior. 2+ years provides sufficient temporal variation for time-series analysis and seasonal patterns."
+    },
+    "block_range": {
+      "first_block": 15537394,
+      "last_block": 19124999,
+      "rationale": "Block 15537394 is the first PoS block (post-Merge). Block 19124999 estimated as of 2024-12-31 (rough estimate: ~100 blocks/sec * 86400 sec/day * 843 days ≈ 7.3M blocks; actual ~8.4M blocks in period)",
+      "calculation": "Ethereum targets 1 block per 12 seconds = 7,200 blocks per day. Over 843 days: 843 * 7200 = 6,069,600 blocks (lower bound; actual is ~7.3–8.4M due to slot inclusions and network variations)"
+    },
+    "expected_sample_size": {
+      "row_count": "~7,300,000 rows (estimated)",
+      "storage_size": "~1.2–1.5 GB (uncompressed; ~200–250 bytes per row)",
+      "compressed_size": "~300–400 MB (parquet or compressed JSON)"
+    },
+    "temporal_resolution": {
+      "granularity": "Per-block (not aggregated)",
+      "rationale": "Block-level granularity enables precise time-series analysis, detection of network events (congestion, reorganizations), and inter-block time distribution analysis.",
+      "alternative_aggregations": "Daily/weekly available on demand for lighter-weight analysis"
+    },
+    "expected_characteristics": {
+      "blocks_per_day": "~7,200 (12-second average block time)",
+      "timestamps_per_day": "86,400 seconds; thus ~12 blocks per unique second on average",
+      "temporal_coverage": "843 calendar days = 72,792 hours = 4,367,520 seconds",
+      "implied_block_time_mean": "4367520 seconds / 6069600 blocks ≈ 0.72 seconds per block (over the full period, accounting for network variations)"
+    }
+  },
+  "extraction_strategy": {
+    "approach": "Incremental extract with full daily snapshot validation",
+    "phase_1_feasibility": {
+      "description": "Extract first 1,000 blocks post-Merge to validate schema and data quality.",
+      "sql": "SELECT * FROM ethereum.core.blocks WHERE block_number BETWEEN 15537394 AND 15538393 ORDER BY block_number;",
+      "expected_runtime": "<5 seconds",
+      "purpose": "Schema validation, timestamp verification, confirm data source accessibility"
+    },
+    "phase_2_sample": {
+      "description": "Extract representative sample: one week of data (7,200 blocks).",
+      "sql": "SELECT * FROM ethereum.core.blocks WHERE block_timestamp BETWEEN 1663340827 AND 1663946027 ORDER BY block_number;",
+      "expected_runtime": "<30 seconds",
+      "purpose": "Estimate extraction rate, validate data quality pipeline, estimate final storage size"
+    },
+    "phase_3_full_extract": {
+      "description": "Full extraction for analysis period (2022-09-15 to 2024-12-31).",
+      "sql": "SELECT block_number, block_timestamp, gas_used, gas_limit, transaction_count, base_fee_per_gas, parent_hash, block_hash, CURRENT_TIMESTAMP as extraction_timestamp FROM ethereum.core.blocks WHERE block_timestamp BETWEEN 1663340827 AND 1735689600 ORDER BY block_number;",
+      "batch_processing": "Recommend batching by month (604,800 seconds ≈ 7 days * 86,400) to manage memory and API quotas",
+      "expected_runtime": "~5–15 minutes (depending on API plan and concurrency)",
+      "parallelization": "Safe to parallelize monthly batches; use unique output files per month, then UNION ALL"
+    },
+    "derived_fields_computation": {
+      "approach": "Post-extraction in Python/SQL",
+      "steps": [
+        {
+          "step": 1,
+          "operation": "Calculate elapsed_seconds_from_genesis",
+          "sql": "elapsed_seconds_from_genesis = block_timestamp - 1438269973"
+        },
+        {
+          "step": 2,
+          "operation": "Calculate elapsed_days_from_merge",
+          "sql": "elapsed_days_from_merge = (block_timestamp - 1663340827) / 86400"
+        },
+        {
+          "step": 3,
+          "operation": "Calculate blocks_since_genesis and blocks_since_merge",
+          "sql": "blocks_since_genesis = block_number; blocks_since_merge = block_number - 15537393"
+        },
+        {
+          "step": 4,
+          "operation": "Calculate time_since_previous_block_seconds (requires window function)",
+          "sql": "time_since_previous_block_seconds = block_timestamp - LAG(block_timestamp) OVER (ORDER BY block_number)"
+        }
+      ]
+    },
+    "output_format": {
+      "primary_format": "Parquet (columnar, compressed, schema-preserving)",
+      "secondary_format": "CSV with GZIP compression (for portability)",
+      "partitioning": "By month (block_timestamp YEAR-MONTH) for efficient querying",
+      "compression": "Snappy or gzip (Parquet native or CSV)"
+    }
+  },
+  "data_governance": {
+    "data_availability": "Public. Ethereum block data is fully transparent and immutable.",
+    "licensing": "Public domain (blockchain data is not copyrightable).",
+    "retention_policy": "Indefinite. Once extracted, data should be retained for reproducibility.",
+    "version_control": "Include extraction_timestamp and data_source version in metadata.",
+    "reproducibility": "All query SQL and extraction parameters documented for audit trail."
+  },
+  "analysis_preparation": {
+    "key_variables_for_regression": [
+      {
+        "variable": "block_number",
+        "role": "Independent variable (X)",
+        "derivation": "Observed",
+        "transformation": "Consider log(block_number) for elasticity interpretation"
+      },
+      {
+        "variable": "elapsed_seconds_from_genesis",
+        "role": "Dependent variable (Y)",
+        "derivation": "Derived from block_timestamp",
+        "interpretation": "Wall-clock elapsed time; measures systematic relationship",
+        "units": "Seconds"
+      },
+      {
+        "variable": "time_since_previous_block_seconds",
+        "role": "Control / diagnostic",
+        "derivation": "Calculated as lag of block_timestamp",
+        "interpretation": "Residual inter-block time; useful for examining deviations from model",
+        "units": "Seconds"
+      },
+      {
+        "variable": "elapsed_days_from_merge",
+        "role": "Time index for time-series analysis",
+        "derivation": "Derived from block_timestamp",
+        "units": "Fractional days",
+        "use_case": "Trend estimation, seasonal decomposition"
+      },
+      {
+        "variable": "gas_used",
+        "role": "Control variable (optional)",
+        "derivation": "Observed",
+        "interpretation": "Block complexity; may correlate with minor timestamp drift",
+        "units": "Gas units"
+      }
+    ],
+    "regression_model_sketch": {
+      "specification": "OLS with time-series structure",
+      "equation": "elapsed_seconds_from_genesis_i = β₀ + β₁ * block_number_i + ε_i",
+      "rationale": "Block height and wall-clock time should be nearly perfectly collinear (R² ≈ 0.9999). β₁ estimates the average seconds per block over the full period.",
+      "expected_coefficient": "β₁ ≈ 12 seconds/block (post-Merge target)",
+      "identification": "No endogeneity (block_number is deterministic, not subject to simultaneity bias)"
+    },
+    "robustness_checks": [
+      {
+        "check": "Subsample by network congestion periods",
+        "rationale": "Timestamp drift may vary with gas_used or transaction_count"
+      },
+      {
+        "check": "Quantile regression (Q50, Q95, Q99)",
+        "rationale": "Distribution of inter-block times may be non-normal; quantiles capture tail behavior"
+      },
+      {
+        "check": "Jackknife re-estimation by month",
+        "rationale": "Detect if any single month drives result; identify structural breaks"
+      },
+      {
+        "check": "Newey-West HAC standard errors",
+        "rationale": "Account for serial correlation in inter-block times"
+      }
+    ]
+  },
+  "metadata": {
+    "created_date": "2024-12-31",
+    "created_by": "Data Architect (Blockchain specialization)",
+    "schema_version": "1.0",
+    "last_updated": "2024-12-31",
+    "research_id": "1f256351-d253-47cf-9fcf-a745fc7fe08f",
+    "stage": "Pipeline Design Complete"
+  }
+}

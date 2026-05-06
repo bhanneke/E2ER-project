@@ -1,0 +1,8 @@
+{
+  "paper_id": "1f256351-d253-47cf-9fcf-a745fc7fe08f",
+  "title": "Block height vs. elapsed time on Ethereum",
+  "research_question": "What is the empirical relationship between Ethereum block height and wall-clock elapsed time on Ethereum mainnet since the merge?",
+  "datasets": [],
+  "mode": "single_pass",
+  "current_stage": "idea"
+}
