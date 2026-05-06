@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}{{ paper.title }} — E2ER{% endblock %}
+
+{% block content %}
+<header class="paper-header">
+  <h1>{{ paper.title }}</h1>
+  <p class="muted">{{ paper.research_question }}</p>
+  <p class="meta">
+    Mode: <code>{{ paper.mode }}</code>
+    {% if paper.github_repo %}· <a href="https://github.com/{{ paper.github_repo }}" target="_blank">{{ paper.github_repo }}</a>{% endif %}
+  </p>
+</header>
+
+<!-- Live-updating section: status, cost meter, recent events.
+     Fetched on page load and polled every 3 seconds via HTMX. -->
+<section id="live"
+         hx-get="/htmx/papers/{{ paper.id }}/live"
+         hx-trigger="load, every 3s"
+         hx-swap="innerHTML">
+  <p class="muted">Loading status…</p>
+</section>
+
+<section class="artifacts">
+  <h2>Artifacts</h2>
+  {% if not artifacts %}
+    <p class="muted">No artifacts yet.</p>
+  {% else %}
+  <ul class="artifact-list">
+    {% for f in artifacts %}
+      <li><a href="/api/papers/{{ paper.id }}/artifacts/{{ f }}" target="_blank">{{ f }}</a></li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  <p>
+    <a class="btn" href="/api/papers/{{ paper.id }}/audit-bundle">Download audit bundle (.tar.gz)</a>
+  </p>
+</section>
+{% endblock %}

@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Papers — E2ER{% endblock %}
+
+{% block content %}
+<h1>Papers</h1>
+
+{% if not papers %}
+  <p class="empty">No papers yet. <a href="/papers/new">Start one →</a></p>
+{% else %}
+<table class="papers">
+  <thead>
+    <tr>
+      <th>Title</th>
+      <th>Status</th>
+      <th>Cost</th>
+      <th>Updated</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for p in papers %}
+    <tr>
+      <td><a href="/papers/{{ p.id }}">{{ p.title }}</a></td>
+      <td><span class="status status-{{ p.status }}">{{ p.status }}</span></td>
+      <td>${{ "%.2f"|format(p.cost or 0) }} <span class="muted">/ ${{ "%.0f"|format(p.max_cost_usd or 25) }}</span></td>
+      <td class="muted">{{ p.updated_at }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}

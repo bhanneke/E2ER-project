@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}New paper — E2ER{% endblock %}
+
+{% block content %}
+<h1>New paper</h1>
+
+<form method="post" action="/papers" class="paper-form">
+  <label>
+    <span>Title</span>
+    <input type="text" name="title" required maxlength="200"
+           placeholder="e.g. Concentrated liquidity and price discovery on Uniswap v3" />
+  </label>
+
+  <label>
+    <span>Research question</span>
+    <textarea name="research_question" rows="4" required
+              placeholder="What is the empirical question this paper answers?"></textarea>
+  </label>
+
+  <div class="row">
+    <label>
+      <span>Mode</span>
+      <select name="mode">
+        <option value="iterative" selected>iterative — full loop with self-attack & polish</option>
+        <option value="single_pass">single_pass — fast draft</option>
+      </select>
+    </label>
+
+    <label>
+      <span>Cost cap (USD)</span>
+      <input type="number" name="max_cost_usd" min="1" max="500" step="1"
+             value="{{ default_cap }}" />
+    </label>
+  </div>
+
+  <button type="submit" class="btn-primary">Start pipeline</button>
+</form>
+{% endblock %}

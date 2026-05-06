@@ -854,3 +854,154 @@ async def test_audit_bundle_contains_expected_files(tmp_path, monkeypatch):
     assert "usage.json" in names
     assert "replication/estimation.py" in names
     assert "audit_log.csv" in names
+
+
+# ---------------------------------------------------------------------------
+# Bundle 2: Dashboard (Jinja2 + HTMX)
+# ---------------------------------------------------------------------------
+
+def _api_client():
+    """TestClient for the FastAPI app, used by Bundle-2 dashboard tests."""
+    pytest.importorskip("fastapi")
+    pytest.importorskip("jinja2")
+    pytest.importorskip("multipart")  # python-multipart
+    from fastapi.testclient import TestClient
+    from src.api.app import app
+    return TestClient(app)
+
+
+def test_dashboard_index_renders(monkeypatch):
+    """GET / returns HTML listing papers from the DB."""
+    rows = [
+        {"id": "abc", "title": "Test paper", "status": "completed",
+         "max_cost_usd": 25.0, "updated_at": "2026-05-06T12:00:00", "cost": 1.23},
+    ]
+
+    async def fake_fetch_all(sql, params=None):
+        return rows
+
+    with patch("src.db.client.fetch_all", side_effect=fake_fetch_all):
+        client = _api_client()
+        resp = client.get("/")
+
+    assert resp.status_code == 200
+    body = resp.text
+    assert "Test paper" in body
+    assert "completed" in body
+    assert "$1.23" in body
+    # htmx + style sheet referenced
+    assert "/static/htmx.min.js" in body
+    assert "/static/style.css" in body
+
+
+def test_dashboard_new_form_renders(monkeypatch):
+    """GET /papers/new shows the creation form pre-filled with default cap."""
+    monkeypatch.setattr(
+        "src.api.app.get_settings",
+        lambda: type("S", (), {"default_max_cost_usd": 25.0})(),
+    )
+    client = _api_client()
+    resp = client.get("/papers/new")
+    assert resp.status_code == 200
+    assert 'name="title"' in resp.text
+    assert 'name="research_question"' in resp.text
+    assert 'value="25"' in resp.text or 'value="25.0"' in resp.text
+
+
+def test_paper_detail_renders(tmp_path, monkeypatch):
+    """GET /papers/{id} shows status, RQ, and live-section + artifacts."""
+    paper_id = str(uuid.uuid4())
+    workspace = tmp_path / paper_id
+    workspace.mkdir()
+    (workspace / "paper_plan.md").write_text("# plan")
+
+    monkeypatch.setattr(
+        "src.api.app.get_settings",
+        lambda: type("S", (), {"workspace_root": str(tmp_path)})(),
+    )
+
+    paper_row = {
+        "id": paper_id, "title": "X", "research_question": "rq",
+        "status": "in_progress", "mode": "iterative", "max_cost_usd": 25.0,
+        "github_repo": None, "last_error": None,
+    }
+
+    async def fake_fetch_one(sql, params=None):
+        return paper_row
+
+    with patch("src.db.client.fetch_one", side_effect=fake_fetch_one):
+        client = _api_client()
+        resp = client.get(f"/papers/{paper_id}")
+
+    assert resp.status_code == 200
+    assert "X" in resp.text
+    assert "rq" in resp.text
+    assert "paper_plan.md" in resp.text
+    # The live section must include the HTMX poll attribute.
+    assert f"/htmx/papers/{paper_id}/live" in resp.text
+
+
+def test_live_fragment_renders_status_and_events(monkeypatch):
+    """HTMX fragment includes status badge, cost meter, and recent events."""
+    paper_id = str(uuid.uuid4())
+    paper_row = {
+        "id": paper_id, "status": "in_progress",
+        "max_cost_usd": 50.0, "last_error": None,
+    }
+    events = [
+        {"event_type": "phase_start", "stage": "initial",
+         "specialist": None, "created_at": "2026-05-06T12:00:01"},
+        {"event_type": "specialist_end", "stage": None,
+         "specialist": "idea_developer", "created_at": "2026-05-06T12:00:30"},
+    ]
+
+    async def fake_fetch_one(sql, params=None):
+        if "FROM papers" in sql:
+            return paper_row
+        if "SUM(cost_usd)" in sql:
+            return {"spent": 12.5}
+        return None
+
+    async def fake_fetch_all(sql, params=None):
+        return events
+
+    with (
+        patch("src.db.client.fetch_one", side_effect=fake_fetch_one),
+        patch("src.db.client.fetch_all", side_effect=fake_fetch_all),
+    ):
+        client = _api_client()
+        resp = client.get(f"/htmx/papers/{paper_id}/live")
+
+    assert resp.status_code == 200
+    assert "in_progress" in resp.text
+    assert "$12.50" in resp.text
+    assert "phase_start" in resp.text
+    assert "idea_developer" in resp.text
+
+
+def test_artifact_streaming_rejects_traversal(tmp_path, monkeypatch):
+    """Path traversal attempts (../../) must return 400."""
+    paper_id = str(uuid.uuid4())
+    workspace = tmp_path / paper_id
+    workspace.mkdir()
+    (workspace / "ok.md").write_text("hello")
+    # Sibling file outside the workspace that traversal would try to reach.
+    (tmp_path / "secret.txt").write_text("nope")
+
+    monkeypatch.setattr(
+        "src.api.app.get_settings",
+        lambda: type("S", (), {"workspace_root": str(tmp_path)})(),
+    )
+
+    client = _api_client()
+
+    # Happy path: a real file in the workspace works.
+    ok = client.get(f"/api/papers/{paper_id}/artifacts/ok.md")
+    assert ok.status_code == 200
+    assert ok.text == "hello"
+
+    # Traversal: ../secret.txt resolves outside the workspace and must be rejected.
+    bad = client.get(f"/api/papers/{paper_id}/artifacts/../secret.txt")
+    # FastAPI may normalise the URL; either way the file must not be returned.
+    assert bad.status_code in {400, 404}
+    assert "nope" not in bad.text

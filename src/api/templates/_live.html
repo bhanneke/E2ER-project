@@ -1,0 +1,38 @@
+<div class="status-row">
+  <span class="status status-{{ paper.status }}">{{ paper.status }}</span>
+  <div class="cost-meter">
+    <div class="cost-label">
+      ${{ "%.2f"|format(cost_spent) }}
+      <span class="muted">/ ${{ "%.0f"|format(paper.max_cost_usd or 25) }}</span>
+    </div>
+    <div class="cost-bar">
+      <div class="cost-fill" style="width: {{ cost_pct }}%"></div>
+    </div>
+  </div>
+  {% if can_cancel %}
+    <button class="btn-danger"
+            hx-post="/api/papers/{{ paper.id }}/cancel"
+            hx-confirm="Cancel this run?"
+            hx-swap="none">Cancel</button>
+  {% endif %}
+</div>
+
+{% if paper.last_error %}
+  <p class="error">{{ paper.last_error }}</p>
+{% endif %}
+
+<h2>Events</h2>
+{% if not events %}
+  <p class="muted">Waiting for first event…</p>
+{% else %}
+<ol class="event-log">
+  {% for e in events %}
+    <li class="event event-{{ e.event_type }}">
+      <time>{{ e.created_at_short }}</time>
+      <span class="event-type">{{ e.event_type }}</span>
+      {% if e.stage %}<span class="event-stage">{{ e.stage }}</span>{% endif %}
+      {% if e.specialist %}<span class="event-specialist">{{ e.specialist }}</span>{% endif %}
+    </li>
+  {% endfor %}
+</ol>
+{% endif %}

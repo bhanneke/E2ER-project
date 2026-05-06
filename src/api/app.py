@@ -4,17 +4,24 @@ from __future__ import annotations
 import asyncio
 import io
 import json
+import mimetypes
 import tarfile
 from pathlib import Path
 from typing import Any, List, Optional
 
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, Form, HTTPException, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
 from ..config import get_settings
 from ..logging_config import get_logger
+
+_API_DIR = Path(__file__).resolve().parent
+_STATIC_DIR = _API_DIR / "static"
+_TEMPLATES_DIR = _API_DIR / "templates"
 
 logger = get_logger(__name__)
 app = FastAPI(title="E2ER v3", version="3.0.0", description="End-to-End Researcher pipeline API")
@@ -25,6 +32,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Server-rendered dashboard. Static files (htmx, css) and Jinja2 templates.
+app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
+templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
 
 # Registry of running pipeline tasks, keyed by paper_id.
 # Used by POST /api/papers/{id}/cancel to cancel an in-flight run.
@@ -319,6 +330,175 @@ async def get_usage_summary() -> dict[str, Any]:
 @app.get("/health")
 async def health():
     return {"status": "ok", "service": "e2er-v3"}
+
+
+# --- Dashboard (Jinja2 + HTMX) ---
+
+_TERMINAL_STATUSES = {"completed", "failed", "cancelled"}
+
+
+@app.get("/", response_class=HTMLResponse)
+async def dashboard_index(request: Request) -> Any:
+    """Papers list — landing page."""
+    from ..db.client import fetch_all
+    try:
+        rows = await fetch_all(
+            """
+            SELECT p.id, p.title, p.status, p.max_cost_usd, p.updated_at,
+                   COALESCE((SELECT SUM(cost_usd) FROM llm_usage WHERE paper_id = p.id), 0) AS cost
+            FROM papers p
+            ORDER BY p.updated_at DESC
+            LIMIT 100
+            """
+        )
+    except Exception as e:
+        logger.warning("dashboard_index: DB unavailable (%s) — rendering empty list", e)
+        rows = []
+    # Stringify timestamps for templating.
+    for r in rows or []:
+        if r.get("updated_at") is not None:
+            r["updated_at"] = str(r["updated_at"])[:19]
+    return templates.TemplateResponse(
+        "index.html", {"request": request, "papers": rows or []},
+    )
+
+
+@app.get("/papers/new", response_class=HTMLResponse)
+async def new_paper_form(request: Request) -> Any:
+    return templates.TemplateResponse(
+        "new.html",
+        {"request": request, "default_cap": get_settings().default_max_cost_usd},
+    )
+
+
+@app.post("/papers")
+async def submit_new_paper(
+    title: str = Form(...),
+    research_question: str = Form(...),
+    mode: str = Form("iterative"),
+    max_cost_usd: float = Form(None),
+) -> RedirectResponse:
+    """Form-encoded handler that mirrors POST /api/papers. Redirects to detail page."""
+    req = CreatePaperRequest(
+        title=title,
+        research_question=research_question,
+        mode=mode,
+        max_cost_usd=max_cost_usd,
+    )
+    bg = BackgroundTasks()
+    resp = await create_paper(req, bg)
+    # FastAPI normally runs background_tasks after the response; here we manually
+    # await any tasks the create_paper handler queued (github repo creation).
+    await bg()
+    return RedirectResponse(url=f"/papers/{resp.paper_id}", status_code=303)
+
+
+@app.get("/papers/{paper_id}", response_class=HTMLResponse)
+async def paper_detail(paper_id: str, request: Request) -> Any:
+    """Detail page for a single paper."""
+    from ..db.client import fetch_one
+    paper = await fetch_one("SELECT * FROM papers WHERE id = %(id)s", {"id": paper_id})
+    if not paper:
+        raise HTTPException(status_code=404, detail="Paper not found")
+
+    # Best-effort artifact list (workspace may not exist if DB-only ghost).
+    settings = get_settings()
+    workspace = Path(settings.workspace_root) / paper_id
+    if workspace.exists():
+        artifacts = sorted(
+            str(f.relative_to(workspace))
+            for f in workspace.rglob("*")
+            if f.is_file() and not f.name.startswith(".")
+        )
+    else:
+        artifacts = []
+
+    return templates.TemplateResponse(
+        "paper.html",
+        {"request": request, "paper": paper, "artifacts": artifacts},
+    )
+
+
+@app.get("/htmx/papers/{paper_id}/live", response_class=HTMLResponse)
+async def paper_live_fragment(paper_id: str, request: Request) -> Any:
+    """HTML fragment for the live-updating section of paper.html.
+
+    HTMX polls this every 3s. Returns status badge, cost meter, recent events,
+    and a Cancel button when the paper is still in flight.
+    """
+    from ..db.client import fetch_one, fetch_all
+    paper = await fetch_one("SELECT * FROM papers WHERE id = %(id)s", {"id": paper_id})
+    if not paper:
+        raise HTTPException(status_code=404, detail="Paper not found")
+
+    try:
+        cost_row = await fetch_one(
+            "SELECT COALESCE(SUM(cost_usd), 0)::float AS spent FROM llm_usage WHERE paper_id = %(id)s",
+            {"id": paper_id},
+        )
+        cost_spent = float((cost_row or {}).get("spent", 0.0))
+    except Exception:
+        cost_spent = 0.0
+    cap = float(paper.get("max_cost_usd") or 25.0)
+    cost_pct = min(100.0, (cost_spent / cap * 100.0) if cap > 0 else 0.0)
+
+    try:
+        events = await fetch_all(
+            """
+            SELECT event_type, stage, specialist, created_at
+            FROM pipeline_events
+            WHERE paper_id = %(id)s
+            ORDER BY created_at DESC
+            LIMIT 50
+            """,
+            {"id": paper_id},
+        )
+    except Exception:
+        events = []
+    for e in events or []:
+        if e.get("created_at") is not None:
+            e["created_at_short"] = str(e["created_at"])[11:19]
+
+    return templates.TemplateResponse(
+        "_live.html",
+        {
+            "request": request,
+            "paper": paper,
+            "cost_spent": cost_spent,
+            "cost_pct": cost_pct,
+            "events": events or [],
+            "can_cancel": (paper.get("status") not in _TERMINAL_STATUSES) and (paper_id in _RUNNING),
+        },
+    )
+
+
+@app.get("/api/papers/{paper_id}/events")
+async def list_events(paper_id: str, since: Optional[str] = None) -> list[dict[str, Any]]:
+    """JSON event log. Optional `since=<iso8601>` filter for incremental polling."""
+    from ..db.events import fetch_events
+    return await fetch_events(paper_id, since=since)
+
+
+@app.get("/api/papers/{paper_id}/artifacts/{path:path}")
+async def stream_artifact(paper_id: str, path: str) -> FileResponse:
+    """Serve a single artifact file from the paper workspace, mimetype-aware."""
+    settings = get_settings()
+    workspace = Path(settings.workspace_root) / paper_id
+    if not workspace.exists():
+        raise HTTPException(status_code=404, detail="Workspace not found")
+
+    # Resolve and reject any path that escapes the workspace.
+    target = (workspace / path).resolve()
+    try:
+        target.relative_to(workspace.resolve())
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid artifact path")
+    if not target.is_file():
+        raise HTTPException(status_code=404, detail="Artifact not found")
+
+    mtype, _ = mimetypes.guess_type(str(target))
+    return FileResponse(str(target), media_type=mtype or "application/octet-stream",
+                        filename=target.name)
 
 
 # --- Background tasks ---
