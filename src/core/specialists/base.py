@@ -15,7 +15,7 @@ from ..specialists.registry import SPECIALIST_SKILLS
 
 logger = get_logger(__name__)
 
-_MAX_TURNS = 15
+_MAX_TURNS = 25  # Sonnet tool-rich specialists need more headroom; 15 was too tight
 
 
 async def run_specialist(

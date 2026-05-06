@@ -55,7 +55,11 @@ Your entire response MUST be a single JSON object — nothing else.
 ```
 
 ## Example for the initial design phase
-{"action":"dispatch_parallel","work_orders":[{"specialist":"idea_developer","focus":"Develop the research question into a structured paper plan with propositions and identification strategy.","parallel_group":0},{"specialist":"literature_scanner","focus":"Survey prior work and produce a literature review.","parallel_group":0},{"specialist":"identification_strategist","focus":"Propose the causal identification approach.","parallel_group":0},{"specialist":"econometrics_specialist","focus":"Specify the econometric model.","parallel_group":1},{"specialist":"paper_drafter","focus":"Draft the paper body.","parallel_group":2},{"specialist":"abstract_writer","focus":"Write the abstract.","parallel_group":2}],"rationale":"Initial design and writing pass."}
+{"action":"dispatch_parallel","work_orders":[{"specialist":"idea_developer","focus":"Develop the research question into a structured paper plan with propositions and identification strategy.","parallel_group":0},{"specialist":"literature_scanner","focus":"Survey prior work and produce a literature review.","parallel_group":0},{"specialist":"identification_strategist","focus":"Propose the causal identification approach.","parallel_group":0},{"specialist":"data_architect","focus":"Define the minimal data footprint required to answer the RQ — write data_dictionary.json with the exact tables, columns, granularity, and time window.","parallel_group":1},{"specialist":"data_analyst","focus":"Acquire the data via Allium queries (mandatory when data tools are available — do not synthesize numbers), clean it, and write data_summary.md with the actual returned rows.","parallel_group":2},{"specialist":"econometrics_specialist","focus":"Specify the econometric model.","parallel_group":2},{"specialist":"paper_drafter","focus":"Draft the paper body.","parallel_group":3},{"specialist":"abstract_writer","focus":"Write the abstract.","parallel_group":3}],"rationale":"Initial design + data acquisition + writing pass."}
+
+Note: ALWAYS include `data_analyst` after `data_architect` — this is the
+specialist that actually queries the data. Skipping it leaves the paper
+without empirical content.
 
 Output ONLY the JSON object. No commentary.
 """
