@@ -90,6 +90,22 @@ async def get_approval_status(query_id: str) -> str:
     return row["status"] if row else "pending"
 
 
+async def get_approval_status_with_note(query_id: str) -> tuple[str, str]:
+    """Returns (status, note). The note carries the researcher's reason for
+    rejection (or approval comment). Used by check_approval so the model can
+    actually learn from a rejection rather than guessing what's wrong."""
+    from ...db.client import fetch_one
+
+    row = await fetch_one(
+        "SELECT status, COALESCE(note, '') AS note FROM data_approval_requests "
+        "WHERE query_record_id = %(qid)s ORDER BY created_at DESC LIMIT 1",
+        {"qid": query_id},
+    )
+    if not row:
+        return ("pending", "")
+    return (row["status"], row.get("note") or "")
+
+
 async def export_audit_log(paper_id: str) -> list[dict[str, Any]]:
     """Export full query audit for the replication package."""
     from ...db.client import fetch_all

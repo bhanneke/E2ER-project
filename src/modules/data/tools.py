@@ -107,14 +107,27 @@ class AlliumToolHandler(ToolHandler):
         return json.dumps([t.__dict__ for t in tables], indent=2, default=str)
 
     async def _check_approval(self, query_id: str) -> str:
-        from .audit import get_approval_status
+        from .audit import get_approval_status_with_note
 
-        status = await get_approval_status(query_id)
+        status, note = await get_approval_status_with_note(query_id)
         if status == "approved":
-            return f"Query {query_id} has been approved. You may now use the results."
+            tail = f" Note from researcher: {note}" if note else ""
+            return f"Query {query_id} has been APPROVED. You may now run it via query_allium.{tail}"
         elif status == "rejected":
-            return f"Query {query_id} was rejected by the researcher. Review the rejection note in the dashboard and revise."
-        return f"Query {query_id} is pending approval. The researcher has been notified. Check back later."
+            note_block = (
+                f"\n\nResearcher's rejection reason:\n  {note}\n\n"
+                "Read the reason carefully and submit a NEW production query that addresses it. "
+                "Do NOT keep polling this rejected query — submit a corrected one with query_allium "
+                "(query_type='production')."
+            ) if note else (
+                "\n\nThe researcher did not leave a note. Submit a fresh production query that "
+                "more closely matches the data_dictionary specification."
+            )
+            return f"Query {query_id} was REJECTED by the researcher.{note_block}"
+        return (
+            f"Query {query_id} is pending approval. Wait — do NOT submit duplicate queries. "
+            "Call check_approval again on this same query_id after a short interval."
+        )
 
     async def _query_allium(self, tool_input: dict[str, Any]) -> str:
         from .allium import AlliumProvider
