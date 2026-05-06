@@ -120,69 +120,64 @@ The `literature_scanner` specialist will synthesise the provided references and 
 
 ## Quick start
 
-### 1. Install
-
 ```bash
 git clone https://github.com/bhanneke/E2ER-project.git
 cd E2ER-project
-pip install -e ".[pgvector]"
+./scripts/quickstart.sh        # prompts for ANTHROPIC_API_KEY, builds + starts everything
 ```
 
-### 2. Configure
+The script copies `.env.example` to `.env`, prompts once for your Anthropic API key, runs `docker compose up --build`, and opens the dashboard at <http://localhost:8280/>. Migrations run automatically on first start. Total time-to-first-paper: typically under 5 minutes for the build step plus your run time.
+
+### Dashboard
+
+Once running, the dashboard at `http://localhost:8280/` lets you:
+
+- **Start a paper** — title, research question, mode (single_pass / iterative), per-paper cost cap.
+- **Watch progress live** — status badge, cost meter (spent / cap), event log polled every 3 seconds.
+- **Cancel** — one click during any phase; the runner saves state and marks the paper `cancelled`.
+- **Download artifacts** — every workspace file and a one-click **audit bundle** (`.tar.gz` containing `replication/`, `audit_log.csv`, `data_queries.sql`, `manifest.json`, `contributions.json`, `events.json`, `usage.json`).
+
+### Cost safety
+
+Every paper has a hard cost cap (default $25; configurable per paper at creation time, or via `DEFAULT_MAX_COST_USD` in `.env`). The pipeline checks cumulative cost at every phase boundary; when the cap is reached the run aborts with `last_error = "Budget exceeded after $X.XX"` and the paper is marked `failed`.
+
+### Programmatic API
+
+If you prefer the HTTP API to the dashboard:
 
 ```bash
-cp .env.example .env
-# Required: set ANTHROPIC_API_KEY or OPENROUTER_API_KEY
-# Optional: ALLIUM_API_KEY (data module), GITHUB_TOKEN (repo push)
-```
-
-### 3. Start PostgreSQL
-
-```bash
-# Run from the repo root
-docker compose -f docker/docker-compose.yml up -d db
-```
-
-### 4. Initialise the database
-
-```bash
-python scripts/migrate.py
-# Applies sql/001 through sql/006:
-# papers, llm_usage, data_queries + approvals, literature, contributions, events
-```
-
-### 5. Start the API
-
-```bash
-uvicorn src.api.app:app --reload --port 8280
-```
-
-### 6. Create a paper
-
-```bash
+# Create a paper
 curl -X POST http://localhost:8280/api/papers \
   -H "Content-Type: application/json" \
   -d '{
     "title": "DeFi Liquidity Provision and Market Quality",
     "research_question": "How does concentrated liquidity in Uniswap v3 affect price discovery?",
-    "datasets": ["uniswap_v3_swaps"],
-    "mode": "iterative"
+    "mode": "iterative",
+    "max_cost_usd": 30.0
   }'
 # Returns: {"paper_id": "<uuid>", "status": "idea", ...}
-```
 
-### 7. Approve pending data queries
+# Cancel
+curl -X POST http://localhost:8280/api/papers/<paper_id>/cancel
 
-Once the pipeline submits a production query, it pauses and waits for your approval:
+# Download audit bundle
+curl -O -J http://localhost:8280/api/papers/<paper_id>/audit-bundle
 
-```bash
-# List queries awaiting approval
+# Approve pending data queries (when the data module submits production queries)
 curl http://localhost:8280/api/papers/<paper_id>/pending-queries
-
-# Approve or reject
 curl -X POST http://localhost:8280/api/queries/<query_id>/approve \
   -H "Content-Type: application/json" \
   -d '{"approved": true, "note": "Looks good"}'
+```
+
+### Manual install (without Docker)
+
+```bash
+pip install -e ".[pgvector]"
+docker compose -f docker/docker-compose.yml up -d db    # just the DB
+python scripts/migrate.py
+bash scripts/vendor_htmx.sh                              # one-time, fetches htmx
+uvicorn src.api.app:app --reload --port 8280
 ```
 
 ---
@@ -319,7 +314,7 @@ A ground-up redesign for open-source use. Retains the Strategist architecture fr
 - **Parallel polish stack**: five specialists run concurrently targeting specific weaknesses (formula errors, numeric consistency, institutional context, bibliography, equilibrium conditions)
 - **Mechanical review aggregation**: three deterministic rules replace subjective editorial judgement
 
-Additional v3 changes: BYOK (Anthropic and OpenRouter), built-in Allium data guardrails, token/cost tracking per specialist call, and GitHub integration with Overleaf-compatible repo structure.
+Additional v3 changes: BYOK (Anthropic and OpenRouter), built-in Allium data guardrails, token/cost tracking per specialist call, GitHub integration with Overleaf-compatible repo structure, **per-paper cost cap with hard abort**, **mid-run cancellation**, **server-rendered dashboard (Jinja2 + HTMX)** with live event log and cost meter, and a **downloadable audit bundle** (replication package + contributions + events + usage) for journal-ready provenance.
 
 ---
 
@@ -351,7 +346,7 @@ If you use E2ER in your research, please cite it as:
 pytest tests/ -v
 ```
 
-20 tests covering guardrails, review aggregation, and cost tracking with no network or LLM calls required.
+75+ tests covering guardrails, review aggregation, cost tracking, pipeline orchestration, dashboard rendering, audit bundle creation, and resilience (retries, cancellation, partial failures). No network or LLM calls required.
 
 ---
 
