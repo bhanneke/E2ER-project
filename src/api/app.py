@@ -84,7 +84,7 @@ class ApprovalAction(BaseModel):
 @app.post("/api/papers", response_model=PaperResponse)
 async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTasks):
     """Create a new paper and start the pipeline."""
-    from ..db.client import fetch_one
+    from ..db.client import execute
     import uuid
 
     paper_id = str(uuid.uuid4())
@@ -104,7 +104,7 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
 
     cap = req.max_cost_usd if req.max_cost_usd is not None else settings.default_max_cost_usd
     try:
-        await fetch_one(
+        await execute(
             """
             INSERT INTO papers (id, title, research_question, status, workspace, mode, max_cost_usd)
             VALUES (%(id)s, %(title)s, %(rq)s, 'idea', %(ws)s, %(mode)s, %(cap)s)
