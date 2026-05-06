@@ -709,6 +709,32 @@ async def test_check_budget_uses_in_memory_when_db_unavailable():
         assert exc.value.cap == 10.0
 
 
+def test_parse_decision_handles_fenced_json():
+    """Strategist decisions wrapped in ```json fences must still parse.
+    Real failure mode observed when running Haiku 4.5 on OpenRouter."""
+    from src.core.strategist.engine import _parse_decision
+    raw = (
+        "```json\n"
+        '{"action":"dispatch_parallel",'
+        '"work_orders":[{"specialist":"idea_developer",'
+        '"focus":"Develop the idea","parallel_group":0}],'
+        '"rationale":"go"}\n'
+        "```"
+    )
+    d = _parse_decision(raw)
+    assert d.action == "dispatch_parallel"
+    assert len(d.work_orders) == 1
+    assert d.work_orders[0].specialist == "idea_developer"
+
+
+def test_parse_decision_returns_fail_on_prose():
+    """Markdown / prose responses (no JSON anywhere) must yield action=fail."""
+    from src.core.strategist.engine import _parse_decision
+    d = _parse_decision("## Analysis\n\nThe paper looks good.")
+    assert d.action == "fail"
+    assert "Parse error" in (d.rationale or "")
+
+
 async def test_dispatcher_auto_fills_output_file(tmp_path):
     """When the strategist omits output_file, the dispatcher must fill it from
     SPECIALIST_ARTIFACTS so the specialist gets a deterministic filename."""

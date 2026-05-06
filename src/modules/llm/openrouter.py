@@ -70,12 +70,17 @@ class OpenRouterBackend(LLMBackend):
 
         for turn in range(max_turns):
             try:
-                response = await self._client.chat.completions.create(
-                    model=self._model,
-                    messages=msgs,  # type: ignore[arg-type]
-                    tools=oai_tools if oai_tools else openai_NOT_GIVEN,  # type: ignore[arg-type]
-                    max_tokens=self._max_tokens,
-                )
+                # OpenAI SDK requires omitting `tools` entirely when there are
+                # none — passing an empty list, None, or NOT_GIVEN can error
+                # depending on SDK version. Build kwargs conditionally.
+                create_kwargs: dict[str, Any] = {
+                    "model": self._model,
+                    "messages": msgs,
+                    "max_tokens": self._max_tokens,
+                }
+                if oai_tools:
+                    create_kwargs["tools"] = oai_tools
+                response = await self._client.chat.completions.create(**create_kwargs)
             except Exception as e:
                 logger.error("OpenRouter error on turn %d: %s", turn, e)
                 return ToolLoopResult(

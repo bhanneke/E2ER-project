@@ -197,10 +197,80 @@ class StrategistEngine:
 
 
 def _parse_decision(raw: str) -> StrategistDecision:
-    from ...modules.llm.base import extract_json
-    text = extract_json(raw) or raw
+    """Parse a StrategistDecision from raw LLM output.
+
+    Handles three common output shapes:
+      1. Pure JSON object.
+      2. JSON wrapped in a ```json ... ``` (or bare ```...```) fenced block.
+      3. JSON embedded in surrounding prose.
+
+    We need the OUTERMOST JSON object (the StrategistDecision itself), not
+    one of the inner work_order objects. So the parser tries strategies that
+    target the outer object first.
+    """
+    import re
+
+    if not raw or not raw.strip():
+        return StrategistDecision(action="fail", rationale="Parse error: empty response")
+
+    candidates: list[str] = []
+
+    # 1. Fenced block: ```json {...} ``` — greedy DOTALL captures the whole inner.
+    m = re.search(r"```(?:json)?\s*(\{[\s\S]*\})\s*```", raw)
+    if m:
+        candidates.append(m.group(1).strip())
+
+    # 2. Outermost balanced {...} object found by scanning forward.
+    text = raw.strip()
+    if text.startswith("{") and text.endswith("}"):
+        candidates.append(text)
+    else:
+        # Find the first '{' and walk forward tracking depth in strings.
+        start = text.find("{")
+        if start >= 0:
+            depth = 0
+            in_str = False
+            esc = False
+            for i in range(start, len(text)):
+                ch = text[i]
+                if esc:
+                    esc = False
+                    continue
+                if ch == "\\":
+                    esc = True
+                    continue
+                if ch == '"':
+                    in_str = not in_str
+                    continue
+                if in_str:
+                    continue
+                if ch == "{":
+                    depth += 1
+                elif ch == "}":
+                    depth -= 1
+                    if depth == 0:
+                        candidates.append(text[start : i + 1])
+                        break
+
+    data: dict[str, Any] | None = None
+    for cand in candidates:
+        try:
+            parsed = json.loads(cand)
+            if isinstance(parsed, dict) and "action" in parsed:
+                data = parsed
+                break
+        except Exception:
+            continue
+
+    if not isinstance(data, dict):
+        snippet = raw[:200].replace("\n", " ")
+        logger.warning("Failed to parse strategist decision — raw: %s", snippet)
+        return StrategistDecision(
+            action="fail",
+            rationale=f"Parse error: response was not JSON (started with {raw[:60]!r})",
+        )
+
     try:
-        data = json.loads(text)
         work_orders = [WorkOrder(**w) for w in data.get("work_orders", [])]
         return StrategistDecision(
             action=data.get("action", "fail"),
@@ -210,5 +280,5 @@ def _parse_decision(raw: str) -> StrategistDecision:
             pivot_count=data.get("pivot_count", 0),
         )
     except Exception as e:
-        logger.warning("Failed to parse strategist decision: %s — raw: %s", e, raw[:200])
+        logger.warning("Failed to build StrategistDecision: %s — data: %s", e, str(data)[:200])
         return StrategistDecision(action="fail", rationale=f"Parse error: {e}")
