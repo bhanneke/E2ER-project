@@ -960,7 +960,7 @@ async def test_in_memory_cost_cap_trips_without_db():
     """check_budget must enforce the cap purely from in-memory contribution
     cost when the DB query raises. Without this, papers run unbounded
     against a non-DB workspace (the original $25 runaway scenario)."""
-    from src.core.strategist.state import BudgetExceeded
+    from src.core.strategist.state import BudgetExceededError
     from src.modules.tracking.usage import check_budget
 
     async def boom(*a, **kw):
@@ -970,7 +970,7 @@ async def test_in_memory_cost_cap_trips_without_db():
         # Under cap — passes
         await check_budget("p", max_cost_usd=10.0, in_memory_spent=4.0)
         # Over cap via in-memory — must raise
-        with pytest.raises(BudgetExceeded):
+        with pytest.raises(BudgetExceededError):
             await check_budget("p", max_cost_usd=10.0, in_memory_spent=15.0)
 
 

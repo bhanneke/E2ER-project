@@ -41,7 +41,9 @@ Your entire response MUST be a single JSON object — nothing else.
 ## JSON Schema (StrategistDecision)
 ```
 {
-  "action": "dispatch_parallel" | "dispatch_work_order" | "complete" | "fail" | "ceiling_check" | "self_attack" | "dispatch_polish_stack" | "dispatch_review" | "request_revision",
+  "action": "dispatch_parallel" | "dispatch_work_order" | "complete" | "fail"
+            | "ceiling_check" | "self_attack" | "dispatch_polish_stack"
+            | "dispatch_review" | "request_revision",
   "work_orders": [
     {
       "specialist": "<one of: idea_developer, literature_scanner, identification_strategist,
@@ -56,7 +58,20 @@ Your entire response MUST be a single JSON object — nothing else.
 ```
 
 ## Example for the initial design phase
-{"action":"dispatch_parallel","work_orders":[{"specialist":"idea_developer","focus":"Develop the research question into a structured paper plan with propositions and identification strategy.","parallel_group":0},{"specialist":"literature_scanner","focus":"Survey prior work and produce a literature review.","parallel_group":0},{"specialist":"identification_strategist","focus":"Propose the causal identification approach.","parallel_group":0},{"specialist":"data_architect","focus":"Define the minimal data footprint required to answer the RQ — write data_dictionary.json with the exact tables, columns, granularity, and time window.","parallel_group":1},{"specialist":"data_analyst","focus":"Acquire the data via Allium queries (mandatory when data tools are available — do not synthesize numbers), clean it, and write data_summary.md with the actual returned rows.","parallel_group":2},{"specialist":"econometrics_specialist","focus":"Specify the econometric model.","parallel_group":2},{"specialist":"paper_drafter","focus":"Draft the paper body.","parallel_group":3},{"specialist":"abstract_writer","focus":"Write the abstract.","parallel_group":3}],"rationale":"Initial design + data acquisition + writing pass."}
+{
+  "action": "dispatch_parallel",
+  "work_orders": [
+    {"specialist":"idea_developer","focus":"Develop RQ into paper plan.","parallel_group":0},
+    {"specialist":"literature_scanner","focus":"Survey prior work.","parallel_group":0},
+    {"specialist":"identification_strategist","focus":"Propose ID strategy.","parallel_group":0},
+    {"specialist":"data_architect","focus":"Write data_dictionary.json.","parallel_group":1},
+    {"specialist":"data_analyst","focus":"Acquire data via Allium.","parallel_group":2},
+    {"specialist":"econometrics_specialist","focus":"Specify the econometric model.","parallel_group":2},
+    {"specialist":"paper_drafter","focus":"Draft the paper body.","parallel_group":3},
+    {"specialist":"abstract_writer","focus":"Write the abstract.","parallel_group":3}
+  ],
+  "rationale": "Initial design + data acquisition + writing pass."
+}
 
 Note: ALWAYS include `data_analyst` after `data_architect` — this is the
 specialist that actually queries the data. Skipping it leaves the paper

@@ -72,7 +72,7 @@ async def check_budget(
     max_cost_usd: float,
     in_memory_spent: float = 0.0,
 ) -> None:
-    """Raise BudgetExceeded when cumulative cost has hit the per-paper cap.
+    """Raise BudgetExceededError when cumulative cost has hit the per-paper cap.
 
     Called at phase boundaries by the pipeline runner.
 
@@ -84,7 +84,7 @@ async def check_budget(
          trips). The greater of the two values is treated as authoritative
          to avoid double-counting when both sources see the same call.
     """
-    from ...core.strategist.state import BudgetExceeded
+    from ...core.strategist.state import BudgetExceededError
     from ...db.client import fetch_one
 
     db_spent = 0.0
@@ -100,7 +100,7 @@ async def check_budget(
 
     spent = max(db_spent, float(in_memory_spent))
     if spent >= max_cost_usd:
-        raise BudgetExceeded(spent=spent, cap=max_cost_usd)
+        raise BudgetExceededError(spent=spent, cap=max_cost_usd)
 
 
 async def get_paper_usage(paper_id: str) -> dict[str, Any]:

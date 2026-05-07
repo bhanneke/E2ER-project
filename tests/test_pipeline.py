@@ -855,7 +855,7 @@ async def test_execute_parallel_raises_when_all_fail(tmp_path):
 
 async def test_check_budget_uses_in_memory_when_db_unavailable():
     """Without a DB, check_budget must still trip on the in-memory total."""
-    from src.core.strategist.state import BudgetExceeded
+    from src.core.strategist.state import BudgetExceededError
     from src.modules.tracking.usage import check_budget
 
     async def db_down(sql, params=None):
@@ -865,7 +865,7 @@ async def test_check_budget_uses_in_memory_when_db_unavailable():
         # Under cap — passes.
         await check_budget("p", max_cost_usd=10.0, in_memory_spent=4.0)
         # Over cap via in-memory only — must raise even with DB down.
-        with pytest.raises(BudgetExceeded) as exc:
+        with pytest.raises(BudgetExceededError) as exc:
             await check_budget("p", max_cost_usd=10.0, in_memory_spent=12.5)
         assert exc.value.spent == 12.5
         assert exc.value.cap == 10.0

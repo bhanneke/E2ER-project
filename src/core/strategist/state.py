@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 
 
-class PaperStatus(str, Enum):
+class PaperStatus(StrEnum):
     IDEA = "idea"
     DESIGNING = "designing"
     DATA_COLLECTION = "data_collection"
@@ -21,12 +21,12 @@ class PaperStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
-class PipelineMode(str, Enum):
+class PipelineMode(StrEnum):
     SINGLE_PASS = "single_pass"  # Mode 1 — fast draft, single specialist sequence
     ITERATIVE = "iterative"  # Mode 2 — full loop with ceiling detection + attack
 
 
-class BudgetExceeded(Exception):
+class BudgetExceededError(Exception):
     """Raised when a paper's cumulative LLM cost reaches its per-paper cap."""
 
     def __init__(self, spent: float, cap: float) -> None:
