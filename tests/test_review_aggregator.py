@@ -1,9 +1,8 @@
 """Tests for the mechanical 3-rule review aggregation."""
-import pytest
 
 from src.core.strategist.review_aggregator import (
-    aggregate_reviews,
     ReviewScore,
+    aggregate_reviews,
 )
 
 

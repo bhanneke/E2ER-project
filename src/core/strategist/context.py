@@ -1,8 +1,8 @@
 """Tiered context builders — deliver proportional context to each specialist."""
+
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
 
 def build_tier0_context(workspace: Path, paper_id: str) -> str:
@@ -11,6 +11,7 @@ def build_tier0_context(workspace: Path, paper_id: str) -> str:
     if not manifest:
         return f"Paper ID: {paper_id}\nWorkspace: {workspace}"
     import json
+
     data = json.loads(manifest)
     lines = [
         f"Paper: {data.get('title', 'Untitled')}",
@@ -55,8 +56,13 @@ def build_tier2_context(workspace: Path, paper_id: str) -> str:
     tier1 = build_tier1_context(workspace, paper_id)
     sections = [tier1, ""]
 
-    for fname in ["literature_review.md", "data_summary.md", "identification_strategy.md",
-                  "contributions.json", "econometric_spec.md"]:
+    for fname in [
+        "literature_review.md",
+        "data_summary.md",
+        "identification_strategy.md",
+        "contributions.json",
+        "econometric_spec.md",
+    ]:
         content = _read_artifact(workspace, fname)
         if content:
             label = fname.replace("_", " ").replace(".md", "").replace(".json", "").title()

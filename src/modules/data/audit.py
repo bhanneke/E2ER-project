@@ -1,9 +1,10 @@
 """Data module — audit log for all Allium queries."""
+
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
-from uuid import UUID
 
 
 async def log_query(
@@ -126,7 +127,7 @@ async def export_audit_log(paper_id: str) -> list[dict[str, Any]]:
     )
 
 
-async def write_audit_csv(paper_id: str, output_path: "Path") -> int:
+async def write_audit_csv(paper_id: str, output_path: Path) -> int:
     """Write audit_log.csv to the replication package directory. Returns row count."""
     import csv
     from pathlib import Path as _Path
@@ -136,9 +137,18 @@ async def write_audit_csv(paper_id: str, output_path: "Path") -> int:
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     fieldnames = [
-        "id", "query_type", "query_sql", "fields_requested", "aggregation_level",
-        "estimated_rows", "actual_rows", "validation_status", "approved_by",
-        "approved_at", "executed_at", "created_at",
+        "id",
+        "query_type",
+        "query_sql",
+        "fields_requested",
+        "aggregation_level",
+        "estimated_rows",
+        "actual_rows",
+        "validation_status",
+        "approved_by",
+        "approved_at",
+        "executed_at",
+        "created_at",
     ]
     with open(output_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
@@ -149,7 +159,7 @@ async def write_audit_csv(paper_id: str, output_path: "Path") -> int:
     return len(rows)
 
 
-async def write_data_queries_sql(paper_id: str, output_path: "Path") -> int:
+async def write_data_queries_sql(paper_id: str, output_path: Path) -> int:
     """Write data_queries.sql with all production queries used. Returns query count."""
     from pathlib import Path as _Path
 
@@ -162,7 +172,7 @@ async def write_data_queries_sql(paper_id: str, output_path: "Path") -> int:
     lines = [
         "-- E2ER v3 data queries for replication",
         f"-- paper_id: {paper_id}",
-        f"-- generated: {datetime.now(timezone.utc).isoformat()}",
+        f"-- generated: {datetime.now(UTC).isoformat()}",
         "",
     ]
     for i, row in enumerate(production, 1):

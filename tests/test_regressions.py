@@ -40,11 +40,11 @@ stay working:
   R2  Strategist JSON parser handles fenced  [test_parse_decision_handles_fenced_json]
                                               [...prose-only, balanced-braces, etc. — already in test_pipeline.py]
 """
+
 from __future__ import annotations
 
 import asyncio
 import json
-import os
 import re
 import uuid
 from pathlib import Path
@@ -52,31 +52,30 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # G1: db.client uses psycopg's stdlib dict_row, not a custom mis-implemented one
 # ---------------------------------------------------------------------------
+
 
 def test_db_uses_psycopg_dict_row():
     """fetch_one and fetch_all must import dict_row from psycopg.rows.
     The custom _dict_row(cursor, data) signature broke psycopg3's row-factory
     protocol and made every DB read raise TypeError on the live system."""
     from src.db import client as dbclient
+
     src = Path(dbclient.__file__).read_text()
     # Must NOT define a 2-arg _dict_row that takes (cursor, data) directly.
     assert "def _dict_row(cursor, data):" not in src, (
-        "Custom _dict_row(cursor, data) is the broken signature — "
-        "use psycopg.rows.dict_row instead."
+        "Custom _dict_row(cursor, data) is the broken signature — use psycopg.rows.dict_row instead."
     )
     # Must import psycopg's stdlib factory.
-    assert "from psycopg.rows import dict_row" in src, (
-        "fetch_one/fetch_all should use the stdlib dict_row factory."
-    )
+    assert "from psycopg.rows import dict_row" in src, "fetch_one/fetch_all should use the stdlib dict_row factory."
 
 
 # ---------------------------------------------------------------------------
 # G2: create_paper INSERT must use execute(), not fetch_one()
 # ---------------------------------------------------------------------------
+
 
 async def test_create_paper_uses_execute_not_fetch_one():
     """The papers INSERT has no RETURNING clause; fetch_one() was raising
@@ -94,9 +93,7 @@ async def test_create_paper_uses_execute_not_fetch_one():
     async def fake_fetch_one(sql, params=None):
         captured_calls.append(("fetch_one", params or {}))
         # Match the real bug — fetch_one(INSERT without RETURNING) raises.
-        raise RuntimeError(
-            "the last operation didn't produce records"
-        )
+        raise RuntimeError("the last operation didn't produce records")
 
     with (
         patch("src.db.client.execute", side_effect=fake_execute),
@@ -105,6 +102,7 @@ async def test_create_paper_uses_execute_not_fetch_one():
         patch("src.api.app._run_pipeline", new_callable=AsyncMock),
     ):
         from src.api.app import app
+
         client = TestClient(app)
         resp = client.post(
             "/api/papers",
@@ -117,10 +115,7 @@ async def test_create_paper_uses_execute_not_fetch_one():
         )
     assert resp.status_code == 200
     # The INSERT into papers must have happened via execute, never fetch_one.
-    insert_calls = [
-        kind for kind, params in captured_calls
-        if "id" in params and "title" in params and "rq" in params
-    ]
+    insert_calls = [kind for kind, params in captured_calls if "id" in params and "title" in params and "rq" in params]
     assert insert_calls, "create_paper never sent the INSERT"
     assert all(k == "execute" for k in insert_calls), (
         f"INSERT papers must use execute() (no RETURNING clause); got {insert_calls}"
@@ -131,11 +126,13 @@ async def test_create_paper_uses_execute_not_fetch_one():
 # G3: Settings tolerate extra env vars (POSTGRES_PASSWORD etc.)
 # ---------------------------------------------------------------------------
 
+
 def test_settings_tolerates_extra_env_vars(monkeypatch):
     """Pydantic Settings was rejecting POSTGRES_PASSWORD (used by docker
     compose for variable substitution) as 'extra_forbidden'. Result: app
     refused to start when running against a docker stack."""
     from src.config import Settings, get_settings
+
     get_settings.cache_clear()
     monkeypatch.setenv("POSTGRES_PASSWORD", "anything")
     monkeypatch.setenv("SOME_OTHER_RANDOM_VAR", "ignore-me")
@@ -153,6 +150,7 @@ def test_settings_tolerates_extra_env_vars(monkeypatch):
 # G4: LiteratureToolHandler enforces per-call budgets
 # ---------------------------------------------------------------------------
 
+
 async def test_literature_handler_enforces_search_budget():
     """A single literature_scanner on Sonnet 4.6 made 36 search/fetch/save
     calls and burned $2.80. Budget cap stops this."""
@@ -166,7 +164,7 @@ async def test_literature_handler_enforces_search_budget():
         # First `cap` calls go through.
         for i in range(cap):
             r = await handler.handle("search_papers", {"query": f"q{i}", "limit": 1})
-            assert "budget exhausted" not in r, f"call {i+1} hit budget too early"
+            assert "budget exhausted" not in r, f"call {i + 1} hit budget too early"
         # The next call must hit the cap.
         r = await handler.handle("search_papers", {"query": "qN+1", "limit": 1})
         out = json.loads(r)
@@ -177,6 +175,7 @@ async def test_literature_handler_enforces_search_budget():
 
 async def test_literature_handler_enforces_fetch_budget():
     from src.modules.literature.tools import LiteratureToolHandler
+
     handler = LiteratureToolHandler(Path("/tmp"))
     fake_fetcher = AsyncMock(return_value=None)
     with patch("src.modules.literature.openalex.fetch_by_doi", fake_fetcher):
@@ -189,14 +188,13 @@ async def test_literature_handler_enforces_fetch_budget():
 
 async def test_literature_handler_enforces_save_budget(tmp_path):
     from src.modules.literature.tools import LiteratureToolHandler
+
     handler = LiteratureToolHandler(tmp_path)
     cap = LiteratureToolHandler._MAX_SAVES
     for i in range(cap):
         entry = f"@article{{k{i}, title={{T}}, author={{A}}, year={{2024}}}}"
         await handler.handle("save_bibtex", {"bibtex_entry": entry})
-    r = await handler.handle("save_bibtex", {
-        "bibtex_entry": "@article{kover, title={T}, author={A}, year={2024}}"
-    })
+    r = await handler.handle("save_bibtex", {"bibtex_entry": "@article{kover, title={T}, author={A}, year={2024}}"})
     assert "budget exhausted" in (json.loads(r).get("error") or "").lower()
 
 
@@ -205,6 +203,7 @@ async def test_literature_handler_budgets_are_per_instance(tmp_path):
     per specialist run. Without this, paper-level usage exhausts caps after
     the first specialist."""
     from src.modules.literature.tools import LiteratureToolHandler
+
     h1 = LiteratureToolHandler(tmp_path)
     h2 = LiteratureToolHandler(tmp_path)
     fake = AsyncMock(return_value=MagicMock(papers=[]))
@@ -221,12 +220,14 @@ async def test_literature_handler_budgets_are_per_instance(tmp_path):
 # G5: data_analyst prompt mandates Allium when query_allium is in extra_tools
 # ---------------------------------------------------------------------------
 
+
 def test_data_analyst_prompt_mandates_allium():
     """When data_analyst runs WITH query_allium in its tools, the system
     prompt MUST forbid synthetic data and instruct the model to use the
     Allium workflow. The live test caught Sonnet writing 'All figures are
     synthetic but calibrated' because this guard didn't exist."""
     from src.core.specialists.base import _build_system_prompt
+
     p = _build_system_prompt("data_analyst", "", has_allium=True)
     must_contain = [
         "Mandatory Data Sourcing",
@@ -237,15 +238,14 @@ def test_data_analyst_prompt_mandates_allium():
         "production",
     ]
     for token in must_contain:
-        assert token in p, (
-            f"data_analyst prompt missing guard for {token!r} when has_allium=True"
-        )
+        assert token in p, f"data_analyst prompt missing guard for {token!r} when has_allium=True"
 
 
 def test_data_analyst_prompt_skips_mandate_without_allium():
     """When Allium is not available, the mandate block must be omitted —
     otherwise we'd be telling the model to use a tool that isn't there."""
     from src.core.specialists.base import _build_system_prompt
+
     p = _build_system_prompt("data_analyst", "", has_allium=False)
     assert "Mandatory Data Sourcing" not in p
     assert "query_allium" not in p
@@ -255,16 +255,16 @@ def test_other_specialists_do_not_get_allium_mandate():
     """Only data_analyst should receive the Allium mandate — putting it on
     everyone would confuse pure-text specialists like writers."""
     from src.core.specialists.base import _build_system_prompt
+
     for spec in ("paper_drafter", "abstract_writer", "mechanism_reviewer"):
         p = _build_system_prompt(spec, "", has_allium=True)
-        assert "Mandatory Data Sourcing" not in p, (
-            f"{spec} should not get the data_analyst Allium mandate"
-        )
+        assert "Mandatory Data Sourcing" not in p, f"{spec} should not get the data_analyst Allium mandate"
 
 
 # ---------------------------------------------------------------------------
 # G6: Strategist worked example must include data_architect AND data_analyst
 # ---------------------------------------------------------------------------
+
 
 def test_strategist_system_prompt_includes_data_analyst():
     """My earlier strategist example listed idea_developer, literature_scanner,
@@ -273,6 +273,7 @@ def test_strategist_system_prompt_includes_data_analyst():
     literally and never dispatched it. Result: empty data_summary, paper
     written on no data."""
     from src.core.strategist.engine import _STRATEGIST_SYSTEM
+
     assert "data_analyst" in _STRATEGIST_SYSTEM, (
         "Strategist worked example must include data_analyst — Sonnet "
         "follows examples literally and won't dispatch what isn't shown."
@@ -281,12 +282,14 @@ def test_strategist_system_prompt_includes_data_analyst():
 
 def test_strategist_system_prompt_includes_data_architect():
     from src.core.strategist.engine import _STRATEGIST_SYSTEM
+
     assert "data_architect" in _STRATEGIST_SYSTEM
 
 
 def test_strategist_system_prompt_warns_data_analyst_required():
     """Belt-and-suspenders: explicit instruction not to skip data_analyst."""
     from src.core.strategist.engine import _STRATEGIST_SYSTEM
+
     assert "data_analyst" in _STRATEGIST_SYSTEM
     # Look for the no-skip warning we added.
     assert (
@@ -300,17 +303,20 @@ def test_strategist_system_prompt_warns_data_analyst_required():
 # G7: _MAX_TURNS must be loose enough for tool-rich specialists
 # ---------------------------------------------------------------------------
 
+
 def test_max_turns_is_at_least_25():
     """idea_developer on Sonnet routinely needs 20+ turns when literature
     tools are wired in. _MAX_TURNS=15 caused success=False with no artifact
     written. Don't drop below 25 without measuring."""
     from src.core.specialists.base import _MAX_TURNS
+
     assert _MAX_TURNS >= 25, f"_MAX_TURNS={_MAX_TURNS} is too tight for Sonnet"
 
 
 # ---------------------------------------------------------------------------
 # G8: check_approval returns the rejection note inline
 # ---------------------------------------------------------------------------
+
 
 async def test_check_approval_returns_rejection_note():
     """A rejected query without a returned note left the model unable to
@@ -336,26 +342,26 @@ async def test_check_approval_returns_rejection_note():
 
 async def test_check_approval_returns_approval_message():
     from src.modules.data.tools import AlliumToolHandler
+
     handler = AlliumToolHandler("p", "data_analyst", dictionary=None)
 
     async def fake(qid):
         return ("approved", "ok")
-    with patch(
-        "src.modules.data.audit.get_approval_status_with_note", side_effect=fake
-    ):
+
+    with patch("src.modules.data.audit.get_approval_status_with_note", side_effect=fake):
         out = await handler.handle("check_approval", {"query_id": "x"})
     assert "APPROVED" in out
 
 
 async def test_check_approval_returns_pending_message():
     from src.modules.data.tools import AlliumToolHandler
+
     handler = AlliumToolHandler("p", "data_analyst", dictionary=None)
 
     async def fake(qid):
         return ("pending", "")
-    with patch(
-        "src.modules.data.audit.get_approval_status_with_note", side_effect=fake
-    ):
+
+    with patch("src.modules.data.audit.get_approval_status_with_note", side_effect=fake):
         out = await handler.handle("check_approval", {"query_id": "x"})
     assert "pending" in out.lower()
     # Must instruct the model to wait, not submit duplicates.
@@ -366,10 +372,11 @@ async def test_check_approval_returns_pending_message():
 # G9: Strategist call usage is persisted to llm_usage
 # ---------------------------------------------------------------------------
 
+
 def _stub_engine(tmp_path: Path):
     """Build a StrategistEngine wired to a backend that returns canned usage."""
     from src.core.strategist.engine import StrategistEngine
-    from src.modules.llm.base import ToolLoopResult, TokenUsage
+    from src.modules.llm.base import TokenUsage, ToolLoopResult
 
     backend = MagicMock()
     backend.tool_loop = AsyncMock(
@@ -380,8 +387,12 @@ def _stub_engine(tmp_path: Path):
         )
     )
     return StrategistEngine(
-        backend, tmp_path, "paper-x", mode="single_pass",
-        model="anthropic/claude-haiku-4.5", backend_name="openrouter",
+        backend,
+        tmp_path,
+        "paper-x",
+        mode="single_pass",
+        model="anthropic/claude-haiku-4.5",
+        backend_name="openrouter",
     )
 
 
@@ -412,28 +423,38 @@ async def test_strategist_decide_retry_persists_usage(tmp_path):
     """When the first decide() returns prose, we retry — both calls must
     appear in llm_usage."""
     from src.core.strategist.engine import StrategistEngine
-    from src.modules.llm.base import ToolLoopResult, TokenUsage
+    from src.modules.llm.base import TokenUsage, ToolLoopResult
 
     backend = MagicMock()
     # First call returns prose (forces retry); second returns valid JSON.
-    backend.tool_loop = AsyncMock(side_effect=[
-        ToolLoopResult(
-            success=True, output="## Just markdown",
-            usage=TokenUsage(input_tokens=500, output_tokens=200),
-        ),
-        ToolLoopResult(
-            success=True,
-            output='{"action":"complete","work_orders":[],"rationale":"done"}',
-            usage=TokenUsage(input_tokens=400, output_tokens=100),
-        ),
-    ])
+    backend.tool_loop = AsyncMock(
+        side_effect=[
+            ToolLoopResult(
+                success=True,
+                output="## Just markdown",
+                usage=TokenUsage(input_tokens=500, output_tokens=200),
+            ),
+            ToolLoopResult(
+                success=True,
+                output='{"action":"complete","work_orders":[],"rationale":"done"}',
+                usage=TokenUsage(input_tokens=400, output_tokens=100),
+            ),
+        ]
+    )
     eng = StrategistEngine(
-        backend, tmp_path, "p", "single_pass",
-        model="m", backend_name="openrouter",
+        backend,
+        tmp_path,
+        "p",
+        "single_pass",
+        model="m",
+        backend_name="openrouter",
     )
 
     saves: list[dict] = []
-    async def fake_save(**kw): saves.append(kw)
+
+    async def fake_save(**kw):
+        saves.append(kw)
+
     with patch("src.modules.tracking.usage.save_usage", side_effect=fake_save):
         await eng.decide("designing", iteration=0)
 
@@ -445,7 +466,8 @@ async def test_strategist_decide_retry_persists_usage(tmp_path):
 async def test_strategist_ceiling_check_persists_usage(tmp_path):
     eng = _stub_engine(tmp_path)
     # Override backend output for ceiling_check (returns a verdict JSON)
-    from src.modules.llm.base import ToolLoopResult, TokenUsage
+    from src.modules.llm.base import TokenUsage, ToolLoopResult
+
     eng._backend.tool_loop = AsyncMock(
         return_value=ToolLoopResult(
             success=True,
@@ -455,7 +477,10 @@ async def test_strategist_ceiling_check_persists_usage(tmp_path):
     )
 
     saves: list[dict] = []
-    async def fake(**kw): saves.append(kw)
+
+    async def fake(**kw):
+        saves.append(kw)
+
     with patch("src.modules.tracking.usage.save_usage", side_effect=fake):
         await eng.ceiling_check(iteration=1, pivot_count=0)
 
@@ -464,7 +489,8 @@ async def test_strategist_ceiling_check_persists_usage(tmp_path):
 
 async def test_strategist_self_attack_persists_usage(tmp_path):
     eng = _stub_engine(tmp_path)
-    from src.modules.llm.base import ToolLoopResult, TokenUsage
+    from src.modules.llm.base import TokenUsage, ToolLoopResult
+
     eng._backend.tool_loop = AsyncMock(
         return_value=ToolLoopResult(
             success=True,
@@ -474,7 +500,10 @@ async def test_strategist_self_attack_persists_usage(tmp_path):
     )
 
     saves: list[dict] = []
-    async def fake(**kw): saves.append(kw)
+
+    async def fake(**kw):
+        saves.append(kw)
+
     with patch("src.modules.tracking.usage.save_usage", side_effect=fake):
         await eng.run_self_attack()
 
@@ -485,13 +514,14 @@ async def test_strategist_self_attack_persists_usage(tmp_path):
 # R1: OpenRouter must bail on finish_reason="length", not loop forever
 # ---------------------------------------------------------------------------
 
+
 async def test_openrouter_bails_on_finish_length():
     """Hitting max_tokens=4096 mid-tool-call repeatedly looped forever
     before this guard. Verify the loop returns success=False with a clear
     error message instead of cycling."""
     pytest.importorskip("openai")
-    from src.modules.llm.openrouter import OpenRouterBackend
     from src.modules.llm.base import ToolHandler
+    from src.modules.llm.openrouter import OpenRouterBackend
 
     # Fake response with finish_reason="length"
     fake_response = MagicMock()
@@ -513,11 +543,15 @@ async def test_openrouter_bails_on_finish_length():
     backend._max_tokens = 4096
 
     class NoopHandler(ToolHandler):
-        async def handle(self, name, inp): return ""
+        async def handle(self, name, inp):
+            return ""
 
     result = await backend.tool_loop(
-        system="sys", messages=[{"role": "user", "content": "hi"}],
-        tools=[], tool_handler=NoopHandler(), max_turns=10,
+        system="sys",
+        messages=[{"role": "user", "content": "hi"}],
+        tools=[],
+        tool_handler=NoopHandler(),
+        max_turns=10,
     )
     assert result.success is False
     assert result.stop_reason == "length"
@@ -530,6 +564,7 @@ async def test_openrouter_bails_on_finish_length():
 # Operational invariants: the dispatcher's auto-fill + reviewer routing
 # ---------------------------------------------------------------------------
 
+
 async def test_dispatcher_auto_fills_canonical_output_file(tmp_path):
     """Strategist sometimes omits output_file; dispatcher must fill it
     from SPECIALIST_ARTIFACTS to prevent freelancing. (Already covered in
@@ -538,13 +573,22 @@ async def test_dispatcher_auto_fills_canonical_output_file(tmp_path):
     from src.core.specialists.contracts import WorkOrder
     from src.core.specialists.dispatcher import _inject_context
 
-    (tmp_path / "manifest.json").write_text(json.dumps({
-        "paper_id": "p", "title": "T", "research_question": "RQ",
-        "datasets": [], "current_stage": "designing",
-    }))
+    (tmp_path / "manifest.json").write_text(
+        json.dumps(
+            {
+                "paper_id": "p",
+                "title": "T",
+                "research_question": "RQ",
+                "datasets": [],
+                "current_stage": "designing",
+            }
+        )
+    )
     wo = WorkOrder(
-        paper_id="p", specialist="data_analyst",
-        focus="analyze", context_tier=1,
+        paper_id="p",
+        specialist="data_analyst",
+        focus="analyze",
+        context_tier=1,
     )
     out = _inject_context(wo, tmp_path)
     assert out.output_file == "data_summary.md"
@@ -554,11 +598,14 @@ async def test_dispatcher_auto_fills_canonical_output_file(tmp_path):
 # Cost-tracking integration: a paper run touches every persistence path
 # ---------------------------------------------------------------------------
 
+
 async def test_strategist_engine_constructor_takes_model_and_backend_name(tmp_path):
     """Without these args plumbed through, _record_usage can't tag the
     correct model and the cost row would be wrong even if persisted."""
     import inspect
+
     from src.core.strategist.engine import StrategistEngine
+
     sig = inspect.signature(StrategistEngine.__init__)
     assert "model" in sig.parameters
     assert "backend_name" in sig.parameters
@@ -568,10 +615,10 @@ def test_runner_passes_model_and_backend_to_strategist():
     """PipelineRunner.__init__ must wire model + backend_name through to
     the StrategistEngine — otherwise strategist usage rows are tagged
     'unknown' and cost reporting drifts."""
-    from src.core.strategist.runner import PipelineRunner
-    src = Path(PipelineRunner.__module__.replace(".", "/"))
-    src_text = (Path("/Users/hanneke/Documents/Projects/E2ER_v3/src/core/strategist/runner.py")
-                .read_text())
+    from src.core.strategist.runner import PipelineRunner  # noqa: F401  (imported to validate the module exists)
+
+    runner_path = Path(__file__).resolve().parent.parent / "src/core/strategist/runner.py"
+    src_text = runner_path.read_text()
     # The construction site must pass model= and backend_name=
     assert "StrategistEngine(" in src_text
     # In a single block: backend, workspace, paper_id, mode, model=..., backend_name=...
@@ -594,13 +641,22 @@ def test_runner_passes_model_and_backend_to_strategist():
 # These tests prove those invariants without spending a cent.
 # ===========================================================================
 
+
 def _make_workspace_with_manifest(tmp_path: Path, paper_id: str) -> Path:
     ws = tmp_path / paper_id
     ws.mkdir(parents=True)
-    (ws / "manifest.json").write_text(json.dumps({
-        "paper_id": paper_id, "title": "T", "research_question": "RQ",
-        "datasets": [], "mode": "single_pass", "current_stage": "idea",
-    }))
+    (ws / "manifest.json").write_text(
+        json.dumps(
+            {
+                "paper_id": paper_id,
+                "title": "T",
+                "research_question": "RQ",
+                "datasets": [],
+                "mode": "single_pass",
+                "current_stage": "idea",
+            }
+        )
+    )
     return ws
 
 
@@ -608,14 +664,17 @@ def _make_pipeline_runner(workspace: Path, paper_id: str, *, fail_at: str | None
     """Build a PipelineRunner whose strategist returns a canned decision and
     whose specialists are mocked so we can simulate failure points."""
     from src.core.strategist.runner import PipelineRunner
-    from src.core.strategist.actions import StrategistDecision
-    from src.core.strategist.actions import WorkOrder as StrategistWO
 
     backend = MagicMock()
     runner = PipelineRunner(
-        paper_id=paper_id, workspace=workspace, backend=backend,
-        model="m", mode="single_pass",
-        extra_tools=[], extra_handlers=[], backend_name="mock",
+        paper_id=paper_id,
+        workspace=workspace,
+        backend=backend,
+        model="m",
+        mode="single_pass",
+        extra_tools=[],
+        extra_handlers=[],
+        backend_name="mock",
         max_cost_usd=10.0,
     )
     return runner
@@ -628,9 +687,7 @@ async def test_finalize_runs_compile_even_when_pipeline_failed(tmp_path):
     paper_id = str(uuid.uuid4())
     workspace = _make_workspace_with_manifest(tmp_path, paper_id)
     # A draft to compile
-    (workspace / "paper_draft.tex").write_text(
-        "\\section{Introduction}\nFailed mid-run but draft exists.\n"
-    )
+    (workspace / "paper_draft.tex").write_text("\\section{Introduction}\nFailed mid-run but draft exists.\n")
 
     runner = _make_pipeline_runner(workspace, paper_id)
     runner._run_initial_phase = AsyncMock(side_effect=RuntimeError("simulated all-specialists failure"))
@@ -691,8 +748,7 @@ async def test_finalize_swallows_compile_errors(tmp_path):
     with (
         patch("src.db.client.execute", new_callable=AsyncMock),
         patch("src.db.client.fetch_one", new_callable=AsyncMock, return_value={"spent": 0.0}),
-        patch.object(runner, "_run_compile_phase",
-                     AsyncMock(side_effect=RuntimeError("latex broken"))),
+        patch.object(runner, "_run_compile_phase", AsyncMock(side_effect=RuntimeError("latex broken"))),
         patch.object(runner, "_export_audit_log_only", audit_called),
         patch.object(runner, "_run_github_push_phase", push_called),
     ):
@@ -741,11 +797,10 @@ async def test_failed_status_records_useful_last_error(tmp_path):
     paper_id = str(uuid.uuid4())
     workspace = _make_workspace_with_manifest(tmp_path, paper_id)
     runner = _make_pipeline_runner(workspace, paper_id)
-    runner._run_initial_phase = AsyncMock(
-        side_effect=RuntimeError("Strategist returned no work orders")
-    )
+    runner._run_initial_phase = AsyncMock(side_effect=RuntimeError("Strategist returned no work orders"))
 
     captured: list[tuple[str, str | None]] = []
+
     async def fake_execute(sql, params=None):
         if params and "s" in params and "id" in params:
             captured.append((params.get("s"), params.get("e")))
@@ -853,12 +908,13 @@ async def test_specialist_failure_in_dispatcher_records_failed_contribution():
     that flows into the audit trail."""
     from src.core.specialists.contracts import WorkOrder as ContractWO
     from src.core.specialists.dispatcher import execute_work_order
-    from src.modules.llm.base import ToolLoopResult, TokenUsage
+    from src.modules.llm.base import TokenUsage, ToolLoopResult
 
     fake_backend = MagicMock()
     fake_backend.tool_loop = AsyncMock(
         return_value=ToolLoopResult(
-            success=False, output="",
+            success=False,
+            output="",
             error="402: credit exhausted",
             tool_calls_made=0,
             usage=TokenUsage(),
@@ -866,11 +922,14 @@ async def test_specialist_failure_in_dispatcher_records_failed_contribution():
     )
 
     wo = ContractWO(
-        paper_id=str(uuid.uuid4()), specialist="idea_developer",
-        focus="develop", context_tier=0,
+        paper_id=str(uuid.uuid4()),
+        specialist="idea_developer",
+        focus="develop",
+        context_tier=0,
     )
 
     import tempfile
+
     with tempfile.TemporaryDirectory() as td:
         ws = Path(td)
         (ws / "manifest.json").write_text("{}")
@@ -879,7 +938,13 @@ async def test_specialist_failure_in_dispatcher_records_failed_contribution():
             patch("src.modules.tracking.usage.save_usage", new_callable=AsyncMock),
         ):
             contribution = await execute_work_order(
-                wo, fake_backend, ws, "m", [], [], "mock",
+                wo,
+                fake_backend,
+                ws,
+                "m",
+                [],
+                [],
+                "mock",
             )
 
     assert contribution.success is False
@@ -890,12 +955,13 @@ async def test_specialist_failure_in_dispatcher_records_failed_contribution():
 # Cost-cap edge case: the cap must trip even when DB is unreachable
 # ---------------------------------------------------------------------------
 
+
 async def test_in_memory_cost_cap_trips_without_db():
     """check_budget must enforce the cap purely from in-memory contribution
     cost when the DB query raises. Without this, papers run unbounded
     against a non-DB workspace (the original $25 runaway scenario)."""
-    from src.modules.tracking.usage import check_budget
     from src.core.strategist.state import BudgetExceeded
+    from src.modules.tracking.usage import check_budget
 
     async def boom(*a, **kw):
         raise RuntimeError("DB unreachable")
@@ -912,6 +978,7 @@ async def test_in_memory_cost_cap_trips_without_db():
 # Resume-after-partial-failure: the state file must enable picking up
 # ---------------------------------------------------------------------------
 
+
 async def test_state_checkpoint_written_before_each_phase_save(tmp_path):
     """If we crash between phases, the state file must already record what
     we completed so the next run resumes correctly. Tested by simulating a
@@ -922,9 +989,10 @@ async def test_state_checkpoint_written_before_each_phase_save(tmp_path):
     # Build runner where initial phase succeeds, review phase fails.
     runner = _make_pipeline_runner(workspace, paper_id)
 
-    async def first_phase_succeeds(): pass
+    async def first_phase_succeeds():
+        pass
+
     async def review_phase_blows_up():
-        from src.core.strategist.state import PaperStatus
         raise RuntimeError("review phase OpenRouter 402")
 
     runner._run_initial_phase = AsyncMock(side_effect=first_phase_succeeds)

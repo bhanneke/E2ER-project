@@ -1,4 +1,5 @@
 """Data module — Allium HTTP API provider."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -50,11 +51,13 @@ class AlliumProvider:
                     data = resp.json()
                     tables = []
                     for item in data.get("schemas", []):
-                        tables.append(TableInfo(
-                            schema=item.get("schema", ""),
-                            table=item.get("table", ""),
-                            description=item.get("description", ""),
-                        ))
+                        tables.append(
+                            TableInfo(
+                                schema=item.get("schema", ""),
+                                table=item.get("table", ""),
+                                description=item.get("description", ""),
+                            )
+                        )
                     return tables
             except Exception as e:
                 logger.warning("list_tables failed: %s", e)
@@ -76,7 +79,11 @@ class AlliumProvider:
                     if resp.status_code >= 500:
                         last_error = f"HTTP {resp.status_code}"
                         continue
-                    return {"error": f"HTTP {resp.status_code}: {resp.text[:300]}", "rows": [], "columns": []}
+                    return {
+                        "error": f"HTTP {resp.status_code}: {resp.text[:300]}",
+                        "rows": [],
+                        "columns": [],
+                    }
                 except httpx.TimeoutException:
                     last_error = "timeout"
                 except httpx.HTTPError as e:

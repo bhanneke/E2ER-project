@@ -1,7 +1,7 @@
 """GitHub integration — create paper repos and push artifacts."""
+
 from __future__ import annotations
 
-import base64
 from pathlib import Path
 from typing import Any
 
@@ -145,7 +145,9 @@ class GitHubClient:
         for path, content in stubs.items():
             try:
                 self.push_file(
-                    repo_name, path, content,
+                    repo_name,
+                    path,
+                    content,
                     "chore: scaffold replication package structure",
                 )
             except Exception as e:

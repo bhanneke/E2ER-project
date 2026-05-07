@@ -1,4 +1,5 @@
 """Skills loader — reads skill markdown files and injects into specialist prompts."""
+
 from __future__ import annotations
 
 from pathlib import Path

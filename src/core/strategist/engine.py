@@ -1,4 +1,5 @@
 """Strategist engine — the meta-agent that directs the pipeline."""
+
 from __future__ import annotations
 
 import json
@@ -6,19 +7,19 @@ from pathlib import Path
 from typing import Any
 
 from ...logging_config import get_logger
-from ...modules.llm.base import LLMBackend, ToolLoopResult
+from ...modules.llm.base import LLMBackend
 from ...modules.llm.tools import FILE_TOOLS, FileToolHandler
 from ..strategist.actions import (
     CeilingCheckResult,
-    SelfAttackReport,
     SelfAttackFinding,
+    SelfAttackReport,
     StrategistDecision,
     WorkOrder,
 )
 from ..strategist.context import (
+    build_self_attack_context,
     build_tier1_context,
     build_tier2_context,
-    build_self_attack_context,
 )
 
 logger = get_logger(__name__)
@@ -107,6 +108,7 @@ class StrategistEngine:
         backend_name: str = "anthropic",
     ) -> None:
         from ...modules.llm.base import TokenUsage
+
         self._backend = backend
         self._workspace = workspace
         self._paper_id = paper_id
@@ -123,6 +125,7 @@ class StrategistEngine:
         Without this, strategist tokens are invisible to GET /api/papers and
         the audit bundle, leading to systematic cost under-reporting."""
         from ...modules.tracking.usage import save_usage
+
         try:
             await save_usage(
                 paper_id=self._paper_id,
@@ -163,11 +166,14 @@ class StrategistEngine:
         if decision.action == "fail" and "Parse error" in (decision.rationale or ""):
             retry_msgs = msgs + [
                 {"role": "assistant", "content": result.output[:4000]},
-                {"role": "user", "content": (
-                    "Your previous response was not valid JSON. "
-                    "Output ONLY a JSON object (begin with `{`, end with `}`, "
-                    "no prose, no fences) matching the StrategistDecision schema."
-                )},
+                {
+                    "role": "user",
+                    "content": (
+                        "Your previous response was not valid JSON. "
+                        "Output ONLY a JSON object (begin with `{`, end with `}`, "
+                        "no prose, no fences) matching the StrategistDecision schema."
+                    ),
+                },
             ]
             retry = await self._backend.tool_loop(
                 system=_STRATEGIST_SYSTEM,
@@ -185,11 +191,7 @@ class StrategistEngine:
     async def ceiling_check(self, iteration: int, pivot_count: int) -> CeilingCheckResult:
         """Assess whether the iteration has hit diminishing returns."""
         context = build_tier1_context(self._workspace, self._paper_id)
-        prompt = (
-            f"Iteration: {iteration}, Pivots used: {pivot_count}\n\n"
-            f"{context}\n\n"
-            + _CEILING_CHECK_PROMPT
-        )
+        prompt = f"Iteration: {iteration}, Pivots used: {pivot_count}\n\n{context}\n\n" + _CEILING_CHECK_PROMPT
 
         result = await self._backend.tool_loop(
             system=_STRATEGIST_SYSTEM,

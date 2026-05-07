@@ -1,4 +1,5 @@
 """Specialist contracts — WorkOrder and Contribution Pydantic models."""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -9,6 +10,7 @@ from pydantic import BaseModel, Field
 
 class WorkOrder(BaseModel):
     """Instructions passed to a specialist."""
+
     paper_id: str
     specialist: str
     focus: str
@@ -17,11 +19,12 @@ class WorkOrder(BaseModel):
     output_file: str = ""
     extra: dict[str, Any] = Field(default_factory=dict)
     parallel_group: int = 0  # used by execute_with_dependencies for group ordering
-    context_tier: int = 1    # 0=minimal, 1=decision-relevant, 2=full artifacts
+    context_tier: int = 1  # 0=minimal, 1=decision-relevant, 2=full artifacts
 
 
 class Contribution(BaseModel):
     """Result produced by a specialist."""
+
     paper_id: str
     specialist: str
     output: str
@@ -37,5 +40,6 @@ class Contribution(BaseModel):
 
 class ReviewContribution(Contribution):
     """Reviewer output — includes structured score."""
+
     score: float = 0.0
     recommendation: str = ""

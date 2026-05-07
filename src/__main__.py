@@ -1,4 +1,5 @@
 """E2ER v3 CLI entry point — `e2er serve` or `e2er migrate`."""
+
 from __future__ import annotations
 
 import argparse
@@ -23,8 +24,8 @@ def main() -> None:
 
     if args.command == "migrate":
         import asyncio
-        from pathlib import Path
         import importlib.util
+        from pathlib import Path
 
         migrate_path = Path(__file__).parent.parent / "scripts" / "migrate.py"
         if not migrate_path.exists():

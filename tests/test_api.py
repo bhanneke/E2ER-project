@@ -1,7 +1,7 @@
 """API endpoint tests — no live DB or LLM required."""
+
 from __future__ import annotations
 
-import uuid
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
@@ -29,6 +29,7 @@ def client(tmp_path: Path):
 # Health
 # ---------------------------------------------------------------------------
 
+
 def test_health_returns_ok(client):
     resp = client.get("/health")
     assert resp.status_code == 200
@@ -40,6 +41,7 @@ def test_health_returns_ok(client):
 # ---------------------------------------------------------------------------
 # POST /api/papers
 # ---------------------------------------------------------------------------
+
 
 def test_create_paper_returns_paper_id(client, tmp_path):
     with (
@@ -106,6 +108,7 @@ def test_create_paper_manifest_content(client, tmp_path):
 # GET /api/papers
 # ---------------------------------------------------------------------------
 
+
 def test_list_papers_empty(client):
     with patch("src.db.client.fetch_all", new_callable=AsyncMock, return_value=[]):
         resp = client.get("/api/papers")
@@ -126,6 +129,7 @@ def test_list_papers_returns_rows(client):
 # GET /api/papers/{paper_id}
 # ---------------------------------------------------------------------------
 
+
 def test_get_paper_not_found(client):
     with patch("src.db.client.fetch_one", new_callable=AsyncMock, return_value=None):
         resp = client.get("/api/papers/nonexistent-id")
@@ -134,9 +138,14 @@ def test_get_paper_not_found(client):
 
 def test_get_paper_found(client):
     row = {
-        "id": "abc-123", "title": "Test", "status": "completed",
-        "research_question": "Test RQ?", "workspace": "/tmp/test",
-        "mode": "single_pass", "github_repo": None, "created_at": "2026-01-01",
+        "id": "abc-123",
+        "title": "Test",
+        "status": "completed",
+        "research_question": "Test RQ?",
+        "workspace": "/tmp/test",
+        "mode": "single_pass",
+        "github_repo": None,
+        "created_at": "2026-01-01",
     }
     with patch("src.db.client.fetch_one", new_callable=AsyncMock, return_value=row):
         resp = client.get("/api/papers/abc-123")
@@ -148,6 +157,7 @@ def test_get_paper_found(client):
 # ---------------------------------------------------------------------------
 # GET /api/papers/{paper_id}/artifacts
 # ---------------------------------------------------------------------------
+
 
 def test_list_artifacts_workspace_not_found(client):
     with patch("src.config.get_settings") as mock_settings:
@@ -181,6 +191,7 @@ def test_list_artifacts_returns_file_list(client, tmp_path):
 # POST /api/queries/{query_id}/approve
 # ---------------------------------------------------------------------------
 
+
 def test_approve_query(client):
     with patch("src.db.client.execute", new_callable=AsyncMock):
         resp = client.post(
@@ -206,6 +217,7 @@ def test_reject_query(client):
 # GET /api/papers/{paper_id}/pending-queries
 # ---------------------------------------------------------------------------
 
+
 def test_pending_queries_empty(client):
     with patch("src.db.client.fetch_all", new_callable=AsyncMock, return_value=[]):
         resp = client.get("/api/papers/paper-abc/pending-queries")
@@ -216,10 +228,15 @@ def test_pending_queries_empty(client):
 def test_pending_queries_returns_rows(client):
     rows = [
         {
-            "id": "q1", "query_sql": "SELECT tx_hash FROM ...", "query_type": "production",
-            "fields_requested": '["tx_hash"]', "aggregation_level": "transaction",
-            "estimated_rows": 1000, "created_at": "2026-01-01",
-            "approval_request_id": "ar1", "approval_status": "pending",
+            "id": "q1",
+            "query_sql": "SELECT tx_hash FROM ...",
+            "query_type": "production",
+            "fields_requested": '["tx_hash"]',
+            "aggregation_level": "transaction",
+            "estimated_rows": 1000,
+            "created_at": "2026-01-01",
+            "approval_request_id": "ar1",
+            "approval_status": "pending",
         }
     ]
     with patch("src.db.client.fetch_all", new_callable=AsyncMock, return_value=rows):

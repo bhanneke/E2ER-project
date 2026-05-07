@@ -1,4 +1,5 @@
 """Specialist registry — maps specialist names to output artifacts and skills."""
+
 from __future__ import annotations
 
 SPECIALIST_ARTIFACTS: dict[str, str] = {
@@ -34,11 +35,25 @@ SPECIALIST_ARTIFACTS: dict[str, str] = {
 }
 
 SPECIALIST_SKILLS: dict[str, list[str]] = {
-    "idea_developer": ["base/researcher", "base/economist", "reasoning/creative-ideation", "reasoning/novelty"],
+    "idea_developer": [
+        "base/researcher",
+        "base/economist",
+        "reasoning/creative-ideation",
+        "reasoning/novelty",
+    ],
     "literature_scanner": ["base/researcher", "synthesis/context-builder"],
     "data_architect": ["data/blockchain", "data/crypto-defi", "base/economist"],
-    "identification_strategist": ["causal-inference/judge-designs", "causal-inference/natural-experiments", "reasoning/identification"],
-    "econometrics_specialist": ["econometrics/iv-estimation", "econometrics/did", "econometrics/panel-data", "econometrics/event-study"],
+    "identification_strategist": [
+        "causal-inference/judge-designs",
+        "causal-inference/natural-experiments",
+        "reasoning/identification",
+    ],
+    "econometrics_specialist": [
+        "econometrics/iv-estimation",
+        "econometrics/did",
+        "econometrics/panel-data",
+        "econometrics/event-study",
+    ],
     "data_analyst": ["data/cleaning", "data/figure-spec", "econometrics/panel-data"],
     "paper_drafter": ["writing/paper-structure", "writing/personal-style", "base/researcher"],
     "section_writer": ["writing/paper-structure", "writing/personal-style", "reasoning/anti-slop"],
@@ -50,7 +65,11 @@ SPECIALIST_SKILLS: dict[str, list[str]] = {
     "writing_reviewer": ["review/writing-quality", "reasoning/anti-slop"],
     "data_reviewer": ["review/data-quality", "data/cleaning"],
     "identification_reviewer": ["causal-inference/sensitivity", "review/technical-review"],
-    "self_attacker": ["review/referee-simulation", "reasoning/argument-audit", "causal-inference/sensitivity"],
+    "self_attacker": [
+        "review/referee-simulation",
+        "reasoning/argument-audit",
+        "causal-inference/sensitivity",
+    ],
     "polish_formula": ["latex/econ-model", "math/optimization-verification"],
     "polish_numerics": ["data/cleaning", "review/consistency-check"],
     "polish_institutions": ["base/economist", "data/crypto-defi"],

@@ -1,10 +1,9 @@
 """Tests for GitHub integration — create repos, push files, push directories."""
+
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock, call, patch
-
-import pytest
+from unittest.mock import MagicMock, patch
 
 
 def _make_mock_github(repo: MagicMock | None = None) -> tuple[MagicMock, MagicMock, MagicMock]:
@@ -24,6 +23,7 @@ def _make_mock_github(repo: MagicMock | None = None) -> tuple[MagicMock, MagicMo
 # ---------------------------------------------------------------------------
 # create_paper_repo
 # ---------------------------------------------------------------------------
+
 
 def test_create_paper_repo_returns_urls():
     mock_gh_cls, mock_user, mock_repo = _make_mock_github()
@@ -97,6 +97,7 @@ def test_create_paper_repo_slug_from_title():
 # push_file
 # ---------------------------------------------------------------------------
 
+
 def test_push_file_creates_when_not_exists():
     mock_gh_cls, mock_user, mock_repo = _make_mock_github()
     mock_repo.get_contents.side_effect = Exception("404 Not Found")
@@ -145,6 +146,7 @@ def test_push_file_accepts_bytes():
 # ---------------------------------------------------------------------------
 # push_directory
 # ---------------------------------------------------------------------------
+
 
 def test_push_directory_pushes_all_files(tmp_path: Path):
     (tmp_path / "main.tex").write_text("\\documentclass{article}")
@@ -222,6 +224,7 @@ def test_push_directory_continues_on_individual_file_error(tmp_path: Path):
 # ensure_replication_scaffold
 # ---------------------------------------------------------------------------
 
+
 def test_ensure_replication_scaffold_creates_gitkeeps():
     mock_gh_cls, mock_user, mock_repo = _make_mock_github()
     mock_repo.get_contents.side_effect = Exception("404")
@@ -232,8 +235,5 @@ def test_ensure_replication_scaffold_creates_gitkeeps():
         client = GitHubClient("fake-token", "fake-user")
         client.ensure_replication_scaffold("my-repo")
 
-    paths_pushed = {
-        call[1].get("path") or call[0][0]
-        for call in mock_repo.create_file.call_args_list
-    }
+    paths_pushed = {call[1].get("path") or call[0][0] for call in mock_repo.create_file.call_args_list}
     assert "replication/.gitkeep" in paths_pushed

@@ -1,4 +1,5 @@
 """GitHub push hooks — called at pipeline stage transitions."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -16,8 +17,8 @@ async def push_latex_draft(
 ) -> dict[str, Any] | None:
     """Push the current LaTeX draft to GitHub after a pipeline stage completes."""
     from ...config import get_settings
-    from .client import GitHubClient
     from ...db.client import fetch_one
+    from .client import GitHubClient
 
     settings = get_settings()
     if not settings.github_enabled:
@@ -50,8 +51,8 @@ async def push_replication_package(
 ) -> dict[str, Any] | None:
     """Push the replication package to GitHub (SQL queries, estimation code, audit log)."""
     from ...config import get_settings
-    from .client import GitHubClient
     from ...db.client import fetch_one
+    from .client import GitHubClient
 
     settings = get_settings()
     if not settings.github_enabled:

@@ -1,17 +1,16 @@
 """Specialist execution — owns the tool-use loop for each specialist call."""
+
 from __future__ import annotations
 
 import time
 from pathlib import Path
-from typing import Any
 
 from ...logging_config import get_logger
-from ...modules.llm.base import LLMBackend, CompositeToolHandler, ToolHandler
+from ...modules.llm.base import CompositeToolHandler, LLMBackend, ToolHandler
 from ...modules.llm.tools import FILE_TOOLS, FileToolHandler
 from ...modules.tracking.costs import compute_cost
 from ...modules.tracking.usage import save_usage
 from ..specialists.contracts import Contribution, WorkOrder
-from ..specialists.registry import SPECIALIST_SKILLS
 
 logger = get_logger(__name__)
 
@@ -39,9 +38,7 @@ async def run_specialist(
     specialist = work_order.specialist
 
     skills_text = load_skills_for_specialist(specialist)
-    has_allium = any(
-        (t.get("name") == "query_allium") for t in (extra_tools or [])
-    )
+    has_allium = any((t.get("name") == "query_allium") for t in (extra_tools or []))
     system = _build_system_prompt(specialist, skills_text, has_allium=has_allium)
 
     tools = list(FILE_TOOLS)
@@ -57,7 +54,11 @@ async def run_specialist(
 
     logger.info(
         "%s: starting tool_loop (system=%d chars, user=%d chars, %d tools, max_turns=%d)",
-        specialist, len(system), len(user_prompt), len(tools), _MAX_TURNS,
+        specialist,
+        len(system),
+        len(user_prompt),
+        len(tools),
+        _MAX_TURNS,
     )
     t_loop = time.time()
 
@@ -72,8 +73,11 @@ async def run_specialist(
     duration = time.time() - t0
     logger.info(
         "%s: tool_loop returned in %.1fs (success=%s, tools_called=%d, tokens=%d)",
-        specialist, time.time() - t_loop, result.success,
-        result.tool_calls_made, result.usage.total_tokens,
+        specialist,
+        time.time() - t_loop,
+        result.success,
+        result.tool_calls_made,
+        result.usage.total_tokens,
     )
 
     cost = compute_cost(model, result.usage)
@@ -94,6 +98,7 @@ async def run_specialist(
     # record of every specialist invocation (success or failure).
     try:
         from ...db.client import execute
+
         await execute(
             """
             INSERT INTO contributions
@@ -144,44 +149,51 @@ def _build_system_prompt(specialist: str, skills_text: str, has_allium: bool = F
         "One specialist = one artifact.",
         "3. Do not invent additional filenames. The orchestrator only collects "
         "the canonical artifact named in the work order.",
-        "4. After the single write_file call succeeds, end your turn — "
-        "no further commentary, no follow-up files.",
+        "4. After the single write_file call succeeds, end your turn — no further commentary, no follow-up files.",
         "5. If you need to gather information, use read_file or other tools, "
         "but produce exactly one final write_file at the end.",
         "",
     ]
     if specialist == "data_analyst" and has_allium:
-        lines.extend([
-            "## Mandatory Data Sourcing — DO NOT SYNTHESIZE",
-            "The Allium tool `query_allium` is wired into your tool list. You MUST use it.",
-            "- Do NOT write \"synthetic\", \"calibrated\", \"plausible\", \"illustrative\", \"hypothetical\" "
-            "or \"representative\" numbers. Inventing data is a hard failure.",
-            "- Workflow:",
-            "  1. Call `list_allium_tables` once to confirm the table you'll query.",
-            "  2. Submit a `query_allium` call with `query_type='feasibility'` (auto-approved, "
-            "samples 1000 rows). Inspect the result.",
-            "  3. Submit production queries with `query_type='production'`. These return a "
-            "`query_id` and require human approval — poll `check_approval` until status='approved' "
-            "(typically takes minutes; do NOT give up). Once approved, query_allium returns the rows.",
-            "  4. Build the data_summary.md from the actual returned rows. Cite the query_ids.",
-            "- If a query is rejected or never approves within reasonable time, report this in "
-            "data_summary.md as a transparent failure — do NOT fall back to invented data.",
-            "",
-        ])
+        lines.extend(
+            [
+                "## Mandatory Data Sourcing — DO NOT SYNTHESIZE",
+                "The Allium tool `query_allium` is wired into your tool list. You MUST use it.",
+                '- Do NOT write "synthetic", "calibrated", "plausible", "illustrative", "hypothetical" '
+                'or "representative" numbers. Inventing data is a hard failure.',
+                "- Workflow:",
+                "  1. Call `list_allium_tables` once to confirm the table you'll query.",
+                "  2. Submit a `query_allium` call with `query_type='feasibility'` (auto-approved, "
+                "samples 1000 rows). Inspect the result.",
+                "  3. Submit production queries with `query_type='production'`. These return a "
+                "`query_id` and require human approval — poll `check_approval` until status='approved' "
+                "(typically takes minutes; do NOT give up). Once approved, query_allium returns the rows.",
+                "  4. Build the data_summary.md from the actual returned rows. Cite the query_ids.",
+                "- If a query is rejected or never approves within reasonable time, report this in "
+                "data_summary.md as a transparent failure — do NOT fall back to invented data.",
+                "",
+            ]
+        )
     if skills_text:
         lines.append("## Your Expertise\n")
         lines.append(skills_text)
     return "\n".join(lines)
 
 
-_BIB_SPECIALISTS = frozenset([
-    "literature_scanner", "paper_drafter", "section_writer",
-    "abstract_writer", "revisor",
-])
+_BIB_SPECIALISTS = frozenset(
+    [
+        "literature_scanner",
+        "paper_drafter",
+        "section_writer",
+        "abstract_writer",
+        "revisor",
+    ]
+)
 
 
 def _build_user_prompt(work_order: WorkOrder) -> str:
     from ..specialists.registry import REVIEWER_SPECIALISTS
+
     parts = [f"## Work Order\n{work_order.focus}"]
     if work_order.context:
         parts.append(f"\n## Context\n{work_order.context}")
@@ -214,6 +226,7 @@ def _load_reference_summary(specialist: str) -> str:
     if specialist not in _BIB_SPECIALISTS:
         return ""
     from ...config import get_settings
+
     settings = get_settings()
     if not settings.literature_bibtex_file:
         return ""
@@ -222,6 +235,7 @@ def _load_reference_summary(specialist: str) -> str:
         return ""
     try:
         from ...modules.literature.bibtex import parse_bibtex_file
+
         papers = parse_bibtex_file(bib_path)
     except Exception:
         return ""
@@ -234,7 +248,7 @@ def _load_reference_summary(specialist: str) -> str:
             authors += " et al."
         year = f" ({p.year})" if p.year else ""
         journal = f". _{p.journal}_" if p.journal else ""
-        lines.append(f"- {authors}{year}. \"{p.title}\"{journal}")
+        lines.append(f'- {authors}{year}. "{p.title}"{journal}')
     if len(papers) > 60:
         lines.append(f"  ... and {len(papers) - 60} more. See `{bib_path}` for the full list.")
     return "\n".join(lines)

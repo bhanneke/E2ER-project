@@ -1,4 +1,5 @@
 """Specialist dispatcher — runs work orders, supports parallel execution."""
+
 from __future__ import annotations
 
 import asyncio
@@ -27,8 +28,10 @@ def _inject_context(work_order: WorkOrder, workspace: Path) -> WorkOrder:
     every subsequent turn → quadratic input growth).
     """
     from ..strategist.context import (
-        build_tier0_context, build_tier1_context, build_tier2_context,
         build_review_context,
+        build_tier0_context,
+        build_tier1_context,
+        build_tier2_context,
     )
     from .registry import REVIEWER_SPECIALISTS, SPECIALIST_ARTIFACTS
 
@@ -66,7 +69,9 @@ async def execute_work_order(
     work_order = _inject_context(work_order, workspace)
     logger.info("Dispatching %s for paper %s", work_order.specialist, work_order.paper_id)
     await log_event(
-        work_order.paper_id, "specialist_start", specialist=work_order.specialist,
+        work_order.paper_id,
+        "specialist_start",
+        specialist=work_order.specialist,
     )
     try:
         contribution = await run_specialist(
@@ -79,7 +84,8 @@ async def execute_work_order(
             backend_name=backend_name,
         )
         await log_event(
-            work_order.paper_id, "specialist_end",
+            work_order.paper_id,
+            "specialist_end",
             specialist=work_order.specialist,
             payload={"success": contribution.success},
         )
@@ -90,7 +96,8 @@ async def execute_work_order(
     except Exception as e:
         logger.error("Specialist %s failed: %s", work_order.specialist, e)
         await log_event(
-            work_order.paper_id, "specialist_failed",
+            work_order.paper_id,
+            "specialist_failed",
             specialist=work_order.specialist,
             payload={"error": str(e)},
         )
@@ -120,6 +127,7 @@ async def execute_parallel(
     rather than silently advancing to the next phase with no artifacts).
     """
     from ...config import get_settings
+
     if not work_orders:
         return []
     logger.info("Parallel dispatch: %d specialists", len(work_orders))
@@ -128,8 +136,13 @@ async def execute_parallel(
     async def _bounded(wo: WorkOrder) -> Contribution:
         async with sem:
             return await execute_work_order(
-                wo, backend, workspace, model,
-                extra_tools, extra_handlers, backend_name,
+                wo,
+                backend,
+                workspace,
+                model,
+                extra_tools,
+                extra_handlers,
+                backend_name,
             )
 
     contributions = await asyncio.gather(*(_bounded(wo) for wo in work_orders))
@@ -140,9 +153,7 @@ async def execute_parallel(
             "execute_parallel: %d/%d specialists failed: %s",
             len(failed),
             len(contributions),
-            ", ".join(
-                f"{c.specialist}({(c.error or '?')[:60]})" for c in failed
-            ),
+            ", ".join(f"{c.specialist}({(c.error or '?')[:60]})" for c in failed),
         )
     if failed and len(failed) == len(contributions):
         details = "; ".join(f"{c.specialist}: {c.error}" for c in failed)
@@ -172,8 +183,13 @@ async def execute_with_dependencies(
         group = list(group_iter)
         logger.info("Executing parallel group %d (%d specialists)", group_id, len(group))
         contributions = await execute_parallel(
-            group, backend, workspace, model,
-            extra_tools, extra_handlers, backend_name,
+            group,
+            backend,
+            workspace,
+            model,
+            extra_tools,
+            extra_handlers,
+            backend_name,
         )
         all_contributions.extend(contributions)
 

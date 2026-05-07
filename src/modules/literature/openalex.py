@@ -1,4 +1,5 @@
 """Literature module — OpenAlex search provider (open access, no key required)."""
+
 from __future__ import annotations
 
 import urllib.parse
@@ -15,14 +16,17 @@ _EMAIL = "research@e2er.app"  # polite pool
 
 async def search_papers(query: str, limit: int = 20) -> SearchResult:
     """Search OpenAlex for papers matching the query."""
-    params = urllib.parse.urlencode({
-        "search": query,
-        "per-page": min(limit, 50),
-        "mailto": _EMAIL,
-    })
+    params = urllib.parse.urlencode(
+        {
+            "search": query,
+            "per-page": min(limit, 50),
+            "mailto": _EMAIL,
+        }
+    )
     url = f"{_BASE}/works?{params}"
     try:
         import json
+
         text = await fetch_text(url)
         data = json.loads(text)
         papers = [_parse(w) for w in data.get("results", [])]
@@ -43,6 +47,7 @@ async def fetch_by_doi(doi: str) -> PaperMetadata | None:
     url = f"{_BASE}/works/https://doi.org/{encoded}?mailto={_EMAIL}"
     try:
         import json
+
         text = await fetch_text(url)
         data = json.loads(text)
         return _parse(data)
@@ -60,7 +65,7 @@ def _parse(work: dict) -> PaperMetadata:
 
     doi = work.get("doi", "") or ""
     if doi.startswith("https://doi.org/"):
-        doi = doi[len("https://doi.org/"):]
+        doi = doi[len("https://doi.org/") :]
 
     pdf_url = ""
     oa = work.get("open_access", {})

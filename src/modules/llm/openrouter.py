@@ -1,7 +1,7 @@
 """LLM module — OpenRouter backend (OpenAI-compatible API)."""
+
 from __future__ import annotations
 
-import asyncio
 import time
 from typing import Any
 
@@ -9,7 +9,7 @@ from openai import AsyncOpenAI
 
 from ...config import get_settings
 from ...logging_config import get_logger
-from .base import LLMBackend, ToolHandler, ToolLoopResult, TokenUsage
+from .base import LLMBackend, TokenUsage, ToolHandler, ToolLoopResult
 
 logger = get_logger(__name__)
 
@@ -85,7 +85,8 @@ class OpenRouterBackend(LLMBackend):
                 response = await self._client.chat.completions.create(**create_kwargs)
                 logger.info(
                     "OpenRouter turn %d: response in %.1fs (finish=%s)",
-                    turn, time.monotonic() - t_call,
+                    turn,
+                    time.monotonic() - t_call,
                     response.choices[0].finish_reason if response.choices else "?",
                 )
             except Exception as e:
@@ -116,9 +117,9 @@ class OpenRouterBackend(LLMBackend):
             # at the orchestration level or surface a clear cap error.
             if finish_reason == "length":
                 logger.warning(
-                    "OpenRouter turn %d: hit max_tokens=%d (finish=length). "
-                    "Bailing out to avoid infinite loop.",
-                    turn, self._max_tokens,
+                    "OpenRouter turn %d: hit max_tokens=%d (finish=length). Bailing out to avoid infinite loop.",
+                    turn,
+                    self._max_tokens,
                 )
                 return ToolLoopResult(
                     success=False,
@@ -144,25 +145,41 @@ class OpenRouterBackend(LLMBackend):
                 )
 
             # Execute tool calls
-            msgs.append({"role": "assistant", "content": msg.content, "tool_calls": [
-                {"id": tc.id, "type": "function", "function": {"name": tc.function.name, "arguments": tc.function.arguments}}
-                for tc in (msg.tool_calls or [])
-            ]})
+            msgs.append(
+                {
+                    "role": "assistant",
+                    "content": msg.content,
+                    "tool_calls": [
+                        {
+                            "id": tc.id,
+                            "type": "function",
+                            "function": {
+                                "name": tc.function.name,
+                                "arguments": tc.function.arguments,
+                            },
+                        }
+                        for tc in (msg.tool_calls or [])
+                    ],
+                }
+            )
 
             for tc in msg.tool_calls or []:
                 tool_calls_made += 1
                 import json
+
                 try:
                     tool_input = json.loads(tc.function.arguments)
                 except Exception:
                     tool_input = {}
                 logger.debug("Tool call: %s(%s)", tc.function.name, list(tool_input.keys()))
                 result_text = await tool_handler.handle(tc.function.name, tool_input)
-                msgs.append({
-                    "role": "tool",
-                    "tool_call_id": tc.id,
-                    "content": result_text,
-                })
+                msgs.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "content": result_text,
+                    }
+                )
 
         return ToolLoopResult(
             success=False,

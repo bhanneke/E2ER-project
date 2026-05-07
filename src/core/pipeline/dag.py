@@ -1,8 +1,8 @@
 """Pipeline DAG — defines the default specialist execution order."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
 
 
 @dataclass
@@ -23,10 +23,18 @@ SINGLE_PASS_DAG: list[Stage] = [
     Stage("econometrics", ["econometrics_specialist"], parallel=False),
     Stage("writing", ["paper_drafter"], parallel=False),
     Stage("formatting", ["latex_formatter", "abstract_writer"], parallel=True),
-    Stage("review", [
-        "mechanism_reviewer", "technical_reviewer", "literature_reviewer",
-        "writing_reviewer", "data_reviewer", "identification_reviewer",
-    ], parallel=True),
+    Stage(
+        "review",
+        [
+            "mechanism_reviewer",
+            "technical_reviewer",
+            "literature_reviewer",
+            "writing_reviewer",
+            "data_reviewer",
+            "identification_reviewer",
+        ],
+        parallel=True,
+    ),
 ]
 
 # Extended pipeline stages (Mode 2 — iterative with V3 extensions)
@@ -39,16 +47,31 @@ ITERATIVE_DAG: list[Stage] = [
     Stage("writing", ["section_writer"], parallel=False),
     Stage("ceiling_check", [], parallel=False),  # handled by StrategistEngine
     Stage("self_attack", ["self_attacker"], parallel=False),
-    Stage("polish", [
-        "polish_formula", "polish_numerics", "polish_institutions",
-        "polish_bibliography", "polish_equilibria",
-    ], parallel=True),
+    Stage(
+        "polish",
+        [
+            "polish_formula",
+            "polish_numerics",
+            "polish_institutions",
+            "polish_bibliography",
+            "polish_equilibria",
+        ],
+        parallel=True,
+    ),
     Stage("abstract", ["abstract_writer"], parallel=False),
     Stage("formatting", ["latex_formatter"], parallel=False),
-    Stage("review", [
-        "mechanism_reviewer", "technical_reviewer", "literature_reviewer",
-        "writing_reviewer", "data_reviewer", "identification_reviewer",
-    ], parallel=True),
+    Stage(
+        "review",
+        [
+            "mechanism_reviewer",
+            "technical_reviewer",
+            "literature_reviewer",
+            "writing_reviewer",
+            "data_reviewer",
+            "identification_reviewer",
+        ],
+        parallel=True,
+    ),
     Stage("revision", ["revisor"], parallel=False, required=False),
     Stage("replication", ["replication_packager"], parallel=False),
 ]

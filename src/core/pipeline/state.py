@@ -1,11 +1,11 @@
 """Pipeline execution state — persisted progress for resume-ability."""
+
 from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
-
 
 _STATE_FILENAME = ".pipeline_state.json"
 _BACKUP_FILENAME = ".pipeline_state.json.bak"
@@ -46,7 +46,7 @@ class PipelineState:
         tmp.replace(path)
 
     @classmethod
-    def load(cls, workspace: Path, paper_id: str, mode: str) -> "PipelineState":
+    def load(cls, workspace: Path, paper_id: str, mode: str) -> PipelineState:
         # Try main file first, fall back to .bak if main is corrupted.
         for name in (_STATE_FILENAME, _BACKUP_FILENAME):
             p = workspace / name

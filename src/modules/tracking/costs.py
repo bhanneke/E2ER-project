@@ -1,4 +1,5 @@
 """Token cost estimation per model."""
+
 from __future__ import annotations
 
 from decimal import Decimal
@@ -23,7 +24,7 @@ _PRICING: dict[str, tuple[Decimal, Decimal]] = {
 }
 
 _MILLION = Decimal("1_000_000")
-_CACHE_READ_MULT = Decimal("0.1")    # cache reads: 10% of input price
+_CACHE_READ_MULT = Decimal("0.1")  # cache reads: 10% of input price
 _CACHE_WRITE_MULT = Decimal("1.25")  # cache writes: 125% of input price
 _DEFAULT_INPUT = Decimal("3")
 _DEFAULT_OUTPUT = Decimal("15")

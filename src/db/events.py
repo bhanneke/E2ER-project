@@ -1,4 +1,5 @@
 """Append-only pipeline events log — one row per phase/specialist transition."""
+
 from __future__ import annotations
 
 import json

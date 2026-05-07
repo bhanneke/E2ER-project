@@ -1,4 +1,5 @@
 """Pipeline integration tests — exercises the full orchestration path with mocked LLM and DB."""
+
 from __future__ import annotations
 
 import asyncio
@@ -17,10 +18,10 @@ from src.core.strategist.actions import (
     WorkOrder,  # WorkOrder from strategist.actions, NOT from specialists.contracts
 )
 
-
 # ---------------------------------------------------------------------------
 # Pre-canned strategist decisions used across tests
 # ---------------------------------------------------------------------------
+
 
 def _designing_decision(paper_id: str) -> StrategistDecision:
     # Note: strategist.actions.WorkOrder does NOT have paper_id — paper_id lives
@@ -49,6 +50,7 @@ _SELF_ATTACK_CLEAN = SelfAttackReport(findings=[], overall_severity=1)
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_workspace(tmp_path: Path, paper_id: str, mode: str = "single_pass") -> Path:
     ws = tmp_path / paper_id
     ws.mkdir(parents=True)
@@ -67,6 +69,7 @@ def _make_workspace(tmp_path: Path, paper_id: str, mode: str = "single_pass") ->
 # ---------------------------------------------------------------------------
 # Single-pass mode
 # ---------------------------------------------------------------------------
+
 
 async def test_single_pass_creates_core_artifacts(tmp_path, mock_llm):
     paper_id = str(uuid.uuid4())
@@ -113,7 +116,13 @@ async def test_single_pass_creates_core_artifacts(tmp_path, mock_llm):
     # Aggregation JSON must be valid
     agg = json.loads((workspace / "review_aggregation.json").read_text())
     assert "verdict" in agg
-    assert agg["verdict"] in {"ACCEPT", "MINOR_REVISION", "MAJOR_REVISION", "HARD_REJECT", "MECHANISM_FAIL"}
+    assert agg["verdict"] in {
+        "ACCEPT",
+        "MINOR_REVISION",
+        "MAJOR_REVISION",
+        "HARD_REJECT",
+        "MECHANISM_FAIL",
+    }
 
 
 async def test_single_pass_specialist_call_order(tmp_path, mock_llm):
@@ -130,9 +139,14 @@ async def test_single_pass_specialist_call_order(tmp_path, mock_llm):
         patch("src.modules.tracking.usage.save_usage", new_callable=AsyncMock),
     ):
         runner = PipelineRunner(
-            paper_id=paper_id, workspace=workspace, backend=mock_llm,
-            model="claude-test", mode="single_pass",
-            extra_tools=[], extra_handlers=[], backend_name="mock",
+            paper_id=paper_id,
+            workspace=workspace,
+            backend=mock_llm,
+            model="claude-test",
+            mode="single_pass",
+            extra_tools=[],
+            extra_handlers=[],
+            backend_name="mock",
         )
         await runner.run()
 
@@ -140,15 +154,24 @@ async def test_single_pass_specialist_call_order(tmp_path, mock_llm):
 
     # Core specialists from the designing decision
     expected_core = {
-        "idea_developer", "literature_scanner", "identification_strategist",
-        "econometrics_specialist", "paper_drafter", "abstract_writer", "latex_formatter",
+        "idea_developer",
+        "literature_scanner",
+        "identification_strategist",
+        "econometrics_specialist",
+        "paper_drafter",
+        "abstract_writer",
+        "latex_formatter",
     }
     assert expected_core.issubset(called), f"Missing specialist calls: {expected_core - called}"
 
     # All 6 reviewers
     expected_reviewers = {
-        "mechanism_reviewer", "technical_reviewer", "literature_reviewer",
-        "writing_reviewer", "data_reviewer", "identification_reviewer",
+        "mechanism_reviewer",
+        "technical_reviewer",
+        "literature_reviewer",
+        "writing_reviewer",
+        "data_reviewer",
+        "identification_reviewer",
     }
     assert expected_reviewers.issubset(called), f"Missing reviewer calls: {expected_reviewers - called}"
 
@@ -167,9 +190,14 @@ async def test_single_pass_contributions_count(tmp_path, mock_llm):
         patch("src.modules.tracking.usage.save_usage", new_callable=AsyncMock),
     ):
         runner = PipelineRunner(
-            paper_id=paper_id, workspace=workspace, backend=mock_llm,
-            model="claude-test", mode="single_pass",
-            extra_tools=[], extra_handlers=[], backend_name="mock",
+            paper_id=paper_id,
+            workspace=workspace,
+            backend=mock_llm,
+            model="claude-test",
+            mode="single_pass",
+            extra_tools=[],
+            extra_handlers=[],
+            backend_name="mock",
         )
         result = await runner.run()
 
@@ -181,6 +209,7 @@ async def test_single_pass_contributions_count(tmp_path, mock_llm):
 # ---------------------------------------------------------------------------
 # Review aggregation outcome
 # ---------------------------------------------------------------------------
+
 
 async def test_review_aggregation_accept_completes_paper(tmp_path, mock_llm):
     """When all reviewers score ≥ 6, the paper should reach ACCEPT or MINOR_REVISION."""
@@ -196,11 +225,16 @@ async def test_review_aggregation_accept_completes_paper(tmp_path, mock_llm):
         patch("src.modules.tracking.usage.save_usage", new_callable=AsyncMock),
     ):
         runner = PipelineRunner(
-            paper_id=paper_id, workspace=workspace, backend=mock_llm,
-            model="claude-test", mode="single_pass",
-            extra_tools=[], extra_handlers=[], backend_name="mock",
+            paper_id=paper_id,
+            workspace=workspace,
+            backend=mock_llm,
+            model="claude-test",
+            mode="single_pass",
+            extra_tools=[],
+            extra_handlers=[],
+            backend_name="mock",
         )
-        result = await runner.run()
+        await runner.run()
 
     # mock_llm always returns Score: 7/10 for all reviewers → expect ACCEPT or MINOR_REVISION
     agg = json.loads((workspace / "review_aggregation.json").read_text())
@@ -213,9 +247,10 @@ async def test_review_aggregation_accept_completes_paper(tmp_path, mock_llm):
 # Skills loading
 # ---------------------------------------------------------------------------
 
+
 def test_skills_loaded_for_all_specialists():
     """Every specialist in the registry should resolve to at least one skill file."""
-    from src.skills.loader import load_skills_for_specialist, _SPECIALIST_SKILLS
+    from src.skills.loader import _SPECIALIST_SKILLS, load_skills_for_specialist
 
     missing_skills: list[str] = []
     for specialist in _SPECIALIST_SKILLS:
@@ -233,15 +268,30 @@ def test_skills_directory_has_expected_files():
     from src.skills.loader import _load_skill
 
     required = [
-        "iv-estimation", "did", "panel-data", "event-study",
-        "judge-designs", "natural-experiments", "sensitivity",
-        "creative-ideation", "novelty", "argument-audit",
-        "paper-structure", "personal-style", "abstract",
-        "econ-model", "tables", "bibtex",
-        "game-theory", "market-microstructure",
-        "context-builder", "referee-simulation",
-        "technical-review", "consistency-check",
-        "writing-quality", "data-quality",
+        "iv-estimation",
+        "did",
+        "panel-data",
+        "event-study",
+        "judge-designs",
+        "natural-experiments",
+        "sensitivity",
+        "creative-ideation",
+        "novelty",
+        "argument-audit",
+        "paper-structure",
+        "personal-style",
+        "abstract",
+        "econ-model",
+        "tables",
+        "bibtex",
+        "game-theory",
+        "market-microstructure",
+        "context-builder",
+        "referee-simulation",
+        "technical-review",
+        "consistency-check",
+        "writing-quality",
+        "data-quality",
     ]
     missing = [name for name in required if not _load_skill(name).strip()]
     assert not missing, f"Required skill files not found or empty: {missing}"
@@ -251,9 +301,9 @@ def test_skills_directory_has_expected_files():
 # Workspace isolation
 # ---------------------------------------------------------------------------
 
+
 async def test_two_papers_workspace_isolated(tmp_path, mock_llm):
     """Two concurrent pipeline runs must not cross-contaminate workspaces."""
-    import asyncio
 
     paper_a = str(uuid.uuid4())
     paper_b = str(uuid.uuid4())
@@ -269,20 +319,32 @@ async def test_two_papers_workspace_isolated(tmp_path, mock_llm):
         patch("src.modules.tracking.usage.save_usage", new_callable=AsyncMock),
     ):
         runner_a = PipelineRunner(
-            paper_id=paper_a, workspace=ws_a, backend=mock_llm,
-            model="claude-test", mode="single_pass",
-            extra_tools=[], extra_handlers=[], backend_name="mock",
+            paper_id=paper_a,
+            workspace=ws_a,
+            backend=mock_llm,
+            model="claude-test",
+            mode="single_pass",
+            extra_tools=[],
+            extra_handlers=[],
+            backend_name="mock",
         )
-        runner_b = PipelineRunner(
-            paper_id=paper_b, workspace=ws_b, backend=mock_llm,
-            model="claude-test", mode="single_pass",
-            extra_tools=[], extra_handlers=[], backend_name="mock",
+        # Construct runner_b to verify construction alone doesn't pollute ws_b;
+        # only runner_a is executed below.
+        _runner_b = PipelineRunner(  # noqa: F841 — construction is the test
+            paper_id=paper_b,
+            workspace=ws_b,
+            backend=mock_llm,
+            model="claude-test",
+            mode="single_pass",
+            extra_tools=[],
+            extra_handlers=[],
+            backend_name="mock",
         )
         # Run sequentially to avoid decide() side_effect complexity
         await runner_a.run()
 
     # Files in ws_a must NOT appear in ws_b
-    files_a = {f.name for f in ws_a.rglob("*") if f.is_file()}
+    _files_a = {f.name for f in ws_a.rglob("*") if f.is_file()}  # noqa: F841 — kept for symmetry with files_b
     files_b = {f.name for f in ws_b.rglob("*") if f.is_file()}
 
     # ws_b should only have manifest.json (nothing written by runner_b since it wasn't run)
@@ -293,16 +355,24 @@ async def test_two_papers_workspace_isolated(tmp_path, mock_llm):
 # Context injection
 # ---------------------------------------------------------------------------
 
+
 def test_inject_context_tier0(tmp_path):
     """Tier 0 produces minimal context: paper title + RQ only."""
     import json
+
     from src.core.specialists.contracts import WorkOrder
     from src.core.specialists.dispatcher import _inject_context
 
     ws = tmp_path / "paper-ctx"
     ws.mkdir()
-    manifest = {"paper_id": "test-id", "title": "DeFi Liquidity", "research_question": "Does X affect Y?",
-                "datasets": [], "mode": "single_pass", "current_stage": "idea"}
+    manifest = {
+        "paper_id": "test-id",
+        "title": "DeFi Liquidity",
+        "research_question": "Does X affect Y?",
+        "datasets": [],
+        "mode": "single_pass",
+        "current_stage": "idea",
+    }
     (ws / "manifest.json").write_text(json.dumps(manifest))
 
     wo = WorkOrder(paper_id="test-id", specialist="idea_developer", focus="Develop idea", context_tier=0)
@@ -316,17 +386,29 @@ def test_inject_context_tier0(tmp_path):
 def test_inject_context_tier1_includes_paper_plan(tmp_path):
     """Tier 1 injects paper_plan.md content into specialist context."""
     import json
+
     from src.core.specialists.contracts import WorkOrder
     from src.core.specialists.dispatcher import _inject_context
 
     ws = tmp_path / "paper-ctx1"
     ws.mkdir()
-    manifest = {"paper_id": "test-id", "title": "Test Paper", "research_question": "RQ?",
-                "datasets": [], "mode": "single_pass", "current_stage": "idea"}
+    manifest = {
+        "paper_id": "test-id",
+        "title": "Test Paper",
+        "research_question": "RQ?",
+        "datasets": [],
+        "mode": "single_pass",
+        "current_stage": "idea",
+    }
     (ws / "manifest.json").write_text(json.dumps(manifest))
     (ws / "paper_plan.md").write_text("# Paper Plan\n\nH1: X increases Y.")
 
-    wo = WorkOrder(paper_id="test-id", specialist="econometrics_specialist", focus="Specify model", context_tier=1)
+    wo = WorkOrder(
+        paper_id="test-id",
+        specialist="econometrics_specialist",
+        focus="Specify model",
+        context_tier=1,
+    )
     enriched = _inject_context(wo, ws)
 
     assert "H1: X increases Y." in enriched.context
@@ -335,17 +417,29 @@ def test_inject_context_tier1_includes_paper_plan(tmp_path):
 def test_inject_context_tier2_includes_draft(tmp_path):
     """Tier 2 injects the current draft into reviewer context."""
     import json
+
     from src.core.specialists.contracts import WorkOrder
     from src.core.specialists.dispatcher import _inject_context
 
     ws = tmp_path / "paper-ctx2"
     ws.mkdir()
-    manifest = {"paper_id": "test-id", "title": "Test Paper", "research_question": "RQ?",
-                "datasets": [], "mode": "single_pass", "current_stage": "review"}
+    manifest = {
+        "paper_id": "test-id",
+        "title": "Test Paper",
+        "research_question": "RQ?",
+        "datasets": [],
+        "mode": "single_pass",
+        "current_stage": "review",
+    }
     (ws / "manifest.json").write_text(json.dumps(manifest))
     (ws / "paper_draft.tex").write_text(r"\documentclass{article}\begin{document}The draft.\end{document}")
 
-    wo = WorkOrder(paper_id="test-id", specialist="mechanism_reviewer", focus="Review mechanism", context_tier=2)
+    wo = WorkOrder(
+        paper_id="test-id",
+        specialist="mechanism_reviewer",
+        focus="Review mechanism",
+        context_tier=2,
+    )
     enriched = _inject_context(wo, ws)
 
     assert "The draft." in enriched.context
@@ -356,8 +450,13 @@ def test_inject_context_skips_if_already_populated(tmp_path):
     from src.core.specialists.contracts import WorkOrder
     from src.core.specialists.dispatcher import _inject_context
 
-    wo = WorkOrder(paper_id="test-id", specialist="paper_drafter", focus="Draft",
-                   context="Already set by caller.", context_tier=2)
+    wo = WorkOrder(
+        paper_id="test-id",
+        specialist="paper_drafter",
+        focus="Draft",
+        context="Already set by caller.",
+        context_tier=2,
+    )
     enriched = _inject_context(wo, tmp_path)
 
     assert enriched.context == "Already set by caller."
@@ -366,6 +465,7 @@ def test_inject_context_skips_if_already_populated(tmp_path):
 # ---------------------------------------------------------------------------
 # Compile + GitHub push phases
 # ---------------------------------------------------------------------------
+
 
 async def test_compile_phase_non_fatal(tmp_path, mock_llm):
     """Compile phase must not crash the pipeline when no LaTeX compiler is present."""
@@ -383,9 +483,14 @@ async def test_compile_phase_non_fatal(tmp_path, mock_llm):
         patch("src.modules.github.push.push_latex_draft", new_callable=AsyncMock, return_value=None),
     ):
         runner = PipelineRunner(
-            paper_id=paper_id, workspace=workspace, backend=mock_llm,
-            model="claude-test", mode="single_pass",
-            extra_tools=[], extra_handlers=[], backend_name="mock",
+            paper_id=paper_id,
+            workspace=workspace,
+            backend=mock_llm,
+            model="claude-test",
+            mode="single_pass",
+            extra_tools=[],
+            extra_handlers=[],
+            backend_name="mock",
         )
         result = await runner.run()
 
@@ -410,9 +515,14 @@ async def test_github_push_called_on_completion(tmp_path, mock_llm):
         patch("src.modules.github.push.push_latex_draft", push_mock),
     ):
         runner = PipelineRunner(
-            paper_id=paper_id, workspace=workspace, backend=mock_llm,
-            model="claude-test", mode="single_pass",
-            extra_tools=[], extra_handlers=[], backend_name="mock",
+            paper_id=paper_id,
+            workspace=workspace,
+            backend=mock_llm,
+            model="claude-test",
+            mode="single_pass",
+            extra_tools=[],
+            extra_handlers=[],
+            backend_name="mock",
         )
         await runner.run()
 
@@ -425,6 +535,7 @@ async def test_github_push_called_on_completion(tmp_path, mock_llm):
 # ---------------------------------------------------------------------------
 # Replication phase
 # ---------------------------------------------------------------------------
+
 
 async def test_replication_phase_runs_packager(tmp_path, mock_llm):
     """replication_packager must be called and estimation.py must be written."""
@@ -444,9 +555,14 @@ async def test_replication_phase_runs_packager(tmp_path, mock_llm):
         patch("src.modules.data.audit.write_data_queries_sql", new_callable=AsyncMock, return_value=0),
     ):
         runner = PipelineRunner(
-            paper_id=paper_id, workspace=workspace, backend=mock_llm,
-            model="claude-test", mode="single_pass",
-            extra_tools=[], extra_handlers=[], backend_name="mock",
+            paper_id=paper_id,
+            workspace=workspace,
+            backend=mock_llm,
+            model="claude-test",
+            mode="single_pass",
+            extra_tools=[],
+            extra_handlers=[],
+            backend_name="mock",
         )
         await runner.run()
 
@@ -472,9 +588,14 @@ async def test_replication_contributions_count(tmp_path, mock_llm):
         patch("src.modules.data.audit.write_data_queries_sql", new_callable=AsyncMock, return_value=0),
     ):
         runner = PipelineRunner(
-            paper_id=paper_id, workspace=workspace, backend=mock_llm,
-            model="claude-test", mode="single_pass",
-            extra_tools=[], extra_handlers=[], backend_name="mock",
+            paper_id=paper_id,
+            workspace=workspace,
+            backend=mock_llm,
+            model="claude-test",
+            mode="single_pass",
+            extra_tools=[],
+            extra_handlers=[],
+            backend_name="mock",
         )
         result = await runner.run()
 
@@ -486,6 +607,7 @@ async def test_replication_contributions_count(tmp_path, mock_llm):
 # ---------------------------------------------------------------------------
 # State persistence / resume
 # ---------------------------------------------------------------------------
+
 
 async def test_state_saved_after_each_phase(tmp_path, mock_llm):
     """A .pipeline_state.json must exist after a successful run."""
@@ -505,9 +627,14 @@ async def test_state_saved_after_each_phase(tmp_path, mock_llm):
         patch("src.modules.data.audit.write_data_queries_sql", new_callable=AsyncMock, return_value=0),
     ):
         runner = PipelineRunner(
-            paper_id=paper_id, workspace=workspace, backend=mock_llm,
-            model="claude-test", mode="single_pass",
-            extra_tools=[], extra_handlers=[], backend_name="mock",
+            paper_id=paper_id,
+            workspace=workspace,
+            backend=mock_llm,
+            model="claude-test",
+            mode="single_pass",
+            extra_tools=[],
+            extra_handlers=[],
+            backend_name="mock",
         )
         await runner.run()
 
@@ -528,14 +655,18 @@ async def test_resume_skips_completed_phases(tmp_path, mock_llm):
 
     # Pre-write review files so _run_revision_phase workspace fallback finds scores
     for reviewer in ["mechanism", "technical", "literature", "writing", "data", "identification"]:
-        (workspace / f"review_{reviewer}.md").write_text(f"# Review\n\nScore: 7/10\n\nLooks good.")
+        (workspace / f"review_{reviewer}.md").write_text("# Review\n\nScore: 7/10\n\nLooks good.")
 
     # Pre-write state: initial + review already done
     pre_state = {
-        "paper_id": paper_id, "mode": "single_pass",
+        "paper_id": paper_id,
+        "mode": "single_pass",
         "completed_stages": ["initial", "review"],
-        "current_stage": "", "iteration": 0, "pivot_count": 0,
-        "contributions_count": 13, "last_status": "in_progress",
+        "current_stage": "",
+        "iteration": 0,
+        "pivot_count": 0,
+        "contributions_count": 13,
+        "last_status": "in_progress",
         "metadata": {},
     }
     (workspace / ".pipeline_state.json").write_text(json.dumps(pre_state))
@@ -553,9 +684,14 @@ async def test_resume_skips_completed_phases(tmp_path, mock_llm):
         patch("src.modules.data.audit.write_data_queries_sql", new_callable=AsyncMock, return_value=0),
     ):
         runner = PipelineRunner(
-            paper_id=paper_id, workspace=workspace, backend=mock_llm,
-            model="claude-test", mode="single_pass",
-            extra_tools=[], extra_handlers=[], backend_name="mock",
+            paper_id=paper_id,
+            workspace=workspace,
+            backend=mock_llm,
+            model="claude-test",
+            mode="single_pass",
+            extra_tools=[],
+            extra_handlers=[],
+            backend_name="mock",
         )
         result = await runner.run()
 
@@ -579,6 +715,7 @@ async def test_resume_skips_completed_phases(tmp_path, mock_llm):
 # Resilience: error surfacing + parallel dispatch failure handling
 # ---------------------------------------------------------------------------
 
+
 async def test_update_status_clears_last_error_on_non_failed(tmp_path, mock_llm):
     """Any non-FAILED status update must NULL out last_error to avoid stale errors on resume."""
     from src.core.strategist.runner import PipelineRunner
@@ -594,9 +731,14 @@ async def test_update_status_clears_last_error_on_non_failed(tmp_path, mock_llm)
 
     with patch("src.db.client.execute", side_effect=capture):
         runner = PipelineRunner(
-            paper_id=paper_id, workspace=workspace, backend=mock_llm,
-            model="m", mode="single_pass",
-            extra_tools=[], extra_handlers=[], backend_name="mock",
+            paper_id=paper_id,
+            workspace=workspace,
+            backend=mock_llm,
+            model="m",
+            mode="single_pass",
+            extra_tools=[],
+            extra_handlers=[],
+            backend_name="mock",
         )
         await runner._update_status(PaperStatus.IN_PROGRESS)
         await runner._update_status(PaperStatus.COMPLETED)
@@ -618,6 +760,7 @@ async def test_update_status_clears_last_error_on_non_failed(tmp_path, mock_llm)
 async def test_execute_parallel_logs_aggregate_failure(tmp_path, caplog):
     """One failing specialist surfaces in aggregate WARNING; others still succeed."""
     import logging
+
     from src.core.specialists.contracts import WorkOrder as ContractWorkOrder
     from src.core.specialists.dispatcher import execute_parallel
     from tests.conftest import MockLLMBackend
@@ -630,12 +773,18 @@ async def test_execute_parallel_logs_aggregate_failure(tmp_path, caplog):
 
     orders = [
         ContractWorkOrder(
-            paper_id=paper_id, specialist="idea_developer",
-            focus="develop", parallel_group=0, context_tier=0,
+            paper_id=paper_id,
+            specialist="idea_developer",
+            focus="develop",
+            parallel_group=0,
+            context_tier=0,
         ),
         ContractWorkOrder(
-            paper_id=paper_id, specialist="literature_scanner",
-            focus="scan", parallel_group=0, context_tier=0,
+            paper_id=paper_id,
+            specialist="literature_scanner",
+            focus="scan",
+            parallel_group=0,
+            context_tier=0,
         ),
     ]
 
@@ -645,7 +794,13 @@ async def test_execute_parallel_logs_aggregate_failure(tmp_path, caplog):
         caplog.at_level(logging.WARNING, logger="src.core.specialists.dispatcher"),
     ):
         contributions = await execute_parallel(
-            orders, backend, workspace, "m", [], [], "mock",
+            orders,
+            backend,
+            workspace,
+            "m",
+            [],
+            [],
+            "mock",
         )
 
     assert len(contributions) == 2
@@ -670,12 +825,18 @@ async def test_execute_parallel_raises_when_all_fail(tmp_path):
 
     orders = [
         ContractWorkOrder(
-            paper_id=paper_id, specialist="idea_developer",
-            focus="develop", parallel_group=0, context_tier=0,
+            paper_id=paper_id,
+            specialist="idea_developer",
+            focus="develop",
+            parallel_group=0,
+            context_tier=0,
         ),
         ContractWorkOrder(
-            paper_id=paper_id, specialist="literature_scanner",
-            focus="scan", parallel_group=0, context_tier=0,
+            paper_id=paper_id,
+            specialist="literature_scanner",
+            focus="scan",
+            parallel_group=0,
+            context_tier=0,
         ),
     ]
 
@@ -691,10 +852,11 @@ async def test_execute_parallel_raises_when_all_fail(tmp_path):
 # Bundle 1: Safety & auditability
 # ---------------------------------------------------------------------------
 
+
 async def test_check_budget_uses_in_memory_when_db_unavailable():
     """Without a DB, check_budget must still trip on the in-memory total."""
-    from src.modules.tracking.usage import check_budget
     from src.core.strategist.state import BudgetExceeded
+    from src.modules.tracking.usage import check_budget
 
     async def db_down(sql, params=None):
         raise RuntimeError("no db")
@@ -713,6 +875,7 @@ def test_parse_decision_handles_fenced_json():
     """Strategist decisions wrapped in ```json fences must still parse.
     Real failure mode observed when running Haiku 4.5 on OpenRouter."""
     from src.core.strategist.engine import _parse_decision
+
     raw = (
         "```json\n"
         '{"action":"dispatch_parallel",'
@@ -730,6 +893,7 @@ def test_parse_decision_handles_fenced_json():
 def test_parse_decision_returns_fail_on_prose():
     """Markdown / prose responses (no JSON anywhere) must yield action=fail."""
     from src.core.strategist.engine import _parse_decision
+
     d = _parse_decision("## Analysis\n\nThe paper looks good.")
     assert d.action == "fail"
     assert "Parse error" in (d.rationale or "")
@@ -744,21 +908,27 @@ async def test_reviewer_gets_full_draft_in_context(tmp_path):
 
     paper_id = str(uuid.uuid4())
     workspace = tmp_path
-    (workspace / "manifest.json").write_text(json.dumps({
-        "paper_id": paper_id, "title": "T", "research_question": "RQ",
-        "datasets": [], "current_stage": "review",
-    }))
-    # A draft long enough that tier-2 truncation would lose information.
-    long_draft = (
-        "\\section{Introduction}\nThis is the paper draft. "
-        + ("Lorem ipsum dolor sit amet. " * 500)
+    (workspace / "manifest.json").write_text(
+        json.dumps(
+            {
+                "paper_id": paper_id,
+                "title": "T",
+                "research_question": "RQ",
+                "datasets": [],
+                "current_stage": "review",
+            }
+        )
     )
+    # A draft long enough that tier-2 truncation would lose information.
+    long_draft = "\\section{Introduction}\nThis is the paper draft. " + ("Lorem ipsum dolor sit amet. " * 500)
     (workspace / "paper_draft.tex").write_text(long_draft)
     (workspace / "identification_strategy.md").write_text("# ID strategy\n" + "X" * 3000)
 
     wo = ContractWorkOrder(
-        paper_id=paper_id, specialist="technical_reviewer",
-        focus="Audit the methods.", context_tier=2,
+        paper_id=paper_id,
+        specialist="technical_reviewer",
+        focus="Audit the methods.",
+        context_tier=2,
     )
     out = _inject_context(wo, workspace)
 
@@ -784,8 +954,7 @@ async def test_dispatcher_auto_fills_output_file(tmp_path):
     )
     # Workspace has a manifest so context-builder doesn't fail.
     (tmp_path / "manifest.json").write_text(
-        '{"paper_id": "p", "title": "T", "research_question": "RQ",'
-        ' "datasets": [], "current_stage": "designing"}'
+        '{"paper_id": "p", "title": "T", "research_question": "RQ", "datasets": [], "current_stage": "designing"}'
     )
     out = _inject_context(wo, tmp_path)
     assert out.output_file == "paper_plan.md"
@@ -817,9 +986,14 @@ async def test_budget_exceeded_aborts_pipeline(tmp_path, mock_llm):
         patch("src.modules.tracking.usage.save_usage", new_callable=AsyncMock),
     ):
         runner = PipelineRunner(
-            paper_id=paper_id, workspace=workspace, backend=mock_llm,
-            model="m", mode="single_pass",
-            extra_tools=[], extra_handlers=[], backend_name="mock",
+            paper_id=paper_id,
+            workspace=workspace,
+            backend=mock_llm,
+            model="m",
+            mode="single_pass",
+            extra_tools=[],
+            extra_handlers=[],
+            backend_name="mock",
             max_cost_usd=10.0,  # under the $99 already spent
         )
         result = await runner.run()
@@ -856,9 +1030,14 @@ async def test_cancellation_marks_paper_cancelled(tmp_path, mock_llm):
         patch("src.modules.tracking.usage.save_usage", new_callable=AsyncMock),
     ):
         runner = PipelineRunner(
-            paper_id=paper_id, workspace=workspace, backend=mock_llm,
-            model="m", mode="single_pass",
-            extra_tools=[], extra_handlers=[], backend_name="mock",
+            paper_id=paper_id,
+            workspace=workspace,
+            backend=mock_llm,
+            model="m",
+            mode="single_pass",
+            extra_tools=[],
+            extra_handlers=[],
+            backend_name="mock",
             max_cost_usd=100.0,
         )
         runner._run_initial_phase = cancel_at_initial  # type: ignore[assignment]
@@ -899,6 +1078,7 @@ async def test_log_event_writes_to_pipeline_events():
 async def test_audit_bundle_contains_expected_files(tmp_path, monkeypatch):
     """GET /api/papers/{id}/audit-bundle returns a tarball with manifest+events+contributions+replication."""
     import tarfile
+
     pytest.importorskip("fastapi")
     from fastapi.testclient import TestClient
 
@@ -910,18 +1090,30 @@ async def test_audit_bundle_contains_expected_files(tmp_path, monkeypatch):
 
     # Point the API at this tmp workspace_root. Patch the binding inside
     # src.api.app, not src.config, because app.py imports the symbol at the top.
-    fake_settings = type("S", (), {
-        "workspace_root": str(tmp_path),
-        "llm_backend": "mock", "default_model": "m",
-        "data_module_enabled": False, "literature_kb_enabled": False,
-        "github_enabled": False, "default_max_cost_usd": 25.0,
-    })()
+    fake_settings = type(
+        "S",
+        (),
+        {
+            "workspace_root": str(tmp_path),
+            "llm_backend": "mock",
+            "default_model": "m",
+            "data_module_enabled": False,
+            "literature_kb_enabled": False,
+            "github_enabled": False,
+            "default_max_cost_usd": 25.0,
+        },
+    )()
     monkeypatch.setattr("src.api.app.get_settings", lambda: fake_settings)
 
     paper_row = {
-        "id": paper_id, "title": "Test", "research_question": "RQ",
-        "status": "completed", "max_cost_usd": 25.0, "last_error": None,
-        "github_repo": None, "created_at": "2026-05-06",
+        "id": paper_id,
+        "title": "Test",
+        "research_question": "RQ",
+        "status": "completed",
+        "max_cost_usd": 25.0,
+        "last_error": None,
+        "github_repo": None,
+        "created_at": "2026-05-06",
     }
 
     async def fake_fetch_one(sql, params=None):
@@ -941,6 +1133,7 @@ async def test_audit_bundle_contains_expected_files(tmp_path, monkeypatch):
         patch("src.modules.tracking.usage.get_paper_usage", side_effect=fake_get_usage),
     ):
         from src.api.app import app
+
         client = TestClient(app)
         resp = client.get(f"/api/papers/{paper_id}/audit-bundle")
 
@@ -960,21 +1153,30 @@ async def test_audit_bundle_contains_expected_files(tmp_path, monkeypatch):
 # Bundle 2: Dashboard (Jinja2 + HTMX)
 # ---------------------------------------------------------------------------
 
+
 def _api_client():
     """TestClient for the FastAPI app, used by Bundle-2 dashboard tests."""
     pytest.importorskip("fastapi")
     pytest.importorskip("jinja2")
     pytest.importorskip("multipart")  # python-multipart
     from fastapi.testclient import TestClient
+
     from src.api.app import app
+
     return TestClient(app)
 
 
 def test_dashboard_index_renders(monkeypatch):
     """GET / returns HTML listing papers from the DB."""
     rows = [
-        {"id": "abc", "title": "Test paper", "status": "completed",
-         "max_cost_usd": 25.0, "updated_at": "2026-05-06T12:00:00", "cost": 1.23},
+        {
+            "id": "abc",
+            "title": "Test paper",
+            "status": "completed",
+            "max_cost_usd": 25.0,
+            "updated_at": "2026-05-06T12:00:00",
+            "cost": 1.23,
+        },
     ]
 
     async def fake_fetch_all(sql, params=None):
@@ -1021,9 +1223,14 @@ def test_paper_detail_renders(tmp_path, monkeypatch):
     )
 
     paper_row = {
-        "id": paper_id, "title": "X", "research_question": "rq",
-        "status": "in_progress", "mode": "iterative", "max_cost_usd": 25.0,
-        "github_repo": None, "last_error": None,
+        "id": paper_id,
+        "title": "X",
+        "research_question": "rq",
+        "status": "in_progress",
+        "mode": "iterative",
+        "max_cost_usd": 25.0,
+        "github_repo": None,
+        "last_error": None,
     }
 
     async def fake_fetch_one(sql, params=None):
@@ -1045,14 +1252,24 @@ def test_live_fragment_renders_status_and_events(monkeypatch):
     """HTMX fragment includes status badge, cost meter, and recent events."""
     paper_id = str(uuid.uuid4())
     paper_row = {
-        "id": paper_id, "status": "in_progress",
-        "max_cost_usd": 50.0, "last_error": None,
+        "id": paper_id,
+        "status": "in_progress",
+        "max_cost_usd": 50.0,
+        "last_error": None,
     }
     events = [
-        {"event_type": "phase_start", "stage": "initial",
-         "specialist": None, "created_at": "2026-05-06T12:00:01"},
-        {"event_type": "specialist_end", "stage": None,
-         "specialist": "idea_developer", "created_at": "2026-05-06T12:00:30"},
+        {
+            "event_type": "phase_start",
+            "stage": "initial",
+            "specialist": None,
+            "created_at": "2026-05-06T12:00:01",
+        },
+        {
+            "event_type": "specialist_end",
+            "stage": None,
+            "specialist": "idea_developer",
+            "created_at": "2026-05-06T12:00:30",
+        },
     ]
 
     async def fake_fetch_one(sql, params=None):
@@ -1111,9 +1328,11 @@ def test_artifact_streaming_rejects_traversal(tmp_path, monkeypatch):
 # Bundle 4: Output completeness — literature tools, LaTeX assembly, BYOD
 # ---------------------------------------------------------------------------
 
+
 async def test_literature_handler_can_handle():
     """LiteratureToolHandler advertises only its own tools."""
     from src.modules.literature.tools import LiteratureToolHandler
+
     h = LiteratureToolHandler(Path("/tmp"))
     assert h.can_handle("search_papers") is True
     assert h.can_handle("fetch_paper") is True
@@ -1124,14 +1343,9 @@ async def test_literature_handler_can_handle():
 async def test_save_bibtex_writes_to_workspace(tmp_path):
     """save_bibtex with a literal entry appends to literature.bib in the workspace."""
     from src.modules.literature.tools import LiteratureToolHandler
+
     h = LiteratureToolHandler(tmp_path)
-    entry = (
-        "@article{smith2023,\n"
-        "  title = {A study},\n"
-        "  author = {Smith, Jane},\n"
-        "  year = {2023}\n"
-        "}"
-    )
+    entry = "@article{smith2023,\n  title = {A study},\n  author = {Smith, Jane},\n  year = {2023}\n}"
     out = json.loads(await h.handle("save_bibtex", {"bibtex_entry": entry}))
     assert out["status"] == "saved"
     assert out["key"] == "smith2023"
@@ -1146,6 +1360,7 @@ async def test_save_bibtex_writes_to_workspace(tmp_path):
 def test_assemble_document_wraps_body():
     """A bare body (no \\documentclass) gets wrapped with the standard preamble."""
     from src.core.renderer.templates import assemble_document
+
     body = r"\section{Introduction}" + "\nIt was a dark and stormy night.\n"
     full = assemble_document(body)
     assert r"\documentclass" in full
@@ -1158,6 +1373,7 @@ def test_assemble_document_wraps_body():
 def test_assemble_document_preserves_full_doc():
     """A body that already includes \\documentclass is left alone."""
     from src.core.renderer.templates import assemble_document
+
     full_body = r"\documentclass{article}" + "\n\\begin{document}\nHello.\n\\end{document}\n"
     out = assemble_document(full_body)
     # Exactly one \documentclass — no double wrapping.
@@ -1168,6 +1384,7 @@ def test_assemble_document_preserves_full_doc():
 def test_assemble_refs_bib_merges_and_dedupes(tmp_path):
     """literature.bib + user_refs.bib merge into refs.bib without duplicate keys."""
     from src.core.renderer.templates import assemble_refs_bib
+
     (tmp_path / "literature.bib").write_text(
         "@article{a2023, title={A}, author={A}, year={2023}}\n"
         "@article{shared2024, title={Shared}, author={X}, year={2024}}\n"
@@ -1190,6 +1407,7 @@ def test_assemble_refs_bib_merges_and_dedupes(tmp_path):
 
 def test_assemble_refs_bib_returns_none_when_no_sources(tmp_path):
     from src.core.renderer.templates import assemble_refs_bib
+
     assert assemble_refs_bib(tmp_path) is None
 
 
@@ -1239,14 +1457,19 @@ def test_tier1_context_includes_user_data(tmp_path):
     from src.core.strategist.context import build_tier1_context
 
     workspace = tmp_path
-    (workspace / "manifest.json").write_text(json.dumps({
-        "paper_id": "p", "title": "T", "research_question": "RQ",
-        "datasets": [], "current_stage": "designing",
-    }))
-    (workspace / "data").mkdir()
-    (workspace / "data" / "trades.csv").write_text(
-        "id,price,volume\n1,100.5,50\n2,101.0,75\n3,99.8,30\n"
+    (workspace / "manifest.json").write_text(
+        json.dumps(
+            {
+                "paper_id": "p",
+                "title": "T",
+                "research_question": "RQ",
+                "datasets": [],
+                "current_stage": "designing",
+            }
+        )
     )
+    (workspace / "data").mkdir()
+    (workspace / "data" / "trades.csv").write_text("id,price,volume\n1,100.5,50\n2,101.0,75\n3,99.8,30\n")
     ctx = build_tier1_context(workspace, "p")
     assert "Researcher-Provided Data Files" in ctx
     assert "data/trades.csv" in ctx

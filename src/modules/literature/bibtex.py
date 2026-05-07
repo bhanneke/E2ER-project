@@ -1,4 +1,5 @@
 """Literature module — BibTeX parsing and bibliography management."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -39,7 +40,6 @@ def merge_bibtex_with_literature(
     """Merge user-provided BibTeX entries with fetched literature.
     User-provided entries take precedence (they may have better metadata).
     """
-    doi_index = {p.doi.lower(): p for p in fetched if p.doi}
     result = list(provided)
     seen_dois = {p.doi.lower() for p in provided if p.doi}
 

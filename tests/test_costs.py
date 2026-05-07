@@ -1,4 +1,5 @@
 """Tests for token cost computation."""
+
 from decimal import Decimal
 
 from src.modules.llm.base import TokenUsage

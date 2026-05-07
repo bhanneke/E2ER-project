@@ -7,6 +7,7 @@ in a standard preamble + bibliography block before invoking pdflatex.
 This keeps the model's output focused on prose and makes the document
 class, packages, and bibliography style consistent across all papers.
 """
+
 from __future__ import annotations
 
 from pathlib import Path

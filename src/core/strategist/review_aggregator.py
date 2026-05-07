@@ -1,8 +1,8 @@
 """Mechanical review aggregation — 3-rule system for publication decisions."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 
 
 @dataclass

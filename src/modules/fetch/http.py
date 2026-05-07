@@ -1,8 +1,8 @@
 """SSRF-safe HTTP client — blocks private IP ranges and enforces timeouts."""
+
 from __future__ import annotations
 
 import ipaddress
-import re
 from urllib.parse import urlparse
 
 import httpx

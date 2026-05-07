@@ -1,4 +1,5 @@
 """Shared test fixtures and mock LLM backend."""
+
 from __future__ import annotations
 
 import json
@@ -9,8 +10,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from src.modules.llm.base import LLMBackend, ToolHandler, ToolLoopResult, TokenUsage
-
+from src.modules.llm.base import LLMBackend, TokenUsage, ToolHandler, ToolLoopResult
 
 # ---------------------------------------------------------------------------
 # Deterministic specialist outputs (filename, content)
@@ -108,7 +108,11 @@ _DESIGNING_DECISION = {
     "work_orders": [
         {"specialist": "idea_developer", "focus": "Develop idea", "parallel_group": 0},
         {"specialist": "literature_scanner", "focus": "Scan literature", "parallel_group": 0},
-        {"specialist": "identification_strategist", "focus": "Develop ID strategy", "parallel_group": 0},
+        {
+            "specialist": "identification_strategist",
+            "focus": "Develop ID strategy",
+            "parallel_group": 0,
+        },
         {"specialist": "econometrics_specialist", "focus": "Specify model", "parallel_group": 1},
         {"specialist": "paper_drafter", "focus": "Draft paper", "parallel_group": 2},
         {"specialist": "abstract_writer", "focus": "Write abstract", "parallel_group": 2},
@@ -117,7 +121,11 @@ _DESIGNING_DECISION = {
     "rationale": "Initial design phase — run all core specialists.",
 }
 
-_CEILING_RESULT = {"verdict": "proceed_to_review", "reason": "Quality ceiling reached.", "suggested_pivots": []}
+_CEILING_RESULT = {
+    "verdict": "proceed_to_review",
+    "reason": "Quality ceiling reached.",
+    "suggested_pivots": [],
+}
 _SELF_ATTACK_RESULT = {"findings": [], "overall_severity": 1}
 
 
@@ -152,18 +160,14 @@ class MockLLMBackend(LLMBackend):
         # Detect strategist vs. self-attack vs. ceiling vs. specialist
         if "adversarial reviewer" in system.lower():
             self.strategist_calls.append("self_attack")
-            return ToolLoopResult(
-                success=True, output=json.dumps(_SELF_ATTACK_RESULT), usage=usage
-            )
+            return ToolLoopResult(success=True, output=json.dumps(_SELF_ATTACK_RESULT), usage=usage)
 
         if "the strategist, the meta-agent" in system.lower():
             phase = self._detect_phase(messages)
             self.strategist_calls.append(phase)
             if phase == "ceiling":
                 return ToolLoopResult(success=True, output=json.dumps(_CEILING_RESULT), usage=usage)
-            return ToolLoopResult(
-                success=True, output=json.dumps(_DESIGNING_DECISION), usage=usage
-            )
+            return ToolLoopResult(success=True, output=json.dumps(_DESIGNING_DECISION), usage=usage)
 
         # Specialist call
         specialist = self._detect_specialist(system)
@@ -179,7 +183,6 @@ class MockLLMBackend(LLMBackend):
             try:
                 # Create parent directory for nested paths (e.g. replication/estimation.py)
                 if "/" in filename:
-                    parent = filename.rsplit("/", 1)[0]
                     await tool_handler.handle("list_directory", {"path": "."})
                 await tool_handler.handle("write_file", {"path": filename, "content": content})
             except Exception:
@@ -204,6 +207,7 @@ class MockLLMBackend(LLMBackend):
 # ---------------------------------------------------------------------------
 # Pytest fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def mock_llm() -> MockLLMBackend:
@@ -248,9 +252,13 @@ def mock_db():
             return {"id": str(uuid.uuid4())}
         if "SELECT" in sql and "papers" in sql:
             return {
-                "id": "test-uuid", "title": "Test", "status": "idea",
-                "research_question": "Test RQ", "workspace": "/tmp/test",
-                "mode": "single_pass", "github_repo": None,
+                "id": "test-uuid",
+                "title": "Test",
+                "status": "idea",
+                "research_question": "Test RQ",
+                "workspace": "/tmp/test",
+                "mode": "single_pass",
+                "github_repo": None,
                 "created_at": "2026-01-01T00:00:00",
             }
         return None
@@ -282,13 +290,14 @@ def _block_real_db_pool(monkeypatch):
     `with patch(...)` chain in those tests runs after this fixture
     and takes precedence).
     """
-    from unittest.mock import AsyncMock
     monkeypatch.setattr("src.db.client.execute", AsyncMock(return_value=None))
     monkeypatch.setattr(
-        "src.db.client.fetch_one", AsyncMock(return_value=None),
+        "src.db.client.fetch_one",
+        AsyncMock(return_value=None),
     )
     monkeypatch.setattr(
-        "src.db.client.fetch_all", AsyncMock(return_value=[]),
+        "src.db.client.fetch_all",
+        AsyncMock(return_value=[]),
     )
     # Note: write_audit_csv / write_data_queries_sql intentionally NOT mocked
     # here — they call the patched fetch_all internally and degrade to an

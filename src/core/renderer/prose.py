@@ -1,4 +1,5 @@
 """Renderer — assembles specialist outputs into a cohesive paper draft."""
+
 from __future__ import annotations
 
 from pathlib import Path

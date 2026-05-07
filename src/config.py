@@ -1,8 +1,9 @@
 """E2ER v3 — Unified configuration (all BYOK settings)."""
+
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic_settings import BaseSettings
 
@@ -10,9 +11,9 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     # ── LLM ───────────────────────────────────────────────────────────────────
     llm_backend: Literal["anthropic", "openrouter"] = "anthropic"
-    anthropic_api_key: Optional[str] = None
+    anthropic_api_key: str | None = None
     anthropic_model: str = "claude-sonnet-4-5"
-    openrouter_api_key: Optional[str] = None
+    openrouter_api_key: str | None = None
     openrouter_model: str = "anthropic/claude-sonnet-4-5"
     enable_prompt_caching: bool = True
 
@@ -22,7 +23,7 @@ class Settings(BaseSettings):
     db_port: int = 5432
     db_name: str = "e2er"
     db_user: str = "e2er"
-    postgres_url: Optional[str] = None  # overrides individual settings if set
+    postgres_url: str | None = None  # overrides individual settings if set
 
     @property
     def database_url(self) -> str:
@@ -31,7 +32,7 @@ class Settings(BaseSettings):
         return f"postgresql://{self.db_user}:{self.db_password}@{self.db_host}:{self.db_port}/{self.db_name}"
 
     # ── Data — Allium ─────────────────────────────────────────────────────────
-    allium_api_key: Optional[str] = None
+    allium_api_key: str | None = None
     allium_api_base: str = "https://api.allium.so/api/v1"
     auto_approve_feasibility: bool = True
     max_queries_per_paper: int = 20
@@ -42,17 +43,17 @@ class Settings(BaseSettings):
         return self.allium_api_key is not None
 
     # ── Literature ────────────────────────────────────────────────────────────
-    literature_bibtex_file: Optional[str] = None
-    semantic_scholar_api_key: Optional[str] = None
+    literature_bibtex_file: str | None = None
+    semantic_scholar_api_key: str | None = None
 
     @property
     def literature_kb_enabled(self) -> bool:
         return self.postgres_url is not None or self.db_password != "changeme"
 
     # ── GitHub ────────────────────────────────────────────────────────────────
-    github_token: Optional[str] = None
-    github_username: Optional[str] = None
-    github_org: Optional[str] = None
+    github_token: str | None = None
+    github_username: str | None = None
+    github_org: str | None = None
     github_paper_prefix: str = "E2ER"
     github_private_repos: bool = True
 
@@ -67,9 +68,9 @@ class Settings(BaseSettings):
     weak_accept_threshold: float = 7.0
     max_revision_iterations: int = 3
     default_max_cost_usd: float = 25.0  # fallback per-paper cost cap
-    max_tokens_per_call: int = 16384     # per-API-call output cap; needs to be
-                                          # large enough for full file content
-                                          # (Haiku supports up to 64K)
+    max_tokens_per_call: int = 16384  # per-API-call output cap; needs to be
+    # large enough for full file content
+    # (Haiku supports up to 64K)
 
     # ── Server ────────────────────────────────────────────────────────────────
     host: str = "0.0.0.0"

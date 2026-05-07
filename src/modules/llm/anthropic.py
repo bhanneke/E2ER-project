@@ -1,7 +1,7 @@
 """LLM module — Anthropic API backend with prompt caching and tool-use loop."""
+
 from __future__ import annotations
 
-import asyncio
 import time
 from typing import Any
 
@@ -9,7 +9,7 @@ import anthropic
 
 from ...config import get_settings
 from ...logging_config import get_logger
-from .base import LLMBackend, ToolHandler, ToolLoopResult, TokenUsage
+from .base import LLMBackend, TokenUsage, ToolHandler, ToolLoopResult
 
 logger = get_logger(__name__)
 
@@ -106,9 +106,7 @@ class AnthropicBackend(LLMBackend):
             )
 
             # Extract text output
-            text_output = " ".join(
-                b.text for b in response.content if hasattr(b, "text")
-            )
+            text_output = " ".join(b.text for b in response.content if hasattr(b, "text"))
 
             if response.stop_reason == "end_turn":
                 return ToolLoopResult(
@@ -139,11 +137,13 @@ class AnthropicBackend(LLMBackend):
                 tool_calls_made += 1
                 logger.debug("Tool call: %s(%s)", block.name, list(block.input.keys()))
                 result_text = await tool_handler.handle(block.name, block.input)
-                tool_results.append({
-                    "type": "tool_result",
-                    "tool_use_id": block.id,
-                    "content": result_text,
-                })
+                tool_results.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": result_text,
+                    }
+                )
 
             # Append assistant turn + tool results
             msgs.append({"role": "assistant", "content": response.content})

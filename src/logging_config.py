@@ -1,12 +1,13 @@
 """E2ER v3 — Structured logging configuration."""
+
 from __future__ import annotations
 
 import logging
 import sys
-from functools import lru_cache
+from functools import cache
 
 
-@lru_cache(maxsize=None)
+@cache
 def get_logger(name: str) -> logging.Logger:
     logger = logging.getLogger(name)
     if not logger.handlers:

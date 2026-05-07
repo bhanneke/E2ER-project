@@ -1,9 +1,9 @@
 """LLM module — abstract backend interface and shared data types."""
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from decimal import Decimal
 from typing import Any
 
 
@@ -14,7 +14,7 @@ class TokenUsage:
     cache_read_tokens: int = 0
     cache_write_tokens: int = 0
 
-    def __add__(self, other: "TokenUsage") -> "TokenUsage":
+    def __add__(self, other: TokenUsage) -> TokenUsage:
         return TokenUsage(
             input_tokens=self.input_tokens + other.input_tokens,
             output_tokens=self.output_tokens + other.output_tokens,

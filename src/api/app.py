@@ -1,4 +1,5 @@
 """FastAPI application — REST API for E2ER v3 pipeline."""
+
 from __future__ import annotations
 
 import asyncio
@@ -7,9 +8,9 @@ import json
 import mimetypes
 import tarfile
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any
 
-from fastapi import FastAPI, File, Form, HTTPException, BackgroundTasks, Request, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -58,13 +59,14 @@ async def _log_config() -> None:
 
 # --- Request/Response Models ---
 
+
 class CreatePaperRequest(BaseModel):
     title: str
     research_question: str
-    datasets: List[str] = []
+    datasets: list[str] = []
     mode: str = "iterative"
-    bibtex_path: Optional[str] = None
-    max_cost_usd: Optional[float] = None  # falls back to settings.default_max_cost_usd
+    bibtex_path: str | None = None
+    max_cost_usd: float | None = None  # falls back to settings.default_max_cost_usd
 
 
 class PaperResponse(BaseModel):
@@ -81,11 +83,13 @@ class ApprovalAction(BaseModel):
 
 # --- Paper endpoints ---
 
+
 @app.post("/api/papers", response_model=PaperResponse)
 async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTasks):
     """Create a new paper and start the pipeline."""
-    from ..db.client import execute
     import uuid
+
+    from ..db.client import execute
 
     paper_id = str(uuid.uuid4())
     settings = get_settings()
@@ -109,8 +113,14 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
             INSERT INTO papers (id, title, research_question, status, workspace, mode, max_cost_usd)
             VALUES (%(id)s, %(title)s, %(rq)s, 'idea', %(ws)s, %(mode)s, %(cap)s)
             """,
-            {"id": paper_id, "title": req.title, "rq": req.research_question,
-             "ws": str(workspace), "mode": req.mode, "cap": cap},
+            {
+                "id": paper_id,
+                "title": req.title,
+                "rq": req.research_question,
+                "ws": str(workspace),
+                "mode": req.mode,
+                "cap": cap,
+            },
         )
     except Exception as e:
         logger.warning("Could not persist paper to DB: %s", e)
@@ -134,6 +144,7 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
 @app.get("/api/papers")
 async def list_papers() -> list[dict[str, Any]]:
     from ..db.client import fetch_all
+
     try:
         return await fetch_all("SELECT id, title, status, created_at FROM papers ORDER BY created_at DESC LIMIT 50")
     except Exception:
@@ -143,6 +154,7 @@ async def list_papers() -> list[dict[str, Any]]:
 @app.get("/api/papers/{paper_id}")
 async def get_paper(paper_id: str) -> dict[str, Any]:
     from ..db.client import fetch_one
+
     row = await fetch_one("SELECT * FROM papers WHERE id = %(id)s", {"id": paper_id})
     if not row:
         raise HTTPException(status_code=404, detail="Paper not found")
@@ -164,8 +176,8 @@ async def get_paper(paper_id: str) -> dict[str, Any]:
 
 @app.get("/api/papers/{paper_id}/artifacts")
 async def list_artifacts(paper_id: str) -> dict[str, Any]:
-    from ..db.client import fetch_one
     from ..config import get_settings
+
     settings = get_settings()
     workspace = Path(settings.workspace_root) / paper_id
     if not workspace.exists():
@@ -271,9 +283,11 @@ async def audit_bundle(paper_id: str) -> StreamingResponse:
 
 # --- Data approval endpoints ---
 
+
 @app.get("/api/papers/{paper_id}/pending-queries")
 async def get_pending_queries(paper_id: str) -> list[dict[str, Any]]:
     from ..db.client import fetch_all
+
     try:
         return await fetch_all(
             """
@@ -294,18 +308,22 @@ async def get_pending_queries(paper_id: str) -> list[dict[str, Any]]:
 @app.post("/api/queries/{query_id}/approve")
 async def approve_query(query_id: str, action: ApprovalAction):
     from ..db.client import execute
+
     if action.approved:
         await execute(
-            "UPDATE data_approval_requests SET status = 'approved', reviewed_at = NOW(), note = %(note)s WHERE query_record_id = %(id)s",
+            "UPDATE data_approval_requests SET status = 'approved', reviewed_at = NOW(), "
+            "note = %(note)s WHERE query_record_id = %(id)s",
             {"id": query_id, "note": action.note},
         )
         await execute(
-            "UPDATE data_query_records SET validation_status = 'approved', approved_by = 'researcher' WHERE id = %(id)s",
+            "UPDATE data_query_records SET validation_status = 'approved', "
+            "approved_by = 'researcher' WHERE id = %(id)s",
             {"id": query_id},
         )
     else:
         await execute(
-            "UPDATE data_approval_requests SET status = 'rejected', reviewed_at = NOW(), note = %(note)s WHERE query_record_id = %(id)s",
+            "UPDATE data_approval_requests SET status = 'rejected', reviewed_at = NOW(), "
+            "note = %(note)s WHERE query_record_id = %(id)s",
             {"id": query_id, "note": action.note},
         )
     return {"status": "approved" if action.approved else "rejected", "query_id": query_id}
@@ -313,19 +331,23 @@ async def approve_query(query_id: str, action: ApprovalAction):
 
 # --- Usage tracking endpoints ---
 
+
 @app.get("/api/papers/{paper_id}/usage")
 async def get_paper_usage(paper_id: str) -> dict[str, Any]:
     from ..modules.tracking.usage import get_paper_usage
+
     return await get_paper_usage(paper_id)
 
 
 @app.get("/api/usage/summary")
 async def get_usage_summary() -> dict[str, Any]:
     from ..modules.tracking.usage import get_usage_summary
+
     return await get_usage_summary()
 
 
 # --- Health ---
+
 
 @app.get("/health")
 async def health():
@@ -341,6 +363,7 @@ _TERMINAL_STATUSES = {"completed", "failed", "cancelled"}
 async def dashboard_index(request: Request) -> Any:
     """Papers list — landing page."""
     from ..db.client import fetch_all
+
     try:
         rows = await fetch_all(
             """
@@ -359,15 +382,18 @@ async def dashboard_index(request: Request) -> Any:
         if r.get("updated_at") is not None:
             r["updated_at"] = str(r["updated_at"])[:19]
     return templates.TemplateResponse(
-        "index.html", {"request": request, "papers": rows or []},
+        request,
+        "index.html",
+        {"papers": rows or []},
     )
 
 
 @app.get("/papers/new", response_class=HTMLResponse)
 async def new_paper_form(request: Request) -> Any:
     return templates.TemplateResponse(
+        request,
         "new.html",
-        {"request": request, "default_cap": get_settings().default_max_cost_usd},
+        {"default_cap": get_settings().default_max_cost_usd},
     )
 
 
@@ -397,6 +423,7 @@ async def submit_new_paper(
 async def paper_detail(paper_id: str, request: Request) -> Any:
     """Detail page for a single paper."""
     from ..db.client import fetch_one
+
     paper = await fetch_one("SELECT * FROM papers WHERE id = %(id)s", {"id": paper_id})
     if not paper:
         raise HTTPException(status_code=404, detail="Paper not found")
@@ -406,16 +433,15 @@ async def paper_detail(paper_id: str, request: Request) -> Any:
     workspace = Path(settings.workspace_root) / paper_id
     if workspace.exists():
         artifacts = sorted(
-            str(f.relative_to(workspace))
-            for f in workspace.rglob("*")
-            if f.is_file() and not f.name.startswith(".")
+            str(f.relative_to(workspace)) for f in workspace.rglob("*") if f.is_file() and not f.name.startswith(".")
         )
     else:
         artifacts = []
 
     return templates.TemplateResponse(
+        request,
         "paper.html",
-        {"request": request, "paper": paper, "artifacts": artifacts},
+        {"paper": paper, "artifacts": artifacts},
     )
 
 
@@ -426,7 +452,8 @@ async def paper_live_fragment(paper_id: str, request: Request) -> Any:
     HTMX polls this every 3s. Returns status badge, cost meter, recent events,
     and a Cancel button when the paper is still in flight.
     """
-    from ..db.client import fetch_one, fetch_all
+    from ..db.client import fetch_all, fetch_one
+
     paper = await fetch_one("SELECT * FROM papers WHERE id = %(id)s", {"id": paper_id})
     if not paper:
         raise HTTPException(status_code=404, detail="Paper not found")
@@ -460,9 +487,9 @@ async def paper_live_fragment(paper_id: str, request: Request) -> Any:
             e["created_at_short"] = str(e["created_at"])[11:19]
 
     return templates.TemplateResponse(
+        request,
         "_live.html",
         {
-            "request": request,
             "paper": paper,
             "cost_spent": cost_spent,
             "cost_pct": cost_pct,
@@ -473,9 +500,10 @@ async def paper_live_fragment(paper_id: str, request: Request) -> Any:
 
 
 @app.get("/api/papers/{paper_id}/events")
-async def list_events(paper_id: str, since: Optional[str] = None) -> list[dict[str, Any]]:
+async def list_events(paper_id: str, since: str | None = None) -> list[dict[str, Any]]:
     """JSON event log. Optional `since=<iso8601>` filter for incremental polling."""
     from ..db.events import fetch_events
+
     return await fetch_events(paper_id, since=since)
 
 
@@ -497,8 +525,7 @@ async def stream_artifact(paper_id: str, path: str) -> FileResponse:
         raise HTTPException(status_code=404, detail="Artifact not found")
 
     mtype, _ = mimetypes.guess_type(str(target))
-    return FileResponse(str(target), media_type=mtype or "application/octet-stream",
-                        filename=target.name)
+    return FileResponse(str(target), media_type=mtype or "application/octet-stream", filename=target.name)
 
 
 # Accepted BYOD file extensions. Limits applied to keep workspace cheap to mount.
@@ -541,7 +568,7 @@ async def upload_data_file(paper_id: str, file: UploadFile = File(...)) -> dict[
                 target.unlink(missing_ok=True)
                 raise HTTPException(
                     status_code=413,
-                    detail=f"file too large (>{_DATA_FILE_MAX_BYTES // (1024*1024)} MB)",
+                    detail=f"file too large (>{_DATA_FILE_MAX_BYTES // (1024 * 1024)} MB)",
                 )
             out.write(chunk)
     return {"filename": name, "size": written, "path": f"data/{name}"}
@@ -549,12 +576,13 @@ async def upload_data_file(paper_id: str, file: UploadFile = File(...)) -> dict[
 
 # --- Background tasks ---
 
+
 async def _run_pipeline(paper_id: str, workspace: Path, mode: str, max_cost_usd: float) -> None:
     from ..config import get_settings
-    from ..modules.llm.registry import get_backend
     from ..core.strategist.runner import PipelineRunner
     from ..modules.data.tools import ALLIUM_TOOLS, DeferredAlliumToolHandler
     from ..modules.literature.tools import LITERATURE_TOOLS, LiteratureToolHandler
+    from ..modules.llm.registry import get_backend
 
     settings = get_settings()
     backend = get_backend(settings)
@@ -596,6 +624,7 @@ async def _create_github_repo(paper_id: str, title: str) -> None:
         client = GitHubClient(settings.github_token, settings.github_username)
         repo_info = client.create_paper_repo(paper_id, title, private=True)
         from ..db.client import execute
+
         await execute(
             "UPDATE papers SET github_repo = %(repo)s WHERE id = %(id)s",
             {"repo": repo_info["repo_name"], "id": paper_id},

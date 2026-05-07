@@ -1,4 +1,5 @@
 """Literature module — shared data models."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -30,17 +31,17 @@ class PaperMetadata:
         authors_str = " and ".join(self.authors) if self.authors else "Unknown"
         lines = [
             f"@article{{{self.bibtex_key},",
-            f'  title = {{{self.title}}},',
-            f'  author = {{{authors_str}}},',
+            f"  title = {{{self.title}}},",
+            f"  author = {{{authors_str}}},",
         ]
         if self.year:
-            lines.append(f'  year = {{{self.year}}},')
+            lines.append(f"  year = {{{self.year}}},")
         if self.journal:
-            lines.append(f'  journal = {{{self.journal}}},')
+            lines.append(f"  journal = {{{self.journal}}},")
         if self.doi:
-            lines.append(f'  doi = {{{self.doi}}},')
+            lines.append(f"  doi = {{{self.doi}}},")
         if self.url:
-            lines.append(f'  url = {{{self.url}}},')
+            lines.append(f"  url = {{{self.url}}},")
         lines.append("}")
         return "\n".join(lines)
 

@@ -1,4 +1,5 @@
 """LaTeX compiler — wraps the drafter's body in a standard preamble + bib and compiles to PDF."""
+
 from __future__ import annotations
 
 import asyncio
@@ -66,7 +67,7 @@ async def compile_latex(workspace: Path, main_file: str = "paper_draft.tex") -> 
             logger.warning("Compiler succeeded but PDF not found")
         else:
             logger.warning("LaTeX compilation failed: %s", stderr.decode()[:500])
-    except asyncio.TimeoutError:
+    except TimeoutError:
         logger.warning("LaTeX compilation timed out")
     except Exception as e:
         logger.warning("LaTeX compilation error: %s", e)

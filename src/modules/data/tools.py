@@ -1,7 +1,9 @@
 """Data module — Allium tool definitions and tool handler."""
+
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 
 from ...logging_config import get_logger
@@ -29,7 +31,9 @@ ALLIUM_TOOLS: list[dict[str, Any]] = [
                 "query_type": {
                     "type": "string",
                     "enum": ["feasibility", "production"],
-                    "description": "feasibility=sample run (auto-approved), production=full run (human approval required)",
+                    "description": (
+                        "feasibility=sample run (auto-approved), production=full run (human approval required)"
+                    ),
                 },
                 "fields_requested": {
                     "type": "array",
@@ -62,7 +66,10 @@ ALLIUM_TOOLS: list[dict[str, Any]] = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "query_id": {"type": "string", "description": "The query_id returned by query_allium"},
+                "query_id": {
+                    "type": "string",
+                    "description": "The query_id returned by query_allium",
+                },
             },
             "required": ["query_id"],
         },
@@ -96,8 +103,8 @@ class AlliumToolHandler(ToolHandler):
         return f"Unknown tool: {tool_name}"
 
     async def _list_tables(self) -> str:
-        from .allium import AlliumProvider
         from ...config import get_settings
+        from .allium import AlliumProvider
 
         settings = get_settings()
         if not settings.allium_api_key:
@@ -115,13 +122,17 @@ class AlliumToolHandler(ToolHandler):
             return f"Query {query_id} has been APPROVED. You may now run it via query_allium.{tail}"
         elif status == "rejected":
             note_block = (
-                f"\n\nResearcher's rejection reason:\n  {note}\n\n"
-                "Read the reason carefully and submit a NEW production query that addresses it. "
-                "Do NOT keep polling this rejected query — submit a corrected one with query_allium "
-                "(query_type='production')."
-            ) if note else (
-                "\n\nThe researcher did not leave a note. Submit a fresh production query that "
-                "more closely matches the data_dictionary specification."
+                (
+                    f"\n\nResearcher's rejection reason:\n  {note}\n\n"
+                    "Read the reason carefully and submit a NEW production query that addresses it. "
+                    "Do NOT keep polling this rejected query — submit a corrected one with query_allium "
+                    "(query_type='production')."
+                )
+                if note
+                else (
+                    "\n\nThe researcher did not leave a note. Submit a fresh production query that "
+                    "more closely matches the data_dictionary specification."
+                )
             )
             return f"Query {query_id} was REJECTED by the researcher.{note_block}"
         return (
@@ -130,10 +141,10 @@ class AlliumToolHandler(ToolHandler):
         )
 
     async def _query_allium(self, tool_input: dict[str, Any]) -> str:
-        from .allium import AlliumProvider
-        from .guardrails import QueryValidator
-        from .audit import log_query, mark_approved, mark_executed, create_approval_request
         from ...config import get_settings
+        from .allium import AlliumProvider
+        from .audit import create_approval_request, log_query, mark_approved, mark_executed
+        from .guardrails import QueryValidator
 
         settings = get_settings()
         if not settings.allium_api_key:
@@ -213,8 +224,9 @@ class DeferredAlliumToolHandler(AlliumToolHandler):
     stays current as data_architect evolves the dictionary during the pipeline run.
     """
 
-    def __init__(self, paper_id: str, specialist: str, workspace: "Path") -> None:
+    def __init__(self, paper_id: str, specialist: str, workspace: Path) -> None:
         from pathlib import Path as _Path
+
         super().__init__(paper_id, specialist, dictionary=None)
         self._workspace = _Path(workspace)
 
@@ -228,6 +240,7 @@ class DeferredAlliumToolHandler(AlliumToolHandler):
             return None
         try:
             from .dictionary import DataDictionary
+
             return DataDictionary.model_validate_json(path.read_text(encoding="utf-8"))
         except Exception:
             return None

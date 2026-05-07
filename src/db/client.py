@@ -1,4 +1,5 @@
 """Async PostgreSQL client using psycopg3 connection pool."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -14,7 +15,9 @@ async def get_pool():
     global _pool
     if _pool is None:
         import psycopg_pool
+
         from ..config import get_settings
+
         settings = get_settings()
         _pool = psycopg_pool.AsyncConnectionPool(
             conninfo=settings.database_url,
@@ -34,6 +37,7 @@ async def execute(sql: str, params: dict[str, Any] | None = None) -> None:
 
 async def fetch_one(sql: str, params: dict[str, Any] | None = None) -> dict[str, Any] | None:
     from psycopg.rows import dict_row
+
     pool = await get_pool()
     async with pool.connection() as conn:
         async with conn.cursor(row_factory=dict_row) as cur:
@@ -43,6 +47,7 @@ async def fetch_one(sql: str, params: dict[str, Any] | None = None) -> dict[str,
 
 async def fetch_all(sql: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     from psycopg.rows import dict_row
+
     pool = await get_pool()
     async with pool.connection() as conn:
         async with conn.cursor(row_factory=dict_row) as cur:

@@ -1,7 +1,8 @@
 """Strategist action types — structured decisions emitted by the Strategist."""
+
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -45,8 +46,14 @@ class CeilingCheckResult(BaseModel):
 class SelfAttackFinding(BaseModel):
     severity: int  # 1-10
     category: Literal[
-        "identification", "mechanism", "numerics", "institutions",
-        "equilibrium", "bibliography", "framing", "novelty"
+        "identification",
+        "mechanism",
+        "numerics",
+        "institutions",
+        "equilibrium",
+        "bibliography",
+        "framing",
+        "novelty",
     ]
     description: str
     suggested_fix: str = ""

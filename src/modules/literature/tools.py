@@ -11,6 +11,7 @@ Tool calls dispatch to existing async clients in this module:
 The handler also persists a running list of citations to literature.bib in
 the paper workspace so the LaTeX compiler can wire up \\bibliography{refs}.
 """
+
 from __future__ import annotations
 
 import json
@@ -24,12 +25,14 @@ from .models import PaperMetadata
 logger = get_logger(__name__)
 
 # Specialists permitted to use these tools — mirrors the bib-injection list.
-LITERATURE_SPECIALISTS = frozenset({
-    "literature_scanner",
-    "polish_bibliography",
-    "revisor",
-    "paper_drafter",
-})
+LITERATURE_SPECIALISTS = frozenset(
+    {
+        "literature_scanner",
+        "polish_bibliography",
+        "revisor",
+        "paper_drafter",
+    }
+)
 
 LITERATURE_TOOLS: list[dict[str, Any]] = [
     {
@@ -123,21 +126,27 @@ class LiteratureToolHandler(ToolHandler):
     async def handle(self, tool_name: str, tool_input: dict[str, Any]) -> str:
         # Budget guard — return a stop signal rather than execute the call.
         if tool_name == "search_papers" and self._search_calls >= self._MAX_SEARCHES:
-            return json.dumps({
-                "error": f"search budget exhausted ({self._MAX_SEARCHES} calls). "
-                "Stop searching and write your output now using the references "
-                "you have already found.",
-            })
+            return json.dumps(
+                {
+                    "error": f"search budget exhausted ({self._MAX_SEARCHES} calls). "
+                    "Stop searching and write your output now using the references "
+                    "you have already found.",
+                }
+            )
         if tool_name == "fetch_paper" and self._fetch_calls >= self._MAX_FETCHES:
-            return json.dumps({
-                "error": f"fetch budget exhausted ({self._MAX_FETCHES} calls). "
-                "Stop fetching and proceed with what you have.",
-            })
+            return json.dumps(
+                {
+                    "error": f"fetch budget exhausted ({self._MAX_FETCHES} calls). "
+                    "Stop fetching and proceed with what you have.",
+                }
+            )
         if tool_name == "save_bibtex" and self._save_calls >= self._MAX_SAVES:
-            return json.dumps({
-                "error": f"save_bibtex budget exhausted ({self._MAX_SAVES} entries). "
-                "Use what's saved and write your output.",
-            })
+            return json.dumps(
+                {
+                    "error": f"save_bibtex budget exhausted ({self._MAX_SAVES} entries). "
+                    "Use what's saved and write your output.",
+                }
+            )
 
         try:
             if tool_name == "search_papers":
@@ -155,34 +164,40 @@ class LiteratureToolHandler(ToolHandler):
         return json.dumps({"error": f"unknown tool: {tool_name}"})
 
     async def _search(self, inp: dict[str, Any]) -> str:
-        from . import openalex, arxiv
+        from . import arxiv, openalex
+
         query = inp["query"]
         limit = max(1, min(int(inp.get("limit", 10)), 50))
         try:
             result = await openalex.search_papers(query, limit=limit)
             if result.papers:
-                return json.dumps({
-                    "source": "openalex",
-                    "query": query,
-                    "count": len(result.papers),
-                    "papers": [_to_dict(p) for p in result.papers],
-                })
+                return json.dumps(
+                    {
+                        "source": "openalex",
+                        "query": query,
+                        "count": len(result.papers),
+                        "papers": [_to_dict(p) for p in result.papers],
+                    }
+                )
         except Exception as e:
             logger.info("OpenAlex search failed (%s) — falling back to arXiv", e)
         # Fallback
         try:
             result = await arxiv.search_papers(query, limit=limit)
-            return json.dumps({
-                "source": "arxiv",
-                "query": query,
-                "count": len(result.papers),
-                "papers": [_to_dict(p) for p in result.papers],
-            })
+            return json.dumps(
+                {
+                    "source": "arxiv",
+                    "query": query,
+                    "count": len(result.papers),
+                    "papers": [_to_dict(p) for p in result.papers],
+                }
+            )
         except Exception as e:
             return json.dumps({"error": f"all search backends failed: {e}"})
 
     async def _fetch(self, inp: dict[str, Any]) -> str:
         from . import openalex, semantic_scholar
+
         doi = inp["doi"].strip()
         try:
             paper = await openalex.fetch_by_doi(doi)
@@ -207,6 +222,7 @@ class LiteratureToolHandler(ToolHandler):
             key = _extract_bibtex_key(entry)
         elif inp.get("doi"):
             from . import openalex, semantic_scholar
+
             doi = inp["doi"].strip()
             paper = None
             try:

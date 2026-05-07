@@ -1,4 +1,5 @@
 """Literature module — pgvector storage and semantic search for paper KB."""
+
 from __future__ import annotations
 
 import json
@@ -63,8 +64,8 @@ async def _vector_search(
     paper_project_id: str | None,
     limit: int,
 ) -> list[dict[str, Any]]:
-    from ...db.client import fetch_all
     from ...config import get_settings
+    from ...db.client import fetch_all
 
     settings = get_settings()
     if not settings.literature_kb_enabled:

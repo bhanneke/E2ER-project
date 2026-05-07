@@ -1,9 +1,9 @@
 """Data module — 5-rule guardrail layer enforced before every query execution."""
+
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Any
 
 from .dictionary import DataDictionary
 
@@ -55,7 +55,10 @@ class QueryValidator:
 
     # ── Rule 3: Time-bound WHERE clause ───────────────────────────────────────
     _DATE_PATTERNS = [
-        re.compile(r"WHERE.*?\b(date|timestamp|time|block_time|evt_block_time|created_at|block_date)\b", re.IGNORECASE | re.DOTALL),
+        re.compile(
+            r"WHERE.*?\b(date|timestamp|time|block_time|evt_block_time|created_at|block_date)\b",
+            re.IGNORECASE | re.DOTALL,
+        ),
         re.compile(r"WHERE.*?[><=!]+\s*'?\d{4}-\d{2}-\d{2}", re.IGNORECASE | re.DOTALL),
         re.compile(r"WHERE.*?BETWEEN\s+", re.IGNORECASE | re.DOTALL),
         re.compile(r"WHERE.*?DATE_TRUNC\s*\(", re.IGNORECASE | re.DOTALL),
@@ -142,17 +145,13 @@ class QueryValidator:
             QueryValidator.validate_no_select_star(sql),
             QueryValidator.validate_fields_in_dictionary(fields_requested, dictionary),
             QueryValidator.validate_time_bound(sql),
-            QueryValidator.validate_aggregation_level(
-                aggregation_level, granularity_justification, dictionary
-            ),
+            QueryValidator.validate_aggregation_level(aggregation_level, granularity_justification, dictionary),
         ]
         for c in checks:
             if not c.valid:
                 return c
 
-        feasibility = await QueryValidator.validate_feasibility_first(
-            query_type, paper_id, primary_table
-        )
+        feasibility = await QueryValidator.validate_feasibility_first(query_type, paper_id, primary_table)
         if not feasibility.valid:
             return feasibility
 

@@ -1,12 +1,10 @@
 """Tests for the data audit trail module."""
+
 from __future__ import annotations
 
 import csv
-import uuid
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
-
-import pytest
 
 
 async def test_log_query_returns_id():
@@ -31,8 +29,12 @@ async def test_log_query_no_row_returns_empty():
         from src.modules.data.audit import log_query
 
         query_id = await log_query(
-            paper_id="p", specialist="s", query_sql="SELECT x FROM t WHERE dt >= '2024-01-01'",
-            query_type="feasibility", fields_requested=["x"], aggregation_level="daily",
+            paper_id="p",
+            specialist="s",
+            query_sql="SELECT x FROM t WHERE dt >= '2024-01-01'",
+            query_type="feasibility",
+            fields_requested=["x"],
+            aggregation_level="daily",
         )
     assert query_id == ""
 
@@ -95,12 +97,18 @@ async def test_get_approval_status_missing_returns_pending():
 async def test_export_audit_log_returns_records():
     rows = [
         {
-            "id": "q1", "query_type": "feasibility",
+            "id": "q1",
+            "query_type": "feasibility",
             "query_sql": "SELECT x FROM t WHERE dt >= '2024-01-01'",
-            "fields_requested": '["x"]', "aggregation_level": "daily",
-            "estimated_rows": 1000, "actual_rows": 987,
-            "validation_status": "approved", "approved_by": "researcher",
-            "approved_at": None, "executed_at": None, "created_at": None,
+            "fields_requested": '["x"]',
+            "aggregation_level": "daily",
+            "estimated_rows": 1000,
+            "actual_rows": 987,
+            "validation_status": "approved",
+            "approved_by": "researcher",
+            "approved_at": None,
+            "executed_at": None,
+            "created_at": None,
         }
     ]
     with patch("src.db.client.fetch_all", new_callable=AsyncMock, return_value=rows):
@@ -114,12 +122,18 @@ async def test_export_audit_log_returns_records():
 async def test_write_audit_csv_creates_file(tmp_path: Path):
     rows = [
         {
-            "id": "q1", "query_type": "production",
+            "id": "q1",
+            "query_type": "production",
             "query_sql": "SELECT x FROM t WHERE dt >= '2024-01-01'",
-            "fields_requested": '["x"]', "aggregation_level": "daily",
-            "estimated_rows": 10000, "actual_rows": 9876,
-            "validation_status": "approved", "approved_by": "researcher",
-            "approved_at": "2026-01-01", "executed_at": "2026-01-01", "created_at": "2026-01-01",
+            "fields_requested": '["x"]',
+            "aggregation_level": "daily",
+            "estimated_rows": 10000,
+            "actual_rows": 9876,
+            "validation_status": "approved",
+            "approved_by": "researcher",
+            "approved_at": "2026-01-01",
+            "executed_at": "2026-01-01",
+            "created_at": "2026-01-01",
         }
     ]
     with patch("src.db.client.fetch_all", new_callable=AsyncMock, return_value=rows):
@@ -152,12 +166,18 @@ async def test_write_audit_csv_empty(tmp_path: Path):
 async def test_write_data_queries_sql_creates_file(tmp_path: Path):
     rows = [
         {
-            "id": "q1", "query_type": "production",
+            "id": "q1",
+            "query_type": "production",
             "query_sql": "SELECT date, amount FROM swaps WHERE date >= '2024-01-01'",
-            "fields_requested": '["date", "amount"]', "aggregation_level": "daily",
-            "estimated_rows": 5000, "actual_rows": 4800,
-            "validation_status": "approved", "approved_by": "researcher",
-            "approved_at": "2026-01-01", "executed_at": "2026-01-01", "created_at": "2026-01-01",
+            "fields_requested": '["date", "amount"]',
+            "aggregation_level": "daily",
+            "estimated_rows": 5000,
+            "actual_rows": 4800,
+            "validation_status": "approved",
+            "approved_by": "researcher",
+            "approved_at": "2026-01-01",
+            "executed_at": "2026-01-01",
+            "created_at": "2026-01-01",
         }
     ]
     with patch("src.db.client.fetch_all", new_callable=AsyncMock, return_value=rows):

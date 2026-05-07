@@ -1,4 +1,5 @@
 """Literature module — Semantic Scholar search provider."""
+
 from __future__ import annotations
 
 import urllib.parse
@@ -19,6 +20,7 @@ async def search_papers(query: str, limit: int = 20) -> SearchResult:
     url = f"{_BASE}/paper/search?{params}"
     try:
         import json
+
         text = await fetch_text(url)
         data = json.loads(text)
         papers = [_parse(p) for p in data.get("data", [])]
@@ -38,6 +40,7 @@ async def fetch_by_doi(doi: str) -> PaperMetadata | None:
     url = f"{_BASE}/paper/DOI:{doi}?fields={_FIELDS}"
     try:
         import json
+
         text = await fetch_text(url)
         data = json.loads(text)
         return _parse(data)

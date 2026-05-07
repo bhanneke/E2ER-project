@@ -1,4 +1,5 @@
 """GitHub module — .gitignore and README templates for paper repos."""
+
 from __future__ import annotations
 
 LATEX_GITIGNORE = """\

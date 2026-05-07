@@ -8,6 +8,7 @@ The critical invariant: if stage N crashes, re-running the pipeline must
 These tests exist because re-running specialists costs real money. A single
 re-run of all specialists is on the order of $20-30 in Anthropic API spend.
 """
+
 from __future__ import annotations
 
 import json
@@ -21,15 +22,19 @@ from src.core.pipeline.state import PipelineState
 from src.core.strategist.runner import PipelineRunner
 from src.core.strategist.state import PaperStatus
 
-
 # ---------------------------------------------------------------------------
 # Fault-injection runner
 # ---------------------------------------------------------------------------
 
 # All phases run by PipelineRunner.run() in iterative mode, in execution order.
 PHASE_ORDER = [
-    "initial", "iterative", "self_attack", "polish",
-    "review", "revision", "replication",
+    "initial",
+    "iterative",
+    "self_attack",
+    "polish",
+    "review",
+    "revision",
+    "replication",
 ]
 
 
@@ -91,14 +96,11 @@ def _make_workspace(tmp_path: Path, mode: str = "iterative") -> tuple[Path, str]
     pid = f"resilience-{uuid.uuid4().hex[:8]}"
     ws = tmp_path / pid
     ws.mkdir(parents=True)
-    (ws / "manifest.json").write_text(
-        json.dumps({"paper_id": pid, "title": "Test", "mode": mode})
-    )
+    (ws / "manifest.json").write_text(json.dumps({"paper_id": pid, "title": "Test", "mode": mode}))
     return ws, pid
 
 
-def _make_runner(workspace: Path, paper_id: str, fail_at: str | None = None,
-                 mode: str = "iterative") -> _FaultyRunner:
+def _make_runner(workspace: Path, paper_id: str, fail_at: str | None = None, mode: str = "iterative") -> _FaultyRunner:
     return _FaultyRunner(
         paper_id=paper_id,
         workspace=workspace,
@@ -124,6 +126,7 @@ def _runner_patches():
 # 1) Crash at each phase preserves earlier completed phases in state file
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.parametrize("fail_at", PHASE_ORDER)
 async def test_crash_preserves_earlier_phase_state(tmp_path, fail_at):
     ws, pid = _make_workspace(tmp_path)
@@ -146,14 +149,13 @@ async def test_crash_preserves_earlier_phase_state(tmp_path, fail_at):
             f"earlier phase '{prior}' lost from state after crash at '{fail_at}' "
             f"— resume would re-execute it and re-spend tokens. completed={completed}"
         )
-    assert fail_at not in completed, (
-        f"failed phase '{fail_at}' must NOT be marked complete (would skip retry)"
-    )
+    assert fail_at not in completed, f"failed phase '{fail_at}' must NOT be marked complete (would skip retry)"
 
 
 # ---------------------------------------------------------------------------
 # 2) Resume after crash does not redo completed phases
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.parametrize("crash_at", ["self_attack", "polish", "review", "revision", "replication"])
 async def test_resume_does_not_redo_completed_phases(tmp_path, crash_at):
@@ -174,15 +176,14 @@ async def test_resume_does_not_redo_completed_phases(tmp_path, crash_at):
             f"(call count = {r2.calls[phase]}). This would re-spend API tokens "
             f"on every resume. r2.calls = {r2.calls}"
         )
-    for phase in PHASE_ORDER[PHASE_ORDER.index(crash_at):]:
-        assert r2.calls[phase] >= 1, (
-            f"phase '{phase}' was not executed on resume (calls={r2.calls})"
-        )
+    for phase in PHASE_ORDER[PHASE_ORDER.index(crash_at) :]:
+        assert r2.calls[phase] >= 1, f"phase '{phase}' was not executed on resume (calls={r2.calls})"
 
 
 # ---------------------------------------------------------------------------
 # 3) Artifacts on disk survive a downstream crash
 # ---------------------------------------------------------------------------
+
 
 async def test_artifacts_persist_through_downstream_crash(tmp_path):
     ws, pid = _make_workspace(tmp_path)
@@ -207,6 +208,7 @@ async def test_artifacts_persist_through_downstream_crash(tmp_path):
 # ---------------------------------------------------------------------------
 # 4) State file atomicity — corrupt main file recovers from .bak
 # ---------------------------------------------------------------------------
+
 
 def test_state_save_keeps_backup_for_corruption_recovery(tmp_path):
     """state.save() must use atomic-rename + keep a .bak so a corrupted main
@@ -235,8 +237,7 @@ def test_state_save_keeps_backup_for_corruption_recovery(tmp_path):
 
     recovered = PipelineState.load(ws, "p1", "iterative")
     assert "initial" in recovered.completed_stages, (
-        "after main file corruption, load() must recover from .bak. "
-        f"Got completed_stages={recovered.completed_stages}"
+        f"after main file corruption, load() must recover from .bak. Got completed_stages={recovered.completed_stages}"
     )
 
 
@@ -266,6 +267,7 @@ def test_state_save_atomic_rename(tmp_path):
 # 5) DB phase-end logged before next phase starts
 # ---------------------------------------------------------------------------
 
+
 async def test_phase_end_logged_before_next_phase_starts(tmp_path):
     ws, pid = _make_workspace(tmp_path)
     runner = _make_runner(ws, pid, fail_at=None)
@@ -283,23 +285,17 @@ async def test_phase_end_logged_before_next_phase_starts(tmp_path):
         await runner.run()
 
     for phase in PHASE_ORDER:
-        starts = [i for i, (et, st) in enumerate(log_calls)
-                  if et == "phase_start" and st == phase]
-        ends = [i for i, (et, st) in enumerate(log_calls)
-                if et == "phase_end" and st == phase]
+        starts = [i for i, (et, st) in enumerate(log_calls) if et == "phase_start" and st == phase]
+        ends = [i for i, (et, st) in enumerate(log_calls) if et == "phase_end" and st == phase]
         assert starts, f"phase '{phase}' missing phase_start event (events={log_calls})"
         assert ends, f"phase '{phase}' missing phase_end event"
-        assert starts[0] < ends[0], (
-            f"phase '{phase}' logged end before start — phase boundary violated"
-        )
+        assert starts[0] < ends[0], f"phase '{phase}' logged end before start — phase boundary violated"
 
     # Phase ends must come strictly before the next phase's start.
     for i, phase in enumerate(PHASE_ORDER[:-1]):
         next_phase = PHASE_ORDER[i + 1]
-        my_end = next(idx for idx, (et, st) in enumerate(log_calls)
-                      if et == "phase_end" and st == phase)
-        next_start = next(idx for idx, (et, st) in enumerate(log_calls)
-                          if et == "phase_start" and st == next_phase)
+        my_end = next(idx for idx, (et, st) in enumerate(log_calls) if et == "phase_end" and st == phase)
+        next_start = next(idx for idx, (et, st) in enumerate(log_calls) if et == "phase_start" and st == next_phase)
         assert my_end < next_start, (
             f"'{phase}' phase_end logged after '{next_phase}' phase_start — "
             "phase commit ordering broken; resume would lose work"
@@ -309,6 +305,7 @@ async def test_phase_end_logged_before_next_phase_starts(tmp_path):
 # ---------------------------------------------------------------------------
 # 6) GitHub push idempotence — re-pushing existing files uses update_file
 # ---------------------------------------------------------------------------
+
 
 def test_github_push_directory_idempotent_on_resume(tmp_path):
     """Re-running push_directory after a partial push must use update_file
@@ -320,7 +317,8 @@ def test_github_push_directory_idempotent_on_resume(tmp_path):
     pushed_files: dict[str, bytes] = {}
 
     class _FakeContents:
-        def __init__(self, sha): self.sha = sha
+        def __init__(self, sha):
+            self.sha = sha
 
     def _get_contents(path, ref="main"):
         if path in pushed_files:
@@ -362,9 +360,7 @@ def test_github_push_directory_idempotent_on_resume(tmp_path):
 
     assert n1 == 3, f"first push should send all 3 files, got {n1}"
     assert n2 == 3, f"second push should still process all 3 files, got {n2}"
-    assert len(create_calls) == 3, (
-        f"first push must use create_file 3x for new files; got {len(create_calls)}"
-    )
+    assert len(create_calls) == 3, f"first push must use create_file 3x for new files; got {len(create_calls)}"
     assert len(update_calls) == 3, (
         f"second push must use update_file 3x for already-pushed files "
         f"(got {len(update_calls)} updates, {len(create_calls)} total creates). "
@@ -375,6 +371,7 @@ def test_github_push_directory_idempotent_on_resume(tmp_path):
 # ---------------------------------------------------------------------------
 # 7) Full completion replay is a no-op (the critical $$ guarantee)
 # ---------------------------------------------------------------------------
+
 
 async def test_replay_after_completion_is_noop(tmp_path):
     """A fully-completed pipeline re-run must make zero new specialist calls.

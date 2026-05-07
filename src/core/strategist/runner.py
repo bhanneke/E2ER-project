@@ -1,4 +1,5 @@
 """Pipeline runner — orchestrates the full paper pipeline with V3 extensions."""
+
 from __future__ import annotations
 
 import asyncio
@@ -10,8 +11,8 @@ from ...logging_config import get_logger
 from ...modules.llm.base import LLMBackend, ToolHandler
 from ..specialists.contracts import Contribution, WorkOrder
 from ..specialists.dispatcher import execute_parallel, execute_with_dependencies
-from ..specialists.registry import REVIEWER_SPECIALISTS, POLISH_SPECIALISTS, SPECIALIST_ARTIFACTS
-from ..strategist.actions import CeilingCheckResult, SelfAttackReport, StrategistDecision
+from ..specialists.registry import POLISH_SPECIALISTS, REVIEWER_SPECIALISTS, SPECIALIST_ARTIFACTS
+from ..strategist.actions import StrategistDecision
 from ..strategist.engine import StrategistEngine
 from ..strategist.review_aggregator import aggregate_reviews, parse_review_output
 from ..strategist.state import PaperStatus
@@ -46,14 +47,19 @@ class PipelineRunner:
         self._extra_handlers = extra_handlers or []
         self._backend_name = backend_name
         self._strategist = StrategistEngine(
-            backend, workspace, paper_id, mode,
-            model=model, backend_name=backend_name,
+            backend,
+            workspace,
+            paper_id,
+            mode,
+            model=model,
+            backend_name=backend_name,
         )
         self._contributions: list[Contribution] = []
         self._iteration = 0
         self._pivot_count = 0
         if max_cost_usd is None:
             from ...config import get_settings
+
             max_cost_usd = get_settings().default_max_cost_usd
         self._max_cost_usd = max_cost_usd
 
@@ -64,15 +70,16 @@ class PipelineRunner:
         cost cap still trips. Authoritative on whichever side is larger.
         """
         from ...modules.tracking.costs import compute_cost
+
         spec_cost = sum(c.cost_usd or 0.0 for c in self._contributions)
         strat_cost = float(compute_cost(self._model, self._strategist.total_usage))
         return spec_cost + strat_cost
 
     async def run(self) -> dict[str, Any]:
         """Run the full pipeline from idea to completion, with checkpoint/resume support."""
-        from ..pipeline.state import PipelineState
         from ...db.events import log_event
         from ...modules.tracking.usage import check_budget
+        from ..pipeline.state import PipelineState
 
         state = PipelineState.load(self._workspace, self._paper_id, self._mode)
         self._iteration = state.iteration
@@ -199,6 +206,7 @@ class PipelineRunner:
         provenance trail of which queries ran (or were rejected).
         """
         from ...modules.data.audit import write_audit_csv, write_data_queries_sql
+
         replication_dir = self._workspace / "replication"
         replication_dir.mkdir(exist_ok=True)
         audit_csv = replication_dir / "audit_log.csv"
@@ -219,9 +227,7 @@ class PipelineRunner:
         """
         decision = await self._strategist.decide("designing", iteration=0)
         if decision.action == "fail":
-            raise RuntimeError(
-                f"Strategist could not plan the initial phase: {decision.rationale}"
-            )
+            raise RuntimeError(f"Strategist could not plan the initial phase: {decision.rationale}")
         if not decision.work_orders:
             raise RuntimeError(
                 "Strategist returned no work orders for the initial phase — cannot "
@@ -258,8 +264,12 @@ class PipelineRunner:
                     self._pivot_count += 1
                     pivot_contributions = await execute_parallel(
                         self._to_contract_orders(ceiling.suggested_pivots),
-                        self._backend, self._workspace, self._model,
-                        self._extra_tools, self._extra_handlers, self._backend_name,
+                        self._backend,
+                        self._workspace,
+                        self._model,
+                        self._extra_tools,
+                        self._extra_handlers,
+                        self._backend_name,
                     )
                     self._contributions.extend(pivot_contributions)
                     break  # one pivot per paper
@@ -275,14 +285,17 @@ class PipelineRunner:
         report_path = self._workspace / "self_attack_report.json"
         report_path.write_text(
             json.dumps(
-                {"findings": [f.__dict__ for f in attack_report.findings],
-                 "overall_severity": attack_report.overall_severity},
+                {
+                    "findings": [f.__dict__ for f in attack_report.findings],
+                    "overall_severity": attack_report.overall_severity,
+                },
                 indent=2,
             )
         )
         logger.info(
             "Self-attack: %d findings, max severity %d",
-            len(attack_report.findings), attack_report.overall_severity,
+            len(attack_report.findings),
+            attack_report.overall_severity,
         )
 
         # Critical findings (severity >=7) trigger targeted revision
@@ -291,18 +304,19 @@ class PipelineRunner:
                 WorkOrder(
                     paper_id=self._paper_id,
                     specialist="revisor",
-                    focus=(
-                        f"Critical finding (severity {f.severity}): {f.description}\n"
-                        f"Fix: {f.suggested_fix}"
-                    ),
+                    focus=(f"Critical finding (severity {f.severity}): {f.description}\nFix: {f.suggested_fix}"),
                     context_tier=2,
                 )
                 for f in attack_report.critical_findings[:3]  # limit to top 3
             ]
             contributions = await execute_parallel(
                 critical_work_orders,
-                self._backend, self._workspace, self._model,
-                self._extra_tools, self._extra_handlers, self._backend_name,
+                self._backend,
+                self._workspace,
+                self._model,
+                self._extra_tools,
+                self._extra_handlers,
+                self._backend_name,
             )
             self._contributions.extend(contributions)
 
@@ -328,8 +342,12 @@ class PipelineRunner:
 
         contributions = await execute_parallel(
             polish_orders,
-            self._backend, self._workspace, self._model,
-            self._extra_tools, self._extra_handlers, self._backend_name,
+            self._backend,
+            self._workspace,
+            self._model,
+            self._extra_tools,
+            self._extra_handlers,
+            self._backend_name,
         )
         self._contributions.extend(contributions)
         return PaperStatus.POLISH
@@ -351,8 +369,12 @@ class PipelineRunner:
 
         contributions = await execute_parallel(
             review_orders,
-            self._backend, self._workspace, self._model,
-            self._extra_tools, self._extra_handlers, self._backend_name,
+            self._backend,
+            self._workspace,
+            self._model,
+            self._extra_tools,
+            self._extra_handlers,
+            self._backend_name,
         )
         self._contributions.extend(contributions)
         return PaperStatus.REVIEW
@@ -387,8 +409,12 @@ class PipelineRunner:
         aggregation_path = self._workspace / "review_aggregation.json"
         aggregation_path.write_text(
             json.dumps(
-                {"verdict": result.verdict, "weighted_avg": result.weighted_avg,
-                 "rule_triggered": result.rule_triggered, "rationale": result.rationale},
+                {
+                    "verdict": result.verdict,
+                    "weighted_avg": result.weighted_avg,
+                    "rule_triggered": result.rule_triggered,
+                    "rationale": result.rationale,
+                },
                 indent=2,
             )
         )
@@ -406,9 +432,15 @@ class PipelineRunner:
                 context_tier=2,
             )
             from ..specialists.dispatcher import execute_work_order
+
             contribution = await execute_work_order(
-                revision_order, self._backend, self._workspace, self._model,
-                self._extra_tools, self._extra_handlers, self._backend_name,
+                revision_order,
+                self._backend,
+                self._workspace,
+                self._model,
+                self._extra_tools,
+                self._extra_handlers,
+                self._backend_name,
             )
             self._contributions.append(contribution)
             return PaperStatus.COMPLETED
@@ -429,29 +461,40 @@ class PipelineRunner:
         contract_orders = self._to_contract_orders(decision.work_orders)
         if len(contract_orders) == 1:
             from ..specialists.dispatcher import execute_work_order
+
             c = await execute_work_order(
                 contract_orders[0],
-                self._backend, self._workspace, self._model,
-                self._extra_tools, self._extra_handlers, self._backend_name,
+                self._backend,
+                self._workspace,
+                self._model,
+                self._extra_tools,
+                self._extra_handlers,
+                self._backend_name,
             )
             return [c]
         return await execute_with_dependencies(
             contract_orders,
-            self._backend, self._workspace, self._model,
-            self._extra_tools, self._extra_handlers, self._backend_name,
+            self._backend,
+            self._workspace,
+            self._model,
+            self._extra_tools,
+            self._extra_handlers,
+            self._backend_name,
         )
 
     def _to_contract_orders(self, strategist_orders: list) -> list[WorkOrder]:
         """Adapt strategist.actions.WorkOrder → specialists.contracts.WorkOrder."""
         result = []
         for wo in strategist_orders:
-            result.append(WorkOrder(
-                paper_id=self._paper_id,
-                specialist=wo.specialist,
-                focus=wo.focus,
-                parallel_group=getattr(wo, "parallel_group", 0),
-                context_tier=getattr(wo, "context_tier", 1),
-            ))
+            result.append(
+                WorkOrder(
+                    paper_id=self._paper_id,
+                    specialist=wo.specialist,
+                    focus=wo.focus,
+                    parallel_group=getattr(wo, "parallel_group", 0),
+                    context_tier=getattr(wo, "context_tier", 1),
+                )
+            )
         return result
 
     async def _run_replication_phase(self) -> None:
@@ -462,6 +505,7 @@ class PipelineRunner:
 
         try:
             from ...modules.data.audit import write_audit_csv, write_data_queries_sql
+
             await write_audit_csv(self._paper_id, replication_dir / "audit_log.csv")
             await write_data_queries_sql(self._paper_id, replication_dir / "data_queries.sql")
         except Exception as e:
@@ -480,9 +524,15 @@ class PipelineRunner:
             context_tier=2,
         )
         from ..specialists.dispatcher import execute_work_order
+
         contribution = await execute_work_order(
-            order, self._backend, self._workspace, self._model,
-            self._extra_tools, self._extra_handlers, self._backend_name,
+            order,
+            self._backend,
+            self._workspace,
+            self._model,
+            self._extra_tools,
+            self._extra_handlers,
+            self._backend_name,
         )
         self._contributions.append(contribution)
 
@@ -490,6 +540,7 @@ class PipelineRunner:
         """Compile paper_draft.tex to PDF. Non-fatal — PDF is a bonus output."""
         try:
             from ..renderer.compiler import compile_latex
+
             pdf = await compile_latex(self._workspace)
             if pdf:
                 logger.info("Compiled PDF: %s", pdf)
@@ -502,18 +553,22 @@ class PipelineRunner:
         """Push LaTeX artifacts to GitHub. Non-fatal — skipped when token not configured."""
         try:
             from ...modules.github.push import push_latex_draft
+
             result = await push_latex_draft(self._paper_id, self._workspace, "completion")
             if result:
-                logger.info("GitHub push: %d files to %s", result.get("pushed_files", 0), result.get("repo", ""))
+                logger.info(
+                    "GitHub push: %d files to %s",
+                    result.get("pushed_files", 0),
+                    result.get("repo", ""),
+                )
         except Exception as e:
             logger.warning("GitHub push failed: %s", e)
 
     async def _update_status(self, status: PaperStatus, error: str | None = None) -> None:
         try:
             from ...db.client import execute
-            terminal_with_reason = (
-                status in {PaperStatus.FAILED, PaperStatus.CANCELLED} and error is not None
-            )
+
+            terminal_with_reason = status in {PaperStatus.FAILED, PaperStatus.CANCELLED} and error is not None
             if terminal_with_reason:
                 await execute(
                     "UPDATE papers SET status = %(s)s, last_error = %(e)s, updated_at = NOW() WHERE id = %(id)s",

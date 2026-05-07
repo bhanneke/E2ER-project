@@ -1,7 +1,7 @@
 """LLM module — tool definitions and file tool handler."""
+
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
@@ -51,7 +51,10 @@ FILE_TOOLS: list[dict[str, Any]] = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "Directory path (default: workspace root)"},
+                "path": {
+                    "type": "string",
+                    "description": "Directory path (default: workspace root)",
+                },
             },
             "required": [],
         },

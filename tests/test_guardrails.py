@@ -1,8 +1,7 @@
 """Tests for the 5-rule Allium guardrail system."""
-import pytest
 
-from src.modules.data.guardrails import QueryValidator
 from src.modules.data.dictionary import DataDictionary, DataDictionaryEntry
+from src.modules.data.guardrails import QueryValidator
 
 
 def _make_dict(*field_names: str) -> DataDictionary:
@@ -13,6 +12,7 @@ def _make_dict(*field_names: str) -> DataDictionary:
 
 
 # --- Rule 1: No SELECT * ---
+
 
 def test_select_star_rejected():
     result = QueryValidator.validate_no_select_star("SELECT * FROM transfers")
@@ -26,19 +26,16 @@ def test_table_star_rejected():
 
 
 def test_explicit_fields_accepted():
-    result = QueryValidator.validate_no_select_star(
-        "SELECT block_timestamp, from_address, value FROM transfers"
-    )
+    result = QueryValidator.validate_no_select_star("SELECT block_timestamp, from_address, value FROM transfers")
     assert result.valid
 
 
 # --- Rule 2: Fields in dictionary ---
 
+
 def test_valid_fields_pass():
     d = _make_dict("block_timestamp", "from_address", "value")
-    result = QueryValidator.validate_fields_in_dictionary(
-        ["block_timestamp", "from_address"], d
-    )
+    result = QueryValidator.validate_fields_in_dictionary(["block_timestamp", "from_address"], d)
     assert result.valid
 
 
@@ -50,6 +47,7 @@ def test_unknown_field_rejected():
 
 
 # --- Rule 3: Time-bound WHERE clause ---
+
 
 def test_date_bound_passes():
     sql = "SELECT x FROM t WHERE block_timestamp >= '2024-01-01' AND block_timestamp < '2024-02-01'"
@@ -68,6 +66,7 @@ def test_non_time_where_rejected():
 
 
 # --- Rule 4: Aggregation level ---
+
 
 def test_daily_aggregation_passes():
     d = _make_dict("value")

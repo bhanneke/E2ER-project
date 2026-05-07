@@ -1,4 +1,5 @@
 """Literature module — arXiv search provider."""
+
 from __future__ import annotations
 
 import urllib.parse
@@ -16,12 +17,14 @@ _NS = {"atom": "http://www.w3.org/2005/Atom", "arxiv": "http://arxiv.org/schemas
 
 async def search_papers(query: str, limit: int = 20) -> SearchResult:
     """Search arXiv using the Atom feed API."""
-    params = urllib.parse.urlencode({
-        "search_query": f"all:{query}",
-        "start": 0,
-        "max_results": min(limit, 50),
-        "sortBy": "relevance",
-    })
+    params = urllib.parse.urlencode(
+        {
+            "search_query": f"all:{query}",
+            "start": 0,
+            "max_results": min(limit, 50),
+            "sortBy": "relevance",
+        }
+    )
     url = f"{_BASE}?{params}"
     try:
         xml_text = await fetch_text(url)

@@ -15,11 +15,11 @@ Run explicitly with::
 
     ANTHROPIC_API_KEY=sk-ant-... pytest tests/e2e/test_haiku_smoke.py -v -m e2e
 """
+
 from __future__ import annotations
 
 import os
 import uuid
-from pathlib import Path
 
 import pytest
 
@@ -44,6 +44,7 @@ async def test_haiku_single_pass_smoke(tmp_path):
 
     # Fresh settings (clear lru_cache from any earlier import).
     from src.config import get_settings
+
     get_settings.cache_clear()
 
     from src.core.strategist.runner import PipelineRunner
@@ -54,10 +55,10 @@ async def test_haiku_single_pass_smoke(tmp_path):
     workspace = tmp_path / paper_id
     workspace.mkdir()
     (workspace / "manifest.json").write_text(
-        '{"paper_id": "%s", "title": "Block height vs. elapsed time on Ethereum",'
+        f'{{"paper_id": "{paper_id}", "title": "Block height vs. elapsed time on Ethereum",'
         ' "research_question": "Describe the empirical relationship between block height'
         ' and wall-clock time on Ethereum mainnet.",'
-        ' "datasets": [], "mode": "single_pass", "current_stage": "idea"}' % paper_id
+        ' "datasets": [], "mode": "single_pass", "current_stage": "idea"}'
     )
 
     backend = AnthropicBackend()

@@ -1,11 +1,11 @@
 """Token and cost usage recording."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
-from uuid import UUID
 
 from ..llm.base import TokenUsage
 from .costs import compute_cost
@@ -27,7 +27,7 @@ class UsageRecord:
 
     def __post_init__(self) -> None:
         if self.timestamp is None:
-            self.timestamp = datetime.now(timezone.utc)
+            self.timestamp = datetime.now(UTC)
 
 
 async def save_usage(
@@ -105,7 +105,7 @@ async def check_budget(
 
 async def get_paper_usage(paper_id: str) -> dict[str, Any]:
     """Get aggregated usage totals and per-specialist breakdown for a paper."""
-    from ...db.client import fetch_one, fetch_all
+    from ...db.client import fetch_all, fetch_one
 
     totals = await fetch_one(
         """
@@ -120,7 +120,10 @@ async def get_paper_usage(paper_id: str) -> dict[str, Any]:
         {"id": paper_id},
     )
     breakdown = await fetch_all(
-        "SELECT specialist, SUM(cost_usd)::numeric AS cost_usd, SUM(input_tokens+output_tokens)::bigint AS tokens FROM llm_usage WHERE paper_id = %(id)s GROUP BY specialist ORDER BY cost_usd DESC",
+        "SELECT specialist, SUM(cost_usd)::numeric AS cost_usd, "
+        "SUM(input_tokens+output_tokens)::bigint AS tokens "
+        "FROM llm_usage WHERE paper_id = %(id)s "
+        "GROUP BY specialist ORDER BY cost_usd DESC",
         {"id": paper_id},
     )
     return {"totals": totals or {}, "by_specialist": breakdown}
