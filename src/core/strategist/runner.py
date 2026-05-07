@@ -81,13 +81,23 @@ class PipelineRunner:
         from ...modules.tracking.usage import check_budget
         from ..pipeline.state import PipelineState
 
-        state = PipelineState.load(self._workspace, self._paper_id, self._mode)
-        self._iteration = state.iteration
-        self._pivot_count = state.pivot_count
-        prior_contributions = state.contributions_count
+        # Initialise outside try/except so the except branch can reference state
+        # if setup itself fails. Without this, a crash in load() or _update_status()
+        # propagates silently from the background task with no event log.
+        state: PipelineState | None = None
+        try:
+            state = PipelineState.load(self._workspace, self._paper_id, self._mode)
+            self._iteration = state.iteration
+            self._pivot_count = state.pivot_count
+            prior_contributions = state.contributions_count
 
-        status = PaperStatus.DESIGNING
-        await self._update_status(status)
+            status = PaperStatus.DESIGNING
+            await self._update_status(status)
+        except Exception as e:
+            logger.error("Pipeline setup failed for paper %s: %s", self._paper_id, e)
+            await log_event(self._paper_id, "failed", payload={"error": f"setup: {type(e).__name__}: {e}"})
+            await self._update_status(PaperStatus.FAILED, error=f"setup error: {e}")
+            return {"status": "failed", "error": f"setup: {type(e).__name__}: {e}"}
 
         async def _phase(name: str, fn) -> Any:
             """Run a phase with budget check, event logging, and state persistence."""
@@ -273,6 +283,24 @@ class PipelineRunner:
                     )
                     self._contributions.extend(pivot_contributions)
                     break  # one pivot per paper
+                if ceiling.verdict == "continue":
+                    # Explicitly fall through to the next iteration. On the final
+                    # iteration this lets the for-loop exit naturally — but we log
+                    # so it doesn't look like the ceiling check was satisfied.
+                    if iteration == _MAX_ITERATIONS:
+                        logger.warning(
+                            "Ceiling check returned 'continue' on final iteration %d; "
+                            "exiting iterative phase without quality-ceiling confirmation",
+                            iteration,
+                        )
+                    continue
+                # Any other verdict is unrecognised — log and proceed defensively.
+                logger.warning(
+                    "Unrecognised ceiling verdict '%s' at iter=%d; treating as proceed_to_review",
+                    ceiling.verdict,
+                    iteration,
+                )
+                break
 
         return PaperStatus.CEILING_CHECK
 
@@ -297,6 +325,10 @@ class PipelineRunner:
             len(attack_report.findings),
             attack_report.overall_severity,
         )
+
+        if not attack_report.findings:
+            logger.info("Self-attack: no findings — skipping critical-finding revision step")
+            return PaperStatus.SELF_ATTACK
 
         # Critical findings (severity >=7) trigger targeted revision
         if attack_report.critical_findings:
@@ -400,8 +432,14 @@ class PipelineRunner:
                             scores.append(score)
 
         if not scores:
-            logger.warning("No review scores extracted — proceeding to completion")
-            return PaperStatus.COMPLETED
+            # Auto-completing on missing review evidence is dangerous: it
+            # produces a "completed" paper with no review trail. Surface as
+            # FAILED so the user knows to re-run the review phase.
+            logger.error(
+                "No review scores extracted for paper %s — marking FAILED. Re-running the review phase will recover.",
+                self._paper_id,
+            )
+            return PaperStatus.FAILED
 
         result = aggregate_reviews(scores)
         logger.info("Review aggregation: %s (avg=%.2f)", result.verdict, result.weighted_avg)

@@ -6,7 +6,13 @@ from pathlib import Path
 
 
 def build_tier0_context(workspace: Path, paper_id: str) -> str:
-    """Tier 0 — minimal orientation: paper title, research question, data available."""
+    """Tier 0 — minimal orientation: paper title, research question, data available.
+
+    The research question is wrapped via sanitize_for_prompt because it's
+    untrusted user input that flows into every strategist and specialist call.
+    """
+    from ...modules.security import sanitize_for_prompt
+
     manifest = _read_artifact(workspace, "manifest.json")
     if not manifest:
         return f"Paper ID: {paper_id}\nWorkspace: {workspace}"
@@ -16,10 +22,12 @@ def build_tier0_context(workspace: Path, paper_id: str) -> str:
     lines = [
         f"Paper: {data.get('title', 'Untitled')}",
         f"ID: {paper_id}",
-        f"Research Question: {data.get('research_question', 'TBD')}",
         f"Methodology: {data.get('methodology', 'empirical')}",
         f"Data Available: {', '.join(data.get('datasets', []))}",
         f"Current Stage: {data.get('current_stage', 'unknown')}",
+        "",
+        "Research Question:",
+        sanitize_for_prompt(data.get("research_question", "TBD"), max_chars=2000),
     ]
     return "\n".join(lines)
 
@@ -153,8 +161,10 @@ def _list_user_data(workspace: Path) -> str:
                 if head:
                     preview = "\n    ".join(h[:200] for h in head)
                     line += f"\n    {preview}"
-            except Exception:
-                pass
+            except Exception as e:
+                from ...logging_config import get_logger
+
+                get_logger(__name__).debug("preview read failed for %s: %s", path, e)
         lines.append(line)
     return "\n".join(lines)
 
@@ -164,8 +174,10 @@ def _read_artifact(workspace: Path, filename: str) -> str | None:
     if path.exists():
         try:
             return path.read_text(encoding="utf-8")
-        except Exception:
-            pass
+        except Exception as e:
+            from ...logging_config import get_logger
+
+            get_logger(__name__).warning("Failed to read artifact %s: %s", path, e)
     return None
 
 

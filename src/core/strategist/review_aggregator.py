@@ -47,6 +47,19 @@ def aggregate_reviews(scores: list[ReviewScore]) -> AggregationResult:
     Rule 2: If any reviewer < 4 → HARD_REJECT.
     Rule 3: Weighted average — technical_reviewer has 1.5x weight.
     """
+    from ...logging_config import get_logger
+    from ..specialists.registry import REVIEWER_SPECIALISTS
+
+    expected = len(REVIEWER_SPECIALISTS)
+    if len(scores) < expected:
+        get_logger(__name__).warning(
+            "Partial review aggregation: only %d/%d reviewer scores present "
+            "(missing: %s). Verdict computed on partial data — treat with caution.",
+            len(scores),
+            expected,
+            sorted(set(REVIEWER_SPECIALISTS) - {s.reviewer for s in scores}),
+        )
+
     for s in scores:
         s.weight = _WEIGHTS.get(s.reviewer, 1.0)
 
