@@ -7,7 +7,12 @@
 
 **E2ER** is an open-source pipeline for producing peer-review-quality empirical research papers in information systems, economics, and finance. The researcher provides a research question and data access; the pipeline handles the rest: study design, data acquisition, econometric estimation, writing, review, and replication packaging.
 
-> **Scope**: E2ER is optimised for empirical papers. It works best with structured data, a clear identification strategy, and established econometric methods. It is not designed for purely theoretical work.
+> **Scope**: E2ER supports three methodologies, selectable per paper at creation time:
+> - **`empirical`** (default) — data-driven, runs identification + econometrics specialists
+> - **`theoretical`** — formal model + hypotheses, no data specialists
+> - **`mixed`** — formal model AND empirical test
+>
+> Pick the methodology that matches your paper's argument structure. Most users want `empirical`; theoretical mode is for pure-model papers (no data, just propositions and proofs).
 
 ---
 
@@ -186,6 +191,7 @@ curl -X POST http://localhost:8280/api/papers \
     "title": "DeFi Liquidity Provision and Market Quality",
     "research_question": "How does concentrated liquidity in Uniswap v3 affect price discovery?",
     "mode": "iterative",
+    "methodology": "empirical",
     "max_cost_usd": 30.0
   }'
 # Returns: {"paper_id": "<uuid>", "status": "idea", ...}

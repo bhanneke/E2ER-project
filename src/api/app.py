@@ -65,6 +65,7 @@ class CreatePaperRequest(BaseModel):
     research_question: str
     datasets: list[str] = []
     mode: str = "iterative"
+    methodology: str = "empirical"  # empirical | theoretical | mixed
     bibtex_path: str | None = None
     max_cost_usd: float | None = None  # falls back to settings.default_max_cost_usd
 
@@ -96,12 +97,19 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
     workspace = Path(settings.workspace_root) / paper_id
     workspace.mkdir(parents=True, exist_ok=True)
 
+    if req.methodology not in {"empirical", "theoretical", "mixed"}:
+        raise HTTPException(
+            status_code=400,
+            detail=f"methodology must be one of empirical|theoretical|mixed, got {req.methodology!r}",
+        )
+
     manifest = {
         "paper_id": paper_id,
         "title": req.title,
         "research_question": req.research_question,
         "datasets": req.datasets,
         "mode": req.mode,
+        "methodology": req.methodology,
         "current_stage": "idea",
     }
     (workspace / "manifest.json").write_text(json.dumps(manifest, indent=2))
@@ -110,8 +118,8 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
     try:
         await execute(
             """
-            INSERT INTO papers (id, title, research_question, status, workspace, mode, max_cost_usd)
-            VALUES (%(id)s, %(title)s, %(rq)s, 'idea', %(ws)s, %(mode)s, %(cap)s)
+            INSERT INTO papers (id, title, research_question, status, workspace, mode, methodology, max_cost_usd)
+            VALUES (%(id)s, %(title)s, %(rq)s, 'idea', %(ws)s, %(mode)s, %(methodology)s, %(cap)s)
             """,
             {
                 "id": paper_id,
@@ -119,6 +127,7 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
                 "rq": req.research_question,
                 "ws": str(workspace),
                 "mode": req.mode,
+                "methodology": req.methodology,
                 "cap": cap,
             },
         )
@@ -402,6 +411,7 @@ async def submit_new_paper(
     title: str = Form(...),
     research_question: str = Form(...),
     mode: str = Form("iterative"),
+    methodology: str = Form("empirical"),
     max_cost_usd: float = Form(None),
 ) -> RedirectResponse:
     """Form-encoded handler that mirrors POST /api/papers. Redirects to detail page."""
@@ -409,6 +419,7 @@ async def submit_new_paper(
         title=title,
         research_question=research_question,
         mode=mode,
+        methodology=methodology,
         max_cost_usd=max_cost_usd,
     )
     bg = BackgroundTasks()

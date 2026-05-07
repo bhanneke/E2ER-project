@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Methodology selector** — papers now accept a `methodology` field at
+  creation time: `empirical` (default, unchanged), `theoretical` (formal
+  model only, no data/econometrics specialists), `mixed` (formal model +
+  empirical test). Surfaced in the dashboard form and `POST /api/papers`.
+- New `theory_specialist` (writes `model_spec.md`) ported from E2ER v2.
+  Dispatched by the strategist when methodology is `theoretical` or
+  `mixed`. Skill bundle: `base/economist`, `modeling/game-theory`,
+  `modeling/asset-pricing`, `math/proof-strategies`,
+  `reasoning/identification`.
+- `sql/009_papers_methodology.sql` — adds `methodology` column to the
+  `papers` table with a CHECK constraint.
+- `tests/test_methodology.py` — 12 tests pinning the registry, prompt
+  contract, manifest persistence, API validation, and specialist
+  invocation.
 - GitHub Actions CI: ruff lint + format + pytest on Python 3.11 and 3.12,
   triggered on push to `main` and all PRs.
 - Branch protection on `main` requiring both pytest matrix jobs to pass

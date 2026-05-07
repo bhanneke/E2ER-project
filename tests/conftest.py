@@ -41,6 +41,11 @@ _SPECIALIST_OUTPUTS: dict[str, tuple[str, str]] = {
         "data_summary.md",
         "# Data Summary\n\nThe dataset contains 10,000 observations.",
     ),
+    "theory_specialist": (
+        "model_spec.md",
+        "# Formal Model\n\n## Setup\nAgents maximise utility subject to budget.\n\n"
+        "## Propositions\nP1: Equilibrium price is monotone in supply.",
+    ),
     "paper_drafter": (
         "paper_draft.tex",
         "\\documentclass{article}\n\\begin{document}\n\\title{Test}\n\\maketitle\nContent.\n\\end{document}",

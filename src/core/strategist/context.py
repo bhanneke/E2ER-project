@@ -17,6 +17,7 @@ def build_tier0_context(workspace: Path, paper_id: str) -> str:
         f"Paper: {data.get('title', 'Untitled')}",
         f"ID: {paper_id}",
         f"Research Question: {data.get('research_question', 'TBD')}",
+        f"Methodology: {data.get('methodology', 'empirical')}",
         f"Data Available: {', '.join(data.get('datasets', []))}",
         f"Current Stage: {data.get('current_stage', 'unknown')}",
     ]

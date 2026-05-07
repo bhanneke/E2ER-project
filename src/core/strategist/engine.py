@@ -47,8 +47,8 @@ Your entire response MUST be a single JSON object — nothing else.
   "work_orders": [
     {
       "specialist": "<one of: idea_developer, literature_scanner, identification_strategist,
-                     data_architect, econometrics_specialist, data_analyst, paper_drafter,
-                     section_writer, abstract_writer, latex_formatter, revisor>",
+                     data_architect, econometrics_specialist, data_analyst, theory_specialist,
+                     paper_drafter, section_writer, abstract_writer, latex_formatter, revisor>",
       "focus": "<one-paragraph specific instruction for this specialist>",
       "parallel_group": <integer 0..N — same group runs in parallel; later groups depend on earlier>
     }
@@ -73,9 +73,24 @@ Your entire response MUST be a single JSON object — nothing else.
   "rationale": "Initial design + data acquisition + writing pass."
 }
 
-Note: ALWAYS include `data_analyst` after `data_architect` — this is the
-specialist that actually queries the data. Skipping it leaves the paper
-without empirical content.
+## Methodology-aware dispatch
+
+The paper's `Methodology:` field (in the context block) is one of `empirical`,
+`theoretical`, or `mixed`. Dispatch differently:
+
+- `empirical` (default): dispatch the data + econometrics specialists. Do NOT
+  dispatch `theory_specialist`. ALWAYS include `data_analyst` after
+  `data_architect` — that's the specialist that actually queries data;
+  skipping it leaves the paper without empirical content.
+- `theoretical`: dispatch `theory_specialist` to develop the formal model.
+  Do NOT dispatch `data_architect`, `data_analyst`, or `econometrics_specialist`
+  for a pure theoretical paper.
+- `mixed`: dispatch `theory_specialist` AND the empirical specialists. Theory
+  develops the model; empirical specialists test its predictions.
+
+`theory_specialist` writes `model_spec.md` (formal model in LaTeX with
+assumptions, derivations, propositions). Place it in the same parallel_group
+as `identification_strategist` since they're both upstream of writing.
 
 Output ONLY the JSON object. No commentary.
 """

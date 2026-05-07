@@ -10,6 +10,8 @@ SPECIALIST_ARTIFACTS: dict[str, str] = {
     "identification_strategist": "identification_strategy.md",
     "econometrics_specialist": "econometric_spec.md",
     "data_analyst": "data_summary.md",
+    # Theoretical-paper specialist (dispatched when methodology is theoretical or mixed)
+    "theory_specialist": "model_spec.md",
     # Writing phase
     "paper_drafter": "paper_draft.tex",
     "section_writer": "paper_draft.tex",
@@ -55,6 +57,13 @@ SPECIALIST_SKILLS: dict[str, list[str]] = {
         "econometrics/event-study",
     ],
     "data_analyst": ["data/cleaning", "data/figure-spec", "econometrics/panel-data"],
+    "theory_specialist": [
+        "base/economist",
+        "modeling/game-theory",
+        "modeling/asset-pricing",
+        "math/proof-strategies",
+        "reasoning/identification",
+    ],
     "paper_drafter": ["writing/paper-structure", "writing/personal-style", "base/researcher"],
     "section_writer": ["writing/paper-structure", "writing/personal-style", "reasoning/anti-slop"],
     "abstract_writer": ["writing/abstract", "reasoning/anti-slop"],

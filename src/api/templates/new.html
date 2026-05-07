@@ -27,6 +27,15 @@
     </label>
 
     <label>
+      <span>Methodology</span>
+      <select name="methodology">
+        <option value="empirical" selected>empirical — data-driven, identification + econometrics</option>
+        <option value="theoretical">theoretical — formal model, hypotheses, no data</option>
+        <option value="mixed">mixed — formal model AND empirical test</option>
+      </select>
+    </label>
+
+    <label>
       <span>Cost cap (USD)</span>
       <input type="number" name="max_cost_usd" min="1" max="500" step="1"
              value="{{ default_cap }}" />
