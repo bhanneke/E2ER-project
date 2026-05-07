@@ -130,6 +130,14 @@ async def execute_parallel(
 
     if not work_orders:
         return []
+
+    # Mid-phase budget check: parallel batches can spend several dollars between
+    # the runner's phase-boundary checks. A pre-batch check protects against a
+    # single phase blowing past the cap.
+    from ...modules.tracking.usage import check_budget_by_paper_id
+
+    await check_budget_by_paper_id(work_orders[0].paper_id)
+
     logger.info("Parallel dispatch: %d specialists", len(work_orders))
     sem = asyncio.Semaphore(get_settings().max_concurrent_specialists)
 

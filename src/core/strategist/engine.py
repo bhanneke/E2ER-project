@@ -57,6 +57,13 @@ Your entire response MUST be a single JSON object — nothing else.
 }
 ```
 
+Note: reviewer specialists (mechanism_reviewer, technical_reviewer,
+literature_reviewer, writing_reviewer, data_reviewer, identification_reviewer)
+and polish specialists (polish_formula, polish_numerics, polish_institutions,
+polish_bibliography, polish_equilibria) are NOT in your dispatch roster.
+The runner invokes those directly during the review and polish phases —
+do not return them as work_orders.
+
 ## Example for the initial design phase
 {
   "action": "dispatch_parallel",

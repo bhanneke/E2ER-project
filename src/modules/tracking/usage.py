@@ -103,6 +103,31 @@ async def check_budget(
         raise BudgetExceededError(spent=spent, cap=max_cost_usd)
 
 
+async def check_budget_by_paper_id(paper_id: str) -> None:
+    """Fetch the cap from the papers table and run the budget check.
+
+    Used by code paths (like the dispatcher) that don't have the cap on
+    hand. Falls back to default_max_cost_usd when no row exists or the
+    DB is unavailable. No-op on lookup failure rather than blocking work.
+    """
+    from ...config import get_settings
+    from ...db.client import fetch_one
+
+    cap = get_settings().default_max_cost_usd
+    try:
+        row = await fetch_one(
+            "SELECT max_cost_usd FROM papers WHERE id = %(id)s",
+            {"id": paper_id},
+        )
+        if row and row.get("max_cost_usd") is not None:
+            cap = float(row["max_cost_usd"])
+    except Exception:
+        # DB unavailable — use default cap. Better to over-trip than to skip the check.
+        pass
+
+    await check_budget(paper_id, cap, in_memory_spent=0.0)
+
+
 async def get_paper_usage(paper_id: str) -> dict[str, Any]:
     """Get aggregated usage totals and per-specialist breakdown for a paper."""
     from ...db.client import fetch_all, fetch_one
