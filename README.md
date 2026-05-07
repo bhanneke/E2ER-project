@@ -1,9 +1,9 @@
 # E2ER v3: End-to-End Researcher
 
 [![Status](https://img.shields.io/badge/status-active%20development-blue)]()
-[![License](https://img.shields.io/badge/license-MIT-green)]()
-[![Python](https://img.shields.io/badge/python-3.10%2B-blue)]()
-[![Tests](https://img.shields.io/badge/tests-passing-brightgreen)]()
+[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.11%2B-blue)]()
+[![Tests](https://github.com/bhanneke/E2ER-project/actions/workflows/tests.yml/badge.svg)](https://github.com/bhanneke/E2ER-project/actions/workflows/tests.yml)
 
 **E2ER** is an open-source pipeline for producing peer-review-quality empirical research papers in information systems, economics, and finance. The researcher provides a research question and data access; the pipeline handles the rest: study design, data acquisition, econometric estimation, writing, review, and replication packaging.
 
