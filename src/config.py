@@ -80,6 +80,15 @@ class Settings(BaseSettings):
     repos_dir: str = "repos"
     workspace_root: str = "workspaces"
 
+    # ── API security ──────────────────────────────────────────────────────────
+    # When set, all mutating endpoints (POST/DELETE) require
+    # `Authorization: Bearer <token>`. When unset (default), the API is open
+    # — fine for localhost dev, NOT fine for any deploy beyond your machine.
+    api_auth_token: str | None = None
+    # Comma-separated origins for CORS. Default is the dashboard on localhost.
+    # Set to '*' explicitly to allow any origin (only do this for non-secret deploys).
+    cors_origins: str = "http://localhost:8280,http://127.0.0.1:8280"
+
     @property
     def default_model(self) -> str:
         if self.llm_backend == "openrouter":

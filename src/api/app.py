@@ -10,7 +10,7 @@ import tarfile
 from pathlib import Path
 from typing import Any
 
-from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -20,6 +20,25 @@ from pydantic import BaseModel
 from ..config import get_settings
 from ..logging_config import get_logger
 
+
+def require_auth(authorization: str | None = Header(default=None)) -> None:
+    """Bearer-token auth for mutating endpoints.
+
+    No-op when `api_auth_token` is unset (dev mode). When set, requires
+    `Authorization: Bearer <token>` and returns 401 on mismatch.
+    """
+    # getattr keeps test stubs of get_settings() that omit this field working;
+    # treat missing field as "auth disabled" (dev default).
+    expected = getattr(get_settings(), "api_auth_token", None)
+    if not expected:
+        return  # auth disabled in dev
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing bearer token")
+    presented = authorization[len("Bearer ") :].strip()
+    if presented != expected:
+        raise HTTPException(status_code=401, detail="Invalid bearer token")
+
+
 _API_DIR = Path(__file__).resolve().parent
 _STATIC_DIR = _API_DIR / "static"
 _TEMPLATES_DIR = _API_DIR / "templates"
@@ -27,11 +46,13 @@ _TEMPLATES_DIR = _API_DIR / "templates"
 logger = get_logger(__name__)
 app = FastAPI(title="E2ER v3", version="3.0.0", description="End-to-End Researcher pipeline API")
 
+_cors_origins = [o.strip() for o in get_settings().cors_origins.split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=_cors_origins,
+    allow_methods=["GET", "POST", "DELETE"],
+    allow_headers=["Authorization", "Content-Type"],
+    allow_credentials=True,
 )
 
 # Server-rendered dashboard. Static files (htmx, css) and Jinja2 templates.
@@ -85,7 +106,7 @@ class ApprovalAction(BaseModel):
 # --- Paper endpoints ---
 
 
-@app.post("/api/papers", response_model=PaperResponse)
+@app.post("/api/papers", response_model=PaperResponse, dependencies=[Depends(require_auth)])
 async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTasks):
     """Create a new paper and start the pipeline."""
     import uuid
@@ -156,7 +177,8 @@ async def list_papers() -> list[dict[str, Any]]:
 
     try:
         return await fetch_all("SELECT id, title, status, created_at FROM papers ORDER BY created_at DESC LIMIT 50")
-    except Exception:
+    except Exception as e:
+        logger.warning("list_papers DB read failed; returning empty list: %s", e)
         return []
 
 
@@ -179,7 +201,8 @@ async def get_paper(paper_id: str) -> dict[str, Any]:
             {"id": paper_id},
         )
         return {**row, "usage": usage or {}}
-    except Exception:
+    except Exception as e:
+        logger.warning("get_paper usage fetch failed for paper_id=%s: %s", paper_id, e)
         return {**row, "usage": {}}
 
 
@@ -196,7 +219,7 @@ async def list_artifacts(paper_id: str) -> dict[str, Any]:
     return {"paper_id": paper_id, "files": files}
 
 
-@app.post("/api/papers/{paper_id}/cancel")
+@app.post("/api/papers/{paper_id}/cancel", dependencies=[Depends(require_auth)])
 async def cancel_paper(paper_id: str) -> dict[str, Any]:
     """Cancel an in-flight pipeline run. The runner's CancelledError handler
     will save state and mark the paper as cancelled in the DB."""
@@ -234,7 +257,8 @@ async def audit_bundle(paper_id: str) -> StreamingResponse:
             """,
             {"p": paper_id},
         )
-    except Exception:
+    except Exception as e:
+        logger.warning("audit-bundle contributions fetch failed for %s: %s", paper_id, e)
         contributions = []
     try:
         events = await fetch_all(
@@ -244,11 +268,13 @@ async def audit_bundle(paper_id: str) -> StreamingResponse:
             """,
             {"p": paper_id},
         )
-    except Exception:
+    except Exception as e:
+        logger.warning("audit-bundle events fetch failed for %s: %s", paper_id, e)
         events = []
     try:
         usage = await _get_usage(paper_id)
-    except Exception:
+    except Exception as e:
+        logger.warning("audit-bundle usage fetch failed for %s: %s", paper_id, e)
         usage = {}
 
     manifest = {
@@ -311,30 +337,38 @@ async def get_pending_queries(paper_id: str) -> list[dict[str, Any]]:
             {"pid": paper_id},
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("pending-queries fetch failed for paper_id=%s: %s", paper_id, e)
+        raise HTTPException(status_code=500, detail="failed to fetch pending queries; check server logs")
 
 
-@app.post("/api/queries/{query_id}/approve")
+@app.post("/api/queries/{query_id}/approve", dependencies=[Depends(require_auth)])
 async def approve_query(query_id: str, action: ApprovalAction):
     from ..db.client import execute
 
-    if action.approved:
-        await execute(
-            "UPDATE data_approval_requests SET status = 'approved', reviewed_at = NOW(), "
-            "note = %(note)s WHERE query_record_id = %(id)s",
-            {"id": query_id, "note": action.note},
-        )
-        await execute(
-            "UPDATE data_query_records SET validation_status = 'approved', "
-            "approved_by = 'researcher' WHERE id = %(id)s",
-            {"id": query_id},
-        )
-    else:
-        await execute(
-            "UPDATE data_approval_requests SET status = 'rejected', reviewed_at = NOW(), "
-            "note = %(note)s WHERE query_record_id = %(id)s",
-            {"id": query_id, "note": action.note},
-        )
+    try:
+        if action.approved:
+            await execute(
+                "UPDATE data_approval_requests SET status = 'approved', reviewed_at = NOW(), "
+                "note = %(note)s WHERE query_record_id = %(id)s",
+                {"id": query_id, "note": action.note},
+            )
+            await execute(
+                "UPDATE data_query_records SET validation_status = 'approved', "
+                "approved_by = 'researcher' WHERE id = %(id)s",
+                {"id": query_id},
+            )
+        else:
+            await execute(
+                "UPDATE data_approval_requests SET status = 'rejected', reviewed_at = NOW(), "
+                "note = %(note)s WHERE query_record_id = %(id)s",
+                {"id": query_id, "note": action.note},
+            )
+    except Exception as e:
+        # A silent DB failure here would tell the LLM "approved" while the row
+        # is still pending — and the next check_approval poll would surface
+        # the contradiction. Fail loudly instead.
+        logger.error("approve_query DB write failed for query_id=%s: %s", query_id, e)
+        raise HTTPException(status_code=500, detail="approval write failed; check server logs")
     return {"status": "approved" if action.approved else "rejected", "query_id": query_id}
 
 
@@ -406,7 +440,7 @@ async def new_paper_form(request: Request) -> Any:
     )
 
 
-@app.post("/papers")
+@app.post("/papers", dependencies=[Depends(require_auth)])
 async def submit_new_paper(
     title: str = Form(...),
     research_question: str = Form(...),
@@ -475,7 +509,8 @@ async def paper_live_fragment(paper_id: str, request: Request) -> Any:
             {"id": paper_id},
         )
         cost_spent = float((cost_row or {}).get("spent", 0.0))
-    except Exception:
+    except Exception as e:
+        logger.warning("live-fragment cost fetch failed for %s: %s — showing $0 (may be wrong)", paper_id, e)
         cost_spent = 0.0
     cap = float(paper.get("max_cost_usd") or 25.0)
     cost_pct = min(100.0, (cost_spent / cap * 100.0) if cap > 0 else 0.0)
@@ -491,7 +526,8 @@ async def paper_live_fragment(paper_id: str, request: Request) -> Any:
             """,
             {"id": paper_id},
         )
-    except Exception:
+    except Exception as e:
+        logger.warning("live-fragment events fetch failed for %s: %s", paper_id, e)
         events = []
     for e in events or []:
         if e.get("created_at") is not None:
@@ -544,7 +580,7 @@ _DATA_EXT_ALLOW = {".csv", ".tsv", ".parquet", ".xlsx", ".xls", ".json", ".jsonl
 _DATA_FILE_MAX_BYTES = 200 * 1024 * 1024  # 200 MB per upload
 
 
-@app.post("/api/papers/{paper_id}/files")
+@app.post("/api/papers/{paper_id}/files", dependencies=[Depends(require_auth)])
 async def upload_data_file(paper_id: str, file: UploadFile = File(...)) -> dict[str, Any]:
     """Upload a researcher-supplied data file into the paper's workspace/data/.
 
