@@ -76,7 +76,9 @@ Reviews are aggregated by three deterministic rules applied in order:
 
 ## Data access: Allium
 
-The data module uses [Allium](https://allium.so) for indexed blockchain data. Set `ALLIUM_API_KEY` in `.env` to enable it. The pipeline also runs without data (literature-only or with manually provided files).
+> **The data module is optional.** Most users won't have an Allium key, and that's fine. Set `DATA_MODULE_ENABLED=false` in `.env` to run literature-only papers, or supply your own data files in the workspace. Allium is only required for blockchain/DeFi empirical work.
+
+The data module uses [Allium](https://allium.so) for indexed blockchain data. Set `ALLIUM_API_KEY` in `.env` to enable it.
 
 Every query passes through 5 guardrails before execution:
 
@@ -128,6 +130,8 @@ cd E2ER-project
 
 The script copies `.env.example` to `.env`, prompts once for your Anthropic API key, runs `docker compose up --build`, and opens the dashboard at <http://localhost:8280/>. Migrations run automatically on first start. Total time-to-first-paper: typically under 5 minutes for the build step plus your run time.
 
+> **Costs:** a typical `single_pass` paper runs ~$0.50 on Haiku or $3–8 on Sonnet; `iterative` runs $15–25 on Sonnet and is hard-capped at $25 by default. See [Expected cost per paper](#expected-cost-per-paper) below.
+
 ### Verify your install
 
 Before configuring an API key, confirm the pipeline runs end-to-end with mocks:
@@ -154,9 +158,21 @@ Once running, the dashboard at `http://localhost:8280/` lets you:
 - **Cancel** — one click during any phase; the runner saves state and marks the paper `cancelled`.
 - **Download artifacts** — every workspace file and a one-click **audit bundle** (`.tar.gz` containing `replication/`, `audit_log.csv`, `data_queries.sql`, `manifest.json`, `contributions.json`, `events.json`, `usage.json`).
 
+### Expected cost per paper
+
+Costs vary with research-question complexity, mode, and model. Rough order of magnitude on current Anthropic pricing:
+
+| Mode | Model | Typical cost | Notes |
+|------|-------|-------------|-------|
+| `single_pass` | Claude Haiku 4.5 | **~$0.50** | Fast draft. Used by `make smoke-paid`. |
+| `single_pass` | Claude Sonnet 4.6 | **$3 – $8** | Better depth, still one shot. |
+| `iterative` | Claude Sonnet 4.6 | **$15 – $25** | Full loop with ceiling check, self-attack, polish stack, review, revision. Hits the default $25 cap on complex RQs. |
+
+Iterative on Opus or with the data module enabled (Allium production queries cost extra) can run higher.
+
 ### Cost safety
 
-Every paper has a hard cost cap (default $25; configurable per paper at creation time, or via `DEFAULT_MAX_COST_USD` in `.env`). The pipeline checks cumulative cost at every phase boundary; when the cap is reached the run aborts with `last_error = "Budget exceeded after $X.XX"` and the paper is marked `failed`.
+Every paper has a hard cost cap (default $25; configurable per paper at creation time, or via `DEFAULT_MAX_COST_USD` in `.env`). The pipeline checks cumulative cost at every phase boundary; when the cap is reached the run aborts with `last_error = "Budget exceeded after $X.XX"` and the paper is marked `failed`. The cap protects you from runaway costs even if a specialist enters a tool-call loop.
 
 ### Programmatic API
 
