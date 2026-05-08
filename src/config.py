@@ -68,9 +68,16 @@ class Settings(BaseSettings):
     weak_accept_threshold: float = 7.0
     max_revision_iterations: int = 3
     default_max_cost_usd: float = 25.0  # fallback per-paper cost cap
-    max_tokens_per_call: int = 16384  # per-API-call output cap; needs to be
-    # large enough for full file content
-    # (Haiku supports up to 64K)
+    # Per-API-call output cap. Must be large enough for ONE specialist's
+    # `write_file` tool argument (the JSON / LaTeX / markdown content).
+    # 16384 was too low: data_architect / paper_drafter writing
+    # data_dictionary.json or full paper drafts hit finish_reason="length"
+    # mid-write, the tool_loop correctly bails (looping is futile — same
+    # wall every time), and the specialist is marked failed. Both Anthropic
+    # Claude Sonnet 4.6 and Haiku 4.5 support 64K output tokens; use
+    # 32K as a balanced default that leaves headroom without burning extra
+    # latency on calls that don't need it.
+    max_tokens_per_call: int = 32768
 
     # ── Server ────────────────────────────────────────────────────────────────
     host: str = "0.0.0.0"

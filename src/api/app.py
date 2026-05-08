@@ -21,6 +21,22 @@ from ..config import get_settings
 from ..logging_config import get_logger
 
 
+def _validate_uuid(paper_id: str) -> str:
+    """Validate that paper_id is a syntactically valid UUID, else 404.
+
+    Without this, an invalid string flows into a `uuid` column and psycopg
+    raises InvalidTextRepresentation, which Starlette surfaces as 500 — not
+    helpful for a typo'd URL.
+    """
+    import uuid as _uuid
+
+    try:
+        _uuid.UUID(paper_id)
+    except (ValueError, AttributeError, TypeError) as e:
+        raise HTTPException(status_code=404, detail="Paper not found") from e
+    return paper_id
+
+
 def require_auth(authorization: str | None = Header(default=None)) -> None:
     """Bearer-token auth for mutating endpoints.
 
@@ -183,7 +199,7 @@ async def list_papers() -> list[dict[str, Any]]:
 
 
 @app.get("/api/papers/{paper_id}")
-async def get_paper(paper_id: str) -> dict[str, Any]:
+async def get_paper(paper_id: str = Depends(_validate_uuid)) -> dict[str, Any]:
     from ..db.client import fetch_one
 
     row = await fetch_one("SELECT * FROM papers WHERE id = %(id)s", {"id": paper_id})
@@ -472,7 +488,7 @@ async def submit_new_paper(
 
 
 @app.get("/papers/{paper_id}", response_class=HTMLResponse)
-async def paper_detail(paper_id: str, request: Request) -> Any:
+async def paper_detail(request: Request, paper_id: str = Depends(_validate_uuid)) -> Any:
     """Detail page for a single paper."""
     from ..db.client import fetch_one
 
@@ -498,7 +514,7 @@ async def paper_detail(paper_id: str, request: Request) -> Any:
 
 
 @app.get("/htmx/papers/{paper_id}/live", response_class=HTMLResponse)
-async def paper_live_fragment(paper_id: str, request: Request) -> Any:
+async def paper_live_fragment(request: Request, paper_id: str = Depends(_validate_uuid)) -> Any:
     """HTML fragment for the live-updating section of paper.html.
 
     HTMX polls this every 3s. Returns status badge, cost meter, recent events,

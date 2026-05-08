@@ -758,7 +758,9 @@ async def test_update_status_clears_last_error_on_non_failed(tmp_path, mock_llm)
 
 
 async def test_execute_parallel_logs_aggregate_failure(tmp_path, caplog):
-    """One failing specialist surfaces in aggregate WARNING; others still succeed."""
+    """A reviewer (tolerant-of-partial-failure) failing alongside a successful
+    specialist surfaces in aggregate WARNING but does NOT raise — review
+    aggregation handles missing scores."""
     import logging
 
     from src.core.specialists.contracts import WorkOrder as ContractWorkOrder
@@ -769,20 +771,20 @@ async def test_execute_parallel_logs_aggregate_failure(tmp_path, caplog):
     workspace = tmp_path / paper_id
     workspace.mkdir()
 
-    backend = MockLLMBackend(fail_specialists={"literature_scanner"})
+    backend = MockLLMBackend(fail_specialists={"writing_reviewer"})
 
     orders = [
         ContractWorkOrder(
             paper_id=paper_id,
-            specialist="idea_developer",
-            focus="develop",
+            specialist="mechanism_reviewer",
+            focus="review",
             parallel_group=0,
             context_tier=0,
         ),
         ContractWorkOrder(
             paper_id=paper_id,
-            specialist="literature_scanner",
-            focus="scan",
+            specialist="writing_reviewer",
+            focus="review",
             parallel_group=0,
             context_tier=0,
         ),
@@ -805,10 +807,51 @@ async def test_execute_parallel_logs_aggregate_failure(tmp_path, caplog):
 
     assert len(contributions) == 2
     by_spec = {c.specialist: c for c in contributions}
-    assert by_spec["idea_developer"].success is True
-    assert by_spec["literature_scanner"].success is False
+    assert by_spec["mechanism_reviewer"].success is True
+    assert by_spec["writing_reviewer"].success is False
     assert "1/2 specialists failed" in caplog.text
-    assert "literature_scanner" in caplog.text
+    assert "writing_reviewer" in caplog.text
+
+
+async def test_execute_parallel_raises_on_missing_canonical_artifact(tmp_path):
+    """Cascade-detection: if a non-tolerant specialist (e.g. idea_developer)
+    fails and its canonical artifact is missing, raise immediately so the
+    pipeline doesn't continue with downstream specialists that need it.
+    Regression for the May 2026 NFT-marketplace run.
+    """
+    from src.core.specialists.contracts import WorkOrder as ContractWorkOrder
+    from src.core.specialists.dispatcher import execute_parallel
+    from tests.conftest import MockLLMBackend
+
+    paper_id = str(uuid.uuid4())
+    workspace = tmp_path / paper_id
+    workspace.mkdir()
+
+    backend = MockLLMBackend(fail_specialists={"idea_developer"})
+
+    orders = [
+        ContractWorkOrder(
+            paper_id=paper_id,
+            specialist="idea_developer",
+            focus="develop",
+            parallel_group=0,
+            context_tier=0,
+        ),
+        ContractWorkOrder(
+            paper_id=paper_id,
+            specialist="literature_scanner",
+            focus="scan",
+            parallel_group=0,
+            context_tier=0,
+        ),
+    ]
+
+    with (
+        patch("src.db.client.execute", new_callable=AsyncMock),
+        patch("src.modules.tracking.usage.save_usage", new_callable=AsyncMock),
+        pytest.raises(RuntimeError, match="canonical artifact"),
+    ):
+        await execute_parallel(orders, backend, workspace, "m", [], [], "mock")
 
 
 async def test_execute_parallel_raises_when_all_fail(tmp_path):

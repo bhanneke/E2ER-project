@@ -137,8 +137,9 @@ def test_get_paper_not_found(client):
 
 
 def test_get_paper_found(client):
+    paper_id = "12345678-1234-1234-1234-123456789abc"
     row = {
-        "id": "abc-123",
+        "id": paper_id,
         "title": "Test",
         "status": "completed",
         "research_question": "Test RQ?",
@@ -148,10 +149,17 @@ def test_get_paper_found(client):
         "created_at": "2026-01-01",
     }
     with patch("src.db.client.fetch_one", new_callable=AsyncMock, return_value=row):
-        resp = client.get("/api/papers/abc-123")
+        resp = client.get(f"/api/papers/{paper_id}")
     assert resp.status_code == 200
     assert resp.json()["title"] == "Test"
     assert resp.json()["status"] == "completed"
+
+
+def test_get_paper_invalid_uuid_returns_404(client):
+    """Non-UUID paths must 404, not 500. Regression for the typo'd-URL case
+    that previously surfaced as psycopg.InvalidTextRepresentation → 500."""
+    resp = client.get("/api/papers/not-a-uuid-at-all")
+    assert resp.status_code == 404
 
 
 # ---------------------------------------------------------------------------

@@ -14,7 +14,10 @@ from ..specialists.contracts import Contribution, WorkOrder
 
 logger = get_logger(__name__)
 
-_MAX_TURNS = 25  # Sonnet tool-rich specialists need more headroom; 15 was too tight
+_MAX_TURNS = 40  # Bumped from 25 after May 2026 NFT-marketplace run: idea_developer
+# (36 turns), data_architect, data_analyst, and econometrics_specialist all hit the
+# 25-cap on Sonnet 4.6 with Allium tool calls. Successful runs in the same batch used
+# 29-38 turns. 40 gives Sonnet enough headroom while still bounding worst-case spend.
 
 
 async def run_specialist(

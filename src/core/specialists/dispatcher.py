@@ -163,9 +163,34 @@ async def execute_parallel(
             len(contributions),
             ", ".join(f"{c.specialist}({(c.error or '?')[:60]})" for c in failed),
         )
+
     if failed and len(failed) == len(contributions):
         details = "; ".join(f"{c.specialist}: {c.error}" for c in failed)
         raise RuntimeError(f"All specialists failed in parallel batch: {details}")
+
+    # Cascade detection: a specialist that "succeeded" but didn't actually write
+    # its canonical artifact will starve downstream specialists. Reviewers and
+    # polish specialists are tolerant of partial failure (the aggregator handles
+    # gaps); everyone else writes a required upstream artifact.
+    from .registry import POLISH_SPECIALISTS, REVIEWER_SPECIALISTS, SPECIALIST_ARTIFACTS
+
+    tolerant = set(REVIEWER_SPECIALISTS) | set(POLISH_SPECIALISTS)
+    missing_artifacts = []
+    for c in contributions:
+        if c.specialist in tolerant:
+            continue
+        artifact = SPECIALIST_ARTIFACTS.get(c.specialist)
+        if not artifact:
+            continue
+        if not (workspace / artifact).exists():
+            missing_artifacts.append((c.specialist, artifact, c.error or "(no error)"))
+
+    if missing_artifacts:
+        details = "; ".join(f"{spec} -> {artifact} missing ({err[:80]})" for spec, artifact, err in missing_artifacts)
+        raise RuntimeError(
+            f"Specialist(s) did not produce canonical artifact: {details}. "
+            "Halting before downstream cascade — see specialist_failed events for details."
+        )
 
     return contributions
 
