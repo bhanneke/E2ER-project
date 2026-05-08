@@ -16,6 +16,7 @@ pip install -e ".[pgvector,dev]"
 docker compose -f docker/docker-compose.yml up -d db
 python scripts/migrate.py
 bash scripts/vendor_htmx.sh
+make hooks      # install pre-commit hooks (ruff + mypy on every commit)
 pytest tests/
 ```
 
@@ -24,6 +25,20 @@ The default `pytest` invocation skips real-LLM tests (`-m 'not e2e'`). To run th
 ```bash
 ANTHROPIC_API_KEY=sk-ant-... pytest tests/e2e/test_haiku_smoke.py -v -m e2e
 ```
+
+### Pre-commit hooks (recommended)
+
+`make hooks` installs git pre-commit hooks that run `ruff check`, `ruff format --check`, and `mypy` before every commit — catching the same issues CI would, locally, in seconds. Skip a single commit's hooks with `git commit --no-verify` (rarely a good idea). Run all hooks against the whole tree with `pre-commit run --all-files`.
+
+### Local checks before pushing
+
+```bash
+make lint       # ruff check + format --check
+make typecheck  # mypy
+make smoke      # full mocked test suite (~10s, no API key needed)
+```
+
+Or all three at once via the pre-commit hooks if you've installed them.
 
 ---
 

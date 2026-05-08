@@ -1,0 +1,54 @@
+# Pre-commit hooks for E2ER v3.
+#
+# Activates the same checks CI runs (ruff lint, ruff format, mypy) on every
+# `git commit` so contributors don't ship a red CI 45 seconds later.
+#
+# Install once after cloning:
+#   pip install pre-commit
+#   pre-commit install
+#
+# Then every `git commit` runs the hooks. To run manually against the whole
+# tree (e.g. after pulling a big change):
+#   pre-commit run --all-files
+#
+# To skip the hooks for one commit (rarely a good idea):
+#   git commit --no-verify
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.7.4
+    hooks:
+      # Linter — fails on E/F/I/N/W/UP violations (matches pyproject config).
+      - id: ruff
+        args: [--fix]
+        files: ^(src|tests)/
+      # Formatter — applies ruff format to keep the repo consistent.
+      - id: ruff-format
+        files: ^(src|tests)/
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.13.0
+    hooks:
+      - id: mypy
+        files: ^src/
+        # Use the same baseline config as `mypy src/` in CI.
+        # additional_dependencies are needed because the pre-commit isolated
+        # env doesn't have project deps; we only declare the minimum mypy
+        # needs to type-check our source (the rest are ignored via
+        # ignore_missing_imports = true in pyproject.toml).
+        additional_dependencies:
+          - pydantic>=2.9.0
+          - pydantic-settings>=2.6.0
+
+  # Standard hygiene hooks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-added-large-files
+        args: [--maxkb=500]
+      - id: check-merge-conflict
+      - id: detect-private-key

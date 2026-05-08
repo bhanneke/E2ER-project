@@ -35,5 +35,8 @@ jobs:
       - name: Lint (ruff format)
         run: ruff format --check src/ tests/
 
+      - name: Type check (mypy)
+        run: mypy src/
+
       - name: Run tests
         run: pytest tests/ -v --tb=short -m "not e2e"

@@ -1,4 +1,4 @@
-.PHONY: install test lint format smoke smoke-paid clean help
+.PHONY: install test lint typecheck format smoke smoke-paid hooks clean help
 
 # Use the same Python that resolves `python3` so Makefile works regardless of
 # whether `pytest` / `ruff` happen to be on the user's PATH.
@@ -11,7 +11,9 @@ help:
 	@echo "  smoke-paid  Run the live Haiku end-to-end test (~\$$0.50, needs ANTHROPIC_API_KEY)"
 	@echo "  test        Same as smoke (full mocked suite)"
 	@echo "  lint        Run ruff check + format --check"
+	@echo "  typecheck   Run mypy"
 	@echo "  format      Auto-format with ruff"
+	@echo "  hooks       Install pre-commit hooks (ruff + mypy on every commit)"
 	@echo "  clean       Remove caches and build artifacts"
 
 install:
@@ -36,9 +38,17 @@ lint:
 	$(PY) -m ruff check src/ tests/
 	$(PY) -m ruff format --check src/ tests/
 
+typecheck:
+	$(PY) -m mypy src/
+
 format:
 	$(PY) -m ruff format src/ tests/
 	$(PY) -m ruff check --fix src/ tests/
+
+hooks:
+	$(PY) -m pip install pre-commit
+	pre-commit install
+	@echo "✓ pre-commit installed. Hooks will run on every `git commit`."
 
 clean:
 	rm -rf .pytest_cache .ruff_cache .mypy_cache build dist *.egg-info

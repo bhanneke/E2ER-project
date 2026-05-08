@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added (P3 engineering hygiene)
+- **mypy in CI.** `mypy src/` runs after `ruff` in `.github/workflows/tests.yml`.
+  Config in `pyproject.toml` is pragmatic (catches real bugs without grinding
+  on annotation completeness): `no_implicit_optional`, `strict_equality`,
+  `warn_redundant_casts`. Per-module strictness can be ratcheted up later.
+- **Pre-commit hooks.** `.pre-commit-config.yaml` runs ruff (with --fix),
+  ruff-format, mypy, and standard hygiene hooks (trailing whitespace, large
+  file check, merge-conflict markers, **detect-private-key**) on every commit.
+  Install with `make hooks`.
+- `Makefile` gains `typecheck` and `hooks` targets; help output updated.
+- CONTRIBUTING.md gains a "Pre-commit hooks (recommended)" section and a
+  "Local checks before pushing" cheat sheet.
+
+### Fixed (real bugs surfaced by mypy)
+- `src/modules/literature/bibtex.py` was calling `bibtexparser.load(f, parser=...)`
+  which **does not exist** in bibtexparser v2 (project pins `>=2.0.0b7`).
+  Any user with a `LITERATURE_BIBTEX_FILE` set would have hit
+  `AttributeError: module has no attribute 'load'` at runtime. Migrated to
+  `bibtexparser.parse_file()` and the v2 `Entry.fields_dict` API, with a
+  glue layer keeping `_entry_to_metadata`'s dict interface unchanged.
+- `src/modules/literature/arxiv.py`: `el.text` was accessed on an
+  `Optional[Element]` without a None check — would raise `AttributeError`
+  on author entries with missing `<atom:name>` tags.
+- `src/modules/github/client.py`: `Github.get_user()` returns
+  `NamedUser | AuthenticatedUser`; only `AuthenticatedUser` has `create_repo`.
+  Cast added so type narrowing works without breaking tests that mock the
+  user with MagicMock.
+- `src/modules/github/push.py` and `src/api/app.py`: `GitHubClient(token, user)`
+  was constructed with `Optional[str]` arguments that the constructor types
+  as `str`. Added explicit None check (returns early when github is configured
+  but token/username are missing) plus assert in push paths.
+- `src/api/app.py`: `for e in events` shadowed the `except Exception as e`
+  variable on the line above, which Python 3 deletes after the except block
+  closes. Renamed to `exc` / `ev` to remove the deleted-variable read that
+  mypy correctly flagged.
+- `src/modules/llm/base.py` `tool_loop` typed `tool_handler: ToolHandler`,
+  but engine.py was calling it with `tool_handler=None` for tool-less
+  strategist decisions. Widened the abstract signature (and both concrete
+  backends) to `ToolHandler | None`, with explicit None handling that
+  surfaces a clear error if the model nonetheless requests a tool.
+- `src/modules/data/tools.py`: `result` was reassigned from `ValidationResult`
+  to `dict[str, Any]` in the same function, which mypy correctly flagged as
+  a type confusion. Renamed the second binding to `query_result`.
+
 ### Added
 - **Methodology selector** — papers now accept a `methodology` field at
   creation time: `empirical` (default, unchanged), `theoretical` (formal
