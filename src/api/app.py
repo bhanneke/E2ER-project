@@ -80,6 +80,41 @@ templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
 _RUNNING: dict[str, asyncio.Task] = {}
 
 
+# First-run guardrail: until a paper at the same (model, methodology, mode)
+# tuple has reached `completed`, cap is forced to $1.00 unless the requester
+# acknowledges. Caps blast radius on the first-of-anything to roughly the
+# cost of one Haiku run.
+_UNPROVEN_TUPLE_CAP = 1.0
+
+
+async def _tuple_is_proven(model: str, methodology: str, mode: str) -> bool:
+    """Has any paper with this (model, methodology, mode) tuple completed?
+
+    Returns False when the DB is unavailable — fail safe (treat as unproven)
+    rather than fail open. The user can still proceed by acknowledging.
+    """
+    from ..db.client import fetch_one
+
+    try:
+        row = await fetch_one(
+            """
+            SELECT 1 FROM papers
+            WHERE status = 'completed'
+              AND model = %(model)s
+              AND methodology = %(methodology)s
+              AND mode = %(mode)s
+            LIMIT 1
+            """,
+            {"model": model, "methodology": methodology, "mode": mode},
+        )
+    except Exception as e:
+        logger.warning(
+            "tuple-proven check failed for (%s, %s, %s): %s — treating as unproven", model, methodology, mode, e
+        )
+        return False
+    return row is not None
+
+
 @app.on_event("startup")
 async def _log_config() -> None:
     s = get_settings()
@@ -105,6 +140,11 @@ class CreatePaperRequest(BaseModel):
     methodology: str = "empirical"  # empirical | theoretical | mixed
     bibtex_path: str | None = None
     max_cost_usd: float | None = None  # falls back to settings.default_max_cost_usd
+    # First-run guardrail: when no paper at the current (model, methodology, mode)
+    # tuple has ever reached `completed`, the cap is forced to $1.00 unless the
+    # requester explicitly acknowledges. Defaults to False so the cheap path
+    # is the easy path. See `_UNPROVEN_TUPLE_CAP`.
+    acknowledge_unproven_tuple: bool = False
 
 
 class PaperResponse(BaseModel):
@@ -140,6 +180,38 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
             detail=f"methodology must be one of empirical|theoretical|mixed, got {req.methodology!r}",
         )
 
+    # First-run guardrail. Inspect the (model, methodology, mode) tuple. If
+    # nothing has completed at this combination, force the cap to $1 unless
+    # the requester explicitly acknowledges. This is the proactive defense
+    # against the May 2026 "spend $8 chasing a Sonnet bug" failure: cheap
+    # validation must succeed once before we trust an expensive cap.
+    current_model = settings.default_model
+    requested_cap = req.max_cost_usd if req.max_cost_usd is not None else settings.default_max_cost_usd
+    proven = await _tuple_is_proven(current_model, req.methodology, req.mode)
+    if not proven and requested_cap > _UNPROVEN_TUPLE_CAP and not req.acknowledge_unproven_tuple:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"This is the first paper at (model={current_model}, "
+                f"methodology={req.methodology}, mode={req.mode}). The cost cap "
+                f"is limited to ${_UNPROVEN_TUPLE_CAP:.2f} until at least one "
+                f"paper with this combination reaches status='completed'. "
+                f"You requested ${requested_cap:.2f}. "
+                f"Either lower the cap to ${_UNPROVEN_TUPLE_CAP:.2f}, or set "
+                f"`acknowledge_unproven_tuple: true` in the request to override."
+            ),
+        )
+    cap = requested_cap if proven else min(requested_cap, _UNPROVEN_TUPLE_CAP)
+    if not proven:
+        logger.warning(
+            "First run at (model=%s, methodology=%s, mode=%s); cap=%.2f (override=%s)",
+            current_model,
+            req.methodology,
+            req.mode,
+            cap,
+            req.acknowledge_unproven_tuple,
+        )
+
     manifest = {
         "paper_id": paper_id,
         "title": req.title,
@@ -147,16 +219,17 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
         "datasets": req.datasets,
         "mode": req.mode,
         "methodology": req.methodology,
+        "model": current_model,
         "current_stage": "idea",
     }
     (workspace / "manifest.json").write_text(json.dumps(manifest, indent=2))
-
-    cap = req.max_cost_usd if req.max_cost_usd is not None else settings.default_max_cost_usd
     try:
         await execute(
             """
-            INSERT INTO papers (id, title, research_question, status, workspace, mode, methodology, max_cost_usd)
-            VALUES (%(id)s, %(title)s, %(rq)s, 'idea', %(ws)s, %(mode)s, %(methodology)s, %(cap)s)
+            INSERT INTO papers (id, title, research_question, status, workspace,
+                                mode, methodology, model, max_cost_usd)
+            VALUES (%(id)s, %(title)s, %(rq)s, 'idea', %(ws)s,
+                    %(mode)s, %(methodology)s, %(model)s, %(cap)s)
             """,
             {
                 "id": paper_id,
@@ -165,6 +238,7 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
                 "ws": str(workspace),
                 "mode": req.mode,
                 "methodology": req.methodology,
+                "model": current_model,
                 "cap": cap,
             },
         )

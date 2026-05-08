@@ -55,6 +55,10 @@ def test_create_paper_returns_paper_id(client, tmp_path):
                 "research_question": "How does concentrated liquidity affect price discovery?",
                 "datasets": ["uniswap_v3_swaps"],
                 "mode": "single_pass",
+                # First-run guardrail: tests must either ack the unproven tuple
+                # or set a low cap. We use ack here since we're testing the
+                # paper-creation contract, not the guardrail.
+                "acknowledge_unproven_tuple": True,
             },
         )
 
@@ -73,7 +77,7 @@ def test_create_paper_workspace_created(client, tmp_path):
     ):
         resp = client.post(
             "/api/papers",
-            json={"title": "Test", "research_question": "Test RQ?"},
+            json={"title": "Test", "research_question": "Test RQ?", "acknowledge_unproven_tuple": True},
         )
 
     assert resp.status_code == 200
@@ -95,6 +99,7 @@ def test_create_paper_manifest_content(client, tmp_path):
                 "title": "Bitcoin Volatility",
                 "research_question": "Did the ETF approval reduce BTC volatility?",
                 "mode": "iterative",
+                "acknowledge_unproven_tuple": True,
             },
         )
 
