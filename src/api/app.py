@@ -533,12 +533,12 @@ async def paper_live_fragment(paper_id: str, request: Request) -> Any:
             """,
             {"id": paper_id},
         )
-    except Exception as e:
-        logger.warning("live-fragment events fetch failed for %s: %s", paper_id, e)
+    except Exception as exc:
+        logger.warning("live-fragment events fetch failed for %s: %s", paper_id, exc)
         events = []
-    for e in events or []:
-        if e.get("created_at") is not None:
-            e["created_at_short"] = str(e["created_at"])[11:19]
+    for ev in events or []:
+        if ev.get("created_at") is not None:
+            ev["created_at_short"] = str(ev["created_at"])[11:19]
 
     return templates.TemplateResponse(
         request,
@@ -674,6 +674,9 @@ async def _create_github_repo(paper_id: str, title: str) -> None:
     from ..modules.github.client import GitHubClient
 
     settings = get_settings()
+    if not settings.github_token or not settings.github_username:
+        logger.warning("github_enabled but token/username unset; skipping repo creation for %s", paper_id)
+        return
     try:
         client = GitHubClient(settings.github_token, settings.github_username)
         repo_info = client.create_paper_repo(paper_id, title, private=True)

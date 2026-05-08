@@ -15,11 +15,18 @@ class GitHubClient:
     """Thin wrapper around PyGithub for paper repo management."""
 
     def __init__(self, token: str, username: str) -> None:
+        from typing import cast
+
         from github import Github
+        from github.AuthenticatedUser import AuthenticatedUser
 
         self._gh = Github(token)
         self._username = username
-        self._user = self._gh.get_user()
+        # Github(token).get_user() with no argument always returns
+        # AuthenticatedUser at runtime, but PyGithub's stubs widen to
+        # NamedUser | AuthenticatedUser. cast() narrows for mypy without
+        # breaking tests that mock the user with MagicMock.
+        self._user = cast(AuthenticatedUser, self._gh.get_user())
 
     def create_paper_repo(
         self,
@@ -96,6 +103,11 @@ class GitHubClient:
 
         try:
             existing = repo.get_contents(file_path, ref=branch)
+            # get_contents returns ContentFile | list[ContentFile] (the latter
+            # for directories). For a single-file path it's the scalar — bail
+            # to create_file if PyGithub returned a list.
+            if isinstance(existing, list):
+                raise RuntimeError("get_contents returned a list; expected scalar")
             repo.update_file(
                 path=file_path,
                 message=commit_message,

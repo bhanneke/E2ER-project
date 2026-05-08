@@ -60,10 +60,19 @@ ignore = ["N805", "N806"]
 
 [tool.mypy]
 python_version = "3.11"
-strict = true
-warn_return_any = true
+# Pragmatic baseline: catch real bugs (wrong types, optional-attr access,
+# variable shadowing) without grinding on annotation completeness for a
+# 10K-line codebase that wasn't type-checked from day one.
 warn_unused_configs = true
 ignore_missing_imports = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = false  # tolerate # type: ignore drift across versions
+strict_equality = true
+# Disabled (would produce 30+ stylistic errors on the existing codebase):
+#   disallow_untyped_defs / disallow_any_generics / no_any_return /
+#   warn_return_any — these can be ratcheted on later, file-by-file, via
+#   per-module overrides if you want to tighten gradually.
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

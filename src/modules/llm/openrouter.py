@@ -58,7 +58,7 @@ class OpenRouterBackend(LLMBackend):
         system: str,
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]],
-        tool_handler: ToolHandler,
+        tool_handler: ToolHandler | None,
         max_turns: int = 30,
     ) -> ToolLoopResult:
         start = time.monotonic()
@@ -172,7 +172,10 @@ class OpenRouterBackend(LLMBackend):
                 except Exception:
                     tool_input = {}
                 logger.debug("Tool call: %s(%s)", tc.function.name, list(tool_input.keys()))
-                result_text = await tool_handler.handle(tc.function.name, tool_input)
+                if tool_handler is None:
+                    result_text = "Tool dispatch is disabled for this call."
+                else:
+                    result_text = await tool_handler.handle(tc.function.name, tool_input)
                 msgs.append(
                     {
                         "role": "tool",

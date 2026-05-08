@@ -201,15 +201,17 @@ class AlliumToolHandler(ToolHandler):
         # Execute feasibility query
         provider = AlliumProvider(settings.allium_api_key, settings.allium_api_base)
         try:
-            result = await provider.execute_raw(exec_sql)
-            row_count = len(result.get("rows", []))
+            # Renamed from `result` to avoid shadowing the ValidationResult above —
+            # mypy locks the variable's inferred type at first assignment.
+            query_result = await provider.execute_raw(exec_sql)
+            row_count = len(query_result.get("rows", []))
             await mark_executed(query_id, row_count)
             return (
                 f"Feasibility query executed. {row_count} rows returned.\n"
                 f"query_id: {query_id}\n"
                 f"Sample result (first 3 rows):\n"
-                f"{json.dumps(result.get('rows', [])[:3], indent=2, default=str)}\n\n"
-                f"Columns: {result.get('columns', [])}"
+                f"{json.dumps(query_result.get('rows', [])[:3], indent=2, default=str)}\n\n"
+                f"Columns: {query_result.get('columns', [])}"
             )
         except Exception as e:
             logger.error("Allium execution error: %s", e)

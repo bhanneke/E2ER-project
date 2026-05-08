@@ -72,10 +72,15 @@ class LLMBackend(ABC):
         system: str,
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]],
-        tool_handler: ToolHandler,
+        tool_handler: ToolHandler | None,
         max_turns: int = 30,
     ) -> ToolLoopResult:
-        """Run a multi-turn tool-use conversation until end_turn or max_turns."""
+        """Run a multi-turn tool-use conversation until end_turn or max_turns.
+
+        ``tool_handler`` may be ``None`` for tool-less calls (strategist
+        decisions, structured-output prompts) where we just want a completion
+        without tool dispatch.
+        """
         ...
 
 

@@ -40,7 +40,7 @@ class AnthropicBackend(LLMBackend):
         system: str,
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]],
-        tool_handler: ToolHandler,
+        tool_handler: ToolHandler | None,
         max_turns: int = 30,
     ) -> ToolLoopResult:
         start = time.monotonic()
@@ -82,7 +82,7 @@ class AnthropicBackend(LLMBackend):
                     model=self._model,
                     max_tokens=self._max_tokens,
                     system=system_content,  # type: ignore[arg-type]
-                    messages=msgs,
+                    messages=msgs,  # type: ignore[arg-type]
                     tools=tools,  # type: ignore[arg-type]
                 )
             except anthropic.APIError as e:
@@ -136,7 +136,12 @@ class AnthropicBackend(LLMBackend):
                     continue
                 tool_calls_made += 1
                 logger.debug("Tool call: %s(%s)", block.name, list(block.input.keys()))
-                result_text = await tool_handler.handle(block.name, block.input)
+                if tool_handler is None:
+                    # Caller passed no handler but the model requested a tool —
+                    # surface as an error result so the model sees its mistake.
+                    result_text = "Tool dispatch is disabled for this call."
+                else:
+                    result_text = await tool_handler.handle(block.name, block.input)
                 tool_results.append(
                     {
                         "type": "tool_result",

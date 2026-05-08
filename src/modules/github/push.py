@@ -32,6 +32,8 @@ async def push_latex_draft(
         return None
 
     repo_name = row["github_repo"]
+    # github_enabled checked above; assert narrows Optional[str] → str for mypy.
+    assert settings.github_token and settings.github_username
     client = GitHubClient(settings.github_token, settings.github_username)
 
     pushed = client.push_directory(
@@ -66,6 +68,7 @@ async def push_replication_package(
         return None
 
     repo_name = row["github_repo"]
+    assert settings.github_token and settings.github_username
     client = GitHubClient(settings.github_token, settings.github_username)
     client.ensure_replication_scaffold(repo_name)
 

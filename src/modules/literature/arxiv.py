@@ -41,11 +41,11 @@ def _parse(entry: ET.Element) -> PaperMetadata:
         el = entry.find(tag, _NS)
         return (el.text or "").strip() if el is not None else ""
 
-    authors = [
-        (a.find("atom:name", _NS).text or "").strip()
-        for a in entry.findall("atom:author", _NS)
-        if a.find("atom:name", _NS) is not None
-    ]
+    def _name(a: ET.Element) -> str:
+        name_el = a.find("atom:name", _NS)
+        return (name_el.text or "").strip() if name_el is not None and name_el.text else ""
+
+    authors = [_name(a) for a in entry.findall("atom:author", _NS) if a.find("atom:name", _NS) is not None]
 
     arxiv_id = text("atom:id").split("/abs/")[-1]
     pdf_url = f"https://arxiv.org/pdf/{arxiv_id}"

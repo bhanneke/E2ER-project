@@ -11,18 +11,17 @@ logger = get_logger(__name__)
 
 
 def parse_bibtex_file(bib_path: Path) -> list[PaperMetadata]:
-    """Parse a .bib file and return PaperMetadata for each entry."""
+    """Parse a .bib file and return PaperMetadata for each entry.
+
+    Uses bibtexparser v2's `parse_file` API. The v1 `bibtexparser.load(f, ...)`
+    call no longer exists.
+    """
     try:
         import bibtexparser
-        from bibtexparser.bparser import BibTexParser
 
-        parser = BibTexParser(common_strings=True)
-        with open(bib_path, encoding="utf-8") as f:
-            db = bibtexparser.load(f, parser=parser)
-
-        papers = []
-        for entry in db.entries:
-            papers.append(_entry_to_metadata(entry))
+        library = bibtexparser.parse_file(str(bib_path))
+        # v2 Entry → flat str dict, matching what _entry_to_metadata expects.
+        papers = [_entry_to_metadata({k: v.value for k, v in entry.fields_dict.items()}) for entry in library.entries]
         logger.info("Parsed %d entries from %s", len(papers), bib_path)
         return papers
     except ImportError:
