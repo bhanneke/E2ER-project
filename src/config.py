@@ -10,7 +10,7 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     # ── LLM ───────────────────────────────────────────────────────────────────
-    llm_backend: Literal["anthropic", "openrouter"] = "anthropic"
+    llm_backend: Literal["anthropic", "openrouter", "claude_code"] = "anthropic"
     anthropic_api_key: str | None = None
     anthropic_model: str = "claude-sonnet-4-5"
     openrouter_api_key: str | None = None
@@ -86,6 +86,17 @@ class Settings(BaseSettings):
     artifacts_dir: str = "artifacts"
     repos_dir: str = "repos"
     workspace_root: str = "workspaces"
+
+    # ── Claude Code CLI backend (free under Max plan) ─────────────────────────
+    # Set LLM_BACKEND=claude_code to delegate every specialist call to the
+    # `claude` CLI subprocess instead of paying API tokens. Requires Claude
+    # Code installed (`npm i -g @anthropic-ai/claude-code`) AND a Max plan.
+    # See src/modules/llm/claude_code.py for trade-offs (Allium guardrails
+    # need a wrapper script, prompt tool-name conventions differ).
+    claude_code_path: str = "claude"
+    claude_code_timeout: int = 1800  # 30 min hard cap per specialist invocation
+    claude_code_max_turns: int = 60  # Default agentic-turn cap inside the CLI
+    claude_code_cwd: str = ""  # Empty → use os.getcwd() at invocation time
 
     # ── API security ──────────────────────────────────────────────────────────
     # When set, all mutating endpoints (POST/DELETE) require

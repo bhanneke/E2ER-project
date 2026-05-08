@@ -16,4 +16,8 @@ def get_backend(settings: Settings) -> LLMBackend:
         from .openrouter import OpenRouterBackend
 
         return OpenRouterBackend()
+    elif settings.llm_backend == "claude_code":
+        from .claude_code import ClaudeCodeBackend
+
+        return ClaudeCodeBackend()
     raise ValueError(f"Unknown LLM backend: {settings.llm_backend!r}")

@@ -233,6 +233,7 @@ uvicorn src.api.app:app --reload --port 8280
 |----------|---------|-------|
 | Anthropic | `LLM_BACKEND=anthropic` | Supports prompt caching (recommended) |
 | OpenRouter | `LLM_BACKEND=openrouter` | 200+ models via OpenAI-compatible format |
+| **Claude Code CLI** | `LLM_BACKEND=claude_code` | **$0/token under your Max plan.** Requires `npm i -g @anthropic-ai/claude-code` and an active Max subscription. The pipeline shells out to the `claude` CLI per specialist; no API key needed. Trade-off: Allium guardrails (the `query_allium` JSON-tool boundary) only work with `anthropic`/`openrouter`. Run with `DATA_MODULE_ENABLED=false` for literature-only / BYOD papers. |
 
 > Need a key? Anthropic: <https://console.anthropic.com/> (new accounts get a small free credit). OpenRouter: <https://openrouter.ai/keys> (pay-as-you-go).
 
