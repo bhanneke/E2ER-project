@@ -146,7 +146,13 @@ make install   # pip install -e ".[dev]"
 make smoke     # full mocked test suite — no API key needed, ~15s
 ```
 
-If `make smoke` reports `155 passed`, your install is good and the orchestration works.
+If `make smoke` reports `176 passed`, your install is good and the orchestration works.
+
+**Want to see what the pipeline actually produces?** The repo ships with worked examples — real artifacts from real runs:
+
+- [`examples/e2er_v3_haiku_smoke/`](examples/e2er_v3_haiku_smoke/) — single-pass paper run on Haiku 4.5 (~$1.50, ~11 minutes), data module disabled
+- [`examples/starter_theoretical/`](examples/starter_theoretical/) — minimal theoretical paper template you can copy as a starting point
+- [`examples/e2er_v1_nft_seasonality/`](examples/e2er_v1_nft_seasonality/) and [`e2er_v1_bitcoin_institutionalization/`](examples/e2er_v1_bitcoin_institutionalization/) — full v1 papers, including final PDFs
 
 To run a real $0.50 end-to-end test on Claude Haiku (requires `ANTHROPIC_API_KEY`):
 
@@ -227,6 +233,28 @@ uvicorn src.api.app:app --reload --port 8280
 |----------|---------|-------|
 | Anthropic | `LLM_BACKEND=anthropic` | Supports prompt caching (recommended) |
 | OpenRouter | `LLM_BACKEND=openrouter` | 200+ models via OpenAI-compatible format |
+
+> Need a key? Anthropic: <https://console.anthropic.com/> (new accounts get a small free credit). OpenRouter: <https://openrouter.ai/keys> (pay-as-you-go).
+
+---
+
+## Troubleshooting
+
+**`make smoke` fails with `ModuleNotFoundError`** — you skipped `make install`. Run `make install` (which is `pip install -e ".[dev]"`) first.
+
+**`./scripts/quickstart.sh` fails on `docker compose up`** — Docker isn't installed or isn't running. Either start Docker Desktop, or follow the [Manual install](#manual-install-without-docker) section to run with Postgres + uvicorn directly.
+
+**`pytest` errors with `ImportError: cannot import name 'UTC' from 'datetime'`** — your local Python is < 3.11. The project requires Python 3.11+. Use `pyenv install 3.11` or `brew install python@3.12`.
+
+**Paper stuck in `in_progress` forever** — check `workspaces/<paper_id>/.pipeline_state.json`: the last completed phase is recorded. Then check `~/your-log-path` for the failure. To resume, hit the dashboard (the runner reads state.json and skips completed phases) or `POST /api/papers/{id}/cancel` and start fresh.
+
+**Cost runaway concerns** — every paper has a hard `max_cost_usd` cap (default $25). The pipeline checks the cap before each phase AND before each parallel batch, then halts with `BudgetExceededError`. If a run cost more than expected, the audit bundle (`/api/papers/{id}/audit-bundle`) has the per-call breakdown.
+
+**`Authorization` header missing on JSON POSTs** — you set `API_AUTH_TOKEN` in `.env` but didn't include `-H "Authorization: Bearer <token>"` on your curl. The HTML dashboard form is exempt — see `.env.example` for why.
+
+**Allium API key error / data module crashes** — set `DATA_MODULE_ENABLED=false` in `.env`. The pipeline runs literature-only (or with manually uploaded data files) without Allium. See [Data access: Allium](#data-access-allium).
+
+**Hit the OpenRouter "402 Payment Required" wall** — your OpenRouter balance hit zero. The pipeline correctly bails on this rather than looping, but you'll see the failed paper. Top up at <https://openrouter.ai/credits>.
 
 ---
 

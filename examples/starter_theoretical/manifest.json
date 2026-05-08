@@ -1,0 +1,8 @@
+{
+  "title": "Optimal subsidy strategy in two-sided markets with congestion externalities",
+  "research_question": "When should a profit-maximising platform subsidise one side of a two-sided market with cross-side network effects, conditional on whether the subsidised side imposes congestion costs on the other?",
+  "datasets": [],
+  "mode": "single_pass",
+  "methodology": "theoretical",
+  "max_cost_usd": 10.0
+}

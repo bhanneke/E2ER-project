@@ -6,6 +6,24 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
+# 0. Pre-flight checks — fail fast with actionable hints.
+if ! command -v docker >/dev/null 2>&1; then
+    echo "✗ docker not found on PATH." >&2
+    echo "  Install Docker Desktop (https://www.docker.com/products/docker-desktop) and retry." >&2
+    echo "  To run without Docker, see the Manual install section in README.md." >&2
+    exit 1
+fi
+if ! docker info >/dev/null 2>&1; then
+    echo "✗ docker daemon is not running." >&2
+    echo "  Start Docker Desktop (or 'sudo systemctl start docker' on Linux) and retry." >&2
+    exit 1
+fi
+if ! docker compose version >/dev/null 2>&1; then
+    echo "✗ docker compose subcommand not available." >&2
+    echo "  Install Docker Compose v2 (https://docs.docker.com/compose/install/) and retry." >&2
+    exit 1
+fi
+
 # 1. .env file
 if [ ! -f .env ]; then
     echo "→ creating .env from .env.example"
@@ -37,7 +55,14 @@ fi
 
 # 3. Build + start
 echo "→ docker compose up -d --build"
-docker compose -f docker/docker-compose.yml up -d --build
+if ! docker compose -f docker/docker-compose.yml up -d --build; then
+    echo "✗ docker compose build/up failed." >&2
+    echo "  Common causes:" >&2
+    echo "    • Out of disk space — 'docker system prune' may help." >&2
+    echo "    • Port 8280 or 5432 already in use — 'lsof -i :8280' / change PORT in .env." >&2
+    echo "    • Old container collision — 'docker compose -f docker/docker-compose.yml down' and retry." >&2
+    exit 1
+fi
 
 # 4. Wait for the app health endpoint to come up.
 echo -n "→ waiting for http://localhost:8280/health "

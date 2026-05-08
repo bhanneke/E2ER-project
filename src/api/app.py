@@ -440,7 +440,7 @@ async def new_paper_form(request: Request) -> Any:
     )
 
 
-@app.post("/papers", dependencies=[Depends(require_auth)])
+@app.post("/papers")
 async def submit_new_paper(
     title: str = Form(...),
     research_question: str = Form(...),
@@ -448,7 +448,14 @@ async def submit_new_paper(
     methodology: str = Form("empirical"),
     max_cost_usd: float = Form(None),
 ) -> RedirectResponse:
-    """Form-encoded handler that mirrors POST /api/papers. Redirects to detail page."""
+    """Form-encoded handler that mirrors POST /api/papers. Redirects to detail page.
+
+    NOT bearer-auth-protected: browsers can't add `Authorization: Bearer ...`
+    to a regular form POST. The JSON /api/papers IS auth-protected, so machine
+    clients still need a token. When deploying with API_AUTH_TOKEN set, lock
+    the dashboard down at the network layer (Tailscale, VPN, localhost-only
+    bind) — see SECURITY.md.
+    """
     req = CreatePaperRequest(
         title=title,
         research_question=research_question,
