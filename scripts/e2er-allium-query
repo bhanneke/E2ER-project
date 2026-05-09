@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Allium gatekeeper for Claude Code CLI specialists.
+#
+# When `LLM_BACKEND=claude_code`, specialists run inside the `claude` CLI
+# subprocess. Their tool dispatch is internal, so the in-process
+# AlliumToolHandler can't intercept queries. This wrapper is the gatekeeper:
+# the CLI is configured with `--allowedTools=Bash(e2er-allium-query:*)`,
+# meaning this is the ONLY path to Allium for the specialist.
+#
+# Implementation is a thin shim over `python -m src.modules.data.cli`,
+# which constructs the same AlliumToolHandler used in API mode and runs
+# the SAME 5 guardrails (no SELECT *, fields-in-dict, time-bound WHERE,
+# granularity justification, feasibility-first).
+#
+# Usage examples:
+#   e2er-allium-query feasibility --paper-id <uuid> --sql "..." \
+#                                  --fields col1,col2 --aggregation daily \
+#                                  --rationale "..."
+#   e2er-allium-query production  --paper-id <uuid> --sql "..." ...
+#   e2er-allium-query check-approval --paper-id <uuid> --query-id <uuid>
+#   e2er-allium-query list-tables --paper-id <uuid>
+#
+# Run from anywhere; the wrapper resolves the project root from its own path.
+
+set -euo pipefail
+
+# Resolve the project root from this script's location: repo/scripts/e2er-allium-query
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+cd "$PROJECT_ROOT"
+exec python -m src.modules.data.cli "$@"

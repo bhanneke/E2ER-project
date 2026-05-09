@@ -1,0 +1,78 @@
+# Allium queries via the gatekeeper CLI
+
+This skill applies when the pipeline runs under `LLM_BACKEND=claude_code`
+(Claude Code CLI). In that mode you have **no direct access to Allium's
+HTTP API**. Instead, you invoke the bash command `e2er-allium-query`,
+which validates your query against the same 5 guardrails as the JSON-tool
+`query_allium` (used in API-backend mode), then forwards approved queries
+to Allium and reports results back.
+
+## The four subcommands
+
+```bash
+# 1) Sample a query (1000-row LIMIT, auto-approved)
+e2er-allium-query feasibility \
+  --paper-id <YOUR_PAPER_ID> \
+  --sql "SELECT block_number, ts FROM ethereum.blocks WHERE ts >= '2024-01-01' LIMIT 1000" \
+  --fields block_number,ts \
+  --aggregation daily \
+  --rationale "verify data availability for the analysis window" \
+  --primary-table ethereum.blocks
+
+# 2) Submit a full query for human approval
+e2er-allium-query production \
+  --paper-id <YOUR_PAPER_ID> \
+  --sql "..." --fields ... --aggregation transaction \
+  --rationale "..." --primary-table ...
+
+# 3) Poll for a production query's approval status
+e2er-allium-query check-approval \
+  --paper-id <YOUR_PAPER_ID> \
+  --query-id <QUERY_ID_FROM_STEP_2>
+
+# 4) List available Allium dataset schemas/tables
+e2er-allium-query list-tables --paper-id <YOUR_PAPER_ID>
+```
+
+## Workflow rules
+
+1. **Always run a `feasibility` query first** for any new table. Production
+   queries on a table with no prior approved feasibility are rejected
+   automatically (guardrail #5).
+2. **Every query must list its fields explicitly** — no `SELECT *` (#1).
+3. **Every query must have a time-bound `WHERE` clause** matching the
+   `time_filter` declared in `data_dictionary.json` (#3).
+4. **All selected fields must be in `data_dictionary.json`** (#2). Update
+   the dictionary first if you need a new field.
+5. **Transaction- or event-level granularity requires `--rationale`** that
+   justifies why aggregating wouldn't suffice (#4).
+
+## What the wrapper returns
+
+stdout text mirrors what the JSON-tool returns to API-mode specialists:
+
+- **On guardrail rejection**: a multi-line message starting with
+  `"Query rejected by guardrails:"` followed by the specific rule that
+  failed and a hint at how to fix it. Read it carefully — it tells you
+  exactly what to change.
+- **On feasibility success**: `query_id`, row count, the first 3 rows as
+  JSON, and the columns. You may then use the data, or if you want the
+  full result set, submit a `production` query (which the human reviews).
+- **On production submission**: `query_id` and a reminder to poll
+  `check-approval` until status is `APPROVED` or `REJECTED`. Do NOT keep
+  resubmitting the same query.
+- **On approval rejected**: the researcher's note explaining why. Submit
+  a corrected production query — do not poll the rejected one again.
+
+## Things you MUST NOT do
+
+- **Do not call Allium HTTPS endpoints directly** (`mcp.allium.so`,
+  `api.allium.so`, etc.). The CLI's tool restriction layer denies it; you
+  will only frustrate yourself.
+- **Do not pipe data through other bash commands** to bypass the
+  gatekeeper. Curl, wget, custom Python — all blocked.
+- **Do not skip the data dictionary update** if you need a new field. The
+  gatekeeper checks every selected column against the live dictionary
+  file in your workspace.
+
+The wrapper IS your only Allium access.

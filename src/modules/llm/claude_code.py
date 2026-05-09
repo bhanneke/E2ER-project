@@ -27,6 +27,7 @@ import json
 import os
 import shutil
 import time
+from pathlib import Path
 from typing import Any
 
 from ...config import get_settings
@@ -40,8 +41,23 @@ logger = get_logger(__name__)
 # These are Claude Code's *native* tool names. The pipeline's specialists
 # describe their artifacts by filename ("write paper_plan.md") rather than
 # tool name ("call write_file"), so the CLI naturally maps to its built-in
-# Write/Read/Edit. Bash is allowed for replication code execution.
-_DEFAULT_ALLOWED_TOOLS = ["Read", "Write", "Edit", "Glob", "Grep", "Bash"]
+# Write/Read/Edit. Bash is allowed for replication code execution AND for
+# the e2er-allium-query gatekeeper (see scripts/e2er-allium-query). The
+# `Bash(e2er-allium-query:*)` pattern explicitly allows that command — the
+# CLI's tool layer denies any other Allium access.
+_DEFAULT_ALLOWED_TOOLS = [
+    "Read",
+    "Write",
+    "Edit",
+    "Glob",
+    "Grep",
+    "Bash",
+    "Bash(e2er-allium-query:*)",
+]
+
+# `scripts/` (containing e2er-allium-query) is inserted at the front of
+# PATH for the subprocess so the model can invoke the gatekeeper by name.
+_SCRIPTS_DIR = Path(__file__).resolve().parent.parent.parent.parent / "scripts"
 
 
 class ClaudeCodeBackend(LLMBackend):
@@ -137,6 +153,12 @@ async def _invoke_cli(
 
     logger.info("ClaudeCode: invoking %s (max_turns=%d, prompt=%d chars)", cli_path, max_turns, len(prompt))
 
+    # Prepend the project's scripts/ dir to PATH so the subprocess can find
+    # `e2er-allium-query` by name. This is the only way the CLI can reach
+    # Allium when guardrails are enabled (DATA_MODULE_ENABLED=true).
+    env = os.environ.copy()
+    env["PATH"] = f"{_SCRIPTS_DIR}{os.pathsep}{env.get('PATH', '')}"
+
     try:
         proc = await asyncio.create_subprocess_exec(
             *cmd,
@@ -144,6 +166,7 @@ async def _invoke_cli(
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=cwd,
+            env=env,
         )
     except FileNotFoundError:
         return ToolLoopResult(
