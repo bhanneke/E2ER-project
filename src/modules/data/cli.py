@@ -131,12 +131,20 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
 
-    # All subcommands need paper_id (drives workspace + audit log).
-    parser.add_argument("--paper-id", required=True, help="Paper UUID this query belongs to.")
+    # paper_id and specialist are runner-supplied context — they're the same
+    # for every call within a specialist invocation. The runner sets them
+    # via E2ER_PAPER_ID / E2ER_SPECIALIST env vars; the bash wrapper or this
+    # parser pick them up. CLI flags override env so devs can still test
+    # invocations manually.
+    parser.add_argument(
+        "--paper-id",
+        default=None,
+        help="Paper UUID. Defaults to $E2ER_PAPER_ID; required if neither is set.",
+    )
     parser.add_argument(
         "--specialist",
-        default="data_analyst",
-        help="Specialist invoking this query (for audit log).",
+        default=None,
+        help="Specialist name (audit log). Defaults to $E2ER_SPECIALIST or 'data_analyst'.",
     )
 
     sub = parser.add_subparsers(dest="command", required=True)
@@ -185,8 +193,26 @@ _DISPATCH = {
 
 def main(argv: list[str] | None = None) -> int:
     """Entry point. Returns process exit code."""
+    import os
+
     parser = _build_parser()
     args = parser.parse_args(argv)
+
+    # Resolve paper_id / specialist: explicit flag wins, then env var, then
+    # default. Without paper_id we cannot route the query (workspace lookup
+    # + audit log both need it).
+    args.paper_id = args.paper_id or os.environ.get("E2ER_PAPER_ID")
+    args.specialist = args.specialist or os.environ.get("E2ER_SPECIALIST") or "data_analyst"
+    if not args.paper_id:
+        print(
+            "e2er-allium-query: paper_id missing. Pass --paper-id <uuid> or set "
+            "E2ER_PAPER_ID in the environment. (Normally the runner injects this "
+            "automatically; this error means the wrapper is being called outside a "
+            "specialist run.)",
+            file=sys.stderr,
+        )
+        return 2
+
     runner = _DISPATCH.get(args.command)
     if runner is None:
         print(f"Unknown command: {args.command}", file=sys.stderr)

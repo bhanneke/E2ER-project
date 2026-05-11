@@ -84,12 +84,20 @@ class ClaudeCodeBackend(LLMBackend):
         tools: list[dict[str, Any]],
         tool_handler: ToolHandler | None,
         max_turns: int = 30,
+        *,
+        paper_id: str | None = None,
+        specialist: str | None = None,
     ) -> ToolLoopResult:
         """Invoke the CLI once with system + last user message as the prompt.
 
         The CLI runs its own internal tool loop (file ops, bash, etc.) until
         end-turn or max-turns. `tool_handler` and `tools` are ignored — the
         CLI uses its native tool set, allowed via `--allowedTools`.
+
+        ``paper_id`` and ``specialist`` are propagated to the subprocess as
+        ``E2ER_PAPER_ID`` and ``E2ER_SPECIALIST`` env vars. The
+        ``e2er-allium-query`` wrapper picks them up automatically — the
+        specialist doesn't have to remember its own paper_id.
         """
         start = time.monotonic()
 
@@ -114,14 +122,28 @@ class ClaudeCodeBackend(LLMBackend):
         # ignored (different naming scheme) — we just allow the standard set.
         allowed_tools = _DEFAULT_ALLOWED_TOOLS
 
+        # Per-specialist working directory: the CLI's `Write` tool resolves
+        # relative paths against cwd. If we run the CLI from the project
+        # root, files like "paper_plan.md" land in the repo root instead of
+        # the paper's workspace — discovered May 2026 NFT-paper run #4. Use
+        # the paper's workspace as cwd when paper_id is supplied; fall back
+        # to the configured backend cwd for tool-less invocations
+        # (strategist decisions don't write files anyway).
+        cwd = self._cwd
+        if paper_id:
+            settings = get_settings()
+            cwd = str(Path(settings.workspace_root) / paper_id)
+
         return await _invoke_cli(
             cli_path=self._cli_path,
             prompt=prompt,
             allowed_tools=allowed_tools,
             timeout=self._timeout,
-            cwd=self._cwd,
+            cwd=cwd,
             max_turns=max_turns or self._max_turns_default,
             start=start,
+            paper_id=paper_id,
+            specialist=specialist,
         )
 
 
@@ -134,6 +156,8 @@ async def _invoke_cli(
     cwd: str,
     max_turns: int,
     start: float,
+    paper_id: str | None = None,
+    specialist: str | None = None,
 ) -> ToolLoopResult:
     """Run `claude -p` as a subprocess. Async-native version of v1's wrapper."""
     # Sanitize null bytes — upstream artifacts can embed \x00 which the
@@ -158,6 +182,13 @@ async def _invoke_cli(
     # Allium when guardrails are enabled (DATA_MODULE_ENABLED=true).
     env = os.environ.copy()
     env["PATH"] = f"{_SCRIPTS_DIR}{os.pathsep}{env.get('PATH', '')}"
+    # Wire deterministic context — the wrapper reads these and injects them
+    # into the python CLI call, so the specialist doesn't have to remember
+    # its own paper_id.
+    if paper_id:
+        env["E2ER_PAPER_ID"] = paper_id
+    if specialist:
+        env["E2ER_SPECIALIST"] = specialist
 
     try:
         proc = await asyncio.create_subprocess_exec(
@@ -297,15 +328,16 @@ def _extract_usage(raw: dict[str, Any]) -> TokenUsage:
 
 
 def _count_tool_calls(raw: dict[str, Any]) -> int:
-    """Count tool_use blocks in the CLI's message log if available."""
-    msgs = raw.get("messages") or []
-    if not isinstance(msgs, list):
-        return 0
-    count = 0
-    for m in msgs:
-        if not isinstance(m, dict):
-            continue
-        content = m.get("content")
-        if isinstance(content, list):
-            count += sum(1 for b in content if isinstance(b, dict) and b.get("type") == "tool_use")
-    return count
+    """Approximate tool-call count from the CLI summary.
+
+    Claude Code 2.x doesn't include a `messages` array in
+    `--output-format json`; only top-level metadata. The closest signal is
+    `num_turns`: a tool-less completion = 1 turn, each tool use adds at
+    least one more turn. So `num_turns - 1` is a lower bound on tool calls.
+    Approximate is fine — this metric is informational, the cascade-
+    detection logic uses file existence, not tool count.
+    """
+    n = raw.get("num_turns", 0)
+    if isinstance(n, int) and n > 0:
+        return max(0, n - 1)
+    return 0

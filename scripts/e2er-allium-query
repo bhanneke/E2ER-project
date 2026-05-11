@@ -29,4 +29,17 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 cd "$PROJECT_ROOT"
-exec python -m src.modules.data.cli "$@"
+
+# If the runner injected E2ER_PAPER_ID / E2ER_SPECIALIST into the env and the
+# user didn't pass --paper-id / --specialist explicitly, inject them now so
+# the specialist's invocation can stay clean: `e2er-allium-query feasibility
+# --sql "..." --fields ...` instead of `--paper-id <uuid> --specialist ...`.
+extra_args=()
+if [[ -n "${E2ER_PAPER_ID:-}" ]] && [[ "$*" != *"--paper-id"* ]]; then
+    extra_args+=("--paper-id" "$E2ER_PAPER_ID")
+fi
+if [[ -n "${E2ER_SPECIALIST:-}" ]] && [[ "$*" != *"--specialist"* ]]; then
+    extra_args+=("--specialist" "$E2ER_SPECIALIST")
+fi
+
+exec python -m src.modules.data.cli "${extra_args[@]}" "$@"

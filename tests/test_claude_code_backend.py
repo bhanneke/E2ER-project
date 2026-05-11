@@ -57,22 +57,17 @@ async def test_tool_loop_parses_successful_cli_output(monkeypatch, tmp_path):
     from src.modules.llm.claude_code import ClaudeCodeBackend
 
     backend = ClaudeCodeBackend()
+    # Claude Code 2.x summary JSON has no `messages` array — only top-level
+    # metadata. `num_turns` is the only signal for tool calls (1 turn = no
+    # tools, N turns = N-1 tool uses). Verified against the real CLI on
+    # May 2026.
     summary = {
         "type": "result",
         "subtype": "success",
         "result": "I have written paper_plan.md.",
         "is_error": False,
+        "num_turns": 3,  # 2 tool uses + 1 final assistant turn
         "usage": {"input_tokens": 1234, "output_tokens": 567, "cache_read_input_tokens": 0},
-        "messages": [
-            {"role": "user", "content": "x"},
-            {
-                "role": "assistant",
-                "content": [
-                    {"type": "tool_use", "name": "Write", "input": {"path": "x"}},
-                    {"type": "tool_use", "name": "Write", "input": {"path": "y"}},
-                ],
-            },
-        ],
     }
     stdout = (json.dumps({"type": "system"}) + "\n" + json.dumps(summary) + "\n").encode()
     proc = _mock_proc(stdout=stdout)

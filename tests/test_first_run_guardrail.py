@@ -92,15 +92,27 @@ def test_unproven_tuple_accepts_low_cap(tmp_path, monkeypatch):
 
 
 def test_unproven_tuple_with_ack_allows_high_cap(tmp_path, monkeypatch):
-    """Explicit acknowledgement is the override path."""
+    """Explicit acknowledgement is the override path: request goes through
+    AND the effective cap is the requested value, not the unproven floor.
+
+    Regression for May 2026 NFT-paper run #4: ack-with-cap=$5 ran the
+    pipeline but the runner was still given cap=$1, so the run died on
+    BudgetExceededError at $1.33."""
     monkeypatch.setenv("WORKSPACE_ROOT", str(tmp_path))
 
     from src.config import get_settings
 
     get_settings.cache_clear()
 
+    captured: dict = {}
+
+    async def capture_execute(sql, params=None):
+        # Capture the INSERT INTO papers row to verify the persisted cap.
+        if params and "cap" in params:
+            captured["cap"] = params["cap"]
+
     with (
-        patch("src.db.client.execute", new_callable=AsyncMock),
+        patch("src.db.client.execute", side_effect=capture_execute),
         patch("src.db.client.fetch_one", new_callable=AsyncMock, return_value=None),
         patch("src.api.app._run_pipeline", new_callable=AsyncMock),
     ):
@@ -109,7 +121,11 @@ def test_unproven_tuple_with_ack_allows_high_cap(tmp_path, monkeypatch):
             json=_payload(max_cost_usd=25.0, acknowledge_unproven_tuple=True),
         )
 
-    assert resp.status_code == 200, f"ack should override the cap: {resp.text}"
+    assert resp.status_code == 200, f"ack should override: {resp.text}"
+    assert captured.get("cap") == 25.0, (
+        f"ack=true must raise the effective cap to the requested value, not just "
+        f"bypass the rejection. Got persisted cap = {captured.get('cap')}, expected 25.0."
+    )
 
 
 # ---------------------------------------------------------------------------

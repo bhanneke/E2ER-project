@@ -159,6 +159,9 @@ class MockLLMBackend(LLMBackend):
         tools: list[dict[str, Any]],
         tool_handler: ToolHandler | None,
         max_turns: int = 30,
+        *,
+        paper_id: str | None = None,  # noqa: ARG002 — interface parity with backends
+        specialist: str | None = None,  # noqa: ARG002
     ) -> ToolLoopResult:
         usage = TokenUsage(input_tokens=100, output_tokens=50)
 

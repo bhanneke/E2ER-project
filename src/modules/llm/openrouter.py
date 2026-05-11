@@ -60,6 +60,9 @@ class OpenRouterBackend(LLMBackend):
         tools: list[dict[str, Any]],
         tool_handler: ToolHandler | None,
         max_turns: int = 30,
+        *,
+        paper_id: str | None = None,  # noqa: ARG002 — accepted for interface parity, unused in SDK mode
+        specialist: str | None = None,  # noqa: ARG002
     ) -> ToolLoopResult:
         start = time.monotonic()
         usage = TokenUsage()

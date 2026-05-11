@@ -9,10 +9,12 @@ to Allium and reports results back.
 
 ## The four subcommands
 
+You **do NOT need to pass `--paper-id`** — the runner has already wired it
+into the environment. Just call the wrapper with the query-specific args:
+
 ```bash
 # 1) Sample a query (1000-row LIMIT, auto-approved)
 e2er-allium-query feasibility \
-  --paper-id <YOUR_PAPER_ID> \
   --sql "SELECT block_number, ts FROM ethereum.blocks WHERE ts >= '2024-01-01' LIMIT 1000" \
   --fields block_number,ts \
   --aggregation daily \
@@ -21,17 +23,14 @@ e2er-allium-query feasibility \
 
 # 2) Submit a full query for human approval
 e2er-allium-query production \
-  --paper-id <YOUR_PAPER_ID> \
   --sql "..." --fields ... --aggregation transaction \
   --rationale "..." --primary-table ...
 
 # 3) Poll for a production query's approval status
-e2er-allium-query check-approval \
-  --paper-id <YOUR_PAPER_ID> \
-  --query-id <QUERY_ID_FROM_STEP_2>
+e2er-allium-query check-approval --query-id <QUERY_ID_FROM_STEP_2>
 
 # 4) List available Allium dataset schemas/tables
-e2er-allium-query list-tables --paper-id <YOUR_PAPER_ID>
+e2er-allium-query list-tables
 ```
 
 ## Workflow rules

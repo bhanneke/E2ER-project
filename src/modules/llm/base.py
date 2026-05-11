@@ -74,12 +74,22 @@ class LLMBackend(ABC):
         tools: list[dict[str, Any]],
         tool_handler: ToolHandler | None,
         max_turns: int = 30,
+        *,
+        paper_id: str | None = None,
+        specialist: str | None = None,
     ) -> ToolLoopResult:
         """Run a multi-turn tool-use conversation until end_turn or max_turns.
 
         ``tool_handler`` may be ``None`` for tool-less calls (strategist
         decisions, structured-output prompts) where we just want a completion
         without tool dispatch.
+
+        ``paper_id`` and ``specialist`` are optional context the runner
+        already knows. SDK backends ignore them (the in-process tool handler
+        already carries this state). The CLI backend uses them to set
+        ``E2ER_PAPER_ID`` / ``E2ER_SPECIALIST`` in the subprocess env so the
+        ``e2er-allium-query`` wrapper can inject them automatically — the
+        specialist's prompt doesn't have to remember its own paper_id.
         """
         ...
 

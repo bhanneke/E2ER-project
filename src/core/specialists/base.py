@@ -43,6 +43,17 @@ async def run_specialist(
     skills_text = load_skills_for_specialist(specialist)
     has_allium = any((t.get("name") == "query_allium") for t in (extra_tools or []))
     system = _build_system_prompt(specialist, skills_text, has_allium=has_allium)
+    user_prompt = _build_user_prompt(work_order)
+
+    # CLI backend uses Claude Code's native tool names (Write/Read/Edit/Glob)
+    # rather than the SDK's (write_file/read_file/...). Translate references
+    # in both prompts so the model finds the tools it's told to call.
+    # Discovered May 2026 NFT-paper run #3: specialists "succeeded" with
+    # tools_called=0 because they read "use `write_file`" but only `Write`
+    # was available, and just emitted text instead.
+    if backend_name == "claude_code":
+        system = _translate_tool_names_for_cli(system)
+        user_prompt = _translate_tool_names_for_cli(user_prompt)
 
     tools = list(FILE_TOOLS)
     if extra_tools:
@@ -52,7 +63,6 @@ async def run_specialist(
     handlers: list[ToolHandler] = list(extra_handlers or []) + [file_handler]
     handler = CompositeToolHandler(handlers)
 
-    user_prompt = _build_user_prompt(work_order)
     messages = [{"role": "user", "content": user_prompt}]
 
     logger.info(
@@ -71,6 +81,11 @@ async def run_specialist(
         tools=tools,
         tool_handler=handler,
         max_turns=_MAX_TURNS,
+        # Forwarded so the CLI backend can wire E2ER_PAPER_ID / E2ER_SPECIALIST
+        # into the subprocess env. SDK backends ignore them — the in-process
+        # tool handler already carries this state.
+        paper_id=paper_id,
+        specialist=specialist,
     )
 
     duration = time.time() - t0
@@ -137,6 +152,33 @@ async def run_specialist(
 
 
 _DATA_SPECIALISTS = frozenset(["data_analyst", "data_architect", "econometrics_specialist"])
+
+
+# Tool-name aliases. The Anthropic SDK exposes JSON-schema tools named
+# `write_file`, `read_file`, `edit_file`, `list_directory` (defined in
+# src/modules/llm/tools.py). The Claude Code CLI exposes its own native
+# tools named `Write`, `Read`, `Edit`, `Glob`. The system + user prompts
+# reference the SDK names; when the active backend is the CLI, we translate
+# those names so the model finds the tool it's instructed to call.
+_CLI_TOOL_ALIASES = {
+    "write_file": "Write",
+    "read_file": "Read",
+    "edit_file": "Edit",
+    "list_directory": "Glob",
+}
+
+
+def _translate_tool_names_for_cli(text: str) -> str:
+    """Replace SDK tool names with their Claude Code CLI equivalents.
+
+    Replaces both backtick-quoted forms (`write_file`) and bare references
+    that appear in skill files. Order matters: replace the longest names
+    first so we don't truncate (e.g. read_file before read).
+    """
+    for sdk_name, cli_name in sorted(_CLI_TOOL_ALIASES.items(), key=lambda kv: -len(kv[0])):
+        text = text.replace(f"`{sdk_name}`", f"`{cli_name}`")
+        text = text.replace(sdk_name, cli_name)
+    return text
 
 
 def _build_system_prompt(specialist: str, skills_text: str, has_allium: bool = False) -> str:
@@ -217,9 +259,14 @@ def _build_user_prompt(work_order: WorkOrder) -> str:
     if work_order.output_file:
         parts.append(
             f"\n## Required Output\n"
-            f"Write your work to EXACTLY ONE file: `{work_order.output_file}`.\n"
-            f"Do not create any other files. After the single `write_file` call "
-            f"succeeds, end your turn."
+            f"Write your work to EXACTLY ONE file at this exact path, directly in "
+            f"the current working directory: `./{work_order.output_file}`.\n"
+            f"Do NOT create subdirectories. Do NOT add prefixes like "
+            f"`workspace/`, `{work_order.specialist}/`, `output/`, etc. The file "
+            f"must appear as `./{work_order.output_file}` relative to cwd, "
+            f"nothing else. Use the exact filename — do not rename or extend it.\n"
+            f"After the single `write_file` call succeeds, end your turn — "
+            f"no further commentary, no follow-up files."
         )
     return "\n".join(parts)
 
@@ -258,11 +305,38 @@ def _load_reference_summary(specialist: str) -> str:
 
 
 def _find_output_file(workspace: Path, specialist: str, expected: str) -> str:
+    """Locate the specialist's canonical artifact in the workspace.
+
+    Looks first at the expected path. If the model nested the file in a
+    subdirectory (CLI backend behaviour observed May 2026: writes to
+    `workspace/<specialist>/<artifact>` or similar despite explicit "no
+    subdirectories" instruction), recover by scanning the workspace for
+    any file matching the basename and moving it to the canonical location.
+    """
     from ..specialists.registry import SPECIALIST_ARTIFACTS
 
     target = expected or SPECIALIST_ARTIFACTS.get(specialist, "")
-    if target:
-        path = workspace / target
-        if path.exists():
-            return str(path)
-    return ""
+    if not target:
+        return ""
+
+    canonical = workspace / target
+    if canonical.exists():
+        return str(canonical)
+
+    # Recovery: find by basename, prefer shortest path (least nesting),
+    # ignore replication/ (legitimate subdir).
+    basename = Path(target).name
+    candidates = [p for p in workspace.rglob(basename) if p.is_file() and "replication" not in p.parts]
+    if not candidates:
+        return ""
+    candidates.sort(key=lambda p: len(p.parts))
+    found = candidates[0]
+    logger.warning(
+        "%s: artifact found at %s instead of canonical %s — moving to canonical location",
+        specialist,
+        found.relative_to(workspace),
+        target,
+    )
+    canonical.parent.mkdir(parents=True, exist_ok=True)
+    found.rename(canonical)
+    return str(canonical)

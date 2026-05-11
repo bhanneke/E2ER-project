@@ -201,7 +201,17 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
                 f"`acknowledge_unproven_tuple: true` in the request to override."
             ),
         )
-    cap = requested_cap if proven else min(requested_cap, _UNPROVEN_TUPLE_CAP)
+    # Cap resolution:
+    #   - proven tuple → honour the requested cap, full stop.
+    #   - unproven + ack → honour the requested cap (ack IS the override).
+    #   - unproven + no ack + low cap → honour the requested cap (it was
+    #     already below the floor; nothing to enforce).
+    #   - unproven + no ack + high cap → rejected above with 400.
+    # Earlier this used min(requested_cap, _UNPROVEN_TUPLE_CAP) even when
+    # ack=true, which meant the override only bypassed the 400 but the cap
+    # was still forced to $1 — observed May 2026 NFT-paper run #4 hitting
+    # BudgetExceededError despite an explicit ack with cap=$5.
+    cap = requested_cap
     if not proven:
         logger.warning(
             "First run at (model=%s, methodology=%s, mode=%s); cap=%.2f (override=%s)",

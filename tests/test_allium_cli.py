@@ -87,6 +87,60 @@ def test_cli_help_lists_all_subcommands(capsys):
 
 
 # ---------------------------------------------------------------------------
+# 1b. paper_id / specialist resolution: env var + missing-id error
+# ---------------------------------------------------------------------------
+
+
+def test_cli_picks_up_paper_id_from_env(workspace, capsys, monkeypatch):
+    """The runner injects E2ER_PAPER_ID into the subprocess env so the
+    specialist's bash invocation can stay clean (no --paper-id flag)."""
+    paper_id, _ = workspace
+    monkeypatch.setenv("ALLIUM_API_KEY", "test-key")
+    monkeypatch.setenv("E2ER_PAPER_ID", paper_id)
+    monkeypatch.setenv("E2ER_SPECIALIST", "data_architect")
+    from src.config import get_settings
+
+    get_settings.cache_clear()
+
+    from src.modules.data import cli
+
+    # No --paper-id, no --specialist on the CLI.
+    with patch("src.db.client.fetch_one", new_callable=AsyncMock, return_value=None):
+        rc = cli.main(
+            [
+                "feasibility",
+                "--sql",
+                "SELECT * FROM ethereum.blocks WHERE ts >= '2024-01-01'",
+                "--fields",
+                "block_number,ts",
+                "--aggregation",
+                "daily",
+                "--rationale",
+                "test",
+            ]
+        )
+
+    out = capsys.readouterr().out
+    assert rc == 0
+    # SELECT * still rejected — proves the call routed through the same
+    # handler that runs all 5 guardrails.
+    assert "rejected" in out.lower()
+
+
+def test_cli_errors_when_paper_id_missing(capsys, monkeypatch):
+    """No --paper-id and no env var → exit code 2 with a clear message."""
+    monkeypatch.delenv("E2ER_PAPER_ID", raising=False)
+    monkeypatch.delenv("E2ER_SPECIALIST", raising=False)
+
+    from src.modules.data import cli
+
+    rc = cli.main(["list-tables"])
+    err = capsys.readouterr().err
+    assert rc == 2
+    assert "paper_id" in err.lower() or "E2ER_PAPER_ID" in err
+
+
+# ---------------------------------------------------------------------------
 # 2. Guardrail rejection — SELECT * (G1)
 # ---------------------------------------------------------------------------
 
