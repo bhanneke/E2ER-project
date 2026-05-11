@@ -123,20 +123,76 @@ def _score_to_verdict(avg: float) -> str:
 
 
 def parse_review_output(reviewer: str, raw_output: str) -> ReviewScore | None:
-    """Extract structured score from a reviewer's text output."""
+    """Extract a structured score from a reviewer's text output.
+
+    Reviewers vary their format in practice. Observed in the May 2026 run:
+      • "**OVERALL SCORE: 6.2/10**"                      (literature_reviewer)
+      • "**Weighted overall score:** 5.6/10"             (mechanism_reviewer)
+      • "## DIMENSION SCORES\n- Contribution: 6.5/10\n   ..."  (mechanism, no overall)
+      • No explicit score, just dimension breakdown      (technical, writing,
+                                                          identification)
+
+    The old `(?:score|rating)[:\\s]+(\\d+)` regex caught only the first
+    pattern because `:**` between the colon and the digit isn't whitespace.
+    The new logic tries patterns in priority order — overall first, then
+    dimension average, then any bare N/10 mention — so reviews are scored
+    deterministically regardless of which template the model used.
+
+    Returns None when no number on a 0-10 scale can be found at all.
+    """
     import re
 
-    score_match = re.search(r"(?:score|rating)[:\s]+(\d+(?:\.\d+)?)\s*(?:/\s*10)?", raw_output, re.IGNORECASE)
+    score: float | None = None
+
+    # P1 — explicit overall/weighted overall score line. The `[^\d\n]{0,15}?`
+    # between the keyword and the digit absorbs markdown bold, colons,
+    # asterisks, and short interstitial whitespace. Capped to one line so we
+    # don't span paragraphs.
+    m = re.search(
+        r"(?:overall|weighted(?:\s+overall)?)\s+score[^\d\n]{0,15}?(\d+(?:\.\d+)?)\s*/\s*10",
+        raw_output,
+        re.IGNORECASE,
+    )
+    if m:
+        score = float(m.group(1))
+
+    # P2 — any "score ... N/10" mention (less specific; e.g. a reviewer who
+    # just writes "Score: 7.5/10" without "Overall").
+    if score is None:
+        m = re.search(
+            r"\bscore\b[^\d\n]{0,15}?(\d+(?:\.\d+)?)\s*/\s*10",
+            raw_output,
+            re.IGNORECASE,
+        )
+        if m:
+            score = float(m.group(1))
+
+    # P3 — DIMENSION SCORES section: average whatever numbers appear there.
+    # The mechanism_reviewer style — list dimensions without an overall.
+    if score is None:
+        section = re.search(r"DIMENSION\s+SCORES.*?(?=\n##|\Z)", raw_output, re.IGNORECASE | re.DOTALL)
+        if section:
+            vals = [float(n) for n in re.findall(r"(\d+(?:\.\d+)?)\s*/\s*10", section.group(0))]
+            vals = [v for v in vals if 0 <= v <= 10]
+            if vals:
+                score = sum(vals) / len(vals)
+
+    # P4 — last-resort: first "N/10" mention anywhere in the first 4 KB.
+    if score is None:
+        m = re.search(r"\b(\d+(?:\.\d+)?)\s*/\s*10\b", raw_output[:4000])
+        if m:
+            v = float(m.group(1))
+            if 0 <= v <= 10:
+                score = v
+
+    if score is None:
+        return None
+
     rec_match = re.search(
         r"(accept|minor.revision|major.revision|reject)",
         raw_output,
         re.IGNORECASE,
     )
-
-    if not score_match:
-        return None
-
-    score = float(score_match.group(1))
     recommendation = rec_match.group(1).lower().replace(" ", "_") if rec_match else "major_revision"
 
     return ReviewScore(

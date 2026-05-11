@@ -39,6 +39,36 @@ POSITIVE ASPECTS:
 1. ...
 ```
 
+## MANDATORY closing format (parser-readable)
+
+The mechanical review aggregator parses a single overall score from your
+file. To remove all ambiguity, your file MUST end with these two lines
+EXACTLY, on their own lines, with no markdown bold, no extra punctuation:
+
+```
+OVERALL SCORE: <number>/10
+RECOMMENDATION: <one of: Accept, Minor Revision, Major Revision, Reject>
+```
+
+Example of a correct closing:
+
+```
+OVERALL SCORE: 6.2/10
+RECOMMENDATION: Major Revision
+```
+
+Do NOT use any of these variants — they fail or distort parsing:
+
+```
+**OVERALL SCORE: 6.2/10**            (markdown bold around the line)
+**Weighted overall score:** 6.2/10   (bold AND non-canonical wording)
+Overall score: 6 out of 10           (use "/10", not "out of 10")
+**Overall:** 6.2/10                  (missing the word "SCORE")
+```
+
+The body of the review (dimension scores, concerns, etc.) can use any
+formatting you like; only these final two lines are parser-mandated.
+
 ## Standards
 
 - Be specific — "the identification strategy is unclear" is not useful; name the specific threat

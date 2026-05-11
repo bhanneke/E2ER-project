@@ -3,6 +3,7 @@
 from src.core.strategist.review_aggregator import (
     ReviewScore,
     aggregate_reviews,
+    parse_review_output,
 )
 
 
@@ -61,3 +62,132 @@ def test_major_revision_range():
     ]
     result = aggregate_reviews(scores)
     assert result.verdict == "MAJOR_REVISION"
+
+
+# ---------------------------------------------------------------------------
+# parse_review_output — handles the four formats observed in real Sonnet
+# reviewer output (May 2026 NFT-paper run #6). Before the parser rewrite,
+# only the canonical `OVERALL SCORE: N/10` matched; markdown bold inside
+# the score line, bare dimension lists, and bold-wrapped overall lines all
+# silently returned None, so only 1 of 6 reviewers' scores entered the
+# weighted aggregation.
+# ---------------------------------------------------------------------------
+
+
+def test_parse_canonical_overall_score():
+    """The format the skill mandates: clean `OVERALL SCORE: N/10` line."""
+    raw = "Body of review here.\n\nOVERALL SCORE: 7.5/10\nRECOMMENDATION: Minor Revision"
+    s = parse_review_output("technical_reviewer", raw)
+    assert s is not None
+    assert s.score == 7.5
+    assert s.recommendation == "minor_revision"
+
+
+def test_parse_bold_wrapped_overall_score():
+    """literature_reviewer-style: markdown bold around the whole line."""
+    raw = "Some body.\n\n**OVERALL SCORE: 6.2/10**\n**RECOMMENDATION: Major Revision**"
+    s = parse_review_output("literature_reviewer", raw)
+    assert s is not None
+    assert s.score == 6.2
+
+
+def test_parse_weighted_overall_with_colon_bold():
+    """mechanism_reviewer-style: `**Weighted overall score:** 5.6/10`.
+    Old parser failed here because `:**` between colon and digit isn't
+    whitespace; new parser tolerates up to 15 non-digit chars."""
+    raw = "Body of mechanism review.\n\n**Weighted overall score:** 5.6/10\nMajor revision needed."
+    s = parse_review_output("mechanism_reviewer", raw)
+    assert s is not None
+    assert s.score == 5.6
+
+
+def test_parse_dimension_scores_averaged_when_no_overall():
+    """Reviewer who lists dimensions but no overall — average the dimensions.
+    Real mechanism_reviewer output sometimes does this."""
+    raw = (
+        "## DIMENSION SCORES\n"
+        "- Contribution: 6/10\n"
+        "- Identification: 6.5/10\n"
+        "- Empirics: 7/10\n"
+        "- Writing: 7/10\n"
+        "- Literature: 5.5/10\n"
+        "\n## MAJOR CONCERNS\n- foo\n"
+    )
+    s = parse_review_output("mechanism_reviewer", raw)
+    assert s is not None
+    # Average of 6, 6.5, 7, 7, 5.5 = 6.4
+    assert 6.3 < s.score < 6.5
+
+
+def test_parse_lone_n_over_10_fallback():
+    """Last-resort fallback: reviewer just wrote `7/10` somewhere."""
+    raw = "Long discursive review. I'd give this a 7/10 overall, frankly. Lots to say."
+    s = parse_review_output("data_reviewer", raw)
+    assert s is not None
+    assert s.score == 7.0
+
+
+def test_parse_returns_none_when_no_score():
+    """A review with no number on a 0-10 scale anywhere should be None,
+    not a default — the aggregator's partial-review warning relies on this."""
+    raw = "This paper has issues with identification and the model setup. No score given here."
+    s = parse_review_output("identification_reviewer", raw)
+    assert s is None
+
+
+def test_parse_clamps_to_0_10_range():
+    """A model that hallucinates a 12/10 score gets clamped."""
+    raw = "OVERALL SCORE: 12/10\nRECOMMENDATION: Accept"
+    s = parse_review_output("technical_reviewer", raw)
+    assert s is not None
+    assert s.score == 10.0
+
+
+def test_parse_prefers_overall_over_dimension():
+    """When both a dimension section AND an overall line exist, prefer overall."""
+    raw = "## DIMENSION SCORES\n- Contribution: 5/10\n- Empirics: 5/10\n\nOVERALL SCORE: 7.5/10\n"
+    s = parse_review_output("technical_reviewer", raw)
+    assert s is not None
+    assert s.score == 7.5  # not the dimension average of 5
+
+
+def test_parse_recommendation_extracted():
+    """Recommendation falls back to major_revision when absent, else extracted."""
+    raw_accept = "OVERALL SCORE: 8.5/10\nRECOMMENDATION: Accept"
+    assert parse_review_output("technical_reviewer", raw_accept).recommendation == "accept"
+
+    raw_reject = "OVERALL SCORE: 3.0/10\nRECOMMENDATION: Reject"
+    assert parse_review_output("technical_reviewer", raw_reject).recommendation == "reject"
+
+    raw_no_rec = "OVERALL SCORE: 6.0/10"
+    assert parse_review_output("technical_reviewer", raw_no_rec).recommendation == "major_revision"
+
+
+def test_aggregator_picks_up_six_real_reviewers_from_run_6():
+    """End-to-end: simulate the six review files from May 2026 NFT-paper
+    run #6 with their actual observed formats. The old parser caught 1/6;
+    the new one must catch at least 5/6 (data_reviewer in run #6 was
+    legitimately empty due to a theoretical paper having no data)."""
+    reviews = {
+        "literature_reviewer": (
+            "## DIMENSION SCORES\n- Contribution: 6.5/10\n\n**OVERALL SCORE: 6.2/10**\nRECOMMENDATION: Major Revision"
+        ),
+        "mechanism_reviewer": (
+            "## DIMENSION SCORES\n- Contribution: **6/10**\n\n"
+            "**Weighted overall score:** 5.6/10\n**Recommendation:** Major Revision"
+        ),
+        "technical_reviewer": (
+            "## DIMENSION SCORES\n- Identification: 6/10\n- Empirics: 7/10\n(no overall line provided)"
+        ),
+        "writing_reviewer": "Long prose review. The paper scores about 7/10 in my view.",
+        "identification_reviewer": "OVERALL SCORE: 7.0/10\nRECOMMENDATION: Major Revision",
+        "data_reviewer": "Pure theory paper; no data to review.",
+    }
+    parsed = {r: parse_review_output(r, raw) for r, raw in reviews.items()}
+    extracted = [(r, s) for r, s in parsed.items() if s is not None]
+    assert len(extracted) >= 5, (
+        f"Parser must extract >=5 of 6 real-world reviewer outputs; got "
+        f"{[(r, s.score if s else None) for r, s in parsed.items()]}"
+    )
+    # data_reviewer is legitimately None (no data, no score).
+    assert parsed["data_reviewer"] is None
