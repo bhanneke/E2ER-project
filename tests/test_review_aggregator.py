@@ -163,6 +163,47 @@ def test_parse_recommendation_extracted():
     assert parse_review_output("technical_reviewer", raw_no_rec).recommendation == "major_revision"
 
 
+def test_reviewer_user_prompt_contains_mandatory_closing_format():
+    """Reviewer work-orders must explicitly require the parser's closing
+    format. Discovered May 2026 NFT-paper run #7: 4 of 6 reviewers ignored
+    the skill's mandate and ended with prose conclusions, so their reviews
+    couldn't be aggregated. The fix is to repeat the requirement in the
+    work-order focus so the model sees it twice (skill + dispatch).
+    """
+    from src.core.specialists.base import _build_user_prompt
+    from src.core.specialists.contracts import WorkOrder
+    from src.core.specialists.registry import REVIEWER_SPECIALISTS
+
+    for reviewer in REVIEWER_SPECIALISTS:
+        wo = WorkOrder(
+            paper_id="test-id",
+            specialist=reviewer,
+            focus="Review the paper.",
+            context_tier=2,
+        )
+        prompt = _build_user_prompt(wo)
+        assert "OVERALL SCORE:" in prompt, (
+            f"{reviewer} work-order prompt missing the parser-required "
+            f"`OVERALL SCORE:` line. Without it, the model writes prose-only "
+            f"reviews that fail aggregation."
+        )
+        assert "RECOMMENDATION:" in prompt, f"{reviewer} prompt missing RECOMMENDATION line"
+        # Non-reviewers should NOT get this block (no scoring expected).
+    from src.core.specialists.registry import POLISH_SPECIALISTS
+
+    for non_reviewer in ["idea_developer", "paper_drafter", *POLISH_SPECIALISTS]:
+        wo = WorkOrder(
+            paper_id="test-id",
+            specialist=non_reviewer,
+            focus="Do your work.",
+            context_tier=2,
+        )
+        prompt = _build_user_prompt(wo)
+        assert "OVERALL SCORE:" not in prompt, (
+            f"{non_reviewer} work-order shouldn't contain the reviewer-only closing-format block"
+        )
+
+
 def test_aggregator_picks_up_six_real_reviewers_from_run_6():
     """End-to-end: simulate the six review files from May 2026 NFT-paper
     run #6 with their actual observed formats. The old parser caught 1/6;

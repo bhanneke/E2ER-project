@@ -254,7 +254,19 @@ def _build_user_prompt(work_order: WorkOrder) -> str:
             "The full paper draft and all supporting documents are already "
             "above in your Context. Do NOT call read_file or list_directory "
             "— they are unnecessary and waste tokens. Review the material in "
-            "your context directly, then write your single review file."
+            "your context directly, then write your single review file.\n"
+            "\n## MANDATORY closing format — parser-enforced\n"
+            "Your review file MUST end with these two lines EXACTLY, on their "
+            "own lines, no markdown bold, no extra punctuation:\n"
+            "```\n"
+            "OVERALL SCORE: <number>/10\n"
+            "RECOMMENDATION: <Accept | Minor Revision | Major Revision | Reject>\n"
+            "```\n"
+            "The mechanical review aggregator parses these two lines to compute "
+            "the panel verdict. Reviews without them are dropped from the "
+            "weighted average, which biases the aggregation and may hide a "
+            "MECHANISM_FAIL or HARD_REJECT signal. Do not end with prose; "
+            "end with the two required lines."
         )
     if work_order.output_file:
         parts.append(
