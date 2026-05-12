@@ -22,8 +22,8 @@ URL), and (3) lessons from the multi-run session.
 | **Allium gatekeeper bash wrapper** | ✓ **VALIDATED end-to-end (run #11)** — 3 queries through, all 5 guardrails fired, all logged to `data_query_records` + `audit_log.csv` |
 | **Disk-first review aggregation (6 of 6 reviewers parsed)** | ✓ **VALIDATED** (run #11 aggregation has 6/6 in `Breakdown:`) |
 | **Allium discovery primitives** (list/describe/distinct-values) | ✓ shipped; needs working URL to validate end-to-end |
-| **Allium SQL endpoint URL** (which surface for this tier) | ✗ **UNRESOLVED** — see #1 below |
-| Real empirical paper with actual Allium data | ✗ blocked by the URL question |
+| **Allium SQL endpoint URL** (correct API shape) | ✓ **RESOLVED** — 4-step async flow shipped (see lesson #9) |
+| Real empirical paper with actual Allium data | ⚠ blocked only by per-tier rate limits; flow validated to step 2/4 live |
 
 The pipeline orchestrates correctly end-to-end. Theoretical papers
 complete at $0 with all artifacts. Empirical papers complete at $0 with
@@ -34,61 +34,52 @@ empirics with a HARD_REJECT verdict.
 
 ---
 
-## #1 priority: confirm the right Allium SQL endpoint URL
+## #1 priority: validate empirical with real data, end-to-end
 
-### The state
+### What's already done
 
-`ALLIUM_API_BASE` is set in `.env` to `https://api.allium.so/api/v1` and
-`AlliumProvider.execute_raw` POSTs to `{base}/explorer/query/run`.
+The Allium URL question turned out to be a request-shape question, not
+a host question. After consulting `docs.allium.so/llms.txt` today we
+shipped the correct 4-step async flow (see lesson #9 below). Live
+probe: `SELECT 1` got through `create-query` (step 1) and into
+`run-async` (step 2) before hitting per-tier rate limits — proves the
+flow is correct end-to-end at the protocol level.
 
-Run #11 evidence:
-- That URL returns **HTTP 404 Not Found** for any SQL.
-- v1/v2 used `https://mcp.allium.so/api/v1/queries`. Probing that today
-  also 404s.
-- `mcp.allium.so/` root replies with a JSON-RPC error requiring
-  `text/event-stream` (MCP-over-SSE protocol, not REST).
+### What's left
 
-Allium has multiple API surfaces (Data Service, Explorer, MCP) and
-different tiers expose different endpoints. Three sources of ground truth
-the next session should consult:
-
-1. **The Allium dashboard's API docs page** (logged in with your
-   account). It will show the *exact* curl command for your tier.
-2. **Allium support / chat** — fastest path to "which URL for SQL
-   under <plan_name>".
-3. **The `Allium-MCP` GitHub repo** if Allium has one — would document
-   the SSE-MCP path.
-
-Once you have the right base URL:
+Submit one empirical paper at a quiet moment (not immediately after
+many test probes that exhaust the per-minute quota) and verify
+end-to-end:
 
 ```bash
-# In .env:
-ALLIUM_API_BASE=https://<the-actual-host>/<the-actual-path>
+# 1. Quick sanity check — should return real rows now
+e2er-allium-query list-tables                                        # >0 tables
+e2er-allium-query describe-table --schema ethereum --table nft_trades  # real columns
+e2er-allium-query distinct-values --schema ethereum --table nft_trades --column marketplace  # actual literals (e.g. 'OpenSea')
+
+# 2. Submit the empirical paper
+curl -X POST http://localhost:8280/api/papers -d '{
+  "title": "...",
+  "research_question": "...",
+  "mode": "single_pass",
+  "methodology": "empirical",
+  "max_cost_usd": 25.0,
+  "acknowledge_unproven_tuple": true
+}'
 ```
 
-Restart the app. Then verify with the discovery primitives:
+If `distinct-values` returns real literals, the pipeline should produce
+a complete empirical paper with rows in the replication package.
 
-```bash
-# Should return >0 tables now
-e2er-allium-query list-tables
+### Per-tier rate-limit caveat
 
-# Should return real columns + types
-e2er-allium-query describe-table --schema ethereum --table nft_trades
-
-# Should return actual marketplace literals + counts
-e2er-allium-query distinct-values --schema ethereum --table nft_trades --column marketplace
-```
-
-If `distinct-values` shows `'OpenSea'` (or whatever Allium actually
-stores), submit the empirical paper again and the pipeline should
-produce a complete empirical run with real data.
-
-### Why this is "user task" not "code task"
-
-The discovery code is portable — it issues standard SQL against whatever
-URL is configured. No code change makes the wrong URL into the right
-URL. The Allium subscription determines which surface is accessible,
-and that's not derivable from inside the repo.
+Allium's `run-async` endpoint enforces queries-per-minute by
+subscription tier. Our implementation retries 429s with exponential
+backoff up to 60s, so brief spikes recover. Sustained tight quotas
+will surface as `run-async HTTP 429: ...` in the audit log; the user's
+tier may need an upgrade, or the pipeline's parallelism (currently
+`max_concurrent_specialists=3`) may need to be lowered for the data
+phase specifically. Not blocking — flagged for awareness.
 
 ---
 
@@ -209,6 +200,26 @@ disk and parses that. Chat summary is a fallback only when the file is
 missing entirely. Regression test sets up a disk-vs-chat disagreement
 and asserts disk wins.
 
+### 9. Allium's API is a 4-step async saved-query model, not single-shot SQL
+
+Our `execute_raw` POSTed to `/explorer/query/run` with
+`{"query": "SELECT ..."}` — that endpoint doesn't exist in Allium's
+API. The actual flow per `docs.allium.so/llms.txt`:
+
+1. `POST /explorer/queries` with `{"title": ..., "config": {"sql": ..., "limit": ...}}` → returns `query_id`
+2. `POST /explorer/queries/{qid}/run-async` → returns `run_id`
+3. `GET /explorer/queries/{qid}/run/{rid}/status` → poll for completion
+4. `GET /explorer/queries/{qid}/run/{rid}/results` → fetch rows
+
+`config.limit` is mandatory (422 without it). Status strings vary across
+versions: accept `completed`/`success`/`finished` as terminal-OK,
+`failed`/`error`/`cancelled`/`canceled` as terminal-fail. Rows may come
+back as list-of-dicts or list-of-lists; normalise on the way out.
+**Fix:** complete rewrite of `execute_raw` with retry-with-backoff
+on 429 (per-tier rate limit), polling step with 1s→5s backoff up to
+120s, transparent error reporting in the canonical `{rows, columns,
+error}` shape.
+
 ### 8. First-run cap acknowledgement only bypassed the rejection
 
 `acknowledge_unproven_tuple=true` let the request through (no 400) but
@@ -258,6 +269,8 @@ curl -X POST http://localhost:8280/api/papers -d '{
 ## Today's commit chain
 
 ```
+2b3e084  AlliumProvider: rewrite execute_raw to use Allium's actual 4-step API
+4c27be0  docs: NEXT_STEPS — replace pre-CLI plan with end-of-May-12 status
 9c40b88  Allium discovery: describe-table, distinct-values, INFORMATION_SCHEMA list-tables
 7093a38  Allium gatekeeper actually works under CLI backend end-to-end
 a74e959  Review aggregation: read scores from disk, not from CLI chat summary
