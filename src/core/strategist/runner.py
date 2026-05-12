@@ -412,24 +412,39 @@ class PipelineRunner:
         return PaperStatus.REVIEW
 
     async def _run_revision_phase(self, current_status: PaperStatus) -> PaperStatus:
-        """Aggregate reviews and decide: accept, revise, or reject."""
+        """Aggregate reviews and decide: accept, revise, or reject.
+
+        Scores are parsed from the review file on disk per reviewer, NOT from
+        the LLM's chat-side summary (`c.output`). Discovered run #8: under
+        the CLI backend, `c.output` is the CLI's final assistant message
+        (often "I've written the review" or a one-paragraph summary). It
+        doesn't reliably contain the `OVERALL SCORE:` line even when the
+        written file does. The file is the canonical artifact; read that.
+
+        The `c.output` chat-summary is used as a fallback only for reviewers
+        whose canonical file is absent (e.g. a specialist hard-failed
+        before writing). Reviewers are tolerant of partial failure in the
+        cascade-detection layer, so missing files don't halt the pipeline.
+        """
         scores = []
+        seen = set()
+        for reviewer in REVIEWER_SPECIALISTS:
+            artifact = SPECIALIST_ARTIFACTS.get(reviewer, "")
+            if artifact:
+                path = self._workspace / artifact
+                if path.exists():
+                    score = parse_review_output(reviewer, path.read_text(encoding="utf-8"))
+                    if score:
+                        scores.append(score)
+                        seen.add(reviewer)
+        # Fallback: any reviewer whose file we couldn't parse, try the
+        # chat-side summary from the contribution row in memory.
         for c in self._contributions:
-            if c.specialist in REVIEWER_SPECIALISTS:
+            if c.specialist in REVIEWER_SPECIALISTS and c.specialist not in seen:
                 score = parse_review_output(c.specialist, c.output)
                 if score:
                     scores.append(score)
-
-        # Resume path: in-memory contributions empty but review files exist on disk
-        if not scores:
-            for reviewer in REVIEWER_SPECIALISTS:
-                artifact = SPECIALIST_ARTIFACTS.get(reviewer, "")
-                if artifact:
-                    path = self._workspace / artifact
-                    if path.exists():
-                        score = parse_review_output(reviewer, path.read_text(encoding="utf-8"))
-                        if score:
-                            scores.append(score)
+                    seen.add(c.specialist)
 
         if not scores:
             # Auto-completing on missing review evidence is dangerous: it

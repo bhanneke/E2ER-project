@@ -204,6 +204,83 @@ def test_reviewer_user_prompt_contains_mandatory_closing_format():
         )
 
 
+def test_runner_aggregation_prefers_disk_over_chat_summary(tmp_path, monkeypatch):
+    """Run #8 regression: the runner's _run_revision_phase used to call
+    parse_review_output on `c.output` (the LLM's chat-side summary) and
+    only fell back to reading files on disk when ALL chat outputs were
+    empty. Under the CLI backend, `c.output` is the CLI's final assistant
+    message ("I've written the review."), which rarely contains the
+    OVERALL SCORE line even when the *file* on disk does. Result: 4/6
+    chat summaries parsed in run #8, the 2 with terse chat outputs were
+    dropped, panel verdict computed from partial data.
+
+    Fix: always read from disk first; fall back to chat summary only for
+    reviewers whose file is missing. This test pins that ordering by
+    setting up a disagreement — disk says 7/10, chat says 3/10 — and
+    asserting the disk score wins.
+    """
+    import asyncio
+    from unittest.mock import AsyncMock, MagicMock
+
+    from src.core.specialists.contracts import Contribution
+    from src.core.strategist.runner import PipelineRunner
+    from src.core.strategist.state import PaperStatus
+
+    paper_id = "11111111-2222-3333-4444-555555555555"
+    workspace = tmp_path / paper_id
+    workspace.mkdir(parents=True)
+
+    # Disk: mechanism_reviewer wrote a 7/10 review file.
+    (workspace / "review_mechanism.md").write_text(
+        "Comprehensive review body.\n\nOVERALL SCORE: 7/10\nRECOMMENDATION: Minor Revision\n"
+    )
+    # Chat-side summary from the same reviewer says 3/10 — disagreement.
+    chat_summary = "OVERALL SCORE: 3/10\nRECOMMENDATION: Reject"
+
+    runner = PipelineRunner(
+        paper_id=paper_id,
+        workspace=workspace,
+        backend=MagicMock(),
+        model="claude-test",
+        mode="single_pass",
+        backend_name="claude_code",
+        max_cost_usd=10.0,
+    )
+    runner._contributions = [
+        Contribution(
+            paper_id=paper_id,
+            specialist="mechanism_reviewer",
+            output=chat_summary,
+            output_file=str(workspace / "review_mechanism.md"),
+            usage_tokens=100,
+            cost_usd=0.0,
+            duration_seconds=1.0,
+            success=True,
+        )
+    ]
+
+    # Stub out the DB / event side-effects we don't care about.
+    monkeypatch.setattr("src.db.client.execute", AsyncMock())
+    monkeypatch.setattr("src.db.events.log_event", AsyncMock())
+    monkeypatch.setattr(runner, "_update_status", AsyncMock())
+
+    asyncio.run(runner._run_revision_phase(PaperStatus.REVIEW))
+    # Verdict was computed from the DISK score (7/10), not the chat (3/10).
+    aggregation_path = workspace / "review_aggregation.json"
+    assert aggregation_path.exists(), "aggregation should have been written"
+    import json
+
+    agg = json.loads(aggregation_path.read_text())
+    # 7/10 = MINOR_REVISION; 3/10 would have been HARD_REJECT (Rule 2).
+    assert agg["verdict"] in {"MINOR_REVISION", "MAJOR_REVISION"}, (
+        f"verdict must be from the disk score (7/10), not the chat summary (3/10). "
+        f"Got verdict={agg['verdict']}, breakdown={agg.get('rationale', '')}"
+    )
+    assert "mechanism_reviewer=7" in agg.get("rationale", ""), (
+        f"breakdown should reflect disk score 7.0, not chat score 3.0; got {agg.get('rationale')}"
+    )
+
+
 def test_aggregator_picks_up_six_real_reviewers_from_run_6():
     """End-to-end: simulate the six review files from May 2026 NFT-paper
     run #6 with their actual observed formats. The old parser caught 1/6;
