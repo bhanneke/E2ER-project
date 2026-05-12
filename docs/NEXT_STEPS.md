@@ -1,8 +1,8 @@
 # Next steps for E2ER v3
 
-End-of-session document — May 8, 2026. Captures (1) what's open, (2) the
-concrete design for the highest-priority piece (Allium guardrails under
-the CLI backend), and (3) lessons from this session.
+End-of-session document — May 12, 2026. Captures (1) where we are after
+extensive live validation, (2) the one remaining blocker (Allium endpoint
+URL), and (3) lessons from the multi-run session.
 
 ---
 
@@ -10,278 +10,285 @@ the CLI backend), and (3) lessons from this session.
 
 | Capability | Status |
 |------------|--------|
-| Mocked unit / regression / stress tests | ✓ 195 passing |
+| Mocked unit / regression / stress tests | ✓ **221 passing** |
 | CI on Python 3.11 + 3.12 (ruff, mypy, pytest) | ✓ green, branch-protected |
 | Three LLM backends: Anthropic, OpenRouter, **Claude Code CLI** | ✓ all wired through `LLMBackend` |
-| First-run cost guardrail ($1 cap on unproven tuples) | ✓ shipped |
+| First-run cost guardrail ($1 cap on unproven tuples) | ✓ shipped + `acknowledge` truly overrides cap |
 | Pipeline resilience (atomic state save, no-redo on resume) | ✓ shipped |
 | Theory specialist + per-paper methodology selector | ✓ shipped |
-| Security: 0 secrets in git, prompt sanitizer, API auth, scrubbed CORS | ✓ shipped |
-| Allium guardrails under SDK backends (anthropic/openrouter) | ✓ working |
-| **Allium guardrails under CLI backend** | ✗ **needs wrapper script (this doc)** |
-| First end-to-end live run with Sonnet | ✗ failed twice (now diagnosed) |
+| Security: 0 secrets in git, prompt sanitizer, API auth, scrubbed CORS, locked-down Bash | ✓ shipped |
+| **CLI backend end-to-end on theoretical methodology** | ✓ **VALIDATED $0 real cost (run #6 / #7 / #8)** |
+| **CLI backend end-to-end on empirical methodology** | ✓ pipeline ran; data layer blocked on URL config (see below) |
+| **Allium gatekeeper bash wrapper** | ✓ **VALIDATED end-to-end (run #11)** — 3 queries through, all 5 guardrails fired, all logged to `data_query_records` + `audit_log.csv` |
+| **Disk-first review aggregation (6 of 6 reviewers parsed)** | ✓ **VALIDATED** (run #11 aggregation has 6/6 in `Breakdown:`) |
+| **Allium discovery primitives** (list/describe/distinct-values) | ✓ shipped; needs working URL to validate end-to-end |
+| **Allium SQL endpoint URL** (which surface for this tier) | ✗ **UNRESOLVED** — see #1 below |
+| Real empirical paper with actual Allium data | ✗ blocked by the URL question |
 
-The pipeline currently has one open architectural gap: Allium data access
-under the new CLI backend. Everything else is shipped.
-
----
-
-## #1 priority: Allium guardrails for the CLI backend
-
-### Why this matters
-
-The CLI backend (`LLM_BACKEND=claude_code`) gives users a $0-per-token
-path under their Max plan — the actual answer to the May 8 token-burn.
-But it currently has no `query_allium` tool: the CLI runs its own internal
-tool loop, so the in-process `AlliumToolHandler` (which validates the 5
-guardrails) can't intercept anything.
-
-Until this is fixed, CLI users have to run with `DATA_MODULE_ENABLED=false`
-(literature-only / BYOD papers). That's a meaningful gap.
-
-### The design (your idea, written out)
-
-> "Agent creates SQL; submits this SQL to another agent which has rights
-> to only take that and put to Allium, and report results back."
-
-That's exactly the bash-wrapper pattern. Concrete shape:
-
-```
-specialist (Claude Code CLI)
-        │
-        │ Bash(e2er-allium-query <subcommand> ...)
-        ▼
-scripts/e2er-allium-query  (bash one-liner → python -m src.modules.data.cli)
-        │
-        │ runs the SAME 5 guardrails (validate_all)
-        │  • no SELECT *
-        │  • fields must be in data_dictionary.json
-        │  • time-bound WHERE required
-        │  • granularity justification (transaction-level)
-        │  • feasibility-first (production query needs prior approved feasibility)
-        ▼
-src.modules.data.allium.AlliumProvider  (existing client)
-        │
-        ▼
-   Allium API
-        │
-        ▼
-   results JSON → stdout → CLI subprocess sees them
-```
-
-The specialist *only* gets the bash wrapper allowlisted; raw Allium API
-access is denied. The wrapper is the gatekeeper.
-
-### Subcommands the wrapper exposes
-
-```bash
-# 1) Feasibility query (auto-approved sample, 1000-row LIMIT enforced)
-e2er-allium-query feasibility \
-  --paper-id <uuid> \
-  --sql "SELECT block_number, ts FROM ethereum.blocks WHERE ts >= '2024-01-01'" \
-  --fields block_number,ts \
-  --aggregation daily \
-  --rationale "verify data availability for the analysis window"
-
-# 2) Production query (requires prior feasibility, then human approval)
-e2er-allium-query production \
-  --paper-id <uuid> \
-  --sql "..." --fields ... --aggregation transaction \
-  --rationale "..."
-
-# 3) Poll for human approval status of a production query
-e2er-allium-query check-approval --query-id <uuid>
-
-# 4) List available tables (no guardrail — read-only schema info)
-e2er-allium-query list-tables
-
-# All return JSON to stdout. Errors go to stderr + non-zero exit code.
-```
-
-These mirror the four methods on `AlliumToolHandler` 1:1.
-
-### Implementation steps (estimated half-day)
-
-1. **`src/modules/data/cli.py`** (new, ~150 lines) — `python -m src.modules.data.cli` entry point.
-   - Uses `argparse` with subcommands matching the four methods above.
-   - Imports the existing `AlliumToolHandler` and calls its methods directly.
-   - Serialises results as JSON to stdout; errors as JSON to stderr.
-   - **Reuses** `validate_all`, `log_query`, `mark_approved`, `create_approval_request`, `get_approval_status_with_note`, `AlliumProvider` — no new logic, just a different entry point.
-
-2. **`scripts/e2er-allium-query`** (new, ~10 lines) — bash wrapper.
-   - Resolves the project's Python and runs `python -m src.modules.data.cli "$@"`.
-   - One-liner; handles `--help` by passing through.
-   - Marked executable (`chmod +x`).
-
-3. **`src/modules/llm/claude_code.py`** — extend `_DEFAULT_ALLOWED_TOOLS` to optionally include `Bash(e2er-allium-query:*)` when `DATA_MODULE_ENABLED=true`. The CLI invocation also needs to ensure the script is on `PATH` (or pass an absolute path).
-
-4. **Specialist prompt update** — `data_analyst` and `data_architect` need a sentence in their skill or system prompt: "To query Allium, invoke the bash command `e2er-allium-query <subcommand>`. You do not have any other Allium access." This ensures the model knows the tool exists and the path. Existing skill files in `skills/files/data/` are the right home.
-
-5. **Tests** (`tests/test_allium_cli.py`):
-   - Each subcommand with a passing query → JSON output with results.
-   - Each subcommand with a failing guardrail → non-zero exit + rejection JSON.
-   - Production query without prior feasibility → rejected (the 5th guardrail).
-   - All offline; mock `AlliumProvider.execute_raw` and the DB calls.
-
-6. **README** — update the LLM-providers table to drop the "DATA_MODULE_ENABLED=false" caveat for the CLI backend once this lands.
-
-### Why this works (and is faithful to v3's safety model)
-
-- **Same guardrails, same code path**: the wrapper imports `validate_all`
-  from `src/modules/data/guardrails.py`. The 5 rules are not duplicated.
-- **Same audit trail**: queries logged to the same `data_query_records`
-  table via `log_query`. The replication package's `audit_log.csv` still
-  captures everything.
-- **Same approval flow**: production queries still go through
-  `data_approval_requests` and the dashboard's pending-queries endpoint.
-  The only change is *who* invokes the validator: the in-process
-  `AlliumToolHandler` (SDK backends) vs the bash wrapper (CLI backend).
-- **No raw Allium access for the specialist**: `--allowedTools=Bash(e2er-allium-query:*)`
-  permits *only* this command; other bash invocations and direct HTTP are
-  blocked by Claude Code's tool restriction layer.
-
-### Risk to flag
-
-The bash subprocess vs. Python in-process split means the wrapper has to
-re-establish the DB connection on every call. For a paper with 20+
-queries, that's 20+ connection setups. Use `psycopg.AsyncConnectionPool`
-in `src/modules/data/cli.py` with persistent state? No — each `python -m`
-invocation is a fresh process. The simpler path: a single `psycopg.connect`
-per invocation. ~50ms overhead per query. Tolerable.
-
-If it's a problem later, the answer is an MCP server (a long-running
-process that the CLI talks to via stdio), but **start with the bash
-wrapper** — simpler, fewer moving parts, ~half a day to ship.
+The pipeline orchestrates correctly end-to-end. Theoretical papers
+complete at $0 with all artifacts. Empirical papers complete at $0 with
+all artifacts EXCEPT real data rows — the data integrity guardrail
+correctly refuses to fabricate numbers when the Allium endpoint returns
+0 rows, and the technical_reviewer correctly flags the resulting thin
+empirics with a HARD_REJECT verdict.
 
 ---
 
-## #2 priority: validate that *anything* end-to-end works
+## #1 priority: confirm the right Allium SQL endpoint URL
 
-The May 8 run failed twice (different bugs each time). Even after fixing
-`max_tokens_per_call`, we never confirmed an end-to-end paper completes.
-The fastest way to validate, *now that the CLI backend exists*:
+### The state
+
+`ALLIUM_API_BASE` is set in `.env` to `https://api.allium.so/api/v1` and
+`AlliumProvider.execute_raw` POSTs to `{base}/explorer/query/run`.
+
+Run #11 evidence:
+- That URL returns **HTTP 404 Not Found** for any SQL.
+- v1/v2 used `https://mcp.allium.so/api/v1/queries`. Probing that today
+  also 404s.
+- `mcp.allium.so/` root replies with a JSON-RPC error requiring
+  `text/event-stream` (MCP-over-SSE protocol, not REST).
+
+Allium has multiple API surfaces (Data Service, Explorer, MCP) and
+different tiers expose different endpoints. Three sources of ground truth
+the next session should consult:
+
+1. **The Allium dashboard's API docs page** (logged in with your
+   account). It will show the *exact* curl command for your tier.
+2. **Allium support / chat** — fastest path to "which URL for SQL
+   under <plan_name>".
+3. **The `Allium-MCP` GitHub repo** if Allium has one — would document
+   the SSE-MCP path.
+
+Once you have the right base URL:
 
 ```bash
 # In .env:
-LLM_BACKEND=claude_code
-DATA_MODULE_ENABLED=false   # until the Allium wrapper above ships
-
-# Then submit:
-curl -X POST http://localhost:8280/api/papers \
-  -H "Content-Type: application/json" \
-  -d '{
-    "title": "...",
-    "research_question": "...",
-    "mode": "single_pass",
-    "methodology": "theoretical",
-    "max_cost_usd": 0.50
-  }'
+ALLIUM_API_BASE=https://<the-actual-host>/<the-actual-path>
 ```
 
-Cost: $0 under your Max plan. If this completes end-to-end, the pipeline
-is genuinely working — and we have a "proven tuple" so the first-run
-guardrail unlocks higher caps for subsequent runs.
+Restart the app. Then verify with the discovery primitives:
 
-If it fails, the failure mode is now diagnostic rather than expensive:
-the CLI's `last_error` will tell us what broke without spending tokens.
+```bash
+# Should return >0 tables now
+e2er-allium-query list-tables
+
+# Should return real columns + types
+e2er-allium-query describe-table --schema ethereum --table nft_trades
+
+# Should return actual marketplace literals + counts
+e2er-allium-query distinct-values --schema ethereum --table nft_trades --column marketplace
+```
+
+If `distinct-values` shows `'OpenSea'` (or whatever Allium actually
+stores), submit the empirical paper again and the pipeline should
+produce a complete empirical run with real data.
+
+### Why this is "user task" not "code task"
+
+The discovery code is portable — it issues standard SQL against whatever
+URL is configured. No code change makes the wrong URL into the right
+URL. The Allium subscription determines which surface is accessible,
+and that's not derivable from inside the repo.
 
 ---
 
-## #3-#N: lower-priority opens
+## #2 priority: features from `docs/PORTING_PLAN.md`
 
-- **`mixed` and `empirical` starter templates** — we have
-  `examples/starter_theoretical/`; the other two methodologies should have
-  parallel templates so users can copy/run.
-- **Cassette-based tests** — record one successful CLI run's output, replay
-  it as a test fixture. This catches regressions of *known-working*
-  behaviour at $0. Lower priority than Allium-CLI; the CLI backend already
-  makes live tests cheap.
-- **PyPI release** — deferred at user's request. Repo remains
+Five items inspired by Imbad0202/academic-research-skills, all still
+unstarted. In execution order:
+
+1. **Compliance front-matter** (~2 hrs) — CRediT, AI-disclosure, ethics
+   declaration in the generated LaTeX. Pulls from existing
+   `contributions` + `data_query_records` tables.
+2. **Devil's-Advocate concession threshold** (~3 hrs) — score the
+   revisor's response to each self-attack finding; block status
+   advance below threshold. Pattern from Imbad0202's stage 4.5.
+3. **Reference integrity gate** (~1 day) — independent OpenAlex/S2
+   verification of every citation in `references.bib`; hard-blocks
+   finalization on failure. Their public 31%-reference-error
+   post-mortem is the precedent.
+4. **Mid-pipeline entry modes** (~1 day) — `revision-coach`,
+   `citation-check`, `outline-only`, `disclosure-only`. 5× addressable
+   use case for ~1 day's work.
+5. **Showcase artifacts** under `examples/showcase/` (~0.5 day + 1
+   run) — fully generated papers with reviews, integrity reports,
+   replication packages. Now possible at $0 on Max plan.
+
+All five are developable at $0 under the CLI backend. The original
+porting plan with full design sketches is at `docs/PORTING_PLAN.md`.
+
+---
+
+## #3 — lower-priority opens
+
+- **The actual Allium endpoint** (#1 above) — depends on subscription
+  details.
+- **Empirical-with-Allium starter template** in `examples/` — has been
+  blocked by the URL issue but is otherwise just a template + README.
+- **`mixed` methodology starter** — we have `examples/starter_theoretical/`;
+  parallel templates for `empirical` + `mixed` would round out coverage.
+- **Cassette-based tests** — record one successful CLI run's output,
+  replay as a regression fixture. Catches regressions of *known-working*
+  behaviour at $0. Lower priority now that the CLI backend itself is
+  $0 to test against.
+- **PyPI release** — deferred at user request. Repo remains
   pip-installable from git.
-- **`mypy --strict` ratchet** — current config catches real bugs but not
-  annotation completeness. Could tighten file-by-file via per-module
-  overrides.
-- **Per-specialist `_MAX_TURNS`** — currently one global value.
-  `data_architect` and `econometrics_specialist` plausibly need more turns
-  than `abstract_writer`. Low priority once cost is $0.
+- **`mypy --strict` ratchet** — current config catches real bugs but
+  not annotation completeness.
 - **GitHub Actions Node 20 → 24** — non-blocking deprecation warning.
   Auto-migrates June 2026.
 
 ---
 
-## Lessons from this session
+## Lessons from the May 12 session
 
-Honest record so the next session doesn't repeat the same loop.
+Eight live runs, six concrete bugs, all caught and fixed at $0 actual
+cost (Max plan + CLI backend). Each is a separate-cause class:
 
-### 1. Mocked tests don't predict live-run failures
+### 1. CLI tool names differ from SDK tool names
 
-The May 8 NFT-marketplace run lost $8 to a bug (`max_tokens_per_call=16384`)
-that existed in the codebase from day one. The unit-test suite never
-caught it because `MockLLMBackend` returns short canned outputs — the
-failure mode (a specialist writing a 30 KB JSON tool argument) literally
-cannot occur with mocked LLMs.
+The system prompt referenced `write_file` / `read_file`; Claude Code CLI
+exposes `Write` / `Read` / `Edit` / `Glob`. The model in CLI mode read
+"use `write_file`" → found no such tool → produced text without writing
+a file. **Fix:** `_translate_tool_names_for_cli` rewrites prompts when
+the backend is `claude_code`. Belt-and-braces: instruction at *both* the
+skill level AND the work-order level.
 
-**Implication**: tests are necessary but not sufficient. Live validation
-is the only way to find the unknowns. The proper response is to make live
-validation *cheap* (the CLI backend), not to add more mocked tests.
+### 2. CLI subprocess CWD must be the paper's workspace
 
-### 2. Read the error messages
+The CLI's `Write` tool resolves relative paths against cwd. Default cwd
+was the project root, so `Write("paper_plan.md")` landed in the repo
+root instead of the paper's workspace. **Fix:**
+`ClaudeCodeBackend._invoke_cli` now passes `cwd={workspace_root}/{paper_id}`
+per invocation. `_find_output_file` has a recursive recovery path that
+moves nested artifacts (`workspace/<specialist>/<file>`) to canonical
+location with a warning.
 
-The first run's log clearly said `"max_tokens=16384 too low — model output
-truncated. Increase max_tokens_per_call in settings."` The second run was
-launched without addressing that line. Three rounds of "fix and retry"
-followed — chasing `max_turns`, cascade detection, UUID validation — all
-real but none the actual root cause. **The error message named the fix.**
+### 3. CLI summary JSON has no `messages` array
 
-### 3. Compare to the working version
+Claude Code 2.x `--output-format json` returns top-level metadata
+(`num_turns`, `usage`, `result`) but **no per-message content list**.
+Our parser counted tool_use blocks in a nonexistent field, so
+`tools_called=0` always. **Fix:** approximate via `num_turns - 1`. The
+metric is informational; the cascade detection uses file-existence, not
+tool count.
 
-v1 and v2 ran papers at $0/token via Claude Code CLI. v3 made an
-architectural change (own the tool loop) without inheriting the
-production-tested settings — `max_tokens_per_call` was a brand-new value
-chosen for chat completions, not for tool-arg-as-file-write workloads.
+### 4. The skills loader has its own `_SPECIALIST_SKILLS` dict
 
-**Implication**: when v3 adds a layer that v1/v2 didn't have, that layer
-needs its own first-principles pressure test. Don't assume defaults
-imported from a different paradigm transfer cleanly.
+Two dicts named the same thing exist: one in
+`src/skills/loader.py` (what actually loads), one in
+`src/core/specialists/registry.py` (what I'd been editing for weeks).
+The loader dict didn't include the `allium-cli` skill I'd added to
+registry. **Fix:** added `allium-cli` to the loader's data_analyst +
+data_architect entries. **TODO** (low priority): unify the two dicts.
 
-### 4. Tests don't change the cost equation; the architecture does
+### 5. Bare `Bash` in the allowlist defeated the gatekeeper
 
-We could write a thousand stress tests and the next live run on a new
-combination would still spend tokens. The actual fix is structural:
-- **First-run guardrail**: caps damage at $1 (shipped)
-- **CLI backend**: zero-cost path under Max plan (shipped)
-- **Cassette replay**: $0 regression coverage of known-working behaviour
-  (deferred)
+`_DEFAULT_ALLOWED_TOOLS` had both `Bash` (unrestricted) and
+`Bash(e2er-allium-query:*)` (pattern). The bare `Bash` made the
+pattern restriction meaningless — model could run any shell command.
+**Fix:** dropped bare `Bash`; only the gatekeeper pattern remains.
+Regression test pins the no-bare-Bash invariant.
 
-These are real defenses. Tests are documentation of what we know.
+### 6. The bash wrapper needed Python interpreter discovery
+
+`scripts/e2er-allium-query` used `exec python -m src.modules.data.cli`,
+but `python` wasn't on the Claude Code subprocess's PATH. Falling back
+to `python3` resolved to the system 3.9 which crashed on PEP 604 union
+types at import. **Fix:** the runner injects `E2ER_PYTHON=sys.executable`
+into the subprocess env; the wrapper prefers that, then probes
+`python3.12 → python3.11 → python3 → python` in order.
+
+### 7. Review aggregator parsed chat summary, not file on disk
+
+Under the CLI backend, `c.output` is the CLI's final assistant message
+("I've written the review") — *not* the file content. Some reviewers
+echoed the score; some didn't. Aggregation was non-deterministic across
+runs. **Fix:** `_run_revision_phase` now reads each reviewer's file from
+disk and parses that. Chat summary is a fallback only when the file is
+missing entirely. Regression test sets up a disk-vs-chat disagreement
+and asserts disk wins.
+
+### 8. First-run cap acknowledgement only bypassed the rejection
+
+`acknowledge_unproven_tuple=true` let the request through (no 400) but
+the cap was still clamped to `$1` via
+`min(requested_cap, _UNPROVEN_TUPLE_CAP)`. Caused `BudgetExceededError`
+mid-pipeline when the user explicitly requested `$25`. **Fix:** ack now
+actually raises the cap to the requested value. Regression test pins
+that the persisted cap matches the request.
 
 ---
 
 ## Quick start for the next session
 
 ```bash
-# 1. Pick up from main
+# 0. Pick up from main
 git pull origin main
+make lint && make typecheck && make smoke   # all should pass (221 tests)
 
-# 2. Verify nothing has broken
-make lint && make typecheck && make smoke      # all should pass
+# 1. Figure out the right Allium URL (#1 above).
+#    Check your Allium dashboard or contact support.
+#    Then update .env: ALLIUM_API_BASE=<correct-url>
 
-# 3. Start with Allium-via-CLI (priority #1)
-#    - Read this file's "implementation steps"
-#    - Build src/modules/data/cli.py
-#    - Build scripts/e2er-allium-query
-#    - Tests in tests/test_allium_cli.py
-#    - Update prompts in skills/files/data/
+# 2. Restart the app + verify discovery works
+lsof -i :8280 | grep LISTEN | awk '{print $2}' | xargs -r kill -9
+/tmp/e2er_venv2/bin/python -m uvicorn src.api.app:app --host 127.0.0.1 --port 8280 &
+e2er-allium-query list-tables                          # should return >0 tables
+e2er-allium-query describe-table --schema ethereum --table nft_trades
 
-# 4. Validate the CLI backend end-to-end
-#    - Set LLM_BACKEND=claude_code, DATA_MODULE_ENABLED=false in .env
-#    - Submit one theoretical paper at $0.50 cap
-#    - If it completes: declare CLI backend production-ready
-#    - If it fails: read the log, fix, retry (cost: $0)
+# 3. Submit an empirical paper end-to-end
+curl -X POST http://localhost:8280/api/papers -d '{
+  "title": "...",
+  "research_question": "...",
+  "mode": "single_pass",
+  "methodology": "empirical",
+  "max_cost_usd": 25.0,
+  "acknowledge_unproven_tuple": true
+}'
 
-# 5. Then validate Allium-via-CLI
-#    - Set DATA_MODULE_ENABLED=true
-#    - Submit one empirical paper at $0.50 cap
-#    - Verify Allium queries route through e2er-allium-query
-#    - Verify guardrails trigger on bad queries
+# 4. If the run succeeds with REAL data rows, ship it as a showcase
+#    paper in examples/showcase/ (item #2.5 of the porting plan).
+
+# 5. Then pick from the porting plan in execution order:
+#    compliance → concession-threshold → integrity-gate → entry-modes
+#    All five developable at $0 under the CLI backend.
 ```
+
+## Today's commit chain
+
+```
+9c40b88  Allium discovery: describe-table, distinct-values, INFORMATION_SCHEMA list-tables
+7093a38  Allium gatekeeper actually works under CLI backend end-to-end
+a74e959  Review aggregation: read scores from disk, not from CLI chat summary
+51d30a1  Reviewer prompts: enforce parser closing-format at dispatch, not just skill
+a1fa5b1  Review aggregator parser: handle the 4 reviewer-output formats Sonnet emits
+```
+
+Test count: 192 → **221** across the session. CI green throughout.
+
+---
+
+## Architecture invariants to preserve
+
+A few things that should NOT be casually changed because their absence
+would re-introduce bugs we shipped fixes for today:
+
+1. **Bare `Bash` must not be in `_DEFAULT_ALLOWED_TOOLS`** — pinned by
+   `test_allowed_tools_do_not_include_bare_bash`. Adding it back opens
+   the arbitrary-command surface.
+2. **Reviewer work-order prompts must contain the `OVERALL SCORE:`
+   closing-format mandate** — pinned by
+   `test_reviewer_user_prompt_contains_mandatory_closing_format`.
+3. **`_run_revision_phase` must read review files from disk first** —
+   pinned by `test_runner_aggregation_prefers_disk_over_chat_summary`.
+   Reverting to chat-summary-first re-introduces the partial-aggregation
+   bug.
+4. **`max_tokens_per_call` must be >=32K** — pinned by
+   `test_max_tokens_per_call_default_is_at_least_32k`. The original
+   $25-burning bug.
+5. **The two skills dicts** (loader.py, registry.py) **must stay in
+   sync** until they're unified. No regression test for this yet;
+   manual diligence required. TODO: write a test that asserts
+   `loader._SPECIALIST_SKILLS.keys() == registry.SPECIALIST_SKILLS.keys()`
+   and bail if a skill name appears in one but not the other.
