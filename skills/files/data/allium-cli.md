@@ -7,7 +7,73 @@ which validates your query against the same 5 guardrails as the JSON-tool
 `query_allium` (used in API-backend mode), then forwards approved queries
 to Allium and reports results back.
 
-## The four subcommands
+## Critical: discover before you filter
+
+Allium stores enum-like columns (marketplace, currency, chain) with
+**specific literal casings and values that you cannot guess**. The
+marketplace column may store `'OpenSea'`, `'opensea'`, a smart-contract
+address, or a numeric code — the answer depends on the table. **Always
+discover, then filter.** Otherwise your `WHERE marketplace IN ('opensea')`
+returns zero rows and the whole empirical section dies on no data.
+
+Workflow:
+
+```bash
+# 1. Discover available schemas / tables
+e2er-allium-query list-tables
+
+# 2. Discover columns + types of a target table
+e2er-allium-query describe-table --schema ethereum --table nft_trades
+
+# 3. Discover actual values for any grouping column you intend to filter on
+e2er-allium-query distinct-values --schema ethereum --table nft_trades --column marketplace --limit 50
+# → returns the top-50 actual literals + their row counts
+```
+
+Only AFTER discovery, compose your feasibility / production queries using
+the literals Allium reported back. If the values surprise you (numeric
+codes? full contract addresses?), update `data_dictionary.json` to reflect
+what's actually there.
+
+## GROUP BY before WHERE IN
+
+When you want to study cross-platform variation but don't yet know the
+literals, **prefer `GROUP BY` to `WHERE IN (...)`**:
+
+```sql
+-- ✗ Fragile: if Allium stores 'OpenSea' not 'opensea', returns 0 rows
+SELECT date, marketplace, SUM(price_native)
+FROM ethereum.nft_trades
+WHERE marketplace IN ('opensea', 'blur', 'x2y2')
+  AND block_timestamp >= '2024-01-01'
+GROUP BY 1, 2;
+
+-- ✓ Robust: works whatever Allium uses; you see all venues, filter in pandas
+SELECT date, marketplace, SUM(price_native) AS volume
+FROM ethereum.nft_trades
+WHERE block_timestamp >= '2024-01-01'
+GROUP BY 1, 2
+HAVING SUM(price_native) > 0;
+```
+
+GROUP BY buckets whatever literals exist; downstream analysis can filter
+case-insensitively or by row count. WHERE IN locks you into your guess.
+
+## The six subcommands
+
+Two are discovery (read-only, no guardrail):
+- `list-tables` — INFORMATION_SCHEMA.TABLES
+- `describe-table` — INFORMATION_SCHEMA.COLUMNS for one table
+- `distinct-values` — top values + counts of a column
+
+Four are guarded queries (5 guardrails apply):
+- `feasibility` — 1000-row sample, auto-approved
+- `production` — full query, human approval required
+- `check-approval` — poll a production query's status
+
+Discovery first, feasibility second, production last.
+
+## Discovery subcommands
 
 You **do NOT need to pass `--paper-id`** — the runner has already wired it
 into the environment. Just call the wrapper with the query-specific args:

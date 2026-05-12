@@ -42,26 +42,114 @@ class AlliumProvider:
             "Content-Type": "application/json",
         }
 
-    async def list_tables(self) -> list[TableInfo]:
-        """List available Allium tables."""
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            try:
-                resp = await client.get(f"{self._base}/schemas", headers=self._headers)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    tables = []
-                    for item in data.get("schemas", []):
-                        tables.append(
-                            TableInfo(
-                                schema=item.get("schema", ""),
-                                table=item.get("table", ""),
-                                description=item.get("description", ""),
-                            )
-                        )
-                    return tables
-            except Exception as e:
-                logger.warning("list_tables failed: %s", e)
-        return []
+    async def list_tables(self, limit: int = 200) -> list[TableInfo]:
+        """List available Allium tables via INFORMATION_SCHEMA.
+
+        Uses standard SQL discovery rather than a vendor-specific REST
+        endpoint. Works against any SQL backend that exposes
+        INFORMATION_SCHEMA (DuckDB, Trino, Snowflake, etc., which is
+        what Allium runs underneath). Falls back to an empty list if the
+        endpoint or schema isn't accessible.
+        """
+        sql = (
+            "SELECT table_schema, table_name "
+            "FROM information_schema.tables "
+            f"ORDER BY table_schema, table_name LIMIT {limit}"
+        )
+        try:
+            raw = await self.execute_raw(sql)
+        except Exception as e:
+            logger.warning("list_tables (information_schema) failed: %s", e)
+            return []
+        if raw.get("error"):
+            logger.warning("list_tables returned error: %s", raw["error"][:200])
+            return []
+        rows = raw.get("rows", [])
+        columns = raw.get("columns", [])
+        tables: list[TableInfo] = []
+        for row in rows:
+            if isinstance(row, dict):
+                tables.append(
+                    TableInfo(
+                        schema=row.get("table_schema", "") or row.get("TABLE_SCHEMA", ""),
+                        table=row.get("table_name", "") or row.get("TABLE_NAME", ""),
+                    )
+                )
+            elif isinstance(row, list) and columns and len(row) >= 2:
+                tables.append(TableInfo(schema=str(row[0]), table=str(row[1])))
+        return tables
+
+    async def describe_table(self, schema: str, table: str) -> list[dict[str, str]]:
+        """Return columns + types for a table via INFORMATION_SCHEMA.COLUMNS.
+
+        Call this BEFORE composing real queries so the model knows the
+        exact column names and types — eliminates the
+        ``WHERE marketplace IN ('opensea')`` failure mode where the
+        literal doesn't match Allium's actual storage.
+        """
+        sql = (
+            "SELECT column_name, data_type "
+            "FROM information_schema.columns "
+            f"WHERE table_schema = '{schema}' AND table_name = '{table}' "
+            "ORDER BY ordinal_position"
+        )
+        try:
+            raw = await self.execute_raw(sql)
+        except Exception as e:
+            logger.warning("describe_table failed for %s.%s: %s", schema, table, e)
+            return []
+        if raw.get("error"):
+            return []
+        rows = raw.get("rows", [])
+        cols = raw.get("columns", [])
+        out: list[dict[str, str]] = []
+        for r in rows:
+            if isinstance(r, dict):
+                out.append({"name": r.get("column_name", ""), "type": r.get("data_type", "")})
+            elif isinstance(r, list) and cols and len(r) >= 2:
+                out.append({"name": str(r[0]), "type": str(r[1])})
+        return out
+
+    async def distinct_values(
+        self,
+        schema: str,
+        table: str,
+        column: str,
+        limit: int = 100,
+    ) -> list[Any]:
+        """Return distinct values of a column with their counts.
+
+        Use this for grouping columns (platform, marketplace, currency, …)
+        BEFORE filtering with ``WHERE col IN (…)``. Instead of guessing
+        whether Allium stores 'OpenSea' / 'opensea' / a contract address,
+        ask Allium what's actually there. Capped at ``limit`` so a
+        high-cardinality column doesn't blow up.
+        """
+        # Identifier interpolation is risky in general, but schema/table/
+        # column here all come from describe_table → INFORMATION_SCHEMA, so
+        # they're either real names or absent. We still strip quotes
+        # defensively to avoid trivial injection if a caller passes
+        # user-supplied input directly.
+        s = schema.replace('"', "").replace("'", "")
+        t = table.replace('"', "").replace("'", "")
+        c = column.replace('"', "").replace("'", "")
+        sql = f"SELECT {c} AS value, COUNT(*) AS n FROM {s}.{t} GROUP BY {c} ORDER BY n DESC LIMIT {limit}"
+        try:
+            raw = await self.execute_raw(sql)
+        except Exception as e:
+            logger.warning("distinct_values failed for %s.%s.%s: %s", schema, table, column, e)
+            return []
+        if raw.get("error"):
+            return []
+        rows = raw.get("rows", [])
+        cols = raw.get("columns", [])
+        out: list[dict[str, Any]] = []
+        for r in rows:
+            if isinstance(r, dict):
+                out.append({"value": r.get("value"), "n": r.get("n", 0)})
+            elif isinstance(r, list) and cols and len(r) >= 2:
+                out.append({"value": r[0], "n": r[1]})
+        return out
 
     async def execute_raw(self, sql: str) -> dict[str, Any]:
         """Execute SQL and return raw response dict."""

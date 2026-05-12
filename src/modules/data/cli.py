@@ -122,6 +122,64 @@ async def _run_list_tables(args: argparse.Namespace) -> str:
     return await handler.handle("list_allium_tables", {})
 
 
+async def _run_describe_table(args: argparse.Namespace) -> str:
+    """Discovery primitive: list columns + types for a table.
+
+    Goes directly through AlliumProvider rather than the tool handler —
+    no guardrail validation needed (read-only INFORMATION_SCHEMA query).
+    """
+    import json as _json
+
+    from ...config import get_settings
+    from .allium import AlliumProvider
+
+    settings = get_settings()
+    if not settings.allium_api_key:
+        return "Allium not configured. Set ALLIUM_API_KEY in .env."
+    provider = AlliumProvider(settings.allium_api_key, settings.allium_api_base)
+    cols = await provider.describe_table(args.schema, args.table)
+    if not cols:
+        return (
+            f"No columns found for {args.schema}.{args.table}. Either the table "
+            f"doesn't exist, or it's outside your Allium plan tier, or "
+            f"INFORMATION_SCHEMA access is restricted. Try `list-tables` to see "
+            f"what's available."
+        )
+    return _json.dumps({"schema": args.schema, "table": args.table, "columns": cols}, indent=2, default=str)
+
+
+async def _run_distinct_values(args: argparse.Namespace) -> str:
+    """Discovery primitive: show actual literal values + frequency for a column.
+
+    Use this BEFORE composing `WHERE col IN (...)` filters — Allium may
+    store marketplace names as 'OpenSea', 'opensea', or contract
+    addresses; this returns the real values so the model uses what's
+    there, not what it guessed.
+    """
+    import json as _json
+
+    from ...config import get_settings
+    from .allium import AlliumProvider
+
+    settings = get_settings()
+    if not settings.allium_api_key:
+        return "Allium not configured. Set ALLIUM_API_KEY in .env."
+    provider = AlliumProvider(settings.allium_api_key, settings.allium_api_base)
+    values = await provider.distinct_values(args.schema, args.table, args.column, limit=args.limit)
+    if not values:
+        return (
+            f"No distinct values returned for {args.schema}.{args.table}.{args.column}. "
+            f"Either the column is empty, doesn't exist, or the discovery query "
+            f"was rejected. Try `describe-table --schema {args.schema} --table "
+            f"{args.table}` to confirm the column name."
+        )
+    return _json.dumps(
+        {"schema": args.schema, "table": args.table, "column": args.column, "values": values},
+        indent=2,
+        default=str,
+    )
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="e2er-allium-query",
@@ -180,6 +238,24 @@ def _build_parser() -> argparse.ArgumentParser:
     # --- list-tables
     sub.add_parser("list-tables", help="List Allium dataset schemas and tables.")
 
+    # --- describe-table (discovery)
+    p = sub.add_parser(
+        "describe-table",
+        help="List columns + types for a table (no guardrail needed; read-only).",
+    )
+    p.add_argument("--schema", required=True, help="e.g. ethereum, polygon, base")
+    p.add_argument("--table", required=True, help="e.g. nft_trades, transactions")
+
+    # --- distinct-values (discovery)
+    p = sub.add_parser(
+        "distinct-values",
+        help="Show actual values + frequency for a column. Use this BEFORE WHERE col IN (...).",
+    )
+    p.add_argument("--schema", required=True)
+    p.add_argument("--table", required=True)
+    p.add_argument("--column", required=True, help="e.g. marketplace, currency_symbol, chain")
+    p.add_argument("--limit", type=int, default=100, help="Max distinct values returned (default 100).")
+
     return parser
 
 
@@ -187,6 +263,8 @@ _DISPATCH = {
     "feasibility": _run_feasibility,
     "production": _run_production,
     "check-approval": _run_check_approval,
+    "describe-table": _run_describe_table,
+    "distinct-values": _run_distinct_values,
     "list-tables": _run_list_tables,
 }
 

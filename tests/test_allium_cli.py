@@ -376,3 +376,157 @@ def test_cli_handles_missing_allium_key(workspace, capsys, monkeypatch):
     assert "not configured" in out.lower() or "allium_api_key" in out.lower(), (
         f"missing-key path must surface a clear message; got: {out!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Discovery primitives — read-only INFORMATION_SCHEMA queries, no guardrail.
+# These let the model learn schemas and value literals BEFORE composing
+# real queries, eliminating the `WHERE marketplace IN ('opensea')` failure
+# mode where Allium actually stores 'OpenSea' or a contract address.
+# ---------------------------------------------------------------------------
+
+
+def test_describe_table_returns_columns(workspace, capsys, monkeypatch):
+    """describe-table returns column names + types from the Allium provider."""
+    paper_id, _ = workspace
+    monkeypatch.setenv("ALLIUM_API_KEY", "test-key")
+    from src.config import get_settings
+
+    get_settings.cache_clear()
+    from src.modules.data import cli
+
+    async def fake_describe(self, schema, table):
+        assert schema == "ethereum"
+        assert table == "nft_trades"
+        return [
+            {"name": "block_timestamp", "type": "timestamp"},
+            {"name": "marketplace", "type": "varchar"},
+            {"name": "price_native", "type": "double"},
+        ]
+
+    with patch("src.modules.data.allium.AlliumProvider.describe_table", new=fake_describe):
+        rc = cli.main(
+            [
+                "--paper-id",
+                paper_id,
+                "describe-table",
+                "--schema",
+                "ethereum",
+                "--table",
+                "nft_trades",
+            ]
+        )
+
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "block_timestamp" in out
+    assert "marketplace" in out
+    assert "varchar" in out
+
+
+def test_distinct_values_returns_actual_literals(workspace, capsys, monkeypatch):
+    """distinct-values returns what Allium actually stores + counts.
+
+    Pinpoints the user's intent: instead of guessing 'opensea' vs
+    'OpenSea', ask Allium and use whatever it returns.
+    """
+    paper_id, _ = workspace
+    monkeypatch.setenv("ALLIUM_API_KEY", "test-key")
+    from src.config import get_settings
+
+    get_settings.cache_clear()
+    from src.modules.data import cli
+
+    async def fake_distinct(self, schema, table, column, limit=100):
+        assert column == "marketplace"
+        return [
+            {"value": "OpenSea", "n": 1234567},
+            {"value": "Blur", "n": 987654},
+            {"value": "X2Y2", "n": 12345},
+        ]
+
+    with patch("src.modules.data.allium.AlliumProvider.distinct_values", new=fake_distinct):
+        rc = cli.main(
+            [
+                "--paper-id",
+                paper_id,
+                "distinct-values",
+                "--schema",
+                "ethereum",
+                "--table",
+                "nft_trades",
+                "--column",
+                "marketplace",
+            ]
+        )
+
+    out = capsys.readouterr().out
+    assert rc == 0
+    # Real casing (capital O) must reach the model — that's the whole point.
+    assert "OpenSea" in out, f"distinct-values must return the actual literal; got {out!r}"
+    assert "1234567" in out  # the count
+
+
+def test_distinct_values_empty_returns_diagnostic_message(workspace, capsys, monkeypatch):
+    """When the column is empty / unknown, return guidance, not silence."""
+    paper_id, _ = workspace
+    monkeypatch.setenv("ALLIUM_API_KEY", "test-key")
+    from src.config import get_settings
+
+    get_settings.cache_clear()
+    from src.modules.data import cli
+
+    async def fake_distinct(self, schema, table, column, limit=100):
+        return []
+
+    with patch("src.modules.data.allium.AlliumProvider.distinct_values", new=fake_distinct):
+        rc = cli.main(
+            [
+                "--paper-id",
+                paper_id,
+                "distinct-values",
+                "--schema",
+                "ethereum",
+                "--table",
+                "nft_trades",
+                "--column",
+                "nonexistent_col",
+            ]
+        )
+
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "describe-table" in out, f"empty-result diagnostic must point the model at describe-table; got {out!r}"
+
+
+def test_list_tables_uses_information_schema(workspace, capsys, monkeypatch):
+    """list-tables now queries INFORMATION_SCHEMA via execute_raw, not the
+    broken `/schemas` GET endpoint. Pin the source-of-truth."""
+    paper_id, _ = workspace
+    monkeypatch.setenv("ALLIUM_API_KEY", "test-key")
+    from src.config import get_settings
+
+    get_settings.cache_clear()
+    from src.modules.data import cli
+
+    captured_sql = []
+
+    async def fake_execute_raw(self, sql):
+        captured_sql.append(sql)
+        return {
+            "columns": ["table_schema", "table_name"],
+            "rows": [
+                {"table_schema": "ethereum", "table_name": "nft_trades"},
+                {"table_schema": "polygon", "table_name": "transactions"},
+            ],
+        }
+
+    with patch("src.modules.data.allium.AlliumProvider.execute_raw", new=fake_execute_raw):
+        rc = cli.main(["--paper-id", paper_id, "list-tables"])
+
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "ethereum" in out and "nft_trades" in out, f"list-tables must surface results; got {out!r}"
+    assert any("information_schema" in sql.lower() for sql in captured_sql), (
+        f"list-tables must use INFORMATION_SCHEMA, not a vendor REST endpoint. SQL: {captured_sql}"
+    )
