@@ -42,4 +42,27 @@ if [[ -n "${E2ER_SPECIALIST:-}" ]] && [[ "$*" != *"--specialist"* ]]; then
     extra_args+=("--specialist" "$E2ER_SPECIALIST")
 fi
 
-exec python -m src.modules.data.cli "${extra_args[@]}" "$@"
+# Find a Python 3.11+ interpreter. The runner injects E2ER_PYTHON pointing
+# at its own sys.executable so the subprocess uses the same interpreter
+# that loaded the project (correct venv, correct Python version). Falls
+# back to common executable names so manual invocations from a shell also
+# work.
+if [[ -n "${E2ER_PYTHON:-}" ]] && [[ -x "$E2ER_PYTHON" ]]; then
+    PY="$E2ER_PYTHON"
+elif command -v python3.12 >/dev/null 2>&1; then
+    PY="$(command -v python3.12)"
+elif command -v python3.11 >/dev/null 2>&1; then
+    PY="$(command -v python3.11)"
+elif command -v python3 >/dev/null 2>&1; then
+    PY="$(command -v python3)"
+elif command -v python >/dev/null 2>&1; then
+    PY="$(command -v python)"
+else
+    echo "e2er-allium-query: cannot find a Python interpreter. The project requires Python 3.11+." >&2
+    echo "  Either install python3.12/python3.11 system-wide, or set E2ER_PYTHON to the project venv's python." >&2
+    exit 4
+fi
+
+# `${extra_args[@]+"${extra_args[@]}"}` is the unbound-safe expansion for
+# an empty array under `set -u` (bash treats empty arrays as unset).
+exec "$PY" -m src.modules.data.cli ${extra_args[@]+"${extra_args[@]}"} "$@"

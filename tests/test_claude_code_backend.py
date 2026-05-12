@@ -46,6 +46,27 @@ def test_registry_returns_claude_code_when_configured(monkeypatch, tmp_path):
     assert isinstance(backend, ClaudeCodeBackend)
 
 
+def test_allowed_tools_do_not_include_bare_bash():
+    """Security invariant: the CLI backend must NOT grant the unrestricted
+    `Bash` tool. Only the gatekeeper pattern `Bash(e2er-allium-query:*)` is
+    permitted. Bare `Bash` would let the model run curl, ssh, sudo, etc. —
+    defeating the Allium guardrails and the broader security model.
+
+    Regression for the May 2026 NFT-paper run #10 review."""
+    from src.modules.llm.claude_code import _DEFAULT_ALLOWED_TOOLS
+
+    assert "Bash" not in _DEFAULT_ALLOWED_TOOLS, (
+        "Bare `Bash` allows unrestricted shell execution; this re-opens the "
+        "arbitrary-command surface that the wrapper pattern was added to close. "
+        f"Allowed tools: {_DEFAULT_ALLOWED_TOOLS}"
+    )
+    # The Allium gatekeeper pattern must still be present.
+    assert any("e2er-allium-query" in t for t in _DEFAULT_ALLOWED_TOOLS), (
+        "Allium gatekeeper pattern missing — data_analyst will have no path to Allium "
+        f"in CLI mode. Allowed tools: {_DEFAULT_ALLOWED_TOOLS}"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Happy path — CLI returns success → ToolLoopResult(success=True)
 # ---------------------------------------------------------------------------

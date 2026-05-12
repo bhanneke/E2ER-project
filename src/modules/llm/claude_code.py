@@ -26,6 +26,7 @@ import asyncio
 import json
 import os
 import shutil
+import sys
 import time
 from pathlib import Path
 from typing import Any
@@ -41,17 +42,24 @@ logger = get_logger(__name__)
 # These are Claude Code's *native* tool names. The pipeline's specialists
 # describe their artifacts by filename ("write paper_plan.md") rather than
 # tool name ("call write_file"), so the CLI naturally maps to its built-in
-# Write/Read/Edit. Bash is allowed for replication code execution AND for
-# the e2er-allium-query gatekeeper (see scripts/e2er-allium-query). The
-# `Bash(e2er-allium-query:*)` pattern explicitly allows that command — the
-# CLI's tool layer denies any other Allium access.
+# Write/Read/Edit.
+#
+# Note on Bash: we DO NOT grant the unrestricted Bash tool. The only
+# permitted shell invocation is `e2er-allium-query`, our Allium gatekeeper
+# (see scripts/e2er-allium-query). The pattern syntax
+# `Bash(e2er-allium-query:*)` tells Claude Code to allow `bash -c
+# "e2er-allium-query <anything>"` but reject any other command. Without
+# this restriction, the model could run arbitrary shell (curl, ssh, sudo,
+# git push, ...), defeating both the Allium guardrails and the broader
+# security model. Specialists that need execution (replication_packager,
+# LaTeX compile) get their tools wired through Python at the runner
+# level, not via Bash from the model.
 _DEFAULT_ALLOWED_TOOLS = [
     "Read",
     "Write",
     "Edit",
     "Glob",
     "Grep",
-    "Bash",
     "Bash(e2er-allium-query:*)",
 ]
 
@@ -182,6 +190,14 @@ async def _invoke_cli(
     # Allium when guardrails are enabled (DATA_MODULE_ENABLED=true).
     env = os.environ.copy()
     env["PATH"] = f"{_SCRIPTS_DIR}{os.pathsep}{env.get('PATH', '')}"
+    # Tell the wrapper which Python to use — same interpreter that's running
+    # the runner, so the subprocess inherits the correct venv (project deps)
+    # and the correct Python version (>=3.11, needed for PEP 604 union types
+    # used throughout the codebase). Discovered run #10: without this the
+    # wrapper called bare `python` from the CLI subprocess's PATH, which
+    # either resolved to nothing (then `exec: python: not found`) or to a
+    # system Python 3.9 that crashed on first import (`str | None`).
+    env["E2ER_PYTHON"] = sys.executable
     # Wire deterministic context — the wrapper reads these and injects them
     # into the python CLI call, so the specialist doesn't have to remember
     # its own paper_id.
