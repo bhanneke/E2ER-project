@@ -152,32 +152,157 @@ class AlliumProvider:
         return out
 
     async def execute_raw(self, sql: str) -> dict[str, Any]:
-        """Execute SQL and return raw response dict."""
-        last_error = ""
-        for attempt in range(_MAX_RETRIES):
-            async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        """Execute SQL via Allium's 4-step async Explorer API.
+
+        Allium's REST API doesn't accept ad-hoc single-shot SQL like
+        ``POST /query`` with ``{"query": "SELECT ..."}``. It's a
+        saved-query model with async execution:
+
+          1. ``POST /explorer/queries``                                  (create query)
+          2. ``POST /explorer/queries/{query_id}/run-async``             (start run)
+          3. ``GET  /explorer/queries/{query_id}/run/{run_id}/status``   (poll)
+          4. ``GET  /explorer/queries/{query_id}/run/{run_id}/results``  (fetch rows)
+
+        Confirmed from https://docs.allium.so/llms.txt 2026-05-12. Our
+        previous implementation POSTed to ``/explorer/query/run`` which
+        404s on every tier.
+
+        Returns the canonical dict shape ``{"rows": [...], "columns": [...]}``
+        on success, or ``{"error": str, "rows": [], "columns": []}`` on
+        client errors. Raises ``RuntimeError`` only on transport-level
+        failure (timeout, network) after all retries.
+        """
+        import time
+
+        title = f"e2er-adhoc-{int(time.time() * 1000)}"
+        # `config.limit` is a required field per Allium's API schema. 1000
+        # matches their documented default; for production queries we
+        # override at run-async time via run_config.
+        create_body = {"title": title, "config": {"sql": sql, "limit": 1000}}
+
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+            # Step 1: create the query
+            try:
+                resp = await client.post(
+                    f"{self._base}/explorer/queries",
+                    headers=self._headers,
+                    json=create_body,
+                )
+            except httpx.HTTPError as e:
+                raise RuntimeError(f"Allium create-query transport error: {e}") from e
+            if resp.status_code != 200:
+                return {
+                    "error": f"create-query HTTP {resp.status_code}: {resp.text[:300]}",
+                    "rows": [],
+                    "columns": [],
+                }
+            qid = resp.json().get("query_id") or resp.json().get("id")
+            if not qid:
+                return {
+                    "error": f"create-query returned no query_id: {resp.text[:300]}",
+                    "rows": [],
+                    "columns": [],
+                }
+
+            # Step 2: kick off async run. 429 (rate limit) on this endpoint
+            # is common when the subscription's queries-per-minute is tight.
+            # Retry with exponential backoff up to 60s before giving up.
+            import asyncio as _asyncio
+
+            backoff = 2.0
+            max_429_wait = 60.0
+            run_async_resp = None
+            t0 = 0.0
+            while t0 < max_429_wait:
                 try:
-                    resp = await client.post(
-                        f"{self._base}/explorer/query/run",
+                    run_async_resp = await client.post(
+                        f"{self._base}/explorer/queries/{qid}/run-async",
                         headers=self._headers,
-                        json={"query": sql},
+                        json={"parameters": {}},
                     )
-                    if resp.status_code == 200:
-                        return resp.json()
-                    if resp.status_code >= 500:
-                        last_error = f"HTTP {resp.status_code}"
-                        continue
+                except httpx.HTTPError as e:
+                    raise RuntimeError(f"Allium run-async transport error: {e}") from e
+                if run_async_resp.status_code != 429:
+                    break
+                logger.warning("Allium run-async rate-limited; sleeping %.1fs before retry", backoff)
+                await _asyncio.sleep(backoff)
+                t0 += backoff
+                backoff = min(backoff * 1.5, 15.0)
+            resp = run_async_resp  # type: ignore[assignment]
+            if resp is None or resp.status_code != 200:
+                code = resp.status_code if resp is not None else "?"
+                text = resp.text[:300] if resp is not None else ""
+                return {
+                    "error": f"run-async HTTP {code}: {text}",
+                    "rows": [],
+                    "columns": [],
+                }
+            rid = resp.json().get("run_id") or resp.json().get("id")
+            if not rid:
+                return {
+                    "error": f"run-async returned no run_id: {resp.text[:300]}",
+                    "rows": [],
+                    "columns": [],
+                }
+
+            # Step 3: poll until done. Use exponential-ish backoff but cap
+            # per-poll wait short — most queries finish in seconds.
+            import asyncio as _asyncio
+
+            poll_interval = 1.0
+            elapsed = 0.0
+            while elapsed < _TIMEOUT:
+                try:
+                    resp = await client.get(
+                        f"{self._base}/explorer/queries/{qid}/run/{rid}/status",
+                        headers=self._headers,
+                    )
+                except httpx.HTTPError as e:
+                    raise RuntimeError(f"Allium poll-status transport error: {e}") from e
+                if resp.status_code != 200:
                     return {
-                        "error": f"HTTP {resp.status_code}: {resp.text[:300]}",
+                        "error": f"poll-status HTTP {resp.status_code}: {resp.text[:300]}",
                         "rows": [],
                         "columns": [],
                     }
-                except httpx.TimeoutException:
-                    last_error = "timeout"
-                except httpx.HTTPError as e:
-                    last_error = str(e)
+                status = (resp.json().get("status") or "").lower()
+                if status in {"completed", "success", "finished"}:
                     break
-        raise RuntimeError(f"Allium query failed after {_MAX_RETRIES} attempts: {last_error}")
+                if status in {"failed", "error", "cancelled", "canceled"}:
+                    err = resp.json().get("error") or resp.text[:300]
+                    return {"error": f"Allium run {status}: {err}", "rows": [], "columns": []}
+                await _asyncio.sleep(poll_interval)
+                elapsed += poll_interval
+                poll_interval = min(poll_interval * 1.5, 5.0)
+            else:
+                return {
+                    "error": f"Allium run timed out after {_TIMEOUT}s waiting for completion",
+                    "rows": [],
+                    "columns": [],
+                }
+
+            # Step 4: fetch results
+            try:
+                resp = await client.get(
+                    f"{self._base}/explorer/queries/{qid}/run/{rid}/results",
+                    headers=self._headers,
+                )
+            except httpx.HTTPError as e:
+                raise RuntimeError(f"Allium fetch-results transport error: {e}") from e
+            if resp.status_code != 200:
+                return {
+                    "error": f"fetch-results HTTP {resp.status_code}: {resp.text[:300]}",
+                    "rows": [],
+                    "columns": [],
+                }
+            data = resp.json()
+            # Normalize: Allium may return rows as list-of-dicts or list-of-lists,
+            # column names under various keys. Surface in the canonical shape.
+            rows = data.get("rows") or data.get("data") or []
+            cols = data.get("columns") or data.get("column_names") or []
+            if rows and isinstance(rows[0], dict) and not cols:
+                cols = list(rows[0].keys())
+            return {"rows": rows, "columns": cols}
 
     async def execute(self, sql: str) -> QueryResult:
         raw = await self.execute_raw(sql)
