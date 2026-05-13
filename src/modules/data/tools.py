@@ -204,13 +204,30 @@ class AlliumToolHandler(ToolHandler):
             # Renamed from `result` to avoid shadowing the ValidationResult above —
             # mypy locks the variable's inferred type at first assignment.
             query_result = await provider.execute_raw(exec_sql)
-            row_count = len(query_result.get("rows", []))
+            err = query_result.get("error")
+            if err:
+                # execute_raw returned an error envelope (HTTP 4xx/5xx,
+                # rate limit, malformed response). Surface this to the
+                # model AND skip mark_executed — otherwise the audit log
+                # records "executed, 0 rows" which falsely implies the
+                # query ran successfully against empty data.
+                logger.warning("Allium feasibility query %s failed: %s", query_id, err)
+                return (
+                    f"Feasibility query failed at the Allium API: {err}\n"
+                    f"query_id: {query_id}\n"
+                    "The query was guardrail-validated, sent to Allium, and Allium "
+                    "returned an error response. Investigate the error message above "
+                    "(typical causes: table name mismatch, rate limit, tier access). "
+                    "Do NOT proceed to production with this query as-is."
+                )
+            rows = query_result.get("rows", [])
+            row_count = len(rows)
             await mark_executed(query_id, row_count)
             return (
                 f"Feasibility query executed. {row_count} rows returned.\n"
                 f"query_id: {query_id}\n"
                 f"Sample result (first 3 rows):\n"
-                f"{json.dumps(query_result.get('rows', [])[:3], indent=2, default=str)}\n\n"
+                f"{json.dumps(rows[:3], indent=2, default=str)}\n\n"
                 f"Columns: {query_result.get('columns', [])}"
             )
         except Exception as e:

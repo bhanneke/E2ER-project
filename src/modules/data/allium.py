@@ -245,8 +245,11 @@ class AlliumProvider:
                     "columns": [],
                 }
 
-            # Step 3: poll until done. Use exponential-ish backoff but cap
-            # per-poll wait short — most queries finish in seconds.
+            # Step 3: poll status. URL is `/explorer/query-runs/{run_id}/status`
+            # — a sibling of /explorer/queries, NOT nested under it.
+            # Confirmed from docs.allium.so/api/explorer/fetch-query-run-status.
+            # Status vocabulary per the docs:
+            #   created | queued | running | success | failed | canceled
             import asyncio as _asyncio
 
             poll_interval = 1.0
@@ -254,7 +257,7 @@ class AlliumProvider:
             while elapsed < _TIMEOUT:
                 try:
                     resp = await client.get(
-                        f"{self._base}/explorer/queries/{qid}/run/{rid}/status",
+                        f"{self._base}/explorer/query-runs/{rid}/status",
                         headers=self._headers,
                     )
                 except httpx.HTTPError as e:
@@ -265,12 +268,22 @@ class AlliumProvider:
                         "rows": [],
                         "columns": [],
                     }
-                status = (resp.json().get("status") or "").lower()
-                if status in {"completed", "success", "finished"}:
+                # Allium returns either {"status": "running"} OR a bare JSON
+                # string "running" depending on something we don't control.
+                # Accept both.
+                body = resp.json()
+                if isinstance(body, str):
+                    status = body.lower()
+                elif isinstance(body, dict):
+                    status = (body.get("status") or "").lower()
+                else:
+                    status = ""
+                if status in {"success", "completed", "finished"}:
                     break
                 if status in {"failed", "error", "cancelled", "canceled"}:
-                    err = resp.json().get("error") or resp.text[:300]
+                    err = body.get("error") if isinstance(body, dict) else resp.text[:300]
                     return {"error": f"Allium run {status}: {err}", "rows": [], "columns": []}
+                # created / queued / running → keep polling
                 await _asyncio.sleep(poll_interval)
                 elapsed += poll_interval
                 poll_interval = min(poll_interval * 1.5, 5.0)
@@ -281,25 +294,49 @@ class AlliumProvider:
                     "columns": [],
                 }
 
-            # Step 4: fetch results
-            try:
-                resp = await client.get(
-                    f"{self._base}/explorer/queries/{qid}/run/{rid}/results",
-                    headers=self._headers,
+            # Step 4: fetch results. URL is `/explorer/query-runs/{run_id}/results`
+            # — also a sibling of /explorer/queries. Response shape:
+            #   {"sql": ..., "data": [{...row...}], "meta": {"columns": [{"name", "data_type"}]}}
+            # Note: `data` not `rows`; columns are objects, not strings.
+            #
+            # 429 retry-with-backoff: same pattern as step 2. Allium throttles
+            # fetch-results too on tight tiers.
+            backoff = 2.0
+            t_fetch = 0.0
+            results_resp = None
+            while t_fetch < max_429_wait:
+                try:
+                    results_resp = await client.get(
+                        f"{self._base}/explorer/query-runs/{rid}/results",
+                        headers=self._headers,
+                    )
+                except httpx.HTTPError as e:
+                    raise RuntimeError(f"Allium fetch-results transport error: {e}") from e
+                if results_resp.status_code != 429:
+                    break
+                logger.warning(
+                    "Allium fetch-results rate-limited; sleeping %.1fs before retry", backoff
                 )
-            except httpx.HTTPError as e:
-                raise RuntimeError(f"Allium fetch-results transport error: {e}") from e
-            if resp.status_code != 200:
+                await _asyncio.sleep(backoff)
+                t_fetch += backoff
+                backoff = min(backoff * 1.5, 15.0)
+            resp = results_resp  # type: ignore[assignment]
+            if resp is None or resp.status_code != 200:
+                code = resp.status_code if resp is not None else "?"
+                text = resp.text[:300] if resp is not None else ""
                 return {
-                    "error": f"fetch-results HTTP {resp.status_code}: {resp.text[:300]}",
+                    "error": f"fetch-results HTTP {code}: {text}",
                     "rows": [],
                     "columns": [],
                 }
-            data = resp.json()
-            # Normalize: Allium may return rows as list-of-dicts or list-of-lists,
-            # column names under various keys. Surface in the canonical shape.
-            rows = data.get("rows") or data.get("data") or []
-            cols = data.get("columns") or data.get("column_names") or []
+            payload = resp.json()
+            rows = payload.get("data") or payload.get("rows") or []
+            meta_cols = (payload.get("meta") or {}).get("columns") or []
+            if meta_cols and isinstance(meta_cols[0], dict):
+                # Allium-native shape: list of {name, data_type}; flatten to names.
+                cols = [c.get("name", "") for c in meta_cols]
+            else:
+                cols = payload.get("columns") or payload.get("column_names") or []
             if rows and isinstance(rows[0], dict) and not cols:
                 cols = list(rows[0].keys())
             return {"rows": rows, "columns": cols}
