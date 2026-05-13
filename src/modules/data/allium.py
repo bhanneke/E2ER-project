@@ -314,9 +314,7 @@ class AlliumProvider:
                     raise RuntimeError(f"Allium fetch-results transport error: {e}") from e
                 if results_resp.status_code != 429:
                     break
-                logger.warning(
-                    "Allium fetch-results rate-limited; sleeping %.1fs before retry", backoff
-                )
+                logger.warning("Allium fetch-results rate-limited; sleeping %.1fs before retry", backoff)
                 await _asyncio.sleep(backoff)
                 t_fetch += backoff
                 backoff = min(backoff * 1.5, 15.0)
