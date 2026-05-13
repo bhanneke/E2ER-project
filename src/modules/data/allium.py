@@ -181,18 +181,36 @@ class AlliumProvider:
         create_body = {"title": title, "config": {"sql": sql, "limit": 1000}}
 
         async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            # Step 1: create the query
-            try:
-                resp = await client.post(
-                    f"{self._base}/explorer/queries",
-                    headers=self._headers,
-                    json=create_body,
-                )
-            except httpx.HTTPError as e:
-                raise RuntimeError(f"Allium create-query transport error: {e}") from e
-            if resp.status_code != 200:
+            # Step 1: create the query. 429s on this endpoint are common when
+            # multiple specialists submit queries concurrently — retry with
+            # the same exponential-backoff pattern as steps 2 and 4.
+            import asyncio as _asyncio
+
+            backoff = 2.0
+            max_429_wait = 60.0
+            create_resp = None
+            t0 = 0.0
+            while t0 < max_429_wait:
+                try:
+                    create_resp = await client.post(
+                        f"{self._base}/explorer/queries",
+                        headers=self._headers,
+                        json=create_body,
+                    )
+                except httpx.HTTPError as e:
+                    raise RuntimeError(f"Allium create-query transport error: {e}") from e
+                if create_resp.status_code != 429:
+                    break
+                logger.warning("Allium create-query rate-limited; sleeping %.1fs before retry", backoff)
+                await _asyncio.sleep(backoff)
+                t0 += backoff
+                backoff = min(backoff * 1.5, 15.0)
+            resp = create_resp  # type: ignore[assignment]
+            if resp is None or resp.status_code != 200:
+                code = resp.status_code if resp is not None else "?"
+                text = resp.text[:300] if resp is not None else ""
                 return {
-                    "error": f"create-query HTTP {resp.status_code}: {resp.text[:300]}",
+                    "error": f"create-query HTTP {code}: {text}",
                     "rows": [],
                     "columns": [],
                 }
@@ -254,6 +272,7 @@ class AlliumProvider:
 
             poll_interval = 1.0
             elapsed = 0.0
+            poll_429_backoff = 2.0
             while elapsed < _TIMEOUT:
                 try:
                     resp = await client.get(
@@ -262,6 +281,18 @@ class AlliumProvider:
                     )
                 except httpx.HTTPError as e:
                     raise RuntimeError(f"Allium poll-status transport error: {e}") from e
+                if resp.status_code == 429:
+                    # Sustained 429s on poll-status indicate account-level
+                    # throttling. Back off the same way as steps 1, 2, 4 —
+                    # the in-flight run will keep cooking on Allium's side.
+                    logger.warning(
+                        "Allium poll-status rate-limited; sleeping %.1fs before retry",
+                        poll_429_backoff,
+                    )
+                    await _asyncio.sleep(poll_429_backoff)
+                    elapsed += poll_429_backoff
+                    poll_429_backoff = min(poll_429_backoff * 1.5, 15.0)
+                    continue
                 if resp.status_code != 200:
                     return {
                         "error": f"poll-status HTTP {resp.status_code}: {resp.text[:300]}",
