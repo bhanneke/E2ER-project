@@ -160,13 +160,13 @@ class AlliumDeveloperProvider:
         """
         params: dict[str, Any] = {
             "chain": chain,
-            "token_address": token_address,
+            "token": token_address,
             "limit": limit,
         }
         if from_ts:
-            params["from"] = from_ts
+            params["block_timestamp_gte"] = from_ts
         if to_ts:
-            params["to"] = to_ts
+            params["block_timestamp_lte"] = to_ts
         if next_token:
             params["next_token"] = next_token
         return await self._request("GET", "/developer/tokens/transfers", params=params)
@@ -187,9 +187,9 @@ class AlliumDeveloperProvider:
         """
         entry: dict[str, Any] = {"chain": chain, "address": address, "limit": limit}
         if from_ts:
-            entry["from"] = from_ts
+            entry["start_timestamp"] = from_ts
         if to_ts:
-            entry["to"] = to_ts
+            entry["end_timestamp"] = to_ts
         return await self._request("POST", "/developer/wallet/transactions", json_body=[entry])
 
     async def get_wallet_balances_history(
@@ -205,8 +205,12 @@ class AlliumDeveloperProvider:
         whale wallets to measure the drawdown shape across exploit days.
         Both from and to are required by Allium.
         """
-        entry = {"chain": chain, "address": address, "from": from_ts, "to": to_ts}
-        return await self._request("POST", "/developer/wallet/balances/history", json_body=[entry])
+        entry = {
+            "addresses": [{"chain": chain, "address": address}],
+            "start_timestamp": from_ts,
+            "end_timestamp": to_ts,
+        }
+        return await self._request("POST", "/developer/wallet/balances/history", json_body=entry)
 
     async def get_token_prices_history(
         self,
@@ -221,12 +225,12 @@ class AlliumDeveloperProvider:
         not provide NFT floor prices.
         """
         entry = {
-            "chain": chain,
-            "token_address": token_address,
-            "from": from_ts,
-            "to": to_ts,
+            "addresses": [{"chain": chain, "token_address": token_address}],
+            "start_timestamp": from_ts,
+            "end_timestamp": to_ts,
+            "time_granularity": "1d",
         }
-        return await self._request("POST", "/developer/prices/history", json_body=[entry])
+        return await self._request("POST", "/developer/prices/history", json_body=entry)
 
     async def get_token_latest_price(self, chain: str, token_address: str) -> dict[str, Any]:
         """Latest spot price for a fungible token (no time range).
