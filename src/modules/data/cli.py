@@ -148,6 +148,111 @@ async def _run_describe_table(args: argparse.Namespace) -> str:
     return _json.dumps({"schema": args.schema, "table": args.table, "columns": cols}, indent=2, default=str)
 
 
+async def _run_dev_transfers(args: argparse.Namespace) -> str:
+    """Developer-tier endpoint: ERC-20 Transfer events for a token over a window.
+
+    Use for transfer-flow event studies — pull transfers of the affected
+    token ±N days around an exploit timestamp.
+    """
+    import json as _json
+
+    from .allium_developer import AlliumDeveloperProvider
+
+    settings = get_settings()
+    if not settings.allium_api_key:
+        return "Allium not configured. Set ALLIUM_API_KEY in .env."
+    provider = AlliumDeveloperProvider(settings.allium_api_key, settings.allium_api_base)
+    result = await provider.get_token_transfers(
+        chain=args.chain,
+        token_address=args.token_address,
+        from_ts=args.from_ts,
+        to_ts=args.to_ts,
+        limit=args.limit,
+        next_token=args.next_token,
+    )
+    return _json.dumps(result, indent=2, default=str)
+
+
+async def _run_dev_wallet_tx(args: argparse.Namespace) -> str:
+    """Developer-tier endpoint: tx history for any address.
+
+    Use this on documented hacker addresses to capture drain transactions
+    and the laundering timeline.
+    """
+    import json as _json
+
+    from .allium_developer import AlliumDeveloperProvider
+
+    settings = get_settings()
+    if not settings.allium_api_key:
+        return "Allium not configured. Set ALLIUM_API_KEY in .env."
+    provider = AlliumDeveloperProvider(settings.allium_api_key, settings.allium_api_base)
+    result = await provider.get_wallet_transactions(
+        chain=args.chain,
+        address=args.address,
+        from_ts=args.from_ts,
+        to_ts=args.to_ts,
+        limit=args.limit,
+    )
+    return _json.dumps(result, indent=2, default=str)
+
+
+async def _run_dev_balances_history(args: argparse.Namespace) -> str:
+    """Developer-tier endpoint: daily balance snapshots for an address."""
+    import json as _json
+
+    from .allium_developer import AlliumDeveloperProvider
+
+    settings = get_settings()
+    if not settings.allium_api_key:
+        return "Allium not configured. Set ALLIUM_API_KEY in .env."
+    provider = AlliumDeveloperProvider(settings.allium_api_key, settings.allium_api_base)
+    result = await provider.get_wallet_balances_history(
+        chain=args.chain,
+        address=args.address,
+        from_ts=args.from_ts,
+        to_ts=args.to_ts,
+    )
+    return _json.dumps(result, indent=2, default=str)
+
+
+async def _run_dev_prices_history(args: argparse.Namespace) -> str:
+    """Developer-tier endpoint: OHLC price history for a fungible token.
+
+    Returns empty for NFT contracts. Sanity-check with get-price first if
+    unsure whether a contract is indexed.
+    """
+    import json as _json
+
+    from .allium_developer import AlliumDeveloperProvider
+
+    settings = get_settings()
+    if not settings.allium_api_key:
+        return "Allium not configured. Set ALLIUM_API_KEY in .env."
+    provider = AlliumDeveloperProvider(settings.allium_api_key, settings.allium_api_base)
+    result = await provider.get_token_prices_history(
+        chain=args.chain,
+        token_address=args.token_address,
+        from_ts=args.from_ts,
+        to_ts=args.to_ts,
+    )
+    return _json.dumps(result, indent=2, default=str)
+
+
+async def _run_dev_get_price(args: argparse.Namespace) -> str:
+    """Developer-tier endpoint: latest spot price for a token (sanity check)."""
+    import json as _json
+
+    from .allium_developer import AlliumDeveloperProvider
+
+    settings = get_settings()
+    if not settings.allium_api_key:
+        return "Allium not configured. Set ALLIUM_API_KEY in .env."
+    provider = AlliumDeveloperProvider(settings.allium_api_key, settings.allium_api_base)
+    result = await provider.get_token_latest_price(chain=args.chain, token_address=args.token_address)
+    return _json.dumps(result, indent=2, default=str)
+
+
 async def _run_distinct_values(args: argparse.Namespace) -> str:
     """Discovery primitive: show actual literal values + frequency for a column.
 
@@ -256,6 +361,63 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--column", required=True, help="e.g. marketplace, currency_symbol, chain")
     p.add_argument("--limit", type=int, default=100, help="Max distinct values returned (default 100).")
 
+    # --- Developer-tier REST endpoints (works when Explorer SQL doesn't) ---
+    p = sub.add_parser(
+        "get-transfers",
+        help="ERC-20 Transfer events for a token over a time window (developer tier).",
+    )
+    p.add_argument("--chain", required=True, help="e.g. ethereum, polygon, arbitrum, base")
+    p.add_argument("--token-address", required=True, help="0x-prefixed contract address")
+    p.add_argument(
+        "--from-ts",
+        dest="from_ts",
+        default=None,
+        help="ISO timestamp (e.g. 2022-03-22T00:00:00Z) or YYYY-MM-DD",
+    )
+    p.add_argument("--to-ts", dest="to_ts", default=None, help="ISO timestamp or YYYY-MM-DD")
+    p.add_argument("--limit", type=int, default=100, help="Max rows per page (default 100)")
+    p.add_argument(
+        "--next-token",
+        dest="next_token",
+        default=None,
+        help="Pagination token from a previous response, if continuing.",
+    )
+
+    p = sub.add_parser(
+        "get-wallet-tx",
+        help="Transaction history for an address (developer tier). Use on hacker EOAs.",
+    )
+    p.add_argument("--chain", required=True)
+    p.add_argument("--address", required=True, help="0x-prefixed address")
+    p.add_argument("--from-ts", dest="from_ts", default=None)
+    p.add_argument("--to-ts", dest="to_ts", default=None)
+    p.add_argument("--limit", type=int, default=100)
+
+    p = sub.add_parser(
+        "get-balances-history",
+        help="Daily balance snapshots for an address (developer tier).",
+    )
+    p.add_argument("--chain", required=True)
+    p.add_argument("--address", required=True)
+    p.add_argument("--from-ts", dest="from_ts", required=True, help="Required: YYYY-MM-DD")
+    p.add_argument("--to-ts", dest="to_ts", required=True, help="Required: YYYY-MM-DD")
+
+    p = sub.add_parser(
+        "get-prices-history",
+        help="OHLC price history for a fungible token (developer tier). Empty for NFTs.",
+    )
+    p.add_argument("--chain", required=True)
+    p.add_argument("--token-address", required=True)
+    p.add_argument("--from-ts", dest="from_ts", required=True)
+    p.add_argument("--to-ts", dest="to_ts", required=True)
+
+    p = sub.add_parser(
+        "get-price",
+        help="Latest spot price for a token (developer tier). Sanity check.",
+    )
+    p.add_argument("--chain", required=True)
+    p.add_argument("--token-address", required=True)
+
     return parser
 
 
@@ -266,6 +428,11 @@ _DISPATCH = {
     "describe-table": _run_describe_table,
     "distinct-values": _run_distinct_values,
     "list-tables": _run_list_tables,
+    "get-transfers": _run_dev_transfers,
+    "get-wallet-tx": _run_dev_wallet_tx,
+    "get-balances-history": _run_dev_balances_history,
+    "get-prices-history": _run_dev_prices_history,
+    "get-price": _run_dev_get_price,
 }
 
 

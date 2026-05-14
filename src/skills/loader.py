@@ -14,10 +14,10 @@ _SKILLS_DIRS = [
 _SPECIALIST_SKILLS: dict[str, list[str]] = {
     "idea_developer": ["economist", "researcher", "creative-ideation", "novelty"],
     "literature_scanner": ["researcher", "context-builder"],
-    "data_architect": ["blockchain", "crypto-defi", "economist", "allium-cli"],
+    "data_architect": ["blockchain", "crypto-defi", "economist", "allium-cli", "allium-developer-api"],
     "identification_strategist": ["judge-designs", "natural-experiments", "identification"],
     "econometrics_specialist": ["iv-estimation", "did", "panel-data", "event-study"],
-    "data_analyst": ["cleaning", "figure-spec", "panel-data", "allium-cli"],
+    "data_analyst": ["cleaning", "figure-spec", "panel-data", "allium-cli", "allium-developer-api"],
     "paper_drafter": ["paper-structure", "personal-style", "researcher"],
     "section_writer": ["paper-structure", "personal-style", "anti-slop"],
     "abstract_writer": ["abstract", "anti-slop"],

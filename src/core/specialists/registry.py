@@ -44,7 +44,13 @@ SPECIALIST_SKILLS: dict[str, list[str]] = {
         "reasoning/novelty",
     ],
     "literature_scanner": ["base/researcher", "synthesis/context-builder"],
-    "data_architect": ["data/blockchain", "data/crypto-defi", "base/economist", "data/allium-cli"],
+    "data_architect": [
+        "data/blockchain",
+        "data/crypto-defi",
+        "base/economist",
+        "data/allium-cli",
+        "data/allium-developer-api",
+    ],
     "identification_strategist": [
         "causal-inference/judge-designs",
         "causal-inference/natural-experiments",
@@ -56,7 +62,13 @@ SPECIALIST_SKILLS: dict[str, list[str]] = {
         "econometrics/panel-data",
         "econometrics/event-study",
     ],
-    "data_analyst": ["data/cleaning", "data/figure-spec", "econometrics/panel-data", "data/allium-cli"],
+    "data_analyst": [
+        "data/cleaning",
+        "data/figure-spec",
+        "econometrics/panel-data",
+        "data/allium-cli",
+        "data/allium-developer-api",
+    ],
     "theory_specialist": [
         "base/economist",
         "modeling/game-theory",
