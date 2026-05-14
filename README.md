@@ -1,4 +1,4 @@
-# E2ER v3: End-to-End Researcher
+# E2ER: End-to-End Researcher
 
 [![Status](https://img.shields.io/badge/status-active%20development-blue)]()
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
