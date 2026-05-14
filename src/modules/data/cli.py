@@ -149,10 +149,11 @@ async def _run_describe_table(args: argparse.Namespace) -> str:
 
 
 async def _run_dev_transfers(args: argparse.Namespace) -> str:
-    """Developer-tier endpoint: ERC-20 Transfer events for a token over a window.
+    """Developer-tier endpoint: token transfers involving a wallet.
 
-    Use for transfer-flow event studies — pull transfers of the affected
-    token ±N days around an exploit timestamp.
+    Despite the name, Allium scopes this to one wallet `address`. Use
+    for hack-event studies by pointing `--address` at the hacker EOA and
+    bounding `--min-timestamp / --max-timestamp` to the window.
     """
     import json as _json
 
@@ -164,11 +165,12 @@ async def _run_dev_transfers(args: argparse.Namespace) -> str:
     provider = AlliumDeveloperProvider(settings.allium_api_key, settings.allium_api_base)
     result = await provider.get_token_transfers(
         chain=args.chain,
-        token_address=args.token_address,
-        from_ts=args.from_ts,
-        to_ts=args.to_ts,
+        address=args.address,
+        token=args.token,
+        min_timestamp=args.min_timestamp,
+        max_timestamp=args.max_timestamp,
         limit=args.limit,
-        next_token=args.next_token,
+        cursor=args.cursor,
     )
     return _json.dumps(result, indent=2, default=str)
 
@@ -176,8 +178,10 @@ async def _run_dev_transfers(args: argparse.Namespace) -> str:
 async def _run_dev_wallet_tx(args: argparse.Namespace) -> str:
     """Developer-tier endpoint: tx history for any address.
 
-    Use this on documented hacker addresses to capture drain transactions
-    and the laundering timeline.
+    Allium does NOT support date filters on this endpoint. Returns the
+    most recent transactions; page back through history with `--cursor`.
+    For older events, prefer `get-transfers` which DOES support
+    min_timestamp/max_timestamp.
     """
     import json as _json
 
@@ -190,9 +194,10 @@ async def _run_dev_wallet_tx(args: argparse.Namespace) -> str:
     result = await provider.get_wallet_transactions(
         chain=args.chain,
         address=args.address,
-        from_ts=args.from_ts,
-        to_ts=args.to_ts,
         limit=args.limit,
+        cursor=args.cursor,
+        transaction_hash=args.transaction_hash,
+        activity_type=args.activity_type,
     )
     return _json.dumps(result, indent=2, default=str)
 
@@ -364,34 +369,67 @@ def _build_parser() -> argparse.ArgumentParser:
     # --- Developer-tier REST endpoints (works when Explorer SQL doesn't) ---
     p = sub.add_parser(
         "get-transfers",
-        help="ERC-20 Transfer events for a token over a time window (developer tier).",
+        help=(
+            "Token transfers involving a wallet over an optional date window "
+            "(developer tier). Wallet-oriented despite the path name."
+        ),
     )
     p.add_argument("--chain", required=True, help="e.g. ethereum, polygon, arbitrum, base")
-    p.add_argument("--token-address", required=True, help="0x-prefixed contract address")
     p.add_argument(
-        "--from-ts",
-        dest="from_ts",
+        "--address",
+        required=True,
+        help="0x-prefixed WALLET address (e.g. hacker EOA). Not a token contract.",
+    )
+    p.add_argument(
+        "--token",
+        default=None,
+        help="Optional 0x-prefixed token contract to restrict transfers to.",
+    )
+    p.add_argument(
+        "--min-timestamp",
+        dest="min_timestamp",
         default=None,
         help="ISO timestamp (e.g. 2022-03-22T00:00:00Z) or YYYY-MM-DD",
     )
-    p.add_argument("--to-ts", dest="to_ts", default=None, help="ISO timestamp or YYYY-MM-DD")
+    p.add_argument(
+        "--max-timestamp",
+        dest="max_timestamp",
+        default=None,
+        help="ISO timestamp or YYYY-MM-DD",
+    )
     p.add_argument("--limit", type=int, default=100, help="Max rows per page (default 100)")
     p.add_argument(
-        "--next-token",
-        dest="next_token",
+        "--cursor",
         default=None,
-        help="Pagination token from a previous response, if continuing.",
+        help="Pagination cursor from a previous response, if continuing.",
     )
 
     p = sub.add_parser(
         "get-wallet-tx",
-        help="Transaction history for an address (developer tier). Use on hacker EOAs.",
+        help=(
+            "Transaction history for an address (developer tier). NO date filter — pages back from now via --cursor."
+        ),
     )
     p.add_argument("--chain", required=True)
     p.add_argument("--address", required=True, help="0x-prefixed address")
-    p.add_argument("--from-ts", dest="from_ts", default=None)
-    p.add_argument("--to-ts", dest="to_ts", default=None)
     p.add_argument("--limit", type=int, default=100)
+    p.add_argument(
+        "--cursor",
+        default=None,
+        help="Pagination cursor; page back through older transactions.",
+    )
+    p.add_argument(
+        "--transaction-hash",
+        dest="transaction_hash",
+        default=None,
+        help="Filter to a single tx hash (e.g. the documented drain tx of a hack).",
+    )
+    p.add_argument(
+        "--activity-type",
+        dest="activity_type",
+        default=None,
+        help="Filter by activity type (e.g. 'transfer', 'swap', 'mint').",
+    )
 
     p = sub.add_parser(
         "get-balances-history",

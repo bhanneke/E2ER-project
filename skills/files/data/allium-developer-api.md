@@ -14,25 +14,36 @@ never makes direct HTTP calls and the same audit / pacing applies.
 ```
 e2er-allium-query get-transfers \
   --chain ethereum \
-  --token-address 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48 \
-  --from-ts 2022-03-22 \
-  --to-ts 2022-03-25 \
+  --address 0x098B716B8Aaf21512996dC57EB0615e2383E2f96 \
+  --token 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48 \
+  --min-timestamp 2022-03-22 \
+  --max-timestamp 2022-03-25 \
   --limit 100
 ```
-ERC-20 Transfer events. Use for transfer-flow event studies. Returns
-`from_address`, `to_address`, `value`, `transaction_hash`,
-`block_timestamp`. Empty for ERC-721 NFTs.
+Token transfers involving a WALLET (the `--address`). Despite the path
+name, this is wallet-scoped — Allium requires `address` and the optional
+`token` filters to a single ERC-20 contract. Returns `from_address`,
+`to_address`, `value`, `transaction_hash`, `block_timestamp`. **The date
+filter actually works on this endpoint** (`min_timestamp` / `max_timestamp`
+are the supported names per Allium's OpenAPI spec). Prefer this over
+`get-wallet-tx` when you need a specific historical window.
 
 ```
 e2er-allium-query get-wallet-tx \
   --chain ethereum \
   --address 0x098B716B8Aaf21512996dC57EB0615e2383E2f96 \
-  --from-ts 2022-03-22 \
-  --to-ts 2022-04-22 \
-  --limit 100
+  --limit 25
 ```
-Transaction history for one address. Use on documented hacker EOAs to
-capture drain transactions, laundering, mixer entry.
+Transaction history for one address. **No date filter is supported by
+Allium on this endpoint.** It returns the most recent `--limit`
+transactions and pages BACKWARD through history via `--cursor`. For
+hack-event studies, use one of:
+- `--transaction-hash 0x...` if you know the drain tx hash from the
+  public post-mortem (cheapest path), or
+- `--cursor <from_prev_response>` to walk back through history (only
+  feasible if the target date is recent — old hacks require many pages).
+For old events, **prefer `get-transfers`** instead — it supports
+`--min-timestamp` and `--max-timestamp` directly.
 
 ```
 e2er-allium-query get-balances-history \

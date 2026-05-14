@@ -145,52 +145,82 @@ class AlliumDeveloperProvider:
     async def get_token_transfers(
         self,
         chain: str,
-        token_address: str,
-        from_ts: str | None = None,
-        to_ts: str | None = None,
+        address: str,
+        token: str | None = None,
+        min_timestamp: str | None = None,
+        max_timestamp: str | None = None,
         limit: int = 100,
-        next_token: str | None = None,
+        cursor: str | None = None,
     ) -> dict[str, Any]:
-        """ERC-20 Transfer events for a token over a date window.
+        """Token transfers involving a wallet, over an optional date window.
 
-        Use this for event-study designs around hacks: pull transfers of
-        the affected token ±30d around the exploit timestamp. The window
-        is enforced via from/to (block_timestamp); Allium handles the
-        time-bound filtering server-side.
+        Despite the path name "tokens/transfers", Allium scopes this to
+        a single wallet ``address`` (required). The optional ``token``
+        filter restricts the response to transfers of one ERC-20 contract.
+        For hack-event studies, point ``address`` at the hacker EOA and
+        bound ``min_timestamp``/``max_timestamp`` to the event window.
+
+        Param names verified against
+        https://docs.allium.so/_openapi/tokens-api.json (Nov 2026):
+        ``min_timestamp`` / ``max_timestamp`` are the SUPPORTED date
+        filters — earlier attempts with from/to or block_timestamp_gte
+        were silently ignored by Allium.
         """
         params: dict[str, Any] = {
             "chain": chain,
-            "token": token_address,
+            "address": address,
             "limit": limit,
         }
-        if from_ts:
-            params["block_timestamp_gte"] = from_ts
-        if to_ts:
-            params["block_timestamp_lte"] = to_ts
-        if next_token:
-            params["next_token"] = next_token
+        if token:
+            params["token"] = token
+        if min_timestamp:
+            params["min_timestamp"] = min_timestamp
+        if max_timestamp:
+            params["max_timestamp"] = max_timestamp
+        if cursor:
+            params["cursor"] = cursor
         return await self._request("GET", "/developer/tokens/transfers", params=params)
 
     async def get_wallet_transactions(
         self,
         chain: str,
         address: str,
-        from_ts: str | None = None,
-        to_ts: str | None = None,
         limit: int = 100,
+        cursor: str | None = None,
+        transaction_hash: str | None = None,
+        activity_type: str | None = None,
     ) -> dict[str, Any]:
-        """Full transaction history for an address.
+        """Transaction history for an address.
 
-        For hack studies, point this at the documented hacker EOA and the
-        exploit-day window to capture initial drain transactions, then
-        widen to study outflow speed and laundering patterns.
+        **Important**: Allium's ``/developer/wallet/transactions`` does NOT
+        support date filters — verified against the live OpenAPI spec
+        (https://docs.allium.so/_openapi/wallet-api.json). It returns the
+        most recent ``limit`` transactions and pages BACKWARD in time via
+        ``cursor``.
+
+        For hack studies where you need transactions from a specific date,
+        either:
+          1. Filter to a known ``transaction_hash`` if you have it from
+             the public post-mortem (cheapest path), OR
+          2. Page back from "now" with ``cursor`` until you reach the
+             target date (expensive for old hacks — consider using
+             ``get_token_transfers`` instead, which DOES support
+             min_timestamp/max_timestamp).
         """
-        entry: dict[str, Any] = {"chain": chain, "address": address, "limit": limit}
-        if from_ts:
-            entry["start_timestamp"] = from_ts
-        if to_ts:
-            entry["end_timestamp"] = to_ts
-        return await self._request("POST", "/developer/wallet/transactions", json_body=[entry])
+        entry: dict[str, Any] = {"chain": chain, "address": address}
+        params: dict[str, Any] = {"limit": limit}
+        if cursor:
+            params["cursor"] = cursor
+        if transaction_hash:
+            params["transaction_hash"] = transaction_hash
+        if activity_type:
+            params["activity_type"] = activity_type
+        return await self._request(
+            "POST",
+            "/developer/wallet/transactions",
+            params=params,
+            json_body=[entry],
+        )
 
     async def get_wallet_balances_history(
         self,
