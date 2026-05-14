@@ -70,14 +70,25 @@ before running a history window over it.
 
 ## Critical discipline
 
+**Write `data_summary.md` EARLY, then append.** Start by writing the
+file with your plan and the events list — even before any data calls.
+After each event's calls, append findings. This way `data_summary.md`
+ALWAYS exists, even if you run out of turns mid-extraction. A partial
+report is far more useful than no report and a "max_turns" failure.
+
 **Always pass a time window** (`--from-ts` / `--to-ts`) on the history
 endpoints. Without it, queries can scan all of chain history and burn
 the rate budget on millions of unwanted rows.
 
-**Always page**. The response includes `next_token`. Don't request a
-single huge `--limit` — break it into 100-row pages and stop when you
-have enough for the analysis. The wrapper rate-limits aggressively (one
-request per ~0.5s) so 10 pages of 100 rows is ~5 seconds, not 5 minutes.
+**Budget your turns.** You have ~80 agent turns. Each tool call uses
+~2. That's ~40 tool calls total — enough for ~10 events × 4 endpoints
+× 1 page each if you keep pages SMALL (limit=20-50 is plenty for
+proving the pattern). DO NOT page through entire histories — pick one
+narrow window per event and move on.
+
+**One page per call is usually enough.** Pagination via `next_token`
+only when the first page clearly truncated something critical for the
+analysis. For "what did the hacker do on day 0", limit=20 captures it.
 
 **One contract per call**. The Allium API accepts list bodies but the
 wrapper exposes one entry per call to keep error envelopes clean.

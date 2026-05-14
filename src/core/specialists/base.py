@@ -14,10 +14,12 @@ from ..specialists.contracts import Contribution, WorkOrder
 
 logger = get_logger(__name__)
 
-_MAX_TURNS = 40  # Bumped from 25 after May 2026 NFT-marketplace run: idea_developer
-# (36 turns), data_architect, data_analyst, and econometrics_specialist all hit the
-# 25-cap on Sonnet 4.6 with Allium tool calls. Successful runs in the same batch used
-# 29-38 turns. 40 gives Sonnet enough headroom while still bounding worst-case spend.
+_MAX_TURNS = 80  # Bumped from 40 after May 2026 hack-event run: data_analyst hit the
+# 40-cap while paginating the new Allium developer endpoints (each get-transfers /
+# get-wallet-tx page = ~2 turns; 10 events × 3 endpoints × 3 pages = ~180 turns
+# in the worst case). Previously 25 was enough when only SQL was wired up.
+# 80 gives data_analyst headroom for real paginated data extraction; specialists
+# that don't need it won't burn what they don't use — turns is a cap, not a target.
 
 
 async def run_specialist(
