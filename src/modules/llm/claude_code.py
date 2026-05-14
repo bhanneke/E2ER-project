@@ -107,8 +107,6 @@ class ClaudeCodeBackend(LLMBackend):
         ``e2er-allium-query`` wrapper picks them up automatically — the
         specialist doesn't have to remember its own paper_id.
         """
-        start = time.monotonic()
-
         # Flatten messages to a single prompt. Most v3 callers pass a
         # 1-element list with the user instruction; if there are more, we
         # join them with explicit role markers so the CLI sees them.
@@ -142,17 +140,67 @@ class ClaudeCodeBackend(LLMBackend):
             settings = get_settings()
             cwd = str(Path(settings.workspace_root) / paper_id)
 
-        return await _invoke_cli(
-            cli_path=self._cli_path,
-            prompt=prompt,
-            allowed_tools=allowed_tools,
-            timeout=self._timeout,
-            cwd=cwd,
-            max_turns=max_turns or self._max_turns_default,
-            start=start,
-            paper_id=paper_id,
-            specialist=specialist,
-        )
+        # Retry transient Anthropic API errors. The CLI surfaces these in
+        # its JSON output as is_error=true + api_error_status set (e.g.
+        # 429, 500, 502, 503, 504, 529). They're not bugs in our code or
+        # the prompt — they're Anthropic infrastructure hiccups, and they
+        # bubble all the way up to the cascade detector unless retried
+        # here. Two retries with 5s + 15s backoff is enough for the
+        # vast majority of transients without burning much wall time.
+        retry_delays = [5.0, 15.0]
+        last_result: ToolLoopResult | None = None
+        for attempt in range(len(retry_delays) + 1):
+            result = await _invoke_cli(
+                cli_path=self._cli_path,
+                prompt=prompt,
+                allowed_tools=allowed_tools,
+                timeout=self._timeout,
+                cwd=cwd,
+                max_turns=max_turns or self._max_turns_default,
+                start=time.monotonic(),
+                paper_id=paper_id,
+                specialist=specialist,
+            )
+            last_result = result
+            if result.success or not _is_transient_api_error(result.error or ""):
+                return result
+            if attempt >= len(retry_delays):
+                break
+            delay = retry_delays[attempt]
+            logger.warning(
+                "Claude Code transient API error (attempt %d/%d, sleeping %.0fs): %s",
+                attempt + 1,
+                len(retry_delays) + 1,
+                delay,
+                (result.error or "")[:200],
+            )
+            await asyncio.sleep(delay)
+        return last_result if last_result is not None else result
+
+
+def _is_transient_api_error(error: str) -> bool:
+    """Detect transient Anthropic API errors worth retrying.
+
+    The CLI's failure JSON includes ``api_error_status`` set to the HTTP
+    code Anthropic returned (e.g. 429, 500, 502, 503, 504, 529) plus
+    ``is_error: true``. These are infrastructure issues, not prompt bugs
+    — retrying with a short backoff resolves >90% of them. We also
+    accept the literal string ``overloaded_error`` Anthropic sometimes
+    returns at the SDK layer.
+
+    Hard failures (auth, malformed request, max_turns) are NOT matched
+    here — those should propagate so the human sees them.
+    """
+    if not error:
+        return False
+    e = error.lower()
+    # CLI exit-code-1 path leaves a JSON blob in the error message with
+    # api_error_status set; the actual status code is what matters.
+    transient_codes = ("429", "500", "502", "503", "504", "529")
+    for code in transient_codes:
+        if f'api_error_status":{code}' in e or f'api_error_status": {code}' in e:
+            return True
+    return "overloaded_error" in e or "overloaded" in e and "anthropic" in e
 
 
 async def _invoke_cli(

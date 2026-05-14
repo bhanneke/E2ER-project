@@ -186,7 +186,7 @@ async def execute_parallel(
             missing_artifacts.append((c.specialist, artifact, c.error or "(no error)"))
 
     if missing_artifacts:
-        details = "; ".join(f"{spec} -> {artifact} missing ({err[:80]})" for spec, artifact, err in missing_artifacts)
+        details = "; ".join(f"{spec} -> {artifact} missing ({err[:400]})" for spec, artifact, err in missing_artifacts)
         raise RuntimeError(
             f"Specialist(s) did not produce canonical artifact: {details}. "
             "Halting before downstream cascade — see specialist_failed events for details."
