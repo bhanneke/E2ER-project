@@ -8,12 +8,12 @@ abstract: >
   data access, the pipeline autonomously handles study design, data acquisition
   (with human-in-the-loop approval), econometric estimation, writing, adversarial
   self-review, parallel peer review, and replication packaging.
-version: "0.1.0"
-date-released: "2026-05-05"
+version: "0.2.0"
+date-released: "2026-05-14"
 license: MIT
 repository-code: "https://github.com/bhanneke/E2ER-project"
 url: "https://github.com/bhanneke/E2ER-project"
-doi: "10.5281/zenodo.XXXXXXX"
+doi: "10.5281/zenodo.20187239"
 authors:
   - family-names: Hanneke
     given-names: Björn
@@ -36,5 +36,6 @@ preferred-citation:
       given-names: Björn
       orcid: "https://orcid.org/0009-0000-7466-9581"
   year: 2026
+  version: "0.2.0"
   url: "https://github.com/bhanneke/E2ER-project"
-  doi: "10.5281/zenodo.XXXXXXX"
+  doi: "10.5281/zenodo.20187239"
