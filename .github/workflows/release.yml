@@ -1,0 +1,151 @@
+name: Release
+
+# Tag-driven release. Fires only on `push: tags: v*`. Builds the wheel,
+# enforces version consistency between pyproject.toml and src/__init__.py,
+# and creates a GitHub release with the wheel attached.
+#
+# PyPI publishing is intentionally NOT wired here yet — that lands in
+# Phase 4 of the stability sprint once the multi-CLI backends + skill
+# bundling are ready and the package is actually useful via `pip install`.
+#
+# Release procedure (see AGENTS.md for the full version):
+#   1. Open release PR dev → main. Bump version in BOTH:
+#        - pyproject.toml [project].version
+#        - src/__init__.py __version__
+#      Move CHANGELOG entries from `## Unreleased` to `## vX.Y.Z — YYYY-MM-DD`.
+#   2. Merge the PR to main.
+#   3. From main, tag and push:
+#        git checkout main && git pull
+#        git tag vX.Y.Z
+#        git push origin vX.Y.Z
+#   4. This workflow runs.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write  # Needed to create the GitHub release
+
+jobs:
+  version-check:
+    name: Verify tag matches package version
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check version consistency
+        run: |
+          TAG="${GITHUB_REF#refs/tags/v}"
+          PYPROJECT_VERSION=$(grep '^version' pyproject.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          INIT_VERSION=$(grep '^__version__' src/__init__.py | sed 's/.*"\(.*\)".*/\1/')
+
+          echo "Git tag:        v$TAG"
+          echo "pyproject.toml: $PYPROJECT_VERSION"
+          echo "src/__init__.py: $INIT_VERSION"
+
+          fail=0
+          if [ "$PYPROJECT_VERSION" != "$INIT_VERSION" ]; then
+            echo "::error::pyproject.toml and src/__init__.py disagree on version"
+            fail=1
+          fi
+          if [ "$TAG" != "$PYPROJECT_VERSION" ]; then
+            echo "::error::Git tag does not match pyproject.toml version"
+            fail=1
+          fi
+          if [ "$fail" -eq 1 ]; then exit 1; fi
+          echo "Version consistency: OK"
+
+  test:
+    name: Run tests before building
+    needs: version-check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run tests
+        run: pytest tests/ -v --tb=short -m "not e2e"
+
+  build:
+    name: Build wheel + sdist
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install build tool
+        run: pip install build
+
+      - name: Build
+        run: python -m build
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          retention-days: 30
+
+  release:
+    name: Create GitHub release
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          # Pull this version's CHANGELOG section if present.
+          NOTES_FILE=$(mktemp)
+          VERSION="${TAG#v}"
+          awk -v ver="$VERSION" '
+            /^## / {
+              if (capturing) exit;
+              if ($0 ~ "\\[?"ver"\\]?") capturing=1;
+              next
+            }
+            capturing { print }
+          ' CHANGELOG.md > "$NOTES_FILE"
+          if [ ! -s "$NOTES_FILE" ]; then
+            echo "Release $TAG" > "$NOTES_FILE"
+          fi
+
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --notes-file "$NOTES_FILE" \
+            dist/*

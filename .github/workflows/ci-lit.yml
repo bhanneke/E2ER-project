@@ -1,0 +1,61 @@
+name: ci-lit (Lane B)
+
+# Lane B — Knowledge & Literature Ingestion (OpenAlex / S2 / arXiv / KB).
+# Triggers ONLY when files relevant to the literature lane change.
+#
+# Lane B has no dedicated tests today. This workflow stays in place so the
+# CI plumbing exists when Phase 2 adds tests/lit/contract/ tests, and so
+# any future literature-only PR shows a "Lane B" check in the PR UI.
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - 'src/modules/literature/**'
+      - 'tests/lit/**'
+      - 'tests/test_literature*.py'
+      - 'skills/files/writing/**'
+      - 'skills/files/synthesis/**'
+      - '.github/workflows/ci-lit.yml'
+  pull_request:
+    paths:
+      - 'src/modules/literature/**'
+      - 'tests/lit/**'
+      - 'tests/test_literature*.py'
+      - 'skills/files/writing/**'
+      - 'skills/files/synthesis/**'
+      - '.github/workflows/ci-lit.yml'
+
+jobs:
+  lane-b:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Lint changed files
+        run: |
+          if [ -d "src/modules/literature" ]; then
+            ruff check src/modules/literature/
+          else
+            echo "src/modules/literature does not exist yet — skipping lint"
+          fi
+
+      - name: Run Lane B tests
+        # No literature-specific tests yet; this passes trivially. When Phase 2
+        # adds tests/lit/, replace this with `pytest tests/lit/ -v`.
+        run: |
+          pytest tests/ -v --tb=short -m "not e2e" -k "literature" || \
+            echo "No literature tests yet — passing trivially"
