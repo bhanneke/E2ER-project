@@ -250,10 +250,11 @@ async def test_review_aggregation_accept_completes_paper(tmp_path, mock_llm):
 
 def test_skills_loaded_for_all_specialists():
     """Every specialist in the registry should resolve to at least one skill file."""
-    from src.skills.loader import _SPECIALIST_SKILLS, load_skills_for_specialist
+    from src.core.specialists.registry import SPECIALIST_SKILLS
+    from src.skills.loader import load_skills_for_specialist
 
     missing_skills: list[str] = []
-    for specialist in _SPECIALIST_SKILLS:
+    for specialist in SPECIALIST_SKILLS:
         skills_text = load_skills_for_specialist(specialist)
         if not skills_text.strip():
             missing_skills.append(specialist)

@@ -99,12 +99,13 @@ echo ""
 info "Phase 4: Skills resolution"
 
 python3 - <<'PYEOF'
-from src.skills.loader import load_skills_for_specialist, _SPECIALIST_SKILLS
-missing = [s for s in _SPECIALIST_SKILLS if not load_skills_for_specialist(s).strip()]
+from src.core.specialists.registry import SPECIALIST_SKILLS
+from src.skills.loader import load_skills_for_specialist
+missing = [s for s in SPECIALIST_SKILLS if not load_skills_for_specialist(s).strip()]
 if missing:
     print(f"FAIL: specialists with no skills: {missing}")
     exit(1)
-print(f"All {len(_SPECIALIST_SKILLS)} specialists resolve to at least one skill file.")
+print(f"All {len(SPECIALIST_SKILLS)} specialists resolve to at least one skill file.")
 PYEOF
 pass "All specialists have skill files loaded"
 

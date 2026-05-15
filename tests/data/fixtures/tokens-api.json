@@ -1,0 +1,1288 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Allium API",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/v1/developer/tokens/chain-address": {
+      "post": {
+        "tags": [
+          "TOKENS",
+          "DEVELOPER"
+        ],
+        "summary": "Get Tokens",
+        "operationId": "get_tokens_api_v1_developer_tokens_chain_address_post",
+        "security": [
+          {
+            "APIKeyBearer": []
+          }
+        ],
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/PayloadTokenAddress"
+                },
+                "minItems": 1,
+                "maxItems": 200,
+                "title": "Payloads"
+              },
+              "example": [
+                {
+                  "token_address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+                  "chain": "ethereum"
+                },
+                {
+                  "token_address": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+                  "chain": "solana"
+                }
+              ]
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/Token"
+                      },
+                      {
+                        "$ref": "#/components/schemas/TokenNotFoundError"
+                      }
+                    ]
+                  },
+                  "title": "Response Get Tokens Api V1 Developer Tokens Chain Address Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/developer/tokens": {
+      "get": {
+        "tags": [
+          "TOKENS",
+          "DEVELOPER"
+        ],
+        "summary": "Get Tokens List",
+        "operationId": "get_tokens_list_api_v1_developer_tokens_get",
+        "security": [
+          {
+            "APIKeyBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "chain",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "The chain of the tokens. Do not pass anything to search across all tokens.",
+              "title": "Chain",
+              "type": "string"
+            },
+            "description": "The chain of the tokens. Do not pass anything to search across all tokens."
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "volume",
+                "trade_count",
+                "fully_diluted_valuation"
+              ],
+              "type": "string",
+              "description": "Sort by a certain field",
+              "default": "volume",
+              "title": "Sort"
+            },
+            "description": "Sort by a certain field"
+          },
+          {
+            "name": "granularity",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/api_server__app__routes__api__developer__tokens__tokens__Granularity"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Granularity of the sorting field. Only used if sort is volume or trade_count.",
+              "title": "Granularity"
+            },
+            "description": "Granularity of the sorting field. Only used if sort is volume or trade_count."
+          },
+          {
+            "name": "order",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "type": "string",
+              "description": "Sorting order",
+              "default": "desc",
+              "title": "Order"
+            },
+            "description": "Sorting order"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 0,
+              "description": "Maximum number of tokens to return.",
+              "default": 200,
+              "title": "Limit"
+            },
+            "description": "Maximum number of tokens to return."
+          },
+          {
+            "name": "volume_usd_1d_threshold",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "Minimum 1d volume in USD. Only returns tokens with volume >= this value.",
+              "title": "Volume Usd 1D Threshold",
+              "type": "number"
+            },
+            "description": "Minimum 1d volume in USD. Only returns tokens with volume >= this value."
+          },
+          {
+            "name": "volume_usd_1h_threshold",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "Minimum 1h volume in USD. Only returns tokens with volume >= this value.",
+              "title": "Volume Usd 1H Threshold",
+              "type": "number"
+            },
+            "description": "Minimum 1h volume in USD. Only returns tokens with volume >= this value."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Token"
+                  },
+                  "title": "Response Get Tokens List Api V1 Developer Tokens Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/developer/tokens/search": {
+      "get": {
+        "tags": [
+          "TOKENS",
+          "DEVELOPER"
+        ],
+        "summary": "Search Tokens",
+        "operationId": "search_tokens_api_v1_developer_tokens_search_get",
+        "security": [
+          {
+            "APIKeyBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "The query string to search in name and symbol. Performs a case-insensitive substring search.",
+              "title": "Q"
+            },
+            "description": "The query string to search in name and symbol. Performs a case-insensitive substring search."
+          },
+          {
+            "name": "chain",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "The chain of the tokens. Do not pass anything to search across all tokens.",
+              "title": "Chain",
+              "type": "string"
+            },
+            "description": "The chain of the tokens. Do not pass anything to search across all tokens."
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "volume",
+                "trade_count",
+                "fully_diluted_valuation"
+              ],
+              "type": "string",
+              "description": "Sort by a certain field",
+              "default": "volume",
+              "title": "Sort"
+            },
+            "description": "Sort by a certain field"
+          },
+          {
+            "name": "granularity",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/api_server__app__routes__api__developer__tokens__tokens__Granularity"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Granularity of the sorting field. Only used if sort is volume or trade_count.",
+              "title": "Granularity"
+            },
+            "description": "Granularity of the sorting field. Only used if sort is volume or trade_count."
+          },
+          {
+            "name": "order",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "type": "string",
+              "description": "Sorting order",
+              "default": "desc",
+              "title": "Order"
+            },
+            "description": "Sorting order"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 0,
+              "description": "Maximum number of tokens to return.",
+              "default": 200,
+              "title": "Limit"
+            },
+            "description": "Maximum number of tokens to return."
+          },
+          {
+            "name": "volume_usd_1d_threshold",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "Minimum 1d volume in USD. Only returns tokens with volume >= this value.",
+              "title": "Volume Usd 1D Threshold",
+              "type": "number"
+            },
+            "description": "Minimum 1d volume in USD. Only returns tokens with volume >= this value."
+          },
+          {
+            "name": "volume_usd_1h_threshold",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "Minimum 1h volume in USD. Only returns tokens with volume >= this value.",
+              "title": "Volume Usd 1H Threshold",
+              "type": "number"
+            },
+            "description": "Minimum 1h volume in USD. Only returns tokens with volume >= this value."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Token"
+                  },
+                  "title": "Response Search Tokens Api V1 Developer Tokens Search Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/developer/tokens/transfers": {
+      "get": {
+        "tags": [
+          "TOKENS",
+          "DEVELOPER"
+        ],
+        "summary": "Transfers",
+        "description": "Provides transfer history for a single wallet",
+        "operationId": "get_wallet_transfers_api_v1_developer_tokens_transfers_get",
+        "security": [
+          {
+            "APIKeyBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "chain",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Chain to get transfers for.",
+              "title": "Chain"
+            },
+            "description": "Chain to get transfers for."
+          },
+          {
+            "name": "address",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "Address to get transfers for.",
+              "title": "Address",
+              "type": "string"
+            },
+            "description": "Address to get transfers for."
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "Cursor to paginate results.",
+              "title": "Cursor",
+              "type": "string"
+            },
+            "description": "Cursor to paginate results."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "exclusiveMinimum": 0,
+              "description": "Limit the number of items in the response. Default is 15.",
+              "default": 15,
+              "title": "Limit"
+            },
+            "description": "Limit the number of items in the response. Default is 15."
+          },
+          {
+            "name": "token",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "Exclude transfers for other tokens",
+              "title": "Token",
+              "type": "string"
+            },
+            "description": "Exclude transfers for other tokens"
+          },
+          {
+            "name": "transfer_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "sent",
+                "received",
+                "any"
+              ],
+              "type": "string",
+              "description": "Direction of the transfer. Defaults to 'any'. Can only be specified when using the address filter",
+              "default": "any",
+              "title": "Transfer Type"
+            },
+            "description": "Direction of the transfer. Defaults to 'any'. Can only be specified when using the address filter"
+          },
+          {
+            "name": "min_timestamp",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "Exclude transfers before this time",
+              "title": "Min Timestamp",
+              "type": "string"
+            },
+            "description": "Exclude transfers before this time"
+          },
+          {
+            "name": "max_timestamp",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "Exclude transfers after this time",
+              "title": "Max Timestamp",
+              "type": "string"
+            },
+            "description": "Exclude transfers after this time"
+          },
+          {
+            "name": "direction",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "type": "string",
+              "description": "Direction to sort by",
+              "default": "desc",
+              "title": "Direction"
+            },
+            "description": "Direction to sort by"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletTransfersEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "LiquidityResults": {
+        "properties": {
+          "amount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount",
+            "description": "Liquidity amount (USD)"
+          },
+          "details": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Details",
+            "description": "Status when amount unavailable (e.g. LIQUIDITY_TOO_HIGH)"
+          }
+        },
+        "type": "object",
+        "title": "LiquidityResults"
+      },
+      "PayloadTokenAddress": {
+        "properties": {
+          "token_address": {
+            "type": "string",
+            "title": "Token Address",
+            "description": "Token contract address"
+          },
+          "chain": {
+            "type": "string",
+            "title": "Chain",
+            "description": "Lowercase chain name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "token_address",
+          "chain"
+        ],
+        "title": "PayloadTokenAddress",
+        "example": {
+          "chain": "ethereum",
+          "token_address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+        }
+      },
+      "SolanaTransfer": {
+        "properties": {
+          "block_slot": {
+            "type": "integer",
+            "title": "Block Slot"
+          },
+          "block_height": {
+            "type": "integer",
+            "title": "Block Height"
+          },
+          "block_timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Block Timestamp"
+          },
+          "block_hash": {
+            "type": "string",
+            "title": "Block Hash"
+          },
+          "txn_id": {
+            "type": "string",
+            "title": "Txn Id"
+          },
+          "txn_index": {
+            "type": "integer",
+            "title": "Txn Index"
+          },
+          "instruction_index": {
+            "type": "integer",
+            "title": "Instruction Index"
+          },
+          "inner_instruction_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inner Instruction Index"
+          },
+          "from_account": {
+            "type": "string",
+            "title": "From Account"
+          },
+          "to_account": {
+            "type": "string",
+            "title": "To Account"
+          },
+          "from_token_account": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Token Account"
+          },
+          "to_token_account": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To Token Account"
+          },
+          "mint": {
+            "type": "string",
+            "title": "Mint"
+          },
+          "value": {
+            "type": "integer",
+            "title": "Value"
+          },
+          "decimals": {
+            "type": "integer",
+            "title": "Decimals"
+          },
+          "signer": {
+            "type": "string",
+            "title": "Signer"
+          }
+        },
+        "type": "object",
+        "required": [
+          "block_slot",
+          "block_height",
+          "block_timestamp",
+          "block_hash",
+          "txn_id",
+          "txn_index",
+          "instruction_index",
+          "inner_instruction_index",
+          "from_account",
+          "to_account",
+          "from_token_account",
+          "to_token_account",
+          "mint",
+          "value",
+          "decimals",
+          "signer"
+        ],
+        "title": "SolanaTransfer"
+      },
+      "Token": {
+        "properties": {
+          "object": {
+            "type": "string",
+            "const": "token",
+            "title": "Object",
+            "default": "token"
+          },
+          "chain": {
+            "type": "string",
+            "title": "Chain",
+            "description": "Lowercase chain name"
+          },
+          "address": {
+            "type": "string",
+            "title": "Address",
+            "description": "Token contract address"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "native",
+                  "non_native",
+                  "evm_erc20",
+                  "evm_erc721",
+                  "evm_erc1155",
+                  "sol_spl",
+                  "sui_token",
+                  "near_nep141",
+                  "near_nep245",
+                  "stellar_classic",
+                  "stellar_sac",
+                  "stellar_wasm"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type",
+            "description": "Token standard type: evm_erc20/evm_erc721/evm_erc1155 (EVMs), sol_spl (Solana), sui_token (Sui), near_nep141/near_nep245 (Near), stellar_classic/stellar_sac/stellar_wasm (Stellar), or native (All)"
+          },
+          "price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price",
+            "description": "Current price (USD)"
+          },
+          "decimals": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decimals",
+            "description": "Token decimal places"
+          },
+          "info": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/api_server__app__core__models__token__TokenInfo"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Token name and symbol"
+          },
+          "attributes": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TokenAttributes"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Token market attributes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "chain",
+          "address"
+        ],
+        "title": "Token"
+      },
+      "TokenAttributes": {
+        "properties": {
+          "total_liquidity_usd": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LiquidityResults"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Liquidity data: {'amount': number} when available, or {'details': 'LIQUIDITY_TOO_HIGH'} when limit exceeded"
+          },
+          "price_diff_1d": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price Diff 1D",
+            "description": "Price change (USD) over last 24h"
+          },
+          "price_diff_pct_1d": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price Diff Pct 1D",
+            "description": "Price change (%) over last 24h"
+          },
+          "price_diff_1h": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price Diff 1H",
+            "description": "Price change (USD) over last 1h"
+          },
+          "price_diff_pct_1h": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price Diff Pct 1H",
+            "description": "Price change (%) over last 1h"
+          },
+          "total_supply": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Supply",
+            "description": "Total token supply"
+          },
+          "fully_diluted_valuation_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fully Diluted Valuation Usd",
+            "description": "Fully diluted valuation (USD)"
+          },
+          "volume_1h": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volume 1H",
+            "description": "Trading volume over last 1h"
+          },
+          "volume_1d": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volume 1D",
+            "description": "Trading volume over last 24h"
+          },
+          "volume_usd_1h": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volume Usd 1H",
+            "description": "Trading volume (USD) over last 1h"
+          },
+          "volume_usd_1d": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volume Usd 1D",
+            "description": "Trading volume (USD) over last 24h"
+          },
+          "volume_24h": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volume 24H",
+            "description": "Trading volume over last 24h"
+          },
+          "volume_usd_24h": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volume Usd 24H",
+            "description": "Trading volume (USD) over last 24h"
+          },
+          "trade_count_1h": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trade Count 1H",
+            "description": "Trade count over last 1h"
+          },
+          "trade_count_1d": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trade Count 1D",
+            "description": "Trade count over last 24h"
+          },
+          "all_time_high": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "All Time High",
+            "description": "All-time high price (USD)"
+          },
+          "all_time_low": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "All Time Low",
+            "description": "All-time low price (USD)"
+          },
+          "image_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Url",
+            "description": "Token logo URL"
+          },
+          "token_creation_time": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token Creation Time",
+            "description": "Token creation timestamp (UTC)"
+          },
+          "holders_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Holders Count",
+            "description": "Number of token holders"
+          },
+          "stellar_fields": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stellar Fields",
+            "description": "Stellar-specific metadata"
+          }
+        },
+        "type": "object",
+        "title": "TokenAttributes"
+      },
+      "TokenNotFoundError": {
+        "properties": {
+          "error": {
+            "type": "string",
+            "title": "Error",
+            "description": "Error message"
+          },
+          "address": {
+            "type": "string",
+            "title": "Address",
+            "description": "Token contract address"
+          },
+          "chain": {
+            "type": "string",
+            "title": "Chain",
+            "description": "Lowercase chain name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "error",
+          "address",
+          "chain"
+        ],
+        "title": "TokenNotFoundError"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      },
+      "WalletTransfersEnvelope": {
+        "properties": {
+          "items": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/SolanaTransfer"
+                },
+                "type": "array"
+              },
+              {
+                "items": {
+                  "$ref": "#/components/schemas/api_server__app__services__transfers__evm__EVMTransfer"
+                },
+                "type": "array"
+              }
+            ],
+            "title": "Items"
+          },
+          "cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cursor"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "cursor"
+        ],
+        "title": "WalletTransfersEnvelope"
+      },
+      "api_server__app__core__models__token__TokenInfo": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "Token name"
+          },
+          "symbol": {
+            "type": "string",
+            "title": "Symbol",
+            "description": "Token symbol"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "symbol"
+        ],
+        "title": "TokenInfo"
+      },
+      "api_server__app__routes__api__developer__tokens__tokens__Granularity": {
+        "type": "string",
+        "enum": [
+          "1d",
+          "1h"
+        ],
+        "title": "Granularity"
+      },
+      "api_server__app__services__transfers__evm__EVMTransfer": {
+        "properties": {
+          "caller": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Caller",
+            "description": "Address that initiated the transfer/called the transfer/transferFrom method."
+          },
+          "token_address": {
+            "type": "string",
+            "title": "Token Address"
+          },
+          "value": {
+            "type": "integer",
+            "title": "Value"
+          },
+          "value_str": {
+            "type": "string",
+            "title": "Value Str"
+          },
+          "from_address": {
+            "type": "string",
+            "title": "From Address"
+          },
+          "to_address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To Address"
+          },
+          "transaction_hash": {
+            "type": "string",
+            "title": "Transaction Hash"
+          },
+          "log_index": {
+            "type": "integer",
+            "title": "Log Index"
+          },
+          "block_timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Block Timestamp"
+          },
+          "block_number": {
+            "type": "integer",
+            "title": "Block Number"
+          },
+          "block_hash": {
+            "type": "string",
+            "title": "Block Hash"
+          },
+          "transaction_index": {
+            "type": "integer",
+            "title": "Transaction Index"
+          }
+        },
+        "type": "object",
+        "required": [
+          "token_address",
+          "value",
+          "value_str",
+          "from_address",
+          "to_address",
+          "transaction_hash",
+          "log_index",
+          "block_timestamp",
+          "block_number",
+          "block_hash",
+          "transaction_index"
+        ],
+        "title": "EVMTransfer"
+      }
+    },
+    "securitySchemes": {
+      "APIKeyBearer": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-KEY"
+      }
+    }
+  },
+  "servers": [
+    {
+      "url": "https://api.allium.so"
+    }
+  ]
+}
