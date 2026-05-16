@@ -121,14 +121,18 @@ def gate_changelog_has_unreleased() -> tuple[bool, str]:
 
 
 def gate_no_release_todos() -> tuple[bool, str]:
-    """TODO(release) markers must be resolved before tagging."""
-    rc, out, _ = _run(["git", "grep", "-l", "-E", "TODO\\(release\\)|FIXME\\(release\\)"])
+    """TODO(release) markers in source code must be resolved before tagging.
+
+    Only scans `src/` so meta-mentions of the marker pattern in docs,
+    slash commands, and this very script don't false-trip the gate.
+    """
+    rc, out, _ = _run(["git", "grep", "-l", "-E", "TODO\\(release\\)|FIXME\\(release\\)", "--", "src/"])
     if rc != 0 and not out.strip():
-        return True, "no TODO(release) markers"
+        return True, "no TODO(release) markers in src/"
     files = [line for line in out.splitlines() if line.strip()]
     if not files:
-        return True, "no TODO(release) markers"
-    return False, f"{len(files)} file(s) have TODO(release): " + ", ".join(files[:5])
+        return True, "no TODO(release) markers in src/"
+    return False, f"{len(files)} file(s) in src/ have TODO(release): " + ", ".join(files[:5])
 
 
 def gate_ci_green() -> tuple[bool, str]:
