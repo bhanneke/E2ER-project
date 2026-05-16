@@ -401,6 +401,178 @@ async def resume_paper(paper_id: str) -> dict[str, Any]:
     return {"status": "resuming", "paper_id": paper_id, "from_status": current}
 
 
+@app.get("/api/papers/{paper_id}/failure-bundle")
+async def failure_bundle(paper_id: str) -> dict[str, Any]:
+    """Single-call diagnostic for a paused/failed run.
+
+    Returns everything the operator (or /diagnose-run agent) needs to
+    understand why a paper stopped, without having to dig through 4
+    separate endpoints + the app log:
+
+      - paper status + last_error (untruncated)
+      - every pipeline event with full untruncated payload
+      - per-specialist drill-down (success/failure/error_msg/turns/cost/tokens)
+      - workspace listing: which canonical artifacts are present vs missing
+      - data_summary.md content (often the most actionable artifact when
+        the data layer is degraded)
+
+    Replaces the 80-char truncation that the cascade detector applies to
+    its halting message. Run #14-#18 each had a critical error hidden by
+    that truncation; this endpoint surfaces the full text.
+    """
+    _validate_uuid(paper_id)
+
+    from ..core.specialists.registry import SPECIALIST_ARTIFACTS
+    from ..db.client import fetch_all, fetch_one
+
+    settings = get_settings()
+    workspace = Path(settings.workspace_root) / paper_id
+
+    try:
+        paper_row = await fetch_one(
+            "SELECT id, title, status, last_error, mode, methodology, max_cost_usd, "
+            "research_question, workspace, created_at FROM papers WHERE id = %(id)s",
+            {"id": paper_id},
+        )
+    except Exception as e:
+        logger.warning("failure-bundle DB lookup failed for %s: %s", paper_id, e)
+        raise HTTPException(status_code=503, detail="database unavailable") from e
+    if paper_row is None:
+        raise HTTPException(status_code=404, detail="paper not found")
+
+    # Events: untruncated payload, sorted oldest → newest. The diagnose-run
+    # agent typically scans these tail-to-head for the first failure event.
+    try:
+        events = await fetch_all(
+            """
+            SELECT event_type, stage, specialist, payload, created_at
+            FROM pipeline_events WHERE paper_id = %(p)s
+            ORDER BY created_at
+            """,
+            {"p": paper_id},
+        )
+    except Exception as e:
+        logger.warning("failure-bundle events fetch failed for %s: %s", paper_id, e)
+        events = []
+
+    # Per-specialist drill-down. error_msg is untruncated here — the
+    # cascade detector's 400-char clamp only applies to the runtime
+    # halting message, not the underlying DB row.
+    try:
+        contributions = await fetch_all(
+            """
+            SELECT specialist, output_file, success, error_msg,
+                   usage_tokens, cost_usd, duration_sec, created_at
+            FROM contributions WHERE paper_id = %(p)s
+            ORDER BY created_at
+            """,
+            {"p": paper_id},
+        )
+    except Exception as e:
+        logger.warning("failure-bundle contributions fetch failed for %s: %s", paper_id, e)
+        contributions = []
+
+    # Workspace state: which canonical artifacts are present vs missing.
+    # Cascade detection halts on the first missing artifact, so this is
+    # the fastest path from "the run failed" to "this specialist didn't
+    # write its file".
+    artifacts_status: list[dict[str, Any]] = []
+    if workspace.exists():
+        for specialist, artifact_path in SPECIALIST_ARTIFACTS.items():
+            candidate = workspace / artifact_path
+            artifacts_status.append(
+                {
+                    "specialist": specialist,
+                    "artifact": artifact_path,
+                    "exists": candidate.exists(),
+                    "size_bytes": candidate.stat().st_size if candidate.exists() else 0,
+                }
+            )
+
+    # data_summary.md is often the most actionable file when the data
+    # layer is degraded — data_analyst writes a transparent failure
+    # report there with API error envelopes intact.
+    data_summary_excerpt = ""
+    ds_path = workspace / "data_summary.md"
+    if ds_path.exists():
+        try:
+            data_summary_excerpt = ds_path.read_text(encoding="utf-8")[:8000]
+        except Exception as e:
+            data_summary_excerpt = f"(could not read data_summary.md: {e})"
+
+    return {
+        "paper_id": paper_id,
+        "status": paper_row.get("status"),
+        "last_error": paper_row.get("last_error"),
+        "title": paper_row.get("title"),
+        "research_question": paper_row.get("research_question"),
+        "mode": paper_row.get("mode"),
+        "methodology": paper_row.get("methodology"),
+        "events": events,
+        "specialists": contributions,
+        "artifacts": artifacts_status,
+        "missing_canonical_artifacts": [a["specialist"] for a in artifacts_status if not a["exists"]],
+        "data_summary_excerpt": data_summary_excerpt,
+    }
+
+
+@app.get("/api/papers/{paper_id}/data-queries")
+async def data_queries(paper_id: str) -> dict[str, Any]:
+    """Return every Allium-style query the paper run submitted.
+
+    The `data_query_records` table captures both SQL Explorer queries
+    (`query_allium feasibility/production`) and developer-tier endpoint
+    calls when they go through the gatekeeper. Surfacing them in one
+    endpoint replaces the manual `cat audit_log.csv | grep ...` workflow.
+
+    Useful when diagnosing a data_analyst run: did the model actually
+    submit queries, were they approved, did they return rows, what
+    errors did Allium emit?
+    """
+    _validate_uuid(paper_id)
+
+    from ..db.client import fetch_all
+
+    try:
+        queries = await fetch_all(
+            """
+            SELECT id, specialist, query_sql, query_type, fields_requested,
+                   aggregation_level, estimated_rows, actual_rows,
+                   validation_status, validation_errors, approval_status,
+                   approval_note, executed_at, created_at
+            FROM data_query_records
+            WHERE paper_id = %(p)s
+            ORDER BY created_at
+            """,
+            {"p": paper_id},
+        )
+    except Exception as e:
+        logger.warning("data-queries fetch failed for %s: %s", paper_id, e)
+        # Missing table is not 5xx-worthy — the data module is optional.
+        return {"paper_id": paper_id, "queries": [], "summary": {}, "error": str(e)}
+
+    # Roll up an at-a-glance summary so the dashboard / agent doesn't have
+    # to count rows itself.
+    summary = {
+        "total": len(queries),
+        "by_type": {},
+        "by_validation_status": {},
+        "by_approval_status": {},
+        "executed": sum(1 for q in queries if q.get("executed_at") is not None),
+        "rows_returned": sum(int(q.get("actual_rows") or 0) for q in queries),
+    }
+    for q in queries:
+        for field, bucket in [
+            ("query_type", "by_type"),
+            ("validation_status", "by_validation_status"),
+            ("approval_status", "by_approval_status"),
+        ]:
+            key = q.get(field) or "unknown"
+            summary[bucket][key] = summary[bucket].get(key, 0) + 1  # type: ignore[index]
+
+    return {"paper_id": paper_id, "queries": queries, "summary": summary}
+
+
 @app.get("/api/papers/{paper_id}/audit-bundle")
 async def audit_bundle(paper_id: str) -> StreamingResponse:
     """Download a tarball with everything needed to verify the paper's provenance:
