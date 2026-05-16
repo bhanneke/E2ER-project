@@ -7,6 +7,125 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+(Add new entries here under `### Lane A — Pipeline`, `### Lane B — Literature`,
+`### Lane C — Data`, or `### Cross-lane` sub-headings per `AGENTS.md`.)
+
+## v0.3.0 — 2026-05-16
+
+The **stability sprint**. Five-phase overhaul focused on making v3
+*actually* stable for users beyond the maintainer. Adopted patterns
+from `Davidvandijcke/coarse` (branching model, slash commands, headless
+CLI backends, OIDC PyPI publishing). Test count: 221 → 290.
+
+### Cross-lane — Foundation & process
+
+- **dev/main branch model**: `dev` is now the default integration branch;
+  `main` is released-only and branch-protected (PR required, no force
+  push, no deletion). All feature work goes through PRs into `dev`.
+- **`AGENTS.md`** (new) codifies the three-lane split (Pipeline / Lit /
+  Data), the public contracts each lane owns, hard rules (no live runs
+  from `dev` without smoke-pass, cross-lane changes need explicit flag),
+  and the tag-driven release procedure.
+- **`.claude/hooks/session-brief.sh`** runs at SessionStart to dump
+  branch, recent commits, CI status, and in-flight paper runs into
+  every new Claude Code session.
+- **`scripts/release_audit.py` + `make release-audit`**: hard-gates
+  (version match between `pyproject.toml` and `src/__init__.py`, clean
+  tree, CHANGELOG has entries, no `TODO(release)`, pytest passes) + soft
+  gates (on-main, CI green). Required before tagging.
+- **`.github/workflows/release.yml`** (new) tag-driven (`push:tags:v*`).
+  Enforces tag↔pyproject↔__init__.py version triple-match, runs tests,
+  builds wheel, creates GH release. Publishes to PyPI via OIDC trusted
+  publishing — no API token secret.
+- **Path-filtered per-lane CI** (`ci-pipeline.yml`, `ci-lit.yml`,
+  `ci-data.yml`): each lane runs only its own tests; full `tests.yml`
+  runs on every dev/main merge.
+- **CHANGELOG per-lane organisation**: entries under `## Unreleased` use
+  `### Lane A`, `### Lane B`, `### Lane C`, `### Cross-lane` sub-headings.
+
+### Lane A — Pipeline (Phase 2-5)
+
+- **Specialist circuit breaker** (`src/core/strategist/runner.py` +
+  `state.py`): tracks consecutive failures per non-tolerant specialist.
+  After 3 failures, the runner raises `CircuitBreakerError`, marks the
+  paper `PAUSED` (new state), logs a `circuit_breaker_tripped` event,
+  and returns cleanly. Tolerant specialists (reviewers, polish) are
+  exempt — their failure is non-blocking. Fixes the run #14 failure
+  mode where data_analyst was re-dispatched 3+ times when Allium was
+  unrecoverable, burning 13 specialists before manual cancel.
+- **Resume from last completed stage** (`POST /api/papers/{id}/resume`):
+  re-enters the pipeline at the first phase whose canonical artifact is
+  missing. Eligible from `paused` or `failed`. Avoids re-running phases
+  that already succeeded after fixing a downstream issue.
+- **Turn-budget signal in specialist prompts** (`src/core/specialists/base.py`):
+  the system prompt opens with a "Turn Budget" section telling the
+  model its max_turns and to write a first version of the canonical
+  artifact within the first half. Fixes the run #16 failure where
+  data_analyst saved write_file for the last turn and hit max_turns
+  mid-pagination.
+- **`SPECIALIST_SKILLS` consolidation**: previously two parallel dicts
+  (`registry.py` and `loader.py`) that drifted whenever someone added a
+  skill to one but not the other. Now one source of truth in
+  `registry.SPECIALIST_SKILLS` with full paths (`data/cleaning`); loader
+  resolves them.
+- **Codex headless backend** (`LLM_BACKEND=codex`, src/modules/llm/codex.py)
+  for ChatGPT Plus/Pro subscriptions. Shells out to `codex exec` — same
+  pattern as the existing Claude Code backend. Adapted from coarse.
+- **Gemini headless backend** (`LLM_BACKEND=gemini`, src/modules/llm/gemini.py)
+  for Google AI Pro/Ultra. Probes `--approval-mode` vs legacy `--yolo`
+  at startup. Adapted from coarse.
+- **Skills bundled in the wheel** (`pyproject.toml` + `skills/__init__.py`):
+  all 49 skill .md files ship in the e2er wheel. `e2er install-skills
+  [--backend claude|codex|gemini|all] [--force]` copies them to the
+  per-CLI skills dir (`~/.{backend}/skills/`).
+- **Pre-run safety**: PR-time contract tests for specialist artifacts
+  (every specialist in `SPECIALIST_ARTIFACTS` has registered skills,
+  every skill path resolves to a real .md file, reviewer/polish lists
+  stay aligned with registries) and integration smoke (theoretical
+  pipeline end-to-end via MockLLMBackend, FastAPI POST surface,
+  cascade-detection halt).
+- **`POST /api/papers/{id}/resume`** (new endpoint, see above).
+- **`GET /api/papers/{id}/failure-bundle`** (new): single-call
+  diagnostic returning paper status + last_error (untruncated), every
+  pipeline event with full payload, per-specialist drill-down
+  (untruncated error_msg), workspace artifact listing (present vs
+  missing), and the data_summary.md excerpt. Replaces the
+  4-endpoint scavenger hunt diagnosis used to require.
+- **Slash commands** (`.claude/commands/*.md`): `/pre-pr`,
+  `/diagnose-run`, `/run-paper`, `/release-audit`.
+
+### Lane B — Literature (Phase 2)
+
+- **Provider contract tests** (`tests/lit/contract/test_provider_shapes.py`):
+  first dedicated Lane B tests. For OpenAlex, Semantic Scholar, and
+  arXiv, mock the documented response payloads and verify parsers
+  handle standard shape, empty results, and network errors without
+  crashing or raising into specialist code.
+
+### Lane C — Data (Phase 2-3, 5)
+
+- **Live OpenAPI contract tests** (`tests/data/contract/test_allium_developer_schema.py`):
+  validates `AlliumDeveloperProvider` method kwargs against Allium's
+  published OpenAPI specs (snapshots cached in
+  `tests/data/fixtures/`). Catches required-param drift, list-vs-object
+  body-shape mismatches, and silently-ignored unknown params. Run
+  #14-#18's wrapper bugs would have been red CI checks instead of
+  burning real specialist invocations.
+- **Nightly schema-drift workflow** (`.github/workflows/schema-drift.yml`):
+  re-fetches Allium's live OpenAPI at 03:30 UTC, diffs against the
+  cached fixtures, opens a labelled issue with the unified-diff
+  artifact if anything changed upstream.
+- **Data-layer degradation breaker** (`src/modules/data/allium_developer.py`):
+  tracks a sliding window of recent call outcomes. If >50% of the last
+  6 calls errored, subsequent calls short-circuit with a structured
+  "data layer degraded" envelope BEFORE hitting the network. Stops a
+  specialist from draining its turn budget on dozens of 429 retries.
+  Self-clears on the next successful call.
+- **`GET /api/papers/{id}/data-queries`** (new): every Allium-style
+  query the run submitted, with validation/approval status, executed
+  timestamps, row counts, plus a rolled-up summary. Replaces the
+  manual `cat audit_log.csv | grep` workflow.
+
 ### Fixed — Real bugs from the May 2026 NFT-marketplace live run
 
 **Root cause (the hard lesson):** v3 made an architectural change v1/v2 didn't have — instead of delegating to the Claude Code CLI subprocess, it owns the tool-use loop directly via the Anthropic / OpenRouter SDKs (so `AlliumToolHandler` can intercept every tool call for guardrail validation). That introduced a class of bugs the unit-test suite never covered: the layer was never pressure-tested with realistic specialist output sizes. `MockLLMBackend` returns short canned outputs, so unit tests never saw the failure modes that hit on the first live run.

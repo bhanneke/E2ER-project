@@ -1,0 +1,161 @@
+name: schema-drift (Allium OpenAPI)
+
+# Nightly job: re-fetch Allium's OpenAPI specs and compare to the fixtures
+# we ship in tests/data/fixtures/. If anything changed upstream, open a
+# GitHub issue so Lane C maintainers can review whether our provider needs
+# an update.
+#
+# Why: live paper runs #14-#18 surfaced wrapper-vs-Allium drift. The PR-time
+# contract tests (tests/data/contract/test_allium_developer_schema.py)
+# guard against drift between OUR code and the cached fixtures. This
+# workflow guards against drift between OUR fixtures and Allium's live
+# spec. Together they form a two-step trap.
+#
+# This is the same pattern coarse uses for its third-party docs sync,
+# minus the bells and whistles.
+
+on:
+  schedule:
+    # 03:30 UTC daily — pick an off-peak slot so cache pressure is low.
+    - cron: '30 3 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  drift-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dev
+
+      - name: Fetch latest Allium OpenAPI specs
+        run: |
+          mkdir -p /tmp/latest-specs
+          for endpoint in tokens-api wallet-api balances-api prices-api; do
+            curl -sf "https://docs.allium.so/_openapi/${endpoint}.json" \
+              -o "/tmp/latest-specs/${endpoint}.json"
+          done
+
+      - name: Compare to cached fixtures
+        id: diff
+        run: |
+          drift_found=0
+          drift_summary=""
+          for endpoint in tokens-api wallet-api balances-api prices-api; do
+            cached="tests/data/fixtures/${endpoint}.json"
+            latest="/tmp/latest-specs/${endpoint}.json"
+
+            # Normalize whitespace + key order before comparing so that
+            # cosmetic re-formatting upstream doesn't fire a false alarm.
+            python3 -c "
+            import json, sys
+            with open('$cached') as f: a = json.load(f)
+            with open('$latest') as f: b = json.load(f)
+            sys.exit(0 if a == b else 1)
+            " || {
+              drift_found=1
+              drift_summary="${drift_summary}- ${endpoint}\n"
+            }
+          done
+
+          if [ "$drift_found" -eq 1 ]; then
+            echo "drift=true" >> $GITHUB_OUTPUT
+            echo -e "Drift detected in:\n${drift_summary}"
+          else
+            echo "drift=false" >> $GITHUB_OUTPUT
+            echo "All Allium OpenAPI specs match cached fixtures."
+          fi
+
+          # Make latest specs available to the issue-creation step.
+          cp /tmp/latest-specs/*.json /tmp/ 2>/dev/null || true
+
+      - name: Generate diff artifact
+        if: steps.diff.outputs.drift == 'true'
+        run: |
+          mkdir -p /tmp/drift-diffs
+          for endpoint in tokens-api wallet-api balances-api prices-api; do
+            cached="tests/data/fixtures/${endpoint}.json"
+            latest="/tmp/latest-specs/${endpoint}.json"
+            if ! diff -q "$cached" "$latest" >/dev/null 2>&1; then
+              diff -u "$cached" "$latest" > "/tmp/drift-diffs/${endpoint}.diff" || true
+            fi
+          done
+          ls -la /tmp/drift-diffs/
+
+      - name: Upload diff artifact
+        if: steps.diff.outputs.drift == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: schema-drift-diffs
+          path: /tmp/drift-diffs/
+          retention-days: 14
+
+      - name: Check for existing open drift issue
+        if: steps.diff.outputs.drift == 'true'
+        id: existing-issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # If there's already an open drift issue, don't spam a new one.
+          existing=$(gh issue list \
+            --state open \
+            --label "schema-drift" \
+            --json number \
+            --jq '.[0].number // empty')
+          echo "number=$existing" >> $GITHUB_OUTPUT
+
+      - name: Open issue if no existing one
+        if: steps.diff.outputs.drift == 'true' && steps.existing-issue.outputs.number == ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          # Ensure the label exists (idempotent; ignore failure if it does).
+          gh label create schema-drift --color "d93f0b" --description "Upstream API schema changed" 2>/dev/null || true
+
+          gh issue create \
+            --title "Allium OpenAPI drift detected $(date +'%Y-%m-%d')" \
+            --label "schema-drift" \
+            --body "$(cat <<EOF
+          The nightly schema-drift check found that Allium's published OpenAPI
+          differs from \`tests/data/fixtures/\`.
+
+          **Action required**: review the diff and decide whether our provider
+          needs an update.
+
+          Run: $RUN_URL
+
+          Workflow artifact \`schema-drift-diffs\` contains the unified diff
+          for each affected endpoint.
+
+          Procedure:
+          1. Download the artifact and inspect the diffs.
+          2. If the change is benign (new optional param, doc tweak), refresh
+             the fixtures:
+             \`\`\`
+             for e in tokens wallet balances prices; do
+               curl -sf "https://docs.allium.so/_openapi/\${e}-api.json" \\
+                 -o "tests/data/fixtures/\${e}-api.json"
+             done
+             \`\`\`
+          3. If the change breaks our provider, update
+             \`src/modules/data/allium_developer.py\` AND the fixtures.
+          4. Run \`pytest tests/data/contract/ -v\` to confirm green.
+          5. Close this issue when fixed.
+          EOF
+          )"
+
+      - name: Comment on existing issue
+        if: steps.diff.outputs.drift == 'true' && steps.existing-issue.outputs.number != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE: ${{ steps.existing-issue.outputs.number }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh issue comment "$ISSUE" --body "Drift still present on $(date +'%Y-%m-%d') — see $RUN_URL"

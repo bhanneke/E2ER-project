@@ -1,4 +1,4 @@
-.PHONY: install test lint typecheck format smoke smoke-paid hooks clean help
+.PHONY: install test lint typecheck format smoke smoke-paid hooks clean help check release-audit rebuild-app
 
 # Use the same Python that resolves `python3` so Makefile works regardless of
 # whether `pytest` / `ruff` happen to be on the user's PATH.
@@ -6,15 +6,18 @@ PY := python3
 
 help:
 	@echo "E2ER make targets:"
-	@echo "  install     Install package + dev dependencies (pip install -e '.[dev]')"
-	@echo "  smoke       Run the full mocked test suite — no API key needed (~15s, free)"
-	@echo "  smoke-paid  Run the live Haiku end-to-end test (~\$$0.50, needs ANTHROPIC_API_KEY)"
-	@echo "  test        Same as smoke (full mocked suite)"
-	@echo "  lint        Run ruff check + format --check"
-	@echo "  typecheck   Run mypy"
-	@echo "  format      Auto-format with ruff"
-	@echo "  hooks       Install pre-commit hooks (ruff + mypy on every commit)"
-	@echo "  clean       Remove caches and build artifacts"
+	@echo "  install        Install package + dev dependencies (pip install -e '.[dev]')"
+	@echo "  smoke          Run the full mocked test suite — no API key needed (~15s, free)"
+	@echo "  smoke-paid     Run the live Haiku end-to-end test (~\$$0.50, needs ANTHROPIC_API_KEY)"
+	@echo "  test           Same as smoke (full mocked suite)"
+	@echo "  lint           Run ruff check + format --check"
+	@echo "  typecheck      Run mypy"
+	@echo "  format         Auto-format with ruff"
+	@echo "  check          Run lint + tests (pre-PR gate)"
+	@echo "  release-audit  Run pre-release audit (version match, clean tree, CHANGELOG, tests)"
+	@echo "  rebuild-app    Stop + start the local uvicorn dev server"
+	@echo "  hooks          Install pre-commit hooks (ruff + mypy on every commit)"
+	@echo "  clean          Remove caches and build artifacts"
 
 install:
 	$(PY) -m pip install -e ".[dev]"
@@ -53,3 +56,22 @@ hooks:
 clean:
 	rm -rf .pytest_cache .ruff_cache .mypy_cache build dist *.egg-info
 	find . -type d -name __pycache__ -exec rm -rf {} +
+
+# Pre-PR gate. Run this before opening a PR — fast checks only.
+check: lint smoke
+
+# Pre-release audit. See scripts/release_audit.py for the full gate list.
+release-audit:
+	@$(PY) scripts/release_audit.py
+
+# Restart the local dev server. Kills any running uvicorn and starts fresh
+# with the venv at /tmp/e2er_venv2 (Python 3.12). The app port is 8280.
+# Use this after changing src/ to pick up edits during local development.
+rebuild-app:
+	@pkill -f "uvicorn src.api.app" 2>/dev/null || true
+	@sleep 2
+	@nohup /tmp/e2er_venv2/bin/python -m uvicorn src.api.app:app \
+		--host 127.0.0.1 --port 8280 --log-level info \
+		> /tmp/e2er_app.log 2>&1 &
+	@sleep 4
+	@curl -s -o /dev/null -w "  uvicorn: HTTP %{http_code} on /api/papers\n" http://127.0.0.1:8280/api/papers || echo "  uvicorn: failed to start — check /tmp/e2er_app.log"

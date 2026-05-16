@@ -1,0 +1,1085 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Allium API",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/v1/developer/prices": {
+      "post": {
+        "tags": [
+          "PRICES",
+          "DEVELOPER"
+        ],
+        "summary": "Latest Token Prices",
+        "description": "Get the latest prices for the given token addresses.",
+        "operationId": "get_latest_prices_api_v1_developer_prices_post",
+        "security": [
+          {
+            "APIKeyBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "with_liquidity_info",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "If true, returns total_liquidity_usd as well. See [this page](https://docs.allium.so/api/developer/data-tips#token-liquidity-filtering) for more details.",
+              "default": false,
+              "title": "With Liquidity Info"
+            },
+            "description": "If true, returns total_liquidity_usd as well. See [this page](https://docs.allium.so/api/developer/data-tips#token-liquidity-filtering) for more details."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/PayloadTokenAddress"
+                },
+                "minItems": 1,
+                "maxItems": 200,
+                "title": "Payloads"
+              },
+              "example": [
+                {
+                  "token_address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+                  "chain": "ethereum"
+                },
+                {
+                  "token_address": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+                  "chain": "solana"
+                }
+              ]
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_TokenPriceV2WithHiddenFields_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/developer/prices/at-timestamp": {
+      "post": {
+        "tags": [
+          "PRICES",
+          "DEVELOPER"
+        ],
+        "summary": "Get Prices At Timestamp",
+        "description": "Get the price for a list of token addresses at a given timestamp.\nIf a token doesn't have a price at the given timestamp (because there weren't any trades at that time),\nthe price will be the price at the closest timestamp before the given timestamp.\nUse 'stalesness_tolerance' to specify the max lookback time (in minutes) for a price.\nArgs:\n    payloads: PayloadTokenAddressAtTimestamp objects containing timestamp, granularity, stalesness_tolerance and a list of token address + chain pairs.\nReturns:\n    Dictionary mapping chain types to lists of PayloadTokenAddressAtTimestamp objects\nExample:\n    ```\n    [\n        {\n            \"addresses\": [\n                {\n                    \"token_address\": \"1Qf8gESP4i6CFNWerUSDdLKJ9U1LpqTYvjJ2MM4pain\",\n                    \"chain\": \"solana\"\n                }\n            ],\n            \"timestamp\": \"2025-07-11T00:00:00Z\",\n            \"time_granularity\": \"5m\",\n            \"staleness_tolerance\": 120\n        }\n    ]\n    ```",
+        "operationId": "get_prices_at_timestamp_api_v1_developer_prices_at_timestamp_post",
+        "security": [
+          {
+            "APIKeyBearer": []
+          }
+        ],
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PayloadTokenAddressAtTimestamp"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_TokenPriceAtTimestamp_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/developer/prices/history": {
+      "post": {
+        "tags": [
+          "PRICES",
+          "DEVELOPER"
+        ],
+        "summary": "Token Prices History",
+        "description": "Get a list of historical token prices by chain and token address for a given time range and granularity.",
+        "operationId": "get_historical_prices_api_v1_developer_prices_history_post",
+        "security": [
+          {
+            "APIKeyBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "title": "Cursor",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/PayloadPriceHistorical"
+                  },
+                  {
+                    "$ref": "#/components/schemas/PayloadPriceHistoricalLegacy"
+                  }
+                ],
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_Union_TokenPriceHistorical__TokenPrice__"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/developer/prices/stats": {
+      "post": {
+        "tags": [
+          "PRICES",
+          "DEVELOPER"
+        ],
+        "summary": "Token Stats",
+        "description": "Get the stats for the given token addresseses.",
+        "operationId": "get_stats_api_v1_developer_prices_stats_post",
+        "security": [
+          {
+            "APIKeyBearer": []
+          }
+        ],
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/PayloadTokenAddress"
+                },
+                "minItems": 1,
+                "maxItems": 200,
+                "description": "List of token addresses to get stats for.",
+                "title": "Addresses"
+              },
+              "example": [
+                {
+                  "token_address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+                  "chain": "ethereum"
+                },
+                {
+                  "token_address": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+                  "chain": "solana"
+                }
+              ]
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_TokenStatsWithHiddenFields_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Envelope_TokenPriceAtTimestamp_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TokenPriceAtTimestamp"
+            },
+            "type": "array",
+            "title": "Items",
+            "description": "Response items"
+          },
+          "cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cursor",
+            "description": "Pagination cursor for next page"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message",
+            "description": "Informational message (e.g. partial results)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "Envelope[TokenPriceAtTimestamp]"
+      },
+      "Envelope_TokenPriceV2WithHiddenFields_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TokenPriceV2WithHiddenFields"
+            },
+            "type": "array",
+            "title": "Items",
+            "description": "Response items"
+          },
+          "cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cursor",
+            "description": "Pagination cursor for next page"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message",
+            "description": "Informational message (e.g. partial results)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "Envelope[TokenPriceV2WithHiddenFields]"
+      },
+      "Envelope_TokenStatsWithHiddenFields_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TokenStatsWithHiddenFields"
+            },
+            "type": "array",
+            "title": "Items",
+            "description": "Response items"
+          },
+          "cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cursor",
+            "description": "Pagination cursor for next page"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message",
+            "description": "Informational message (e.g. partial results)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "Envelope[TokenStatsWithHiddenFields]"
+      },
+      "Envelope_Union_TokenPriceHistorical__TokenPrice__": {
+        "properties": {
+          "items": {
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/TokenPriceHistorical"
+                },
+                {
+                  "$ref": "#/components/schemas/TokenPrice"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Items",
+            "description": "Response items"
+          },
+          "cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cursor",
+            "description": "Pagination cursor for next page"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message",
+            "description": "Informational message (e.g. partial results)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "Envelope[Union[TokenPriceHistorical, TokenPrice]]"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "PayloadPriceHistorical": {
+        "properties": {
+          "start_timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Start Timestamp",
+            "description": "Start of time range (UTC ISO 8601)"
+          },
+          "end_timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "title": "End Timestamp",
+            "description": "End of time range (UTC ISO 8601)"
+          },
+          "addresses": {
+            "items": {
+              "$ref": "#/components/schemas/PayloadTokenAddress"
+            },
+            "type": "array",
+            "title": "Addresses",
+            "description": "List of token address+chain pairs"
+          },
+          "time_granularity": {
+            "$ref": "#/components/schemas/api_server__app__services__prices__models__Granularity",
+            "description": "Candle granularity (15s, 1m, 5m, 1h, 1d)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "start_timestamp",
+          "end_timestamp",
+          "addresses",
+          "time_granularity"
+        ],
+        "title": "PayloadPriceHistorical",
+        "example": {
+          "addresses": [
+            {
+              "chain": "string",
+              "token_address": "string"
+            },
+            {
+              "chain": "string",
+              "token_address": "string"
+            }
+          ],
+          "end_timestamp": "2025-03-07T01:00:00Z",
+          "start_timestamp": "2025-03-07T00:00:00Z",
+          "time_granularity": "5m"
+        }
+      },
+      "PayloadPriceHistoricalLegacy": {
+        "properties": {
+          "chain": {
+            "type": "string",
+            "title": "Chain"
+          },
+          "token_address": {
+            "type": "string",
+            "title": "Token Address"
+          },
+          "time_granularity": {
+            "$ref": "#/components/schemas/api_server__app__services__prices__models__Granularity"
+          },
+          "start_timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Start Timestamp"
+          },
+          "end_timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "title": "End Timestamp"
+          }
+        },
+        "type": "object",
+        "required": [
+          "chain",
+          "token_address",
+          "time_granularity",
+          "start_timestamp",
+          "end_timestamp"
+        ],
+        "title": "PayloadPriceHistoricalLegacy",
+        "example": {
+          "chain": "string",
+          "end_timestamp": "2025-03-07T01:00:00Z",
+          "start_timestamp": "2025-03-07T00:00:00Z",
+          "time_granularity": "5m",
+          "token_address": "string"
+        }
+      },
+      "PayloadTokenAddress": {
+        "properties": {
+          "token_address": {
+            "type": "string",
+            "title": "Token Address",
+            "description": "Token contract address"
+          },
+          "chain": {
+            "type": "string",
+            "title": "Chain",
+            "description": "Lowercase chain name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "token_address",
+          "chain"
+        ],
+        "title": "PayloadTokenAddress",
+        "example": {
+          "chain": "ethereum",
+          "token_address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+        }
+      },
+      "PayloadTokenAddressAtTimestamp": {
+        "properties": {
+          "addresses": {
+            "items": {
+              "$ref": "#/components/schemas/PayloadTokenAddress"
+            },
+            "type": "array",
+            "maxItems": 200,
+            "minItems": 1,
+            "title": "Addresses",
+            "description": "List of token address+chain pairs"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Timestamp",
+            "description": "Target timestamp (UTC ISO 8601)"
+          },
+          "time_granularity": {
+            "$ref": "#/components/schemas/api_server__app__services__prices__models__Granularity",
+            "description": "Candle granularity (15s, 1m, 5m, 1h, 1d)"
+          },
+          "staleness_tolerance": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "duration"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Staleness Tolerance",
+            "description": "Max lookback for price data (e.g. 1h, 30m)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "addresses",
+          "timestamp",
+          "time_granularity"
+        ],
+        "title": "PayloadTokenAddressAtTimestamp",
+        "example": {
+          "addresses": [
+            {
+              "chain": "string",
+              "token_address": "string"
+            },
+            {
+              "chain": "string",
+              "token_address": "string"
+            }
+          ],
+          "staleness_tolerance": "1h",
+          "time_granularity": "5m",
+          "timestamp": "2025-03-07T00:00:00Z"
+        }
+      },
+      "TokenPrice": {
+        "properties": {
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Timestamp"
+          },
+          "chain": {
+            "type": "string",
+            "title": "Chain"
+          },
+          "mint": {
+            "type": "string",
+            "title": "Mint"
+          },
+          "decimals": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decimals"
+          },
+          "price": {
+            "type": "number",
+            "title": "Price"
+          },
+          "open": {
+            "type": "number",
+            "title": "Open"
+          },
+          "high": {
+            "type": "number",
+            "title": "High"
+          },
+          "close": {
+            "type": "number",
+            "title": "Close"
+          },
+          "low": {
+            "type": "number",
+            "title": "Low"
+          },
+          "volume_24h": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volume 24H"
+          },
+          "volume_1h": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volume 1H"
+          },
+          "trade_count_24h": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trade Count 24H"
+          },
+          "trade_count_1h": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trade Count 1H"
+          }
+        },
+        "type": "object",
+        "required": [
+          "timestamp",
+          "chain",
+          "mint",
+          "price",
+          "open",
+          "high",
+          "close",
+          "low"
+        ],
+        "title": "TokenPrice"
+      },
+      "TokenPriceAtTimestamp": {
+        "properties": {
+          "input_timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Input Timestamp",
+            "description": "Requested timestamp"
+          },
+          "price_timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Price Timestamp",
+            "description": "Actual price timestamp"
+          },
+          "mint": {
+            "type": "string",
+            "title": "Mint",
+            "description": "Token contract address"
+          },
+          "chain": {
+            "type": "string",
+            "title": "Chain",
+            "description": "Lowercase chain name"
+          },
+          "price": {
+            "type": "number",
+            "title": "Price",
+            "description": "Price (USD) at the actual price timestamp"
+          }
+        },
+        "type": "object",
+        "required": [
+          "input_timestamp",
+          "price_timestamp",
+          "mint",
+          "chain",
+          "price"
+        ],
+        "title": "TokenPriceAtTimestamp"
+      },
+      "TokenPriceHistorical": {
+        "properties": {
+          "mint": {
+            "type": "string",
+            "title": "Mint",
+            "description": "Token contract address"
+          },
+          "chain": {
+            "type": "string",
+            "title": "Chain",
+            "description": "Lowercase chain name"
+          },
+          "decimals": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decimals",
+            "description": "Token decimal places"
+          },
+          "prices": {
+            "items": {
+              "$ref": "#/components/schemas/TokenPriceHistoricalItem"
+            },
+            "type": "array",
+            "title": "Prices",
+            "description": "OHLCV candle array, one entry per time interval"
+          }
+        },
+        "type": "object",
+        "required": [
+          "mint",
+          "chain",
+          "prices"
+        ],
+        "title": "TokenPriceHistorical"
+      },
+      "TokenPriceHistoricalItem": {
+        "properties": {
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Timestamp",
+            "description": "ISO 8601 UTC candle start time"
+          },
+          "price": {
+            "type": "number",
+            "title": "Price",
+            "description": "Volume-weighted average price (USD) over the interval"
+          },
+          "open": {
+            "type": "number",
+            "title": "Open",
+            "description": "Opening price (USD) at the start of the interval"
+          },
+          "high": {
+            "type": "number",
+            "title": "High",
+            "description": "Highest price (USD) during the interval"
+          },
+          "close": {
+            "type": "number",
+            "title": "Close",
+            "description": "Closing price (USD) at the end of the interval"
+          },
+          "low": {
+            "type": "number",
+            "title": "Low",
+            "description": "Lowest price (USD) during the interval"
+          }
+        },
+        "type": "object",
+        "required": [
+          "timestamp",
+          "price",
+          "open",
+          "high",
+          "close",
+          "low"
+        ],
+        "title": "TokenPriceHistoricalItem"
+      },
+      "TokenPriceV2WithHiddenFields": {
+        "properties": {
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Timestamp",
+            "description": "ISO 8601 UTC candle time"
+          },
+          "chain": {
+            "type": "string",
+            "title": "Chain",
+            "description": "Lowercase chain name"
+          },
+          "address": {
+            "type": "string",
+            "title": "Address",
+            "description": "Token contract address"
+          },
+          "decimals": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decimals",
+            "description": "Token decimal places"
+          },
+          "price": {
+            "type": "number",
+            "title": "Price",
+            "description": "Current price (USD) at the timestamp"
+          },
+          "open": {
+            "type": "number",
+            "title": "Open",
+            "description": "Opening price (USD) at the start of the interval"
+          },
+          "high": {
+            "type": "number",
+            "title": "High",
+            "description": "Highest price (USD) during the interval"
+          },
+          "close": {
+            "type": "number",
+            "title": "Close",
+            "description": "Closing price (USD) at the end of the interval"
+          },
+          "low": {
+            "type": "number",
+            "title": "Low",
+            "description": "Lowest price (USD) during the interval"
+          }
+        },
+        "type": "object",
+        "required": [
+          "timestamp",
+          "chain",
+          "address",
+          "price",
+          "open",
+          "high",
+          "close",
+          "low"
+        ],
+        "title": "TokenPriceV2WithHiddenFields"
+      },
+      "TokenStatsWithHiddenFields": {
+        "properties": {
+          "mint": {
+            "type": "string",
+            "title": "Mint",
+            "description": "Token contract address"
+          },
+          "chain": {
+            "type": "string",
+            "title": "Chain",
+            "description": "Lowercase chain name"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Timestamp",
+            "description": "ISO 8601 UTC timestamp"
+          },
+          "latest_price": {
+            "type": "number",
+            "title": "Latest Price",
+            "description": "Latest price (USD)"
+          },
+          "low_24h": {
+            "type": "number",
+            "title": "Low 24H",
+            "description": "Lowest price (USD) over last 24h"
+          },
+          "high_24h": {
+            "type": "number",
+            "title": "High 24H",
+            "description": "Highest price (USD) over last 24h"
+          },
+          "low_1h": {
+            "type": "number",
+            "title": "Low 1H",
+            "description": "Lowest price (USD) over last 1h"
+          },
+          "high_1h": {
+            "type": "number",
+            "title": "High 1H",
+            "description": "Highest price (USD) over last 1h"
+          },
+          "percent_change_24h": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Percent Change 24H",
+            "description": "Price change (%) over last 24h"
+          },
+          "percent_change_1h": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Percent Change 1H",
+            "description": "Price change (%) over last 1h"
+          },
+          "decimals": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decimals",
+            "description": "Token decimal places"
+          }
+        },
+        "type": "object",
+        "required": [
+          "mint",
+          "chain",
+          "timestamp",
+          "latest_price",
+          "low_24h",
+          "high_24h",
+          "low_1h",
+          "high_1h",
+          "percent_change_24h",
+          "percent_change_1h"
+        ],
+        "title": "TokenStatsWithHiddenFields"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      },
+      "api_server__app__services__prices__models__Granularity": {
+        "type": "string",
+        "enum": [
+          "15s",
+          "1m",
+          "5m",
+          "1h",
+          "1d"
+        ],
+        "title": "Granularity"
+      }
+    },
+    "securitySchemes": {
+      "APIKeyBearer": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-KEY"
+      }
+    }
+  },
+  "servers": [
+    {
+      "url": "https://api.allium.so"
+    }
+  ]
+}

@@ -20,9 +20,29 @@ def main() -> None:
 
     subparsers.add_parser("migrate", help="Run database migrations (sql/001 through sql/006)")
 
+    install_skills = subparsers.add_parser(
+        "install-skills",
+        help="Copy bundled skill files to ~/.{backend}/skills/ for headless CLI backends.",
+    )
+    install_skills.add_argument(
+        "--backend",
+        choices=["claude", "codex", "gemini", "all"],
+        default="all",
+        help="Which backend's skills directory to populate. Default: all installed CLIs.",
+    )
+    install_skills.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite existing skill files. Default: skip files that already exist.",
+    )
+
     args = parser.parse_args()
 
-    if args.command == "migrate":
+    if args.command == "install-skills":
+        from .cli_install_skills import install_skills as _install
+
+        sys.exit(_install(backend=args.backend, force=args.force))
+    elif args.command == "migrate":
         import asyncio
         import importlib.util
         from pathlib import Path

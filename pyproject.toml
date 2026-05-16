@@ -1,6 +1,6 @@
 [project]
 name = "e2er"
-version = "3.0.0"
+version = "0.3.0"
 description = "End-to-End Researcher — automated research pipeline for economics, finance, and IS"
 requires-python = ">=3.11"
 readme = "README.md"
@@ -48,6 +48,28 @@ e2er = "src.__main__:main"
 [build-system]
 requires = ["setuptools>=68.0"]
 build-backend = "setuptools.build_meta"
+
+# Tell setuptools to package both src/ (the codebase) and skills/ (the
+# skill markdown files) into the wheel. `e2er install-skills` (new in v0.3)
+# extracts them to ~/.{claude,codex,gemini}/skills/ for the headless
+# backends.
+#
+# Layout:
+#   src/ → mapped as the unnamed root (so src/api/ is importable as `api`,
+#          src/core/ as `core`, etc. — this matches the existing import
+#          structure used everywhere in the codebase).
+#   skills/ → top-level package at the repo root, ships the .md files
+#             as package-data.
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*", "skills*"]
+exclude = ["tests*", "Tests*", "docs*", "examples*", "scripts*", "docker*"]
+
+[tool.setuptools.package-data]
+# Include every skill .md file under skills/files/{category}/. The `**`
+# glob captures both the category subdirs (data/, writing/, …) and the
+# .md files within them.
+"skills.files" = ["**/*.md"]
 
 [tool.ruff]
 line-length = 120

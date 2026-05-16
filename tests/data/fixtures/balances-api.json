@@ -1,0 +1,1533 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Allium API",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/v1/developer/wallet/balances": {
+      "post": {
+        "tags": [
+          "BALANCES",
+          "DEVELOPER",
+          "WALLET"
+        ],
+        "summary": "Latest Fungible Token Balances",
+        "description": "Get the latest balances for a list of wallets.",
+        "operationId": "get_latest_balances_api_v1_developer_wallet_balances_post",
+        "security": [
+          {
+            "APIKeyBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "with_liquidity_info",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "If true, returns total_liquidity_usd as well. See [this page](https://docs.allium.so/api/developer/data-tips#token-liquidity-filtering) for more details.",
+              "default": false,
+              "title": "With Liquidity Info"
+            },
+            "description": "If true, returns total_liquidity_usd as well. See [this page](https://docs.allium.so/api/developer/data-tips#token-liquidity-filtering) for more details."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/PayloadAddress"
+                },
+                "minItems": 1,
+                "maxItems": 100,
+                "description": "List of wallet chain+address pairs to get balances for.",
+                "examples": [
+                  {
+                    "chain": "ethereum",
+                    "address": "0xab16781a13fe343a275f4bb5c883a64ceda52917"
+                  }
+                ],
+                "title": "Addresses"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletLatestBalancesNewEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/developer/wallet/balances/history": {
+      "post": {
+        "tags": [
+          "BALANCES",
+          "DEVELOPER",
+          "WALLET"
+        ],
+        "summary": "Historical Fungible Token Balances",
+        "description": "Get the historical balances for a list of wallets.",
+        "operationId": "get_historical_balances_api_v1_developer_wallet_balances_history_post",
+        "security": [
+          {
+            "APIKeyBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "description": "Max number of items returned. Default is 1000.",
+              "lte": 5000,
+              "default": 1000,
+              "title": "Limit"
+            },
+            "description": "Max number of items returned. Default is 1000."
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "Cursor to request the next page of results.",
+              "title": "Cursor",
+              "type": "string"
+            },
+            "description": "Cursor to request the next page of results."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PayloadHistoricalBalances",
+                "description": "List of wallet chain+address pairs and a start and end timestamp to fetch historical balances for."
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/api_server__app__services__wallet_balances__wallet_historical_balances_client__Envelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "BitcoinAddress": {
+        "type": "string"
+      },
+      "BitcoinBalances": {
+        "properties": {
+          "chain": {
+            "type": "string",
+            "title": "Chain",
+            "description": "Lowercase chain name"
+          },
+          "address": {
+            "$ref": "#/components/schemas/BitcoinAddress",
+            "description": "Wallet address"
+          },
+          "raw_balance": {
+            "type": "integer",
+            "title": "Raw Balance",
+            "description": "Balance in satoshis"
+          },
+          "decimals": {
+            "type": "integer",
+            "title": "Decimals",
+            "description": "Token decimal places"
+          },
+          "block_timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Block Timestamp",
+            "description": "Block timestamp (UTC)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "chain",
+          "address",
+          "raw_balance",
+          "decimals",
+          "block_timestamp"
+        ],
+        "title": "BitcoinBalances"
+      },
+      "EVMAddress": {
+        "type": "string"
+      },
+      "EVMWalletBalances": {
+        "properties": {
+          "chain": {
+            "type": "string",
+            "title": "Chain",
+            "description": "Lowercase chain name"
+          },
+          "address": {
+            "$ref": "#/components/schemas/EVMAddress",
+            "description": "Wallet address"
+          },
+          "token": {
+            "$ref": "#/components/schemas/Token",
+            "description": "Token metadata"
+          },
+          "raw_balance": {
+            "type": "integer",
+            "title": "Raw Balance",
+            "description": "Raw balance of the token"
+          },
+          "raw_balance_str": {
+            "type": "string",
+            "title": "Raw Balance Str",
+            "description": "Raw balance of the token as a string"
+          },
+          "block_timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Block Timestamp",
+            "description": "Block timestamp (UTC)"
+          },
+          "block_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Block Number",
+            "description": "Block number"
+          },
+          "block_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Block Hash",
+            "description": "Block hash"
+          }
+        },
+        "type": "object",
+        "required": [
+          "chain",
+          "address",
+          "token",
+          "raw_balance",
+          "raw_balance_str",
+          "block_timestamp"
+        ],
+        "title": "EVMWalletBalances",
+        "examples": [
+          {
+            "address": "0xab16781a13fe343a275f4bb5c883a64ceda52917",
+            "block_hash": "0x1d8a87d3da939280fe80fff6b90d19ca629726a1e53849766cb82f57d3fdb836",
+            "block_number": 23145508,
+            "block_timestamp": "2025-08-15T09:22:23Z",
+            "chain": "ethereum",
+            "raw_balance": 1300000000000000000,
+            "raw_balance_str": "1300000000000000000",
+            "token": {
+              "address": "0x0e7667a943b871835f7399e7a5adb14f70717c7e",
+              "chain": "ethereum",
+              "decimals": 18,
+              "info": {
+                "name": "ETH",
+                "symbol": "ETH"
+              },
+              "object": "token",
+              "type": "evm_erc20"
+            }
+          }
+        ]
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "LegacyEVMWalletBalances": {
+        "properties": {
+          "chain": {
+            "type": "string",
+            "title": "Chain"
+          },
+          "address": {
+            "$ref": "#/components/schemas/EVMAddress"
+          },
+          "token_address": {
+            "$ref": "#/components/schemas/EVMAddress"
+          },
+          "raw_balance": {
+            "type": "integer",
+            "title": "Raw Balance"
+          },
+          "token_metadata": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TokenMetadata"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "block_timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Block Timestamp"
+          },
+          "block_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Block Number"
+          },
+          "block_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Block Hash"
+          }
+        },
+        "type": "object",
+        "required": [
+          "chain",
+          "address",
+          "token_address",
+          "raw_balance",
+          "block_timestamp"
+        ],
+        "title": "LegacyEVMWalletBalances"
+      },
+      "LegacySolanaBalances": {
+        "properties": {
+          "chain": {
+            "type": "string",
+            "title": "Chain"
+          },
+          "address": {
+            "$ref": "#/components/schemas/SolanaAddress"
+          },
+          "mint": {
+            "$ref": "#/components/schemas/SolanaAddress"
+          },
+          "raw_balance": {
+            "type": "integer",
+            "title": "Raw Balance"
+          },
+          "decimals": {
+            "type": "integer",
+            "title": "Decimals"
+          },
+          "block_timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Block Timestamp"
+          },
+          "block_slot": {
+            "type": "integer",
+            "title": "Block Slot"
+          },
+          "txn_index": {
+            "type": "integer",
+            "title": "Txn Index"
+          },
+          "token_account": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SolanaAddress"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "block_hash": {
+            "type": "string",
+            "title": "Block Hash"
+          },
+          "txn_id": {
+            "type": "string",
+            "title": "Txn Id"
+          },
+          "token_metadata": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TokenMetadataWithPriceInfo"
+              },
+              {
+                "$ref": "#/components/schemas/TokenMetadata"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token Metadata"
+          }
+        },
+        "type": "object",
+        "required": [
+          "chain",
+          "address",
+          "mint",
+          "raw_balance",
+          "decimals",
+          "block_timestamp",
+          "block_slot",
+          "txn_index",
+          "token_account",
+          "block_hash",
+          "txn_id"
+        ],
+        "title": "LegacySolanaBalances"
+      },
+      "LiquidityResults": {
+        "properties": {
+          "amount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount",
+            "description": "Liquidity amount (USD)"
+          },
+          "details": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Details",
+            "description": "Status when amount unavailable (e.g. LIQUIDITY_TOO_HIGH)"
+          }
+        },
+        "type": "object",
+        "title": "LiquidityResults"
+      },
+      "NearAddress": {
+        "type": "string"
+      },
+      "NearWalletBalances": {
+        "properties": {
+          "chain": {
+            "type": "string",
+            "title": "Chain",
+            "description": "Lowercase chain name"
+          },
+          "address": {
+            "$ref": "#/components/schemas/NearAddress",
+            "description": "Wallet address"
+          },
+          "token": {
+            "$ref": "#/components/schemas/Token",
+            "description": "Token metadata"
+          },
+          "raw_balance": {
+            "type": "integer",
+            "title": "Raw Balance",
+            "description": "Raw balance of the token"
+          },
+          "block_timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Block Timestamp",
+            "description": "Block timestamp (UTC)"
+          },
+          "block_height": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Block Height",
+            "description": "Block height"
+          },
+          "block_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Block Hash",
+            "description": "Block hash"
+          },
+          "account_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Id",
+            "description": "Near account ID"
+          }
+        },
+        "type": "object",
+        "required": [
+          "chain",
+          "address",
+          "token",
+          "raw_balance",
+          "block_timestamp"
+        ],
+        "title": "NearWalletBalances",
+        "examples": [
+          {
+            "account_id": "game.hot.tg",
+            "address": "i7049047578.tg",
+            "block_hash": "2YhsKKSdEF5XuYByWxowBubG5f3Eew9DK73D6KVvCKdw",
+            "block_height": 179073513,
+            "block_timestamp": "2025-12-31T02:41:02Z",
+            "chain": "near",
+            "raw_balance": 163385104,
+            "token": {
+              "address": "game.hot.tg",
+              "chain": "near",
+              "object": "token",
+              "type": "near_nep141"
+            }
+          }
+        ]
+      },
+      "PayloadAddress": {
+        "properties": {
+          "chain": {
+            "type": "string",
+            "title": "Chain",
+            "description": "Lowercase chain name"
+          },
+          "address": {
+            "type": "string",
+            "title": "Address",
+            "description": "Wallet address"
+          }
+        },
+        "type": "object",
+        "required": [
+          "chain",
+          "address"
+        ],
+        "title": "PayloadAddress"
+      },
+      "PayloadHistoricalBalances": {
+        "properties": {
+          "start_timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Start Timestamp",
+            "description": "Start of time range (UTC ISO 8601)"
+          },
+          "end_timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "title": "End Timestamp",
+            "description": "End of time range (UTC ISO 8601)"
+          },
+          "addresses": {
+            "items": {
+              "$ref": "#/components/schemas/PayloadAddress"
+            },
+            "type": "array",
+            "maxItems": 5,
+            "minItems": 1,
+            "title": "Addresses",
+            "description": "List of wallet chain+address pairs"
+          }
+        },
+        "type": "object",
+        "required": [
+          "start_timestamp",
+          "end_timestamp",
+          "addresses"
+        ],
+        "title": "PayloadHistoricalBalances",
+        "example": {
+          "addresses": [
+            {
+              "address": "125Z6k4ZAxsgdG7JxrKZpwbcS1rxqpAeqM9GSCKd66Wp",
+              "chain": "solana"
+            }
+          ],
+          "end_timestamp": "2025-04-01T13:00:00Z",
+          "start_timestamp": "2025-04-01T12:00:00Z"
+        }
+      },
+      "SolanaAddress": {
+        "type": "string"
+      },
+      "SolanaBalances": {
+        "properties": {
+          "chain": {
+            "type": "string",
+            "title": "Chain",
+            "description": "Lowercase chain name"
+          },
+          "address": {
+            "$ref": "#/components/schemas/SolanaAddress",
+            "description": "Wallet address"
+          },
+          "token": {
+            "$ref": "#/components/schemas/Token",
+            "description": "Token metadata"
+          },
+          "raw_balance": {
+            "type": "integer",
+            "title": "Raw Balance",
+            "description": "Raw balance of the token"
+          },
+          "raw_balance_str": {
+            "type": "string",
+            "title": "Raw Balance Str",
+            "description": "Raw balance of the token as a string"
+          },
+          "block_timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Block Timestamp",
+            "description": "Block timestamp (UTC)"
+          },
+          "block_slot": {
+            "type": "integer",
+            "title": "Block Slot",
+            "description": "Block slot"
+          },
+          "txn_index": {
+            "type": "integer",
+            "title": "Txn Index",
+            "description": "Transaction index"
+          },
+          "token_account": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SolanaAddress"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Token account"
+          },
+          "block_hash": {
+            "type": "string",
+            "title": "Block Hash",
+            "description": "Block hash"
+          },
+          "txn_id": {
+            "type": "string",
+            "title": "Txn Id",
+            "description": "Transaction ID"
+          }
+        },
+        "type": "object",
+        "required": [
+          "chain",
+          "address",
+          "token",
+          "raw_balance",
+          "raw_balance_str",
+          "block_timestamp",
+          "block_slot",
+          "txn_index",
+          "token_account",
+          "block_hash",
+          "txn_id"
+        ],
+        "title": "SolanaBalances",
+        "examples": [
+          {
+            "address": "125Z6k4ZAxsgdG7JxrKZpwbcS1rxqpAeqM9GSCKd66Wp",
+            "block_hash": "GrW5zBwRrfTvLtdJHog7rUMcCPQ9K9AYrMKxDhfuD59A",
+            "block_slot": 387297060,
+            "block_timestamp": "2025-12-17T11:49:10Z",
+            "chain": "solana",
+            "raw_balance": 2985840,
+            "raw_balance_str": "2985840",
+            "token": {
+              "address": "So11111111111111111111111111111111111111111",
+              "chain": "solana",
+              "decimals": 9,
+              "object": "token",
+              "type": "sol_spl"
+            },
+            "txn_id": "3dzNgD7ksFoZPeeA14rNN3qxvo5WxsDjTE9VVPj8yLm7y6svTatyrbVTmkJPJErSmhbKLVmJFto1oQsCSVbSeDUT",
+            "txn_index": 714
+          }
+        ]
+      },
+      "StellarAddress": {
+        "type": "string"
+      },
+      "StellarWalletBalances": {
+        "properties": {
+          "chain": {
+            "type": "string",
+            "title": "Chain",
+            "description": "Lowercase chain name"
+          },
+          "address": {
+            "$ref": "#/components/schemas/StellarAddress",
+            "description": "Wallet address"
+          },
+          "token": {
+            "$ref": "#/components/schemas/Token",
+            "description": "Token metadata"
+          },
+          "raw_balance": {
+            "type": "integer",
+            "title": "Raw Balance",
+            "description": "Raw balance of the token"
+          },
+          "available_balance": {
+            "type": "integer",
+            "title": "Available Balance",
+            "description": "Total_balance - minimum_balance - liabilities_selling"
+          },
+          "minimum_balance": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Minimum Balance",
+            "description": "Smallest permissible balance"
+          },
+          "liabilities_selling": {
+            "type": "integer",
+            "title": "Liabilities Selling",
+            "description": "Total asset amount offered for sale across all account offers"
+          },
+          "ledger_close_time": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Ledger Close Time",
+            "description": "Ledger close time (UTC)"
+          },
+          "ledger_sequence": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ledger Sequence",
+            "description": "Ledger sequence number"
+          },
+          "ledger_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ledger Hash",
+            "description": "Ledger hash"
+          }
+        },
+        "type": "object",
+        "required": [
+          "chain",
+          "address",
+          "token",
+          "raw_balance",
+          "available_balance",
+          "liabilities_selling",
+          "ledger_close_time"
+        ],
+        "title": "StellarWalletBalances",
+        "examples": [
+          {
+            "address": "GBHKVXMGFSYXGKUHWCZSUDYVRRKZ6KYV77CHT73FMUNKGLXBJPIN24K7",
+            "available_balance": 12424187,
+            "chain": "stellar",
+            "ledger_close_time": "2026-03-25T02:41:30Z",
+            "ledger_hash": "84ba79a5547483eed5aae2a53b93c6b54e063c77d605f01657b9b30f338dcd05",
+            "ledger_sequence": 61807774,
+            "liabilities_selling": 0,
+            "minimum_balance": 10000000,
+            "raw_balance": 22424187,
+            "token": {
+              "address": "native",
+              "chain": "stellar",
+              "object": "token",
+              "type": "native"
+            }
+          }
+        ]
+      },
+      "SuiAddress": {
+        "type": "string"
+      },
+      "SuiWalletLatestBalances": {
+        "properties": {
+          "block_timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Block Timestamp",
+            "description": "Block timestamp (UTC)"
+          },
+          "address": {
+            "$ref": "#/components/schemas/SuiAddress",
+            "description": "Wallet address"
+          },
+          "chain": {
+            "type": "string",
+            "title": "Chain",
+            "description": "Lowercase chain name"
+          },
+          "raw_balance": {
+            "type": "integer",
+            "title": "Raw Balance",
+            "description": "Balance in smallest unit"
+          },
+          "token": {
+            "$ref": "#/components/schemas/Token",
+            "description": "Token metadata"
+          }
+        },
+        "type": "object",
+        "required": [
+          "block_timestamp",
+          "address",
+          "chain",
+          "raw_balance",
+          "token"
+        ],
+        "title": "SuiWalletLatestBalances"
+      },
+      "Token": {
+        "properties": {
+          "object": {
+            "type": "string",
+            "const": "token",
+            "title": "Object",
+            "default": "token"
+          },
+          "chain": {
+            "type": "string",
+            "title": "Chain",
+            "description": "Lowercase chain name"
+          },
+          "address": {
+            "type": "string",
+            "title": "Address",
+            "description": "Token contract address"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "native",
+                  "non_native",
+                  "evm_erc20",
+                  "evm_erc721",
+                  "evm_erc1155",
+                  "sol_spl",
+                  "sui_token",
+                  "near_nep141",
+                  "near_nep245",
+                  "stellar_classic",
+                  "stellar_sac",
+                  "stellar_wasm"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type",
+            "description": "Token standard type: evm_erc20/evm_erc721/evm_erc1155 (EVMs), sol_spl (Solana), sui_token (Sui), near_nep141/near_nep245 (Near), stellar_classic/stellar_sac/stellar_wasm (Stellar), or native (All)"
+          },
+          "price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price",
+            "description": "Current price (USD)"
+          },
+          "decimals": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decimals",
+            "description": "Token decimal places"
+          },
+          "info": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TokenInfo"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Token name and symbol"
+          },
+          "attributes": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TokenAttributes"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Token market attributes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "chain",
+          "address"
+        ],
+        "title": "Token"
+      },
+      "TokenAttributes": {
+        "properties": {
+          "total_liquidity_usd": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LiquidityResults"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Liquidity data: {'amount': number} when available, or {'details': 'LIQUIDITY_TOO_HIGH'} when limit exceeded"
+          },
+          "price_diff_1d": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price Diff 1D",
+            "description": "Price change (USD) over last 24h"
+          },
+          "price_diff_pct_1d": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price Diff Pct 1D",
+            "description": "Price change (%) over last 24h"
+          },
+          "price_diff_1h": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price Diff 1H",
+            "description": "Price change (USD) over last 1h"
+          },
+          "price_diff_pct_1h": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price Diff Pct 1H",
+            "description": "Price change (%) over last 1h"
+          },
+          "total_supply": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Supply",
+            "description": "Total token supply"
+          },
+          "fully_diluted_valuation_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fully Diluted Valuation Usd",
+            "description": "Fully diluted valuation (USD)"
+          },
+          "volume_1h": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volume 1H",
+            "description": "Trading volume over last 1h"
+          },
+          "volume_1d": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volume 1D",
+            "description": "Trading volume over last 24h"
+          },
+          "volume_usd_1h": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volume Usd 1H",
+            "description": "Trading volume (USD) over last 1h"
+          },
+          "volume_usd_1d": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volume Usd 1D",
+            "description": "Trading volume (USD) over last 24h"
+          },
+          "volume_24h": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volume 24H",
+            "description": "Trading volume over last 24h"
+          },
+          "volume_usd_24h": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volume Usd 24H",
+            "description": "Trading volume (USD) over last 24h"
+          },
+          "trade_count_1h": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trade Count 1H",
+            "description": "Trade count over last 1h"
+          },
+          "trade_count_1d": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trade Count 1D",
+            "description": "Trade count over last 24h"
+          },
+          "all_time_high": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "All Time High",
+            "description": "All-time high price (USD)"
+          },
+          "all_time_low": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "All Time Low",
+            "description": "All-time low price (USD)"
+          },
+          "image_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Url",
+            "description": "Token logo URL"
+          },
+          "token_creation_time": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token Creation Time",
+            "description": "Token creation timestamp (UTC)"
+          },
+          "holders_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Holders Count",
+            "description": "Number of token holders"
+          },
+          "stellar_fields": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stellar Fields",
+            "description": "Stellar-specific metadata"
+          }
+        },
+        "type": "object",
+        "title": "TokenAttributes"
+      },
+      "TokenInfo": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "Token name"
+          },
+          "symbol": {
+            "type": "string",
+            "title": "Symbol",
+            "description": "Token symbol"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "symbol"
+        ],
+        "title": "TokenInfo"
+      },
+      "TokenMetadata": {
+        "properties": {
+          "price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price"
+          },
+          "token_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token Name"
+          },
+          "token_decimals": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token Decimals"
+          },
+          "symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Symbol"
+          }
+        },
+        "type": "object",
+        "title": "TokenMetadata"
+      },
+      "TokenMetadataWithPriceInfo": {
+        "properties": {
+          "price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price"
+          },
+          "token_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token Name"
+          },
+          "token_decimals": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token Decimals"
+          },
+          "symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Symbol"
+          },
+          "price_diff_1d": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price Diff 1D"
+          },
+          "price_diff_pct_1d": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price Diff Pct 1D"
+          }
+        },
+        "type": "object",
+        "title": "TokenMetadataWithPriceInfo"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      },
+      "WalletLatestBalancesNewEnvelope": {
+        "properties": {
+          "items": {
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/EVMWalletBalances"
+                },
+                {
+                  "$ref": "#/components/schemas/SolanaBalances"
+                },
+                {
+                  "$ref": "#/components/schemas/BitcoinBalances"
+                },
+                {
+                  "$ref": "#/components/schemas/NearWalletBalances"
+                },
+                {
+                  "$ref": "#/components/schemas/SuiWalletLatestBalances"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Items",
+            "description": "Token balance entries"
+          },
+          "cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cursor",
+            "description": "Pagination cursor for next page"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "WalletLatestBalancesNewEnvelope"
+      },
+      "api_server__app__services__wallet_balances__wallet_historical_balances_client__Envelope": {
+        "properties": {
+          "items": {
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/SolanaBalances"
+                },
+                {
+                  "$ref": "#/components/schemas/BitcoinBalances"
+                },
+                {
+                  "$ref": "#/components/schemas/EVMWalletBalances"
+                },
+                {
+                  "$ref": "#/components/schemas/NearWalletBalances"
+                },
+                {
+                  "$ref": "#/components/schemas/LegacyEVMWalletBalances"
+                },
+                {
+                  "$ref": "#/components/schemas/LegacySolanaBalances"
+                },
+                {
+                  "$ref": "#/components/schemas/StellarWalletBalances"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Items",
+            "description": "Historical balance entries"
+          },
+          "cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cursor",
+            "description": "Pagination cursor for next page"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "Envelope"
+      }
+    },
+    "securitySchemes": {
+      "APIKeyBearer": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-KEY"
+      }
+    }
+  },
+  "servers": [
+    {
+      "url": "https://api.allium.so"
+    }
+  ]
+}
