@@ -4,7 +4,8 @@
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)]()
 [![Tests](https://github.com/bhanneke/E2ER-project/actions/workflows/tests.yml/badge.svg)](https://github.com/bhanneke/E2ER-project/actions/workflows/tests.yml)
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20187239.svg)](https://doi.org/10.5281/zenodo.20187239)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20187238.svg)](https://doi.org/10.5281/zenodo.20187238)
+[![PyPI](https://img.shields.io/pypi/v/e2er.svg)](https://pypi.org/project/e2er/)
 
 **E2ER** is an open-source pipeline for producing peer-review-quality empirical research papers in information systems, economics, and finance. The researcher provides a research question and data access; the pipeline handles the rest: study design, data acquisition, econometric estimation, writing, review, and replication packaging.
 
@@ -401,15 +402,15 @@ If you use E2ER in your research, please cite it as:
   title        = {{E2ER: End-to-End Researcher, An Open-Source Pipeline
                    for Automated Empirical Research}},
   year         = {2026},
-  version      = {0.2.0},
+  version      = {0.3.0},
   url          = {https://github.com/bhanneke/E2ER-project},
-  doi          = {10.5281/zenodo.20187239},
+  doi          = {10.5281/zenodo.20187238},
   license      = {MIT},
   institution  = {Goethe University Frankfurt},
 }
 ```
 
-*Cite the concept DOI `10.5281/zenodo.20187239` for any version of E2ER, or [browse Zenodo](https://zenodo.org/records/20187239) for version-specific DOIs. A companion paper describing the system architecture and methodology is in preparation.*
+*Cite the concept DOI `10.5281/zenodo.20187238` to credit any version of E2ER (always resolves to the latest release), or [browse all versions on Zenodo](https://zenodo.org/records/20187238) to pin a specific snapshot. A companion paper describing the system architecture and methodology is in preparation.*
 
 ---
 
