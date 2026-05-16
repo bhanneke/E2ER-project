@@ -330,6 +330,77 @@ async def cancel_paper(paper_id: str) -> dict[str, Any]:
     return {"status": "cancelling", "paper_id": paper_id}
 
 
+@app.post("/api/papers/{paper_id}/resume", dependencies=[Depends(require_auth)])
+async def resume_paper(paper_id: str) -> dict[str, Any]:
+    """Resume a paused (circuit-breaker tripped) or failed paper run.
+
+    The pipeline runner's PipelineState load logic skips phases that have
+    already produced their canonical artifacts on disk, so resuming a
+    paused run picks up at the first incomplete phase — not from idea.
+
+    Eligibility:
+        - PAUSED  → typical case (circuit breaker tripped on a specialist)
+        - FAILED  → resume after operator fixed the underlying issue
+
+    Other states get 409 Conflict. In particular, running papers cannot be
+    "resumed" — cancel + resume if you really need to restart.
+    """
+    _validate_uuid(paper_id)
+
+    # Reject if a task is already running for this paper — double-spawning
+    # would race the shared workspace.
+    existing = _RUNNING.get(paper_id)
+    if existing and not existing.done():
+        raise HTTPException(status_code=409, detail="A pipeline task is already running for this paper")
+
+    from ..db.client import fetch_one
+
+    try:
+        row = await fetch_one(
+            "SELECT id, status, workspace, mode, max_cost_usd FROM papers WHERE id = %(id)s",
+            {"id": paper_id},
+        )
+    except Exception as e:
+        logger.warning("DB lookup failed for resume %s: %s", paper_id, e)
+        raise HTTPException(status_code=503, detail="database unavailable") from e
+
+    if row is None:
+        raise HTTPException(status_code=404, detail="paper not found")
+
+    current = (row.get("status") or "").lower()
+    resumable = {"paused", "failed"}
+    if current not in resumable:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"paper status is '{current}' — only {sorted(resumable)} can be resumed. "
+                "Cancel first if you want to restart a running paper."
+            ),
+        )
+
+    workspace = Path(row["workspace"])
+    mode = row.get("mode") or "single_pass"
+    cap = float(row.get("max_cost_usd") or 25.0)
+
+    # Reset status to the lowest reasonable resume point. The runner's
+    # state-load will detect what's actually on disk and skip ahead.
+    from ..db.client import execute
+
+    try:
+        await execute(
+            "UPDATE papers SET status = 'in_progress', last_error = NULL WHERE id = %(id)s",
+            {"id": paper_id},
+        )
+    except Exception as e:
+        logger.warning("Could not update status on resume %s: %s", paper_id, e)
+
+    task = asyncio.create_task(_run_pipeline(paper_id, workspace, mode, cap))
+    _RUNNING[paper_id] = task
+    task.add_done_callback(lambda _t: _RUNNING.pop(paper_id, None))
+
+    return {"status": "resuming", "paper_id": paper_id, "from_status": current}
+
+
 @app.get("/api/papers/{paper_id}/audit-bundle")
 async def audit_bundle(paper_id: str) -> StreamingResponse:
     """Download a tarball with everything needed to verify the paper's provenance:

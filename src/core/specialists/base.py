@@ -44,7 +44,12 @@ async def run_specialist(
 
     skills_text = load_skills_for_specialist(specialist)
     has_allium = any((t.get("name") == "query_allium") for t in (extra_tools or []))
-    system = _build_system_prompt(specialist, skills_text, has_allium=has_allium)
+    system = _build_system_prompt(
+        specialist,
+        skills_text,
+        has_allium=has_allium,
+        max_turns=_MAX_TURNS,
+    )
     user_prompt = _build_user_prompt(work_order)
 
     # CLI backend uses Claude Code's native tool names (Write/Read/Edit/Glob)
@@ -183,11 +188,35 @@ def _translate_tool_names_for_cli(text: str) -> str:
     return text
 
 
-def _build_system_prompt(specialist: str, skills_text: str, has_allium: bool = False) -> str:
+def _build_system_prompt(
+    specialist: str,
+    skills_text: str,
+    has_allium: bool = False,
+    max_turns: int = 80,
+) -> str:
     name = specialist.replace("_", " ").title()
+    # Early-write deadline: aim to have a first version of the canonical
+    # artifact written by the half-way point. For data-heavy specialists
+    # this leaves headroom to append findings as paginated queries come in.
+    # For light specialists (reviewers, polish) it's effectively "write
+    # promptly" — they'll finish well before the cap.
+    early_write_by = max(10, max_turns // 2)
     lines = [
         f"You are the {name} specialist in an end-to-end empirical research pipeline.",
         "You produce high-quality academic research outputs.",
+        "",
+        "## Turn Budget (read this before planning)",
+        f"You have at most {max_turns} agentic turns for this invocation. Each tool",
+        "call costs ~1 turn. Plan accordingly:",
+        f"- Write a FIRST version of your canonical artifact within turn {early_write_by}.",
+        "  A partial-but-existing file is far more useful to the pipeline than a",
+        "  perfect-but-never-written one. The integration cascade halts if your",
+        "  canonical file is missing.",
+        "- Use the remaining turns to append, refine, and back-fill with data.",
+        "- Do NOT save the write_file call for the last turn — if you run out of",
+        "  turns mid-thought, the canonical artifact is gone and the pipeline fails.",
+        "- If you're paginating data: limit one page per call, write what you have",
+        "  to the artifact, then page only if the analysis genuinely requires it.",
         "",
         "## Output Discipline (strict)",
         "1. Your work order names ONE output file. Write that single file with `write_file`.",

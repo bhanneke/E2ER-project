@@ -19,6 +19,12 @@ class PaperStatus(StrEnum):
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
+    # Circuit-breaker halt. Set when a non-tolerant specialist has failed
+    # too many times in a row — the run pauses rather than looping until
+    # budget exhaustion (the run #14 failure mode). The operator inspects
+    # the workspace + events, fixes the underlying issue, and either
+    # resumes via /api/papers/{id}/resume or restarts from IDEA.
+    PAUSED = "paused"
 
 
 class PipelineMode(StrEnum):
@@ -35,8 +41,34 @@ class BudgetExceededError(Exception):
         super().__init__(f"Budget exceeded: spent ${spent:.2f}, cap ${cap:.2f}")
 
 
+class CircuitBreakerError(Exception):
+    """Raised when a non-tolerant specialist has failed ``max_attempts`` times in a row.
+
+    Halts the run cleanly with status=PAUSED instead of looping through
+    the strategist's revision logic until budget is exhausted (the run
+    #14 failure mode where data_analyst was re-dispatched 3 times when
+    Allium was unrecoverably down).
+
+    The PipelineRunner.run() catches this, marks the paper PAUSED, logs
+    a circuit_breaker_tripped event with the specialist + reason, and
+    returns gracefully. The operator inspects the workspace + events
+    and either fixes the underlying issue + resumes, or cancels.
+    """
+
+    def __init__(self, specialist: str, attempts: int, last_error: str | None = None) -> None:
+        self.specialist = specialist
+        self.attempts = attempts
+        self.last_error = last_error
+        msg = f"Circuit breaker: {specialist} failed {attempts} times in a row"
+        if last_error:
+            msg += f". Last error: {last_error[:200]}"
+        super().__init__(msg)
+
+
 # Every state can transition to CANCELLED (user can cancel at any point).
 # CANCELLED is terminal except for restart back to IDEA.
+# PAUSED is reachable from every non-terminal state (circuit breaker), and
+# can transition to IDEA (restart) or any non-terminal state (resume).
 _NON_TERMINAL = {
     PaperStatus.IDEA,
     PaperStatus.DESIGNING,
@@ -105,7 +137,27 @@ VALID_TRANSITIONS: dict[PaperStatus, set[PaperStatus]] = {
     PaperStatus.COMPLETED: set(),
     PaperStatus.FAILED: {PaperStatus.IDEA},
     PaperStatus.CANCELLED: {PaperStatus.IDEA},
+    # PAUSED → can restart from IDEA, cancel, OR resume by re-entering any
+    # non-terminal phase. Resume picks the phase based on the workspace's
+    # last completed canonical artifact (see runner._resume_target_status).
+    PaperStatus.PAUSED: {
+        PaperStatus.IDEA,
+        PaperStatus.CANCELLED,
+        PaperStatus.DESIGNING,
+        PaperStatus.DATA_COLLECTION,
+        PaperStatus.IN_PROGRESS,
+        PaperStatus.CEILING_CHECK,
+        PaperStatus.SELF_ATTACK,
+        PaperStatus.POLISH,
+        PaperStatus.REVIEW,
+        PaperStatus.REVISION,
+    },
 }
+
+# Augment every non-terminal state with PAUSED as a valid exit target.
+# Kept out of the literal above so the FSM diagram stays readable.
+for _state in _NON_TERMINAL:
+    VALID_TRANSITIONS[_state].add(PaperStatus.PAUSED)
 
 
 def can_transition(current: PaperStatus, target: PaperStatus) -> bool:

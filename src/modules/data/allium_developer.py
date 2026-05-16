@@ -52,6 +52,15 @@ _BACKOFF_START = 2.0
 _BACKOFF_CAP = 15.0
 _MIN_REQUEST_SPACING_SEC = 0.5
 
+# Circuit-breaker thresholds for the data layer. When the recent error rate
+# crosses _DEGRADED_ERROR_RATE within the last _DEGRADED_WINDOW calls, the
+# provider returns a structured "data layer degraded" envelope on every
+# subsequent call until at least one call succeeds. This stops a specialist
+# from burning its turn budget retrying the same broken endpoint dozens of
+# times (run #14 / #17 failure mode).
+_DEGRADED_WINDOW = 6
+_DEGRADED_ERROR_RATE = 0.5
+
 # Module-level lock + last-call timestamp to pace requests across concurrent
 # specialists. Without this, 6 parallel data_analyst invocations can burst
 # 30+ requests in one second and exhaust the per-second quota immediately.
@@ -84,6 +93,29 @@ class AlliumDeveloperProvider:
         self._api_key = api_key
         self._base = base_url.rstrip("/")
         self._headers = {"X-API-KEY": api_key, "Content-Type": "application/json"}
+        # Sliding window of recent call outcomes (True=ok, False=error). Used
+        # by the degradation breaker — short-circuit further calls once the
+        # data layer is clearly down.
+        self._recent_outcomes: list[bool] = []
+
+    def _is_degraded(self) -> bool:
+        """True if the recent error rate signals the data layer is down.
+
+        Triggers when we have at least _DEGRADED_WINDOW calls and the
+        majority were errors. The breaker resets the moment one call
+        succeeds — operators don't have to manually clear it.
+        """
+        if len(self._recent_outcomes) < _DEGRADED_WINDOW:
+            return False
+        window = self._recent_outcomes[-_DEGRADED_WINDOW:]
+        error_rate = window.count(False) / _DEGRADED_WINDOW
+        return error_rate > _DEGRADED_ERROR_RATE
+
+    def _record_outcome(self, success: bool) -> None:
+        self._recent_outcomes.append(success)
+        # Keep the deque bounded; we only ever look at the last window.
+        if len(self._recent_outcomes) > _DEGRADED_WINDOW * 4:
+            self._recent_outcomes = self._recent_outcomes[-_DEGRADED_WINDOW * 2 :]
 
     async def _request(
         self,
@@ -95,7 +127,31 @@ class AlliumDeveloperProvider:
         """One HTTP call with pacing + 429 retry. Returns canonical envelope.
 
         Returns ``{"items": [...], "next_token": str | None, "error": str | None}``.
+
+        If the data layer is in a degraded state (recent error rate above
+        threshold), short-circuits with a clear envelope BEFORE making the
+        network call. Specialists see a single explicit signal rather than
+        watching their turn budget drain on dozens of 429 retries.
         """
+        if self._is_degraded():
+            logger.warning(
+                "Allium developer layer degraded (recent error rate > %.0f%% in last %d calls); short-circuiting %s %s",
+                _DEGRADED_ERROR_RATE * 100,
+                _DEGRADED_WINDOW,
+                method,
+                path,
+            )
+            return {
+                "items": [],
+                "next_token": None,
+                "error": (
+                    "Allium data layer degraded — recent call success rate is below "
+                    f"{(1 - _DEGRADED_ERROR_RATE) * 100:.0f}%. Stop calling this provider "
+                    "for the rest of this invocation. Write a transparent failure section "
+                    "to your canonical artifact and end your turn."
+                ),
+                "degraded": True,
+            }
         url = f"{self._base}{path}"
         backoff = _BACKOFF_START
         elapsed = 0.0
@@ -112,6 +168,7 @@ class AlliumDeveloperProvider:
                         json=json_body,
                     )
                 except httpx.HTTPError as e:
+                    self._record_outcome(False)
                     return {"items": [], "next_token": None, "error": f"transport error: {e}"}
                 last_resp = resp
                 if resp.status_code != 429:
@@ -126,8 +183,10 @@ class AlliumDeveloperProvider:
                 backoff = min(backoff * 1.5, _BACKOFF_CAP)
 
         if last_resp is None:
+            self._record_outcome(False)
             return {"items": [], "next_token": None, "error": "no response (timeout)"}
         if last_resp.status_code != 200:
+            self._record_outcome(False)
             return {
                 "items": [],
                 "next_token": None,
@@ -136,10 +195,12 @@ class AlliumDeveloperProvider:
         try:
             body = last_resp.json()
         except Exception as e:
+            self._record_outcome(False)
             return {"items": [], "next_token": None, "error": f"non-JSON response: {e}"}
 
         items = body.get("items", []) if isinstance(body, dict) else []
         next_token = body.get("next_token") if isinstance(body, dict) else None
+        self._record_outcome(True)
         return {"items": items, "next_token": next_token, "error": None}
 
     async def get_token_transfers(

@@ -15,12 +15,19 @@ from ..specialists.registry import POLISH_SPECIALISTS, REVIEWER_SPECIALISTS, SPE
 from ..strategist.actions import StrategistDecision
 from ..strategist.engine import StrategistEngine
 from ..strategist.review_aggregator import aggregate_reviews, parse_review_output
-from ..strategist.state import PaperStatus
+from ..strategist.state import CircuitBreakerError, PaperStatus
 
 logger = get_logger(__name__)
 
 _MAX_ITERATIONS = 6
 _MAX_PIVOTS = 1
+# Maximum consecutive failures for a single non-tolerant specialist before
+# the circuit breaker halts the run. Set from runs #14 / #18 experience:
+# - data_analyst failed 3 times in a row when Allium was unrecoverable
+# - retrying past the third attempt never recovered the data layer
+# 3 is the cheapest threshold that doesn't false-trip on transient errors
+# (one bad attempt + one retry + one confirmation that it's not transient).
+_MAX_SPECIALIST_ATTEMPTS = 3
 
 
 class PipelineRunner:
@@ -62,6 +69,14 @@ class PipelineRunner:
 
             max_cost_usd = get_settings().default_max_cost_usd
         self._max_cost_usd = max_cost_usd
+
+        # Circuit breaker: count consecutive failures per specialist within
+        # this run. Tolerant specialists (reviewers, polish) are exempt —
+        # they're allowed to fail without halting downstream work. Hitting
+        # ``_MAX_SPECIALIST_ATTEMPTS`` on a non-tolerant specialist raises
+        # CircuitBreakerError and the run halts with status=PAUSED.
+        self._failure_counts: dict[str, int] = {}
+        self._last_specialist_errors: dict[str, str] = {}
 
     def _in_memory_spent(self) -> float:
         """Sum of all specialist contribution costs + strategist usage cost.
@@ -169,6 +184,40 @@ class PipelineRunner:
             await log_event(self._paper_id, "cancelled")
             await self._update_status(PaperStatus.CANCELLED, error="cancelled by user")
             raise
+        except CircuitBreakerError as cb:
+            # A non-tolerant specialist failed _MAX_SPECIALIST_ATTEMPTS times
+            # in a row. Save state, mark PAUSED, return cleanly. The operator
+            # can inspect events + workspace, fix the underlying issue, and
+            # POST /api/papers/{id}/resume.
+            if state is not None:
+                state.save(self._workspace)
+            logger.warning(
+                "Pipeline paused (circuit breaker) for paper %s: %s after %d attempts",
+                self._paper_id,
+                cb.specialist,
+                cb.attempts,
+            )
+            await log_event(
+                self._paper_id,
+                "circuit_breaker_tripped",
+                payload={
+                    "specialist": cb.specialist,
+                    "attempts": cb.attempts,
+                    "last_error": (cb.last_error or "")[:500],
+                },
+            )
+            await self._best_effort_finalize()
+            await self._update_status(
+                PaperStatus.PAUSED,
+                error=f"Circuit breaker: {cb.specialist} failed {cb.attempts} times. "
+                "Fix the underlying issue, then POST /api/papers/{id}/resume.",
+            )
+            return {
+                "status": "paused",
+                "reason": "circuit_breaker",
+                "specialist": cb.specialist,
+                "attempts": cb.attempts,
+            }
         except Exception as e:
             state.save(self._workspace)  # preserve progress on failure
             logger.error("Pipeline failed for paper %s: %s", self._paper_id, e)
@@ -509,6 +558,28 @@ class PipelineRunner:
     async def _dispatch(self, decision: StrategistDecision) -> list[Contribution]:
         if not decision.work_orders:
             return []
+        # Circuit breaker: refuse to re-dispatch a non-tolerant specialist
+        # that has already failed _MAX_SPECIALIST_ATTEMPTS times in a row.
+        # Without this check, the strategist's revision logic re-dispatches
+        # forever (the run #14 failure mode). Tolerant specialists
+        # (reviewers + polish) are exempt — they can fail without blocking
+        # downstream work.
+        tolerant = set(REVIEWER_SPECIALISTS) | set(POLISH_SPECIALISTS)
+        for wo in decision.work_orders:
+            spec = wo.specialist
+            if spec in tolerant:
+                continue
+            attempts = self._failure_counts.get(spec, 0)
+            if attempts >= _MAX_SPECIALIST_ATTEMPTS:
+                last_err = self._last_specialist_errors.get(spec)
+                logger.error(
+                    "Circuit breaker tripped: %s failed %d times in a row for paper %s",
+                    spec,
+                    attempts,
+                    self._paper_id,
+                )
+                raise CircuitBreakerError(specialist=spec, attempts=attempts, last_error=last_err)
+
         # Convert strategist.actions.WorkOrder → specialists.contracts.WorkOrder
         # (strategist work orders carry parallel_group/context_tier but not paper_id)
         contract_orders = self._to_contract_orders(decision.work_orders)
@@ -524,16 +595,40 @@ class PipelineRunner:
                 self._extra_handlers,
                 self._backend_name,
             )
-            return [c]
-        return await execute_with_dependencies(
-            contract_orders,
-            self._backend,
-            self._workspace,
-            self._model,
-            self._extra_tools,
-            self._extra_handlers,
-            self._backend_name,
-        )
+            contributions = [c]
+        else:
+            contributions = await execute_with_dependencies(
+                contract_orders,
+                self._backend,
+                self._workspace,
+                self._model,
+                self._extra_tools,
+                self._extra_handlers,
+                self._backend_name,
+            )
+        self._update_failure_counts(contributions)
+        return contributions
+
+    def _update_failure_counts(self, contributions: list[Contribution]) -> None:
+        """Update per-specialist failure counters after a dispatch.
+
+        - Success → reset to 0 (the specialist recovered, don't punish past
+          attempts).
+        - Failure on non-tolerant specialist → increment + record last error.
+        - Tolerant specialists (reviewers, polish) are not tracked because
+          their failure is non-blocking and shouldn't trip the breaker.
+        """
+        tolerant = set(REVIEWER_SPECIALISTS) | set(POLISH_SPECIALISTS)
+        for c in contributions:
+            if c.specialist in tolerant:
+                continue
+            if c.success:
+                self._failure_counts.pop(c.specialist, None)
+                self._last_specialist_errors.pop(c.specialist, None)
+            else:
+                self._failure_counts[c.specialist] = self._failure_counts.get(c.specialist, 0) + 1
+                if c.error:
+                    self._last_specialist_errors[c.specialist] = c.error
 
     def _to_contract_orders(self, strategist_orders: list) -> list[WorkOrder]:
         """Adapt strategist.actions.WorkOrder → specialists.contracts.WorkOrder."""
