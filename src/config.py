@@ -10,7 +10,7 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     # ── LLM ───────────────────────────────────────────────────────────────────
-    llm_backend: Literal["anthropic", "openrouter", "claude_code"] = "anthropic"
+    llm_backend: Literal["anthropic", "openrouter", "claude_code", "codex", "gemini"] = "anthropic"
     anthropic_api_key: str | None = None
     anthropic_model: str = "claude-sonnet-4-5"
     openrouter_api_key: str | None = None
@@ -97,6 +97,25 @@ class Settings(BaseSettings):
     claude_code_timeout: int = 1800  # 30 min hard cap per specialist invocation
     claude_code_max_turns: int = 60  # Default agentic-turn cap inside the CLI
     claude_code_cwd: str = ""  # Empty → use os.getcwd() at invocation time
+
+    # ── Codex CLI backend (free under ChatGPT Plus/Pro plan) ──────────────────
+    # Set LLM_BACKEND=codex to delegate to the `codex exec` subprocess.
+    # Requires Codex installed (`npm install -g @openai/codex`) + `codex login`.
+    # Alpha: interface is stable but live validation pending.
+    codex_path: str = "codex"
+    codex_timeout: int = 1800
+    codex_model: str = ""  # Empty → CLI's default
+    codex_reasoning_effort: str = ""  # low | medium | high; empty → CLI default
+    codex_cwd: str = ""
+
+    # ── Gemini CLI backend (free under Google AI Pro/Ultra plan) ──────────────
+    # Set LLM_BACKEND=gemini to delegate to the `gemini` subprocess. Requires
+    # Gemini CLI installed (`npm install -g @google/gemini-cli`) + `gemini auth`.
+    # Alpha: interface is stable but live validation pending.
+    gemini_path: str = "gemini"
+    gemini_timeout: int = 1800
+    gemini_model: str = ""  # Empty → CLI's default
+    gemini_cwd: str = ""
 
     # ── API security ──────────────────────────────────────────────────────────
     # When set, all mutating endpoints (POST/DELETE) require

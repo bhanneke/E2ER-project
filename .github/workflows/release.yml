@@ -2,11 +2,25 @@ name: Release
 
 # Tag-driven release. Fires only on `push: tags: v*`. Builds the wheel,
 # enforces version consistency between pyproject.toml and src/__init__.py,
-# and creates a GitHub release with the wheel attached.
+# creates a GitHub release with the wheel attached, and publishes to PyPI
+# via OIDC (no API token secret needed).
 #
-# PyPI publishing is intentionally NOT wired here yet — that lands in
-# Phase 4 of the stability sprint once the multi-CLI backends + skill
-# bundling are ready and the package is actually useful via `pip install`.
+# One-time PyPI setup (do this once per PyPI project, before the first tag):
+#   1. Go to https://pypi.org/manage/project/e2er/settings/publishing/
+#      (or create the project first via a manual upload if it doesn't exist).
+#   2. Add a Trusted Publisher with:
+#        owner:         bhanneke
+#        repository:    E2ER-project
+#        workflow:      release.yml
+#        environment:   pypi
+#   3. Create a GitHub environment named "pypi" (Settings → Environments)
+#      with optional protection rules (recommended: require reviewer for
+#      production releases).
+#   4. Push any new v* tag. The `publish` job runs in the `pypi`
+#      environment and mints a short-lived OIDC token that PyPI accepts.
+#
+# Until the pending publisher is registered, the first publish run fails
+# with "invalid-publisher" — expected. Register on PyPI, then re-run.
 #
 # Release procedure (see AGENTS.md for the full version):
 #   1. Open release PR dev → main. Bump version in BOTH:
@@ -27,6 +41,7 @@ on:
 
 permissions:
   contents: write  # Needed to create the GitHub release
+  id-token: write  # Needed for PyPI OIDC trusted publishing
 
 jobs:
   version-check:
@@ -149,3 +164,36 @@ jobs:
             --title "$TAG" \
             --notes-file "$NOTES_FILE" \
             dist/*
+
+  publish:
+    name: Publish to PyPI (OIDC)
+    needs: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Runs in the GitHub `pypi` environment so PyPI's trusted-publisher
+    # check sees the expected environment claim. Without this, OIDC
+    # authentication fails with "invalid-publisher" even when the project
+    # has been pre-registered on PyPI.
+    environment:
+      name: pypi
+      url: https://pypi.org/p/e2er
+    permissions:
+      id-token: write  # for OIDC
+
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to PyPI via OIDC
+        # Uses the official PyPA action which mints a short-lived OIDC
+        # token and POSTs it to PyPI's trusted-publisher endpoint. No
+        # API token secret is needed.
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          # `skip-existing: true` makes re-runs idempotent — if the
+          # version was already uploaded (e.g. a prior partial run),
+          # this is a no-op instead of an error.
+          skip-existing: true

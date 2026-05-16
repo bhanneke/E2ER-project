@@ -20,4 +20,12 @@ def get_backend(settings: Settings) -> LLMBackend:
         from .claude_code import ClaudeCodeBackend
 
         return ClaudeCodeBackend()
+    elif settings.llm_backend == "codex":
+        from .codex import CodexBackend
+
+        return CodexBackend()
+    elif settings.llm_backend == "gemini":
+        from .gemini import GeminiBackend
+
+        return GeminiBackend()
     raise ValueError(f"Unknown LLM backend: {settings.llm_backend!r}")
