@@ -552,8 +552,10 @@ async def data_queries(paper_id: str) -> dict[str, Any]:
         return {"paper_id": paper_id, "queries": [], "summary": {}, "error": str(e)}
 
     # Roll up an at-a-glance summary so the dashboard / agent doesn't have
-    # to count rows itself.
-    summary = {
+    # to count rows itself. Explicit Any annotation because the value type
+    # is heterogeneous (ints + nested dicts) — mypy infers `dict[str, object]`
+    # otherwise and rejects `.get()` on the bucket dicts at attr-defined.
+    summary: dict[str, Any] = {
         "total": len(queries),
         "by_type": {},
         "by_validation_status": {},
@@ -568,7 +570,7 @@ async def data_queries(paper_id: str) -> dict[str, Any]:
             ("approval_status", "by_approval_status"),
         ]:
             key = q.get(field) or "unknown"
-            summary[bucket][key] = summary[bucket].get(key, 0) + 1  # type: ignore[index]
+            summary[bucket][key] = summary[bucket].get(key, 0) + 1
 
     return {"paper_id": paper_id, "queries": queries, "summary": summary}
 
