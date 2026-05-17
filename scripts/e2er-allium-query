@@ -1,68 +1,14 @@
 #!/usr/bin/env bash
-# Allium gatekeeper for Claude Code CLI specialists.
+# Back-compat shim. The Allium gatekeeper moved into the unified
+# `e2er-data` wrapper as the `allium` source on 2026-05-17 (v0.4 prep).
+# This shim re-prefixes the old `e2er-allium-query <cmd>` invocation as
+# `e2er-data allium <cmd>` so external scripts and any unmigrated skill
+# files keep working through a deprecation window.
 #
-# When `LLM_BACKEND=claude_code`, specialists run inside the `claude` CLI
-# subprocess. Their tool dispatch is internal, so the in-process
-# AlliumToolHandler can't intercept queries. This wrapper is the gatekeeper:
-# the CLI is configured with `--allowedTools=Bash(e2er-allium-query:*)`,
-# meaning this is the ONLY path to Allium for the specialist.
-#
-# Implementation is a thin shim over `python -m src.modules.data.cli`,
-# which constructs the same AlliumToolHandler used in API mode and runs
-# the SAME 5 guardrails (no SELECT *, fields-in-dict, time-bound WHERE,
-# granularity justification, feasibility-first).
-#
-# Usage examples:
-#   e2er-allium-query feasibility --paper-id <uuid> --sql "..." \
-#                                  --fields col1,col2 --aggregation daily \
-#                                  --rationale "..."
-#   e2er-allium-query production  --paper-id <uuid> --sql "..." ...
-#   e2er-allium-query check-approval --paper-id <uuid> --query-id <uuid>
-#   e2er-allium-query list-tables --paper-id <uuid>
-#
-# Run from anywhere; the wrapper resolves the project root from its own path.
+# Will be removed in v0.5.0. Migrate to `e2er-data allium <cmd>` for new
+# code.
 
 set -euo pipefail
 
-# Resolve the project root from this script's location: repo/scripts/e2er-allium-query
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-
-cd "$PROJECT_ROOT"
-
-# If the runner injected E2ER_PAPER_ID / E2ER_SPECIALIST into the env and the
-# user didn't pass --paper-id / --specialist explicitly, inject them now so
-# the specialist's invocation can stay clean: `e2er-allium-query feasibility
-# --sql "..." --fields ...` instead of `--paper-id <uuid> --specialist ...`.
-extra_args=()
-if [[ -n "${E2ER_PAPER_ID:-}" ]] && [[ "$*" != *"--paper-id"* ]]; then
-    extra_args+=("--paper-id" "$E2ER_PAPER_ID")
-fi
-if [[ -n "${E2ER_SPECIALIST:-}" ]] && [[ "$*" != *"--specialist"* ]]; then
-    extra_args+=("--specialist" "$E2ER_SPECIALIST")
-fi
-
-# Find a Python 3.11+ interpreter. The runner injects E2ER_PYTHON pointing
-# at its own sys.executable so the subprocess uses the same interpreter
-# that loaded the project (correct venv, correct Python version). Falls
-# back to common executable names so manual invocations from a shell also
-# work.
-if [[ -n "${E2ER_PYTHON:-}" ]] && [[ -x "$E2ER_PYTHON" ]]; then
-    PY="$E2ER_PYTHON"
-elif command -v python3.12 >/dev/null 2>&1; then
-    PY="$(command -v python3.12)"
-elif command -v python3.11 >/dev/null 2>&1; then
-    PY="$(command -v python3.11)"
-elif command -v python3 >/dev/null 2>&1; then
-    PY="$(command -v python3)"
-elif command -v python >/dev/null 2>&1; then
-    PY="$(command -v python)"
-else
-    echo "e2er-allium-query: cannot find a Python interpreter. The project requires Python 3.11+." >&2
-    echo "  Either install python3.12/python3.11 system-wide, or set E2ER_PYTHON to the project venv's python." >&2
-    exit 4
-fi
-
-# `${extra_args[@]+"${extra_args[@]}"}` is the unbound-safe expansion for
-# an empty array under `set -u` (bash treats empty arrays as unset).
-exec "$PY" -m src.modules.data.cli ${extra_args[@]+"${extra_args[@]}"} "$@"
+exec "$SCRIPT_DIR/e2er-data" allium "$@"

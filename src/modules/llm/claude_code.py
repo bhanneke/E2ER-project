@@ -60,11 +60,18 @@ _DEFAULT_ALLOWED_TOOLS = [
     "Edit",
     "Glob",
     "Grep",
+    # Unified data gatekeeper covering Allium + public sources (yfinance,
+    # FRED, …). Allium-specific guardrails still fire inside the wrapper
+    # for `e2er-data allium ...` invocations.
+    "Bash(e2er-data:*)",
+    # Back-compat: e2er-allium-query is a thin shim around `e2er-data
+    # allium`. Keep it allow-listed through v0.5.0 so existing skill files
+    # / external scripts still work during the deprecation window.
     "Bash(e2er-allium-query:*)",
 ]
 
-# `scripts/` (containing e2er-allium-query) is inserted at the front of
-# PATH for the subprocess so the model can invoke the gatekeeper by name.
+# `scripts/` (containing the wrappers) is inserted at the front of PATH
+# for the subprocess so the model can invoke them by bare name.
 _SCRIPTS_DIR = Path(__file__).resolve().parent.parent.parent.parent / "scripts"
 
 

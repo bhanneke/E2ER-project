@@ -1,18 +1,18 @@
 # Allium Developer-tier API (when SQL Explorer is unavailable)
 
-If `e2er-allium-query list-tables` returns empty or `Allium run failed`,
+If `e2er-data allium list-tables` returns empty or `Allium run failed`,
 the account is on the **Developer tier**, not Explorer. The SQL surface
 (`feasibility`, `production`, `list-tables`, `describe-table`,
 `distinct-values`) is NOT available — using it wastes the rate budget.
 
 Instead, use the developer REST endpoints exposed as these subcommands.
-**All work through the same `e2er-allium-query` wrapper** — the model
+**All work through the same `e2er-data allium` wrapper** — the model
 never makes direct HTTP calls and the same audit / pacing applies.
 
 ## Tools available
 
 ```
-e2er-allium-query get-transfers \
+e2er-data allium get-transfers \
   --chain ethereum \
   --address 0x098B716B8Aaf21512996dC57EB0615e2383E2f96 \
   --token 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48 \
@@ -29,7 +29,7 @@ are the supported names per Allium's OpenAPI spec). Prefer this over
 `get-wallet-tx` when you need a specific historical window.
 
 ```
-e2er-allium-query get-wallet-tx \
+e2er-data allium get-wallet-tx \
   --chain ethereum \
   --address 0x098B716B8Aaf21512996dC57EB0615e2383E2f96 \
   --limit 25
@@ -46,7 +46,7 @@ For old events, **prefer `get-transfers`** instead — it supports
 `--min-timestamp` and `--max-timestamp` directly.
 
 ```
-e2er-allium-query get-balances-history \
+e2er-data allium get-balances-history \
   --chain ethereum \
   --address 0xa0c68C638235ee32657e8f720a23ceC1bFc77C77 \
   --from-ts 2023-07-25 \
@@ -56,7 +56,7 @@ Daily balance snapshots for one address. Required for measuring the
 drawdown shape on victim contracts or whale wallets.
 
 ```
-e2er-allium-query get-prices-history \
+e2er-data allium get-prices-history \
   --chain ethereum \
   --token-address 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2 \
   --from-ts 2022-03-01 \
@@ -66,7 +66,7 @@ OHLC price history. **Fungible tokens only** — NFT contracts return
 `{"items":[]}` with no error. Sanity-check first with `get-price`.
 
 ```
-e2er-allium-query get-price \
+e2er-data allium get-price \
   --chain ethereum \
   --token-address 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2
 ```

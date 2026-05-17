@@ -48,9 +48,10 @@ def test_registry_returns_claude_code_when_configured(monkeypatch, tmp_path):
 
 def test_allowed_tools_do_not_include_bare_bash():
     """Security invariant: the CLI backend must NOT grant the unrestricted
-    `Bash` tool. Only the gatekeeper pattern `Bash(e2er-allium-query:*)` is
-    permitted. Bare `Bash` would let the model run curl, ssh, sudo, etc. —
-    defeating the Allium guardrails and the broader security model.
+    `Bash` tool. Only narrow gatekeeper patterns (`Bash(e2er-data:*)` and
+    its back-compat shim `Bash(e2er-allium-query:*)`) are permitted. Bare
+    `Bash` would let the model run curl, ssh, sudo, etc. — defeating the
+    Allium guardrails and the broader security model.
 
     Regression for the May 2026 NFT-paper run #10 review."""
     from src.modules.llm.claude_code import _DEFAULT_ALLOWED_TOOLS
@@ -60,10 +61,13 @@ def test_allowed_tools_do_not_include_bare_bash():
         "arbitrary-command surface that the wrapper pattern was added to close. "
         f"Allowed tools: {_DEFAULT_ALLOWED_TOOLS}"
     )
-    # The Allium gatekeeper pattern must still be present.
-    assert any("e2er-allium-query" in t for t in _DEFAULT_ALLOWED_TOOLS), (
-        "Allium gatekeeper pattern missing — data_analyst will have no path to Allium "
-        f"in CLI mode. Allowed tools: {_DEFAULT_ALLOWED_TOOLS}"
+    # The unified data gatekeeper must be present. We accept either
+    # `e2er-data` (new, v0.4+) or `e2er-allium-query` (legacy shim) so
+    # this test stays green across the v0.4 transition. v0.5 will remove
+    # the back-compat shim and tighten this to require `e2er-data`.
+    assert any("e2er-data" in t or "e2er-allium-query" in t for t in _DEFAULT_ALLOWED_TOOLS), (
+        "Data gatekeeper pattern missing — specialists will have no path to data "
+        f"sources in CLI mode. Allowed tools: {_DEFAULT_ALLOWED_TOOLS}"
     )
 
 
