@@ -315,7 +315,21 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Specialist name (audit log). Defaults to $E2ER_SPECIALIST or 'data_analyst'.",
     )
 
-    sub = parser.add_subparsers(dest="command", required=True)
+    # Top-level: dispatch by data source. Each source (allium, yfinance, …)
+    # gets its own nested subparser group. The invocation shape is:
+    #   e2er-data <source> <command> [options]
+    # e.g.
+    #   e2er-data allium feasibility --sql "..." --aggregation daily ...
+    #   e2er-data yfinance history --ticker AAPL --from 2020-01-01 ...
+    #
+    # Allium-specific guardrails (no SELECT *, time-bound WHERE, dictionary
+    # fields, granularity, feasibility-first) only run for the `allium`
+    # source. Public sources (yfinance, FRED, …) just get rate-limit
+    # handling and audit logging — different cost model.
+    sources = parser.add_subparsers(dest="source", required=True)
+
+    allium_parser = sources.add_parser("allium", help="Allium blockchain data (with the 5-rule guardrails)")
+    sub = allium_parser.add_subparsers(dest="command", required=True)
 
     # --- feasibility / production share the same query options
     for name, help_text in [
@@ -459,18 +473,23 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-_DISPATCH = {
-    "feasibility": _run_feasibility,
-    "production": _run_production,
-    "check-approval": _run_check_approval,
-    "describe-table": _run_describe_table,
-    "distinct-values": _run_distinct_values,
-    "list-tables": _run_list_tables,
-    "get-transfers": _run_dev_transfers,
-    "get-wallet-tx": _run_dev_wallet_tx,
-    "get-balances-history": _run_dev_balances_history,
-    "get-prices-history": _run_dev_prices_history,
-    "get-price": _run_dev_get_price,
+# Per-source dispatch table. Top-level key is the data source; nested key
+# is the subcommand within that source. New sources (yfinance, FRED, …)
+# get their own entries here.
+_DISPATCH: dict[str, dict[str, Any]] = {
+    "allium": {
+        "feasibility": _run_feasibility,
+        "production": _run_production,
+        "check-approval": _run_check_approval,
+        "describe-table": _run_describe_table,
+        "distinct-values": _run_distinct_values,
+        "list-tables": _run_list_tables,
+        "get-transfers": _run_dev_transfers,
+        "get-wallet-tx": _run_dev_wallet_tx,
+        "get-balances-history": _run_dev_balances_history,
+        "get-prices-history": _run_dev_prices_history,
+        "get-price": _run_dev_get_price,
+    },
 }
 
 
@@ -483,12 +502,14 @@ def main(argv: list[str] | None = None) -> int:
 
     # Resolve paper_id / specialist: explicit flag wins, then env var, then
     # default. Without paper_id we cannot route the query (workspace lookup
-    # + audit log both need it).
+    # + audit log both need it). Public sources don't strictly need paper_id
+    # for authorisation, but we still record it on the audit row so the
+    # reproducibility chain isn't broken.
     args.paper_id = args.paper_id or os.environ.get("E2ER_PAPER_ID")
     args.specialist = args.specialist or os.environ.get("E2ER_SPECIALIST") or "data_analyst"
     if not args.paper_id:
         print(
-            "e2er-allium-query: paper_id missing. Pass --paper-id <uuid> or set "
+            "e2er-data: paper_id missing. Pass --paper-id <uuid> or set "
             "E2ER_PAPER_ID in the environment. (Normally the runner injects this "
             "automatically; this error means the wrapper is being called outside a "
             "specialist run.)",
@@ -496,9 +517,16 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
 
-    runner = _DISPATCH.get(args.command)
+    source_dispatch = _DISPATCH.get(args.source)
+    if source_dispatch is None:
+        print(f"Unknown source: {args.source!r}. Known: {sorted(_DISPATCH.keys())}", file=sys.stderr)
+        return 2
+    runner = source_dispatch.get(args.command)
     if runner is None:
-        print(f"Unknown command: {args.command}", file=sys.stderr)
+        print(
+            f"Unknown {args.source} command: {args.command!r}. Known: {sorted(source_dispatch.keys())}",
+            file=sys.stderr,
+        )
         return 2
     try:
         result = asyncio.run(runner(args))
@@ -506,7 +534,7 @@ def main(argv: list[str] | None = None) -> int:
         # Fatal infrastructure error (DB unavailable, no Allium key, etc.).
         # Guardrail rejections come back as a string from handler.handle()
         # — those are NOT exceptions and reach the print() below.
-        print(f"e2er-allium-query failed: {type(e).__name__}: {e}", file=sys.stderr)
+        print(f"e2er-data {args.source} {args.command} failed: {type(e).__name__}: {e}", file=sys.stderr)
         return 3
     print(result)
     return 0

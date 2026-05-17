@@ -2,7 +2,7 @@
 
 This skill applies when the pipeline runs under `LLM_BACKEND=claude_code`
 (Claude Code CLI). In that mode you have **no direct access to Allium's
-HTTP API**. Instead, you invoke the bash command `e2er-allium-query`,
+HTTP API**. Instead, you invoke the bash command `e2er-data allium`,
 which validates your query against the same 5 guardrails as the JSON-tool
 `query_allium` (used in API-backend mode), then forwards approved queries
 to Allium and reports results back.
@@ -20,13 +20,13 @@ Workflow:
 
 ```bash
 # 1. Discover available schemas / tables
-e2er-allium-query list-tables
+e2er-data allium list-tables
 
 # 2. Discover columns + types of a target table
-e2er-allium-query describe-table --schema ethereum --table nft_trades
+e2er-data allium describe-table --schema ethereum --table nft_trades
 
 # 3. Discover actual values for any grouping column you intend to filter on
-e2er-allium-query distinct-values --schema ethereum --table nft_trades --column marketplace --limit 50
+e2er-data allium distinct-values --schema ethereum --table nft_trades --column marketplace --limit 50
 # → returns the top-50 actual literals + their row counts
 ```
 
@@ -80,7 +80,7 @@ into the environment. Just call the wrapper with the query-specific args:
 
 ```bash
 # 1) Sample a query (1000-row LIMIT, auto-approved)
-e2er-allium-query feasibility \
+e2er-data allium feasibility \
   --sql "SELECT block_number, ts FROM ethereum.blocks WHERE ts >= '2024-01-01' LIMIT 1000" \
   --fields block_number,ts \
   --aggregation daily \
@@ -88,15 +88,15 @@ e2er-allium-query feasibility \
   --primary-table ethereum.blocks
 
 # 2) Submit a full query for human approval
-e2er-allium-query production \
+e2er-data allium production \
   --sql "..." --fields ... --aggregation transaction \
   --rationale "..." --primary-table ...
 
 # 3) Poll for a production query's approval status
-e2er-allium-query check-approval --query-id <QUERY_ID_FROM_STEP_2>
+e2er-data allium check-approval --query-id <QUERY_ID_FROM_STEP_2>
 
 # 4) List available Allium dataset schemas/tables
-e2er-allium-query list-tables
+e2er-data allium list-tables
 ```
 
 ## Workflow rules
