@@ -356,6 +356,89 @@ async def _run_yf_search(args: argparse.Namespace) -> str:
     return _json.dumps(result, indent=2, default=str)
 
 
+# ---------------------------------------------------------------------------
+# FRED handlers — Federal Reserve Economic Data, free key.
+# ---------------------------------------------------------------------------
+
+
+def _fred_provider_or_error_envelope() -> tuple[Any, str | None]:
+    """Build FredProvider from settings; return (provider, None) or (None, json_error_str)."""
+    import json as _json
+
+    settings = get_settings()
+    if not settings.fred_api_key:
+        msg = _json.dumps(
+            {
+                "source": "fred",
+                "items": [],
+                "error": (
+                    "FRED_API_KEY not configured. Set it in .env. "
+                    "Get a free key (~30s) at https://fredaccount.stlouisfed.org/apikey"
+                ),
+            },
+            indent=2,
+        )
+        return None, msg
+    from .fred_provider import FredProvider
+
+    return FredProvider(settings.fred_api_key), None
+
+
+async def _run_fred_series(args: argparse.Namespace) -> str:
+    """Pull a FRED series time series."""
+    import json as _json
+
+    provider, err = _fred_provider_or_error_envelope()
+    if provider is None:
+        return err or ""
+    result = await provider.get_series_observations(
+        series_id=args.series_id,
+        observation_start=args.start,
+        observation_end=args.end,
+        frequency=args.frequency,
+        units=args.units,
+        limit=args.limit,
+    )
+    return _json.dumps(result, indent=2, default=str)
+
+
+async def _run_fred_series_info(args: argparse.Namespace) -> str:
+    """Metadata for a FRED series — units, frequency, etc."""
+    import json as _json
+
+    provider, err = _fred_provider_or_error_envelope()
+    if provider is None:
+        return err or ""
+    result = await provider.get_series_info(series_id=args.series_id)
+    return _json.dumps(result, indent=2, default=str)
+
+
+async def _run_fred_search(args: argparse.Namespace) -> str:
+    """Free-text search for FRED series."""
+    import json as _json
+
+    provider, err = _fred_provider_or_error_envelope()
+    if provider is None:
+        return err or ""
+    result = await provider.search_series(
+        query=args.query,
+        limit=args.limit,
+        order_by=args.order_by,
+    )
+    return _json.dumps(result, indent=2, default=str)
+
+
+async def _run_fred_releases(args: argparse.Namespace) -> str:
+    """List FRED releases."""
+    import json as _json
+
+    provider, err = _fred_provider_or_error_envelope()
+    if provider is None:
+        return err or ""
+    result = await provider.get_releases(limit=args.limit)
+    return _json.dumps(result, indent=2, default=str)
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="e2er-allium-query",
@@ -596,6 +679,62 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Maximum number of candidates to return (default 10).",
     )
 
+    # ── FRED source — Federal Reserve Economic Data (US macro). ─────────────
+    fred_parser = sources.add_parser(
+        "fred",
+        help="Federal Reserve Economic Data (CPI, unemployment, rates, GDP, …). Free key.",
+    )
+    fred_sub = fred_parser.add_subparsers(dest="command", required=True)
+
+    p = fred_sub.add_parser(
+        "series",
+        help="Pull a FRED time series. e.g. CPIAUCSL (CPI), UNRATE (unemployment), DGS10 (10y yield).",
+    )
+    p.add_argument("--series-id", dest="series_id", required=True, help="FRED series id, e.g. CPIAUCSL.")
+    p.add_argument("--start", default=None, help="Observation start date (YYYY-MM-DD).")
+    p.add_argument("--end", default=None, help="Observation end date (YYYY-MM-DD).")
+    p.add_argument(
+        "--frequency",
+        default=None,
+        help="Resample frequency: d, w, m, q, sa, a. Omit to use the series' native frequency.",
+    )
+    p.add_argument(
+        "--units",
+        default=None,
+        help="Transformation: lin (raw, default), chg (level change), ch1 (yoy change), pch (% change), log.",
+    )
+    p.add_argument(
+        "--limit",
+        type=int,
+        default=100000,
+        help="Max observations (default 100000 = FRED's max).",
+    )
+
+    p = fred_sub.add_parser(
+        "series-info",
+        help="Metadata for a series: title, units, frequency. Use BEFORE pulling observations to sanity-check.",
+    )
+    p.add_argument("--series-id", dest="series_id", required=True)
+
+    p = fred_sub.add_parser(
+        "search",
+        help="Free-text search across FRED series titles + notes. Returns up to --limit hits.",
+    )
+    p.add_argument("--query", required=True, help="Search text, e.g. 'core CPI' or 'unemployment'.")
+    p.add_argument("--limit", type=int, default=20, help="Max hits (default 20).")
+    p.add_argument(
+        "--order-by",
+        dest="order_by",
+        default="popularity",
+        help="Sort order: popularity (default), observation_start, observation_end, search_rank.",
+    )
+
+    p = fred_sub.add_parser(
+        "releases",
+        help="List FRED releases (Consumer Price Index, Employment Situation, …).",
+    )
+    p.add_argument("--limit", type=int, default=100, help="Max releases returned (default 100).")
+
     return parser
 
 
@@ -622,6 +761,12 @@ _DISPATCH: dict[str, dict[str, Any]] = {
         "fundamentals": _run_yf_fundamentals,
         "dividends": _run_yf_dividends,
         "search": _run_yf_search,
+    },
+    "fred": {
+        "series": _run_fred_series,
+        "series-info": _run_fred_series_info,
+        "search": _run_fred_search,
+        "releases": _run_fred_releases,
     },
 }
 

@@ -51,6 +51,7 @@ SPECIALIST_SKILLS: dict[str, list[str]] = {
         "data/allium-cli",
         "data/allium-developer-api",
         "data/yfinance",
+        "data/fred",
     ],
     "identification_strategist": [
         "causal-inference/judge-designs",
@@ -70,6 +71,7 @@ SPECIALIST_SKILLS: dict[str, list[str]] = {
         "data/allium-cli",
         "data/allium-developer-api",
         "data/yfinance",
+        "data/fred",
     ],
     "theory_specialist": [
         "base/economist",
