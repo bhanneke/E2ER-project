@@ -38,6 +38,12 @@ class Settings(BaseSettings):
     max_queries_per_paper: int = 20
     max_rows_per_paper: int = 5_000_000
 
+    # ── Data — FRED (Federal Reserve Economic Data) ───────────────────────────
+    # Free key, ~30s to register at https://fredaccount.stlouisfed.org/apikey.
+    # Without a key, FRED subcommands return a structured error envelope
+    # pointing the user at the registration URL.
+    fred_api_key: str | None = None
+
     @property
     def data_module_enabled(self) -> bool:
         return self.allium_api_key is not None
