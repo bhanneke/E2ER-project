@@ -290,6 +290,72 @@ async def _run_distinct_values(args: argparse.Namespace) -> str:
     )
 
 
+# ---------------------------------------------------------------------------
+# yfinance handlers — public Yahoo Finance data, no API key.
+# ---------------------------------------------------------------------------
+
+
+async def _run_yf_history(args: argparse.Namespace) -> str:
+    """OHLCV time series for a single ticker."""
+    import json as _json
+
+    from .yfinance_provider import YFinanceProvider
+
+    provider = YFinanceProvider()
+    result = await provider.history(
+        ticker=args.ticker,
+        start=args.start,
+        end=args.end,
+        interval=args.interval,
+        auto_adjust=not args.raw,
+    )
+    return _json.dumps(result, indent=2, default=str)
+
+
+async def _run_yf_ticker_info(args: argparse.Namespace) -> str:
+    """Current snapshot for a ticker (price, market cap, sector, beta, ...)."""
+    import json as _json
+
+    from .yfinance_provider import YFinanceProvider
+
+    provider = YFinanceProvider()
+    result = await provider.ticker_info(ticker=args.ticker)
+    return _json.dumps(result, indent=2, default=str)
+
+
+async def _run_yf_fundamentals(args: argparse.Namespace) -> str:
+    """Annual financial statements: income, balance_sheet, or cash_flow."""
+    import json as _json
+
+    from .yfinance_provider import YFinanceProvider
+
+    provider = YFinanceProvider()
+    result = await provider.fundamentals(ticker=args.ticker, statement=args.statement)
+    return _json.dumps(result, indent=2, default=str)
+
+
+async def _run_yf_dividends(args: argparse.Namespace) -> str:
+    """Full dividend history for a ticker."""
+    import json as _json
+
+    from .yfinance_provider import YFinanceProvider
+
+    provider = YFinanceProvider()
+    result = await provider.dividends(ticker=args.ticker)
+    return _json.dumps(result, indent=2, default=str)
+
+
+async def _run_yf_search(args: argparse.Namespace) -> str:
+    """Name-to-ticker lookup."""
+    import json as _json
+
+    from .yfinance_provider import YFinanceProvider
+
+    provider = YFinanceProvider()
+    result = await provider.search(query=args.query, max_results=args.max_results)
+    return _json.dumps(result, indent=2, default=str)
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="e2er-allium-query",
@@ -470,12 +536,72 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--chain", required=True)
     p.add_argument("--token-address", required=True)
 
+    # ── yfinance source — public Yahoo Finance data, no API key. ────────────
+    yf_parser = sources.add_parser(
+        "yfinance",
+        help="Yahoo Finance market data (equities, ETFs, crypto, FX). No API key.",
+    )
+    yf_sub = yf_parser.add_subparsers(dest="command", required=True)
+
+    p = yf_sub.add_parser(
+        "history",
+        help="OHLCV time series for a ticker over a date window.",
+    )
+    p.add_argument("--ticker", required=True, help="Ticker symbol (e.g. AAPL, BTC-USD, SPY).")
+    p.add_argument("--start", default=None, help="ISO date e.g. 2020-01-01. Omit for max history.")
+    p.add_argument("--end", default=None, help="ISO date e.g. 2024-12-31. Omit for today.")
+    p.add_argument(
+        "--interval",
+        default="1d",
+        help="Bar size: 1m, 5m, 15m, 30m, 60m, 1d (default), 5d, 1wk, 1mo. "
+        "Intraday intervals are rate-limited to ~60 days back.",
+    )
+    p.add_argument(
+        "--raw",
+        action="store_true",
+        help="Disable split/dividend adjustment (default auto-adjusts; you almost always want adjusted).",
+    )
+
+    p = yf_sub.add_parser(
+        "ticker-info",
+        help="Current snapshot for a ticker (price, market cap, sector, beta, P/E, ...).",
+    )
+    p.add_argument("--ticker", required=True)
+
+    p = yf_sub.add_parser(
+        "fundamentals",
+        help="Annual financial statements (income / balance_sheet / cash_flow). ~4 years of history.",
+    )
+    p.add_argument("--ticker", required=True)
+    p.add_argument(
+        "--statement",
+        choices=["income", "balance_sheet", "cash_flow"],
+        default="income",
+        help="Which statement to pull. Default: income.",
+    )
+
+    p = yf_sub.add_parser("dividends", help="Full dividend history (ex-date + amount).")
+    p.add_argument("--ticker", required=True)
+
+    p = yf_sub.add_parser(
+        "search",
+        help="Name-to-ticker lookup. Use when you know the company name but not the symbol.",
+    )
+    p.add_argument("--query", required=True, help="Company / asset name to search for.")
+    p.add_argument(
+        "--max-results",
+        dest="max_results",
+        type=int,
+        default=10,
+        help="Maximum number of candidates to return (default 10).",
+    )
+
     return parser
 
 
 # Per-source dispatch table. Top-level key is the data source; nested key
-# is the subcommand within that source. New sources (yfinance, FRED, …)
-# get their own entries here.
+# is the subcommand within that source. New sources (FRED, EDGAR, …) get
+# their own entries here.
 _DISPATCH: dict[str, dict[str, Any]] = {
     "allium": {
         "feasibility": _run_feasibility,
@@ -489,6 +615,13 @@ _DISPATCH: dict[str, dict[str, Any]] = {
         "get-balances-history": _run_dev_balances_history,
         "get-prices-history": _run_dev_prices_history,
         "get-price": _run_dev_get_price,
+    },
+    "yfinance": {
+        "history": _run_yf_history,
+        "ticker-info": _run_yf_ticker_info,
+        "fundamentals": _run_yf_fundamentals,
+        "dividends": _run_yf_dividends,
+        "search": _run_yf_search,
     },
 }
 
