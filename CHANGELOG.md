@@ -10,6 +10,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 (Add new entries here under `### Lane A — Pipeline`, `### Lane B — Literature`,
 `### Lane C — Data`, or `### Cross-lane` sub-headings per `AGENTS.md`.)
 
+## v0.4.1 — 2026-05-18
+
+Lifecycle patch over v0.4.0. Three resume/shutdown bugs that surfaced
+during the v0.4 SQLite live test.
+
+### Lane A — Pipeline
+
+- **Graceful shutdown** (closes #5): `@app.on_event("shutdown")` now
+  cancels in-flight runner tasks and transitions papers to `paused`.
+  Skips state.json-says-completed papers. Stops the "zombie row at
+  designing/revision after every uvicorn restart" failure mode.
+- **Resume writes terminal status** (closes #6): when resume runs on a
+  paper whose state.json already has every stage complete, the runner
+  now mirrors `state.last_status` back to the DB before returning.
+  Previously the DB row stayed at `designing` (the entry value).
+- **Resume accepts zombies** (closes #7): `/api/papers/{id}/resume` no
+  longer requires status to be `paused`/`failed`. Any non-terminal
+  status with no live runner task in `_RUNNING` is resumable. Combined
+  with #5, this removes the manual-UPDATE workaround entirely.
+- **SQLite translation extensions** (closes nothing — caught by live
+  SQLite smoke after v0.4.0 shipped, fixed before tagging):
+  `NOW()` → `CURRENT_TIMESTAMP`, plus `::int`/`::bigint`/`::numeric`/
+  `::float` casts stripped alongside the existing type/json/interval
+  casts. Without these, status UPDATEs silently failed and usage
+  aggregations crashed SQLite with "unrecognized token: ':'".
+
+### Tests
+
+- `tests/pipeline/integration/test_graceful_shutdown.py` — 3 new.
+- `tests/pipeline/integration/test_resume_terminal_status.py` — 1 new.
+- `tests/pipeline/integration/test_resume_api.py` — 4 new + 1 rewritten.
+
+Test count: 326 → 333.
+
 ## v0.4.0 — 2026-05-18
 
 The **"actually usable by a stranger"** release. `pip install e2er`

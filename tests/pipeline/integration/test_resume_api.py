@@ -81,8 +81,59 @@ def test_resume_409_when_already_running(tmp_path):
         loop.close()
 
 
-def test_resume_409_when_status_not_resumable(tmp_path):
-    """Status=designing must NOT be resumable — it should still be running."""
+def test_resume_409_when_already_completed(tmp_path):
+    """Terminal state — nothing to resume."""
+    paper_id = str(uuid.uuid4())
+    with (
+        patch(
+            "src.db.client.fetch_one",
+            new=AsyncMock(return_value=_mock_paper_row("completed", tmp_path)),
+        ),
+        patch("src.db.client.execute", new=AsyncMock(return_value=None)),
+    ):
+        resp = _client().post(f"/api/papers/{paper_id}/resume")
+    assert resp.status_code == 409, resp.text
+    detail = resp.json().get("detail", "")
+    assert "completed" in detail
+    assert "terminal" in detail.lower()
+
+
+def test_resume_409_when_cancelled(tmp_path):
+    paper_id = str(uuid.uuid4())
+    with (
+        patch(
+            "src.db.client.fetch_one",
+            new=AsyncMock(return_value=_mock_paper_row("cancelled", tmp_path)),
+        ),
+        patch("src.db.client.execute", new=AsyncMock(return_value=None)),
+    ):
+        resp = _client().post(f"/api/papers/{paper_id}/resume")
+    assert resp.status_code == 409
+
+
+def test_resume_accepts_zombie_revision_status(tmp_path):
+    """#7: status=revision but no live runner task → resumable (zombie path).
+
+    Pre-v0.4 this was 409 + manual UPDATE workaround. v0.4 softens the gate
+    so the natural workflow (restart server, /resume mid-flight paper) works.
+    """
+    paper_id = str(uuid.uuid4())
+    with (
+        patch(
+            "src.db.client.fetch_one",
+            new=AsyncMock(return_value=_mock_paper_row("revision", tmp_path)),
+        ),
+        patch("src.db.client.execute", new=AsyncMock(return_value=None)),
+    ):
+        resp = _client().post(f"/api/papers/{paper_id}/resume")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["status"] == "resuming"
+    assert body["from_status"] == "revision"
+
+
+def test_resume_accepts_zombie_designing_status(tmp_path):
+    """#7: status=designing but no live runner task → resumable."""
     paper_id = str(uuid.uuid4())
     with (
         patch(
@@ -92,9 +143,7 @@ def test_resume_409_when_status_not_resumable(tmp_path):
         patch("src.db.client.execute", new=AsyncMock(return_value=None)),
     ):
         resp = _client().post(f"/api/papers/{paper_id}/resume")
-    assert resp.status_code == 409, resp.text
-    detail = resp.json().get("detail", "")
-    assert "designing" in detail
+    assert resp.status_code == 200
 
 
 def test_resume_from_paused_status(tmp_path):

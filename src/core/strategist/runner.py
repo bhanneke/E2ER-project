@@ -173,6 +173,17 @@ class PipelineRunner:
                 state.mark_complete("replication")
                 state.save(self._workspace)
 
+            # Closes #6: when run() is called on a paper whose state.json
+            # already has every stage marked complete (a resume on an
+            # already-finished paper), no phase body executes and the DB
+            # row would stay at `designing` (the state run() set on entry).
+            # Mirror state.last_status — typically `completed` — back to
+            # the DB so the dashboard reflects reality.
+            if state.last_status:
+                final_status = PaperStatus(state.last_status)
+                await self._update_status(final_status)
+                status = final_status
+
             total_contributions = prior_contributions + len(self._contributions)
             return {"status": status.value, "contributions": total_contributions}
 
