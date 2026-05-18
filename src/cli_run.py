@@ -173,6 +173,11 @@ def run(
 
     paper_id = resp.get("paper_id")
     workspace = resp.get("workspace")
+    if not paper_id:
+        # Should never happen given _submit_paper returned successfully, but
+        # narrow the type for mypy + give the user a clear error if it does.
+        print("  ✗ API returned 200 but no paper_id — cannot tail.", file=sys.stderr)
+        return 5
     dashboard_url = f"{_api_root()}/papers/{paper_id}"
 
     print(f"\n  Paper ID:  {paper_id}", file=sys.stderr)
