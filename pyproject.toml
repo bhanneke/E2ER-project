@@ -1,6 +1,6 @@
 [project]
 name = "e2er"
-version = "0.4.1"
+version = "0.4.2"
 description = "End-to-End Researcher — automated research pipeline for economics, finance, and IS"
 requires-python = ">=3.11"
 readme = "README.md"
@@ -51,27 +51,37 @@ e2er = "src.__main__:main"
 requires = ["setuptools>=68.0"]
 build-backend = "setuptools.build_meta"
 
-# Tell setuptools to package both src/ (the codebase) and skills/ (the
-# skill markdown files) into the wheel. `e2er install-skills` (new in v0.3)
-# extracts them to ~/.{claude,codex,gemini}/skills/ for the headless
-# backends.
+# Tell setuptools to package src/ (the codebase), skills/ (the skill
+# markdown files), and sql/ (the SQLite bootstrap schema + Postgres
+# migrations) into the wheel. `e2er install-skills` extracts the bundled
+# skills to ~/.{claude,codex,gemini}/skills/ for the headless backends.
 #
 # Layout:
-#   src/ → mapped as the unnamed root (so src/api/ is importable as `api`,
-#          src/core/ as `core`, etc. — this matches the existing import
-#          structure used everywhere in the codebase).
-#   skills/ → top-level package at the repo root, ships the .md files
-#             as package-data.
+#   src/ → importable as `src.*` (src/api/, src/core/, src/db/, ...)
+#   skills/ → top-level package; ships .md files as package-data so
+#             `e2er install-skills` can find them via importlib.resources.
+#   sql/ → top-level package; ships *.sql files. SQLite bootstrap in
+#          src/db/client.py reads sql/sqlite/schema.sql via a relative
+#          path resolution that works in both dev checkout and installed
+#          wheel layouts.
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["src*", "skills*"]
+include = ["src*", "skills*", "sql*"]
 exclude = ["tests*", "Tests*", "docs*", "examples*", "scripts*", "docker*"]
 
 [tool.setuptools.package-data]
-# Include every skill .md file under skills/files/{category}/. The `**`
-# glob captures both the category subdirs (data/, writing/, …) and the
-# .md files within them.
+# Skill markdown files. `**` captures the category subdirs and the .md files.
 "skills.files" = ["**/*.md"]
+# Static assets and Jinja2 templates served by FastAPI. Without these the
+# `app.mount("/static", StaticFiles(...))` call at import time crashes,
+# which prevents uvicorn from starting on a fresh `pip install e2er`.
+"src.api" = ["static/*", "templates/*"]
+# SQLite bootstrap schema, loaded by src/db/client.py on first connect
+# when DATABASE_URL is not set (zero-config user journey).
+"sql.sqlite" = ["*.sql"]
+# Postgres migrations (kept for `scripts/migrate.py` users who pip-install
+# the dev extra or run from a source checkout).
+"sql" = ["*.sql"]
 
 [tool.ruff]
 line-length = 120
