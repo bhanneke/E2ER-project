@@ -1,6 +1,6 @@
 [project]
 name = "e2er"
-version = "0.4.2"
+version = "0.4.3"
 description = "End-to-End Researcher — automated research pipeline for economics, finance, and IS"
 requires-python = ">=3.11"
 readme = "README.md"
@@ -46,6 +46,13 @@ dev = [
 
 [project.scripts]
 e2er = "src.__main__:main"
+# Data gatekeeper invoked by Claude Code / Codex / Gemini CLI specialists.
+# The skill files (skills/files/data/yfinance.md, fred.md, allium*.md) tell
+# the model to run `e2er-data <source> <command> --save-to ...`. Without
+# this entry point, the dev-checkout bash wrapper at scripts/e2er-data is
+# the only way to invoke it — which means pip-installed users get
+# "command not found" and no data ever lands.
+e2er-data = "src.modules.data.cli:main"
 
 [build-system]
 requires = ["setuptools>=68.0"]
