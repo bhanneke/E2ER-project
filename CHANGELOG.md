@@ -10,6 +10,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 (Add new entries here under `### Lane A — Pipeline`, `### Lane B — Literature`,
 `### Lane C — Data`, or `### Cross-lane` sub-headings per `AGENTS.md`.)
 
+## v0.4.2 — 2026-05-18
+
+Hot-fix over v0.4.1. The 0.4.1 wheel shipped only `.py` files + skill
+markdown, but the runtime needs three other on-disk asset bundles: the
+FastAPI static directory, the Jinja2 templates, and `sql/sqlite/schema.sql`
+for the SQLite bootstrap. Without them, `e2er run` on a fresh
+`pip install e2er` crashed at uvicorn startup with `RuntimeError:
+Directory '.../src/api/static' does not exist`.
+
+### Cross-lane
+
+- **Ship runtime assets in the wheel**: `pyproject.toml` now declares
+  `src.api` package-data (`static/*`, `templates/*`) and `sql` / `sql.sqlite`
+  package-data (`*.sql`). Empty `sql/__init__.py` and `sql/sqlite/__init__.py`
+  make `sql/` discoverable by `setuptools.packages.find`. Verified by
+  fresh-venv install + `uvicorn src.api.app:app` boot, `GET /static/style.css`
+  serving 5,182 bytes, and an end-to-end `e2er run` reaching terminal
+  `failed` status (cost-cap test) with `~/.e2er/papers.db` and the
+  workspace directory both created via the SQLite zero-config path.
+
 ## v0.4.1 — 2026-05-18
 
 Lifecycle patch over v0.4.0. Three resume/shutdown bugs that surfaced
