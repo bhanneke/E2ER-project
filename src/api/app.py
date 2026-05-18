@@ -129,6 +129,64 @@ async def _log_config() -> None:
     )
 
 
+@app.on_event("shutdown")
+async def _graceful_shutdown_runners() -> None:
+    """Closes #5: on SIGTERM/SIGINT, transition in-flight papers to 'paused'
+    rather than letting them rot at their last in-flight status.
+
+    Without this, a server restart while a paper is mid-`revision` (etc.)
+    leaves a zombie row that requires manual UPDATE before /resume will
+    accept it (pre-v0.4 behaviour; #7 also softens the resume gate).
+    """
+    if not _RUNNING:
+        return
+    logger.info("Shutting down — cancelling %d in-flight paper task(s)", len(_RUNNING))
+    paper_ids = list(_RUNNING.keys())
+
+    # Cancel everything first so all runners get their CancelledError
+    # handler to run (which saves state.json). Brief timeout per task —
+    # we're shutting down, can't block forever.
+    for paper_id in paper_ids:
+        task = _RUNNING.get(paper_id)
+        if task and not task.done():
+            task.cancel()
+            try:
+                await asyncio.wait_for(task, timeout=5.0)
+            except (TimeoutError, asyncio.CancelledError):
+                pass
+            except Exception as e:
+                logger.warning("Error awaiting cancelled task for %s: %s", paper_id, e)
+
+    # The runner's CancelledError handler marks status=CANCELLED, but a
+    # server-initiated shutdown isn't a user cancel — re-mark as PAUSED so
+    # the operator's mental model + the /resume eligibility logic match.
+    # Skip papers whose state.json says `last_status: completed` — those
+    # genuinely finished; don't downgrade them.
+    from ..core.pipeline.state import PipelineState
+    from ..db.client import execute
+
+    settings = get_settings()
+    for paper_id in paper_ids:
+        try:
+            workspace = Path(settings.workspace_root) / paper_id
+            if workspace.exists():
+                try:
+                    state = PipelineState.load(workspace, paper_id, mode="iterative")
+                    if state.last_status == "completed":
+                        # Genuinely complete — leave it alone.
+                        continue
+                except Exception:
+                    pass
+            await execute(
+                "UPDATE papers SET status = 'paused', "
+                "last_error = 'Server shutdown while in-flight; POST /resume to continue.' "
+                "WHERE id = %(id)s AND status NOT IN ('completed','cancelled')",
+                {"id": paper_id},
+            )
+        except Exception as e:
+            logger.warning("Could not transition paper %s to paused on shutdown: %s", paper_id, e)
+
+
 # --- Request/Response Models ---
 
 
@@ -332,22 +390,27 @@ async def cancel_paper(paper_id: str) -> dict[str, Any]:
 
 @app.post("/api/papers/{paper_id}/resume", dependencies=[Depends(require_auth)])
 async def resume_paper(paper_id: str) -> dict[str, Any]:
-    """Resume a paused (circuit-breaker tripped) or failed paper run.
+    """Resume a paper whose runner is not actively running.
 
-    The pipeline runner's PipelineState load logic skips phases that have
-    already produced their canonical artifacts on disk, so resuming a
-    paused run picks up at the first incomplete phase — not from idea.
+    The pipeline runner's PipelineState load logic skips phases that
+    already produced their canonical artifacts on disk, so resuming
+    picks up at the first incomplete phase — not from idea.
 
-    Eligibility:
-        - PAUSED  → typical case (circuit breaker tripped on a specialist)
-        - FAILED  → resume after operator fixed the underlying issue
+    Eligibility (closes #7):
+        - Any status EXCEPT a terminal one (``completed`` / ``cancelled``)
+          provided no live runner task exists in ``_RUNNING`` for this paper.
+        - Zombies (status=``revision`` / ``in_progress`` / ``designing`` /
+          etc. left over after a server restart or SIGTERM) are resumable.
+        - Actively-running papers (in ``_RUNNING`` and not ``done()``)
+          are rejected with 409.
 
-    Other states get 409 Conflict. In particular, running papers cannot be
-    "resumed" — cancel + resume if you really need to restart.
+    Pre-v0.4 this was restricted to {paused, failed}, which forced
+    operators to manually ``UPDATE papers SET status='failed'`` every
+    time a server restart left zombie rows behind.
     """
     _validate_uuid(paper_id)
 
-    # Reject if a task is already running for this paper — double-spawning
+    # Reject if a task is genuinely running for this paper — double-spawning
     # would race the shared workspace.
     existing = _RUNNING.get(paper_id)
     if existing and not existing.done():
@@ -368,13 +431,16 @@ async def resume_paper(paper_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail="paper not found")
 
     current = (row.get("status") or "").lower()
-    resumable = {"paused", "failed"}
-    if current not in resumable:
+    # Only terminal states (work is done) reject resume. Everything else —
+    # including zombies in mid-pipeline statuses (revision, in_progress, …) —
+    # is a candidate.
+    terminal = {"completed", "cancelled"}
+    if current in terminal:
         raise HTTPException(
             status_code=409,
             detail=(
-                f"paper status is '{current}' — only {sorted(resumable)} can be resumed. "
-                "Cancel first if you want to restart a running paper."
+                f"paper status is '{current}' (terminal) — nothing to resume. "
+                "Resume only handles in-flight or failed/paused papers."
             ),
         )
 
