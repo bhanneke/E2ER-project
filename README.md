@@ -1,4 +1,4 @@
-# E2ER v3: End-to-End Researcher
+# E2ER — turn a research question into a paper
 
 [![Status](https://img.shields.io/badge/status-active%20development-blue)]()
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
@@ -7,14 +7,63 @@
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20187238.svg)](https://doi.org/10.5281/zenodo.20187238)
 [![PyPI](https://img.shields.io/pypi/v/e2er.svg)](https://pypi.org/project/e2er/)
 
-**E2ER** is an open-source pipeline for producing peer-review-quality empirical research papers in information systems, economics, and finance. The researcher provides a research question and data access; the pipeline handles the rest: study design, data acquisition, econometric estimation, writing, review, and replication packaging.
+Hand E2ER a research question; get back a LaTeX paper with citations,
+an internal peer-review pass, and a runnable replication package — typically
+in ~25 minutes.
 
-> **Scope**: E2ER supports three methodologies, selectable per paper at creation time:
-> - **`empirical`** (default) — data-driven, runs identification + econometrics specialists
-> - **`theoretical`** — formal model + hypotheses, no data specialists
-> - **`mixed`** — formal model AND empirical test
->
-> Pick the methodology that matches your paper's argument structure. Most users want `empirical`; theoretical mode is for pure-model papers (no data, just propositions and proofs).
+**Bring your own LLM subscription:**
+
+| Backend | Cost per paper | Setup |
+|---|---|---|
+| **Claude Code CLI** (Max plan) | $0/token | `npm i -g @anthropic-ai/claude-code` |
+| **Codex CLI** (ChatGPT Plus/Pro) | $0/token | `npm i -g @openai/codex` |
+| **Gemini CLI** (Google AI Pro/Ultra) | $0/token | `npm i -g @google/gemini-cli` |
+| Anthropic SDK | per-token | `ANTHROPIC_API_KEY` |
+| OpenRouter | per-token | `OPENROUTER_API_KEY` (200+ models) |
+
+**Data sources wired in** (more coming):
+
+- **yfinance** — equities, ETFs, crypto, FX, indices. No key.
+- **FRED** — US + international macro time series. Free key (~30s registration).
+- **Allium** — on-chain blockchain data (BYO key, optional).
+
+---
+
+## Quickstart (5 minutes)
+
+```bash
+pip install e2er
+e2er install-skills                # bundles skills for the CLI backends
+export LLM_BACKEND=claude_code     # or anthropic / codex / gemini
+e2er run "Does X affect Y?" --methodology empirical --max-cost 5
+```
+
+That's the whole flow. `e2er run`:
+1. Starts a local API server (uvicorn on :8280) if one isn't already up.
+2. Submits the paper.
+3. Tails the run to your terminal — ^C is safe, the run keeps going.
+4. Prints the paper's workspace path + dashboard URL when done.
+
+**Zero database setup required**: SQLite is the default, auto-created at
+`~/.e2er/papers.db`. Set `DATABASE_URL=postgresql://…` for production /
+multi-user / pgvector-backed literature KB.
+
+Open the dashboard at http://127.0.0.1:8280 to see all papers, drill into
+artifacts, or use the [/diagnose-run slash command](.claude/commands/diagnose-run.md)
+inside Claude Code for any paper that paused or failed.
+
+---
+
+## Methodologies
+
+E2ER supports three argument structures, selectable per paper at creation:
+
+- **`empirical`** (default) — data-driven, runs identification + econometrics specialists
+- **`theoretical`** — formal model + hypotheses, no data specialists
+- **`mixed`** — formal model AND empirical test
+
+Most users want `empirical`. Theoretical mode is for pure-model papers (no data,
+just propositions and proofs).
 
 ---
 

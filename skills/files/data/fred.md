@@ -28,8 +28,15 @@ When NOT to use this:
 e2er-data fred series \
   --series-id CPIAUCSL \
   --start 2020-01-01 \
-  --end 2024-12-31
+  --end 2024-12-31 \
+  --save-to fred_CPIAUCSL.csv
 ```
+
+**ALWAYS pass `--save-to <name>.csv`.** The wrapper writes the
+observations to `workspace/data/<name>.csv` so the replication package
+runs offline. FRED revises series occasionally (the `realtime_start` /
+`realtime_end` columns track this); without `--save-to`, replication
+would silently get different numbers on a re-fetch.
 
 Returns one row per observation with `date`, `value`, plus
 `realtime_start` / `realtime_end` (FRED tracks data revisions; these

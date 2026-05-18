@@ -1,6 +1,6 @@
 [project]
 name = "e2er"
-version = "0.3.0"
+version = "0.4.0"
 description = "End-to-End Researcher — automated research pipeline for economics, finance, and IS"
 requires-python = ">=3.11"
 readme = "README.md"
@@ -24,6 +24,7 @@ dependencies = [
     "numpy>=1.26",
     "matplotlib>=3.8",
     "yfinance>=0.2.40",
+    "aiosqlite>=0.20.0",
     "python-dotenv>=1.0",
     "python-multipart>=0.0.12",
     "jinja2>=3.1.0",

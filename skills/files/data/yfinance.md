@@ -32,8 +32,15 @@ e2er-data yfinance history \
   --ticker AAPL \
   --start 2020-01-01 \
   --end 2024-12-31 \
-  --interval 1d
+  --interval 1d \
+  --save-to AAPL_2020_2024.csv
 ```
+
+**ALWAYS pass `--save-to <name>.csv`.** The wrapper writes the rows to
+`workspace/data/<name>.csv` so the replication package can be run offline
+later. Without `--save-to`, the data only lives in the in-memory tool
+result — replication scripts would have to re-hit Yahoo every time,
+which is fragile (Yahoo silently revises data + delists tickers).
 
 Returns rows with `date`, `open`, `high`, `low`, `close`, `volume`,
 `dividends`, `stock_splits`. The `close` is split + dividend adjusted by

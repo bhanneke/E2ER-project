@@ -18,18 +18,51 @@ class Settings(BaseSettings):
     enable_prompt_caching: bool = True
 
     # ── Database ──────────────────────────────────────────────────────────────
+    # Default: SQLite at ~/.e2er/papers.db (zero-setup, single-user).
+    # Production / multi-user: set DATABASE_URL=postgresql://… (enables
+    # pgvector, concurrent writes, the literature KB).
+    #
+    # Legacy db_* fields preserved for back-compat with prior docker
+    # compose envs. Set DATABASE_URL explicitly to override.
+    database_url: str = ""  # empty → SQLite default
     db_password: str = "changeme"
     db_host: str = "db"
     db_port: int = 5432
     db_name: str = "e2er"
     db_user: str = "e2er"
-    postgres_url: str | None = None  # overrides individual settings if set
+    postgres_url: str | None = None  # legacy alias; overrides db_* if set
 
     @property
-    def database_url(self) -> str:
+    def resolved_database_url(self) -> str:
+        """The DB URL the client should actually use.
+
+        Order of precedence (highest → lowest):
+          1. ``database_url`` env var (most explicit)
+          2. ``postgres_url`` env var (legacy alias)
+          3. The composed ``postgresql://`` URL from db_* fields — ONLY
+             if any db_* field was explicitly overridden (i.e., not the
+             docker-only defaults). Otherwise falls through to SQLite.
+          4. SQLite at ``~/.e2er/papers.db``.
+        """
+        if self.database_url:
+            return self.database_url
         if self.postgres_url:
             return self.postgres_url
-        return f"postgresql://{self.db_user}:{self.db_password}@{self.db_host}:{self.db_port}/{self.db_name}"
+        # If the user has explicitly set ANY db_* field (i.e. they want
+        # Postgres), compose the URL. Otherwise default to SQLite —
+        # avoids tripping the "connect to docker DB called 'db'" failure
+        # mode for fresh pip installs.
+        defaults = (
+            self.db_password == "changeme"
+            and self.db_host == "db"
+            and self.db_port == 5432
+            and self.db_name == "e2er"
+            and self.db_user == "e2er"
+        )
+        if not defaults:
+            return f"postgresql://{self.db_user}:{self.db_password}@{self.db_host}:{self.db_port}/{self.db_name}"
+        # Fall through to SQLite — empty string signals "use default".
+        return ""
 
     # ── Data — Allium ─────────────────────────────────────────────────────────
     allium_api_key: str | None = None
