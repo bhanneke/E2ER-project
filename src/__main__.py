@@ -20,6 +20,36 @@ def main() -> None:
 
     subparsers.add_parser("migrate", help="Run database migrations (sql/001 through sql/006)")
 
+    run_p = subparsers.add_parser(
+        "run",
+        help="Submit a research question to the pipeline (one-command quickstart).",
+    )
+    run_p.add_argument("research_question", help="The research question, in quotes.")
+    run_p.add_argument(
+        "--methodology",
+        choices=["empirical", "theoretical", "mixed"],
+        default="empirical",
+        help="Which methodology specialists to dispatch. Default: empirical.",
+    )
+    run_p.add_argument(
+        "--mode",
+        choices=["single_pass", "iterative"],
+        default="single_pass",
+        help="single_pass = fast (one design+draft+review pass). iterative = full loop with self-attack + revision.",
+    )
+    run_p.add_argument(
+        "--max-cost",
+        type=float,
+        default=5.0,
+        help="Per-paper USD cost cap (default $5). $0 if on the Claude Code / Codex / Gemini CLI backends.",
+    )
+    run_p.add_argument(
+        "--monitor-seconds",
+        type=float,
+        default=1800.0,
+        help="How long to tail the run before detaching. Default 30 min. ^C is safe — run continues in background.",
+    )
+
     install_skills = subparsers.add_parser(
         "install-skills",
         help="Copy bundled skill files to ~/.{backend}/skills/ for headless CLI backends.",
@@ -42,6 +72,18 @@ def main() -> None:
         from .cli_install_skills import install_skills as _install
 
         sys.exit(_install(backend=args.backend, force=args.force))
+    elif args.command == "run":
+        from .cli_run import run as _run
+
+        sys.exit(
+            _run(
+                rq=args.research_question,
+                methodology=args.methodology,
+                mode=args.mode,
+                max_cost=args.max_cost,
+                monitor_seconds=args.monitor_seconds,
+            )
+        )
     elif args.command == "migrate":
         import asyncio
         import importlib.util

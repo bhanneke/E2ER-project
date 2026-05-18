@@ -75,15 +75,28 @@ def workspace(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_cli_help_lists_all_subcommands(capsys):
+def test_cli_help_lists_allium_source(capsys):
+    """Top-level --help shows the data sources (allium, …).
+
+    Subcommands within a source are visible via `allium --help`.
+    """
     from src.modules.data import cli
 
     with pytest.raises(SystemExit):
         cli.main(["--help"])
+    out = capsys.readouterr().out
+    assert "allium" in out, "--help must surface the allium source"
 
+
+def test_allium_help_lists_all_subcommands(capsys):
+    """`<wrapper> allium --help` should list every allium subcommand."""
+    from src.modules.data import cli
+
+    with pytest.raises(SystemExit):
+        cli.main(["allium", "--help"])
     out = capsys.readouterr().out
     for sub in ("feasibility", "production", "check-approval", "list-tables"):
-        assert sub in out, f"--help output missing '{sub}' subcommand"
+        assert sub in out, f"`allium --help` missing '{sub}' subcommand"
 
 
 # ---------------------------------------------------------------------------
@@ -108,6 +121,7 @@ def test_cli_picks_up_paper_id_from_env(workspace, capsys, monkeypatch):
     with patch("src.db.client.fetch_one", new_callable=AsyncMock, return_value=None):
         rc = cli.main(
             [
+                "allium",
                 "feasibility",
                 "--sql",
                 "SELECT * FROM ethereum.blocks WHERE ts >= '2024-01-01'",
@@ -134,7 +148,7 @@ def test_cli_errors_when_paper_id_missing(capsys, monkeypatch):
 
     from src.modules.data import cli
 
-    rc = cli.main(["list-tables"])
+    rc = cli.main(["allium", "list-tables"])
     err = capsys.readouterr().err
     assert rc == 2
     assert "paper_id" in err.lower() or "E2ER_PAPER_ID" in err
@@ -159,6 +173,7 @@ def test_feasibility_rejects_select_star(workspace, capsys, monkeypatch):
             [
                 "--paper-id",
                 paper_id,
+                "allium",
                 "feasibility",
                 "--sql",
                 "SELECT * FROM ethereum.blocks WHERE ts >= '2024-01-01'",
@@ -196,6 +211,7 @@ def test_feasibility_rejects_field_not_in_dictionary(workspace, capsys, monkeypa
             [
                 "--paper-id",
                 paper_id,
+                "allium",
                 "feasibility",
                 "--sql",
                 "SELECT undeclared_column FROM ethereum.blocks WHERE ts >= '2024-01-01'",
@@ -233,6 +249,7 @@ def test_feasibility_rejects_unbounded_query(workspace, capsys, monkeypatch):
             [
                 "--paper-id",
                 paper_id,
+                "allium",
                 "feasibility",
                 "--sql",
                 "SELECT block_number, ts FROM ethereum.blocks",  # no WHERE
@@ -275,6 +292,7 @@ def test_production_rejected_without_prior_feasibility(workspace, capsys, monkey
             [
                 "--paper-id",
                 paper_id,
+                "allium",
                 "production",
                 "--sql",
                 "SELECT block_number, ts FROM ethereum.blocks WHERE ts >= '2024-01-01'",
@@ -321,6 +339,7 @@ def test_check_approval_returns_status(workspace, capsys, monkeypatch):
             [
                 "--paper-id",
                 paper_id,
+                "allium",
                 "check-approval",
                 "--query-id",
                 "abc-123",
@@ -367,6 +386,7 @@ def test_cli_handles_missing_allium_key(workspace, capsys, monkeypatch):
             [
                 "--paper-id",
                 paper_id,
+                "allium",
                 "list-tables",
             ]
         )
@@ -409,6 +429,7 @@ def test_describe_table_returns_columns(workspace, capsys, monkeypatch):
             [
                 "--paper-id",
                 paper_id,
+                "allium",
                 "describe-table",
                 "--schema",
                 "ethereum",
@@ -450,6 +471,7 @@ def test_distinct_values_returns_actual_literals(workspace, capsys, monkeypatch)
             [
                 "--paper-id",
                 paper_id,
+                "allium",
                 "distinct-values",
                 "--schema",
                 "ethereum",
@@ -484,6 +506,7 @@ def test_distinct_values_empty_returns_diagnostic_message(workspace, capsys, mon
             [
                 "--paper-id",
                 paper_id,
+                "allium",
                 "distinct-values",
                 "--schema",
                 "ethereum",
@@ -522,7 +545,7 @@ def test_list_tables_uses_information_schema(workspace, capsys, monkeypatch):
         }
 
     with patch("src.modules.data.allium.AlliumProvider.execute_raw", new=fake_execute_raw):
-        rc = cli.main(["--paper-id", paper_id, "list-tables"])
+        rc = cli.main(["--paper-id", paper_id, "allium", "list-tables"])
 
     out = capsys.readouterr().out
     assert rc == 0

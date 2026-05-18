@@ -290,6 +290,228 @@ async def _run_distinct_values(args: argparse.Namespace) -> str:
     )
 
 
+# ---------------------------------------------------------------------------
+# Raw-data persistence — every public-source handler routes its result
+# through _maybe_save_csv. When the caller passes --save-to <path>, the
+# items list is written to workspace/data/<path>.csv (path is relative;
+# absolute paths are rejected to keep extractions confined to the
+# workspace and replication-package-friendly).
+# ---------------------------------------------------------------------------
+
+
+def _maybe_save_csv(result: dict, args: argparse.Namespace) -> None:
+    """If `--save-to <rel/path>` was passed, dump result['items'] to a CSV
+    under ``workspace/data/<rel/path>``. The summary text and `error` are
+    still returned as the bash output (model still sees what happened);
+    the CSV is the persisted artifact.
+    """
+    save_to = getattr(args, "save_to", None)
+    if not save_to:
+        return
+    items = (result or {}).get("items") or []
+    if not items:
+        # Nothing to save — but record the skip in the result envelope so
+        # the model sees it and doesn't keep retrying.
+        result["save_skipped"] = "no items to persist"
+        return
+
+    # Resolve target path: <workspace>/data/<save_to>. Reject absolute
+    # paths + paths trying to escape the workspace (no `../` shenanigans).
+    if save_to.startswith("/") or ".." in Path(save_to).parts:
+        result["save_error"] = f"--save-to must be a relative path within workspace/data/; got {save_to!r}"
+        return
+
+    workspace = _resolve_workspace(args.paper_id)
+    target = workspace / "data" / save_to
+    target.parent.mkdir(parents=True, exist_ok=True)
+
+    # Lazy import — avoid pulling pandas into the hot path for callers
+    # that don't use --save-to.
+    try:
+        import pandas as pd
+
+        df = pd.DataFrame(items)
+        df.to_csv(target, index=False)
+        result["saved_to"] = str(target.relative_to(workspace))
+        result["saved_rows"] = len(df)
+    except Exception as e:
+        result["save_error"] = f"{type(e).__name__}: {e}"
+
+
+# ---------------------------------------------------------------------------
+# yfinance handlers — public Yahoo Finance data, no API key.
+# ---------------------------------------------------------------------------
+
+
+async def _run_yf_history(args: argparse.Namespace) -> str:
+    """OHLCV time series for a single ticker."""
+    import json as _json
+
+    from .yfinance_provider import YFinanceProvider
+
+    provider = YFinanceProvider()
+    result = await provider.history(
+        ticker=args.ticker,
+        start=args.start,
+        end=args.end,
+        interval=args.interval,
+        auto_adjust=not args.raw,
+    )
+    _maybe_save_csv(result, args)
+    return _json.dumps(result, indent=2, default=str)
+
+
+async def _run_yf_ticker_info(args: argparse.Namespace) -> str:
+    """Current snapshot for a ticker (price, market cap, sector, beta, ...)."""
+    import json as _json
+
+    from .yfinance_provider import YFinanceProvider
+
+    provider = YFinanceProvider()
+    result = await provider.ticker_info(ticker=args.ticker)
+    return _json.dumps(result, indent=2, default=str)
+
+
+async def _run_yf_fundamentals(args: argparse.Namespace) -> str:
+    """Annual financial statements: income, balance_sheet, or cash_flow."""
+    import json as _json
+
+    from .yfinance_provider import YFinanceProvider
+
+    provider = YFinanceProvider()
+    result = await provider.fundamentals(ticker=args.ticker, statement=args.statement)
+    _maybe_save_csv(result, args)
+    return _json.dumps(result, indent=2, default=str)
+
+
+async def _run_yf_dividends(args: argparse.Namespace) -> str:
+    """Full dividend history for a ticker."""
+    import json as _json
+
+    from .yfinance_provider import YFinanceProvider
+
+    provider = YFinanceProvider()
+    result = await provider.dividends(ticker=args.ticker)
+    _maybe_save_csv(result, args)
+    return _json.dumps(result, indent=2, default=str)
+
+
+async def _run_yf_search(args: argparse.Namespace) -> str:
+    """Name-to-ticker lookup."""
+    import json as _json
+
+    from .yfinance_provider import YFinanceProvider
+
+    provider = YFinanceProvider()
+    result = await provider.search(query=args.query, max_results=args.max_results)
+    return _json.dumps(result, indent=2, default=str)
+
+
+# ---------------------------------------------------------------------------
+# FRED handlers — Federal Reserve Economic Data, free key.
+# ---------------------------------------------------------------------------
+
+
+def _fred_provider_or_error_envelope() -> tuple[Any, str | None]:
+    """Build FredProvider from settings; return (provider, None) or (None, json_error_str)."""
+    import json as _json
+
+    settings = get_settings()
+    if not settings.fred_api_key:
+        msg = _json.dumps(
+            {
+                "source": "fred",
+                "items": [],
+                "error": (
+                    "FRED_API_KEY not configured. Set it in .env. "
+                    "Get a free key (~30s) at https://fredaccount.stlouisfed.org/apikey"
+                ),
+            },
+            indent=2,
+        )
+        return None, msg
+    from .fred_provider import FredProvider
+
+    return FredProvider(settings.fred_api_key), None
+
+
+async def _run_fred_series(args: argparse.Namespace) -> str:
+    """Pull a FRED series time series."""
+    import json as _json
+
+    provider, err = _fred_provider_or_error_envelope()
+    if provider is None:
+        return err or ""
+    result = await provider.get_series_observations(
+        series_id=args.series_id,
+        observation_start=args.start,
+        observation_end=args.end,
+        frequency=args.frequency,
+        units=args.units,
+        limit=args.limit,
+    )
+    _maybe_save_csv(result, args)
+    return _json.dumps(result, indent=2, default=str)
+
+
+async def _run_fred_series_info(args: argparse.Namespace) -> str:
+    """Metadata for a FRED series — units, frequency, etc."""
+    import json as _json
+
+    provider, err = _fred_provider_or_error_envelope()
+    if provider is None:
+        return err or ""
+    result = await provider.get_series_info(series_id=args.series_id)
+    return _json.dumps(result, indent=2, default=str)
+
+
+async def _run_fred_search(args: argparse.Namespace) -> str:
+    """Free-text search for FRED series."""
+    import json as _json
+
+    provider, err = _fred_provider_or_error_envelope()
+    if provider is None:
+        return err or ""
+    result = await provider.search_series(
+        query=args.query,
+        limit=args.limit,
+        order_by=args.order_by,
+    )
+    return _json.dumps(result, indent=2, default=str)
+
+
+async def _run_fred_releases(args: argparse.Namespace) -> str:
+    """List FRED releases."""
+    import json as _json
+
+    provider, err = _fred_provider_or_error_envelope()
+    if provider is None:
+        return err or ""
+    result = await provider.get_releases(limit=args.limit)
+    return _json.dumps(result, indent=2, default=str)
+
+
+def _add_save_to(p: argparse.ArgumentParser) -> None:
+    """Add the `--save-to <rel/path.csv>` flag to a data-pulling subcommand.
+
+    When passed, the wrapper writes ``result['items']`` to
+    ``workspace/data/<rel/path>`` after the call. Specialists should use
+    this on every meaningful extraction so the replication package is
+    runnable offline.
+    """
+    p.add_argument(
+        "--save-to",
+        dest="save_to",
+        default=None,
+        help=(
+            "Persist the response rows as a CSV under workspace/data/<rel/path>. "
+            "Use this whenever the data will be referenced in the paper — replication "
+            "scripts re-read from disk, not from re-running the API call. Path is "
+            "relative to workspace/data/; absolute paths are rejected."
+        ),
+    )
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="e2er-allium-query",
@@ -315,7 +537,21 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Specialist name (audit log). Defaults to $E2ER_SPECIALIST or 'data_analyst'.",
     )
 
-    sub = parser.add_subparsers(dest="command", required=True)
+    # Top-level: dispatch by data source. Each source (allium, yfinance, …)
+    # gets its own nested subparser group. The invocation shape is:
+    #   e2er-data <source> <command> [options]
+    # e.g.
+    #   e2er-data allium feasibility --sql "..." --aggregation daily ...
+    #   e2er-data yfinance history --ticker AAPL --from 2020-01-01 ...
+    #
+    # Allium-specific guardrails (no SELECT *, time-bound WHERE, dictionary
+    # fields, granularity, feasibility-first) only run for the `allium`
+    # source. Public sources (yfinance, FRED, …) just get rate-limit
+    # handling and audit logging — different cost model.
+    sources = parser.add_subparsers(dest="source", required=True)
+
+    allium_parser = sources.add_parser("allium", help="Allium blockchain data (with the 5-rule guardrails)")
+    sub = allium_parser.add_subparsers(dest="command", required=True)
 
     # --- feasibility / production share the same query options
     for name, help_text in [
@@ -456,21 +692,159 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--chain", required=True)
     p.add_argument("--token-address", required=True)
 
+    # ── yfinance source — public Yahoo Finance data, no API key. ────────────
+    yf_parser = sources.add_parser(
+        "yfinance",
+        help="Yahoo Finance market data (equities, ETFs, crypto, FX). No API key.",
+    )
+    yf_sub = yf_parser.add_subparsers(dest="command", required=True)
+
+    p = yf_sub.add_parser(
+        "history",
+        help="OHLCV time series for a ticker over a date window.",
+    )
+    p.add_argument("--ticker", required=True, help="Ticker symbol (e.g. AAPL, BTC-USD, SPY).")
+    p.add_argument("--start", default=None, help="ISO date e.g. 2020-01-01. Omit for max history.")
+    p.add_argument("--end", default=None, help="ISO date e.g. 2024-12-31. Omit for today.")
+    p.add_argument(
+        "--interval",
+        default="1d",
+        help="Bar size: 1m, 5m, 15m, 30m, 60m, 1d (default), 5d, 1wk, 1mo. "
+        "Intraday intervals are rate-limited to ~60 days back.",
+    )
+    p.add_argument(
+        "--raw",
+        action="store_true",
+        help="Disable split/dividend adjustment (default auto-adjusts; you almost always want adjusted).",
+    )
+    _add_save_to(p)
+
+    p = yf_sub.add_parser(
+        "ticker-info",
+        help="Current snapshot for a ticker (price, market cap, sector, beta, P/E, ...).",
+    )
+    p.add_argument("--ticker", required=True)
+
+    p = yf_sub.add_parser(
+        "fundamentals",
+        help="Annual financial statements (income / balance_sheet / cash_flow). ~4 years of history.",
+    )
+    p.add_argument("--ticker", required=True)
+    p.add_argument(
+        "--statement",
+        choices=["income", "balance_sheet", "cash_flow"],
+        default="income",
+        help="Which statement to pull. Default: income.",
+    )
+    _add_save_to(p)
+
+    p = yf_sub.add_parser("dividends", help="Full dividend history (ex-date + amount).")
+    p.add_argument("--ticker", required=True)
+    _add_save_to(p)
+
+    p = yf_sub.add_parser(
+        "search",
+        help="Name-to-ticker lookup. Use when you know the company name but not the symbol.",
+    )
+    p.add_argument("--query", required=True, help="Company / asset name to search for.")
+    p.add_argument(
+        "--max-results",
+        dest="max_results",
+        type=int,
+        default=10,
+        help="Maximum number of candidates to return (default 10).",
+    )
+
+    # ── FRED source — Federal Reserve Economic Data (US macro). ─────────────
+    fred_parser = sources.add_parser(
+        "fred",
+        help="Federal Reserve Economic Data (CPI, unemployment, rates, GDP, …). Free key.",
+    )
+    fred_sub = fred_parser.add_subparsers(dest="command", required=True)
+
+    p = fred_sub.add_parser(
+        "series",
+        help="Pull a FRED time series. e.g. CPIAUCSL (CPI), UNRATE (unemployment), DGS10 (10y yield).",
+    )
+    p.add_argument("--series-id", dest="series_id", required=True, help="FRED series id, e.g. CPIAUCSL.")
+    p.add_argument("--start", default=None, help="Observation start date (YYYY-MM-DD).")
+    p.add_argument("--end", default=None, help="Observation end date (YYYY-MM-DD).")
+    p.add_argument(
+        "--frequency",
+        default=None,
+        help="Resample frequency: d, w, m, q, sa, a. Omit to use the series' native frequency.",
+    )
+    p.add_argument(
+        "--units",
+        default=None,
+        help="Transformation: lin (raw, default), chg (level change), ch1 (yoy change), pch (% change), log.",
+    )
+    p.add_argument(
+        "--limit",
+        type=int,
+        default=100000,
+        help="Max observations (default 100000 = FRED's max).",
+    )
+    _add_save_to(p)
+
+    p = fred_sub.add_parser(
+        "series-info",
+        help="Metadata for a series: title, units, frequency. Use BEFORE pulling observations to sanity-check.",
+    )
+    p.add_argument("--series-id", dest="series_id", required=True)
+
+    p = fred_sub.add_parser(
+        "search",
+        help="Free-text search across FRED series titles + notes. Returns up to --limit hits.",
+    )
+    p.add_argument("--query", required=True, help="Search text, e.g. 'core CPI' or 'unemployment'.")
+    p.add_argument("--limit", type=int, default=20, help="Max hits (default 20).")
+    p.add_argument(
+        "--order-by",
+        dest="order_by",
+        default="popularity",
+        help="Sort order: popularity (default), observation_start, observation_end, search_rank.",
+    )
+
+    p = fred_sub.add_parser(
+        "releases",
+        help="List FRED releases (Consumer Price Index, Employment Situation, …).",
+    )
+    p.add_argument("--limit", type=int, default=100, help="Max releases returned (default 100).")
+
     return parser
 
 
-_DISPATCH = {
-    "feasibility": _run_feasibility,
-    "production": _run_production,
-    "check-approval": _run_check_approval,
-    "describe-table": _run_describe_table,
-    "distinct-values": _run_distinct_values,
-    "list-tables": _run_list_tables,
-    "get-transfers": _run_dev_transfers,
-    "get-wallet-tx": _run_dev_wallet_tx,
-    "get-balances-history": _run_dev_balances_history,
-    "get-prices-history": _run_dev_prices_history,
-    "get-price": _run_dev_get_price,
+# Per-source dispatch table. Top-level key is the data source; nested key
+# is the subcommand within that source. New sources (FRED, EDGAR, …) get
+# their own entries here.
+_DISPATCH: dict[str, dict[str, Any]] = {
+    "allium": {
+        "feasibility": _run_feasibility,
+        "production": _run_production,
+        "check-approval": _run_check_approval,
+        "describe-table": _run_describe_table,
+        "distinct-values": _run_distinct_values,
+        "list-tables": _run_list_tables,
+        "get-transfers": _run_dev_transfers,
+        "get-wallet-tx": _run_dev_wallet_tx,
+        "get-balances-history": _run_dev_balances_history,
+        "get-prices-history": _run_dev_prices_history,
+        "get-price": _run_dev_get_price,
+    },
+    "yfinance": {
+        "history": _run_yf_history,
+        "ticker-info": _run_yf_ticker_info,
+        "fundamentals": _run_yf_fundamentals,
+        "dividends": _run_yf_dividends,
+        "search": _run_yf_search,
+    },
+    "fred": {
+        "series": _run_fred_series,
+        "series-info": _run_fred_series_info,
+        "search": _run_fred_search,
+        "releases": _run_fred_releases,
+    },
 }
 
 
@@ -483,12 +857,14 @@ def main(argv: list[str] | None = None) -> int:
 
     # Resolve paper_id / specialist: explicit flag wins, then env var, then
     # default. Without paper_id we cannot route the query (workspace lookup
-    # + audit log both need it).
+    # + audit log both need it). Public sources don't strictly need paper_id
+    # for authorisation, but we still record it on the audit row so the
+    # reproducibility chain isn't broken.
     args.paper_id = args.paper_id or os.environ.get("E2ER_PAPER_ID")
     args.specialist = args.specialist or os.environ.get("E2ER_SPECIALIST") or "data_analyst"
     if not args.paper_id:
         print(
-            "e2er-allium-query: paper_id missing. Pass --paper-id <uuid> or set "
+            "e2er-data: paper_id missing. Pass --paper-id <uuid> or set "
             "E2ER_PAPER_ID in the environment. (Normally the runner injects this "
             "automatically; this error means the wrapper is being called outside a "
             "specialist run.)",
@@ -496,9 +872,16 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
 
-    runner = _DISPATCH.get(args.command)
+    source_dispatch = _DISPATCH.get(args.source)
+    if source_dispatch is None:
+        print(f"Unknown source: {args.source!r}. Known: {sorted(_DISPATCH.keys())}", file=sys.stderr)
+        return 2
+    runner = source_dispatch.get(args.command)
     if runner is None:
-        print(f"Unknown command: {args.command}", file=sys.stderr)
+        print(
+            f"Unknown {args.source} command: {args.command!r}. Known: {sorted(source_dispatch.keys())}",
+            file=sys.stderr,
+        )
         return 2
     try:
         result = asyncio.run(runner(args))
@@ -506,7 +889,7 @@ def main(argv: list[str] | None = None) -> int:
         # Fatal infrastructure error (DB unavailable, no Allium key, etc.).
         # Guardrail rejections come back as a string from handler.handle()
         # — those are NOT exceptions and reach the print() below.
-        print(f"e2er-allium-query failed: {type(e).__name__}: {e}", file=sys.stderr)
+        print(f"e2er-data {args.source} {args.command} failed: {type(e).__name__}: {e}", file=sys.stderr)
         return 3
     print(result)
     return 0

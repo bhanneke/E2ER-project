@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# Unified data gatekeeper for E2ER specialists.
+#
+# Replaces the old `e2er-allium-query` wrapper. The Claude Code CLI is
+# configured with `--allowedTools=Bash(e2er-data:*)`, so this is the ONLY
+# data-access path for specialists running in CLI-backend mode.
+#
+# Implementation is a thin shim over `python -m src.modules.data.cli`,
+# which dispatches by source (allium / yfinance / fred / …). The Allium
+# guardrails (5-rule validation, audit log, human approval) still fire
+# under the hood for `allium` subcommands — only the entry-point shape
+# changed.
+#
+# Usage examples:
+#   e2er-data allium feasibility --sql "..." --aggregation daily \
+#                                --rationale "..."
+#   e2er-data allium production  --sql "..." ...
+#   e2er-data allium check-approval --query-id <uuid>
+#   e2er-data allium list-tables
+#   e2er-data allium get-transfers --chain ethereum --address 0x... \
+#                                  --min-timestamp 2022-03-22
+#   e2er-data yfinance history --ticker AAPL --from 2020-01-01     (coming v0.4)
+#   e2er-data fred series CPIAUCSL --from 2020-01-01               (coming v0.4)
+#
+# Run from anywhere; the wrapper resolves the project root from its own path.
+
+set -euo pipefail
+
+# Resolve the project root from this script's location: repo/scripts/e2er-data
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+cd "$PROJECT_ROOT"
+
+# If the runner injected E2ER_PAPER_ID / E2ER_SPECIALIST into the env and the
+# user didn't pass --paper-id / --specialist explicitly, inject them now so
+# the specialist's invocation can stay clean: `e2er-data allium feasibility
+# --sql "..." --fields ...` instead of `--paper-id <uuid> --specialist ...`.
+extra_args=()
+if [[ -n "${E2ER_PAPER_ID:-}" ]] && [[ "$*" != *"--paper-id"* ]]; then
+    extra_args+=("--paper-id" "$E2ER_PAPER_ID")
+fi
+if [[ -n "${E2ER_SPECIALIST:-}" ]] && [[ "$*" != *"--specialist"* ]]; then
+    extra_args+=("--specialist" "$E2ER_SPECIALIST")
+fi
+
+# Find a Python 3.11+ interpreter. The runner injects E2ER_PYTHON pointing
+# at its own sys.executable so the subprocess uses the same interpreter
+# that loaded the project (correct venv, correct Python version). Falls
+# back to common executable names so manual invocations from a shell also
+# work.
+if [[ -n "${E2ER_PYTHON:-}" ]] && [[ -x "$E2ER_PYTHON" ]]; then
+    PY="$E2ER_PYTHON"
+elif command -v python3.12 >/dev/null 2>&1; then
+    PY="$(command -v python3.12)"
+elif command -v python3.11 >/dev/null 2>&1; then
+    PY="$(command -v python3.11)"
+elif command -v python3 >/dev/null 2>&1; then
+    PY="$(command -v python3)"
+elif command -v python >/dev/null 2>&1; then
+    PY="$(command -v python)"
+else
+    echo "e2er-data: cannot find a Python interpreter. The project requires Python 3.11+." >&2
+    echo "  Either install python3.12/python3.11 system-wide, or set E2ER_PYTHON to the project venv's python." >&2
+    exit 4
+fi
+
+# `${extra_args[@]+"${extra_args[@]}"}` is the unbound-safe expansion for
+# an empty array under `set -u` (bash treats empty arrays as unset).
+exec "$PY" -m src.modules.data.cli ${extra_args[@]+"${extra_args[@]}"} "$@"
