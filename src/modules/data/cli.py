@@ -291,6 +291,54 @@ async def _run_distinct_values(args: argparse.Namespace) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Raw-data persistence — every public-source handler routes its result
+# through _maybe_save_csv. When the caller passes --save-to <path>, the
+# items list is written to workspace/data/<path>.csv (path is relative;
+# absolute paths are rejected to keep extractions confined to the
+# workspace and replication-package-friendly).
+# ---------------------------------------------------------------------------
+
+
+def _maybe_save_csv(result: dict, args: argparse.Namespace) -> None:
+    """If `--save-to <rel/path>` was passed, dump result['items'] to a CSV
+    under ``workspace/data/<rel/path>``. The summary text and `error` are
+    still returned as the bash output (model still sees what happened);
+    the CSV is the persisted artifact.
+    """
+    save_to = getattr(args, "save_to", None)
+    if not save_to:
+        return
+    items = (result or {}).get("items") or []
+    if not items:
+        # Nothing to save — but record the skip in the result envelope so
+        # the model sees it and doesn't keep retrying.
+        result["save_skipped"] = "no items to persist"
+        return
+
+    # Resolve target path: <workspace>/data/<save_to>. Reject absolute
+    # paths + paths trying to escape the workspace (no `../` shenanigans).
+    if save_to.startswith("/") or ".." in Path(save_to).parts:
+        result["save_error"] = f"--save-to must be a relative path within workspace/data/; got {save_to!r}"
+        return
+
+    workspace = _resolve_workspace(args.paper_id)
+    target = workspace / "data" / save_to
+    target.parent.mkdir(parents=True, exist_ok=True)
+
+    # Lazy import — avoid pulling pandas into the hot path for callers
+    # that don't use --save-to.
+    try:
+        import pandas as pd
+
+        df = pd.DataFrame(items)
+        df.to_csv(target, index=False)
+        result["saved_to"] = str(target.relative_to(workspace))
+        result["saved_rows"] = len(df)
+    except Exception as e:
+        result["save_error"] = f"{type(e).__name__}: {e}"
+
+
+# ---------------------------------------------------------------------------
 # yfinance handlers — public Yahoo Finance data, no API key.
 # ---------------------------------------------------------------------------
 
@@ -309,6 +357,7 @@ async def _run_yf_history(args: argparse.Namespace) -> str:
         interval=args.interval,
         auto_adjust=not args.raw,
     )
+    _maybe_save_csv(result, args)
     return _json.dumps(result, indent=2, default=str)
 
 
@@ -331,6 +380,7 @@ async def _run_yf_fundamentals(args: argparse.Namespace) -> str:
 
     provider = YFinanceProvider()
     result = await provider.fundamentals(ticker=args.ticker, statement=args.statement)
+    _maybe_save_csv(result, args)
     return _json.dumps(result, indent=2, default=str)
 
 
@@ -342,6 +392,7 @@ async def _run_yf_dividends(args: argparse.Namespace) -> str:
 
     provider = YFinanceProvider()
     result = await provider.dividends(ticker=args.ticker)
+    _maybe_save_csv(result, args)
     return _json.dumps(result, indent=2, default=str)
 
 
@@ -399,6 +450,7 @@ async def _run_fred_series(args: argparse.Namespace) -> str:
         units=args.units,
         limit=args.limit,
     )
+    _maybe_save_csv(result, args)
     return _json.dumps(result, indent=2, default=str)
 
 
@@ -437,6 +489,27 @@ async def _run_fred_releases(args: argparse.Namespace) -> str:
         return err or ""
     result = await provider.get_releases(limit=args.limit)
     return _json.dumps(result, indent=2, default=str)
+
+
+def _add_save_to(p: argparse.ArgumentParser) -> None:
+    """Add the `--save-to <rel/path.csv>` flag to a data-pulling subcommand.
+
+    When passed, the wrapper writes ``result['items']`` to
+    ``workspace/data/<rel/path>`` after the call. Specialists should use
+    this on every meaningful extraction so the replication package is
+    runnable offline.
+    """
+    p.add_argument(
+        "--save-to",
+        dest="save_to",
+        default=None,
+        help=(
+            "Persist the response rows as a CSV under workspace/data/<rel/path>. "
+            "Use this whenever the data will be referenced in the paper — replication "
+            "scripts re-read from disk, not from re-running the API call. Path is "
+            "relative to workspace/data/; absolute paths are rejected."
+        ),
+    )
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -644,6 +717,7 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Disable split/dividend adjustment (default auto-adjusts; you almost always want adjusted).",
     )
+    _add_save_to(p)
 
     p = yf_sub.add_parser(
         "ticker-info",
@@ -662,9 +736,11 @@ def _build_parser() -> argparse.ArgumentParser:
         default="income",
         help="Which statement to pull. Default: income.",
     )
+    _add_save_to(p)
 
     p = yf_sub.add_parser("dividends", help="Full dividend history (ex-date + amount).")
     p.add_argument("--ticker", required=True)
+    _add_save_to(p)
 
     p = yf_sub.add_parser(
         "search",
@@ -709,6 +785,7 @@ def _build_parser() -> argparse.ArgumentParser:
         default=100000,
         help="Max observations (default 100000 = FRED's max).",
     )
+    _add_save_to(p)
 
     p = fred_sub.add_parser(
         "series-info",

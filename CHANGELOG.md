@@ -10,6 +10,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 (Add new entries here under `### Lane A — Pipeline`, `### Lane B — Literature`,
 `### Lane C — Data`, or `### Cross-lane` sub-headings per `AGENTS.md`.)
 
+## v0.4.0 — 2026-05-18
+
+The **"actually usable by a stranger"** release. `pip install e2er`
+followed by a one-command `e2er run "<RQ>"` now starts a local server,
+submits the paper, and tails the run to terminal — zero database setup,
+zero `.env` editing required to get to a first paper.
+
+### Cross-lane — User journey
+
+- **Zero-setup default**: `e2er serve` no longer requires Postgres. The
+  DB client dispatches to SQLite at `~/.e2er/papers.db` by default; set
+  `DATABASE_URL=postgresql://…` to opt into the production stack
+  (pgvector + concurrent writes + literature KB).
+- **`e2er run "<RQ>"`** subcommand: starts uvicorn in the background if
+  needed, POSTs `/api/papers`, tails status to terminal, prints the
+  paper's workspace + dashboard URL on completion. ^C is safe — the
+  run keeps going.
+- **README rewrite**: leads with the 5-minute quickstart + the BYO-CLI
+  cost matrix. Architecture / artifact list moved below.
+- **GitHub repo description + topics** filled in for discoverability.
+
+### Lane C — Data
+
+- **Raw-data persistence**: every data-pulling subcommand
+  (`yfinance history`, `yfinance fundamentals`, `yfinance dividends`,
+  `fred series`) gains a `--save-to <rel/path>.csv` flag. The wrapper
+  writes the response rows to `workspace/data/<rel/path>` so the
+  replication package is runnable offline. Skill files updated to
+  mandate `--save-to` on every meaningful extraction. Closes #11.
+
+### Internals
+
+- **DB-client dispatch**: `src/db/client.py` now routes SQLite vs Postgres
+  by URL scheme. Postgres ``%(name)s`` parameter style translates to
+  SQLite ``:name`` on the fly; Postgres ``::type`` casts are stripped.
+  Existing call sites need zero changes.
+- **`sql/sqlite/schema.sql`** ships a SQLite-compatible schema with the
+  core tables (papers, events, contributions, llm_usage, data_query_records,
+  data_approval_requests). pgvector-dependent tables (literature_files,
+  knowledge_chunks) are NOT created — KB feature degrades to "disabled"
+  on SQLite, as designed.
+- **`aiosqlite>=0.20.0`** added to dependencies.
+
+### Tests
+
+- New: `tests/data/contract/test_db_dispatch.py` — 9 tests pinning the
+  parameter translation, cast stripping, and path resolution.
+
 ## v0.3.0 — 2026-05-16
 
 The **stability sprint**. Five-phase overhaul focused on making v3
