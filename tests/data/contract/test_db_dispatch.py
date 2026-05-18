@@ -80,10 +80,7 @@ def test_translate_strips_numeric_casts():
     crashed SQLite with `unrecognized token: ":"` — see live SQLite
     smoke 2026-05-18.
     """
-    sql = (
-        "SELECT COUNT(*)::int AS n, SUM(x)::bigint AS s, "
-        "AVG(y)::numeric AS a, MAX(z)::float AS m FROM t"
-    )
+    sql = "SELECT COUNT(*)::int AS n, SUM(x)::bigint AS s, AVG(y)::numeric AS a, MAX(z)::float AS m FROM t"
     out = _translate_to_sqlite(sql)
     for cast in ("::int", "::bigint", "::numeric", "::float"):
         assert cast not in out, f"missed cast: {cast} in {out!r}"
