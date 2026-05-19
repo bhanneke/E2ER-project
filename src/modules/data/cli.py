@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -76,8 +77,23 @@ def _build_handler(paper_id: str, specialist: str, workspace: Path) -> Any:
 
 
 def _resolve_workspace(paper_id: str) -> Path:
-    """Workspace path = settings.workspace_root / paper_id."""
-    return Path(get_settings().workspace_root) / paper_id
+    """Workspace path = workspace_root / paper_id.
+
+    `workspace_root` is read from the ``E2ER_WORKSPACE_ROOT`` env var when
+    set (the runner injects an absolute path), otherwise from
+    ``settings.workspace_root`` (defaults to the relative string ``"workspaces"``).
+
+    Why the env var: the claude_code subprocess runs with cwd = the paper's
+    workspace dir. If we resolve a relative ``"workspaces"`` against that cwd
+    we get ``<workspace>/workspaces/<id>``, i.e. a nested directory. Live
+    test eea5379b on v0.4.4 wrote ``yfinance_SPY_2020_2026.csv`` to
+    ``workspaces/<id>/workspaces/<id>/data/`` for exactly this reason — and
+    the model dutifully papered over it with a ``_candidate_csv_paths``
+    fallback in estimation.py. The env var makes the resolution stable
+    regardless of subprocess cwd.
+    """
+    root = os.environ.get("E2ER_WORKSPACE_ROOT") or get_settings().workspace_root
+    return Path(root) / paper_id
 
 
 async def _run_feasibility(args: argparse.Namespace) -> str:

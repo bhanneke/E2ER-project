@@ -103,7 +103,12 @@ def _submit_paper(rq: str, methodology: str, mode: str, max_cost: float) -> dict
         "title": title,
         "research_question": rq,
         "methodology": methodology,
-        "pipeline_mode": mode,
+        # Field name on the API side is `mode`. Older callers used
+        # `pipeline_mode` (still accepted via Pydantic alias) — see
+        # CreatePaperRequest in src/api/app.py. Use the canonical name
+        # here so the log line in api/app.py reflects what the user
+        # actually passed instead of the default.
+        "mode": mode,
         "max_specialists_per_phase": 6,
         "acknowledge_unproven_tuple": True,
         "max_cost_usd": max_cost,

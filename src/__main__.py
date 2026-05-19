@@ -85,18 +85,13 @@ def main() -> None:
             )
         )
     elif args.command == "migrate":
-        import asyncio
-        import importlib.util
-        from pathlib import Path
+        # Importable module (works in both pip-installed wheel AND dev
+        # checkout). The previous implementation pointed at
+        # `scripts/migrate.py` which is excluded from the wheel — see
+        # pyproject.toml `[tool.setuptools.packages.find]` exclude rules.
+        from .db.migrate import main as _migrate_main
 
-        migrate_path = Path(__file__).parent.parent / "scripts" / "migrate.py"
-        if not migrate_path.exists():
-            print(f"migrate.py not found at {migrate_path}", file=sys.stderr)
-            sys.exit(1)
-        spec = importlib.util.spec_from_file_location("migrate", migrate_path)
-        mod = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
-        spec.loader.exec_module(mod)  # type: ignore[union-attr]
-        asyncio.run(mod.main())
+        _migrate_main()
 
     else:
         import uvicorn

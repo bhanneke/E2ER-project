@@ -15,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel
+from pydantic import AliasChoices, BaseModel, Field
 
 from ..config import get_settings
 from ..logging_config import get_logger
@@ -127,6 +127,18 @@ async def _log_config() -> None:
         "on" if s.github_enabled else "off",
         s.default_max_cost_usd,
     )
+    # CLI backends (Claude Code Max, Codex CLI, Gemini CLI) run on flat-rate
+    # plans, so the cost meter values are Sonnet-equivalent ESTIMATES, not
+    # what the user actually pays. The budget cap still functions as a
+    # token-spend guardrail — useful for runaway protection — but the dollar
+    # number in `/api/papers/<id>` is informational only.
+    if s.llm_backend in {"claude_code", "codex_cli", "gemini_cli"}:
+        logger.warning(
+            "Backend %s: cost values are Sonnet-rate ESTIMATES (synthetic). "
+            "Actual user cost on a flat-rate plan is $0. Budget cap still "
+            "operates as a token-spend guardrail.",
+            s.llm_backend,
+        )
 
 
 @app.on_event("shutdown")
@@ -194,7 +206,13 @@ class CreatePaperRequest(BaseModel):
     title: str
     research_question: str
     datasets: list[str] = []
-    mode: str = "iterative"
+    # Accept both `mode` (canonical) and `pipeline_mode` (legacy alias used
+    # by some external clients + the integration smoke test). Without this
+    # alias the API silently fell back to the "iterative" default whenever
+    # a caller sent `pipeline_mode` — observed in live test eea5379b where
+    # `--mode single_pass` from `e2er run` reached the API as `pipeline_mode`
+    # and the first-run log line reported `mode=iterative`.
+    mode: str = Field(default="iterative", validation_alias=AliasChoices("mode", "pipeline_mode"))
     methodology: str = "empirical"  # empirical | theoretical | mixed
     bibtex_path: str | None = None
     max_cost_usd: float | None = None  # falls back to settings.default_max_cost_usd
@@ -271,13 +289,22 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
     # BudgetExceededError despite an explicit ack with cap=$5.
     cap = requested_cap
     if not proven:
+        # `acknowledge_unproven_tuple=True` means the caller is consenting to
+        # run on a (model, methodology, mode) combo that has never reached
+        # `completed` — they accept the risk and want their `--max-cost` cap
+        # honored instead of being forced to the $1 first-run floor. Phrase
+        # the log line so it's obvious which decision is being recorded.
+        ack = req.acknowledge_unproven_tuple
         logger.warning(
-            "First run at (model=%s, methodology=%s, mode=%s); cap=%.2f (override=%s)",
+            "First run at (model=%s, methodology=%s, mode=%s); cap=$%.2f "
+            "(user_ack_unproven=%s, first_run_floor=$%.2f%s)",
             current_model,
             req.methodology,
             req.mode,
             cap,
-            req.acknowledge_unproven_tuple,
+            ack,
+            _UNPROVEN_TUPLE_CAP,
+            "" if ack else "; user did NOT ack — cap was capped to the floor",
         )
 
     manifest = {
@@ -358,6 +385,12 @@ async def get_paper(paper_id: str = Depends(_validate_uuid)) -> dict[str, Any]:
             """,
             {"id": paper_id},
         )
+        # Tag the cost as a Sonnet-rate estimate when the paper ran on a
+        # flat-rate CLI backend so dashboards can label it correctly.
+        # `total_cost_usd` itself stays unchanged for budget-cap math.
+        backend_used = (row.get("backend") if isinstance(row, dict) else None) or get_settings().llm_backend
+        if usage:
+            usage["cost_is_estimate"] = backend_used in {"claude_code", "codex_cli", "gemini_cli"}
         return {**row, "usage": usage or {}}
     except Exception as e:
         logger.warning("get_paper usage fetch failed for paper_id=%s: %s", paper_id, e)

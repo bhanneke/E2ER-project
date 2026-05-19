@@ -10,6 +10,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 (Add new entries here under `### Lane A — Pipeline`, `### Lane B — Literature`,
 `### Lane C — Data`, or `### Cross-lane` sub-headings per `AGENTS.md`.)
 
+## v0.4.5 — 2026-05-19
+
+Bug pack rolling up findings from the v0.4.4 live test (paper eea5379b)
+that completed end-to-end on a fresh `pip install e2er`. The pipeline
+itself works; these are correctness + clarity fixes around it.
+
+### Lane C — Data
+
+- **Fix nested workspace path on `--save-to`** (Lane C, replication
+  correctness). The data_analyst subprocess runs with cwd at the paper's
+  workspace dir; `_resolve_workspace` then resolved the relative default
+  `workspace_root="workspaces"` against THAT cwd, so the CSV landed at
+  `workspaces/<id>/workspaces/<id>/data/`. The model worked around this
+  by emitting a `_candidate_csv_paths` fallback in estimation.py — a
+  prompt-engineered band-aid for a pipeline bug. Fix: `_resolve_workspace`
+  now prefers `$E2ER_WORKSPACE_ROOT` (claude_code injects the absolute
+  path) over the relative settings default.
+- **Inject absolute workspace_root into the claude_code subprocess env**
+  (`E2ER_WORKSPACE_ROOT`) and use an absolute path as the subprocess cwd.
+  Without both, the relative `workspaces` string can re-resolve at any
+  nested call site.
+
+### Lane A — Pipeline
+
+- **Accept `pipeline_mode` as an alias for `mode`** in `CreatePaperRequest`.
+  `e2er run --mode single_pass` reached the API as `pipeline_mode`,
+  which Pydantic silently dropped → server fell back to the default
+  `"iterative"` → first-run log line falsely reported the wrong mode.
+  Also fix `src/cli_run.py` to send the canonical `mode` field.
+- **Reword the first-run cap log line.** "override=True" read like the
+  server overrode the user's cap; it actually meant the user acknowledged
+  the unproven (model, methodology, mode) tuple so the $1 floor was
+  lifted to their requested cap. New format spells it out:
+  `cap=$20.00 (user_ack_unproven=True, first_run_floor=$1.00)`.
+
+### Cross-lane
+
+- **Label CLI-backend costs as estimates.** Anyone running on
+  `claude_code` / `codex_cli` / `gemini_cli` sees Sonnet-rate synthetic
+  dollars even though the Max plan absorbs the actual cost. Startup log
+  now warns once when a flat-rate backend is selected; the `/api/papers/<id>`
+  usage payload carries a `cost_is_estimate` flag so dashboards can
+  render the number with the right hedge.
+- **`e2er migrate` works on pip-installed wheels.** Old code pointed at
+  `scripts/migrate.py` which is excluded from the wheel. Moved to
+  `src/db/migrate.py` (importable, ships in the wheel), reads SQL files
+  via `importlib.resources("sql")` with a dev-checkout fallback.
+- **Drop the stale `_SCRIPTS_DIR` PATH entry on pip installs.** Guarded
+  with `.exists()` so the resolved PATH doesn't carry a non-existent
+  `site-packages/scripts/` directory that confused `which`-style probes
+  inside the claude_code sandbox.
+
 ## v0.4.4 — 2026-05-19
 
 Hot-fix over v0.4.3. The PATH-propagation logic added in v0.4.3 used
