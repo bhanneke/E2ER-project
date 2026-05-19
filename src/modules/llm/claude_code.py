@@ -143,10 +143,19 @@ class ClaudeCodeBackend(LLMBackend):
         # the paper's workspace as cwd when paper_id is supplied; fall back
         # to the configured backend cwd for tool-less invocations
         # (strategist decisions don't write files anyway).
+        # Resolve workspace_root to an ABSOLUTE path. The default
+        # `workspace_root="workspaces"` (relative) plus the subprocess having
+        # cwd inside a workspace combine to nest `workspaces/<id>` inside
+        # itself when `e2er-data --save-to` resolves its target path. See
+        # live test eea5379b (v0.4.4) — analyze.py wrote
+        # `workspaces/<id>/data/...` from cwd already at `workspaces/<id>/`,
+        # so the CSV landed at `workspaces/<id>/workspaces/<id>/data/...`.
         cwd = self._cwd
+        workspace_root_abs: Path | None = None
         if paper_id:
             settings = get_settings()
-            cwd = str(Path(settings.workspace_root) / paper_id)
+            workspace_root_abs = Path(settings.workspace_root).resolve()
+            cwd = str(workspace_root_abs / paper_id)
 
         # Retry transient Anthropic API errors. The CLI surfaces these in
         # its JSON output as is_error=true + api_error_status set (e.g.
@@ -168,6 +177,7 @@ class ClaudeCodeBackend(LLMBackend):
                 start=time.monotonic(),
                 paper_id=paper_id,
                 specialist=specialist,
+                workspace_root_abs=workspace_root_abs,
             )
             last_result = result
             if result.success or not _is_transient_api_error(result.error or ""):
@@ -222,6 +232,7 @@ async def _invoke_cli(
     start: float,
     paper_id: str | None = None,
     specialist: str | None = None,
+    workspace_root_abs: Path | None = None,
 ) -> ToolLoopResult:
     """Run `claude -p` as a subprocess. Async-native version of v1's wrapper."""
     # Sanitize null bytes — upstream artifacts can embed \x00 which the
@@ -258,7 +269,14 @@ async def _invoke_cli(
     # /opt/homebrew/Cellar/python@3.12/.../Python.framework/.../bin/).
     env = os.environ.copy()
     _bin_dir = sysconfig.get_path("scripts")
-    env["PATH"] = f"{_SCRIPTS_DIR}{os.pathsep}{_bin_dir}{os.pathsep}{env.get('PATH', '')}"
+    # Only include the dev-checkout `scripts/` dir if it actually exists.
+    # On pip-installed wheels `_SCRIPTS_DIR` resolves to a non-existent
+    # `site-packages/scripts/` because scripts/ is excluded from packaging.
+    # The entry-point shim in `_bin_dir` covers pip users.
+    _path_parts = [_bin_dir, env.get("PATH", "")]
+    if _SCRIPTS_DIR.exists():
+        _path_parts.insert(0, str(_SCRIPTS_DIR))
+    env["PATH"] = os.pathsep.join(p for p in _path_parts if p)
     # Tell the wrapper which Python to use — same interpreter that's running
     # the runner, so the subprocess inherits the correct venv (project deps)
     # and the correct Python version (>=3.11, needed for PEP 604 union types
@@ -274,6 +292,13 @@ async def _invoke_cli(
         env["E2ER_PAPER_ID"] = paper_id
     if specialist:
         env["E2ER_SPECIALIST"] = specialist
+    # Absolute workspace root so e2er-data's `_resolve_workspace` resolves to
+    # the same path regardless of subprocess cwd. Without this the relative
+    # default `"workspaces"` resolves against the subprocess cwd, which is
+    # ALREADY the paper's workspace dir → we get `workspaces/<id>/workspaces/<id>/data/`.
+    # See live test eea5379b (v0.4.4) for the failure mode.
+    if workspace_root_abs is not None:
+        env["E2ER_WORKSPACE_ROOT"] = str(workspace_root_abs)
 
     try:
         proc = await asyncio.create_subprocess_exec(
