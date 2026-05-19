@@ -11,7 +11,9 @@ the wheel (see pyproject.toml `[tool.setuptools.package-data]`).
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Sequence
 from importlib import resources
+from importlib.abc import Traversable
 from pathlib import Path
 
 
@@ -26,7 +28,10 @@ async def run() -> int:
     from .client import close_pool, execute
 
     sql_pkg = resources.files("sql")
-    migrations = sorted(
+    # Both branches yield objects with `.name` and `.read_text()` — Traversable
+    # in the wheel path, Path in the dev-checkout fallback. Use a union to
+    # keep mypy happy without losing the type info on each individual entry.
+    migrations: Sequence[Traversable | Path] = sorted(
         (p for p in sql_pkg.iterdir() if p.is_file() and p.name.endswith(".sql")),
         key=lambda p: p.name,
     )
