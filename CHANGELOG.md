@@ -10,6 +10,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 (Add new entries here under `### Lane A — Pipeline`, `### Lane B — Literature`,
 `### Lane C — Data`, or `### Cross-lane` sub-headings per `AGENTS.md`.)
 
+## v0.4.4 — 2026-05-19
+
+Hot-fix over v0.4.3. The PATH-propagation logic added in v0.4.3 used
+`Path(sys.executable).resolve().parent` to find the venv bin/ where pip
+puts the `e2er-data` entry-point shim. On macOS framework venvs this is
+wrong — `bin/python` in the venv is a symlink to the underlying
+`Python.framework/Versions/3.12/Resources/Python.app/Contents/MacOS/Python`,
+and `.resolve()` follows it, so `.parent` lands in
+`.../Python.framework/Versions/3.12/bin/` — which does *not* contain the
+venv's entry-point shims. Live test on run `3f921299` confirmed
+`e2er-data` was still `command not found` even though the shim existed
+at `/tmp/<venv>/bin/e2er-data`.
+
+### Lane C — Data
+
+- **Use `sysconfig.get_path("scripts")`** instead of `Path(sys.executable).resolve().parent`.
+  `sysconfig.get_path("scripts")` is the canonical Python API for the
+  current-install entry-point dir and returns the venv's own `bin/` on
+  Linux, macOS framework venvs, and Windows alike. Verified: on the same
+  venv where `.resolve().parent` returned the framework Python's bin,
+  `sysconfig.get_path("scripts")` returns the venv's bin and the
+  `e2er-data` shim exists there.
+
 ## v0.4.3 — 2026-05-19
 
 Hot-fix over v0.4.2. The 0.4.2 wheel boots and the pipeline runs end-to-end,

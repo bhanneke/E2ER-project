@@ -27,6 +27,7 @@ import json
 import os
 import shutil
 import sys
+import sysconfig
 import time
 from pathlib import Path
 from typing import Any
@@ -244,14 +245,19 @@ async def _invoke_cli(
     # prepended in priority order:
     #   1. The dev-checkout `scripts/` directory (bash wrappers — used when
     #      running from a source checkout).
-    #   2. The venv `bin/` dir next to the running interpreter (where pip
-    #      installs the `e2er-data` entry-point shim from pyproject.toml
-    #      [project.scripts] — required for `pip install e2er` users).
-    # Without (2), specialist runs on a pip-installed system fail at
-    # `which e2er-data` and no data ever lands. See data_summary.md from
-    # run 62526787 for the failure footprint.
+    #   2. The venv `bin/` dir where pip installs the `e2er-data` entry-point
+    #      shim from pyproject.toml [project.scripts] (pip-install users).
+    #
+    # For (2), use `sysconfig.get_path("scripts")` rather than
+    # `Path(sys.executable).parent`. On macOS framework venvs the venv's
+    # bin/python is a symlink to the underlying Python.framework binary,
+    # so `.resolve().parent` lands in the framework's bin/ — where the
+    # entry-point shim does NOT live. `sysconfig.get_path("scripts")`
+    # returns the venv's own bin/ correctly on all platforms (verified
+    # on macOS 26 framework venv where .resolve() jumps to
+    # /opt/homebrew/Cellar/python@3.12/.../Python.framework/.../bin/).
     env = os.environ.copy()
-    _bin_dir = str(Path(sys.executable).resolve().parent)
+    _bin_dir = sysconfig.get_path("scripts")
     env["PATH"] = f"{_SCRIPTS_DIR}{os.pathsep}{_bin_dir}{os.pathsep}{env.get('PATH', '')}"
     # Tell the wrapper which Python to use — same interpreter that's running
     # the runner, so the subprocess inherits the correct venv (project deps)
