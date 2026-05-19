@@ -10,6 +10,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 (Add new entries here under `### Lane A — Pipeline`, `### Lane B — Literature`,
 `### Lane C — Data`, or `### Cross-lane` sub-headings per `AGENTS.md`.)
 
+## v0.4.3 — 2026-05-19
+
+Hot-fix over v0.4.2. The 0.4.2 wheel boots and the pipeline runs end-to-end,
+but the `data_analyst` specialist hits `command not found: e2er-data` and
+no data is ever fetched — so papers reach `paper_draft.tex` without any
+real data behind them. Trace from run `62526787-da0b-4ebd-8cf9-cf4f3e682a04`
+on the v0.4.2 PyPI wheel showed `which e2er-data` → not found inside the
+claude_code subprocess, with PATH containing the venv's `site-packages/scripts/`
+but not `bin/`. The skill files (`data/yfinance.md`, `data/fred.md`,
+`data/allium*.md`) all instruct the model to invoke `e2er-data ...`.
+
+### Lane C — Data
+
+- **Register `e2er-data` as an entry point** in `pyproject.toml [project.scripts]`
+  pointing at `src.modules.data.cli:main`. pip now installs a `e2er-data` shim
+  next to `e2er` in the venv's `bin/`, so the bash wrapper from the dev
+  checkout is no longer required on pip-installed systems.
+- **Prepend the venv `bin/` to the subprocess PATH** in `claude_code.py`
+  (after the dev `scripts/` dir, before the inherited PATH). Without this
+  the entry-point shim is unreachable from the claude_code subprocess
+  even after the shim is installed.
+
 ## v0.4.2 — 2026-05-18
 
 Hot-fix over v0.4.1. The 0.4.1 wheel shipped only `.py` files + skill

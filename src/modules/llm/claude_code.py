@@ -240,11 +240,19 @@ async def _invoke_cli(
 
     logger.info("ClaudeCode: invoking %s (max_turns=%d, prompt=%d chars)", cli_path, max_turns, len(prompt))
 
-    # Prepend the project's scripts/ dir to PATH so the subprocess can find
-    # `e2er-allium-query` by name. This is the only way the CLI can reach
-    # Allium when guardrails are enabled (DATA_MODULE_ENABLED=true).
+    # Make `e2er-data` resolvable from the subprocess by name. Two sources,
+    # prepended in priority order:
+    #   1. The dev-checkout `scripts/` directory (bash wrappers — used when
+    #      running from a source checkout).
+    #   2. The venv `bin/` dir next to the running interpreter (where pip
+    #      installs the `e2er-data` entry-point shim from pyproject.toml
+    #      [project.scripts] — required for `pip install e2er` users).
+    # Without (2), specialist runs on a pip-installed system fail at
+    # `which e2er-data` and no data ever lands. See data_summary.md from
+    # run 62526787 for the failure footprint.
     env = os.environ.copy()
-    env["PATH"] = f"{_SCRIPTS_DIR}{os.pathsep}{env.get('PATH', '')}"
+    _bin_dir = str(Path(sys.executable).resolve().parent)
+    env["PATH"] = f"{_SCRIPTS_DIR}{os.pathsep}{_bin_dir}{os.pathsep}{env.get('PATH', '')}"
     # Tell the wrapper which Python to use — same interpreter that's running
     # the runner, so the subprocess inherits the correct venv (project deps)
     # and the correct Python version (>=3.11, needed for PEP 604 union types
