@@ -300,17 +300,56 @@ def _build_user_prompt(work_order: WorkOrder) -> str:
             "end with the two required lines."
         )
     if work_order.output_file:
-        parts.append(
-            f"\n## Required Output\n"
-            f"Write your work to EXACTLY ONE file at this exact path, directly in "
-            f"the current working directory: `./{work_order.output_file}`.\n"
-            f"Do NOT create subdirectories. Do NOT add prefixes like "
-            f"`workspace/`, `{work_order.specialist}/`, `output/`, etc. The file "
-            f"must appear as `./{work_order.output_file}` relative to cwd, "
-            f"nothing else. Use the exact filename — do not rename or extend it.\n"
-            f"After the single `write_file` call succeeds, end your turn — "
-            f"no further commentary, no follow-up files."
-        )
+        if work_order.sidecar_artifacts:
+            # Multi-file output. The primary markdown artifact AND each
+            # machine-readable JSON sidecar are required. verify_numbers
+            # and downstream consumers depend on the JSON files; emitting
+            # only the markdown silently breaks the anti-hallucination
+            # gate.
+            sidecar_lines = "\n".join(
+                f"  - `./{f}` — see your skill files for the schema this file must follow"
+                for f in work_order.sidecar_artifacts
+            )
+            parts.append(
+                f"\n## Required Output — multiple files\n"
+                f"You MUST write ALL of the following files directly in the "
+                f"current working directory. Each file has a different role; "
+                f"the pipeline fails downstream if any is missing or has the "
+                f"wrong shape.\n\n"
+                f"Primary narrative:\n"
+                f"  - `./{work_order.output_file}` — human-readable markdown\n\n"
+                f"Machine-readable sidecars (your skills define the schema):\n"
+                f"{sidecar_lines}\n\n"
+                f"Rules:\n"
+                f"- Do NOT create subdirectories. Do NOT add prefixes like "
+                f"`workspace/`, `{work_order.specialist}/`, `output/`. Each "
+                f"file must appear at the exact path shown above, relative "
+                f"to cwd.\n"
+                f"- Use the EXACT filenames listed — do not rename, extend, "
+                f"or add suffixes.\n"
+                f"- The JSON sidecars must be valid JSON. Numeric fields "
+                f"must be plain numbers (not strings). Missing data → use "
+                f'`null`, not `"N/A"`.\n'
+                f"- If you genuinely cannot produce a sidecar (e.g. data "
+                f"acquisition failed, no estimation was run), write an "
+                f"empty JSON object `{{}}` rather than omitting the file. "
+                f"The downstream gate distinguishes 'empty' from 'missing' "
+                f"and an empty file is the honest signal.\n"
+                f"- After all `write_file` calls succeed, end your turn — "
+                f"no further commentary."
+            )
+        else:
+            parts.append(
+                f"\n## Required Output\n"
+                f"Write your work to EXACTLY ONE file at this exact path, directly in "
+                f"the current working directory: `./{work_order.output_file}`.\n"
+                f"Do NOT create subdirectories. Do NOT add prefixes like "
+                f"`workspace/`, `{work_order.specialist}/`, `output/`, etc. The file "
+                f"must appear as `./{work_order.output_file}` relative to cwd, "
+                f"nothing else. Use the exact filename — do not rename or extend it.\n"
+                f"After the single `write_file` call succeeds, end your turn — "
+                f"no further commentary, no follow-up files."
+            )
     return "\n".join(parts)
 
 

@@ -63,6 +63,11 @@ SPECIALIST_SKILLS: dict[str, list[str]] = {
         "econometrics/did",
         "econometrics/panel-data",
         "econometrics/event-study",
+        # v0.5: machine-readable sidecar contract consumed by
+        # verify_numbers + paper_drafter. Without this skill the
+        # specialist doesn't know what shape estimation_results.json
+        # must take.
+        "econometrics/estimation-results-schema",
     ],
     "data_analyst": [
         "data/cleaning",
@@ -72,6 +77,10 @@ SPECIALIST_SKILLS: dict[str, list[str]] = {
         "data/allium-developer-api",
         "data/yfinance",
         "data/fred",
+        # v0.5: machine-readable sidecar contract. Teaches the analyst
+        # the summary_statistics.json shape that verify_numbers gates
+        # against and the drafter cites by key.
+        "data/summary-statistics-schema",
     ],
     "theory_specialist": [
         "base/economist",
@@ -103,6 +112,33 @@ SPECIALIST_SKILLS: dict[str, list[str]] = {
     "revisor": ["writing/paper-structure", "writing/personal-style", "reasoning/anti-slop"],
     "replication_packager": ["data/cleaning", "base/researcher", "synthesis/replication-package"],
 }
+
+# Sidecar artifacts produced ALONGSIDE the primary SPECIALIST_ARTIFACTS file.
+# These are machine-readable JSON files that downstream specialists + the
+# verify_numbers gate consume. Pre-v0.5.0 the framework only declared one
+# output file per specialist, so even when a skill (e.g. data/figure-spec.md)
+# instructed JSON emission, the system prompt's "EXACTLY ONE file" rule
+# overrode it and the JSON never appeared. Adding the file here both
+# auto-populates `work_order.sidecar_artifacts` and triggers the
+# multi-file output block in `_build_user_prompt`.
+#
+# Coverage rule: every file consumed by `verify_numbers` MUST appear here
+# under the specialist responsible for it. Adding new consumers is a
+# coordinated change: schema skill file + this dict + the consumer code.
+SPECIALIST_SIDECAR_ARTIFACTS: dict[str, list[str]] = {
+    "data_analyst": [
+        "summary_statistics.json",
+        "figure_spec.json",
+    ],
+    "econometrics_specialist": [
+        "estimation_results.json",
+        # robustness_results.json is conditionally emitted by the
+        # specialist when robustness checks were actually run. Not
+        # required by the registry; the skill file explains when to
+        # include it.
+    ],
+}
+
 
 REVIEWER_SPECIALISTS = [
     "mechanism_reviewer",

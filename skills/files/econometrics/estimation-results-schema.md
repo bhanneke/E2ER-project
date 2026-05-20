@@ -1,0 +1,180 @@
+# `estimation_results.json` — Econometrics Specialist Sidecar
+
+## Purpose
+
+When you actually run estimation (not just specify the model on
+paper), you write the point estimates, standard errors, test
+statistics, and diagnostic numbers to a machine-readable JSON file:
+`estimation_results.json`. Robustness specifications go into the
+optional `robustness_results.json`.
+
+Two consumers depend on this file:
+
+1. **`verify_numbers` gate** — every coefficient, standard error,
+   t-statistic, p-value, R² in the paper's regression tables must
+   match a value in this file. Mismatches with relative error >10%
+   are flagged critical and the paper is rejected before reviewers
+   run.
+2. **`paper_drafter` and `latex_formatter`** — read this to build the
+   regression tables in the paper. Without it, table cells have no
+   source of truth and the drafter must invent.
+
+## When to write this file
+
+- Write it whenever you have actually estimated a model and obtained
+  numeric output (point estimates, SEs, etc.).
+- If you only specified the model (wrote down the equation, fixed
+  effects, instrument strategy) and did not run estimation against
+  real data, write `estimation_results.json` as `{}` rather than
+  fabricating values. The empty file is the honest signal.
+
+## Required shape
+
+A JSON object with one entry per estimated specification. Each entry
+contains coefficients and diagnostics.
+
+**Mandatory top-level structure:**
+
+```json
+{
+  "main": {
+    "specification": "OLS with two-way fixed effects",
+    "n_observations": 24890,
+    "n_clusters": 6225,
+    "coefficients": {
+      "treatment": {
+        "estimate": -0.231,
+        "se": 0.058,
+        "t_stat": -3.98,
+        "p_value": 0.0001,
+        "ci_lower": -0.345,
+        "ci_upper": -0.117
+      },
+      "x1": {
+        "estimate": 0.045,
+        "se": 0.012,
+        "t_stat": 3.75,
+        "p_value": 0.0002,
+        "ci_lower": 0.022,
+        "ci_upper": 0.068
+      }
+    },
+    "diagnostics": {
+      "r_squared": 0.34,
+      "adj_r_squared": 0.32,
+      "f_statistic": 45.2,
+      "df_residual": 24850
+    }
+  }
+}
+```
+
+**Conventions:**
+
+- The top-level key (e.g. `main`, `iv_2sls`, `did_event_study`)
+  identifies the specification. Use the same name in the markdown
+  spec and the paper's table column header.
+- Coefficient names match the variable names in your data dictionary.
+  Use snake_case; do not use the LaTeX-prettified labels here (those
+  belong to the LaTeX formatter).
+- Standard errors are clustered by default. The `cluster_level` field
+  documents the clustering choice when it's not obvious.
+
+**Per-specification optional fields:**
+
+- `cluster_level`: `"unit"`, `"time"`, `"unit_and_time"`, `"none"`,
+  or a specific variable name.
+- `first_stage`: nested object with first-stage F, partial R², and
+  weak-instrument diagnostics (for IV/2SLS).
+- `pre_trend_p_value`, `placebo_p_value`: for DiD/event-study.
+- `cragg_donald_f`, `kleibergen_paap_f`: standard IV diagnostics.
+
+**Add specifications as additional top-level keys.** A paper with main
++ heterogeneity by year + robustness with controls dropped is three
+entries:
+
+```json
+{
+  "main":            { ... },
+  "by_year_2024":    { ... },
+  "no_controls":     { ... }
+}
+```
+
+## `robustness_results.json` — conditional sidecar
+
+When the paper reports robustness checks beyond the main specification
+(alternative samples, alternative controls, alternative SE clustering,
+placebo tests), write them to `robustness_results.json` with the same
+shape. The split between `estimation_results.json` and
+`robustness_results.json` is a courtesy to readers — both files are
+consumed identically by verify_numbers and the drafter.
+
+Do NOT duplicate the main spec into both files. Each value should
+appear exactly once across the two files.
+
+## Rules
+
+1. **Plain numbers, not strings.** `-0.231`, not `"-0.231"` and not
+   `"−0.231"` with a unicode minus.
+2. **Use `null` for genuinely missing diagnostics** (e.g. r_squared
+   is undefined for some non-OLS estimators).
+3. **No `NaN` or `Infinity`.** Use `null` if a diagnostic is
+   undefined.
+4. **Coefficient signs must match the paper.** A drafter that writes
+   "treatment increases the outcome by 0.23" while
+   `estimation_results.json` reports `estimate: -0.23` is a critical
+   mismatch (sign flip) — verify_numbers will catch it.
+5. **Cite by key in the markdown.** When `econometric_spec.md` says
+   "the treatment effect is -0.23 (SE 0.06, p < 0.001)", the trio
+   `-0.23 / 0.058 / 0.0001` must appear in this file under a path
+   that traces back from the citation. Convention:
+   `> Source: estimation_results.json#main.coefficients.treatment`.
+
+## Failure modes — write `{}`, not no file
+
+If you specified the model but did not run estimation:
+
+- Write `estimation_results.json` as `{}`.
+- The drafter sees an empty JSON and produces a "design without
+  estimates" version of the paper (specification + identification +
+  data summary, but no numbers in tables).
+- `robustness_results.json` should not be created at all in this
+  case.
+
+Inventing coefficients and putting them in this file is a hard
+violation of the project's data-integrity rule.
+
+## Example for an IV/2SLS paper
+
+```json
+{
+  "ols_naive": {
+    "specification": "OLS, no controls",
+    "n_observations": 12450,
+    "coefficients": {
+      "treatment": {"estimate": 0.18, "se": 0.04, "t_stat": 4.50, "p_value": 0.0001}
+    },
+    "diagnostics": {"r_squared": 0.08}
+  },
+  "iv_2sls": {
+    "specification": "2SLS with instrument Z, controls X1+X2",
+    "n_observations": 12450,
+    "n_clusters": 6225,
+    "cluster_level": "unit",
+    "coefficients": {
+      "treatment_hat": {"estimate": -0.23, "se": 0.06, "t_stat": -3.83, "p_value": 0.0001},
+      "x1": {"estimate": 0.04, "se": 0.01, "t_stat": 4.00, "p_value": 0.0001}
+    },
+    "first_stage": {
+      "cragg_donald_f": 45.2,
+      "kleibergen_paap_f": 38.1,
+      "instrument_partial_r_squared": 0.18
+    },
+    "diagnostics": {"r_squared": 0.34}
+  }
+}
+```
+
+The drafter writes "the 2SLS estimate is -0.23 (SE 0.06, first-stage
+F = 38.1)" and every number traces to this file.

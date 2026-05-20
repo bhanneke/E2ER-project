@@ -64,6 +64,24 @@ v0.4.5 live tests on papers `a6182f08`, `cbe8048f`, `eea5379b`.
   rationale. `_update_status` now treats PAUSED and REJECTED the
   same way as FAILED and CANCELLED for error preservation.
   Discovered while writing the v0.5 budget-pause regression test.
+- **Machine-readable JSON sidecar contract for verify_numbers.**
+  Pre-v0.5 every specialist was told to write EXACTLY ONE file, so
+  even when a skill described a JSON sidecar (e.g. `data/figure-spec`),
+  the system prompt overrode it and the JSON never appeared. The
+  2026-05-20 live runs confirmed this empirically: both papers wrote
+  `number_verification.json` with `skipped_reason="no source JSON
+  files found"` — the gate was effectively a no-op. v0.5 adds a
+  `SPECIALIST_SIDECAR_ARTIFACTS` registry, a `sidecar_artifacts` field
+  on `WorkOrder` (auto-populated by `_inject_context`), and a
+  multi-file "Required Output" prompt block that lists every required
+  file with its role + JSON validity rules. `data_analyst` now emits
+  `summary_statistics.json` and `figure_spec.json`;
+  `econometrics_specialist` now emits `estimation_results.json`
+  (with optional `robustness_results.json`). Two new schema skill
+  files (`data/summary-statistics-schema`,
+  `econometrics/estimation-results-schema`) teach the JSON shapes and
+  the "write `{}` instead of omitting when data was unavailable"
+  rule that distinguishes "honest empty" from "missing" for the gate.
 
 ## v0.4.5 — 2026-05-19
 
