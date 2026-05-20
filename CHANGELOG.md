@@ -7,8 +7,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-(Add new entries here under `### Lane A — Pipeline`, `### Lane B — Literature`,
-`### Lane C — Data`, or `### Cross-lane` sub-headings per `AGENTS.md`.)
+Headed toward **v0.5.0 — anti-hallucination & methodology-aware
+pipeline**. Full design record at `docs/V0.5_PLAN.md`. Motivated by
+v0.4.5 live tests on papers `a6182f08`, `cbe8048f`, `eea5379b`.
+
+### Lane A — Pipeline
+
+- **Programmatic anti-hallucination gate before review** (new file
+  `src/core/pipeline/verify_numbers.py`, 357 lines). Scans every number
+  in `\begin{tabular}` blocks of `paper_draft.tex` and matches each
+  against the flat numeric values from `summary_statistics.json`,
+  `estimation_results.json`, `robustness_results.json`, and
+  `figure_spec.json`. Tolerance 0.5% relative; integers ≥10 must be
+  exact; signs must match. Critical mismatches (relative error >10%
+  vs the closest source value) → status `REJECTED` and reviewers
+  never spawn. Persists `number_verification.json` at workspace root
+  on every run. Live-test paper `a6182f08`'s "log realized variance
+  falls by 0.41 ($t=-3.9$)" hallucination was caught by
+  `technical_reviewer` only after 6 reviewers had run; this gate
+  catches it deterministically, at $0, before any reviewer spends a
+  token. Graceful skip when no source JSON files are present (warn +
+  pass), so papers from before the analyst contract was tightened
+  don't regress.
+- **Methodology-aware phase routing.** `PipelineRunner.__init__` now
+  accepts `methodology: str = "empirical"`, propagated from
+  `papers.methodology` through `_run_pipeline` and `resume_paper` in
+  the API. For `methodology == "theoretical"`,
+  `_reviewers_for_methodology()` drops `data_reviewer` from the
+  6-reviewer panel and `_run_replication_phase()` early-returns.
+  Live-test paper `cbe8048f` burned ~$0.34 on a `data_reviewer` stub
+  over an empty contract plus ~$0.43 on a replication packager with
+  no replication artifacts — both wasted, both gone in v0.5.
+- **New status `PaperStatus.REJECTED`, distinct from `FAILED`.**
+  `FAILED` is reserved for crashes; `REJECTED` means the pipeline
+  ran successfully and the quality gate (verify_numbers,
+  HARD_REJECT, MECHANISM_FAIL) returned a negative verdict.
+  Resumable: transitions back to IDEA / IN_PROGRESS / REVIEW /
+  REVISION / CANCELLED. `_run_revision_phase`'s HARD_REJECT and
+  MECHANISM_FAIL branches updated to emit REJECTED instead of
+  FAILED. New IN_PROGRESS → REJECTED transition for the
+  verify_numbers gate path.
+- **`BudgetExceededError` → `PAUSED`, resumable.** New `except
+  BudgetExceededError` branch in `PipelineRunner.run()`, alongside
+  the existing `CircuitBreakerError` handler. Persists state, logs a
+  `paused_budget` event with `{spent, cap}`, returns a structured
+  `{status: "paused", reason: "budget_exhausted", ...}` payload.
+  The operator raises `--max-cost` and POSTs
+  `/api/papers/{id}/resume`; existing resume-from-disk logic picks
+  up at the first incomplete phase. Previously a budget exhaustion
+  was indistinguishable from a crash.
+- **`PAUSED` and `REJECTED` rows now persist `last_error`** on the
+  `papers` table. Pre-v0.5, only FAILED and CANCELLED rows carried
+  the error/reason; PAUSED and REJECTED dropped it at the SQL layer,
+  leaving the dashboard with `last_error=NULL` and no way to render
+  the budget breakdown, circuit-breaker specialist, or review-gate
+  rationale. `_update_status` now treats PAUSED and REJECTED the
+  same way as FAILED and CANCELLED for error preservation.
+  Discovered while writing the v0.5 budget-pause regression test.
 
 ## v0.4.5 — 2026-05-19
 

@@ -344,7 +344,7 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
         background_tasks.add_task(_create_github_repo, paper_id, req.title)
 
     # Use asyncio.create_task (not BackgroundTasks) so we get a handle for cancel.
-    task = asyncio.create_task(_run_pipeline(paper_id, workspace, req.mode, cap))
+    task = asyncio.create_task(_run_pipeline(paper_id, workspace, req.mode, cap, req.methodology))
     _RUNNING[paper_id] = task
     task.add_done_callback(lambda _t: _RUNNING.pop(paper_id, None))
 
@@ -453,7 +453,7 @@ async def resume_paper(paper_id: str) -> dict[str, Any]:
 
     try:
         row = await fetch_one(
-            "SELECT id, status, workspace, mode, max_cost_usd FROM papers WHERE id = %(id)s",
+            "SELECT id, status, workspace, mode, max_cost_usd, methodology FROM papers WHERE id = %(id)s",
             {"id": paper_id},
         )
     except Exception as e:
@@ -480,6 +480,7 @@ async def resume_paper(paper_id: str) -> dict[str, Any]:
     workspace = Path(row["workspace"])
     mode = row.get("mode") or "single_pass"
     cap = float(row.get("max_cost_usd") or 25.0)
+    methodology = row.get("methodology") or "empirical"
 
     # Reset status to the lowest reasonable resume point. The runner's
     # state-load will detect what's actually on disk and skip ahead.
@@ -493,7 +494,7 @@ async def resume_paper(paper_id: str) -> dict[str, Any]:
     except Exception as e:
         logger.warning("Could not update status on resume %s: %s", paper_id, e)
 
-    task = asyncio.create_task(_run_pipeline(paper_id, workspace, mode, cap))
+    task = asyncio.create_task(_run_pipeline(paper_id, workspace, mode, cap, methodology))
     _RUNNING[paper_id] = task
     task.add_done_callback(lambda _t: _RUNNING.pop(paper_id, None))
 
@@ -1075,7 +1076,13 @@ async def upload_data_file(paper_id: str, file: UploadFile = File(...)) -> dict[
 # --- Background tasks ---
 
 
-async def _run_pipeline(paper_id: str, workspace: Path, mode: str, max_cost_usd: float) -> None:
+async def _run_pipeline(
+    paper_id: str,
+    workspace: Path,
+    mode: str,
+    max_cost_usd: float,
+    methodology: str = "empirical",
+) -> None:
     from ..config import get_settings
     from ..core.strategist.runner import PipelineRunner
     from ..modules.data.tools import ALLIUM_TOOLS, DeferredAlliumToolHandler
@@ -1109,6 +1116,7 @@ async def _run_pipeline(paper_id: str, workspace: Path, mode: str, max_cost_usd:
         extra_handlers=extra_handlers,
         backend_name=settings.llm_backend,
         max_cost_usd=max_cost_usd,
+        methodology=methodology,
     )
     await runner.run()
 

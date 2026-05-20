@@ -1004,8 +1004,14 @@ async def test_dispatcher_auto_fills_output_file(tmp_path):
     assert out.output_file == "paper_plan.md"
 
 
-async def test_budget_exceeded_aborts_pipeline(tmp_path, mock_llm):
-    """If cumulative cost has hit the cap before a phase, runner must FAIL with a budget error."""
+async def test_budget_exceeded_pauses_pipeline(tmp_path, mock_llm):
+    """Cumulative cost over the cap mid-run must transition to PAUSED, not FAILED.
+
+    v0.5 deliberately separates these states: FAILED is reserved for crashes,
+    PAUSED for budget exhaustion (resumable via /api/papers/{id}/resume after
+    raising --max-cost). Pre-v0.5 conflated them as FAILED, leaving operators
+    unable to tell at a glance whether the run crashed or just ran out of money.
+    """
     from src.core.strategist.engine import StrategistEngine
     from src.core.strategist.runner import PipelineRunner
 
@@ -1042,10 +1048,19 @@ async def test_budget_exceeded_aborts_pipeline(tmp_path, mock_llm):
         )
         result = await runner.run()
 
-    assert result["status"] == "failed"
-    assert "Budget exceeded" in result["error"]
-    # The FAILED row write must include the budget error message.
-    assert any(s == "failed" and e and "Budget exceeded" in e for s, e in captured_status)
+    # v0.5: structured envelope, reason distinguishes from circuit_breaker pause.
+    assert result["status"] == "paused"
+    assert result["reason"] == "budget_exhausted"
+    assert result["spent"] == pytest.approx(99.0)
+    assert result["cap"] == pytest.approx(10.0)
+    # Final DB status is PAUSED with a budget error message.
+    assert any(s == "paused" and e and "BudgetExceededError" in e for s, e in captured_status), (
+        f"PAUSED row write with budget error not found; saw {captured_status}"
+    )
+    # And FAILED must NOT appear — that's the v0.5 contract.
+    assert not any(s == "failed" for s, _ in captured_status), (
+        f"FAILED status written for budget exhaustion (pre-v0.5 behaviour); saw {captured_status}"
+    )
 
 
 async def test_cancellation_marks_paper_cancelled(tmp_path, mock_llm):
