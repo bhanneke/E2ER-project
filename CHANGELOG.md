@@ -7,9 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Headed toward **v0.5.0 — anti-hallucination & methodology-aware
-pipeline**. Full design record at `docs/V0.5_PLAN.md`. Motivated by
-v0.4.5 live tests on papers `a6182f08`, `cbe8048f`, `eea5379b`.
+(Add new entries here under `### Lane A — Pipeline`, `### Lane B — Literature`,
+`### Lane C — Data`, or `### Cross-lane` sub-headings per `AGENTS.md`.)
+
+## v0.5.0 — 2026-05-21
+
+**Anti-hallucination & methodology-aware pipeline.** Full design
+record at `docs/V0.5_PLAN.md`. Motivated by v0.4.5 live tests on
+papers `a6182f08`, `cbe8048f`, `eea5379b`, and validated end-to-end
+against fresh live runs on 2026-05-20 (`234a11ea`, `fd6bf64d`) and
+2026-05-21 (`525fa03c`) — see `docs/V0.5_LIVE_VALIDATION.md`.
 
 ### Lane A — Pipeline
 
