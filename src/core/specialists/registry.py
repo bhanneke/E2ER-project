@@ -63,6 +63,11 @@ SPECIALIST_SKILLS: dict[str, list[str]] = {
         "econometrics/did",
         "econometrics/panel-data",
         "econometrics/event-study",
+        # v0.5: machine-readable sidecar contract consumed by
+        # verify_numbers + paper_drafter. Without this skill the
+        # specialist doesn't know what shape estimation_results.json
+        # must take.
+        "econometrics/estimation-results-schema",
     ],
     "data_analyst": [
         "data/cleaning",
@@ -72,6 +77,10 @@ SPECIALIST_SKILLS: dict[str, list[str]] = {
         "data/allium-developer-api",
         "data/yfinance",
         "data/fred",
+        # v0.5: machine-readable sidecar contract. Teaches the analyst
+        # the summary_statistics.json shape that verify_numbers gates
+        # against and the drafter cites by key.
+        "data/summary-statistics-schema",
     ],
     "theory_specialist": [
         "base/economist",
@@ -80,9 +89,27 @@ SPECIALIST_SKILLS: dict[str, list[str]] = {
         "math/proof-strategies",
         "reasoning/identification",
     ],
-    "paper_drafter": ["writing/paper-structure", "writing/personal-style", "base/researcher"],
-    "section_writer": ["writing/paper-structure", "writing/personal-style", "reasoning/anti-slop"],
-    "abstract_writer": ["writing/abstract", "reasoning/anti-slop"],
+    "paper_drafter": [
+        "writing/paper-structure",
+        "writing/personal-style",
+        "base/researcher",
+        # v0.5: teaches the drafter to cite every number by JSON source
+        # key. Complements the post-hoc verify_numbers gate by reducing
+        # the rate of hallucinated table values in the first place.
+        "writing/cite-numbers-by-source",
+    ],
+    "section_writer": [
+        "writing/paper-structure",
+        "writing/personal-style",
+        "reasoning/anti-slop",
+        "writing/cite-numbers-by-source",
+    ],
+    "abstract_writer": [
+        "writing/abstract",
+        "reasoning/anti-slop",
+        # Abstracts cite the headline numbers — must trace to sidecars.
+        "writing/cite-numbers-by-source",
+    ],
     "latex_formatter": ["latex/econ-model", "latex/tables"],
     "mechanism_reviewer": ["review/referee-simulation", "modeling/market-microstructure"],
     "technical_reviewer": ["review/technical-review", "review/consistency-check"],
@@ -100,9 +127,45 @@ SPECIALIST_SKILLS: dict[str, list[str]] = {
     "polish_institutions": ["base/economist", "data/crypto-defi"],
     "polish_bibliography": ["latex/bibtex", "synthesis/context-builder"],
     "polish_equilibria": ["modeling/game-theory", "math/proof-strategies"],
-    "revisor": ["writing/paper-structure", "writing/personal-style", "reasoning/anti-slop"],
+    "revisor": [
+        "writing/paper-structure",
+        "writing/personal-style",
+        "reasoning/anti-slop",
+        # v0.5: the revisor edits paper_draft.tex; same cite-by-source
+        # discipline as the drafter, otherwise revisions can introduce
+        # new hallucinations that pass review only because the gate
+        # already ran on the pre-revision draft.
+        "writing/cite-numbers-by-source",
+    ],
     "replication_packager": ["data/cleaning", "base/researcher", "synthesis/replication-package"],
 }
+
+# Sidecar artifacts produced ALONGSIDE the primary SPECIALIST_ARTIFACTS file.
+# These are machine-readable JSON files that downstream specialists + the
+# verify_numbers gate consume. Pre-v0.5.0 the framework only declared one
+# output file per specialist, so even when a skill (e.g. data/figure-spec.md)
+# instructed JSON emission, the system prompt's "EXACTLY ONE file" rule
+# overrode it and the JSON never appeared. Adding the file here both
+# auto-populates `work_order.sidecar_artifacts` and triggers the
+# multi-file output block in `_build_user_prompt`.
+#
+# Coverage rule: every file consumed by `verify_numbers` MUST appear here
+# under the specialist responsible for it. Adding new consumers is a
+# coordinated change: schema skill file + this dict + the consumer code.
+SPECIALIST_SIDECAR_ARTIFACTS: dict[str, list[str]] = {
+    "data_analyst": [
+        "summary_statistics.json",
+        "figure_spec.json",
+    ],
+    "econometrics_specialist": [
+        "estimation_results.json",
+        # robustness_results.json is conditionally emitted by the
+        # specialist when robustness checks were actually run. Not
+        # required by the registry; the skill file explains when to
+        # include it.
+    ],
+}
+
 
 REVIEWER_SPECIALISTS = [
     "mechanism_reviewer",

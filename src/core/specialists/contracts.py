@@ -17,6 +17,12 @@ class WorkOrder(BaseModel):
     context: str = ""
     tools: list[str] = Field(default_factory=list)
     output_file: str = ""
+    # Additional artifacts the specialist MUST produce alongside output_file.
+    # Auto-populated from registry.SPECIALIST_SIDECAR_ARTIFACTS in
+    # dispatcher._inject_context. Drives the multi-file "Required Output"
+    # block in the prompt; used to enforce the JSON contract that
+    # verify_numbers and downstream consumers depend on.
+    sidecar_artifacts: list[str] = Field(default_factory=list)
     extra: dict[str, Any] = Field(default_factory=dict)
     parallel_group: int = 0  # used by execute_with_dependencies for group ordering
     context_tier: int = 1  # 0=minimal, 1=decision-relevant, 2=full artifacts

@@ -19,11 +19,17 @@ class PaperStatus(StrEnum):
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
-    # Circuit-breaker halt. Set when a non-tolerant specialist has failed
-    # too many times in a row — the run pauses rather than looping until
-    # budget exhaustion (the run #14 failure mode). The operator inspects
-    # the workspace + events, fixes the underlying issue, and either
-    # resumes via /api/papers/{id}/resume or restarts from IDEA.
+    # Distinct from FAILED so the operator can tell at a glance whether
+    # the paper crashed (FAILED) or was rejected by the review gate
+    # (REJECTED). v0.4.5 live tests conflated both as FAILED. Resumable
+    # via /api/papers/{id}/resume — operator revises and re-runs.
+    REJECTED = "rejected"
+    # Circuit-breaker halt + budget-exhausted halt. Set when a non-tolerant
+    # specialist has failed too many times in a row, OR when the per-paper
+    # cost cap is reached. Workspace artifacts + `.pipeline_state.json`
+    # are preserved, so resuming with a higher --max-cost picks up at the
+    # first incomplete phase. Operator inspects the workspace + events
+    # and either resumes via /api/papers/{id}/resume or restarts from IDEA.
     PAUSED = "paused"
 
 
@@ -102,9 +108,11 @@ VALID_TRANSITIONS: dict[PaperStatus, set[PaperStatus]] = {
         PaperStatus.FAILED,
         PaperStatus.CANCELLED,
     },
+    # IN_PROGRESS → REJECTED for the pre-review verify_numbers audit gate.
     PaperStatus.IN_PROGRESS: {
         PaperStatus.CEILING_CHECK,
         PaperStatus.REVIEW,
+        PaperStatus.REJECTED,
         PaperStatus.FAILED,
         PaperStatus.CANCELLED,
     },
@@ -126,17 +134,29 @@ VALID_TRANSITIONS: dict[PaperStatus, set[PaperStatus]] = {
         PaperStatus.REVISION,
         PaperStatus.COMPLETED,
         PaperStatus.FAILED,
+        PaperStatus.REJECTED,
         PaperStatus.CANCELLED,
     },
     PaperStatus.REVISION: {
         PaperStatus.REVIEW,
         PaperStatus.COMPLETED,
         PaperStatus.FAILED,
+        PaperStatus.REJECTED,
         PaperStatus.CANCELLED,
     },
     PaperStatus.COMPLETED: set(),
     PaperStatus.FAILED: {PaperStatus.IDEA},
     PaperStatus.CANCELLED: {PaperStatus.IDEA},
+    # REJECTED is reachable from REVIEW/REVISION (HARD_REJECT, MECHANISM_FAIL)
+    # and can transition back to IDEA (restart) or any non-terminal phase
+    # when the operator resumes after revising the source artifacts.
+    PaperStatus.REJECTED: {
+        PaperStatus.IDEA,
+        PaperStatus.CANCELLED,
+        PaperStatus.IN_PROGRESS,
+        PaperStatus.REVIEW,
+        PaperStatus.REVISION,
+    },
     # PAUSED → can restart from IDEA, cancel, OR resume by re-entering any
     # non-terminal phase. Resume picks the phase based on the workspace's
     # last completed canonical artifact (see runner._resume_target_status).
