@@ -33,6 +33,12 @@ SPECIALIST_ARTIFACTS: dict[str, str] = {
     "polish_equilibria": "polish_equilibria.md",
     # Revision
     "revisor": "paper_draft.tex",
+    # v0.6: scoped revisor. Writes a structured patch file rather than
+    # rewriting paper_draft.tex from scratch. The merger
+    # (src/core/strategist/patch_merger.py) reads the patch file,
+    # validates each edit's target against the work order's Finding
+    # list, applies in-scope edits, emits a unified diff side artifact.
+    "patch_revisor": "paper_draft.tex.edits.json",
     "replication_packager": "replication/estimation.py",
 }
 
@@ -136,6 +142,16 @@ SPECIALIST_SKILLS: dict[str, list[str]] = {
         # new hallucinations that pass review only because the gate
         # already ran on the pre-revision draft.
         "writing/cite-numbers-by-source",
+    ],
+    # v0.6: scoped patch revisor. Writes paper_draft.tex.edits.json
+    # rather than rewriting the whole .tex. The scoped-revision skill
+    # is load-bearing — without it the specialist has no contract
+    # for the patch file format.
+    "patch_revisor": [
+        "writing/scoped-revision",
+        "writing/cite-numbers-by-source",
+        "writing/personal-style",
+        "reasoning/anti-slop",
     ],
     "replication_packager": ["data/cleaning", "base/researcher", "synthesis/replication-package"],
 }
