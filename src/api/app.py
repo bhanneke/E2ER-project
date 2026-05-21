@@ -223,6 +223,23 @@ class CreatePaperRequest(BaseModel):
     acknowledge_unproven_tuple: bool = False
 
 
+class ResumeRequest(BaseModel):
+    """Body for POST /api/papers/{id}/resume.
+
+    Pre-v0.5 the endpoint took no body and always used the cap stored
+    on the papers row. That made budget-pause recovery a two-step
+    operator dance: UPDATE the row in SQL, THEN POST /resume. The
+    2026-05-20 live validation hit this exact friction. v0.5 lets the
+    operator raise the cap atomically with the resume request.
+
+    `max_cost_usd=None` preserves the prior behaviour (use the existing
+    row value). Any positive value updates the row before re-firing
+    the runner so the new cap is what the budget check reads.
+    """
+
+    max_cost_usd: float | None = None
+
+
 class PaperResponse(BaseModel):
     paper_id: str
     title: str
@@ -344,7 +361,7 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
         background_tasks.add_task(_create_github_repo, paper_id, req.title)
 
     # Use asyncio.create_task (not BackgroundTasks) so we get a handle for cancel.
-    task = asyncio.create_task(_run_pipeline(paper_id, workspace, req.mode, cap))
+    task = asyncio.create_task(_run_pipeline(paper_id, workspace, req.mode, cap, req.methodology))
     _RUNNING[paper_id] = task
     task.add_done_callback(lambda _t: _RUNNING.pop(paper_id, None))
 
@@ -422,7 +439,7 @@ async def cancel_paper(paper_id: str) -> dict[str, Any]:
 
 
 @app.post("/api/papers/{paper_id}/resume", dependencies=[Depends(require_auth)])
-async def resume_paper(paper_id: str) -> dict[str, Any]:
+async def resume_paper(paper_id: str, req: ResumeRequest | None = None) -> dict[str, Any]:
     """Resume a paper whose runner is not actively running.
 
     The pipeline runner's PipelineState load logic skips phases that
@@ -453,7 +470,7 @@ async def resume_paper(paper_id: str) -> dict[str, Any]:
 
     try:
         row = await fetch_one(
-            "SELECT id, status, workspace, mode, max_cost_usd FROM papers WHERE id = %(id)s",
+            "SELECT id, status, workspace, mode, max_cost_usd, methodology FROM papers WHERE id = %(id)s",
             {"id": paper_id},
         )
     except Exception as e:
@@ -480,20 +497,35 @@ async def resume_paper(paper_id: str) -> dict[str, Any]:
     workspace = Path(row["workspace"])
     mode = row.get("mode") or "single_pass"
     cap = float(row.get("max_cost_usd") or 25.0)
+    methodology = row.get("methodology") or "empirical"
+
+    # Optional cap raise (v0.5): if the request body provides a new
+    # max_cost_usd, persist it before re-firing the runner so the
+    # budget check reads the new value. Reject non-positive values —
+    # zero/negative caps would re-pause immediately.
+    if req is not None and req.max_cost_usd is not None:
+        if req.max_cost_usd <= 0:
+            raise HTTPException(
+                status_code=400,
+                detail=f"max_cost_usd must be positive, got {req.max_cost_usd}",
+            )
+        cap = float(req.max_cost_usd)
 
     # Reset status to the lowest reasonable resume point. The runner's
     # state-load will detect what's actually on disk and skip ahead.
+    # Persist the (possibly updated) cap in the same UPDATE so the
+    # row reflects the resume request atomically.
     from ..db.client import execute
 
     try:
         await execute(
-            "UPDATE papers SET status = 'in_progress', last_error = NULL WHERE id = %(id)s",
-            {"id": paper_id},
+            "UPDATE papers SET status = 'in_progress', last_error = NULL, max_cost_usd = %(cap)s WHERE id = %(id)s",
+            {"id": paper_id, "cap": cap},
         )
     except Exception as e:
         logger.warning("Could not update status on resume %s: %s", paper_id, e)
 
-    task = asyncio.create_task(_run_pipeline(paper_id, workspace, mode, cap))
+    task = asyncio.create_task(_run_pipeline(paper_id, workspace, mode, cap, methodology))
     _RUNNING[paper_id] = task
     task.add_done_callback(lambda _t: _RUNNING.pop(paper_id, None))
 
@@ -1075,7 +1107,13 @@ async def upload_data_file(paper_id: str, file: UploadFile = File(...)) -> dict[
 # --- Background tasks ---
 
 
-async def _run_pipeline(paper_id: str, workspace: Path, mode: str, max_cost_usd: float) -> None:
+async def _run_pipeline(
+    paper_id: str,
+    workspace: Path,
+    mode: str,
+    max_cost_usd: float,
+    methodology: str = "empirical",
+) -> None:
     from ..config import get_settings
     from ..core.strategist.runner import PipelineRunner
     from ..modules.data.tools import ALLIUM_TOOLS, DeferredAlliumToolHandler
@@ -1109,6 +1147,7 @@ async def _run_pipeline(paper_id: str, workspace: Path, mode: str, max_cost_usd:
         extra_handlers=extra_handlers,
         backend_name=settings.llm_backend,
         max_cost_usd=max_cost_usd,
+        methodology=methodology,
     )
     await runner.run()
 

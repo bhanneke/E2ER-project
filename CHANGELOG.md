@@ -10,6 +10,116 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 (Add new entries here under `### Lane A — Pipeline`, `### Lane B — Literature`,
 `### Lane C — Data`, or `### Cross-lane` sub-headings per `AGENTS.md`.)
 
+## v0.5.0 — 2026-05-21
+
+**Anti-hallucination & methodology-aware pipeline.** Full design
+record at `docs/V0.5_PLAN.md`. Motivated by v0.4.5 live tests on
+papers `a6182f08`, `cbe8048f`, `eea5379b`, and validated end-to-end
+against fresh live runs on 2026-05-20 (`234a11ea`, `fd6bf64d`) and
+2026-05-21 (`525fa03c`) — see `docs/V0.5_LIVE_VALIDATION.md`.
+
+### Lane A — Pipeline
+
+- **Programmatic anti-hallucination gate before review** (new file
+  `src/core/pipeline/verify_numbers.py`, 357 lines). Scans every number
+  in `\begin{tabular}` blocks of `paper_draft.tex` and matches each
+  against the flat numeric values from `summary_statistics.json`,
+  `estimation_results.json`, `robustness_results.json`, and
+  `figure_spec.json`. Tolerance 0.5% relative; integers ≥10 must be
+  exact; signs must match. Critical mismatches (relative error >10%
+  vs the closest source value) → status `REJECTED` and reviewers
+  never spawn. Persists `number_verification.json` at workspace root
+  on every run. Live-test paper `a6182f08`'s "log realized variance
+  falls by 0.41 ($t=-3.9$)" hallucination was caught by
+  `technical_reviewer` only after 6 reviewers had run; this gate
+  catches it deterministically, at $0, before any reviewer spends a
+  token. Graceful skip when no source JSON files are present (warn +
+  pass), so papers from before the analyst contract was tightened
+  don't regress.
+- **Methodology-aware phase routing.** `PipelineRunner.__init__` now
+  accepts `methodology: str = "empirical"`, propagated from
+  `papers.methodology` through `_run_pipeline` and `resume_paper` in
+  the API. For `methodology == "theoretical"`,
+  `_reviewers_for_methodology()` drops `data_reviewer` from the
+  6-reviewer panel and `_run_replication_phase()` early-returns.
+  Live-test paper `cbe8048f` burned ~$0.34 on a `data_reviewer` stub
+  over an empty contract plus ~$0.43 on a replication packager with
+  no replication artifacts — both wasted, both gone in v0.5.
+- **New status `PaperStatus.REJECTED`, distinct from `FAILED`.**
+  `FAILED` is reserved for crashes; `REJECTED` means the pipeline
+  ran successfully and the quality gate (verify_numbers,
+  HARD_REJECT, MECHANISM_FAIL) returned a negative verdict.
+  Resumable: transitions back to IDEA / IN_PROGRESS / REVIEW /
+  REVISION / CANCELLED. `_run_revision_phase`'s HARD_REJECT and
+  MECHANISM_FAIL branches updated to emit REJECTED instead of
+  FAILED. New IN_PROGRESS → REJECTED transition for the
+  verify_numbers gate path.
+- **`BudgetExceededError` → `PAUSED`, resumable.** New `except
+  BudgetExceededError` branch in `PipelineRunner.run()`, alongside
+  the existing `CircuitBreakerError` handler. Persists state, logs a
+  `paused_budget` event with `{spent, cap}`, returns a structured
+  `{status: "paused", reason: "budget_exhausted", ...}` payload.
+  The operator raises `--max-cost` and POSTs
+  `/api/papers/{id}/resume`; existing resume-from-disk logic picks
+  up at the first incomplete phase. Previously a budget exhaustion
+  was indistinguishable from a crash.
+- **`PAUSED` and `REJECTED` rows now persist `last_error`** on the
+  `papers` table. Pre-v0.5, only FAILED and CANCELLED rows carried
+  the error/reason; PAUSED and REJECTED dropped it at the SQL layer,
+  leaving the dashboard with `last_error=NULL` and no way to render
+  the budget breakdown, circuit-breaker specialist, or review-gate
+  rationale. `_update_status` now treats PAUSED and REJECTED the
+  same way as FAILED and CANCELLED for error preservation.
+  Discovered while writing the v0.5 budget-pause regression test.
+- **`POST /api/papers/{id}/resume` accepts `max_cost_usd` in the
+  request body.** Pre-v0.5 the endpoint silently ignored the body and
+  read the cap from the DB row, so raising the cap on a budget-paused
+  paper required a manual `UPDATE papers SET max_cost_usd = ...`
+  beforehand (the workaround surfaced during the 2026-05-20 live
+  validation). The endpoint now accepts an optional `ResumeRequest`
+  body; a positive `max_cost_usd` is validated and persisted on the
+  row atomically with the status reset, then passed to the runner.
+  Zero or negative values 400. Calls without a body preserve the
+  pre-v0.5 behaviour (use the existing row value).
+- **`paper_drafter`, `section_writer`, `abstract_writer`, and
+  `revisor` load a new `writing/cite-numbers-by-source` skill** that
+  teaches the cite-by-JSON-key discipline: every numeric value in
+  the paper must trace to a value in `summary_statistics.json`,
+  `estimation_results.json`, `robustness_results.json`, or
+  `figure_spec.json`. HTML-comment markers (`<!-- src: file#key -->`)
+  let `verify_numbers` mismatches name the exact source path the
+  drafter should have used. Reduces hallucination rate in the first
+  place; complements the post-hoc gate. Includes the "empty sidecar
+  → no quantitative claims" rule so the design-without-estimates
+  pathway is explicit.
+- **Test-mock fix:** `MockLLMBackend._detect_specialist` now matches
+  on the canonical `You are the <Name> specialist` role line in the
+  system prompt rather than searching for any specialist name
+  substring. The old heuristic silently misrouted calls whenever a
+  skill referenced another specialist by name (e.g. the new
+  `writing/cite-numbers-by-source` mentions "econometrics
+  specialist" → paper_drafter calls were routed to the econometrics
+  output → paper_draft.tex was never produced). Now matches one
+  occurrence per prompt with no skill-content interference.
+- **Machine-readable JSON sidecar contract for verify_numbers.**
+  Pre-v0.5 every specialist was told to write EXACTLY ONE file, so
+  even when a skill described a JSON sidecar (e.g. `data/figure-spec`),
+  the system prompt overrode it and the JSON never appeared. The
+  2026-05-20 live runs confirmed this empirically: both papers wrote
+  `number_verification.json` with `skipped_reason="no source JSON
+  files found"` — the gate was effectively a no-op. v0.5 adds a
+  `SPECIALIST_SIDECAR_ARTIFACTS` registry, a `sidecar_artifacts` field
+  on `WorkOrder` (auto-populated by `_inject_context`), and a
+  multi-file "Required Output" prompt block that lists every required
+  file with its role + JSON validity rules. `data_analyst` now emits
+  `summary_statistics.json` and `figure_spec.json`;
+  `econometrics_specialist` now emits `estimation_results.json`
+  (with optional `robustness_results.json`). Two new schema skill
+  files (`data/summary-statistics-schema`,
+  `econometrics/estimation-results-schema`) teach the JSON shapes and
+  the "write `{}` instead of omitting when data was unavailable"
+  rule that distinguishes "honest empty" from "missing" for the gate.
+
 ## v0.4.5 — 2026-05-19
 
 Bug pack rolling up findings from the v0.4.4 live test (paper eea5379b)

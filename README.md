@@ -7,146 +7,212 @@
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20187238.svg)](https://doi.org/10.5281/zenodo.20187238)
 [![PyPI](https://img.shields.io/pypi/v/e2er.svg)](https://pypi.org/project/e2er/)
 
-Hand E2ER a research question; get back a LaTeX paper with citations,
-an internal peer-review pass, and a runnable replication package — typically
+Hand E2ER a research question; get back a LaTeX paper with citations, an
+internal peer-review pass, and a runnable replication package — typically
 in ~25 minutes.
-
-**Bring your own LLM subscription:**
-
-| Backend | Cost per paper | Setup |
-|---|---|---|
-| **Claude Code CLI** (Max plan) | $0/token | `npm i -g @anthropic-ai/claude-code` |
-| **Codex CLI** (ChatGPT Plus/Pro) | $0/token | `npm i -g @openai/codex` |
-| **Gemini CLI** (Google AI Pro/Ultra) | $0/token | `npm i -g @google/gemini-cli` |
-| Anthropic SDK | per-token | `ANTHROPIC_API_KEY` |
-| OpenRouter | per-token | `OPENROUTER_API_KEY` (200+ models) |
-
-**Data sources wired in** (more coming):
-
-- **yfinance** — equities, ETFs, crypto, FX, indices. No key.
-- **FRED** — US + international macro time series. Free key (~30s registration).
-- **Allium** — on-chain blockchain data (BYO key, optional).
-
----
-
-## Quickstart (5 minutes)
 
 ```bash
 pip install e2er
-e2er install-skills                # bundles skills for the CLI backends
-export LLM_BACKEND=claude_code     # or anthropic / codex / gemini
+e2er install-skills
+export LLM_BACKEND=claude_code
 e2er run "Does X affect Y?" --methodology empirical --max-cost 5
 ```
 
-That's the whole flow. `e2er run`:
-1. Starts a local API server (uvicorn on :8280) if one isn't already up.
-2. Submits the paper.
-3. Tails the run to your terminal — ^C is safe, the run keeps going.
-4. Prints the paper's workspace path + dashboard URL when done.
+That's everything you need to run your first paper. See **[First run](#first-run)** below for what happens next.
 
-**Zero database setup required**: SQLite is the default, auto-created at
-`~/.e2er/papers.db`. Set `DATABASE_URL=postgresql://…` for production /
-multi-user / pgvector-backed literature KB.
+---
 
-Open the dashboard at http://127.0.0.1:8280 to see all papers, drill into
-artifacts, or use the [/diagnose-run slash command](.claude/commands/diagnose-run.md)
-inside Claude Code for any paper that paused or failed.
+## Table of contents
+
+- [Install](#install)
+- [First run](#first-run)
+- [Pick a backend](#pick-a-backend)
+- [What you get](#what-you-get)
+- [Methodologies](#methodologies)
+- [Costs](#costs)
+- [Resume a paused paper](#resume-a-paused-paper)
+- [Data sources](#data-sources)
+- [Literature: bring your own BibTeX](#literature-bring-your-own-bibtex)
+- [Going deeper](#going-deeper)
+- [Examples](#examples)
+- [Troubleshooting](#troubleshooting)
+- [Development (contributing)](#development-contributing)
+- [Citing · Related work · Contact](#citing)
+
+---
+
+## Install
+
+**Prerequisites:** Python 3.11 or 3.12. That's it — SQLite is auto-created at `~/.e2er/papers.db`, so no database setup is needed for the default flow.
+
+```bash
+pip install e2er
+e2er install-skills      # bundles the skill files used by the specialists
+```
+
+To verify your install without spending any tokens:
+
+```bash
+e2er run --help          # CLI is wired
+```
+
+That's all you need to run a paper. The rest of this section covers optional setup.
+
+**Optional — Postgres + pgvector** (for production, multi-user, or the literature KB):
+
+```bash
+export DATABASE_URL=postgresql://user:pass@host:5432/e2er
+e2er migrate              # runs the schema migrations
+```
+
+**Optional — GitHub integration** (push each paper's LaTeX + replication package to its own repo):
+
+```bash
+export GITHUB_TOKEN=ghp_...     # token with `repo` scope
+export GITHUB_OWNER=your-user-or-org
+```
+
+---
+
+## First run
+
+```bash
+export LLM_BACKEND=claude_code   # see "Pick a backend" below
+e2er run "Does liquidity concentration in Uniswap v3 affect price discovery?" \
+   --methodology empirical \
+   --max-cost 5
+```
+
+What happens:
+
+1. `e2er run` starts a local API server (uvicorn on `:8280`) if one isn't already running.
+2. It submits the paper to `POST /api/papers` and gets back a `paper_id` + workspace path.
+3. It tails the run to your terminal. Press `^C` at any time — the run keeps going in the background; re-attach via the dashboard.
+4. When the pipeline finishes, you'll see a summary line with the paper's terminal status (`completed` / `rejected` / `paused`).
+
+Open the dashboard at <http://127.0.0.1:8280> to see all papers, drill into per-specialist artifacts, watch the live cost meter, and download the audit bundle.
+
+Files for a paper land in two places:
+
+- `workspaces/<paper_id>/` on your filesystem — every artifact, every reviewer report, the replication package.
+- A dedicated GitHub repo per paper (if you've set `GITHUB_TOKEN` + `GITHUB_OWNER`), structured for direct Overleaf import.
+
+---
+
+## Pick a backend
+
+E2ER is "bring your own LLM" — choose whichever you already have access to. The CLI backends use your existing subscription, so the marginal cost per paper is **$0**.
+
+| Backend | Setting | Cost per paper | Install |
+|---|---|---|---|
+| **Claude Code CLI** (Anthropic Max) | `LLM_BACKEND=claude_code` | $0/token | `npm i -g @anthropic-ai/claude-code` |
+| **Codex CLI** (ChatGPT Plus/Pro) | `LLM_BACKEND=codex_cli` | $0/token | `npm i -g @openai/codex` |
+| **Gemini CLI** (Google AI Pro/Ultra) | `LLM_BACKEND=gemini_cli` | $0/token | `npm i -g @google/gemini-cli` |
+| Anthropic SDK | `LLM_BACKEND=anthropic` | per-token | `export ANTHROPIC_API_KEY=...` |
+| OpenRouter | `LLM_BACKEND=openrouter` | per-token | `export OPENROUTER_API_KEY=...` (200+ models) |
+
+> **First-run guardrail:** the first paper at any (model, methodology, mode) combination is capped at **$1.00** until one has completed successfully — protects against a runaway tool-use loop on a model that hasn't been validated yet. Pass `--acknowledge-unproven` to lift the floor and use the full `--max-cost` you provided.
+
+---
+
+## What you get
+
+Every paper produces this artifact set in `workspaces/<paper_id>/`:
+
+| File | Description |
+|---|---|
+| `paper_plan.md` | Research design, propositions, identification strategy |
+| `literature_review.md` | Related-work synthesis with citations |
+| `identification_strategy.md` | Causal identification argument and threats |
+| `econometric_spec.md` | Econometric specification with equations |
+| `data_dictionary.json` | Pre-specified data footprint (fields, time filter, granularity) |
+| `data_summary.md` | Data acquisition narrative |
+| `summary_statistics.json` | Machine-readable descriptive stats — consumed by `verify_numbers` and the drafter |
+| `estimation_results.json` | Machine-readable point estimates, SEs, t-stats, p-values |
+| `figure_spec.json` | Numeric values for every figure |
+| `paper_draft.tex` | Full LaTeX manuscript |
+| `abstract.tex` | Standalone abstract |
+| `self_attack_report.json` | Adversarial flaw-finding report with severity scores |
+| `review_*.md` | Structured reviews from 6 specialist reviewers |
+| `review_aggregation.json` | Mechanical aggregation verdict (`ACCEPT` / `MINOR_REVISION` / `MAJOR_REVISION` / `HARD_REJECT`) |
+| `number_verification.json` | Anti-hallucination gate report — every table number checked against the JSON sidecars |
+| `replication/estimation.py` | Main econometric estimation code |
+| `replication/data_queries.sql` | All data queries used in the paper |
+| `replication/audit_log.csv` | Complete data-access audit trail |
+
+If `GITHUB_TOKEN` is set, all of the above are also pushed to a dedicated paper repo with an Overleaf-compatible layout.
 
 ---
 
 ## Methodologies
 
-E2ER supports three argument structures, selectable per paper at creation:
+Pick one per paper via `--methodology`:
 
-- **`empirical`** (default) — data-driven, runs identification + econometrics specialists
-- **`theoretical`** — formal model + hypotheses, no data specialists
-- **`mixed`** — formal model AND empirical test
+- **`empirical`** *(default)* — data-driven; runs identification, data, and econometrics specialists.
+- **`theoretical`** — formal model + propositions; skips data and replication phases (and the data reviewer).
+- **`mixed`** — formal model AND empirical test.
 
-Most users want `empirical`. Theoretical mode is for pure-model papers (no data,
-just propositions and proofs).
-
----
-
-## What the system produces
-
-For each paper, E2ER produces:
-
-| Artifact | Description |
-|----------|-------------|
-| `paper_plan.md` | Research design, propositions, identification strategy |
-| `literature_review.md` | Related work synthesis with citations |
-| `identification_strategy.md` | Causal identification argument and threats |
-| `econometric_spec.md` | Econometric specification with equations |
-| `data_dictionary.json` | Pre-specified minimal data footprint (fields, time filter, granularity) |
-| `paper_draft.tex` | Full LaTeX manuscript |
-| `abstract.tex` | Standalone abstract |
-| `self_attack_report.json` | Adversarial flaw-finding report with severity scores |
-| `review_*.md` | Structured reviews from 6 specialist reviewers |
-| `review_aggregation.json` | Mechanical aggregation verdict and scores |
-| `replication/estimation.py` | Main econometric estimation code |
-| `replication/data_queries.sql` | All data queries used in the paper |
-| `replication/audit_log.csv` | Complete data access audit trail |
-
-All artifacts are committed to a dedicated GitHub repository for the paper, structured for direct import into Overleaf.
+Most users want `empirical`. `theoretical` is for pure-model papers (no data, just propositions and proofs); the pipeline costs ~30% less because the data specialists and replication packager are skipped.
 
 ---
 
-## Pipeline stages
+## Costs
 
-```
-[Researcher input: RQ + optional BibTeX + optional data]
-          |
-          v
-    1. Study Design      idea_developer, literature_scanner, identification_strategist
-    2. Data              data_architect -> Allium queries -> human approval -> data_analyst
-    3. Estimation        econometrics_specialist
-    4. Writing           section_writer, abstract_writer, latex_formatter
-          |
-          v  (iterative mode only)
-    5. Ceiling Check     Strategist assesses whether further iteration adds value
-    6. Self-Attack       Adversarial specialist finds critical flaws (severity 1-10)
-    7. Polish            5 parallel specialists: formula, numerics, institutions, bibliography, equilibria
-          |
-          v
-    8. Review            6 parallel reviewers: mechanism, technical, identification,
-                         literature, data, writing
-    9. Aggregation       3-rule mechanical verdict (see below)
-   10. Revision          Revisor specialist addresses feedback (if MAJOR_REVISION verdict)
-   11. Replication       Packages all queries, code, and audit trail
-   12. GitHub Push       LaTeX + replication package committed to paper repo
+| Mode | Model | Typical cost | Notes |
+|---|---|---|---|
+| `single_pass` | Haiku 4.5 | **~$0.50** | Fast draft. What `make smoke-paid` uses. |
+| `single_pass` | Sonnet 4.6 | **$3 – $8** | Better depth, one pass through the pipeline. |
+| `iterative` | Sonnet 4.6 | **$15 – $25** | Full loop: ceiling check → self-attack → polish → review → revision. Hard-capped at `--max-cost` (default $25). |
+| any | Claude Code / Codex / Gemini CLI | **$0** | Flat-rate subscription absorbs the cost. The dollar meter is a synthetic estimate at Sonnet rates and still drives the budget gate. |
+
+**Budget safety.** Every paper has a hard cap (`--max-cost`, default $25). The pipeline checks cumulative cost at every phase boundary; when the cap is reached the run transitions to `paused` (resumable — see below) rather than crashing.
+
+---
+
+## Resume a paused paper
+
+Papers pause for two reasons, both recoverable:
+
+- **Budget exhausted** — the per-paper cap was reached.
+- **Circuit breaker** — a non-tolerant specialist failed `_MAX_SPECIALIST_ATTEMPTS` times in a row (typically a data-layer outage).
+
+For budget pauses, raise the cap atomically with the resume:
+
+```bash
+curl -X POST http://127.0.0.1:8280/api/papers/<paper_id>/resume \
+  -H "Content-Type: application/json" \
+  -d '{"max_cost_usd": 15}'
 ```
 
----
+For circuit-breaker pauses, fix the underlying problem (e.g. restore data-source access) first, then POST with no body to retry. The runner's resume-from-disk logic skips any phase that already produced its canonical artifact, so you don't re-pay for completed work.
 
-## Review aggregation
-
-Reviews are aggregated by three deterministic rules applied in order:
-
-| Rule | Condition | Verdict |
-|------|-----------|---------|
-| 1 | Mechanism reviewer score < 5 | `MECHANISM_FAIL`: fundamental revision required |
-| 2 | Any reviewer score < 4 | `HARD_REJECT`: floor violation |
-| 3 | Weighted average (technical x 1.5, identification x 1.5, data x 1.25) | `ACCEPT` / `MINOR_REVISION` / `MAJOR_REVISION` / `HARD_REJECT` |
+The dashboard's "Resume" button does the same thing through the UI.
 
 ---
 
-## Data access: Allium
+## Data sources
 
-> **The data module is optional.** Most users won't have an Allium key, and that's fine. Set `DATA_MODULE_ENABLED=false` in `.env` to run literature-only papers, or supply your own data files in the workspace. Allium is only required for blockchain/DeFi empirical work.
+The data module is **optional**. Set `DATA_MODULE_ENABLED=false` to run literature-only papers, or supply your own data files in the workspace's `data/` directory.
 
-The data module uses [Allium](https://allium.so) for indexed blockchain data. Set `ALLIUM_API_KEY` in `.env` to enable it.
+Currently wired in:
 
-Every query passes through 5 guardrails before execution:
+| Source | Coverage | Setup |
+|---|---|---|
+| **yfinance** | Equities, ETFs, crypto, FX, indices | No key required |
+| **FRED** | US + international macro time series | Free key (~30s registration at <https://fred.stlouisfed.org>) |
+| **Allium** | On-chain blockchain data | Bring your own key (`ALLIUM_API_KEY`) |
 
-1. No `SELECT *`: all fields must be listed explicitly
-2. All requested fields must be declared in the paper's `data_dictionary.json`
-3. A time-bound `WHERE` clause is required on every query
-4. Transaction-level granularity requires written justification
-5. Production queries require a prior approved feasibility run on the same table
+### Allium guardrails (when enabled)
 
-**Two-phase workflow:**
-- **Feasibility** (1000-row sample): auto-approved, executes immediately
-- **Production** (full dataset): queued for researcher approval at `GET /api/papers/{id}/pending-queries`
+Every Allium query passes through 5 guardrails before execution:
+
+1. No `SELECT *` — all fields must be listed explicitly.
+2. All requested fields must be declared in the paper's `data_dictionary.json`.
+3. A time-bound `WHERE` clause is required on every query.
+4. Transaction-level granularity requires written justification.
+5. Production queries require a prior approved feasibility run on the same table.
+
+Two-phase workflow: **feasibility** queries (1000-row sample) are auto-approved; **production** queries are queued for researcher approval at `GET /api/papers/{id}/pending-queries`.
 
 We gratefully acknowledge **[Allium](https://allium.so)** for supporting this research through data access and technical collaboration.
 
@@ -154,296 +220,152 @@ We gratefully acknowledge **[Allium](https://allium.so)** for supporting this re
 
 ## Literature: bring your own BibTeX
 
-E2ER does **not** automatically retrieve papers from the internet. The recommended approach is to supply a `.bib` file of your own curated references.
-
-Set `LITERATURE_BIBTEX_FILE=/path/to/refs.bib` in your `.env`. When set, the pipeline:
-
-1. Parses all entries at startup (requires `bibtexparser` — included in `pip install -e .`)
-2. Injects a compact reference list into the prompts of: `literature_scanner`, `paper_drafter`, `section_writer`, `abstract_writer`, and `revisor`
-3. Copies the `.bib` file into the workspace so LaTeX can compile with `\bibliography{refs}`
-
-A typical BibTeX workflow:
+E2ER does **not** automatically retrieve papers from the internet. Supply a `.bib` file of your own curated references:
 
 ```bash
-# Export your references from Zotero / Mendeley as refs.bib
-# Add to .env:
-LITERATURE_BIBTEX_FILE=/home/researcher/my-project/refs.bib
+export LITERATURE_BIBTEX_FILE=/path/to/refs.bib
 ```
 
-The `literature_scanner` specialist will synthesise the provided references and flag gaps where additional literature search is needed. The `paper_drafter` will use `\cite{}` commands aligned with the BibTeX keys in your file.
+When set, the pipeline:
 
-> **Planned extension**: Open-access paper fetching via OpenAlex, Semantic Scholar, and arXiv is implemented in `src/modules/literature/` but not yet wired into the pipeline. Contributions welcome — see `skills/CONTRIBUTING_SKILLS.md` for the extension pattern.
+1. Parses all entries at startup (requires `bibtexparser` — included in `pip install e2er`).
+2. Injects a compact reference list into the prompts of `literature_scanner`, `paper_drafter`, `section_writer`, `abstract_writer`, and `revisor`.
+3. Copies the `.bib` file into the workspace so LaTeX can compile with `\bibliography{refs}`.
+
+A typical workflow: export your references from Zotero / Mendeley as `refs.bib`, set the env var, and the drafter uses `\cite{}` commands aligned with your BibTeX keys.
+
+> **Planned:** open-access paper fetching via OpenAlex, Semantic Scholar, and arXiv is implemented in `src/modules/literature/` but not yet wired into the pipeline. Contributions welcome.
 
 ---
 
-## Quick start
+## Going deeper
 
-```bash
-git clone https://github.com/bhanneke/E2ER-project.git
-cd E2ER-project
-./scripts/quickstart.sh        # prompts for ANTHROPIC_API_KEY, builds + starts everything
+For a high-level mental model before diving into the code:
+
+- **[Pipeline overview](docs/diagrams/pipeline_overview.md)** — full flow from idea to completion (mermaid diagram).
+- **[Specialist DAG](docs/diagrams/specialist_dag.md)** — execution dependencies and parallel groups.
+- **[Review aggregation](docs/diagrams/review_aggregation.md)** — the 3 mechanical rules that turn 6 reviewer scores into a verdict.
+- **[Interactive architecture diagram](docs/architecture.html)** — open in a browser.
+
+### Pipeline phases
+
+```
+[Researcher input: RQ + optional BibTeX + optional data]
+          |
+          v
+    1. Study Design      idea_developer, literature_scanner, identification_strategist
+    2. Data              data_architect → data_analyst → summary_statistics.json
+    3. Estimation        econometrics_specialist → estimation_results.json
+    4. Writing           paper_drafter, abstract_writer, latex_formatter
+          |
+          v  (iterative mode only)
+    5. Ceiling Check     Strategist assesses whether further iteration adds value
+    6. Self-Attack       Adversarial specialist finds critical flaws (severity 1-10)
+    7. Polish            5 parallel specialists: formula, numerics, institutions, bibliography, equilibria
+          |
+          v
+    8. verify_numbers    Programmatic gate: every table number must match a JSON sidecar
+    9. Review            6 parallel reviewers (5 for theoretical): mechanism, technical,
+                         identification, literature, data, writing
+   10. Aggregation       3-rule mechanical verdict
+   11. Revision          Revisor specialist addresses feedback (if MAJOR_REVISION)
+   12. Replication       Packages all queries, code, and audit trail
+   13. GitHub Push       LaTeX + replication package committed to paper repo
 ```
 
-The script copies `.env.example` to `.env`, prompts once for your Anthropic API key, runs `docker compose up --build`, and opens the dashboard at <http://localhost:8280/>. Migrations run automatically on first start. Total time-to-first-paper: typically under 5 minutes for the build step plus your run time.
+### Review aggregation rules
 
-> **Costs:** a typical `single_pass` paper runs ~$0.50 on Haiku or $3–8 on Sonnet; `iterative` runs $15–25 on Sonnet and is hard-capped at $25 by default. See [Expected cost per paper](#expected-cost-per-paper) below.
+Applied in order; first match wins:
 
-### Verify your install
-
-Before configuring an API key, confirm the pipeline runs end-to-end with mocks:
-
-```bash
-make install   # pip install -e ".[dev]"
-make smoke     # full mocked test suite — no API key needed, ~15s
-```
-
-If `make smoke` reports `176 passed`, your install is good and the orchestration works.
-
-**Want to see what the pipeline actually produces?** The repo ships with worked examples — real artifacts from real runs:
-
-- [`examples/e2er_v3_haiku_smoke/`](examples/e2er_v3_haiku_smoke/) — single-pass paper run on Haiku 4.5 (~$1.50, ~11 minutes), data module disabled
-- [`examples/starter_theoretical/`](examples/starter_theoretical/) — minimal theoretical paper template you can copy as a starting point
-- [`examples/e2er_v1_nft_seasonality/`](examples/e2er_v1_nft_seasonality/) and [`e2er_v1_bitcoin_institutionalization/`](examples/e2er_v1_bitcoin_institutionalization/) — full v1 papers, including final PDFs
-
-To run a real $0.50 end-to-end test on Claude Haiku (requires `ANTHROPIC_API_KEY`):
-
-```bash
-ANTHROPIC_API_KEY=sk-ant-... make smoke-paid
-```
-
-### Dashboard
-
-Once running, the dashboard at `http://localhost:8280/` lets you:
-
-- **Start a paper** — title, research question, mode (single_pass / iterative), per-paper cost cap.
-- **Watch progress live** — status badge, cost meter (spent / cap), event log polled every 3 seconds.
-- **Cancel** — one click during any phase; the runner saves state and marks the paper `cancelled`.
-- **Download artifacts** — every workspace file and a one-click **audit bundle** (`.tar.gz` containing `replication/`, `audit_log.csv`, `data_queries.sql`, `manifest.json`, `contributions.json`, `events.json`, `usage.json`).
-
-### Expected cost per paper
-
-Costs vary with research-question complexity, mode, and model. Rough order of magnitude on current Anthropic pricing:
-
-| Mode | Model | Typical cost | Notes |
-|------|-------|-------------|-------|
-| `single_pass` | Claude Haiku 4.5 | **~$0.50** | Fast draft. Used by `make smoke-paid`. |
-| `single_pass` | Claude Sonnet 4.6 | **$3 – $8** | Better depth, still one shot. |
-| `iterative` | Claude Sonnet 4.6 | **$15 – $25** | Full loop with ceiling check, self-attack, polish stack, review, revision. Hits the default $25 cap on complex RQs. |
-
-Iterative on Opus or with the data module enabled (Allium production queries cost extra) can run higher.
-
-### Cost safety
-
-Every paper has a hard cost cap (default $25; configurable per paper at creation time, or via `DEFAULT_MAX_COST_USD` in `.env`). The pipeline checks cumulative cost at every phase boundary; when the cap is reached the run aborts with `last_error = "Budget exceeded after $X.XX"` and the paper is marked `failed`. The cap protects you from runaway costs even if a specialist enters a tool-call loop.
-
-### Programmatic API
-
-If you prefer the HTTP API to the dashboard:
-
-```bash
-# Create a paper
-curl -X POST http://localhost:8280/api/papers \
-  -H "Content-Type: application/json" \
-  -d '{
-    "title": "DeFi Liquidity Provision and Market Quality",
-    "research_question": "How does concentrated liquidity in Uniswap v3 affect price discovery?",
-    "mode": "iterative",
-    "methodology": "empirical",
-    "max_cost_usd": 30.0
-  }'
-# Returns: {"paper_id": "<uuid>", "status": "idea", ...}
-
-# Cancel
-curl -X POST http://localhost:8280/api/papers/<paper_id>/cancel
-
-# Download audit bundle
-curl -O -J http://localhost:8280/api/papers/<paper_id>/audit-bundle
-
-# Approve pending data queries (when the data module submits production queries)
-curl http://localhost:8280/api/papers/<paper_id>/pending-queries
-curl -X POST http://localhost:8280/api/queries/<query_id>/approve \
-  -H "Content-Type: application/json" \
-  -d '{"approved": true, "note": "Looks good"}'
-```
-
-### Manual install (without Docker)
-
-```bash
-pip install -e ".[pgvector]"
-docker compose -f docker/docker-compose.yml up -d db    # just the DB
-python scripts/migrate.py
-bash scripts/vendor_htmx.sh                              # one-time, fetches htmx
-uvicorn src.api.app:app --reload --port 8280
-```
+| Rule | Condition | Verdict |
+|---|---|---|
+| 1 | Mechanism reviewer score < 5 | `MECHANISM_FAIL` — fundamental revision required |
+| 2 | Any reviewer score < 4 | `HARD_REJECT` — floor violation |
+| 3 | Weighted average (technical ×1.5, identification ×1.5, data ×1.25) | `ACCEPT` / `MINOR_REVISION` / `MAJOR_REVISION` / `HARD_REJECT` |
 
 ---
 
-## Supported LLM providers
+## Examples
 
-| Provider | Setting | Notes |
-|----------|---------|-------|
-| Anthropic | `LLM_BACKEND=anthropic` | Supports prompt caching (recommended) |
-| OpenRouter | `LLM_BACKEND=openrouter` | 200+ models via OpenAI-compatible format |
-| **Claude Code CLI** | `LLM_BACKEND=claude_code` | **$0/token under your Max plan.** Requires `npm i -g @anthropic-ai/claude-code` and an active Max subscription. The pipeline shells out to the `claude` CLI per specialist; no API key needed. Allium guardrails work in this mode via the `e2er-allium-query` bash wrapper — same 5 rules, same audit log, same approval flow. |
+The repo ships with worked examples — real artifacts from real runs:
 
-> Need a key? Anthropic: <https://console.anthropic.com/> (new accounts get a small free credit). OpenRouter: <https://openrouter.ai/keys> (pay-as-you-go).
+- [`examples/e2er_v3_haiku_smoke/`](examples/e2er_v3_haiku_smoke/) — single-pass v3 run on Haiku 4.5 (~$1.50, ~11 min), data module disabled. Pipeline plumbing only — not findings.
+- [`examples/starter_theoretical/`](examples/starter_theoretical/) — minimal theoretical paper template you can copy as a starting point.
+- [`examples/e2er_v1_nft_seasonality/`](examples/e2er_v1_nft_seasonality/) — full v1 paper (PDF + LaTeX + replication) testing whether the Halloween effect extends to NFT markets. Null result; 35.8M Ethereum NFT trades.
+- [`examples/e2er_v1_bitcoin_institutionalization/`](examples/e2er_v1_bitcoin_institutionalization/) — full v1 paper on Bitcoin volatility convergence around the January 2024 ETF approval. GARCH + Markov-switching + DiD + Rambachan-Roth.
+
+> These results have not been submitted to a journal and should not be cited as peer-reviewed findings.
+
+<p align="center">
+  <img src="examples/e2er_v1_nft_seasonality/figures/fig1_monthly_returns.png" alt="Monthly NFT Returns" width="600">
+</p>
+<p align="center"><em>Monthly return distribution by platform — pipeline-generated, from the NFT seasonality example</em></p>
 
 ---
 
 ## Troubleshooting
 
-**`make smoke` fails with `ModuleNotFoundError`** — you skipped `make install`. Run `make install` (which is `pip install -e ".[dev]"`) first.
+**`e2er: command not found`** — `pip install e2er` succeeded but the script directory isn't on your PATH. Try `python -m e2er run "..."` instead, or add your `~/.local/bin` (or venv `bin/`) to PATH.
 
-**`./scripts/quickstart.sh` fails on `docker compose up`** — Docker isn't installed or isn't running. Either start Docker Desktop, or follow the [Manual install](#manual-install-without-docker) section to run with Postgres + uvicorn directly.
+**`pip install e2er` errors with `ImportError: cannot import name 'UTC' from 'datetime'`** — your local Python is < 3.11. E2ER requires 3.11+. Use `pyenv install 3.11` or `brew install python@3.12`.
 
-**`pytest` errors with `ImportError: cannot import name 'UTC' from 'datetime'`** — your local Python is < 3.11. The project requires Python 3.11+. Use `pyenv install 3.11` or `brew install python@3.12`.
+**Paper stuck in `in_progress` forever** — check `workspaces/<paper_id>/.pipeline_state.json` for the last completed phase and `~/.e2er/uvicorn.log` for errors. Restart uvicorn and hit `/resume` — the runner reads state.json and skips completed phases.
 
-**Paper stuck in `in_progress` forever** — check `workspaces/<paper_id>/.pipeline_state.json`: the last completed phase is recorded. Then check `~/your-log-path` for the failure. To resume, hit the dashboard (the runner reads state.json and skips completed phases) or `POST /api/papers/{id}/cancel` and start fresh.
+**Paper paused with `BudgetExceededError`** — raise the cap and resume: `curl -X POST http://127.0.0.1:8280/api/papers/<id>/resume -d '{"max_cost_usd": 15}' -H "Content-Type: application/json"`.
 
-**Cost runaway concerns** — every paper has a hard `max_cost_usd` cap (default $25). The pipeline checks the cap before each phase AND before each parallel batch, then halts with `BudgetExceededError`. If a run cost more than expected, the audit bundle (`/api/papers/{id}/audit-bundle`) has the per-call breakdown.
+**Paper rejected with `verify_numbers: N critical mismatches`** — the drafter cited table numbers that don't match the JSON sidecars. Open `number_verification.json` for the specific mismatches. Either revise the source artifacts (`summary_statistics.json` etc.) to match the draft, or revise the draft to match the sources, then resume.
 
-**`Authorization` header missing on JSON POSTs** — you set `API_AUTH_TOKEN` in `.env` but didn't include `-H "Authorization: Bearer <token>"` on your curl. The HTML dashboard form is exempt — see `.env.example` for why.
+**Allium API key error / data module crashes** — set `DATA_MODULE_ENABLED=false` in your environment. The pipeline runs literature-only (or with manually uploaded data files) without Allium.
 
-**Allium API key error / data module crashes** — set `DATA_MODULE_ENABLED=false` in `.env`. The pipeline runs literature-only (or with manually uploaded data files) without Allium. See [Data access: Allium](#data-access-allium).
+**OpenRouter `402 Payment Required`** — your OpenRouter balance is zero. Top up at <https://openrouter.ai/credits>. The pipeline correctly bails rather than looping.
 
-**Hit the OpenRouter "402 Payment Required" wall** — your OpenRouter balance hit zero. The pipeline correctly bails on this rather than looping, but you'll see the failed paper. Top up at <https://openrouter.ai/credits>.
-
----
-
-## Architecture diagrams
-
-An [interactive system architecture diagram](docs/architecture.html) (open in browser) is available in `docs/`.
-
-Individual Mermaid diagrams in [`docs/diagrams/`](docs/diagrams/), rendered natively on GitHub:
-
-| Diagram | Description |
-|---------|-------------|
-| [`pipeline_overview.md`](docs/diagrams/pipeline_overview.md) | Full pipeline from idea to completion |
-| [`specialist_dag.md`](docs/diagrams/specialist_dag.md) | Specialist execution dependencies and parallel groups |
-| [`data_module.md`](docs/diagrams/data_module.md) | Allium query flow through guardrails and approval |
-| [`llm_tool_loop.md`](docs/diagrams/llm_tool_loop.md) | LLM API loop and tool call interception |
-| [`system_architecture.md`](docs/diagrams/system_architecture.md) | Component overview |
-| [`review_aggregation.md`](docs/diagrams/review_aggregation.md) | 3-rule mechanical review aggregation |
+**`Authorization` header missing on JSON POSTs** — you set `API_AUTH_TOKEN` but didn't include `-H "Authorization: Bearer <token>"` on the request. The HTML dashboard form is exempt.
 
 ---
 
-## Example outputs
+## Development (contributing)
 
-The following papers were produced by earlier versions of the E2ER pipeline. In each case the researcher selected the research question and participated in the review stage; all other steps (literature search, data acquisition, estimation, writing) were handled autonomously by the pipeline.
+For local development on the repo itself (rather than `pip install e2er`):
 
-> Results have not been submitted to a journal and should not be cited as peer-reviewed findings.
+```bash
+git clone https://github.com/bhanneke/E2ER-project.git
+cd E2ER-project
+pip install -e ".[dev]"
+make smoke          # full mocked test suite — ~15s, no API key needed
+```
 
-### v3 smoke test (Haiku 4.5, no data)
+If `make smoke` reports `420+ passed`, your install is good and the orchestration works end-to-end. Then:
 
-A full v3 single-pass run against `claude-haiku-4.5` via OpenRouter, with the data module disabled, in ~11 minutes for ~$1.50. Numbers in the paper draft are model-imagined since no real data was queried — the run validates pipeline plumbing, not findings. See [`examples/e2er_v3_haiku_smoke/`](examples/e2er_v3_haiku_smoke/) for the full artifact set and a candid quality assessment.
+```bash
+make lint           # ruff check + format check
+make typecheck      # mypy
+make smoke-paid     # ~$0.50 Haiku run end-to-end (requires ANTHROPIC_API_KEY)
+```
 
-### NFT Market Seasonality
+**Docker path (postgres + dashboard in one command):**
 
-Tests whether the Halloween effect (systematically higher winter returns) extends to NFT markets. The pipeline acquired 35.8 million Ethereum-based NFT trades across eight platforms, specified econometric models, and ran robustness checks including bootstrap inference, permutation tests, and jackknife analysis.
+```bash
+./scripts/quickstart.sh    # prompts for ANTHROPIC_API_KEY, runs `docker compose up --build`
+```
 
-**Key result (null finding):** No statistically significant Halloween effect. Two-thirds of the raw seasonal differential in USD returns reflects ETH price seasonality rather than NFT-specific patterns.
+See [`AGENTS.md`](AGENTS.md) for the branch model, lane structure, and contribution conventions. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the PR process, and [`skills/CONTRIBUTING_SKILLS.md`](skills/CONTRIBUTING_SKILLS.md) for the skill-file pattern (the lowest-friction way to contribute — markdown only, no code changes).
 
-[Paper PDF](examples/e2er_v1_nft_seasonality/paper.pdf) · [LaTeX source](examples/e2er_v1_nft_seasonality/main.tex) · [Replication package](examples/e2er_v1_nft_seasonality/replication/)
-
-<p align="center">
-  <img src="examples/e2er_v1_nft_seasonality/figures/fig1_monthly_returns.png" alt="Monthly NFT Returns" width="680">
-</p>
-<p align="center"><em>Monthly return distribution by platform — pipeline-generated</em></p>
-
-### Institutionalisation of Bitcoin
-
-Examines whether Bitcoin's volatility converged toward traditional asset levels following the January 2024 spot ETF approval. The pipeline estimated GARCH and Markov-switching regime models, ran a difference-in-differences design around the ETF date, and executed robustness checks (Mann-Kendall trend tests, Rambachan-Roth sensitivity, leave-one-out analysis).
-
-**Key result (null finding):** Bitcoin's GARCH volatility fell from 89% to 50% after ETF approval, reaching a low-volatility regime at 32% (within commodity range). But Bitcoin sustains this regime for only 6 days on average versus 82 days for equities; convergence is gradual, not structural.
-
-[Paper PDF](examples/e2er_v1_bitcoin_institutionalization/paper.pdf) · [LaTeX source](examples/e2er_v1_bitcoin_institutionalization/main.tex) · [Replication package](examples/e2er_v1_bitcoin_institutionalization/replication/)
-
-<p align="center">
-  <img src="examples/e2er_v1_bitcoin_institutionalization/figures/figure_2_event_study.png" alt="Event Study: ETF Approval" width="680">
-</p>
-<p align="center"><em>Event study around ETF approval date — pipeline-generated</em></p>
-
----
-
-## Related projects
+### Related projects
 
 The automated research space is developing quickly. Two projects most relevant to E2ER:
 
-**[Project APE](https://ape.socialcatalystlab.org/)** (Social Catalyst Lab, University of Zurich, Prof. David Yanagizawa-Drott) is the closest in spirit to E2ER. APE agents identify policy questions with credible causal identification strategies, fetch real data from public APIs (Census, BLS, FRED), run econometric analysis, and produce complete research papers. The project has generated approximately 1,000 papers and is now entering systematic evaluation, where AI-generated papers compete in a tournament against peer-reviewed research from leading economics journals. All papers, code, data, and failures are publicly available. E2ER differs in scope: it targets a broader range of empirical domains and data sources, prioritises researcher direction over full autonomy, and integrates data governance (guardrails, audit trail) as a first-class concern.
+- **[Project APE](https://ape.socialcatalystlab.org/)** (Social Catalyst Lab, University of Zurich) — AI agents identifying policy questions with credible causal identification strategies, running econometric analysis, and producing complete papers. ~1,000 papers generated; now in systematic evaluation against peer-reviewed journals. Closest in spirit to E2ER.
+- **[ZeroPaper](https://github.com/alejandroll10/zeropaper)** (Institute for Automated Research) — ~30 specialised agents across 10 stages, focused on theory-first finance and macroeconomics. E2ER adopts four quality-control ideas from ZeroPaper (ceiling detection, self-attack, parallel polish, mechanical aggregation).
 
-**[ZeroPaper](https://github.com/alejandroll10/zeropaper)** (Institute for Automated Research) coordinates approximately 30 specialised agents across 10 stages with a focus on theory-first finance and macroeconomics research. E2ER draws on four quality-control ideas from ZeroPaper: ceiling detection, adversarial self-attack, a parallel polish stack, and mechanical review aggregation.
+### Roadmap highlights
 
----
-
-## Development roadmap
-
-### Data sources for integration
-
-The data module is designed to be extended beyond Allium. Planned and candidate integrations:
-
-| Source | Domain | Access |
-|--------|--------|--------|
-| [FRED](https://fred.stlouisfed.org/) | Macroeconomics (750+ series) | Free API key |
-| [WRDS](https://wrds-www.wharton.upenn.edu/) | Finance (CRSP, Compustat, OptionMetrics) | Institutional subscription |
-| [OpenBB](https://openbb.co/) | Finance, macro, crypto | Open source |
-| [Census Bureau API](https://api.census.gov/) | Demographics, economic surveys | Free |
-| [BLS API](https://www.bls.gov/developers/) | Labour market data | Free |
-| [ECB Data Portal](https://data.ecb.europa.eu/) | European monetary and financial data | Free |
-| [World Bank API](https://datahelpdesk.worldbank.org/knowledgebase/articles/889392) | Development economics | Free |
-| [Dune Analytics](https://dune.com/) | Blockchain analytics (SQL interface) | API key |
-| [Flipside Crypto](https://flipsidecrypto.xyz/) | Blockchain data (alternative to Allium) | API key |
-
-If you have access to a data source you would like to integrate, open an issue or contact hanneke@wiwi.uni-frankfurt.de.
-
-### Instrumental variables and natural experiments database
-
-A curated database of potential identification strategies in the blockchain economy is maintained in [`docs/iv_database.md`](docs/iv_database.md). It documents protocol upgrades, regulatory events, and algorithmic changes that can serve as instruments or treatment discontinuities for causal research. Contributions are welcome.
-
-### Evaluation
-
-A quality evaluation framework for pipeline runs is defined in [`docs/evaluation_framework.md`](docs/evaluation_framework.md), covering six scored dimensions (identification validity, empirical execution, writing quality, literature grounding, replication integrity, novelty) and all automated pipeline metrics. Evaluated runs are logged in [`docs/evaluation_log.csv`](docs/evaluation_log.csv).
+- **More data sources**: WRDS, OpenBB, Census, BLS, ECB, World Bank, Dune, Flipside — the data module is designed to be extended. See [`docs/iv_database.md`](docs/iv_database.md) for the natural-experiments catalogue.
+- **Evaluation framework**: [`docs/evaluation_framework.md`](docs/evaluation_framework.md) — six scored dimensions (identification, execution, writing, literature, replication, novelty) plus automated metrics.
+- **Testers wanted**: if you're working on an empirical question in IS, economics, finance, or adjacent fields and want to run the pipeline on your own data, contact <hanneke@wiwi.uni-frankfurt.de>.
 
 ---
 
-## Version history
-
-### v1: Linear Pipeline
-
-A sequential pipeline of 14 specialised agents processing a research question through 16 fixed stages. Each agent handles one task (literature search, data acquisition, theory development, estimation, drafting, review) and passes artifacts forward. Quality gates between stages enforce minimum standards before downstream agents proceed.
-
-```
-idea -> research design -> [literature | data | theory] -> merge -> estimation
-     -> analysis -> draft -> [consistency | review | technical | visual] -> revision
-```
-
-24 workers, 118 skill files, 40+ skills across 9 domains. Fixed stage ordering with no editorial intelligence at runtime. Produced 133 paper drafts across 157 runs.
-
-### v2: Strategist-Controlled Architecture
-
-A central Strategist agent (acting as first author) orchestrates 12 specialist agents (co-authors) through a work-order pattern. The Strategist operates in two modes: Mode 1 (lean orchestration with structured JSON decisions at pipeline checkpoints) and Mode 2 (full editorial control with access to the complete paper).
-
-Key advances over v1:
-- Strategist makes tactical decisions at checkpoints rather than following a fixed sequence
-- Tiered context management: Tier 0 (paper identity), Tier 1 (decision-specific), Tier 2 (full artifacts)
-- Data pipeline isolation: only the Data specialist queries databases; all others work from exports
-- Human review gates at research design and post-draft stages
-
-### v3: Open-Source Release (this repo)
-
-A ground-up redesign for open-source use. Retains the Strategist architecture from v2 and adds four extensions adapted from [ZeroPaper](https://github.com/alejandroll10/zeropaper):
-
-- **Ceiling detection**: Strategist assesses diminishing returns after each iteration and decides whether to continue, pivot (max once), or proceed to review
-- **Self-attack phase**: an adversarial specialist scores the draft's flaws by severity (1-10) before external review
-- **Parallel polish stack**: five specialists run concurrently targeting specific weaknesses (formula errors, numeric consistency, institutional context, bibliography, equilibrium conditions)
-- **Mechanical review aggregation**: three deterministic rules replace subjective editorial judgement
-
-Additional v3 changes: BYOK (Anthropic and OpenRouter), built-in Allium data guardrails, token/cost tracking per specialist call, GitHub integration with Overleaf-compatible repo structure, **per-paper cost cap with hard abort**, **mid-run cancellation**, **server-rendered dashboard (Jinja2 + HTMX)** with live event log and cost meter, and a **downloadable audit bundle** (replication package + contributions + events + usage) for journal-ready provenance.
-
----
-
-## How to cite
-
-If you use E2ER in your research, please cite it as:
+## Citing
 
 ```bibtex
 @software{hanneke2026e2er,
@@ -451,7 +373,7 @@ If you use E2ER in your research, please cite it as:
   title        = {{E2ER: End-to-End Researcher, An Open-Source Pipeline
                    for Automated Empirical Research}},
   year         = {2026},
-  version      = {0.3.0},
+  version      = {0.5.0},
   url          = {https://github.com/bhanneke/E2ER-project},
   doi          = {10.5281/zenodo.20187238},
   license      = {MIT},
@@ -459,52 +381,15 @@ If you use E2ER in your research, please cite it as:
 }
 ```
 
-*Cite the concept DOI `10.5281/zenodo.20187238` to credit any version of E2ER (always resolves to the latest release), or [browse all versions on Zenodo](https://zenodo.org/records/20187238) to pin a specific snapshot. A companion paper describing the system architecture and methodology is in preparation.*
-
----
-
-## Running tests
-
-```bash
-pytest tests/ -v
-```
-
-75+ tests covering guardrails, review aggregation, cost tracking, pipeline orchestration, dashboard rendering, audit bundle creation, and resilience (retries, cancellation, partial failures). No network or LLM calls required.
-
----
-
-## Get involved: call for testers
-
-E2ER v3 is in active development and we are looking for researchers who want to test the pipeline on their own questions and domains. If you are working on an empirical question in IS, economics, finance, or adjacent fields and are interested in running the pipeline, please get in touch.
-
-We are particularly interested in:
-
-- **New empirical domains**: the pipeline has been tested on blockchain/DeFi data; we want to know how it performs on different research contexts (fintech, platform economics, digital markets, public finance, and more)
-- **New data sources**: if you have access to a structured dataset and want to explore adding it as a data module alongside Allium, we would like to collaborate
-- **Systematic evaluation**: we are building a quality evaluation framework (see [`docs/evaluation_framework.md`](docs/evaluation_framework.md)) and need runs across domains to establish baselines; testers who complete the human evaluation rubric contribute directly to the companion paper
-- **Edge cases and failure modes**: if the pipeline produces something clearly wrong or breaks in an interesting way, that feedback is valuable
-
-Contact: **hanneke@wiwi.uni-frankfurt.de** or open an issue on this repository.
-
----
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, the contribution paths (skills, specialists, data sources, LLM backends), and the PR process. Highlights:
-
-- **Skill files** (no code changes): add domain expertise as markdown in `skills/files/`; loaded automatically into specialist prompts. Detailed guide: [`skills/CONTRIBUTING_SKILLS.md`](skills/CONTRIBUTING_SKILLS.md).
-- **Data providers**: the data module is designed to be extended; Allium and the literature stack are the current examples.
-- **IV database**: add natural experiments and instrumental variables to [`docs/iv_database.md`](docs/iv_database.md).
-- **Research questions**: open an issue with a question you think could be tested.
+Cite the concept DOI `10.5281/zenodo.20187238` to credit any version (resolves to the latest release), or [browse all versions on Zenodo](https://zenodo.org/records/20187238) to pin a specific snapshot. A companion paper describing the system architecture is in preparation.
 
 ---
 
 ## Contact
 
-**Björn Hanneke** · [bjornhanneke.com](https://www.bjornhanneke.com) · hanneke@wiwi.uni-frankfurt.de
+**Björn Hanneke** · [bjornhanneke.com](https://www.bjornhanneke.com) · <hanneke@wiwi.uni-frankfurt.de>
 
-PhD Candidate, Goethe University Frankfurt
-Chair of Information Systems and Information Management (Prof. Dr. Oliver Hinz)
+PhD Candidate, Goethe University Frankfurt — Chair of Information Systems and Information Management (Prof. Dr. Oliver Hinz).
 
 [ORCID](https://orcid.org/0009-0000-7466-9581) · [Google Scholar](https://scholar.google.com/citations?user=N5fbuZIAAAAJ) · [LinkedIn](https://linkedin.com/in/bhanneke)
 

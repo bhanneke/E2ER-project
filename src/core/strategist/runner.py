@@ -15,7 +15,7 @@ from ..specialists.registry import POLISH_SPECIALISTS, REVIEWER_SPECIALISTS, SPE
 from ..strategist.actions import StrategistDecision
 from ..strategist.engine import StrategistEngine
 from ..strategist.review_aggregator import aggregate_reviews, parse_review_output
-from ..strategist.state import CircuitBreakerError, PaperStatus
+from ..strategist.state import BudgetExceededError, CircuitBreakerError, PaperStatus
 
 logger = get_logger(__name__)
 
@@ -44,12 +44,16 @@ class PipelineRunner:
         extra_handlers: list[ToolHandler] | None = None,
         backend_name: str = "anthropic",
         max_cost_usd: float | None = None,
+        methodology: str = "empirical",
     ) -> None:
         self._paper_id = paper_id
         self._workspace = workspace
         self._backend = backend
         self._model = model
         self._mode = mode
+        # Methodology drives phase routing (data_reviewer + replication_packager
+        # are skipped for theoretical papers — pre-v0.5 they ran wastefully).
+        self._methodology = methodology
         self._extra_tools = extra_tools or []
         self._extra_handlers = extra_handlers or []
         self._backend_name = backend_name
@@ -229,6 +233,25 @@ class PipelineRunner:
                 "specialist": cb.specialist,
                 "attempts": cb.attempts,
             }
+        except BudgetExceededError as be:
+            # Distinct from a crash (FAILED). Budget exhaustion preserves
+            # the workspace + state.json; resuming via /api/papers/{id}/resume
+            # after raising --max-cost picks up at the first incomplete phase.
+            state.save(self._workspace)
+            logger.warning(
+                "Pipeline paused (budget) for paper %s: spent $%.2f, cap $%.2f",
+                self._paper_id,
+                be.spent,
+                be.cap,
+            )
+            error_msg = f"BudgetExceededError: spent ${be.spent:.2f}, cap ${be.cap:.2f}"
+            await log_event(
+                self._paper_id,
+                "paused_budget",
+                payload={"spent": be.spent, "cap": be.cap},
+            )
+            await self._update_status(PaperStatus.PAUSED, error=error_msg)
+            return {"status": "paused", "reason": "budget_exhausted", "spent": be.spent, "cap": be.cap}
         except Exception as e:
             state.save(self._workspace)  # preserve progress on failure
             logger.error("Pipeline failed for paper %s: %s", self._paper_id, e)
@@ -444,9 +467,48 @@ class PipelineRunner:
         self._contributions.extend(contributions)
         return PaperStatus.POLISH
 
+    def _reviewers_for_methodology(self) -> list[str]:
+        """Filter the reviewer roster by methodology.
+
+        Theoretical papers don't have data to review — `data_reviewer`
+        reviewed an empty contract on paper cbe8048f (live test v0.4.5)
+        and produced a generic stub for ~$0.34. Skip it.
+        """
+        if self._methodology == "theoretical":
+            return [r for r in REVIEWER_SPECIALISTS if r != "data_reviewer"]
+        return list(REVIEWER_SPECIALISTS)
+
     async def _run_review_phase(self) -> PaperStatus:
-        """Parallel formal review by all reviewer specialists."""
+        """Parallel formal review by all reviewer specialists.
+
+        Before reviewers run, the programmatic verify_numbers gate checks
+        every number in the LaTeX tables against the analyst's source
+        JSON files. Critical mismatches → REJECTED before reviewers spend
+        tokens. Missing source files → skip with warning (per v0.5.0
+        design).
+        """
         logger.info("Running review phase for paper %s", self._paper_id)
+
+        # --- verify_numbers pre-review gate (v0.5.0) ---
+        from ..pipeline.verify_numbers import verify_and_save
+
+        draft_path = self._workspace / "paper_draft.tex"
+        if draft_path.is_file():
+            report = verify_and_save(draft_path, self._workspace)
+            if report.critical_mismatches:
+                summary = "; ".join(
+                    f"{m.draft_value} vs {m.source_value} ({m.source_key}) at {m.table_context}"
+                    for m in report.critical_mismatches[:5]
+                )
+                error = (
+                    f"verify_numbers: {len(report.critical_mismatches)} critical "
+                    f"mismatch(es) between LaTeX tables and source JSON. "
+                    f"First {min(5, len(report.critical_mismatches))}: {summary}"
+                )
+                logger.error("Paper %s: %s", self._paper_id, error)
+                await self._update_status(PaperStatus.REJECTED, error=error)
+                return PaperStatus.REJECTED
+
         await self._update_status(PaperStatus.REVIEW)
 
         review_orders = [
@@ -456,7 +518,7 @@ class PipelineRunner:
                 focus=f"Conduct a thorough {r.replace('_', ' ')} of this paper.",
                 context_tier=2,
             )
-            for r in REVIEWER_SPECIALISTS
+            for r in self._reviewers_for_methodology()
         ]
 
         contributions = await execute_parallel(
@@ -558,13 +620,15 @@ class PipelineRunner:
             self._contributions.append(contribution)
             return PaperStatus.COMPLETED
 
-        # HARD_REJECT or MECHANISM_FAIL
+        # HARD_REJECT or MECHANISM_FAIL — distinct from FAILED (crash). The
+        # operator can revise the source artifacts and POST /resume to
+        # re-enter the pipeline at the appropriate phase.
         logger.warning("Paper %s received %s", self._paper_id, result.verdict)
         await self._update_status(
-            PaperStatus.FAILED,
+            PaperStatus.REJECTED,
             error=f"{result.verdict}: {result.rationale}",
         )
-        return PaperStatus.FAILED
+        return PaperStatus.REJECTED
 
     async def _dispatch(self, decision: StrategistDecision) -> list[Contribution]:
         if not decision.work_orders:
@@ -657,7 +721,18 @@ class PipelineRunner:
         return result
 
     async def _run_replication_phase(self) -> None:
-        """Export audit trail and run replication_packager specialist."""
+        """Export audit trail and run replication_packager specialist.
+
+        Skipped for `methodology=theoretical` papers — there's no data to
+        package. Pre-v0.5 this ran wastefully on every paper (~$0.43 on
+        the theory live test paper cbe8048f).
+        """
+        if self._methodology == "theoretical":
+            logger.info(
+                "Skipping replication phase for paper %s (methodology=theoretical)",
+                self._paper_id,
+            )
+            return
         logger.info("Running replication phase for paper %s", self._paper_id)
         replication_dir = self._workspace / "replication"
         replication_dir.mkdir(exist_ok=True)
@@ -727,8 +802,23 @@ class PipelineRunner:
         try:
             from ...db.client import execute
 
-            terminal_with_reason = status in {PaperStatus.FAILED, PaperStatus.CANCELLED} and error is not None
-            if terminal_with_reason:
+            # Statuses that should preserve the error/reason message on the row
+            # so the dashboard can render the why behind the halt without
+            # parsing the events table. v0.5 adds PAUSED and REJECTED here:
+            # both carry actionable operator information (budget breakdown,
+            # circuit-breaker specialist, review-gate rationale) that pre-v0.5
+            # was silently dropped at the SQL layer.
+            preserve_error = (
+                status
+                in {
+                    PaperStatus.FAILED,
+                    PaperStatus.CANCELLED,
+                    PaperStatus.PAUSED,
+                    PaperStatus.REJECTED,
+                }
+                and error is not None
+            )
+            if preserve_error:
                 await execute(
                     "UPDATE papers SET status = %(s)s, last_error = %(e)s, updated_at = NOW() WHERE id = %(id)s",
                     {"s": status.value, "e": error, "id": self._paper_id},

@@ -33,7 +33,7 @@ def _inject_context(work_order: WorkOrder, workspace: Path) -> WorkOrder:
         build_tier1_context,
         build_tier2_context,
     )
-    from .registry import REVIEWER_SPECIALISTS, SPECIALIST_ARTIFACTS
+    from .registry import REVIEWER_SPECIALISTS, SPECIALIST_ARTIFACTS, SPECIALIST_SIDECAR_ARTIFACTS
 
     updates: dict[str, object] = {}
 
@@ -50,6 +50,16 @@ def _inject_context(work_order: WorkOrder, workspace: Path) -> WorkOrder:
         canonical = SPECIALIST_ARTIFACTS.get(work_order.specialist)
         if canonical:
             updates["output_file"] = canonical
+
+    # Auto-populate sidecar_artifacts from the registry when the strategist
+    # / caller didn't set it. Without this, the multi-file output block in
+    # _build_user_prompt would never fire and the JSON contract would
+    # silently not be emitted — the exact failure mode the v0.5 live runs
+    # surfaced.
+    if not work_order.sidecar_artifacts:
+        sidecars = SPECIALIST_SIDECAR_ARTIFACTS.get(work_order.specialist)
+        if sidecars:
+            updates["sidecar_artifacts"] = list(sidecars)
 
     return work_order.model_copy(update=updates) if updates else work_order
 
