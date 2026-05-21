@@ -89,9 +89,27 @@ SPECIALIST_SKILLS: dict[str, list[str]] = {
         "math/proof-strategies",
         "reasoning/identification",
     ],
-    "paper_drafter": ["writing/paper-structure", "writing/personal-style", "base/researcher"],
-    "section_writer": ["writing/paper-structure", "writing/personal-style", "reasoning/anti-slop"],
-    "abstract_writer": ["writing/abstract", "reasoning/anti-slop"],
+    "paper_drafter": [
+        "writing/paper-structure",
+        "writing/personal-style",
+        "base/researcher",
+        # v0.5: teaches the drafter to cite every number by JSON source
+        # key. Complements the post-hoc verify_numbers gate by reducing
+        # the rate of hallucinated table values in the first place.
+        "writing/cite-numbers-by-source",
+    ],
+    "section_writer": [
+        "writing/paper-structure",
+        "writing/personal-style",
+        "reasoning/anti-slop",
+        "writing/cite-numbers-by-source",
+    ],
+    "abstract_writer": [
+        "writing/abstract",
+        "reasoning/anti-slop",
+        # Abstracts cite the headline numbers — must trace to sidecars.
+        "writing/cite-numbers-by-source",
+    ],
     "latex_formatter": ["latex/econ-model", "latex/tables"],
     "mechanism_reviewer": ["review/referee-simulation", "modeling/market-microstructure"],
     "technical_reviewer": ["review/technical-review", "review/consistency-check"],
@@ -109,7 +127,16 @@ SPECIALIST_SKILLS: dict[str, list[str]] = {
     "polish_institutions": ["base/economist", "data/crypto-defi"],
     "polish_bibliography": ["latex/bibtex", "synthesis/context-builder"],
     "polish_equilibria": ["modeling/game-theory", "math/proof-strategies"],
-    "revisor": ["writing/paper-structure", "writing/personal-style", "reasoning/anti-slop"],
+    "revisor": [
+        "writing/paper-structure",
+        "writing/personal-style",
+        "reasoning/anti-slop",
+        # v0.5: the revisor edits paper_draft.tex; same cite-by-source
+        # discipline as the drafter, otherwise revisions can introduce
+        # new hallucinations that pass review only because the gate
+        # already ran on the pre-revision draft.
+        "writing/cite-numbers-by-source",
+    ],
     "replication_packager": ["data/cleaning", "base/researcher", "synthesis/replication-package"],
 }
 

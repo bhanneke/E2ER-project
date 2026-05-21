@@ -64,6 +64,36 @@ v0.4.5 live tests on papers `a6182f08`, `cbe8048f`, `eea5379b`.
   rationale. `_update_status` now treats PAUSED and REJECTED the
   same way as FAILED and CANCELLED for error preservation.
   Discovered while writing the v0.5 budget-pause regression test.
+- **`POST /api/papers/{id}/resume` accepts `max_cost_usd` in the
+  request body.** Pre-v0.5 the endpoint silently ignored the body and
+  read the cap from the DB row, so raising the cap on a budget-paused
+  paper required a manual `UPDATE papers SET max_cost_usd = ...`
+  beforehand (the workaround surfaced during the 2026-05-20 live
+  validation). The endpoint now accepts an optional `ResumeRequest`
+  body; a positive `max_cost_usd` is validated and persisted on the
+  row atomically with the status reset, then passed to the runner.
+  Zero or negative values 400. Calls without a body preserve the
+  pre-v0.5 behaviour (use the existing row value).
+- **`paper_drafter`, `section_writer`, `abstract_writer`, and
+  `revisor` load a new `writing/cite-numbers-by-source` skill** that
+  teaches the cite-by-JSON-key discipline: every numeric value in
+  the paper must trace to a value in `summary_statistics.json`,
+  `estimation_results.json`, `robustness_results.json`, or
+  `figure_spec.json`. HTML-comment markers (`<!-- src: file#key -->`)
+  let `verify_numbers` mismatches name the exact source path the
+  drafter should have used. Reduces hallucination rate in the first
+  place; complements the post-hoc gate. Includes the "empty sidecar
+  → no quantitative claims" rule so the design-without-estimates
+  pathway is explicit.
+- **Test-mock fix:** `MockLLMBackend._detect_specialist` now matches
+  on the canonical `You are the <Name> specialist` role line in the
+  system prompt rather than searching for any specialist name
+  substring. The old heuristic silently misrouted calls whenever a
+  skill referenced another specialist by name (e.g. the new
+  `writing/cite-numbers-by-source` mentions "econometrics
+  specialist" → paper_drafter calls were routed to the econometrics
+  output → paper_draft.tex was never produced). Now matches one
+  occurrence per prompt with no skill-content interference.
 - **Machine-readable JSON sidecar contract for verify_numbers.**
   Pre-v0.5 every specialist was told to write EXACTLY ONE file, so
   even when a skill described a JSON sidecar (e.g. `data/figure-spec`),

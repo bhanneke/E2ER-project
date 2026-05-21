@@ -205,6 +205,29 @@ class MockLLMBackend(LLMBackend):
         return "designing"
 
     def _detect_specialist(self, system: str) -> str:
+        """Detect which specialist this call is for.
+
+        Match against the canonical role line emitted by
+        `_build_system_prompt`: `You are the <Title Cased Name> specialist`.
+        This is exactly one occurrence per system prompt and never appears
+        in skill content. The earlier "look for the name anywhere in the
+        system text" heuristic was brittle: skills that referenced other
+        specialists by name (e.g. writing/cite-numbers-by-source mentions
+        `econometrics specialist`) would cause paper_drafter calls to
+        misroute to whichever name was named earliest in
+        _SPECIALIST_OUTPUTS — silently writing the wrong file and
+        breaking downstream tests.
+        """
+        import re
+
+        m = re.search(r"You are the ([A-Z][A-Za-z ]+) specialist", system)
+        if m:
+            canonical = m.group(1).strip().lower().replace(" ", "_")
+            if canonical in _SPECIALIST_OUTPUTS:
+                return canonical
+        # Fallback: prior substring heuristic, for system prompts that
+        # don't follow the role-line convention (e.g. tests that build
+        # synthetic prompts).
         system_lower = system.lower()
         for name in _SPECIALIST_OUTPUTS:
             if name.replace("_", " ") in system_lower:

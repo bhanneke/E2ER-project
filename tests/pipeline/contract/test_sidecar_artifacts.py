@@ -218,3 +218,37 @@ class TestPromptMultiFileOutput:
         prompt = self._build("data_analyst", sidecars=["summary_statistics.json"])
         assert "valid JSON" in prompt
         assert "plain numbers" in prompt
+
+
+# ---------------------------------------------------------------------------
+# Writing specialists get the cite-by-source skill (v0.5)
+# ---------------------------------------------------------------------------
+
+
+class TestCiteBySourceSkillWiring:
+    """Pin that the drafter / section writer / abstract writer / revisor all
+    load the writing/cite-numbers-by-source skill. Without it the drafter
+    has no instruction to cite by JSON key, and verify_numbers becomes
+    purely reactive (catches mistakes post-hoc) rather than the model
+    avoiding them in the first place."""
+
+    def test_paper_drafter_loads_cite_skill(self):
+        assert "writing/cite-numbers-by-source" in SPECIALIST_SKILLS["paper_drafter"]
+
+    def test_section_writer_loads_cite_skill(self):
+        assert "writing/cite-numbers-by-source" in SPECIALIST_SKILLS["section_writer"]
+
+    def test_abstract_writer_loads_cite_skill(self):
+        """Abstracts cite the headline numbers — must trace to sidecars
+        same as body text."""
+        assert "writing/cite-numbers-by-source" in SPECIALIST_SKILLS["abstract_writer"]
+
+    def test_revisor_loads_cite_skill(self):
+        """The revisor edits paper_draft.tex post-review. If it doesn't
+        follow the same cite-by-source rule, revisions can re-introduce
+        hallucinations the original gate already caught."""
+        assert "writing/cite-numbers-by-source" in SPECIALIST_SKILLS["revisor"]
+
+    def test_cite_skill_file_exists(self):
+        skill_path = Path(__file__).resolve().parents[3] / "skills" / "files" / "writing" / "cite-numbers-by-source.md"
+        assert skill_path.exists(), f"cite-numbers-by-source.md missing at {skill_path}"
