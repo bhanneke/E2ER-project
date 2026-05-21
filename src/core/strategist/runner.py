@@ -599,26 +599,7 @@ class PipelineRunner:
             return PaperStatus.COMPLETED
 
         if result.verdict == "MAJOR_REVISION":
-            await self._update_status(PaperStatus.REVISION)
-            revision_order = WorkOrder(
-                paper_id=self._paper_id,
-                specialist="revisor",
-                focus=f"Revise paper based on review aggregation: {result.rationale}",
-                context_tier=2,
-            )
-            from ..specialists.dispatcher import execute_work_order
-
-            contribution = await execute_work_order(
-                revision_order,
-                self._backend,
-                self._workspace,
-                self._model,
-                self._extra_tools,
-                self._extra_handlers,
-                self._backend_name,
-            )
-            self._contributions.append(contribution)
-            return PaperStatus.COMPLETED
+            return await self._run_patch_revision(scores)
 
         # HARD_REJECT or MECHANISM_FAIL — distinct from FAILED (crash). The
         # operator can revise the source artifacts and POST /resume to
@@ -628,6 +609,160 @@ class PipelineRunner:
             PaperStatus.REJECTED,
             error=f"{result.verdict}: {result.rationale}",
         )
+        return PaperStatus.REJECTED
+
+    async def _run_patch_revision(self, scores: list) -> PaperStatus:
+        """Dispatch patch_revisor with structured findings and apply the result.
+
+        v0.6 step 3: replaces the pre-v0.6 single-revisor full-rewrite
+        path. Collects findings from the review scores + the
+        verify_numbers report (if present), serialises them into the
+        work order, lets patch_revisor emit a patch file, and runs the
+        merger to apply only the in-scope edits.
+
+        Outcomes:
+            COMPLETED — patch file applied without failures, OR
+                       patch_revisor (legitimately) emitted an empty
+                       patch because findings were unactionable.
+            REJECTED  — patch_revisor produced no patch file at all,
+                       or one or more edits failed (target not found,
+                       find ambiguous, out-of-scope). The error
+                       message names the first failures so the
+                       operator can revise + resume.
+        """
+        import json
+
+        from ..pipeline.verify_numbers import VerificationReport
+        from ..specialists.dispatcher import execute_work_order
+        from .findings import (
+            Finding,
+            collect_review_findings,
+            collect_verify_numbers_findings,
+            combine_findings,
+        )
+        from .patch_merger import merge_patch_file
+
+        await self._update_status(PaperStatus.REVISION)
+
+        # Collect Findings. Review scores are always available here;
+        # verify_numbers may have left a report from the pre-review
+        # gate (it runs before the review phase as of v0.5).
+        review_findings = collect_review_findings(scores)
+        verify_findings: list[Finding] = []
+        verify_path = self._workspace / "number_verification.json"
+        if verify_path.is_file():
+            try:
+                data = json.loads(verify_path.read_text(encoding="utf-8"))
+                # VerificationReport carries Mismatch dataclasses;
+                # rebuild from the persisted dict shape produced by
+                # `VerificationReport.to_dict()`.
+                report = VerificationReport()
+                report.passed = bool(data.get("passed", True))
+                report.mismatches = []
+                from ..pipeline.verify_numbers import Mismatch
+
+                for m in data.get("mismatches", []):
+                    report.mismatches.append(
+                        Mismatch(
+                            draft_value=m.get("draft_value", ""),
+                            source_key=m.get("source_key", ""),
+                            source_value=m.get("source_value", ""),
+                            table_context=m.get("table_context", ""),
+                            severity=m.get("severity", "minor"),
+                        )
+                    )
+                verify_findings = collect_verify_numbers_findings(report)
+            except (OSError, json.JSONDecodeError, KeyError) as e:
+                logger.warning(
+                    "could not parse number_verification.json for paper %s: %s",
+                    self._paper_id,
+                    e,
+                )
+
+        findings = combine_findings(review_findings, verify_findings)
+        if not findings:
+            # The aggregator said MAJOR_REVISION but no individual
+            # reviewer's score crossed the Finding floor and there
+            # were no verify_numbers mismatches. The patch_revisor
+            # wouldn't have anything to act on; transition straight
+            # to COMPLETED with a warning so the operator can review.
+            logger.warning(
+                "Paper %s: MAJOR_REVISION verdict with no actionable findings "
+                "— skipping patch_revisor and marking COMPLETED",
+                self._paper_id,
+            )
+            await self._update_status(PaperStatus.COMPLETED)
+            return PaperStatus.COMPLETED
+
+        # Serialise findings into the work order's focus so the
+        # patch_revisor can read them without an extra file load.
+        findings_json = json.dumps(
+            [
+                {
+                    "source": f.source,
+                    "source_detail": f.source_detail,
+                    "target": f.target,
+                    "severity": f.severity,
+                    "problem": f.problem,
+                    "suggested_fix": f.suggested_fix,
+                }
+                for f in findings
+            ],
+            indent=2,
+        )
+        focus = (
+            "Emit a patch file (`paper_draft.tex.edits.json`) that "
+            "addresses the findings below. See your "
+            "`writing/scoped-revision` skill for the patch file shape.\n\n"
+            f"FINDINGS ({len(findings)} items, severity-sorted):\n"
+            f"```json\n{findings_json}\n```"
+        )
+
+        revision_order = WorkOrder(
+            paper_id=self._paper_id,
+            specialist="patch_revisor",
+            focus=focus,
+            context_tier=2,
+        )
+        contribution = await execute_work_order(
+            revision_order,
+            self._backend,
+            self._workspace,
+            self._model,
+            self._extra_tools,
+            self._extra_handlers,
+            self._backend_name,
+        )
+        self._contributions.append(contribution)
+
+        # Apply the patch. Missing-file is REJECTED (patch_revisor
+        # didn't deliver). Any failed edit is REJECTED with the first
+        # few failures surfaced in the error message so the operator
+        # can fix and resume without parsing the events log.
+        try:
+            merge_result = merge_patch_file(self._workspace, findings)
+        except FileNotFoundError as e:
+            error_msg = f"patch_revisor did not produce a patch file: {e}"
+            logger.error("Paper %s: %s", self._paper_id, error_msg)
+            await self._update_status(PaperStatus.REJECTED, error=error_msg)
+            return PaperStatus.REJECTED
+
+        if merge_result.fully_applied:
+            logger.info(
+                "Paper %s: applied %d edits, draft patched + diff written",
+                self._paper_id,
+                merge_result.n_applied,
+            )
+            await self._update_status(PaperStatus.COMPLETED)
+            return PaperStatus.COMPLETED
+
+        first_failures = "; ".join(f"[{r.edit.target}] {r.error}" for r in merge_result.failed[:3])
+        error_msg = (
+            f"patch_revisor: {merge_result.n_applied} edits applied, "
+            f"{merge_result.n_failed} failed. First failures: {first_failures}"
+        )
+        logger.warning("Paper %s: %s", self._paper_id, error_msg)
+        await self._update_status(PaperStatus.REJECTED, error=error_msg)
         return PaperStatus.REJECTED
 
     async def _dispatch(self, decision: StrategistDecision) -> list[Contribution]:
