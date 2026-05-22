@@ -918,6 +918,41 @@ class PipelineRunner:
     async def _dispatch(self, decision: StrategistDecision) -> list[Contribution]:
         if not decision.work_orders:
             return []
+
+        # v0.6 step 6: iterative-phase guard against paper_drafter
+        # re-dispatch. paper_drafter writes the WHOLE paper_draft.tex
+        # from scratch every time it runs, which causes drift in
+        # sections reviewers already approved on prior iterations.
+        # The strategist's prompt now instructs it to use section_writer
+        # on iterations 2+; this is the load-bearing hard check that
+        # catches the strategist if it ignores the instruction.
+        # iteration 0 = initial phase, iteration 1 = first iterative
+        # pass (both legitimate paper_drafter calls), iteration >= 2 =
+        # forbidden territory.
+        if self._iteration >= 2:
+            kept: list = []
+            dropped: list[str] = []
+            for wo in decision.work_orders:
+                if wo.specialist == "paper_drafter":
+                    dropped.append(wo.focus[:80] if wo.focus else "(no focus)")
+                else:
+                    kept.append(wo)
+            if dropped:
+                logger.warning(
+                    "Iterative-phase guard: dropped %d paper_drafter work "
+                    "order(s) on iteration %d. The strategist should dispatch "
+                    "section_writer with a scoped focus instead; full rewrites "
+                    "after iteration 1 cause drift. Dropped foci: %s",
+                    len(dropped),
+                    self._iteration,
+                    "; ".join(repr(f) for f in dropped),
+                )
+                decision = decision.model_copy(update={"work_orders": kept})
+                # If the guard dropped EVERY work order, return early —
+                # nothing left to dispatch.
+                if not kept:
+                    return []
+
         # Circuit breaker: refuse to re-dispatch a non-tolerant specialist
         # that has already failed _MAX_SPECIALIST_ATTEMPTS times in a row.
         # Without this check, the strategist's revision logic re-dispatches
