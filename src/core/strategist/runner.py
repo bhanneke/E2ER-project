@@ -413,27 +413,49 @@ class PipelineRunner:
             logger.info("Self-attack: no findings — skipping critical-finding revision step")
             return PaperStatus.SELF_ATTACK
 
-        # Critical findings (severity >=7) trigger targeted revision
+        # v0.6 step 4: critical findings drive ONE patch_revisor call,
+        # not three parallel revisor calls writing to paper_draft.tex.
+        # Pre-v0.6 the parallel writes raced on the same file — last
+        # writer won, the other two revisions were silently discarded,
+        # and the surviving rewrite was produced without knowledge of
+        # the other findings. The patch_revisor receives all the
+        # critical findings in one work order, emits one patch file,
+        # the merger applies it sequentially.
         if attack_report.critical_findings:
-            critical_work_orders = [
-                WorkOrder(
-                    paper_id=self._paper_id,
-                    specialist="revisor",
-                    focus=(f"Critical finding (severity {f.severity}): {f.description}\nFix: {f.suggested_fix}"),
-                    context_tier=2,
-                )
-                for f in attack_report.critical_findings[:3]  # limit to top 3
-            ]
-            contributions = await execute_parallel(
-                critical_work_orders,
-                self._backend,
-                self._workspace,
-                self._model,
-                self._extra_tools,
-                self._extra_handlers,
-                self._backend_name,
-            )
-            self._contributions.extend(contributions)
+            from .findings import collect_self_attack_findings
+
+            # severity_floor=7 mirrors the pre-v0.6 critical-only cap
+            # (SelfAttackReport.critical_findings uses the same
+            # threshold). Limit to top 3 to bound spend.
+            findings = collect_self_attack_findings(attack_report, severity_floor=7)
+            findings = sorted(findings, key=lambda f: -f.severity)[:3]
+
+            if findings:
+                try:
+                    merge_result = await self._dispatch_patch_revisor(findings)
+                    if merge_result.fully_applied:
+                        logger.info(
+                            "Self-attack patch: applied %d edits to %d critical findings",
+                            merge_result.n_applied,
+                            len(findings),
+                        )
+                    else:
+                        # Don't transition to REJECTED — self-attack is
+                        # advisory. The review phase will catch any
+                        # remaining issues. Just log so the operator
+                        # knows the patch was partial.
+                        first_failures = "; ".join(f"[{r.edit.target}] {r.error}" for r in merge_result.failed[:3])
+                        logger.warning(
+                            "Self-attack patch: %d edits applied, %d failed. First failures: %s",
+                            merge_result.n_applied,
+                            merge_result.n_failed,
+                            first_failures,
+                        )
+                except FileNotFoundError as e:
+                    logger.warning(
+                        "Self-attack patch_revisor did not produce a patch file: %s",
+                        e,
+                    )
 
         return PaperStatus.SELF_ATTACK
 
@@ -611,88 +633,33 @@ class PipelineRunner:
         )
         return PaperStatus.REJECTED
 
-    async def _run_patch_revision(self, scores: list) -> PaperStatus:
-        """Dispatch patch_revisor with structured findings and apply the result.
+    async def _dispatch_patch_revisor(self, findings: list) -> Any:
+        """Dispatch patch_revisor with a findings list, then apply the merger.
 
-        v0.6 step 3: replaces the pre-v0.6 single-revisor full-rewrite
-        path. Collects findings from the review scores + the
-        verify_numbers report (if present), serialises them into the
-        work order, lets patch_revisor emit a patch file, and runs the
-        merger to apply only the in-scope edits.
+        Shared helper used by both `_run_patch_revision` (MAJOR_REVISION
+        path) and `_run_self_attack_phase` (critical-findings path).
+        Caller is responsible for the status transition based on the
+        returned MergeResult.
 
-        Outcomes:
-            COMPLETED — patch file applied without failures, OR
-                       patch_revisor (legitimately) emitted an empty
-                       patch because findings were unactionable.
-            REJECTED  — patch_revisor produced no patch file at all,
-                       or one or more edits failed (target not found,
-                       find ambiguous, out-of-scope). The error
-                       message names the first failures so the
-                       operator can revise + resume.
+        Args:
+            findings: list of `Finding` objects scoped to this call.
+                The merger uses these to enforce scope — any edit
+                whose target isn't in this list is rejected.
+
+        Returns:
+            `MergeResult` describing applied + failed edits and the
+            unified diff side artifact.
+
+        Raises:
+            FileNotFoundError: when patch_revisor's LLM call completed
+                but no `paper_draft.tex.edits.json` was written to the
+                workspace (caller decides whether this is REJECTED or
+                logged-and-continue).
         """
         import json
 
-        from ..pipeline.verify_numbers import VerificationReport
         from ..specialists.dispatcher import execute_work_order
-        from .findings import (
-            Finding,
-            collect_review_findings,
-            collect_verify_numbers_findings,
-            combine_findings,
-        )
         from .patch_merger import merge_patch_file
-
-        await self._update_status(PaperStatus.REVISION)
-
-        # Collect Findings. Review scores are always available here;
-        # verify_numbers may have left a report from the pre-review
-        # gate (it runs before the review phase as of v0.5).
-        review_findings = collect_review_findings(scores)
-        verify_findings: list[Finding] = []
-        verify_path = self._workspace / "number_verification.json"
-        if verify_path.is_file():
-            try:
-                data = json.loads(verify_path.read_text(encoding="utf-8"))
-                # VerificationReport carries Mismatch dataclasses;
-                # rebuild from the persisted dict shape produced by
-                # `VerificationReport.to_dict()`.
-                report = VerificationReport()
-                report.passed = bool(data.get("passed", True))
-                report.mismatches = []
-                from ..pipeline.verify_numbers import Mismatch
-
-                for m in data.get("mismatches", []):
-                    report.mismatches.append(
-                        Mismatch(
-                            draft_value=m.get("draft_value", ""),
-                            source_key=m.get("source_key", ""),
-                            source_value=m.get("source_value", ""),
-                            table_context=m.get("table_context", ""),
-                            severity=m.get("severity", "minor"),
-                        )
-                    )
-                verify_findings = collect_verify_numbers_findings(report)
-            except (OSError, json.JSONDecodeError, KeyError) as e:
-                logger.warning(
-                    "could not parse number_verification.json for paper %s: %s",
-                    self._paper_id,
-                    e,
-                )
-
-        findings = combine_findings(review_findings, verify_findings)
-        if not findings:
-            # The aggregator said MAJOR_REVISION but no individual
-            # reviewer's score crossed the Finding floor and there
-            # were no verify_numbers mismatches. The patch_revisor
-            # wouldn't have anything to act on; transition straight
-            # to COMPLETED with a warning so the operator can review.
-            logger.warning(
-                "Paper %s: MAJOR_REVISION verdict with no actionable findings "
-                "— skipping patch_revisor and marking COMPLETED",
-                self._paper_id,
-            )
-            await self._update_status(PaperStatus.COMPLETED)
-            return PaperStatus.COMPLETED
 
         # Serialise findings into the work order's focus so the
         # patch_revisor can read them without an extra file load.
@@ -735,12 +702,94 @@ class PipelineRunner:
         )
         self._contributions.append(contribution)
 
-        # Apply the patch. Missing-file is REJECTED (patch_revisor
-        # didn't deliver). Any failed edit is REJECTED with the first
-        # few failures surfaced in the error message so the operator
-        # can fix and resume without parsing the events log.
+        return merge_patch_file(self._workspace, findings)
+
+    def _collect_revision_findings(self, scores: list) -> list:
+        """Build the findings list for the MAJOR_REVISION patch_revisor call.
+
+        Combines review-score findings (always present at the
+        revision phase) with verify_numbers findings if the gate
+        emitted a report. Sorted severity-desc with source priority
+        (verify_numbers > self_attack > review).
+        """
+        import json
+
+        from ..pipeline.verify_numbers import Mismatch, VerificationReport
+        from .findings import (
+            Finding,
+            collect_review_findings,
+            collect_verify_numbers_findings,
+            combine_findings,
+        )
+
+        review_findings = collect_review_findings(scores)
+        verify_findings: list[Finding] = []
+        verify_path = self._workspace / "number_verification.json"
+        if verify_path.is_file():
+            try:
+                data = json.loads(verify_path.read_text(encoding="utf-8"))
+                # VerificationReport carries Mismatch dataclasses;
+                # rebuild from the persisted dict shape produced by
+                # `VerificationReport.to_dict()`.
+                report = VerificationReport()
+                report.passed = bool(data.get("passed", True))
+                report.mismatches = []
+                for m in data.get("mismatches", []):
+                    report.mismatches.append(
+                        Mismatch(
+                            draft_value=m.get("draft_value", ""),
+                            source_key=m.get("source_key", ""),
+                            source_value=m.get("source_value", ""),
+                            table_context=m.get("table_context", ""),
+                            severity=m.get("severity", "minor"),
+                        )
+                    )
+                verify_findings = collect_verify_numbers_findings(report)
+            except (OSError, json.JSONDecodeError, KeyError) as e:
+                logger.warning(
+                    "could not parse number_verification.json for paper %s: %s",
+                    self._paper_id,
+                    e,
+                )
+
+        return combine_findings(review_findings, verify_findings)
+
+    async def _run_patch_revision(self, scores: list) -> PaperStatus:
+        """MAJOR_REVISION path: collect findings, dispatch patch_revisor, apply.
+
+        v0.6 step 3: replaces the pre-v0.6 single-revisor full-rewrite
+        path. Caller is `_run_revision_phase` after the aggregator
+        emits `MAJOR_REVISION`.
+
+        Outcomes:
+            COMPLETED — patch file applied without failures, OR
+                       no actionable findings (skipped dispatch), OR
+                       patch_revisor (legitimately) emitted an empty
+                       patch because findings were unactionable.
+            REJECTED  — patch_revisor produced no patch file at all,
+                       or one or more edits failed. The error message
+                       names the first failures so the operator can
+                       revise + resume.
+        """
+        await self._update_status(PaperStatus.REVISION)
+
+        findings = self._collect_revision_findings(scores)
+        if not findings:
+            # The aggregator said MAJOR_REVISION but no individual
+            # reviewer's score crossed the Finding floor and there
+            # were no verify_numbers mismatches. The patch_revisor
+            # wouldn't have anything to act on; transition straight
+            # to COMPLETED with a warning so the operator can review.
+            logger.warning(
+                "Paper %s: MAJOR_REVISION verdict with no actionable findings "
+                "— skipping patch_revisor and marking COMPLETED",
+                self._paper_id,
+            )
+            await self._update_status(PaperStatus.COMPLETED)
+            return PaperStatus.COMPLETED
+
         try:
-            merge_result = merge_patch_file(self._workspace, findings)
+            merge_result = await self._dispatch_patch_revisor(findings)
         except FileNotFoundError as e:
             error_msg = f"patch_revisor did not produce a patch file: {e}"
             logger.error("Paper %s: %s", self._paper_id, error_msg)
