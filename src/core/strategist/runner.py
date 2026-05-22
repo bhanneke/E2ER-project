@@ -28,6 +28,15 @@ _MAX_PIVOTS = 1
 # 3 is the cheapest threshold that doesn't false-trip on transient errors
 # (one bad attempt + one retry + one confirmation that it's not transient).
 _MAX_SPECIALIST_ATTEMPTS = 3
+# v0.6 step 5: budget for the verify_numbers auto-patch loop. When the
+# pre-review gate finds critical mismatches, the runner dispatches
+# patch_revisor with the mismatch findings, re-runs verify_numbers, and
+# only transitions to REJECTED if the second pass STILL has criticals.
+# 1 attempt is the right cost/benefit point: one patch fixes the common
+# "drafter rounded wrong" / "drafter typo'd a sign" case at the cost of
+# one specialist call; > 1 attempts means the drafter+patch pair can't
+# converge and operator intervention is needed.
+_VERIFY_NUMBERS_AUTO_PATCH_BUDGET = 1
 
 
 class PipelineRunner:
@@ -511,25 +520,32 @@ class PipelineRunner:
         """
         logger.info("Running review phase for paper %s", self._paper_id)
 
-        # --- verify_numbers pre-review gate (v0.5.0) ---
+        # --- verify_numbers pre-review gate (v0.5.0; v0.6 auto-patch loop) ---
         from ..pipeline.verify_numbers import verify_and_save
 
         draft_path = self._workspace / "paper_draft.tex"
         if draft_path.is_file():
             report = verify_and_save(draft_path, self._workspace)
             if report.critical_mismatches:
-                summary = "; ".join(
-                    f"{m.draft_value} vs {m.source_value} ({m.source_key}) at {m.table_context}"
-                    for m in report.critical_mismatches[:5]
-                )
-                error = (
-                    f"verify_numbers: {len(report.critical_mismatches)} critical "
-                    f"mismatch(es) between LaTeX tables and source JSON. "
-                    f"First {min(5, len(report.critical_mismatches))}: {summary}"
-                )
-                logger.error("Paper %s: %s", self._paper_id, error)
-                await self._update_status(PaperStatus.REJECTED, error=error)
-                return PaperStatus.REJECTED
+                # v0.6 step 5: try to auto-patch before rejecting. If the
+                # patch_revisor can fix the mismatches by editing the
+                # table cells the drafter got wrong, the paper continues
+                # to reviewers; otherwise REJECTED with the same error
+                # surface as v0.5.
+                report = await self._verify_numbers_auto_patch(report)
+                if report.critical_mismatches:
+                    summary = "; ".join(
+                        f"{m.draft_value} vs {m.source_value} ({m.source_key}) at {m.table_context}"
+                        for m in report.critical_mismatches[:5]
+                    )
+                    error = (
+                        f"verify_numbers: {len(report.critical_mismatches)} critical "
+                        f"mismatch(es) between LaTeX tables and source JSON. "
+                        f"First {min(5, len(report.critical_mismatches))}: {summary}"
+                    )
+                    logger.error("Paper %s: %s", self._paper_id, error)
+                    await self._update_status(PaperStatus.REJECTED, error=error)
+                    return PaperStatus.REJECTED
 
         await self._update_status(PaperStatus.REVIEW)
 
@@ -632,6 +648,91 @@ class PipelineRunner:
             error=f"{result.verdict}: {result.rationale}",
         )
         return PaperStatus.REJECTED
+
+    async def _verify_numbers_auto_patch(self, report):
+        """Try to auto-patch verify_numbers critical mismatches before REJECT.
+
+        v0.6 step 5. Closes the proactive detect → patch → re-detect
+        loop that v0.5's defensive REJECT path left out. Bounded by
+        `_VERIFY_NUMBERS_AUTO_PATCH_BUDGET` (default 1 attempt) so a
+        drafter that consistently disagrees with the source JSON
+        doesn't loop forever — it falls through to REJECTED and the
+        operator intervenes.
+
+        Args:
+            report: the current VerificationReport with critical
+                mismatches.
+
+        Returns:
+            A (possibly updated) VerificationReport. If the auto-patch
+            succeeded, this report will have an empty
+            `critical_mismatches` list and the caller proceeds to
+            reviewers. If the patch failed (budget exhausted, missing
+            patch file, residual criticals), the returned report
+            still has criticals and the caller transitions to
+            REJECTED with the original error surface.
+        """
+        from ..pipeline.verify_numbers import verify_and_save
+        from .findings import collect_verify_numbers_findings
+
+        budget = _VERIFY_NUMBERS_AUTO_PATCH_BUDGET
+        if budget <= 0:
+            logger.debug("verify_numbers auto-patch disabled by budget; falling through to REJECTED")
+            return report
+
+        logger.info(
+            "verify_numbers gate found %d critical mismatch(es) — attempting auto-patch (budget=%d)",
+            len(report.critical_mismatches),
+            budget,
+        )
+
+        findings = collect_verify_numbers_findings(report)
+        if not findings:
+            # All mismatches were below the findings severity_floor.
+            # collect_verify_numbers_findings drops minor mismatches by
+            # default; if we land here with critical_mismatches but
+            # zero findings, something has gone wrong with the floor
+            # configuration. Fall through to REJECTED rather than
+            # dispatching a useless patch_revisor.
+            logger.warning(
+                "verify_numbers has critical mismatches but no Findings emitted "
+                "— skipping auto-patch and falling through to REJECTED"
+            )
+            return report
+
+        try:
+            merge_result = await self._dispatch_patch_revisor(findings)
+        except FileNotFoundError as e:
+            logger.warning(
+                "verify_numbers auto-patch: patch_revisor produced no patch file (%s) — falling through to REJECTED",
+                e,
+            )
+            return report
+
+        if not merge_result.fully_applied:
+            logger.warning(
+                "verify_numbers auto-patch: %d edits applied, %d failed — falling through to REJECTED",
+                merge_result.n_applied,
+                merge_result.n_failed,
+            )
+            # Don't return early — even a partial patch may have
+            # cleared some mismatches. Re-run verify_numbers below
+            # to find out, then the outer caller decides.
+
+        # Re-run verify_numbers on the patched draft.
+        draft_path = self._workspace / "paper_draft.tex"
+        new_report = verify_and_save(draft_path, self._workspace)
+        if new_report.critical_mismatches:
+            logger.warning(
+                "verify_numbers auto-patch: %d critical mismatch(es) remain after patch",
+                len(new_report.critical_mismatches),
+            )
+        else:
+            logger.info(
+                "verify_numbers auto-patch: all critical mismatches resolved (%d edits applied)",
+                merge_result.n_applied,
+            )
+        return new_report
 
     async def _dispatch_patch_revisor(self, findings: list) -> Any:
         """Dispatch patch_revisor with a findings list, then apply the merger.
