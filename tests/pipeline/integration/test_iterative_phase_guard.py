@@ -207,14 +207,19 @@ async def test_paper_drafter_allowed_on_iteration_1(tmp_path, mock_llm):
 
 
 @pytest.mark.asyncio
-async def test_section_writer_not_dropped_on_iteration_2(tmp_path, mock_llm):
-    """The guard must be specific to paper_drafter. section_writer
-    is the LEGITIMATE replacement on iterations 2+; dropping it
-    would defeat the whole step-6 design."""
+async def test_legitimate_specialists_not_dropped_on_iteration_2(tmp_path, mock_llm):
+    """The guard must be specific to full-rewrite specialists
+    (`paper_drafter` and, from v0.6.1, `revisor`). `section_writer`
+    is the LEGITIMATE writing specialist on iterations 2+; design
+    specialists like `data_analyst` are likewise legitimate. Dropping
+    them would defeat the whole step-6 design."""
     runner = _runner(tmp_path, mock_llm)
     runner._iteration = 2
 
-    decision = _decision("section_writer", "revisor", "data_analyst")
+    # v0.6.1: `revisor` IS now dropped (full-rewrite); replaced by
+    # `econometrics_specialist` here to keep the test's intent of
+    # "legitimate iter-2+ specialists survive the guard".
+    decision = _decision("section_writer", "econometrics_specialist", "data_analyst")
     dispatched: list[str] = []
 
     async def _capture(work_order, *args, **kwargs):
@@ -235,7 +240,7 @@ async def test_section_writer_not_dropped_on_iteration_2(tmp_path, mock_llm):
     ):
         await runner._dispatch(decision)
 
-    assert set(dispatched) == {"section_writer", "revisor", "data_analyst"}
+    assert set(dispatched) == {"section_writer", "econometrics_specialist", "data_analyst"}
 
 
 # ---------------------------------------------------------------------------
@@ -302,3 +307,125 @@ def test_strategist_prompt_mentions_iteration_rule():
     # The hard-check warning is mentioned so the strategist knows
     # the runner will catch violations
     assert "dropped" in _STRATEGIST_SYSTEM.lower() or "drop" in _STRATEGIST_SYSTEM.lower()
+
+
+# ---------------------------------------------------------------------------
+# v0.6.1: revisor also blocked on iter >= 2 (surfaced by live run 3bc58e8d)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_revisor_dropped_on_iteration_2(tmp_path, mock_llm, caplog):
+    """v0.6.1: the legacy `revisor` rewrites paper_draft.tex from
+    scratch, same as paper_drafter — so the same iterative-phase
+    guard must apply to it. v0.6.0's live run (paper 3bc58e8d)
+    surfaced the gap: the strategist dispatched revisor during
+    iterative phase even though paper_drafter was correctly
+    skipped. v0.6.1 closes that door."""
+    runner = _runner(tmp_path, mock_llm)
+    runner._iteration = 2
+
+    decision = _decision("revisor", "section_writer")
+    dispatched: list[str] = []
+
+    async def _capture(work_order, *args, **kwargs):
+        dispatched.append(work_order.specialist)
+        return _successful_contribution(runner._paper_id, work_order.specialist)
+
+    async def _capture_parallel(orders, *args, **kwargs):
+        for o in orders:
+            dispatched.append(o.specialist)
+        return [_successful_contribution(runner._paper_id, o.specialist) for o in orders]
+
+    with (
+        patch("src.core.specialists.dispatcher.execute_work_order", side_effect=_capture),
+        patch(
+            "src.core.strategist.runner.execute_with_dependencies",
+            side_effect=_capture_parallel,
+        ),
+        caplog.at_level("WARNING"),
+    ):
+        await runner._dispatch(decision)
+
+    assert "revisor" not in dispatched, f"revisor must NOT be dispatched on iteration 2; saw {dispatched}"
+    assert "section_writer" in dispatched
+    # Warning mentions revisor specifically
+    relevant_logs = [r for r in caplog.records if "Iterative-phase guard" in r.message]
+    assert relevant_logs
+    assert "revisor" in relevant_logs[0].message
+
+
+@pytest.mark.asyncio
+async def test_revisor_allowed_on_iteration_1(tmp_path, mock_llm):
+    """Iteration 1 is the first iterative pass. revisor may
+    legitimately reconcile the draft once at this point (e.g.
+    after upstream artifacts changed). Only iteration >= 2 is
+    guarded."""
+    runner = _runner(tmp_path, mock_llm)
+    runner._iteration = 1
+
+    decision = _decision("revisor")
+    dispatched: list[str] = []
+
+    async def _capture(work_order, *args, **kwargs):
+        dispatched.append(work_order.specialist)
+        return _successful_contribution(runner._paper_id, work_order.specialist)
+
+    with patch("src.core.specialists.dispatcher.execute_work_order", side_effect=_capture):
+        await runner._dispatch(decision)
+
+    assert dispatched == ["revisor"]
+
+
+@pytest.mark.asyncio
+async def test_revisor_and_paper_drafter_both_dropped(tmp_path, mock_llm, caplog):
+    """When the strategist submits BOTH legacy full-rewrite specialists
+    on iter >= 2, the guard drops both and keeps the rest."""
+    runner = _runner(tmp_path, mock_llm)
+    runner._iteration = 3
+
+    decision = _decision("paper_drafter", "revisor", "section_writer", "data_analyst")
+    dispatched: list[str] = []
+
+    async def _capture(work_order, *args, **kwargs):
+        dispatched.append(work_order.specialist)
+        return _successful_contribution(runner._paper_id, work_order.specialist)
+
+    async def _capture_parallel(orders, *args, **kwargs):
+        for o in orders:
+            dispatched.append(o.specialist)
+        return [_successful_contribution(runner._paper_id, o.specialist) for o in orders]
+
+    with (
+        patch("src.core.specialists.dispatcher.execute_work_order", side_effect=_capture),
+        patch(
+            "src.core.strategist.runner.execute_with_dependencies",
+            side_effect=_capture_parallel,
+        ),
+        caplog.at_level("WARNING"),
+    ):
+        await runner._dispatch(decision)
+
+    # Both full-rewrite specialists dropped, others kept.
+    assert "paper_drafter" not in dispatched
+    assert "revisor" not in dispatched
+    assert sorted(dispatched) == ["data_analyst", "section_writer"]
+
+
+def test_strategist_prompt_mentions_revisor_in_iter_rule():
+    """The prompt's iterative-phase rule must name `revisor` explicitly
+    so the strategist knows BOTH full-rewrite specialists are
+    forbidden on iter 2+. Without naming it, the strategist might
+    pick revisor as a 'workaround' for the paper_drafter ban."""
+    from src.core.strategist.engine import _STRATEGIST_SYSTEM
+
+    # Grab the iterative-phase rule section
+    assert "Iterative-phase rule" in _STRATEGIST_SYSTEM
+    # revisor must be named in the same context as paper_drafter — i.e.
+    # both listed as forbidden on iter 2+.
+    rule_section = _STRATEGIST_SYSTEM[_STRATEGIST_SYSTEM.index("Iterative-phase rule") :]
+    assert "paper_drafter" in rule_section
+    assert "revisor" in rule_section
+    # And the patch_revisor escape valve is mentioned as the
+    # legitimate way to do scoped revisions
+    assert "patch_revisor" in rule_section
