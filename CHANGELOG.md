@@ -10,6 +10,104 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 (Add new entries here under `### Lane A — Pipeline`, `### Lane B — Literature`,
 `### Lane C — Data`, or `### Cross-lane` sub-headings per `AGENTS.md`.)
 
+## v0.6.0 — 2026-05-23
+
+**Targeted-revision discipline.** Closes the three drift sources
+identified in `docs/V0.6_PLAN.md`: full-rewrite `revisor` on
+MAJOR_REVISION, parallel-`revisor` write race in self-attack, and
+unconstrained `paper_drafter` re-dispatch in the iterative phase.
+Validated end-to-end on paper `3bc58e8d` (2026-05-22, 38 min,
+$12.36 est., Sonnet via Claude Code CLI).
+
+### Lane A — Pipeline
+
+- **New `patch_revisor` specialist + deterministic merger.**
+  Replaces the pre-v0.6 `revisor` in every dispatch site. Writes
+  structured edits to `paper_draft.tex.edits.json`; the merger
+  (`src/core/strategist/patch_merger.py`) validates each edit's
+  `target` against the work order's `Finding` list, applies
+  in-scope edits to `paper_draft.tex`, and emits
+  `paper_draft.tex.applied.diff` as a unified-diff audit
+  artifact. One edit type supported in v0.6: `replace_text`
+  with `find` / `replace` / `find_must_be_unique`. Target
+  schema: `section:<name>` / `table:<label>` / `references` /
+  `abstract` / `paper:full`. Edits whose target isn't in the
+  findings are rejected before any text is touched.
+- **Structured `Finding` dataclass + three collectors.** New
+  `src/core/strategist/findings.py` introduces the
+  `Finding(source, source_detail, target, severity, problem,
+  suggested_fix)` frozen dataclass that every revision source
+  emits: `collect_self_attack_findings`,
+  `collect_verify_numbers_findings`, `collect_review_findings`.
+  `combine_findings` sorts severity-desc with source priority
+  (verify_numbers > self_attack > review on ties — numerical
+  mismatches are the most mechanical to fix).
+- **MAJOR_REVISION wired through `patch_revisor`.** Replaces the
+  pre-v0.6 free-text-rationale path. Combines review findings +
+  (when present) verify_numbers findings, serialises them as a
+  JSON block in the work order's `focus`, dispatches
+  `patch_revisor`, calls `merge_patch_file`. fully_applied →
+  COMPLETED; missing patch file or failed edits → REJECTED with
+  the first 3 failures named in `last_error`. Edge case:
+  MAJOR_REVISION with no actionable findings short-circuits to
+  COMPLETED without dispatching (avoids wasted spend).
+- **Self-attack critical findings wired through `patch_revisor`.**
+  Eliminates the pre-v0.6 parallel-revisor write race. Top-3
+  critical findings are batched into ONE patch_revisor call.
+  Patch failures at this phase are advisory (logged, do NOT
+  REJECT) — the downstream review phase catches what remains.
+- **`verify_numbers` auto-patch loop (proactive gate).** Pre-v0.6
+  the gate was defensive: critical mismatch → REJECTED. v0.6
+  closes the detect → patch → re-detect loop: critical mismatch →
+  dispatch `patch_revisor` with the mismatch findings → re-run
+  `verify_numbers` on the patched draft → REJECTED only if the
+  second pass still has criticals. Bounded by
+  `_VERIFY_NUMBERS_AUTO_PATCH_BUDGET = 1` (single attempt) so a
+  drafter that consistently disagrees with the source JSON
+  doesn't loop. The persisted `number_verification.json`
+  reflects the post-patch state.
+- **Iterative-phase guard against `paper_drafter` re-dispatch.**
+  Two-layer defence:
+  - Soft: strategist's system prompt instructs it to use
+    `section_writer` (scoped to a `section:<name>` focus) on
+    iterations 2+, never `paper_drafter`. Validated on the live
+    run — strategist used `section_writer` 3× in iter 2.
+  - Hard: `_dispatch` drops `paper_drafter` work orders when
+    `self._iteration >= 2`, logging a warning. Catches the
+    strategist if it ignores the soft instruction. iteration 0
+    (initial) and iteration 1 (first iterative) still allow
+    `paper_drafter` legitimately.
+- **`patch_revisor` loads three skills.** `writing/scoped-revision`
+  (new — defines the patch-file shape with worked examples for
+  verify_numbers and self_attack findings),
+  `writing/cite-numbers-by-source` (v0.5 — same discipline as
+  the drafter), `writing/personal-style`, `reasoning/anti-slop`.
+- **Five architecture invariants pinned.** Each step has a
+  primary regression test; `tests/pipeline/integration/test_v0_6_invariants.py`
+  documents all five in one place and adds cross-step
+  assertions (legacy `revisor` never dispatched by v0.6 runner
+  paths; both source types reach `patch_revisor`'s focus when
+  review + verify_numbers both have findings; merger
+  scope-enforcement holds across dispatch sites).
+
+### Test counts
+
+- Mocked suite: 521 passed (was 422 in v0.5.0; +99 in v0.6).
+- New test modules: `test_findings.py`, `test_patch_merger.py`,
+  `test_patch_revision_wiring.py`, `test_self_attack_patch_wiring.py`,
+  `test_verify_numbers_auto_patch.py`, `test_iterative_phase_guard.py`,
+  `test_v0_6_invariants.py`.
+
+### Known follow-ups (deferred to v0.6.1)
+
+- The legacy `revisor` specialist is no longer dispatched by v0.6
+  runner code paths, but the strategist may still freely dispatch
+  it from `_run_iterative_phase`. Surfaced by the 2026-05-22 live
+  run (one revisor call in iterative phase). Candidate fix:
+  extend the iterative-phase guard to also drop `revisor` on
+  iterations 2+, OR update the strategist prompt to discourage
+  it explicitly.
+
 ## v0.5.0 — 2026-05-21
 
 **Anti-hallucination & methodology-aware pipeline.** Full design
