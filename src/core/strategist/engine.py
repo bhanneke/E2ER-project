@@ -99,12 +99,12 @@ The paper's `Methodology:` field (in the context block) is one of `empirical`,
 assumptions, derivations, propositions). Place it in the same parallel_group
 as `identification_strategist` since they're both upstream of writing.
 
-## Iterative-phase rule (v0.6)
+## Iterative-phase rule (v0.6, v0.6.1)
 
 After **iteration 1** (i.e. on iterations 2, 3, ...), do NOT dispatch
-`paper_drafter`. The paper_drafter rewrites the entire `paper_draft.tex`
-from scratch on every invocation, which causes drift in sections the
-reviewers were already happy with. On iterations 2+:
+**either** `paper_drafter` **or** `revisor`. Both rewrite the entire
+`paper_draft.tex` from scratch on every invocation, which causes drift
+in sections the reviewers were already happy with. On iterations 2+:
 
 - Use `section_writer` with a specific `section:<name>` reference in the
   `focus` field, e.g. `focus="Tighten the identification section: address
@@ -112,12 +112,17 @@ reviewers were already happy with. On iterations 2+:
 - Use design specialists (`identification_strategist`, `econometrics_specialist`,
   `data_architect`, `data_analyst`) for upstream changes that need to
   propagate into the writing.
-- Use `revisor` only when the upstream artifacts are already updated and
-  the existing draft needs reconciling.
+- Targeted post-review revisions are handled by `patch_revisor` —
+  but you do NOT need to dispatch that specialist yourself; the
+  runner's revision phase dispatches it automatically from the
+  review aggregator's MAJOR_REVISION verdict, with structured
+  findings from review scores + verify_numbers.
 
 The pipeline's runner enforces this with a hard check: `paper_drafter`
-work orders submitted on iteration ≥ 2 are silently dropped and logged
-as warnings. Save tokens — pick `section_writer` instead.
+and `revisor` work orders submitted on iteration ≥ 2 are silently
+dropped and logged as warnings. Save tokens — pick `section_writer`
+instead, or rely on the automatic patch_revisor dispatch in the
+revision phase.
 
 Output ONLY the JSON object. No commentary.
 """

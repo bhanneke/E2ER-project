@@ -10,6 +10,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 (Add new entries here under `### Lane A — Pipeline`, `### Lane B — Literature`,
 `### Lane C — Data`, or `### Cross-lane` sub-headings per `AGENTS.md`.)
 
+## v0.6.1 — 2026-05-23
+
+Hot-fix on v0.6.0 closing the known follow-up surfaced by the
+v0.6.0 live run on paper `3bc58e8d`.
+
+### Lane A — Pipeline
+
+- **Iterative-phase guard extended to drop the legacy `revisor`**
+  on iterations 2+, alongside `paper_drafter`. Both specialists
+  rewrite `paper_draft.tex` from scratch every time they run, so
+  the same drift argument that motivated step 6's
+  `paper_drafter` guard applies to `revisor`. v0.6.0's live run
+  showed the strategist dispatching `revisor` during iterative
+  phase even though `paper_drafter` was correctly skipped — the
+  guard only filtered one. v0.6.1 closes the same door for both.
+- **Strategist system prompt updated** to name `revisor`
+  explicitly alongside `paper_drafter` in the iterative-phase
+  rule, and to point at `patch_revisor` (dispatched automatically
+  by the runner's revision phase) as the legitimate path for
+  scoped revisions. Removes the v0.6.0 ambiguity where the prompt
+  said "use `revisor` only when upstream artifacts are updated"
+  but the runner now expects no `revisor` calls in iterative
+  phase at all.
+- **`test_section_writer_not_dropped_on_iteration_2` renamed** to
+  `test_legitimate_specialists_not_dropped_on_iteration_2` and
+  updated to reflect the v0.6.1 contract (was asserting `revisor`
+  survives the guard, now asserts only the legitimate specialists
+  do).
+- **4 new regression tests** in `test_iterative_phase_guard.py`
+  pinning the extended-guard contract.
+
+Full mocked suite: 525 passed (was 521 in v0.6.0; +4 here).
+
 ## v0.6.0 — 2026-05-23
 
 **Targeted-revision discipline.** Closes the three drift sources
