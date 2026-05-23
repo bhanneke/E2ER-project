@@ -919,33 +919,42 @@ class PipelineRunner:
         if not decision.work_orders:
             return []
 
-        # v0.6 step 6: iterative-phase guard against paper_drafter
-        # re-dispatch. paper_drafter writes the WHOLE paper_draft.tex
-        # from scratch every time it runs, which causes drift in
-        # sections reviewers already approved on prior iterations.
-        # The strategist's prompt now instructs it to use section_writer
+        # v0.6 step 6 + v0.6.1: iterative-phase guard against
+        # whole-draft rewrites. Both `paper_drafter` and (v0.6.1)
+        # `revisor` write to `paper_draft.tex` from scratch every
+        # time, causing drift in sections reviewers already approved.
+        # The strategist's prompt instructs it to use `section_writer`
+        # (or `patch_revisor` via the runner's revision-phase wiring)
         # on iterations 2+; this is the load-bearing hard check that
         # catches the strategist if it ignores the instruction.
         # iteration 0 = initial phase, iteration 1 = first iterative
-        # pass (both legitimate paper_drafter calls), iteration >= 2 =
-        # forbidden territory.
+        # pass (both legitimate full-draft calls), iteration >= 2 =
+        # forbidden territory for both specialists.
+        #
+        # Surfaced by the v0.6.0 live run (paper 3bc58e8d): the
+        # strategist dispatched the legacy `revisor` during iterative
+        # phase even though `paper_drafter` was correctly skipped.
+        # v0.6.0's guard only filtered `paper_drafter`; v0.6.1 closes
+        # the same drift door for `revisor`.
         if self._iteration >= 2:
+            forbidden_full_rewriters = {"paper_drafter", "revisor"}
             kept: list = []
-            dropped: list[str] = []
+            dropped: list[tuple[str, str]] = []
             for wo in decision.work_orders:
-                if wo.specialist == "paper_drafter":
-                    dropped.append(wo.focus[:80] if wo.focus else "(no focus)")
+                if wo.specialist in forbidden_full_rewriters:
+                    dropped.append((wo.specialist, wo.focus[:80] if wo.focus else "(no focus)"))
                 else:
                     kept.append(wo)
             if dropped:
                 logger.warning(
-                    "Iterative-phase guard: dropped %d paper_drafter work "
+                    "Iterative-phase guard: dropped %d full-draft work "
                     "order(s) on iteration %d. The strategist should dispatch "
-                    "section_writer with a scoped focus instead; full rewrites "
-                    "after iteration 1 cause drift. Dropped foci: %s",
+                    "section_writer (or patch_revisor via the revision phase) "
+                    "instead; full rewrites after iteration 1 cause drift. "
+                    "Dropped: %s",
                     len(dropped),
                     self._iteration,
-                    "; ".join(repr(f) for f in dropped),
+                    "; ".join(f"{spec}({focus!r})" for spec, focus in dropped),
                 )
                 decision = decision.model_copy(update={"work_orders": kept})
                 # If the guard dropped EVERY work order, return early —
