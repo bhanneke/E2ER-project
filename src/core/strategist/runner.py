@@ -28,6 +28,15 @@ _MAX_PIVOTS = 1
 # 3 is the cheapest threshold that doesn't false-trip on transient errors
 # (one bad attempt + one retry + one confirmation that it's not transient).
 _MAX_SPECIALIST_ATTEMPTS = 3
+# v0.6 step 5: budget for the verify_numbers auto-patch loop. When the
+# pre-review gate finds critical mismatches, the runner dispatches
+# patch_revisor with the mismatch findings, re-runs verify_numbers, and
+# only transitions to REJECTED if the second pass STILL has criticals.
+# 1 attempt is the right cost/benefit point: one patch fixes the common
+# "drafter rounded wrong" / "drafter typo'd a sign" case at the cost of
+# one specialist call; > 1 attempts means the drafter+patch pair can't
+# converge and operator intervention is needed.
+_VERIFY_NUMBERS_AUTO_PATCH_BUDGET = 1
 
 
 class PipelineRunner:
@@ -413,27 +422,49 @@ class PipelineRunner:
             logger.info("Self-attack: no findings — skipping critical-finding revision step")
             return PaperStatus.SELF_ATTACK
 
-        # Critical findings (severity >=7) trigger targeted revision
+        # v0.6 step 4: critical findings drive ONE patch_revisor call,
+        # not three parallel revisor calls writing to paper_draft.tex.
+        # Pre-v0.6 the parallel writes raced on the same file — last
+        # writer won, the other two revisions were silently discarded,
+        # and the surviving rewrite was produced without knowledge of
+        # the other findings. The patch_revisor receives all the
+        # critical findings in one work order, emits one patch file,
+        # the merger applies it sequentially.
         if attack_report.critical_findings:
-            critical_work_orders = [
-                WorkOrder(
-                    paper_id=self._paper_id,
-                    specialist="revisor",
-                    focus=(f"Critical finding (severity {f.severity}): {f.description}\nFix: {f.suggested_fix}"),
-                    context_tier=2,
-                )
-                for f in attack_report.critical_findings[:3]  # limit to top 3
-            ]
-            contributions = await execute_parallel(
-                critical_work_orders,
-                self._backend,
-                self._workspace,
-                self._model,
-                self._extra_tools,
-                self._extra_handlers,
-                self._backend_name,
-            )
-            self._contributions.extend(contributions)
+            from .findings import collect_self_attack_findings
+
+            # severity_floor=7 mirrors the pre-v0.6 critical-only cap
+            # (SelfAttackReport.critical_findings uses the same
+            # threshold). Limit to top 3 to bound spend.
+            findings = collect_self_attack_findings(attack_report, severity_floor=7)
+            findings = sorted(findings, key=lambda f: -f.severity)[:3]
+
+            if findings:
+                try:
+                    merge_result = await self._dispatch_patch_revisor(findings)
+                    if merge_result.fully_applied:
+                        logger.info(
+                            "Self-attack patch: applied %d edits to %d critical findings",
+                            merge_result.n_applied,
+                            len(findings),
+                        )
+                    else:
+                        # Don't transition to REJECTED — self-attack is
+                        # advisory. The review phase will catch any
+                        # remaining issues. Just log so the operator
+                        # knows the patch was partial.
+                        first_failures = "; ".join(f"[{r.edit.target}] {r.error}" for r in merge_result.failed[:3])
+                        logger.warning(
+                            "Self-attack patch: %d edits applied, %d failed. First failures: %s",
+                            merge_result.n_applied,
+                            merge_result.n_failed,
+                            first_failures,
+                        )
+                except FileNotFoundError as e:
+                    logger.warning(
+                        "Self-attack patch_revisor did not produce a patch file: %s",
+                        e,
+                    )
 
         return PaperStatus.SELF_ATTACK
 
@@ -489,25 +520,32 @@ class PipelineRunner:
         """
         logger.info("Running review phase for paper %s", self._paper_id)
 
-        # --- verify_numbers pre-review gate (v0.5.0) ---
+        # --- verify_numbers pre-review gate (v0.5.0; v0.6 auto-patch loop) ---
         from ..pipeline.verify_numbers import verify_and_save
 
         draft_path = self._workspace / "paper_draft.tex"
         if draft_path.is_file():
             report = verify_and_save(draft_path, self._workspace)
             if report.critical_mismatches:
-                summary = "; ".join(
-                    f"{m.draft_value} vs {m.source_value} ({m.source_key}) at {m.table_context}"
-                    for m in report.critical_mismatches[:5]
-                )
-                error = (
-                    f"verify_numbers: {len(report.critical_mismatches)} critical "
-                    f"mismatch(es) between LaTeX tables and source JSON. "
-                    f"First {min(5, len(report.critical_mismatches))}: {summary}"
-                )
-                logger.error("Paper %s: %s", self._paper_id, error)
-                await self._update_status(PaperStatus.REJECTED, error=error)
-                return PaperStatus.REJECTED
+                # v0.6 step 5: try to auto-patch before rejecting. If the
+                # patch_revisor can fix the mismatches by editing the
+                # table cells the drafter got wrong, the paper continues
+                # to reviewers; otherwise REJECTED with the same error
+                # surface as v0.5.
+                report = await self._verify_numbers_auto_patch(report)
+                if report.critical_mismatches:
+                    summary = "; ".join(
+                        f"{m.draft_value} vs {m.source_value} ({m.source_key}) at {m.table_context}"
+                        for m in report.critical_mismatches[:5]
+                    )
+                    error = (
+                        f"verify_numbers: {len(report.critical_mismatches)} critical "
+                        f"mismatch(es) between LaTeX tables and source JSON. "
+                        f"First {min(5, len(report.critical_mismatches))}: {summary}"
+                    )
+                    logger.error("Paper %s: %s", self._paper_id, error)
+                    await self._update_status(PaperStatus.REJECTED, error=error)
+                    return PaperStatus.REJECTED
 
         await self._update_status(PaperStatus.REVIEW)
 
@@ -599,26 +637,7 @@ class PipelineRunner:
             return PaperStatus.COMPLETED
 
         if result.verdict == "MAJOR_REVISION":
-            await self._update_status(PaperStatus.REVISION)
-            revision_order = WorkOrder(
-                paper_id=self._paper_id,
-                specialist="revisor",
-                focus=f"Revise paper based on review aggregation: {result.rationale}",
-                context_tier=2,
-            )
-            from ..specialists.dispatcher import execute_work_order
-
-            contribution = await execute_work_order(
-                revision_order,
-                self._backend,
-                self._workspace,
-                self._model,
-                self._extra_tools,
-                self._extra_handlers,
-                self._backend_name,
-            )
-            self._contributions.append(contribution)
-            return PaperStatus.COMPLETED
+            return await self._run_patch_revision(scores)
 
         # HARD_REJECT or MECHANISM_FAIL — distinct from FAILED (crash). The
         # operator can revise the source artifacts and POST /resume to
@@ -630,9 +649,310 @@ class PipelineRunner:
         )
         return PaperStatus.REJECTED
 
+    async def _verify_numbers_auto_patch(self, report):
+        """Try to auto-patch verify_numbers critical mismatches before REJECT.
+
+        v0.6 step 5. Closes the proactive detect → patch → re-detect
+        loop that v0.5's defensive REJECT path left out. Bounded by
+        `_VERIFY_NUMBERS_AUTO_PATCH_BUDGET` (default 1 attempt) so a
+        drafter that consistently disagrees with the source JSON
+        doesn't loop forever — it falls through to REJECTED and the
+        operator intervenes.
+
+        Args:
+            report: the current VerificationReport with critical
+                mismatches.
+
+        Returns:
+            A (possibly updated) VerificationReport. If the auto-patch
+            succeeded, this report will have an empty
+            `critical_mismatches` list and the caller proceeds to
+            reviewers. If the patch failed (budget exhausted, missing
+            patch file, residual criticals), the returned report
+            still has criticals and the caller transitions to
+            REJECTED with the original error surface.
+        """
+        from ..pipeline.verify_numbers import verify_and_save
+        from .findings import collect_verify_numbers_findings
+
+        budget = _VERIFY_NUMBERS_AUTO_PATCH_BUDGET
+        if budget <= 0:
+            logger.debug("verify_numbers auto-patch disabled by budget; falling through to REJECTED")
+            return report
+
+        logger.info(
+            "verify_numbers gate found %d critical mismatch(es) — attempting auto-patch (budget=%d)",
+            len(report.critical_mismatches),
+            budget,
+        )
+
+        findings = collect_verify_numbers_findings(report)
+        if not findings:
+            # All mismatches were below the findings severity_floor.
+            # collect_verify_numbers_findings drops minor mismatches by
+            # default; if we land here with critical_mismatches but
+            # zero findings, something has gone wrong with the floor
+            # configuration. Fall through to REJECTED rather than
+            # dispatching a useless patch_revisor.
+            logger.warning(
+                "verify_numbers has critical mismatches but no Findings emitted "
+                "— skipping auto-patch and falling through to REJECTED"
+            )
+            return report
+
+        try:
+            merge_result = await self._dispatch_patch_revisor(findings)
+        except FileNotFoundError as e:
+            logger.warning(
+                "verify_numbers auto-patch: patch_revisor produced no patch file (%s) — falling through to REJECTED",
+                e,
+            )
+            return report
+
+        if not merge_result.fully_applied:
+            logger.warning(
+                "verify_numbers auto-patch: %d edits applied, %d failed — falling through to REJECTED",
+                merge_result.n_applied,
+                merge_result.n_failed,
+            )
+            # Don't return early — even a partial patch may have
+            # cleared some mismatches. Re-run verify_numbers below
+            # to find out, then the outer caller decides.
+
+        # Re-run verify_numbers on the patched draft.
+        draft_path = self._workspace / "paper_draft.tex"
+        new_report = verify_and_save(draft_path, self._workspace)
+        if new_report.critical_mismatches:
+            logger.warning(
+                "verify_numbers auto-patch: %d critical mismatch(es) remain after patch",
+                len(new_report.critical_mismatches),
+            )
+        else:
+            logger.info(
+                "verify_numbers auto-patch: all critical mismatches resolved (%d edits applied)",
+                merge_result.n_applied,
+            )
+        return new_report
+
+    async def _dispatch_patch_revisor(self, findings: list) -> Any:
+        """Dispatch patch_revisor with a findings list, then apply the merger.
+
+        Shared helper used by both `_run_patch_revision` (MAJOR_REVISION
+        path) and `_run_self_attack_phase` (critical-findings path).
+        Caller is responsible for the status transition based on the
+        returned MergeResult.
+
+        Args:
+            findings: list of `Finding` objects scoped to this call.
+                The merger uses these to enforce scope — any edit
+                whose target isn't in this list is rejected.
+
+        Returns:
+            `MergeResult` describing applied + failed edits and the
+            unified diff side artifact.
+
+        Raises:
+            FileNotFoundError: when patch_revisor's LLM call completed
+                but no `paper_draft.tex.edits.json` was written to the
+                workspace (caller decides whether this is REJECTED or
+                logged-and-continue).
+        """
+        import json
+
+        from ..specialists.dispatcher import execute_work_order
+        from .patch_merger import merge_patch_file
+
+        # Serialise findings into the work order's focus so the
+        # patch_revisor can read them without an extra file load.
+        findings_json = json.dumps(
+            [
+                {
+                    "source": f.source,
+                    "source_detail": f.source_detail,
+                    "target": f.target,
+                    "severity": f.severity,
+                    "problem": f.problem,
+                    "suggested_fix": f.suggested_fix,
+                }
+                for f in findings
+            ],
+            indent=2,
+        )
+        focus = (
+            "Emit a patch file (`paper_draft.tex.edits.json`) that "
+            "addresses the findings below. See your "
+            "`writing/scoped-revision` skill for the patch file shape.\n\n"
+            f"FINDINGS ({len(findings)} items, severity-sorted):\n"
+            f"```json\n{findings_json}\n```"
+        )
+
+        revision_order = WorkOrder(
+            paper_id=self._paper_id,
+            specialist="patch_revisor",
+            focus=focus,
+            context_tier=2,
+        )
+        contribution = await execute_work_order(
+            revision_order,
+            self._backend,
+            self._workspace,
+            self._model,
+            self._extra_tools,
+            self._extra_handlers,
+            self._backend_name,
+        )
+        self._contributions.append(contribution)
+
+        return merge_patch_file(self._workspace, findings)
+
+    def _collect_revision_findings(self, scores: list) -> list:
+        """Build the findings list for the MAJOR_REVISION patch_revisor call.
+
+        Combines review-score findings (always present at the
+        revision phase) with verify_numbers findings if the gate
+        emitted a report. Sorted severity-desc with source priority
+        (verify_numbers > self_attack > review).
+        """
+        import json
+
+        from ..pipeline.verify_numbers import Mismatch, VerificationReport
+        from .findings import (
+            Finding,
+            collect_review_findings,
+            collect_verify_numbers_findings,
+            combine_findings,
+        )
+
+        review_findings = collect_review_findings(scores)
+        verify_findings: list[Finding] = []
+        verify_path = self._workspace / "number_verification.json"
+        if verify_path.is_file():
+            try:
+                data = json.loads(verify_path.read_text(encoding="utf-8"))
+                # VerificationReport carries Mismatch dataclasses;
+                # rebuild from the persisted dict shape produced by
+                # `VerificationReport.to_dict()`.
+                report = VerificationReport()
+                report.passed = bool(data.get("passed", True))
+                report.mismatches = []
+                for m in data.get("mismatches", []):
+                    report.mismatches.append(
+                        Mismatch(
+                            draft_value=m.get("draft_value", ""),
+                            source_key=m.get("source_key", ""),
+                            source_value=m.get("source_value", ""),
+                            table_context=m.get("table_context", ""),
+                            severity=m.get("severity", "minor"),
+                        )
+                    )
+                verify_findings = collect_verify_numbers_findings(report)
+            except (OSError, json.JSONDecodeError, KeyError) as e:
+                logger.warning(
+                    "could not parse number_verification.json for paper %s: %s",
+                    self._paper_id,
+                    e,
+                )
+
+        return combine_findings(review_findings, verify_findings)
+
+    async def _run_patch_revision(self, scores: list) -> PaperStatus:
+        """MAJOR_REVISION path: collect findings, dispatch patch_revisor, apply.
+
+        v0.6 step 3: replaces the pre-v0.6 single-revisor full-rewrite
+        path. Caller is `_run_revision_phase` after the aggregator
+        emits `MAJOR_REVISION`.
+
+        Outcomes:
+            COMPLETED — patch file applied without failures, OR
+                       no actionable findings (skipped dispatch), OR
+                       patch_revisor (legitimately) emitted an empty
+                       patch because findings were unactionable.
+            REJECTED  — patch_revisor produced no patch file at all,
+                       or one or more edits failed. The error message
+                       names the first failures so the operator can
+                       revise + resume.
+        """
+        await self._update_status(PaperStatus.REVISION)
+
+        findings = self._collect_revision_findings(scores)
+        if not findings:
+            # The aggregator said MAJOR_REVISION but no individual
+            # reviewer's score crossed the Finding floor and there
+            # were no verify_numbers mismatches. The patch_revisor
+            # wouldn't have anything to act on; transition straight
+            # to COMPLETED with a warning so the operator can review.
+            logger.warning(
+                "Paper %s: MAJOR_REVISION verdict with no actionable findings "
+                "— skipping patch_revisor and marking COMPLETED",
+                self._paper_id,
+            )
+            await self._update_status(PaperStatus.COMPLETED)
+            return PaperStatus.COMPLETED
+
+        try:
+            merge_result = await self._dispatch_patch_revisor(findings)
+        except FileNotFoundError as e:
+            error_msg = f"patch_revisor did not produce a patch file: {e}"
+            logger.error("Paper %s: %s", self._paper_id, error_msg)
+            await self._update_status(PaperStatus.REJECTED, error=error_msg)
+            return PaperStatus.REJECTED
+
+        if merge_result.fully_applied:
+            logger.info(
+                "Paper %s: applied %d edits, draft patched + diff written",
+                self._paper_id,
+                merge_result.n_applied,
+            )
+            await self._update_status(PaperStatus.COMPLETED)
+            return PaperStatus.COMPLETED
+
+        first_failures = "; ".join(f"[{r.edit.target}] {r.error}" for r in merge_result.failed[:3])
+        error_msg = (
+            f"patch_revisor: {merge_result.n_applied} edits applied, "
+            f"{merge_result.n_failed} failed. First failures: {first_failures}"
+        )
+        logger.warning("Paper %s: %s", self._paper_id, error_msg)
+        await self._update_status(PaperStatus.REJECTED, error=error_msg)
+        return PaperStatus.REJECTED
+
     async def _dispatch(self, decision: StrategistDecision) -> list[Contribution]:
         if not decision.work_orders:
             return []
+
+        # v0.6 step 6: iterative-phase guard against paper_drafter
+        # re-dispatch. paper_drafter writes the WHOLE paper_draft.tex
+        # from scratch every time it runs, which causes drift in
+        # sections reviewers already approved on prior iterations.
+        # The strategist's prompt now instructs it to use section_writer
+        # on iterations 2+; this is the load-bearing hard check that
+        # catches the strategist if it ignores the instruction.
+        # iteration 0 = initial phase, iteration 1 = first iterative
+        # pass (both legitimate paper_drafter calls), iteration >= 2 =
+        # forbidden territory.
+        if self._iteration >= 2:
+            kept: list = []
+            dropped: list[str] = []
+            for wo in decision.work_orders:
+                if wo.specialist == "paper_drafter":
+                    dropped.append(wo.focus[:80] if wo.focus else "(no focus)")
+                else:
+                    kept.append(wo)
+            if dropped:
+                logger.warning(
+                    "Iterative-phase guard: dropped %d paper_drafter work "
+                    "order(s) on iteration %d. The strategist should dispatch "
+                    "section_writer with a scoped focus instead; full rewrites "
+                    "after iteration 1 cause drift. Dropped foci: %s",
+                    len(dropped),
+                    self._iteration,
+                    "; ".join(repr(f) for f in dropped),
+                )
+                decision = decision.model_copy(update={"work_orders": kept})
+                # If the guard dropped EVERY work order, return early —
+                # nothing left to dispatch.
+                if not kept:
+                    return []
+
         # Circuit breaker: refuse to re-dispatch a non-tolerant specialist
         # that has already failed _MAX_SPECIALIST_ATTEMPTS times in a row.
         # Without this check, the strategist's revision logic re-dispatches
