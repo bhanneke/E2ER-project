@@ -20,6 +20,16 @@ def main() -> None:
 
     subparsers.add_parser("migrate", help="Run database migrations (sql/001 through sql/006)")
 
+    init_p = subparsers.add_parser(
+        "init",
+        help="Guided first-paper setup: pick a backend, write .env, bundle skills, print example RQs.",
+    )
+    init_p.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite an existing .env without prompting.",
+    )
+
     run_p = subparsers.add_parser(
         "run",
         help="Submit a research question to the pipeline (one-command quickstart).",
@@ -84,6 +94,10 @@ def main() -> None:
                 monitor_seconds=args.monitor_seconds,
             )
         )
+    elif args.command == "init":
+        from .cli_init import init as _init
+
+        sys.exit(_init(force=args.force))
     elif args.command == "migrate":
         # Importable module (works in both pip-installed wheel AND dev
         # checkout). The previous implementation pointed at

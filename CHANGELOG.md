@@ -10,6 +10,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 (Add new entries here under `### Lane A — Pipeline`, `### Lane B — Literature`,
 `### Lane C — Data`, or `### Cross-lane` sub-headings per `AGENTS.md`.)
 
+## v0.7.0 — 2026-05-24
+
+Better onboarding + a verify_numbers parser fix, bundled.
+Surfaced by direct user feedback ("pip install e2er and then
+what?") and by the v0.6.1 live run on paper `f79b7cd9` that hit
+two false-positive critical mismatches caused by parser bugs.
+
+### Cross-lane
+
+- **New `e2er init` command — guided first-paper setup wizard.**
+  Closes the post-`pip install e2er` onboarding gap. Walks the
+  user through 4 steps (LLM backend pick + prereq check, data
+  module on/off, optional BibTeX path, optional Postgres
+  `DATABASE_URL`), an optional GitHub-integration prompt, then
+  writes `./.env` (with confirm-overwrite), runs `e2er
+  install-skills`, and prints three concrete example research
+  questions to copy. Hand-rolled stdin wizard — no new
+  dependencies (no `click` / `prompt_toolkit`). TTY-detected so
+  non-interactive invocations exit with a helpful one-line guide
+  instead of blocking on `input()`. Secrets discipline: GitHub
+  PATs and API keys collected during the wizard are written to
+  `.env` as comments, never as live env vars. 24 new unit tests
+  in `tests/test_cli_init.py`. README quickstart updated to lead
+  with `e2er init`.
+
+### Lane A — Pipeline
+
+- **Fix two `verify_numbers` false-positives**: ISO date strings
+  in column headers (`2021-03-01`) were being parsed as the bare
+  year `2021`, false-positive-mismatching against unrelated
+  source values; and LaTeX brace-protected thousands separators
+  (`1{,}573.89` — the form that survives math mode) were being
+  split into two bogus numbers (`1` and `573.89`). Both surfaced
+  on the v0.6.1 live-validation paper `f79b7cd9`, which was
+  REJECTED entirely on parser bugs rather than real
+  hallucinations. New `_normalize_cell(cell)` helper runs
+  before `_NUMBER_RE` on each tabular cell: normalizes `{,}` →
+  `,` so the existing thousands branch picks the value up
+  intact, then strips ISO / slash / US date patterns so years
+  inside dates don't leak as numeric claims. Bare years outside
+  date context (e.g. `Sample size & 2021`) still extract — the
+  fix is targeted at dates, not all four-digit numbers. 5 new
+  regression tests in `tests/pipeline/test_verify_numbers.py`.
+
+### Test counts
+
+- Mocked suite: 554 passed (was 525 in v0.6.1; +24 wizard +5
+  verify_numbers fix).
+
 ## v0.6.1 — 2026-05-23
 
 Hot-fix on v0.6.0 closing the known follow-up surfaced by the

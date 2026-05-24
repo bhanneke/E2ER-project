@@ -13,12 +13,11 @@ in ~25 minutes.
 
 ```bash
 pip install e2er
-e2er install-skills
-export LLM_BACKEND=claude_code
-e2er run "Does X affect Y?" --methodology empirical --max-cost 5
+e2er init                           # interactive setup wizard (~1 min)
+e2er run "<your research question>" --methodology empirical --max-cost 5
 ```
 
-That's everything you need to run your first paper. See **[First run](#first-run)** below for what happens next.
+`e2er init` walks you through picking an LLM backend, checks the prerequisites, writes `.env`, bundles the skill files, and prints example research questions to copy. See **[First run](#first-run)** below for what happens after you hit Enter on `e2er run`.
 
 ---
 
@@ -47,7 +46,17 @@ That's everything you need to run your first paper. See **[First run](#first-run
 
 ```bash
 pip install e2er
+e2er init                # guided setup: backend pick, prereq check, .env, skills
+```
+
+`e2er init` is the recommended path — it asks you a handful of questions, checks that your chosen LLM backend is installed, writes a working `.env` to the current directory, runs `install-skills`, and prints example research questions you can copy. Re-run it any time to reconfigure (`--force` overwrites without prompting).
+
+If you'd rather do it by hand:
+
+```bash
+pip install e2er
 e2er install-skills      # bundles the skill files used by the specialists
+export LLM_BACKEND=claude_code   # or anthropic / openrouter / codex_cli / gemini_cli
 ```
 
 To verify your install without spending any tokens:

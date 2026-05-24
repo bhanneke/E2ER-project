@@ -174,6 +174,110 @@ x & 0.42 \\
         # context string carries the label
         assert any("tab:liquidity" in ctx for _, ctx in nums)
 
+    def test_iso_dates_in_headers_not_extracted_as_numbers(self):
+        """v0.7 fix: a column header like '2021-03-01' was being
+        parsed as the bare number 2021, which then false-positive-
+        mismatched against unrelated source values. Surfaced by the
+        v0.6.1 live run on paper f79b7cd9. Strip ISO dates before
+        extraction."""
+        tex = r"""
+\label{tab:prices}
+\begin{tabular}{lccc}
+& 2021-03-01 & 2022-04-15 & 2023-12-01 \\
+WETH & 1573.89 & 1234.56 & 2050.00 \\
+\end{tabular}
+"""
+        nums = _extract_table_numbers(tex)
+        values = {n for n, _ in nums}
+        # Real numeric claims survive
+        assert "1573.89" in values
+        assert "1234.56" in values
+        # Date-string years do NOT
+        assert "2021" not in values
+        assert "2022" not in values
+        assert "2023" not in values
+
+    def test_slash_dates_in_headers_not_extracted(self):
+        tex = r"""
+\begin{tabular}{lcc}
+& 2024/01 & 2024/12 \\
+x & 0.50 & 0.75 \\
+\end{tabular}
+"""
+        nums = _extract_table_numbers(tex)
+        values = {n for n, _ in nums}
+        assert "0.50" in values
+        assert "0.75" in values
+        assert "2024" not in values
+
+    def test_us_format_dates_not_extracted(self):
+        tex = r"""
+\begin{tabular}{lc}
+03/15/2024 & 1.23 \\
+12/31/2025 & 4.56 \\
+\end{tabular}
+"""
+        nums = _extract_table_numbers(tex)
+        values = {n for n, _ in nums}
+        assert "1.23" in values
+        assert "4.56" in values
+        # Date components NOT extracted: not 2024, not 2025, not
+        # the bare 03 / 15 / 12 / 31 either.
+        for date_part in ("2024", "2025", "15", "31"):
+            assert date_part not in values, f"date component {date_part!r} leaked into extracted numbers"
+
+    def test_latex_brace_thousands_separator_treated_as_one_number(self):
+        """v0.7 fix: ``1{,}573.89`` is the LaTeX idiom for a comma
+        thousands separator that survives math mode. Pre-fix, the
+        cell parser split this into the two bogus numbers 1 and
+        573.89 — both of which then false-positive-mismatched
+        against unrelated source values. Surfaced on paper
+        f79b7cd9. Normalize ``{,}`` → ``,`` before extraction so
+        the existing thousands-separator branch picks it up as a
+        single 1,573.89 = 1573.89."""
+        tex = r"""
+\begin{tabular}{lccc}
+WETH & 1{,}573.89 & 4{,}738.79 & 1{,}199.88 \\
+WBTC & 49{,}027.83 & 67{,}860.04 & 16{,}572.04 \\
+\end{tabular}
+"""
+        nums = _extract_table_numbers(tex)
+        values = {n for n, _ in nums}
+        # The original 6 thousands-separated numbers survive intact
+        # (without the brace wrapping)
+        for v in ("1,573.89", "4,738.79", "1,199.88", "49,027.83", "67,860.04", "16,572.04"):
+            assert v in values, (
+                f"thousands-separated value {v!r} not extracted intact "
+                f"— pre-fix the brace would have split it into two halves"
+            )
+        # No spurious split-halves: '1' as a standalone match (pre-fix
+        # bug); '573.89' alone (pre-fix bug); '49' alone (pre-fix bug)
+        # The merged form is what's there; the split form would mean
+        # the regression returned.
+        bogus = {"573.89", "738.79", "199.88", "027.83", "860.04", "572.04"}
+        leaked = bogus & values
+        assert not leaked, (
+            f"brace-protected thousands separator still splitting numbers: saw spurious split halves {leaked}"
+        )
+
+    def test_bare_year_outside_date_context_still_extracted(self):
+        """Defensive: only HYPHENATED-or-SLASH-PATTERNED dates are
+        stripped. A bare ``2021`` inside a count cell (e.g. 'N=2021
+        observations') is still a legitimate numeric claim that
+        needs to match against the source JSON."""
+        tex = r"""
+\begin{tabular}{lc}
+Sample size & 2021 \\
+\end{tabular}
+"""
+        nums = _extract_table_numbers(tex)
+        values = {n for n, _ in nums}
+        assert "2021" in values, (
+            "bare year-shaped numbers outside a date context must still be "
+            "extracted — the fix targets date strings, not all four-digit "
+            "numbers"
+        )
+
 
 # ---------------------------------------------------------------------------
 # _parse_number
