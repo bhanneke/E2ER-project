@@ -110,6 +110,52 @@ _NUMBER_RE = re.compile(
 )
 
 
+# Date patterns to strip from a cell BEFORE number extraction.
+# Surfaced by the v0.6.1 live run on paper f79b7cd9: a cell
+# containing "2021-03-01" was parsed as the bare number 2021,
+# which then false-positive-mismatched against the source JSON
+# under `price_anchors_usd_close.2021-03-01.WETH` ("source value:
+# 1573.89" vs "draft value: 2021"). The mismatch was a parser
+# bug, not a hallucination — the year was part of the date, not
+# a numeric claim.
+#
+# We strip three common date forms:
+#   - ISO: YYYY-MM-DD or YYYY-MM
+#   - slash: YYYY/MM/DD or YYYY/MM
+#   - US: MM/DD/YYYY
+# Bare years like "2021" outside a date context still get
+# extracted — they may legitimately be a count or a year referenced
+# in the paper's text.
+_DATE_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"\b\d{4}-\d{1,2}(?:-\d{1,2})?\b"),
+    re.compile(r"\b\d{4}/\d{1,2}(?:/\d{1,2})?\b"),
+    re.compile(r"\b\d{1,2}/\d{1,2}/\d{4}\b"),
+)
+
+
+def _normalize_cell(cell: str) -> str:
+    """Pre-process a tabular cell before running ``_NUMBER_RE``.
+
+    Two fixes, both surfaced by the v0.6.1 live run:
+
+    1. LaTeX thousands separator ``1{,}573.89`` (the brace-protected
+       form that's safe inside math mode) was being split into the
+       two numbers 1 and 573.89. We replace ``{,}`` with ``,`` so
+       the existing thousands-separator branch of ``_NUMBER_RE``
+       picks it up as a single 1,573.89.
+    2. Date strings (``2021-03-01``, ``03/01/2021``, ``2021/03``)
+       inside column headers were extracting the year as a numeric
+       claim, generating false-positive mismatches. We strip date
+       substrings entirely before number extraction.
+    """
+    # LaTeX brace-protected thousands separator → standard comma.
+    # Done first so subsequent date stripping sees a clean number.
+    cell = cell.replace("{,}", ",")
+    for pattern in _DATE_PATTERNS:
+        cell = pattern.sub("", cell)
+    return cell
+
+
 def _flatten_json(obj: Any, prefix: str = "") -> dict[str, float]:
     """Recursively extract all numeric values from a JSON object.
 
@@ -185,7 +231,7 @@ def _extract_table_numbers(tex_content: str) -> list[tuple[str, str]]:
                 continue
             cells = row.split("&")
             for cell_idx, cell in enumerate(cells):
-                cell = cell.strip()
+                cell = _normalize_cell(cell.strip())
                 for num_match in _NUMBER_RE.finditer(cell):
                     num_str = num_match.group(1)
                     parsed = _parse_number(num_str)
