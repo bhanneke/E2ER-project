@@ -26,6 +26,8 @@ from src.core.strategist.patch_merger import (
     Edit,
     apply_edit,
     apply_patch,
+    list_section_titles,
+    list_table_labels,
     merge_patch_file,
     parse_patch_file,
     validate_targets,
@@ -325,6 +327,105 @@ class TestRegionExtraction:
         _, result = apply_edit(text, edit)
         assert not result.success
         assert "not found in document" in result.error
+
+
+# ---------------------------------------------------------------------------
+# v0.7.3: "did you mean..." suggestions on section/table not-found
+# ---------------------------------------------------------------------------
+
+
+class TestSectionTableCatalogHelpers:
+    """v0.7.3 surfaces helpers that list the addressable targets in a
+    draft. The merger uses them to enrich the error message when a
+    section: or table: target isn't found; they're also exposed as
+    public API for future tooling (e.g. an `e2er sections` debug
+    command). Pin the contract."""
+
+    def test_list_section_titles_in_document_order(self):
+        # _DRAFT has \section{Introduction}, \section{Identification
+        # Strategy}, \section{Results}
+        titles = list_section_titles(_DRAFT)
+        assert titles == ["Introduction", "Identification Strategy", "Results"]
+
+    def test_list_section_titles_empty_when_no_sections(self):
+        assert list_section_titles(r"\documentclass{article}\begin{document}\end{document}") == []
+
+    def test_list_table_labels_in_document_order(self):
+        labels = list_table_labels(_DRAFT)
+        assert labels == ["tab:main"]
+
+    def test_list_table_labels_empty_when_no_labelled_tables(self):
+        tex = r"""
+\begin{tabular}{lc}
+x & 0.42 \\
+\end{tabular}
+"""
+        assert list_table_labels(tex) == []
+
+
+class TestApplyEditNotFoundIncludesSuggestions:
+    """The v0.7.2 live re-validation REJECTED on a paper whose
+    patch_revisor emitted ``section:results`` and ``section:mechanism``
+    targets that didn't exist in the draft. The merger reported
+    "target region not found" with no hint. v0.7.3 appends the list
+    of available section names so the patch_revisor's retry has
+    actionable info."""
+
+    def test_section_not_found_error_lists_available_sections(self):
+        edit = Edit(
+            target="section:mechanism",  # NOT in _DRAFT
+            edit_type="replace_text",
+            find="x",
+            replace="y",
+        )
+        _, result = apply_edit(_DRAFT, edit)
+        assert not result.success
+        assert "not found in document" in result.error
+        # The actual available sections must be named verbatim
+        assert "Introduction" in result.error
+        assert "Identification Strategy" in result.error
+        assert "Results" in result.error
+        # And the "available sections:" lead-in so the patch_revisor
+        # knows what the list means
+        assert "available sections" in result.error
+
+    def test_table_not_found_error_lists_available_labels(self):
+        edit = Edit(
+            target="table:tab:phantom",  # NOT in _DRAFT
+            edit_type="replace_text",
+            find="x",
+            replace="y",
+        )
+        _, result = apply_edit(_DRAFT, edit)
+        assert not result.success
+        assert "not found in document" in result.error
+        assert "tab:main" in result.error
+        assert "available table labels" in result.error
+
+    def test_no_suggestions_when_target_not_section_or_table(self):
+        """For `paper:full` / `abstract` / `references`, suggestions
+        aren't useful — these are universal targets. (And `paper:full`
+        in particular never fails to resolve.) Just don't append the
+        suggestion suffix."""
+        # Construct a doc without an abstract
+        empty_doc = r"\documentclass{article}\begin{document}\end{document}"
+        edit = Edit(target="abstract", edit_type="replace_text", find="x", replace="y")
+        _, result = apply_edit(empty_doc, edit)
+        assert not result.success
+        # The "available ..." suffix should NOT appear for abstract
+        assert "available sections" not in result.error
+        assert "available table labels" not in result.error
+
+    def test_no_suggestions_when_no_sections_exist_at_all(self):
+        """Defensive: if the draft has zero sections, suggesting
+        '(available sections: )' would be misleading. Suppress the
+        suffix entirely in that case."""
+        tex = r"\documentclass{article}\begin{document}\end{document}"
+        edit = Edit(target="section:anything", edit_type="replace_text", find="x", replace="y")
+        _, result = apply_edit(tex, edit)
+        assert not result.success
+        # No "available sections:" line should appear when the list is empty
+        assert "available sections" not in result.error
 
 
 # ---------------------------------------------------------------------------
