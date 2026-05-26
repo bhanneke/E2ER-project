@@ -131,7 +131,11 @@ def _poll_status(paper_id: str, total_seconds: float, poll_interval: float = 15.
     """Tail status until terminal. Returns the final status."""
     import httpx
 
-    terminal = {"completed", "failed", "cancelled", "paused"}
+    # `rejected` is a v0.5+ terminal status (review-gate or verify_numbers
+    # quality reject, distinct from `failed` which means crash). Pre-fix
+    # the tailer kept polling forever on REJECTED papers because they
+    # weren't in this set — observed during fresh-install testing.
+    terminal = {"completed", "failed", "cancelled", "paused", "rejected"}
     start = time.monotonic()
     last_state = ""
     while time.monotonic() - start < total_seconds:

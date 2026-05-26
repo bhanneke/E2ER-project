@@ -60,6 +60,35 @@ def main() -> None:
         help="How long to tail the run before detaching. Default 30 min. ^C is safe — run continues in background.",
     )
 
+    status_p = subparsers.add_parser(
+        "status",
+        help="Show the current status of a paper (and optionally tail it).",
+    )
+    status_p.add_argument("paper_id", help="The paper UUID returned by `e2er run`.")
+    status_p.add_argument(
+        "--tail",
+        action="store_true",
+        help="Poll status until the paper reaches a terminal state. ^C is safe — paper continues.",
+    )
+    status_p.add_argument(
+        "--monitor-seconds",
+        type=float,
+        default=1800.0,
+        help="With --tail, max time to poll before detaching. Default 30 min.",
+    )
+
+    cancel_p = subparsers.add_parser(
+        "cancel",
+        help="Cancel an in-flight paper. Workspace + completed phases are preserved.",
+    )
+    cancel_p.add_argument("paper_id", help="The paper UUID returned by `e2er run`.")
+    cancel_p.add_argument(
+        "--yes",
+        "-y",
+        action="store_true",
+        help="Skip the confirmation prompt.",
+    )
+
     install_skills = subparsers.add_parser(
         "install-skills",
         help="Copy bundled skill files to ~/.{backend}/skills/ for headless CLI backends.",
@@ -98,6 +127,20 @@ def main() -> None:
         from .cli_init import init as _init
 
         sys.exit(_init(force=args.force))
+    elif args.command == "status":
+        from .cli_status import status as _status
+
+        sys.exit(
+            _status(
+                paper_id=args.paper_id,
+                tail=args.tail,
+                monitor_seconds=args.monitor_seconds,
+            )
+        )
+    elif args.command == "cancel":
+        from .cli_status import cancel as _cancel
+
+        sys.exit(_cancel(paper_id=args.paper_id, yes=args.yes))
     elif args.command == "migrate":
         # Importable module (works in both pip-installed wheel AND dev
         # checkout). The previous implementation pointed at
