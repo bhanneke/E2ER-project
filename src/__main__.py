@@ -89,6 +89,32 @@ def main() -> None:
         help="Skip the confirmation prompt.",
     )
 
+    resume_p = subparsers.add_parser(
+        "resume",
+        help=(
+            "Resume a paused / failed paper. Resume-from-disk skips phases that "
+            "already produced their canonical artifact, so completed work isn't repeated."
+        ),
+    )
+    resume_p.add_argument("paper_id", help="The paper UUID returned by `e2er run`.")
+    resume_p.add_argument(
+        "--max-cost",
+        type=float,
+        default=None,
+        help="Raise the per-paper cost cap atomically with the resume (common after BudgetExceededError).",
+    )
+    resume_p.add_argument(
+        "--tail",
+        action="store_true",
+        help="Poll the resumed paper until terminal. ^C is safe — paper continues.",
+    )
+    resume_p.add_argument(
+        "--monitor-seconds",
+        type=float,
+        default=1800.0,
+        help="With --tail, max time to poll before detaching. Default 30 min.",
+    )
+
     install_skills = subparsers.add_parser(
         "install-skills",
         help="Copy bundled skill files to ~/.{backend}/skills/ for headless CLI backends.",
@@ -141,6 +167,17 @@ def main() -> None:
         from .cli_status import cancel as _cancel
 
         sys.exit(_cancel(paper_id=args.paper_id, yes=args.yes))
+    elif args.command == "resume":
+        from .cli_status import resume as _resume
+
+        sys.exit(
+            _resume(
+                paper_id=args.paper_id,
+                max_cost=args.max_cost,
+                tail=args.tail,
+                monitor_seconds=args.monitor_seconds,
+            )
+        )
     elif args.command == "migrate":
         # Importable module (works in both pip-installed wheel AND dev
         # checkout). The previous implementation pointed at
