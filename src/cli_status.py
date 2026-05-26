@@ -1,4 +1,5 @@
-"""``e2er status`` and ``e2er cancel`` — re-attach / stop commands.
+"""``e2er status`` / ``e2er cancel`` / ``e2er resume`` —
+re-attach / stop / restart commands.
 
 Closes the post-`e2er run` gap: when the run-tailer times out (or
 the user ^C's it), they need a way to come back to the paper from
@@ -7,12 +8,17 @@ the terminal without opening the dashboard.
   e2er status <paper_id>          one-shot snapshot
   e2er status <paper_id> --tail   re-attach the tailer
   e2er cancel <paper_id>          stop a running paper
+  e2er resume <paper_id>          restart a paused / failed paper
+  e2er resume <paper_id> --max-cost 15   raise the cap while resuming
 
-Both commands talk to the local API server (or whatever
+`status` and `cancel` talk to the local API server (or whatever
 ``E2ER_API_URL`` resolves to). They do NOT auto-start uvicorn —
-if the API is down, they print a clear error and exit non-zero,
-because "the server isn't running" is a different problem from
-"the paper is in a weird state".
+"the server isn't running" is a different problem from "the paper
+is in a weird state".
+
+`resume` is different: the user is actively asking the paper to
+start running again, so we DO auto-start uvicorn (same behaviour
+as `e2er run`).
 """
 
 from __future__ import annotations
@@ -255,4 +261,133 @@ def cancel(paper_id: str, yes: bool = False) -> int:
     print(
         "  (Status hasn't transitioned to `cancelled` yet — give it a few seconds, then `e2er status <id>` to confirm.)"
     )
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# e2er resume
+# ---------------------------------------------------------------------------
+
+
+def resume(
+    paper_id: str,
+    max_cost: float | None = None,
+    tail: bool = False,
+    monitor_seconds: float = 1800.0,
+) -> int:
+    """Resume a paused / failed / zombie paper.
+
+    Unlike ``status`` and ``cancel``, this command auto-starts the
+    local uvicorn if it isn't already up — the user is actively
+    asking the paper to start running again, so they expect the
+    server up. Same UX as ``e2er run``.
+
+    Optional ``--max-cost`` raises the per-paper cap atomically
+    with the resume request (v0.5+ ``ResumeRequest`` body support).
+    The most common use case: a paper PAUSED on
+    ``BudgetExceededError`` and the operator wants to give it
+    more budget without two-step ``UPDATE`` + POST.
+
+    With ``--tail``, re-uses ``_poll_status`` so the operator can
+    watch the resumed paper to completion.
+    """
+    import httpx
+
+    from .cli_run import _ensure_api_up
+
+    ok, err = _ensure_api_up()
+    if not ok:
+        print(f"e2er resume: {err}", file=sys.stderr)
+        return 3
+
+    # Look up first so the prompt + log can show what's being resumed.
+    try:
+        r = httpx.get(f"{_api_root()}/api/papers/{paper_id}", timeout=10.0)
+    except Exception as e:
+        print(f"e2er resume: lookup failed: {e}", file=sys.stderr)
+        return 3
+    if r.status_code == 404:
+        print(f"e2er resume: paper {paper_id} not found", file=sys.stderr)
+        return 4
+
+    payload = r.json()
+    current_status = payload.get("status", "?")
+    if current_status == "completed":
+        # Genuinely done — no point resuming. Different from cancelled
+        # (which IS resumable per the v0.4 state-machine softening).
+        print("e2er resume: paper is already completed; nothing to resume.")
+        return 0
+
+    title = payload.get("title") or "(untitled)"
+    current_cap = payload.get("max_cost_usd")
+    print(f"Resuming: {_truncate(title, 80)}")
+    print(f"  Paper ID: {paper_id}")
+    print(f"  Current status: {current_status}")
+    if max_cost is not None:
+        print(f"  Cap: ${_format_money(current_cap)} → ${_format_money(max_cost)}")
+    else:
+        print(f"  Cap: ${_format_money(current_cap)} (unchanged)")
+    last_error = payload.get("last_error")
+    if last_error:
+        print(f"  Was: {_truncate(str(last_error), 120)}")
+
+    # POST /resume with the optional cap raise
+    body: dict = {}
+    if max_cost is not None:
+        body["max_cost_usd"] = max_cost
+    try:
+        r = httpx.post(
+            f"{_api_root()}/api/papers/{paper_id}/resume",
+            json=body,
+            timeout=10.0,
+        )
+    except Exception as e:
+        print(f"e2er resume: POST failed: {e}", file=sys.stderr)
+        return 3
+
+    if r.status_code == 400:
+        # Validation error (e.g. non-positive cap from the v0.5
+        # ResumeRequest validator). Surface the detail directly.
+        try:
+            detail = r.json().get("detail") or r.text
+        except Exception:
+            detail = r.text
+        print(f"e2er resume: {detail}", file=sys.stderr)
+        return 5
+    if r.status_code == 409:
+        # Already running (the runner refuses to double-spawn). The user
+        # should `e2er cancel` first if they want to restart.
+        try:
+            detail = r.json().get("detail") or r.text
+        except Exception:
+            detail = r.text
+        print(
+            f"e2er resume: {detail}\n  Hint: `e2er cancel {paper_id}` first if you want to stop the running task.",
+            file=sys.stderr,
+        )
+        return 5
+    if r.status_code not in (200, 202):
+        print(
+            f"e2er resume: POST returned {r.status_code}: {r.text[:300]}",
+            file=sys.stderr,
+        )
+        return 5
+
+    try:
+        body_response = r.json()
+    except Exception:
+        body_response = {}
+    new_status = body_response.get("status", "resuming")
+    print(f"  ✓ Resumed. {new_status}")
+    print(f"  Dashboard: {_api_root()}/papers/{paper_id}")
+
+    if tail:
+        print()
+        print(f"Polling status (max {monitor_seconds:.0f}s, ^C is safe):")
+        try:
+            final = _poll_status(paper_id, total_seconds=monitor_seconds)
+        except KeyboardInterrupt:
+            print("\n  ^C — paper continues in the background.", file=sys.stderr)
+            return 0
+        print(f"\n  Final status: {final}")
     return 0

@@ -178,35 +178,21 @@ Most users want `empirical`. `theoretical` is for pure-model papers (no data, ju
 
 ---
 
-## Check, tail, or cancel a paper
+## Check, tail, cancel, resume
 
-After `e2er run` you have three lightweight CLI commands for managing the paper from the terminal:
-
-```bash
-e2er status <paper_id>              # one-shot snapshot
-e2er status <paper_id> --tail       # re-attach the live tailer
-e2er cancel <paper_id>              # stop a running paper (confirms first)
-e2er cancel <paper_id> --yes        # skip the confirmation
-```
-
-`status` shows the current phase, cost meter, last error if any, and the workspace + dashboard URLs. `cancel` preserves the workspace + completed-phase artifacts so the run is resumable.
-
-## Resume a paused paper
-
-Papers pause for two reasons, both recoverable:
-
-- **Budget exhausted** — the per-paper cap was reached.
-- **Circuit breaker** — a non-tolerant specialist failed `_MAX_SPECIALIST_ATTEMPTS` times in a row (typically a data-layer outage).
-
-For budget pauses, raise the cap atomically with the resume:
+After `e2er run` you have four lightweight CLI commands for managing the paper from the terminal:
 
 ```bash
-curl -X POST http://127.0.0.1:8280/api/papers/<paper_id>/resume \
-  -H "Content-Type: application/json" \
-  -d '{"max_cost_usd": 15}'
+e2er status <paper_id>                       # one-shot snapshot
+e2er status <paper_id> --tail                # re-attach the live tailer
+e2er cancel <paper_id>                       # stop a running paper (confirms first)
+e2er cancel <paper_id> --yes                 # skip the confirmation
+e2er resume <paper_id>                       # restart a paused / failed paper
+e2er resume <paper_id> --max-cost 15         # raise the cap while resuming
+e2er resume <paper_id> --max-cost 15 --tail  # raise cap + watch to terminal
 ```
 
-For circuit-breaker pauses, fix the underlying problem (e.g. restore data-source access) first, then POST with no body to retry. The runner's resume-from-disk logic skips any phase that already produced its canonical artifact, so you don't re-pay for completed work.
+`status` shows the current phase, cost meter, last error if any, and the workspace + dashboard URLs. `cancel` preserves the workspace + completed-phase artifacts so the run is resumable. `resume` works for budget-paused papers (use `--max-cost` to give it more budget), circuit-breaker pauses (POST with no extra cap; fix the underlying issue first), and zombie revision/in_progress rows left behind by a server restart. The resume-from-disk logic skips any phase that already produced its canonical artifact, so completed work isn't re-paid.
 
 The dashboard's "Resume" button does the same thing through the UI.
 

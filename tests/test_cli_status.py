@@ -15,6 +15,7 @@ from src.cli_status import (
     _format_status_summary,
     _truncate,
     cancel,
+    resume,
     status,
 )
 
@@ -337,3 +338,183 @@ class TestCancel:
             code = cancel("abc", yes=True)
         assert code == 5
         assert "500" in capsys.readouterr().err
+
+
+# ---------------------------------------------------------------------------
+# resume()
+# ---------------------------------------------------------------------------
+
+
+class TestResume:
+    def _make_lookup(self, status_value: str, **extras) -> MagicMock:
+        mock = MagicMock()
+        mock.status_code = 200
+        base = {
+            "id": "abc",
+            "title": "Test",
+            "status": status_value,
+            "max_cost_usd": 5.0,
+            "last_error": None,
+            "usage": {"total_cost_usd": 0.0, "specialist_calls": 0},
+        }
+        base.update(extras)
+        mock.json.return_value = base
+        return mock
+
+    def _resume_response(self, status: str = "resuming") -> MagicMock:
+        post_resp = MagicMock()
+        post_resp.status_code = 200
+        post_resp.json.return_value = {
+            "status": status,
+            "paper_id": "abc",
+            "from_status": "paused",
+        }
+        return post_resp
+
+    # --- happy paths ---------------------------------------------------------
+
+    def _patch_ensure_api(self, ok: bool = True, err: str | None = None):
+        return patch(
+            "src.cli_run._ensure_api_up",
+            return_value=(ok, err),
+        )
+
+    def test_resume_paused_paper_no_cap_change(self, capsys):
+        """Common case: paper PAUSED on budget but operator wants to
+        retry with the same cap (e.g. circuit-breaker pause).
+        Resume body is empty {}; the API uses the row's existing cap."""
+        post_resp = self._resume_response()
+        with (
+            self._patch_ensure_api(ok=True),
+            patch("httpx.get", return_value=self._make_lookup("paused")),
+            patch("httpx.post", return_value=post_resp) as mock_post,
+        ):
+            code = resume("abc")
+        assert code == 0
+        # Body sent was empty dict (no cap change)
+        body = mock_post.call_args.kwargs["json"]
+        assert body == {}
+        out = capsys.readouterr().out
+        assert "Resuming" in out
+        assert "(unchanged)" in out
+
+    def test_resume_with_raised_cap(self, capsys):
+        """Budget-PAUSED paper with --max-cost: the new cap is sent
+        in the body and reflected in the user-facing summary."""
+        post_resp = self._resume_response()
+        with (
+            self._patch_ensure_api(ok=True),
+            patch(
+                "httpx.get",
+                return_value=self._make_lookup("paused", max_cost_usd=5.0, last_error="BudgetExceededError: ..."),
+            ),
+            patch("httpx.post", return_value=post_resp) as mock_post,
+        ):
+            code = resume("abc", max_cost=15.0)
+        assert code == 0
+        body = mock_post.call_args.kwargs["json"]
+        assert body == {"max_cost_usd": 15.0}
+        out = capsys.readouterr().out
+        # Cap delta visible
+        assert "$5.00 → $15.00" in out
+        # last_error gets surfaced so the user knows what was wrong
+        assert "BudgetExceededError" in out
+
+    # --- failure / edge paths ------------------------------------------------
+
+    def test_api_unreachable_returns_3(self, capsys):
+        with self._patch_ensure_api(ok=False, err="cannot start uvicorn (timeout)"):
+            code = resume("abc")
+        assert code == 3
+        assert "timeout" in capsys.readouterr().err
+
+    def test_404_paper_returns_4(self, capsys):
+        not_found = MagicMock()
+        not_found.status_code = 404
+        with (
+            self._patch_ensure_api(ok=True),
+            patch("httpx.get", return_value=not_found),
+        ):
+            code = resume("abc")
+        assert code == 4
+        assert "not found" in capsys.readouterr().err
+
+    def test_completed_paper_short_circuits_with_message(self, capsys):
+        """Cannot resume a completed paper — print a message and exit 0.
+        Different from cancelled (which IS resumable per the v0.4
+        state-machine softening)."""
+        with (
+            self._patch_ensure_api(ok=True),
+            patch("httpx.get", return_value=self._make_lookup("completed")),
+            patch("httpx.post") as mock_post,
+        ):
+            code = resume("abc")
+        assert code == 0
+        assert mock_post.call_count == 0, "POST must not be called for a completed paper"
+        assert "already completed" in capsys.readouterr().out
+
+    def test_400_validation_error_returns_5(self, capsys):
+        """v0.5+ ResumeRequest rejects non-positive max_cost_usd. The
+        CLI surfaces the API's detail directly."""
+        bad_resp = MagicMock()
+        bad_resp.status_code = 400
+        bad_resp.json.return_value = {"detail": "max_cost_usd must be positive, got 0.0"}
+        bad_resp.text = "bad request"
+        with (
+            self._patch_ensure_api(ok=True),
+            patch("httpx.get", return_value=self._make_lookup("paused")),
+            patch("httpx.post", return_value=bad_resp),
+        ):
+            code = resume("abc", max_cost=0.0)
+        assert code == 5
+        # The detail message reaches the user
+        assert "must be positive" in capsys.readouterr().err
+
+    def test_409_already_running_returns_5_with_cancel_hint(self, capsys):
+        """Resume refuses when a paper is already running. The user
+        needs to know they can `e2er cancel` first."""
+        conflict = MagicMock()
+        conflict.status_code = 409
+        conflict.json.return_value = {"detail": "A pipeline task is already running for this paper"}
+        conflict.text = "conflict"
+        with (
+            self._patch_ensure_api(ok=True),
+            patch("httpx.get", return_value=self._make_lookup("in_progress")),
+            patch("httpx.post", return_value=conflict),
+        ):
+            code = resume("abc")
+        assert code == 5
+        err = capsys.readouterr().err
+        assert "already running" in err
+        # And the hint mentioning cancel
+        assert "e2er cancel" in err
+
+    def test_other_non_200_returns_5(self, capsys):
+        bad = MagicMock()
+        bad.status_code = 503
+        bad.text = "service unavailable"
+        with (
+            self._patch_ensure_api(ok=True),
+            patch("httpx.get", return_value=self._make_lookup("paused")),
+            patch("httpx.post", return_value=bad),
+        ):
+            code = resume("abc")
+        assert code == 5
+        assert "503" in capsys.readouterr().err
+
+    def test_tail_flag_invokes_poll(self):
+        """With --tail the resume command re-uses _poll_status. Mock
+        it to ensure resume hands off correctly without actually
+        looping."""
+        post_resp = self._resume_response()
+        with (
+            self._patch_ensure_api(ok=True),
+            patch("httpx.get", return_value=self._make_lookup("paused")),
+            patch("httpx.post", return_value=post_resp),
+            patch("src.cli_status._poll_status", return_value="completed") as mock_poll,
+        ):
+            code = resume("abc", tail=True, monitor_seconds=60.0)
+        assert code == 0
+        assert mock_poll.call_count == 1
+        # Forwards the monitor budget
+        assert mock_poll.call_args.kwargs.get("total_seconds") == 60.0 or mock_poll.call_args.args[1] == 60.0
