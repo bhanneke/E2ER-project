@@ -10,6 +10,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 (Add new entries here under `### Lane A — Pipeline`, `### Lane B — Literature`,
 `### Lane C — Data`, or `### Cross-lane` sub-headings per `AGENTS.md`.)
 
+## v0.7.2 — 2026-05-26
+
+Closes the v0.7.1-noted follow-up: a CLI command to resume
+paused / failed / zombie papers. Completes the status / cancel /
+resume trio so the operator never has to drop down to curl.
+
+### Cross-lane
+
+- **`e2er resume <paper_id>`** — restart a paused or failed
+  paper from the terminal. Optional `--max-cost N` raises the
+  cap atomically with the resume (sent through to the v0.5+
+  `ResumeRequest` body). Surfaces the paper's title + previous
+  status + cap delta + `last_error` before issuing the POST, so
+  the operator knows what they're restarting. Unlike `status`
+  and `cancel`, this command DOES auto-start uvicorn — the user
+  is asking the paper to start running again, so the server
+  needs to be up.
+  - 200 → prints the new transient status (`resuming`) +
+    dashboard URL, optionally tails to terminal via `--tail`
+  - 400 → surfaces the validation detail (e.g. non-positive
+    cap) directly so the user can fix and retry
+  - 409 → "already running" with a hint to `e2er cancel` first
+  - 404 → "paper not found"
+- **9 new regression tests** in `tests/test_cli_status.py`
+  covering: no-cap-change happy path, cap-raise happy path,
+  completed-paper short-circuit, 400 / 409 / 503 / 404 error
+  paths, `--tail` integration, the API-unreachable branch.
+
+### Test counts
+
+- Mocked suite: 590 passed (was 581 in v0.7.1; +9 here).
+
 ## v0.7.1 — 2026-05-26
 
 Two new lightweight CLI commands surfaced by the v0.7.0
