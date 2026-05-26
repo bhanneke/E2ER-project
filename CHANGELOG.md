@@ -10,6 +10,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 (Add new entries here under `### Lane A — Pipeline`, `### Lane B — Literature`,
 `### Lane C — Data`, or `### Cross-lane` sub-headings per `AGENTS.md`.)
 
+## v0.7.3 — 2026-05-26
+
+Fix the patch_revisor section-target resolution bug surfaced by
+the v0.7.2 live re-validation on paper `7f4f2363`. The drafter
+got a paper all the way through to the revision phase (v0.7.0's
+verify_numbers parser fix worked), but the patch_revisor emitted
+edits targeting canonical section names (`section:results`,
+`section:mechanism`) that didn't exist in the actual draft. The
+merger reported "target region not found" with no hint and the
+paper REJECTED on parser bugs, not real hallucinations — for the
+second release in a row.
+
+### Lane A — Pipeline
+
+- **Merger emits "did you mean..." suggestions on section/table
+  not-found.** When `apply_edit` can't resolve a `section:` or
+  `table:` target, the error message now appends the list of
+  available section titles or labelled tables in the document.
+  Example before/after:
+  - Before: `target region 'section:results' not found in document`
+  - After: `target region 'section:results' not found in document (available sections: 'Introduction', 'Identification Strategy', 'Empirical Strategy', 'Discussion')`
+  Two new public helpers: `list_section_titles(text)` and
+  `list_table_labels(text)`. Suggestions are suppressed when the
+  list is empty (avoids the misleading
+  `(available sections: )` suffix on minimal LaTeX skeletons).
+  Universal targets (`paper:full` / `abstract` / `references`)
+  don't get suggestions.
+- **`writing/scoped-revision.md` skill update.** New section
+  ("Before you compose any edits — list the draft's actual
+  targets") instructs the patch_revisor to grep the draft for
+  `\section{...}` and `\label{tab:...}` lines before composing
+  patches. Explains the case-insensitive substring matching the
+  merger uses, the common failure mode (canonical-name vs
+  actual-heading mismatch), and the `paper:full` fallback for
+  findings that don't have a dedicated section.
+
+### Test counts
+
+- Mocked suite: 598 passed (was 590 in v0.7.2; +8 here).
+- 8 new tests in `tests/pipeline/test_patch_merger.py`:
+  - 4 for `list_section_titles` and `list_table_labels` helpers.
+  - 4 for the extended error: section suggestions, table
+    suggestions, no suggestion for non-section/table targets, no
+    misleading suffix when the list is empty.
+
 ## v0.7.2 — 2026-05-26
 
 Closes the v0.7.1-noted follow-up: a CLI command to resume
