@@ -299,6 +299,55 @@ def _extract_region(text: str, target: str) -> tuple[int, int]:
     return (-1, -1)
 
 
+def list_section_titles(text: str) -> list[str]:
+    """Return every ``\\section{...}`` title in document order.
+
+    Used by ``apply_edit`` to emit "did you mean: …" suggestions when
+    a ``section:<name>`` target can't be resolved. Also exposed as a
+    public helper so the patch_revisor (or a future
+    ``e2er sections <paper_id>`` debug command) can list the
+    addressable targets in a paper without inventing them.
+    """
+    return [m.group(1) for m in re.finditer(r"\\section\{([^}]+)\}", text)]
+
+
+def list_table_labels(text: str) -> list[str]:
+    """Return every ``\\label{tab:...}`` in document order.
+
+    Tables without an explicit ``\\label{tab:...}`` are addressable
+    via ``table:Table_<N>`` (the N-th ``\\begin{tabular}``). This
+    helper lists the labelled ones because those are what a
+    `verify_numbers` finding will reference by name.
+    """
+    return [m.group(1) for m in re.finditer(r"\\label\{(tab:[A-Za-z0-9_:-]+)\}", text)]
+
+
+def _format_section_suggestion(text: str, requested_name: str) -> str:
+    """Build a 'did you mean...' suffix for a section-not-found error.
+
+    Returns "" when there are no sections at all (the suggestion
+    would be empty and misleading). The patch_revisor sees this on
+    retry and can pick a target that actually exists. Surfaced by
+    the v0.7.2 live re-validation (paper 7f4f2363) where the
+    revisor emitted ``section:results`` and ``section:mechanism``
+    targets against a paper whose actual sections were named
+    differently — the merger reported "not found" with no hint and
+    the run REJECTED.
+    """
+    candidates = list_section_titles(text)
+    if not candidates:
+        return ""
+    return f" (available sections: {', '.join(repr(c) for c in candidates)})"
+
+
+def _format_table_suggestion(text: str, requested_label: str) -> str:
+    """Build a 'did you mean...' suffix for a table-not-found error."""
+    candidates = list_table_labels(text)
+    if not candidates:
+        return ""
+    return f" (available table labels: {', '.join(repr(c) for c in candidates)})"
+
+
 # ---------------------------------------------------------------------------
 # Edit application
 # ---------------------------------------------------------------------------
@@ -325,10 +374,21 @@ def apply_edit(text: str, edit: Edit) -> tuple[str, EditResult]:
 
     region_start, region_end = _extract_region(text, edit.target)
     if region_start == -1:
+        # Append a "did you mean..." hint when the target is a section
+        # or table — these are the most-frequently-missed because the
+        # patch_revisor uses canonical names (`section:results`) that
+        # may not match the draft's actual headings. Surfaced by the
+        # v0.7.2 live re-validation. paper:full / abstract / references
+        # are universal and never need disambiguation.
+        suggestion = ""
+        if edit.target.startswith("section:"):
+            suggestion = _format_section_suggestion(text, edit.target[len("section:") :])
+        elif edit.target.startswith("table:"):
+            suggestion = _format_table_suggestion(text, edit.target[len("table:") :])
         return text, EditResult(
             edit=edit,
             success=False,
-            error=f"target region {edit.target!r} not found in document",
+            error=f"target region {edit.target!r} not found in document{suggestion}",
         )
 
     region = text[region_start:region_end]

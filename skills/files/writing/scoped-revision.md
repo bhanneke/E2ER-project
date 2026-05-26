@@ -65,6 +65,36 @@ one edit. Currently the merger supports one `edit_type`:
 | `source_finding` | optional | Free-text provenance (e.g. `"verify_numbers#0"`). Appears in the merger's report; helps the operator audit which Finding drove which edit. |
 | `id` | optional | Stable identifier for this edit. The merger generates `e0`, `e1`, ... if absent. |
 
+## Before you compose any edits — list the draft's actual targets
+
+Read `paper_draft.tex` and grep its real `\section{...}` headings and
+`\label{tab:...}` references. Write down the list. **Every edit's
+`target` must use one of those exact names** (case-insensitive
+substring of the section title; exact match for table labels).
+
+```
+# What the draft actually contains:
+grep -nE '^\\(section|label)\{' paper_draft.tex
+```
+
+Common failure mode: the finding's `target` field says
+`section:results`, but the draft's heading is `\section{Empirical
+Strategy}` or `\section{Estimation}`. The merger does
+case-insensitive substring matching on the heading text — so
+`section:strategy` would match `\section{Empirical Strategy}`,
+but `section:results` would NOT.
+
+When a finding's `target` doesn't have a matching section, pick
+the closest existing section based on the finding's `problem`
+text — don't invent a target hoping the merger will figure it
+out. The merger rejects targets that aren't in the work order's
+findings, AND it can't resolve sections that don't exist; both
+failures cost an LLM round-trip.
+
+If a finding pertains to material the paper doesn't have a
+dedicated section for, use `paper:full` as the target. The
+merger's region-extraction is permissive for `paper:full`.
+
 ## Rules
 
 1. **One edit per finding, where possible.** If a finding names a
