@@ -10,6 +10,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 (Add new entries here under `### Lane A — Pipeline`, `### Lane B — Literature`,
 `### Lane C — Data`, or `### Cross-lane` sub-headings per `AGENTS.md`.)
 
+## v0.7.1 — 2026-05-26
+
+Two new lightweight CLI commands surfaced by the v0.7.0
+fresh-install UX test: when `e2er run`'s tailer times out (or
+the user ^C's it), there was no scripted way to re-attach,
+inspect the current state, or cancel a runaway paper without
+opening the dashboard.
+
+### Cross-lane
+
+- **`e2er status <paper_id>`** — one-shot snapshot of a paper:
+  status, mode/methodology, cost meter (with the
+  `cost_is_estimate` marker on CLI backends), specialist call
+  count, token total, workspace path, dashboard URL. Shows
+  `last_error` verbatim when present so the user can diagnose
+  REJECTED / PAUSED / FAILED without parsing the events log.
+  With `--tail`, re-uses the same polling loop `e2er run` uses
+  so the user can re-attach after ^C. Short-circuits on already-
+  terminal status (no wasted polls). Hits the local API by
+  default; respects `E2ER_API_URL` for remote inspection.
+- **`e2er cancel <paper_id>`** — POSTs the `/cancel` endpoint
+  with a confirmation prompt (skippable via `--yes`). Surfaces
+  the title + current status + spend-so-far before the user
+  confirms so they don't cancel by accident. Terminal-status
+  short-circuit. Treats post-cancel 404 as success (the paper
+  finished while we were asking; that's what the user wanted).
+  Brief post-cancel poll so the user sees the CANCELLED
+  transition land before the shell returns.
+- **Cost output now formats with two decimals.** Pre-fix
+  `e2er status` showed `$8.462921999999999`; now `$8.46`. Float
+  noise was reaching the user-facing string when the API
+  returned high-precision cost totals.
+- **`_poll_status` now treats `rejected` as terminal.** Pre-fix
+  the `e2er run` tailer kept polling forever on REJECTED papers
+  (a v0.5+ status it didn't know about). Observed during fresh-
+  install testing on paper 2ca473aa.
+
+### Test counts
+
+- Mocked suite: 581 passed (was 554 in v0.7.0; +27 cli_status).
+- 27 new tests in `tests/test_cli_status.py` covering
+  formatters, exit codes, the unreachable-API branch, the
+  confirmation prompt, and the post-cancel-404 race handling.
+
+### Known follow-up (v0.7.2 candidate)
+
+- `e2er resume <paper_id>` — natural complement to `cancel`.
+  PAUSED papers can be resumed via `curl POST /resume` today;
+  a CLI command would close the same UX gap that `status` and
+  `cancel` close. Out of scope for v0.7.1.
+
 ## v0.7.0 — 2026-05-24
 
 Better onboarding + a verify_numbers parser fix, bundled.

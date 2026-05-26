@@ -178,6 +178,19 @@ Most users want `empirical`. `theoretical` is for pure-model papers (no data, ju
 
 ---
 
+## Check, tail, or cancel a paper
+
+After `e2er run` you have three lightweight CLI commands for managing the paper from the terminal:
+
+```bash
+e2er status <paper_id>              # one-shot snapshot
+e2er status <paper_id> --tail       # re-attach the live tailer
+e2er cancel <paper_id>              # stop a running paper (confirms first)
+e2er cancel <paper_id> --yes        # skip the confirmation
+```
+
+`status` shows the current phase, cost meter, last error if any, and the workspace + dashboard URLs. `cancel` preserves the workspace + completed-phase artifacts so the run is resumable.
+
 ## Resume a paused paper
 
 Papers pause for two reasons, both recoverable:
