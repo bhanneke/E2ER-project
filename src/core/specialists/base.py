@@ -354,35 +354,84 @@ def _build_user_prompt(work_order: WorkOrder) -> str:
 
 
 def _load_reference_summary(specialist: str) -> str:
-    """Return a compact bibliography block if LITERATURE_BIBTEX_FILE is set."""
+    """Return a compact bibliography block from the configured BibTeX sources.
+
+    Two sources, both optional, both merged when present:
+
+    1. ``LITERATURE_BIBTEX_FILE`` — a single .bib file path. The v0.4
+       contract. Power users with a curated per-project file still get
+       exact control here.
+    2. ``LOCAL_DATA_DIR`` (v0.8) — any ``*.bib`` files inside the
+       researcher's BYOD corpus directory. Picks up Zotero-exported
+       Better BibTeX files, manual exports, etc. The drafter sees them
+       alongside the curated file.
+
+    Both sources are parsed and de-duplicated by (title, year) so a
+    user who has the same .bib in both places doesn't get every
+    reference listed twice. Empty config → empty string, same as v0.4.
+    """
     if specialist not in _BIB_SPECIALISTS:
         return ""
     from ...config import get_settings
 
     settings = get_settings()
-    if not settings.literature_bibtex_file:
-        return ""
-    bib_path = Path(settings.literature_bibtex_file)
-    if not bib_path.exists():
-        return ""
-    try:
-        from ...modules.literature.bibtex import parse_bibtex_file
 
-        papers = parse_bibtex_file(bib_path)
-    except Exception:
+    # Collect candidate paths from both config knobs.
+    bib_paths: list[Path] = []
+    if settings.literature_bibtex_file:
+        primary = Path(settings.literature_bibtex_file).expanduser()
+        if primary.is_file():
+            bib_paths.append(primary)
+    if settings.local_data_dir:
+        local_dir = Path(settings.local_data_dir).expanduser()
+        if local_dir.is_dir():
+            for candidate in sorted(local_dir.iterdir()):
+                if candidate.is_file() and candidate.suffix.lower() == ".bib":
+                    # Skip duplicates if the same file was named in
+                    # LITERATURE_BIBTEX_FILE — common when the user
+                    # points the explicit env var at one file inside
+                    # the BYOD corpus.
+                    if candidate.resolve() in {p.resolve() for p in bib_paths}:
+                        continue
+                    bib_paths.append(candidate)
+
+    if not bib_paths:
         return ""
-    if not papers:
+
+    from ...modules.literature.bibtex import parse_bibtex_file
+
+    all_papers = []
+    seen: set[tuple[str, str]] = set()
+    sources_used: list[str] = []
+    for bib_path in bib_paths:
+        try:
+            papers = parse_bibtex_file(bib_path)
+        except Exception:
+            continue
+        if not papers:
+            continue
+        sources_used.append(bib_path.name)
+        for p in papers:
+            key = (p.title.strip().lower(), str(p.year or ""))
+            if key in seen:
+                continue
+            seen.add(key)
+            all_papers.append(p)
+
+    if not all_papers:
         return ""
-    lines = [f"## Available References ({len(papers)} papers from {bib_path.name})\n"]
-    for p in papers[:60]:
+
+    sources_label = ", ".join(sources_used) if len(sources_used) <= 3 else f"{len(sources_used)} BibTeX files"
+    lines = [f"## Available References ({len(all_papers)} papers from {sources_label})\n"]
+    for p in all_papers[:60]:
         authors = ", ".join(p.authors[:2])
         if len(p.authors) > 2:
             authors += " et al."
         year = f" ({p.year})" if p.year else ""
         journal = f". _{p.journal}_" if p.journal else ""
         lines.append(f'- {authors}{year}. "{p.title}"{journal}')
-    if len(papers) > 60:
-        lines.append(f"  ... and {len(papers) - 60} more. See `{bib_path}` for the full list.")
+    if len(all_papers) > 60:
+        lines.append(f"  ... and {len(all_papers) - 60} more.")
     return "\n".join(lines)
 
 
