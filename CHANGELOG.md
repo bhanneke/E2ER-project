@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Cross-lane
+
+- **`scripts/live_check.py` — live smoke harness.** Exercises the real
+  data/literature provider paths (yfinance, FRED, Allium connectivity,
+  OpenAlex search, `read_reference` on an OA PDF, Zotero library) against
+  live services, auto-skipping providers without credentials. No LLM calls
+  (free). Complements `make smoke` (offline/mocked) and `make smoke-paid`
+  (full LLM run). Run: `python scripts/live_check.py`.
+
 ### Lane C — Data
 
 - **Allium folded behind a `Warehouse` capability (M3b of
@@ -32,6 +41,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Lane B — Literature
 
+- **Fix: literature search crashed on OpenAlex/S2 explicit nulls.** A live
+  search returned 0 papers because `openalex._parse` raised
+  `'NoneType' object has no attribute 'get'` on a result whose
+  `primary_location.source` (or `open_access` / `authorships`) was an
+  explicit `null` — `.get(k, default)` doesn't apply the default for a
+  present-but-null value. Both parsers now guard with `or {}` / `or []`.
+  Regression tests added (the mocked payloads previously only used
+  well-formed fields, so the bug only surfaced live).
 - **Full-text `read_reference` tool (M2.5 of `docs/MODULARIZATION_PLAN.md`).**
   Specialists can now read a reference's PDF in full to deepen the lit
   review, not just its abstract. New `read_reference` literature tool takes

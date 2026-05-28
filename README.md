@@ -31,7 +31,7 @@ e2er run "<your research question>" --methodology empirical --max-cost 5
 - [Costs](#costs)
 - [Resume a paused paper](#resume-a-paused-paper)
 - [Data sources](#data-sources)
-- [Literature: bring your own BibTeX](#literature-bring-your-own-bibtex)
+- [Literature](#literature)
 - [Going deeper](#going-deeper)
 - [Examples](#examples)
 - [Troubleshooting](#troubleshooting)
@@ -200,15 +200,18 @@ The dashboard's "Resume" button does the same thing through the UI.
 
 ## Data sources
 
-The data module is **optional**. Set `DATA_MODULE_ENABLED=false` to run literature-only papers, or supply your own data files in the workspace's `data/` directory.
+Specialists **discover** data sources in light of the research question: they
+call `list_data_sources` to see what's available and what each is for, then
+pull series data with a unified `fetch_data` tool (or `query_allium` for
+on-chain data). To run literature-only papers, just leave the data keys unset
+— or supply your own files in the workspace's `data/` directory (and via
+`LOCAL_DATA_DIR`).
 
-Currently wired in:
-
-| Source | Coverage | Setup |
-|---|---|---|
-| **yfinance** | Equities, ETFs, crypto, FX, indices | No key required |
-| **FRED** | US + international macro time series | Free key (~30s registration at <https://fred.stlouisfed.org>) |
-| **Allium** | On-chain blockchain data | Bring your own key (`ALLIUM_API_KEY`) |
+| Source | Coverage | Setup | In-loop tool |
+|---|---|---|---|
+| **yfinance** | Equities, ETFs, crypto, FX, indices | No key required (always on) | `fetch_data` |
+| **FRED** | US + international macro time series | Free key (`FRED_API_KEY`, ~30s at <https://fred.stlouisfed.org>) | `fetch_data` |
+| **Allium** | On-chain blockchain data (requires query credits) | Bring your own key (`ALLIUM_API_KEY`) | `query_allium` (guarded) |
 
 ### Allium guardrails (when enabled)
 
@@ -226,23 +229,39 @@ We gratefully acknowledge **[Allium](https://allium.so)** for supporting this re
 
 ---
 
-## Literature: bring your own BibTeX
+## Literature
 
-E2ER does **not** automatically retrieve papers from the internet. Supply a `.bib` file of your own curated references:
+Two complementary paths: **your own references**, and **open-access discovery + full text**.
+
+### Your reference library
+
+Bring references from any of these — all optional, merged and de-duplicated by (title, year):
 
 ```bash
-export LITERATURE_BIBTEX_FILE=/path/to/refs.bib
+export LITERATURE_BIBTEX_FILE=/path/to/refs.bib   # a single .bib file
+export LOCAL_DATA_DIR=/path/to/corpus             # any *.bib in this folder (+ data files)
+export ZOTERO_API_KEY=...                          # your live Zotero library
+export ZOTERO_USER_ID=1234567                      # (or ZOTERO_GROUP_ID for a group library)
 ```
 
-When set, the pipeline:
+A compact reference list is injected into the prompts of the bibliography-relevant
+specialists (`literature_scanner`, `polish_bibliography`, `paper_drafter`, `revisor`),
+and any `.bib` is copied into the workspace so LaTeX compiles with `\bibliography{refs}`.
 
-1. Parses all entries at startup (requires `bibtexparser` — included in `pip install e2er`).
-2. Injects a compact reference list into the prompts of `literature_scanner`, `paper_drafter`, `section_writer`, `abstract_writer`, and `revisor`.
-3. Copies the `.bib` file into the workspace so LaTeX can compile with `\bibliography{refs}`.
+### Discovery and full text (open access)
 
-A typical workflow: export your references from Zotero / Mendeley as `refs.bib`, set the env var, and the drafter uses `\cite{}` commands aligned with your BibTeX keys.
+The pipeline **does** reach the internet for literature, through guarded tools:
 
-> **Planned:** open-access paper fetching via OpenAlex, Semantic Scholar, and arXiv is implemented in `src/modules/literature/` but not yet wired into the pipeline. Contributions welcome.
+- **`search_papers`** / **`fetch_paper`** — search and fetch metadata via OpenAlex
+  (free, no key), with arXiv and Semantic Scholar fallbacks.
+- **`read_reference`** — download a paper's PDF and extract its text (via `pypdf`)
+  so specialists can read what a paper actually says, not just its abstract. Takes a
+  `pdf_url` (from a search result or a `[PDF]`-marked reference) or a `doi` (resolves
+  an open-access PDF). Tightly budgeted to protect the token budget.
+
+> **Zotero PDFs:** `read_reference` can fetch a Zotero attachment only if the file is
+> in Zotero's cloud file storage (the Web API can't serve locally-stored / WebDAV /
+> over-quota files). When it isn't, use open-access resolution by DOI instead.
 
 ---
 
@@ -323,7 +342,7 @@ The repo ships with worked examples — real artifacts from real runs:
 
 **Paper rejected with `verify_numbers: N critical mismatches`** — the drafter cited table numbers that don't match the JSON sidecars. Open `number_verification.json` for the specific mismatches. Either revise the source artifacts (`summary_statistics.json` etc.) to match the draft, or revise the draft to match the sources, then resume.
 
-**Allium API key error / data module crashes** — set `DATA_MODULE_ENABLED=false` in your environment. The pipeline runs literature-only (or with manually uploaded data files) without Allium.
+**Allium API key error / out of credits** — leave `ALLIUM_API_KEY` unset to run without on-chain data; the pipeline runs literature-only (or with FRED/yfinance series, and manually uploaded data files). yfinance and FRED are unaffected by Allium. (Note: `data_module_enabled` is a computed property, not a settable env var — there's no `DATA_MODULE_ENABLED` toggle; presence of the key is what matters.)
 
 **OpenRouter `402 Payment Required`** — your OpenRouter balance is zero. Top up at <https://openrouter.ai/credits>. The pipeline correctly bails rather than looping.
 
@@ -342,12 +361,13 @@ pip install -e ".[dev]"
 make smoke          # full mocked test suite — ~15s, no API key needed
 ```
 
-If `make smoke` reports `420+ passed`, your install is good and the orchestration works end-to-end. Then:
+If `make smoke` reports `680+ passed`, your install is good and the orchestration works end-to-end. Then:
 
 ```bash
-make lint           # ruff check + format check
-make typecheck      # mypy
-make smoke-paid     # ~$0.50 Haiku run end-to-end (requires ANTHROPIC_API_KEY)
+make lint                      # ruff check + format check
+make typecheck                 # mypy
+python scripts/live_check.py   # live provider smoke (real APIs, no LLM/cost; skips unconfigured)
+make smoke-paid                # ~$0.50 Haiku run end-to-end (requires ANTHROPIC_API_KEY)
 ```
 
 **Docker path (postgres + dashboard in one command):**

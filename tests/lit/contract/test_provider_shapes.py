@@ -250,3 +250,52 @@ async def test_arxiv_falls_back_on_malformed_xml():
 
     assert result.papers == []
     assert result.source == "arxiv"
+
+
+# ---------- Explicit-null robustness (regression: live search returned 0) ----------
+
+
+@pytest.mark.asyncio
+async def test_openalex_parses_results_with_explicit_nulls():
+    """OpenAlex returns explicit `null` (not absent keys) for optional fields.
+    `.get(k, default)` doesn't apply the default for a present-but-null value,
+    so the parser must guard with `or {}`/`or []`. A live search crashed with
+    `'NoneType' object has no attribute 'get'` on `primary_location.source=null`
+    before this was fixed."""
+    from src.modules.literature.openalex import search_papers
+
+    payload = {
+        "meta": {"count": 1},
+        "results": [
+            {
+                "id": "https://openalex.org/W999",
+                "title": "Paper with null nested fields",
+                "publication_year": 2023,
+                "authorships": None,
+                "open_access": None,
+                "primary_location": {"source": None},
+                "abstract_inverted_index": None,
+            }
+        ],
+    }
+    with patch("src.modules.literature.openalex.fetch_text", new=AsyncMock(return_value=json.dumps(payload))):
+        result = await search_papers("anything")
+
+    assert len(result.papers) == 1, "must not crash on explicit nulls"
+    p = result.papers[0]
+    assert p.title == "Paper with null nested fields"
+    assert p.authors == []
+    assert p.journal == ""
+    assert p.pdf_url == ""
+
+
+@pytest.mark.asyncio
+async def test_semantic_scholar_parses_null_authors():
+    from src.modules.literature.semantic_scholar import search_papers
+
+    payload = {"total": 1, "data": [{"title": "No authors", "year": 2023, "authors": None}]}
+    with patch("src.modules.literature.semantic_scholar.fetch_text", new=AsyncMock(return_value=json.dumps(payload))):
+        result = await search_papers("anything")
+
+    assert len(result.papers) == 1
+    assert result.papers[0].authors == []
