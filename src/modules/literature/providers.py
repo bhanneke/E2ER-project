@@ -159,3 +159,29 @@ class LocalBibLibrary(ReferenceLibrary):
             except Exception as e:
                 logger.warning("LocalBibLibrary: failed to parse %s: %s", bib_path, e)
         return papers
+
+
+class ZoteroLibrary(ReferenceLibrary):
+    """The researcher's Zotero library, via the Zotero Web API.
+
+    Set the API key plus exactly one of ``user_id`` / ``group_id``. Maps
+    items to ``PaperMetadata`` and captures the primary PDF attachment href
+    (for the planned on-demand ``read_reference`` tool). Never raises —
+    degrades to ``[]`` so a Zotero outage can't break paper creation.
+    """
+
+    name = "zotero"
+
+    def __init__(self, api_key: str, user_id: str | None = None, group_id: str | None = None) -> None:
+        self._api_key = api_key
+        self._user_id = user_id
+        self._group_id = group_id
+
+    def entries(self) -> list[PaperMetadata]:
+        from .zotero import fetch_library
+
+        try:
+            return fetch_library(self._api_key, user_id=self._user_id, group_id=self._group_id)
+        except Exception as e:
+            logger.warning("ZoteroLibrary.entries failed: %s", e)
+            return []

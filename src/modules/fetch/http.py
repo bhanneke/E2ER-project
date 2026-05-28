@@ -57,6 +57,23 @@ async def fetch_text(url: str, headers: dict | None = None) -> str:
         return content.decode("utf-8", errors="replace")
 
 
+def fetch_text_sync(url: str, headers: dict | None = None) -> str:
+    """Synchronous variant of ``fetch_text``.
+
+    For sync callers — notably the ``ReferenceLibrary`` providers, which are
+    consumed by the (sync) specialist prompt builder and so can't await.
+    Same SSRF check, timeout, and size cap.
+    """
+    _check_url(url)
+    with httpx.Client(timeout=_TIMEOUT, follow_redirects=True) as client:
+        resp = client.get(url, headers=headers or {})
+        resp.raise_for_status()
+        content = resp.content
+        if len(content) > _MAX_BYTES:
+            content = content[:_MAX_BYTES]
+        return content.decode("utf-8", errors="replace")
+
+
 async def fetch_bytes(url: str, headers: dict | None = None) -> bytes:
     """Fetch URL and return raw bytes (for PDF downloads)."""
     _check_url(url)
