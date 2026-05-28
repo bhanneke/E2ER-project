@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_Nothing yet._
+
+## v0.8.0 — 2026-05-28
+
+Pluggable data & literature providers. Specialists now **discover** data
+sources in light of the research question — FRED and yfinance reach the
+tool loop via `list_data_sources` + a unified `fetch_data`, and Allium sits
+behind a `Warehouse` capability (its 5 guardrails unchanged). They also
+pull the researcher's own reference library (local `.bib`, `LOCAL_DATA_DIR`,
+and **Zotero** via the Web API) and read **full-text PDFs** (`read_reference`).
+Both lanes are now registry-pluggable, so new providers are drop-in.
+
 ### Cross-lane
 
 - **`scripts/live_check.py` — live smoke harness.** Exercises the real
