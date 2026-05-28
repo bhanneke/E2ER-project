@@ -7,8 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-(Add new entries here under `### Lane A — Pipeline`, `### Lane B — Literature`,
-`### Lane C — Data`, or `### Cross-lane` sub-headings per `AGENTS.md`.)
+### Lane B — Literature
+
+- **Provider interface + registry (M1 of `docs/MODULARIZATION_PLAN.md`).**
+  Formalized the de-facto interface the source modules already shared into
+  capability sub-types — `SearchSource` (web discovery; OpenAlex, arXiv,
+  Semantic Scholar) and `ReferenceLibrary` (the researcher's own corpus;
+  `LocalBibLibrary` over `LITERATURE_BIBTEX_FILE` + `LOCAL_DATA_DIR`) — in
+  new `providers.py` / `registry.py`. `LiteratureToolHandler` and
+  `_load_reference_summary` now iterate the registry instead of hardcoding
+  provider names. Pure refactor: the search (OpenAlex→arXiv) and DOI-fetch
+  (OpenAlex→S2) fallback chains are reproduced exactly; +13 tests, no
+  behaviour change. This is the seam Zotero (M2) and Citavi (M4) plug into.
 
 ## v0.7.3 — 2026-05-26
 

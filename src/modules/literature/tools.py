@@ -20,7 +20,7 @@ from typing import Any
 
 from ...logging_config import get_logger
 from ..llm.base import ToolHandler
-from .models import PaperMetadata
+from .models import PaperMetadata, SearchResult
 
 logger = get_logger(__name__)
 
@@ -164,53 +164,64 @@ class LiteratureToolHandler(ToolHandler):
         return json.dumps({"error": f"unknown tool: {tool_name}"})
 
     async def _search(self, inp: dict[str, Any]) -> str:
-        from . import arxiv, openalex
+        from ...config import get_settings
+        from .registry import search_sources
 
         query = inp["query"]
         limit = max(1, min(int(inp.get("limit", 10)), 50))
-        try:
-            result = await openalex.search_papers(query, limit=limit)
+
+        # Iterate the registry's search chain (OpenAlex → arXiv). Return the
+        # first source that yields papers; if none does, return the last
+        # source's (empty) result; if every source raised, return an error.
+        last_result: SearchResult | None = None
+        last_error: Exception | None = None
+        for source in search_sources(get_settings()):
+            try:
+                result = await source.search(query, limit)
+            except Exception as e:
+                last_error = e
+                logger.info("%s search failed (%s) — trying next source", source.name, e)
+                continue
+            last_result = result
             if result.papers:
-                return json.dumps(
-                    {
-                        "source": "openalex",
-                        "query": query,
-                        "count": len(result.papers),
-                        "papers": [_to_dict(p) for p in result.papers],
-                    }
-                )
-        except Exception as e:
-            logger.info("OpenAlex search failed (%s) — falling back to arXiv", e)
-        # Fallback
-        try:
-            result = await arxiv.search_papers(query, limit=limit)
+                break
+
+        if last_result is not None:
             return json.dumps(
                 {
-                    "source": "arxiv",
+                    "source": last_result.source,
                     "query": query,
-                    "count": len(result.papers),
-                    "papers": [_to_dict(p) for p in result.papers],
+                    "count": len(last_result.papers),
+                    "papers": [_to_dict(p) for p in last_result.papers],
                 }
             )
-        except Exception as e:
-            return json.dumps({"error": f"all search backends failed: {e}"})
+        return json.dumps({"error": f"all search backends failed: {last_error}"})
+
+    async def _resolve_doi(self, doi: str) -> tuple[str, PaperMetadata] | None:
+        """Resolve a DOI through the registry's fetch chain (OpenAlex → S2).
+
+        Returns ``(source_name, paper)`` for the first source that finds it,
+        else ``None``. Shared by ``_fetch`` and ``_save``.
+        """
+        from ...config import get_settings
+        from .registry import doi_fetch_sources
+
+        for source in doi_fetch_sources(get_settings()):
+            try:
+                paper = await source.fetch(doi)
+            except Exception as e:
+                logger.info("%s fetch failed: %s", source.name, e)
+                continue
+            if paper:
+                return source.name, paper
+        return None
 
     async def _fetch(self, inp: dict[str, Any]) -> str:
-        from . import openalex, semantic_scholar
-
         doi = inp["doi"].strip()
-        try:
-            paper = await openalex.fetch_by_doi(doi)
-            if paper:
-                return json.dumps({"source": "openalex", "paper": _to_dict(paper)})
-        except Exception as e:
-            logger.info("OpenAlex fetch failed (%s) — falling back to S2", e)
-        try:
-            paper = await semantic_scholar.fetch_by_doi(doi)
-            if paper:
-                return json.dumps({"source": "semantic_scholar", "paper": _to_dict(paper)})
-        except Exception as e:
-            logger.info("S2 fetch failed: %s", e)
+        resolved = await self._resolve_doi(doi)
+        if resolved is not None:
+            source_name, paper = resolved
+            return json.dumps({"source": source_name, "paper": _to_dict(paper)})
         return json.dumps({"error": f"paper not found for DOI {doi}"})
 
     async def _save(self, inp: dict[str, Any]) -> str:
@@ -221,21 +232,11 @@ class LiteratureToolHandler(ToolHandler):
             entry = entry.strip()
             key = _extract_bibtex_key(entry)
         elif inp.get("doi"):
-            from . import openalex, semantic_scholar
-
             doi = inp["doi"].strip()
-            paper = None
-            try:
-                paper = await openalex.fetch_by_doi(doi)
-            except Exception:
-                pass
-            if paper is None:
-                try:
-                    paper = await semantic_scholar.fetch_by_doi(doi)
-                except Exception:
-                    pass
-            if paper is None:
+            resolved = await self._resolve_doi(doi)
+            if resolved is None:
                 return json.dumps({"error": f"could not fetch DOI {doi}"})
+            _source_name, paper = resolved
             entry = paper.to_bibtex()
             key = paper.bibtex_key
         else:
