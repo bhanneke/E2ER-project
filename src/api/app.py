@@ -1191,6 +1191,7 @@ async def _run_pipeline(
 ) -> None:
     from ..config import get_settings
     from ..core.strategist.runner import PipelineRunner
+    from ..modules.data.discovery_tools import DATA_DISCOVERY_TOOLS, SeriesDataToolHandler
     from ..modules.data.tools import ALLIUM_TOOLS, DeferredAlliumToolHandler
     from ..modules.literature.tools import LITERATURE_TOOLS, LiteratureToolHandler
     from ..modules.llm.registry import get_backend
@@ -1207,6 +1208,11 @@ async def _run_pipeline(
         extra_tools.extend(ALLIUM_TOOLS)
         if settings.allium_api_key:
             extra_handlers.append(DeferredAlliumToolHandler(paper_id, "pipeline", workspace))
+
+    # Series data (FRED/yfinance) + discovery — always on (yfinance needs no
+    # key). Agents call list_data_sources, in light of the RQ, then fetch_data.
+    extra_tools.extend(DATA_DISCOVERY_TOOLS)
+    extra_handlers.append(SeriesDataToolHandler())
 
     # Literature tools are always on — OpenAlex needs no API key.
     extra_tools.extend(LITERATURE_TOOLS)
