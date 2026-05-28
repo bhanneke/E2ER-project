@@ -136,17 +136,55 @@ declare their own; none bypass it.
 
 ## Milestones
 
-| # | Scope | Risk | Tests |
-|---|-------|------|-------|
-| **M1** | **Lane B interface + registry refactor.** Declare `SearchSource`/`ReferenceLibrary`, make openalex/arxiv/s2 implement `SearchSource`, wrap local-`.bib` as a `ReferenceLibrary`. Handler iterates registry; `_load_reference_summary` consumes libraries. **No behavior change.** | Low — pure refactor over an existing implicit interface | Existing Lane B suite stays green; add registry tests |
-| **M2** | **Zotero `ReferenceLibrary` provider.** Pull the user's library into `PaperMetadata`; feeds the same merge path as local `.bib`. New `zotero_*` config. | Med — first external API; needs the M1 seam | New `tests/lit/` cases, mocked HTTP |
-| **M3** | **Lane C interface + registry.** Unify Allium + FRED + yfinance + local-files behind capability types; expose FRED/yfinance as in-loop tools; generalize `data_module_enabled`. Preserve guardrails. | Med-High — touches the guardrail path | Lane C suite green; new tool-loop tests for FRED/yfinance; guardrail regression tests must still pass |
-| **M4** | **Citavi + further providers** on the proven interfaces. | Low per provider | Per-provider mocked tests |
-| **M5** | *(Deferred)* App container consuming these module APIs. | — | — |
+| # | Scope | Status |
+|---|-------|--------|
+| **M1** | Lane B interface + registry: `SearchSource`/`ReferenceLibrary`, openalex/arxiv/s2 + local-`.bib` behind it; handler + `_load_reference_summary` iterate the registry. Pure refactor. | ✅ done (PR #42) |
+| **M2** | Zotero `ReferenceLibrary` via Web API (JSON-direct); merged + deduped into the reference summary. `zotero_*` config. | ✅ done (PR #43) |
+| **M2.5** | `read_reference` full-text tool: download a PDF (OA-by-DOI or a `pdf_url`) + extract via `pypdf`; budgeted. | ✅ done (PR #44) |
+| **M3a** | Lane C series side: `SeriesFetcher` + registry; FRED/yfinance in-loop via `list_data_sources` + unified `fetch_data` (RQ-aware discovery). | ✅ done (PR #45) |
+| **M3b** | Allium folded behind a `Warehouse` capability into the data registry. Pure refactor; 5 guardrails untouched. | ✅ done (PR #46) |
+| **M4** | Citavi + further reference-manager providers on the proven Lane-B seam. | later (deferred at user request) |
+| **M5** | App container consuming these module APIs. | deferred (functionality-first) |
 
-Per `AGENTS.md`, M1–M2 are Lane B, M3 is Lane C — largely independent,
-path-filtered CI. Each milestone lands with a CHANGELOG entry under
-`## Unreleased` in its lane.
+Both lanes are now pluggable. Each milestone landed with a CHANGELOG entry
+under `## Unreleased`, per `AGENTS.md` lane discipline.
+
+### Live validation (2026-05-28)
+
+Run via `scripts/live_check.py` (real services, no LLM cost). Findings:
+
+- ✅ yfinance `fetch_data`, OpenAlex `search_papers`, `read_reference` on an
+  open-access PDF, and the Zotero library pull (1,994 items) all work live.
+- 🐞 **Fixed**: OpenAlex/S2 parsers crashed on explicit `null` nested fields
+  (`primary_location.source` etc.) — live search returned 0. Guarded + regression-tested.
+- ⚠️ **Zotero PDFs** are only fetchable when stored in Zotero's cloud file
+  storage. Many libraries store files locally / via WebDAV / over quota →
+  the Web API 404s on `/file`. `read_reference`'s OA-by-DOI path is the
+  reliable fallback. Not a code defect; documented in the README.
+- ⚠️ **Allium** requires query credits on the account; an empty account
+  returns HTTP 403 "out of credits". On-chain papers need a funded key.
+
+## Roadmap — extending the modules
+
+The registries make new providers drop-in. Candidates, by lane:
+
+**Data (`SeriesFetcher` / `Warehouse`)** — each is a `card()` + `fetch()` (series)
+or a guarded tool (warehouse), auto-surfaced by `list_data_sources`:
+- Series: ECB / World Bank / IMF (international macro), Census & BLS (US micro),
+  CoinGecko (crypto prices, keyless), OpenBB.
+- Warehouses: WRDS (CRSP/Compustat — the big one for finance), Dune / Flipside
+  (on-chain SQL alternatives to Allium), Bloomberg/Refinitiv (license-gated).
+
+**Literature (`SearchSource` / `ReferenceLibrary`)**:
+- Reference managers: **Citavi (M4)**, Mendeley, Paperpile, EndNote exports.
+- Search sources: Crossref, CORE, Unpaywall (more OA-PDF resolution paths,
+  which also strengthens the `read_reference` fallback when Zotero storage is
+  unavailable).
+- Full text: a better extractor (pymupdf4llm) behind the same `read_reference`
+  tool if pypdf's layout/table handling proves insufficient.
+
+**Cross-cutting**: a small per-paper cache for library pulls (Zotero re-fetches
+its whole library per bib-specialist today); `make live-check` target.
 
 ---
 

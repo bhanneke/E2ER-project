@@ -57,9 +57,13 @@ async def fetch_by_doi(doi: str) -> PaperMetadata | None:
 
 
 def _parse(work: dict) -> PaperMetadata:
+    # OpenAlex returns explicit nulls (not just absent keys) for optional
+    # fields like `source`, `open_access`, `authorships`. `.get(k, default)`
+    # only applies the default when k is ABSENT, so every nested access must
+    # guard with `or {}` / `or []` against a present-but-null value.
     authors = []
-    for a in work.get("authorships", []):
-        display = a.get("author", {}).get("display_name", "")
+    for a in work.get("authorships") or []:
+        display = (a.get("author") or {}).get("display_name", "")
         if display:
             authors.append(display)
 
@@ -67,10 +71,10 @@ def _parse(work: dict) -> PaperMetadata:
     if doi.startswith("https://doi.org/"):
         doi = doi[len("https://doi.org/") :]
 
-    pdf_url = ""
-    oa = work.get("open_access", {})
-    if oa.get("oa_url"):
-        pdf_url = oa["oa_url"]
+    oa = work.get("open_access") or {}
+    pdf_url = oa.get("oa_url") or ""
+
+    source = (work.get("primary_location") or {}).get("source") or {}
 
     return PaperMetadata(
         title=work.get("title", "") or "",
@@ -78,7 +82,7 @@ def _parse(work: dict) -> PaperMetadata:
         year=work.get("publication_year"),
         doi=doi,
         abstract=_clean_abstract(work.get("abstract_inverted_index")),
-        journal=(work.get("primary_location") or {}).get("source", {}).get("display_name", ""),
+        journal=source.get("display_name", ""),
         url=work.get("id", ""),
         pdf_url=pdf_url,
         source="openalex",
