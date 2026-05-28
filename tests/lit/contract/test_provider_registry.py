@@ -31,7 +31,14 @@ from src.modules.literature.registry import (
 
 
 def _settings(**kwargs):
-    base = {"literature_bibtex_file": None, "local_data_dir": None}
+    base = {
+        "literature_bibtex_file": None,
+        "local_data_dir": None,
+        "zotero_enabled": False,
+        "zotero_api_key": None,
+        "zotero_user_id": None,
+        "zotero_group_id": None,
+    }
     base.update(kwargs)
     return SimpleNamespace(**base)
 

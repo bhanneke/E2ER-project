@@ -98,6 +98,17 @@ class Settings(BaseSettings):
     literature_bibtex_file: str | None = None
     semantic_scholar_api_key: str | None = None
 
+    # Zotero Web API (reference library). Set the key plus exactly one of
+    # user_id / group_id. The library's bibliographic items are merged into
+    # the reference summary alongside local .bib (see reference_libraries()).
+    zotero_api_key: str | None = None
+    zotero_user_id: str | None = None
+    zotero_group_id: str | None = None
+
+    @property
+    def zotero_enabled(self) -> bool:
+        return self.zotero_api_key is not None and (self.zotero_user_id is not None or self.zotero_group_id is not None)
+
     @property
     def literature_kb_enabled(self) -> bool:
         return self.postgres_url is not None or self.db_password != "changeme"

@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Lane B — Literature
 
+- **Zotero reference library (M2 of `docs/MODULARIZATION_PLAN.md`).** New
+  `ZoteroLibrary` `ReferenceLibrary` reads the researcher's Zotero library
+  via the Web API's native JSON (`zotero.py`), maps items to
+  `PaperMetadata`, and captures each item's primary PDF attachment href
+  (for the planned on-demand `read_reference` tool, M2.5). Config:
+  `ZOTERO_API_KEY` + one of `ZOTERO_USER_ID` / `ZOTERO_GROUP_ID`; merged
+  into the reference summary after local `.bib`, deduped by (title, year).
+  Unset → no-op. Sync `fetch_text_sync` helper added for the (sync)
+  reference-library path. Degrades to `[]` on any Zotero error — can't
+  break paper creation.
 - **Provider interface + registry (M1 of `docs/MODULARIZATION_PLAN.md`).**
   Formalized the de-facto interface the source modules already shared into
   capability sub-types — `SearchSource` (web discovery; OpenAlex, arXiv,
