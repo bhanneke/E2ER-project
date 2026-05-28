@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Lane C — Data
 
+- **Allium folded behind a `Warehouse` capability (M3b of
+  `docs/MODULARIZATION_PLAN.md`).** Allium is now a first-class registered
+  provider: `AlliumWarehouse` owns its `card()`, `tools()` (→ `ALLIUM_TOOLS`)
+  and `handler()` (→ `DeferredAlliumToolHandler`); `_run_pipeline` assembles
+  it by iterating `warehouses(settings)` instead of hardcoding, and the
+  catalog builds its card from the warehouse. Pure refactor — same condition
+  (Allium key present), same tools, **the 5 `QueryValidator` guardrails and
+  approval flow are untouched**, and `has_allium`/`data_module_enabled` are
+  unchanged. Completes the Lane-C registry (series + warehouse).
 - **Series data in the agent loop + RQ-aware discovery (M3a of
   `docs/MODULARIZATION_PLAN.md`).** FRED and yfinance are no longer
   CLI-only — specialists reach them in the tool loop. New `SeriesFetcher`

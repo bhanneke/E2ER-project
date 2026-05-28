@@ -1192,7 +1192,7 @@ async def _run_pipeline(
     from ..config import get_settings
     from ..core.strategist.runner import PipelineRunner
     from ..modules.data.discovery_tools import DATA_DISCOVERY_TOOLS, SeriesDataToolHandler
-    from ..modules.data.tools import ALLIUM_TOOLS, DeferredAlliumToolHandler
+    from ..modules.data.registry import warehouses
     from ..modules.literature.tools import LITERATURE_TOOLS, LiteratureToolHandler
     from ..modules.llm.registry import get_backend
 
@@ -1204,10 +1204,12 @@ async def _run_pipeline(
     extra_tools: list[dict] = []
     extra_handlers: list = []
 
-    if settings.data_module_enabled:
-        extra_tools.extend(ALLIUM_TOOLS)
-        if settings.allium_api_key:
-            extra_handlers.append(DeferredAlliumToolHandler(paper_id, "pipeline", workspace))
+    # Warehouses (Allium) — each contributes its own guarded tools + handler
+    # (query_allium keeps the 5-rule validator + approval flow). Present only
+    # when configured (Allium key), matching the prior behaviour exactly.
+    for warehouse in warehouses(settings):
+        extra_tools.extend(warehouse.tools())
+        extra_handlers.append(warehouse.handler(paper_id, workspace))
 
     # Series data (FRED/yfinance) + discovery — always on (yfinance needs no
     # key). Agents call list_data_sources, in light of the RQ, then fetch_data.

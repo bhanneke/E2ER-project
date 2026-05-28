@@ -21,7 +21,12 @@ Each fetcher wraps an existing provider and exposes:
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from ..llm.base import ToolHandler
 
 
 class SeriesFetcher(ABC):
@@ -132,3 +137,59 @@ class YFinanceFetcher(SeriesFetcher):
         if method == "search":
             return await self._provider.search(params["query"], max_results=int(params.get("max_results", 10)))
         return _unknown_method("yfinance", method, ["history", "info", "fundamentals", "dividends", "search"])
+
+
+class Warehouse(ABC):
+    """A queryable data warehouse with its own guarded tool surface.
+
+    Unlike ``SeriesFetcher`` (parameterized reads via the unified
+    ``fetch_data``), a warehouse contributes its *own* tools and handler:
+    Allium's ``query_allium`` carries a rich validated schema, the 5-rule
+    guardrails, and a human-approval flow that don't fit a generic fetch.
+    The registry just makes a warehouse a first-class, discoverable provider
+    alongside the series fetchers — it does NOT touch the guardrails.
+    """
+
+    name: str
+
+    @abstractmethod
+    def card(self) -> dict[str, Any]:
+        """Catalog entry, pointing the agent at the warehouse's own tool."""
+        ...
+
+    @abstractmethod
+    def tools(self) -> list[dict[str, Any]]:
+        """Tool schemas this warehouse contributes to the specialist loop."""
+        ...
+
+    @abstractmethod
+    def handler(self, paper_id: str, workspace: Path) -> ToolHandler:
+        """The tool handler that executes this warehouse's tools."""
+        ...
+
+
+class AlliumWarehouse(Warehouse):
+    """Allium blockchain SQL warehouse — the existing guarded query_allium path."""
+
+    name = "allium"
+
+    def card(self) -> dict[str, Any]:
+        return {
+            "name": "allium",
+            "kind": "warehouse",
+            "use": "On-chain / blockchain data via SQL — transactions, transfers, DEX/NFT "
+            "events, balances. Use for crypto / web3 research questions.",
+            "requires": "ALLIUM_API_KEY",
+            "tool": "Use the `query_allium` tool (NOT fetch_data) — it enforces field "
+            "whitelisting, mandatory time bounds, and human approval for production runs.",
+        }
+
+    def tools(self) -> list[dict[str, Any]]:
+        from .tools import ALLIUM_TOOLS
+
+        return ALLIUM_TOOLS
+
+    def handler(self, paper_id: str, workspace: Path) -> ToolHandler:
+        from .tools import DeferredAlliumToolHandler
+
+        return DeferredAlliumToolHandler(paper_id, "pipeline", workspace)

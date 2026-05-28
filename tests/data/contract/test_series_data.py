@@ -12,8 +12,8 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from src.modules.data.discovery_tools import SeriesDataToolHandler
-from src.modules.data.providers import FredFetcher, SeriesFetcher, YFinanceFetcher
-from src.modules.data.registry import data_catalog, series_fetchers
+from src.modules.data.providers import AlliumWarehouse, FredFetcher, SeriesFetcher, Warehouse, YFinanceFetcher
+from src.modules.data.registry import data_catalog, series_fetchers, warehouses
 
 
 def _settings(fred_api_key=None, allium_api_key=None):
@@ -87,6 +87,40 @@ async def test_yfinance_dispatch_maps_params():
 
 def test_fetchers_are_series_fetchers():
     assert isinstance(YFinanceFetcher(), SeriesFetcher)
+
+
+# ---------------------------------------------------------------------------
+# Warehouse capability (Allium) — M3b
+# ---------------------------------------------------------------------------
+
+
+def test_no_warehouses_without_allium_key():
+    assert warehouses(_settings()) == []
+
+
+def test_allium_warehouse_present_with_key():
+    whs = warehouses(_settings(allium_api_key="k"))
+    assert [w.name for w in whs] == ["allium"]
+    assert isinstance(whs[0], Warehouse)
+
+
+def test_allium_warehouse_contributes_query_allium_tool():
+    tools = AlliumWarehouse().tools()
+    assert "query_allium" in [t["name"] for t in tools]
+
+
+def test_allium_warehouse_handler_is_deferred_handler():
+    from pathlib import Path
+
+    from src.modules.data.tools import DeferredAlliumToolHandler
+
+    h = AlliumWarehouse().handler("paper-1", Path("/tmp"))
+    assert isinstance(h, DeferredAlliumToolHandler)
+
+
+def test_catalog_allium_card_comes_from_warehouse():
+    card = next(c for c in data_catalog(_settings(allium_api_key="k")) if c["name"] == "allium")
+    assert card == AlliumWarehouse().card()
 
 
 # ---------------------------------------------------------------------------
