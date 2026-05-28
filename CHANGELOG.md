@@ -9,7 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Lane B — Literature
 
-- **Zotero reference library (M2 of `docs/MODULARIZATION_PLAN.md`).** New
+- **Full-text `read_reference` tool (M2.5 of `docs/MODULARIZATION_PLAN.md`).**
+  Specialists can now read a reference's PDF in full to deepen the lit
+  review, not just its abstract. New `read_reference` literature tool takes
+  a `pdf_url` (surfaced in search/fetch results and on `[PDF]`-marked
+  reference-list entries, incl. Zotero attachments) or a `doi` (resolves an
+  open-access PDF). Downloads (auth'd for Zotero hrefs, `/file/view` →
+  `/file`), extracts text via **pypdf** (`pdf.py`), and returns it
+  truncated to ~20K chars. Tightly budgeted (`_MAX_READS=6` + per-read char
+  cap) given the prior 522K-token literature blowup. `fetch_bytes` gained a
+  `max_bytes` override (PDFs exceed the 2 MB default). New `pypdf` dep. New
   `ZoteroLibrary` `ReferenceLibrary` reads the researcher's Zotero library
   via the Web API's native JSON (`zotero.py`), maps items to
   `PaperMetadata`, and captures each item's primary PDF attachment href

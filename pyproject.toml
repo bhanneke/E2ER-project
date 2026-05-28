@@ -20,6 +20,7 @@ dependencies = [
     "pyalex>=0.14",
     "arxiv>=2.1.0",
     "bibtexparser>=2.0.0b7",
+    "pypdf>=4.0",
     "pandas>=2.0",
     "numpy>=1.26",
     "matplotlib>=3.8",
