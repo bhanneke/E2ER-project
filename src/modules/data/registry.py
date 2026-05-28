@@ -14,7 +14,7 @@ from __future__ import annotations
 from typing import Any
 
 from ...config import Settings
-from .providers import FredFetcher, SeriesFetcher, YFinanceFetcher
+from .providers import AlliumWarehouse, FredFetcher, SeriesFetcher, Warehouse, YFinanceFetcher
 
 
 def series_fetchers(settings: Settings) -> list[SeriesFetcher]:
@@ -25,25 +25,20 @@ def series_fetchers(settings: Settings) -> list[SeriesFetcher]:
     return fetchers
 
 
-def _allium_card() -> dict[str, Any]:
-    return {
-        "name": "allium",
-        "kind": "warehouse",
-        "use": "On-chain / blockchain data via SQL — transactions, transfers, DEX/NFT "
-        "events, balances. Use for crypto / web3 research questions.",
-        "requires": "ALLIUM_API_KEY",
-        "tool": "Use the `query_allium` tool (NOT fetch_data) — it enforces field "
-        "whitelisting, mandatory time bounds, and human approval for production runs.",
-    }
+def warehouses(settings: Settings) -> list[Warehouse]:
+    """Available SQL warehouses (contribute their own guarded tools+handler)."""
+    whs: list[Warehouse] = []
+    if settings.allium_api_key:
+        whs.append(AlliumWarehouse())
+    return whs
 
 
 def data_catalog(settings: Settings) -> list[dict[str, Any]]:
     """All available data sources, as agent-facing cards.
 
-    Series providers describe their ``fetch_data`` methods; the Allium
-    warehouse points at its own guarded ``query_allium`` tool.
+    Series providers describe their ``fetch_data`` methods; warehouses point
+    at their own guarded tools (e.g. Allium → ``query_allium``).
     """
     catalog: list[dict[str, Any]] = [f.card() for f in series_fetchers(settings)]
-    if settings.allium_api_key:
-        catalog.append(_allium_card())
+    catalog.extend(w.card() for w in warehouses(settings))
     return catalog
