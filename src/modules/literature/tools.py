@@ -96,6 +96,30 @@ LITERATURE_TOOLS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "name": "read_reference",
+        "description": (
+            "Read the full text of a reference's PDF to deepen the literature review "
+            "(read what a paper actually says, not just its abstract). Pass `pdf_url` "
+            "(from a search_papers / fetch_paper result, or a reference list entry that "
+            "shows one) or a `doi` (the tool will resolve an open-access PDF). Returns "
+            "extracted text, truncated. Use sparingly — read only papers central to the "
+            "argument; it is token-expensive."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "pdf_url": {
+                    "type": "string",
+                    "description": "Direct PDF URL — an open-access link or a Zotero attachment href",
+                },
+                "doi": {
+                    "type": "string",
+                    "description": "DOI to resolve to an open-access PDF when no pdf_url is known",
+                },
+            },
+        },
+    },
 ]
 
 
@@ -112,6 +136,11 @@ class LiteratureToolHandler(ToolHandler):
     _MAX_SEARCHES = 8
     _MAX_FETCHES = 12
     _MAX_SAVES = 30
+    _MAX_READS = 6  # full-text PDF reads — token-expensive, so a tight cap
+    # Per-read extracted-text cap (~5K tokens). Guards the token budget the
+    # search/fetch budgets exist to protect (the 522K-token incident).
+    _READ_CHAR_CAP = 20_000
+    _PDF_MAX_BYTES = 25 * 1024 * 1024  # PDFs blow past the default 2 MB cap
 
     def __init__(self, workspace: Path) -> None:
         self._workspace = Path(workspace)
@@ -119,9 +148,10 @@ class LiteratureToolHandler(ToolHandler):
         self._search_calls = 0
         self._fetch_calls = 0
         self._save_calls = 0
+        self._read_calls = 0
 
     def can_handle(self, tool_name: str) -> bool:
-        return tool_name in {"search_papers", "fetch_paper", "save_bibtex"}
+        return tool_name in {"search_papers", "fetch_paper", "save_bibtex", "read_reference"}
 
     async def handle(self, tool_name: str, tool_input: dict[str, Any]) -> str:
         # Budget guard — return a stop signal rather than execute the call.
@@ -147,6 +177,13 @@ class LiteratureToolHandler(ToolHandler):
                     "Use what's saved and write your output.",
                 }
             )
+        if tool_name == "read_reference" and self._read_calls >= self._MAX_READS:
+            return json.dumps(
+                {
+                    "error": f"read_reference budget exhausted ({self._MAX_READS} reads). "
+                    "Proceed with what you have read.",
+                }
+            )
 
         try:
             if tool_name == "search_papers":
@@ -158,6 +195,9 @@ class LiteratureToolHandler(ToolHandler):
             if tool_name == "save_bibtex":
                 self._save_calls += 1
                 return await self._save(tool_input)
+            if tool_name == "read_reference":
+                self._read_calls += 1
+                return await self._read_reference(tool_input)
         except Exception as e:
             logger.warning("Literature tool %s failed: %s", tool_name, e)
             return json.dumps({"error": str(e)})
@@ -224,6 +264,61 @@ class LiteratureToolHandler(ToolHandler):
             return json.dumps({"source": source_name, "paper": _to_dict(paper)})
         return json.dumps({"error": f"paper not found for DOI {doi}"})
 
+    @staticmethod
+    def _download_target(pdf_url: str, settings: Any) -> tuple[str, dict[str, str]]:
+        """Resolve a PDF href to (download_url, headers).
+
+        Zotero attachment hrefs are ``.../file/view`` (an HTML viewer) and
+        require the API key; normalize to the ``.../file`` download endpoint
+        and attach the key. Everything else (open-access PDFs) downloads
+        unauthenticated as-is.
+        """
+        from urllib.parse import urlparse
+
+        host = urlparse(pdf_url).hostname or ""
+        if host == "api.zotero.org" and settings.zotero_api_key:
+            url = pdf_url[: -len("/view")] if pdf_url.endswith("/view") else pdf_url
+            return url, {"Zotero-API-Key": settings.zotero_api_key}
+        return pdf_url, {}
+
+    async def _read_reference(self, inp: dict[str, Any]) -> str:
+        from ...config import get_settings
+        from ..fetch.http import fetch_bytes
+        from .pdf import extract_pdf_text
+
+        settings = get_settings()
+        pdf_url = (inp.get("pdf_url") or "").strip()
+        doi = (inp.get("doi") or "").strip()
+
+        # No direct URL but a DOI → resolve an open-access PDF via the fetch chain.
+        if not pdf_url and doi:
+            resolved = await self._resolve_doi(doi)
+            if resolved is not None:
+                pdf_url = (resolved[1].pdf_url or "").strip()
+        if not pdf_url:
+            return json.dumps(
+                {
+                    "error": "no readable PDF for that reference — pass a `pdf_url`, "
+                    "or a `doi` that has an open-access PDF.",
+                }
+            )
+
+        url, headers = self._download_target(pdf_url, settings)
+        try:
+            data = await fetch_bytes(url, headers=headers, max_bytes=self._PDF_MAX_BYTES)
+        except Exception as e:
+            return json.dumps({"error": f"could not download PDF: {e}", "pdf_url": pdf_url})
+
+        text = extract_pdf_text(data, max_chars=self._READ_CHAR_CAP)
+        if not text.strip():
+            return json.dumps(
+                {
+                    "error": "PDF downloaded but no extractable text (likely a scanned image).",
+                    "pdf_url": pdf_url,
+                }
+            )
+        return json.dumps({"pdf_url": pdf_url, "chars": len(text), "text": text})
+
     async def _save(self, inp: dict[str, Any]) -> str:
         # If a literal BibTeX entry was provided, append it directly.
         entry: str | None = inp.get("bibtex_entry")
@@ -264,6 +359,7 @@ def _to_dict(p: PaperMetadata) -> dict[str, Any]:
         "journal": p.journal,
         "citations": p.citations,
         "bibtex_key": p.bibtex_key,
+        "pdf_url": p.pdf_url,  # lets the model pass it to read_reference
     }
 
 

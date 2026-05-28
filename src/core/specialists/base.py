@@ -396,14 +396,20 @@ def _load_reference_summary(specialist: str) -> str:
         return ""
 
     sources_label = ", ".join(sources_used) if len(sources_used) <= 3 else f"{len(sources_used)} libraries"
-    lines = [f"## Available References ({len(all_papers)} papers from {sources_label})\n"]
+    has_pdf = any(p.pdf_url for p in all_papers)
+    header = f"## Available References ({len(all_papers)} papers from {sources_label})"
+    lines = [header]
+    if has_pdf:
+        lines.append("Entries marked [PDF] can be read in full with the `read_reference` tool (pass the pdf_url).")
+    lines.append("")
     for p in all_papers[:60]:
         authors = ", ".join(p.authors[:2])
         if len(p.authors) > 2:
             authors += " et al."
         year = f" ({p.year})" if p.year else ""
         journal = f". _{p.journal}_" if p.journal else ""
-        lines.append(f'- {authors}{year}. "{p.title}"{journal}')
+        pdf = f" [PDF: {p.pdf_url}]" if p.pdf_url else ""
+        lines.append(f'- {authors}{year}. "{p.title}"{journal}{pdf}')
     if len(all_papers) > 60:
         lines.append(f"  ... and {len(all_papers) - 60} more.")
     return "\n".join(lines)
