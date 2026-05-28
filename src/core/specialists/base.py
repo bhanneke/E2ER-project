@@ -354,35 +354,64 @@ def _build_user_prompt(work_order: WorkOrder) -> str:
 
 
 def _load_reference_summary(specialist: str) -> str:
-    """Return a compact bibliography block if LITERATURE_BIBTEX_FILE is set."""
+    """Return a compact bibliography block from the configured reference
+    libraries.
+
+    Libraries are resolved via the Lane-B registry
+    (``reference_libraries``). Today that's the local ``.bib`` corpus
+    (``LITERATURE_BIBTEX_FILE`` + any ``*.bib`` in ``LOCAL_DATA_DIR``);
+    Zotero and Citavi plug in there later (see
+    ``docs/MODULARIZATION_PLAN.md``). Entries are merged and de-duplicated
+    by (title, year) so the same paper in two libraries isn't listed
+    twice. Empty config → empty string.
+    """
     if specialist not in _BIB_SPECIALISTS:
         return ""
     from ...config import get_settings
+    from ...modules.literature.registry import reference_libraries
 
-    settings = get_settings()
-    if not settings.literature_bibtex_file:
+    libraries = reference_libraries(get_settings())
+    if not libraries:
         return ""
-    bib_path = Path(settings.literature_bibtex_file)
-    if not bib_path.exists():
-        return ""
-    try:
-        from ...modules.literature.bibtex import parse_bibtex_file
 
-        papers = parse_bibtex_file(bib_path)
-    except Exception:
+    all_papers = []
+    seen: set[tuple[str, str]] = set()
+    sources_used: list[str] = []
+    for library in libraries:
+        try:
+            papers = library.entries()
+        except Exception:
+            continue
+        if not papers:
+            continue
+        sources_used.append(library.name)
+        for p in papers:
+            key = (p.title.strip().lower(), str(p.year or ""))
+            if key in seen:
+                continue
+            seen.add(key)
+            all_papers.append(p)
+
+    if not all_papers:
         return ""
-    if not papers:
-        return ""
-    lines = [f"## Available References ({len(papers)} papers from {bib_path.name})\n"]
-    for p in papers[:60]:
+
+    sources_label = ", ".join(sources_used) if len(sources_used) <= 3 else f"{len(sources_used)} libraries"
+    has_pdf = any(p.pdf_url for p in all_papers)
+    header = f"## Available References ({len(all_papers)} papers from {sources_label})"
+    lines = [header]
+    if has_pdf:
+        lines.append("Entries marked [PDF] can be read in full with the `read_reference` tool (pass the pdf_url).")
+    lines.append("")
+    for p in all_papers[:60]:
         authors = ", ".join(p.authors[:2])
         if len(p.authors) > 2:
             authors += " et al."
         year = f" ({p.year})" if p.year else ""
         journal = f". _{p.journal}_" if p.journal else ""
-        lines.append(f'- {authors}{year}. "{p.title}"{journal}')
-    if len(papers) > 60:
-        lines.append(f"  ... and {len(papers) - 60} more. See `{bib_path}` for the full list.")
+        pdf = f" [PDF: {p.pdf_url}]" if p.pdf_url else ""
+        lines.append(f'- {authors}{year}. "{p.title}"{journal}{pdf}')
+    if len(all_papers) > 60:
+        lines.append(f"  ... and {len(all_papers) - 60} more.")
     return "\n".join(lines)
 
 

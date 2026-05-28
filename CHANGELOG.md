@@ -7,8 +7,89 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-(Add new entries here under `### Lane A — Pipeline`, `### Lane B — Literature`,
-`### Lane C — Data`, or `### Cross-lane` sub-headings per `AGENTS.md`.)
+_Nothing yet._
+
+## v0.8.0 — 2026-05-28
+
+Pluggable data & literature providers. Specialists now **discover** data
+sources in light of the research question — FRED and yfinance reach the
+tool loop via `list_data_sources` + a unified `fetch_data`, and Allium sits
+behind a `Warehouse` capability (its 5 guardrails unchanged). They also
+pull the researcher's own reference library (local `.bib`, `LOCAL_DATA_DIR`,
+and **Zotero** via the Web API) and read **full-text PDFs** (`read_reference`).
+Both lanes are now registry-pluggable, so new providers are drop-in.
+
+### Cross-lane
+
+- **`scripts/live_check.py` — live smoke harness.** Exercises the real
+  data/literature provider paths (yfinance, FRED, Allium connectivity,
+  OpenAlex search, `read_reference` on an OA PDF, Zotero library) against
+  live services, auto-skipping providers without credentials. No LLM calls
+  (free). Complements `make smoke` (offline/mocked) and `make smoke-paid`
+  (full LLM run). Run: `python scripts/live_check.py`.
+
+### Lane C — Data
+
+- **Allium folded behind a `Warehouse` capability (M3b of
+  `docs/MODULARIZATION_PLAN.md`).** Allium is now a first-class registered
+  provider: `AlliumWarehouse` owns its `card()`, `tools()` (→ `ALLIUM_TOOLS`)
+  and `handler()` (→ `DeferredAlliumToolHandler`); `_run_pipeline` assembles
+  it by iterating `warehouses(settings)` instead of hardcoding, and the
+  catalog builds its card from the warehouse. Pure refactor — same condition
+  (Allium key present), same tools, **the 5 `QueryValidator` guardrails and
+  approval flow are untouched**, and `has_allium`/`data_module_enabled` are
+  unchanged. Completes the Lane-C registry (series + warehouse).
+- **Series data in the agent loop + RQ-aware discovery (M3a of
+  `docs/MODULARIZATION_PLAN.md`).** FRED and yfinance are no longer
+  CLI-only — specialists reach them in the tool loop. New `SeriesFetcher`
+  capability + data registry (`providers.py`, `registry.py`) mirror the
+  Lane-B pattern. Two new tools: `list_data_sources` (serves the registry
+  catalog so the agent picks the right source for the research question)
+  and a unified `fetch_data(provider, method, params)`. Allium is unchanged
+  — it keeps its guarded `query_allium` tool and is advertised in the
+  catalog (the 5 guardrails are untouched). Series tools are always on
+  (yfinance needs no key); budgeted (`_MAX_FETCHES=20`). M3b will fold
+  Allium behind a `Warehouse` capability into the same registry.
+
+### Lane B — Literature
+
+- **Fix: literature search crashed on OpenAlex/S2 explicit nulls.** A live
+  search returned 0 papers because `openalex._parse` raised
+  `'NoneType' object has no attribute 'get'` on a result whose
+  `primary_location.source` (or `open_access` / `authorships`) was an
+  explicit `null` — `.get(k, default)` doesn't apply the default for a
+  present-but-null value. Both parsers now guard with `or {}` / `or []`.
+  Regression tests added (the mocked payloads previously only used
+  well-formed fields, so the bug only surfaced live).
+- **Full-text `read_reference` tool (M2.5 of `docs/MODULARIZATION_PLAN.md`).**
+  Specialists can now read a reference's PDF in full to deepen the lit
+  review, not just its abstract. New `read_reference` literature tool takes
+  a `pdf_url` (surfaced in search/fetch results and on `[PDF]`-marked
+  reference-list entries, incl. Zotero attachments) or a `doi` (resolves an
+  open-access PDF). Downloads (auth'd for Zotero hrefs, `/file/view` →
+  `/file`), extracts text via **pypdf** (`pdf.py`), and returns it
+  truncated to ~20K chars. Tightly budgeted (`_MAX_READS=6` + per-read char
+  cap) given the prior 522K-token literature blowup. `fetch_bytes` gained a
+  `max_bytes` override (PDFs exceed the 2 MB default). New `pypdf` dep. New
+  `ZoteroLibrary` `ReferenceLibrary` reads the researcher's Zotero library
+  via the Web API's native JSON (`zotero.py`), maps items to
+  `PaperMetadata`, and captures each item's primary PDF attachment href
+  (for the planned on-demand `read_reference` tool, M2.5). Config:
+  `ZOTERO_API_KEY` + one of `ZOTERO_USER_ID` / `ZOTERO_GROUP_ID`; merged
+  into the reference summary after local `.bib`, deduped by (title, year).
+  Unset → no-op. Sync `fetch_text_sync` helper added for the (sync)
+  reference-library path. Degrades to `[]` on any Zotero error — can't
+  break paper creation.
+- **Provider interface + registry (M1 of `docs/MODULARIZATION_PLAN.md`).**
+  Formalized the de-facto interface the source modules already shared into
+  capability sub-types — `SearchSource` (web discovery; OpenAlex, arXiv,
+  Semantic Scholar) and `ReferenceLibrary` (the researcher's own corpus;
+  `LocalBibLibrary` over `LITERATURE_BIBTEX_FILE` + `LOCAL_DATA_DIR`) — in
+  new `providers.py` / `registry.py`. `LiteratureToolHandler` and
+  `_load_reference_summary` now iterate the registry instead of hardcoding
+  provider names. Pure refactor: the search (OpenAlex→arXiv) and DOI-fetch
+  (OpenAlex→S2) fallback chains are reproduced exactly; +13 tests, no
+  behaviour change. This is the seam Zotero (M2) and Citavi (M4) plug into.
 
 ## v0.7.3 — 2026-05-26
 

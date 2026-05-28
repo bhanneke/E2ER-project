@@ -53,3 +53,6 @@ logs/
 
 # Docker
 docker-compose.override.yml
+
+# live_check.py output
+live_check_report.json

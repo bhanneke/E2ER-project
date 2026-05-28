@@ -20,7 +20,7 @@ from typing import Any
 
 from ...logging_config import get_logger
 from ..llm.base import ToolHandler
-from .models import PaperMetadata
+from .models import PaperMetadata, SearchResult
 
 logger = get_logger(__name__)
 
@@ -96,6 +96,30 @@ LITERATURE_TOOLS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "name": "read_reference",
+        "description": (
+            "Read the full text of a reference's PDF to deepen the literature review "
+            "(read what a paper actually says, not just its abstract). Pass `pdf_url` "
+            "(from a search_papers / fetch_paper result, or a reference list entry that "
+            "shows one) or a `doi` (the tool will resolve an open-access PDF). Returns "
+            "extracted text, truncated. Use sparingly — read only papers central to the "
+            "argument; it is token-expensive."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "pdf_url": {
+                    "type": "string",
+                    "description": "Direct PDF URL — an open-access link or a Zotero attachment href",
+                },
+                "doi": {
+                    "type": "string",
+                    "description": "DOI to resolve to an open-access PDF when no pdf_url is known",
+                },
+            },
+        },
+    },
 ]
 
 
@@ -112,6 +136,11 @@ class LiteratureToolHandler(ToolHandler):
     _MAX_SEARCHES = 8
     _MAX_FETCHES = 12
     _MAX_SAVES = 30
+    _MAX_READS = 6  # full-text PDF reads — token-expensive, so a tight cap
+    # Per-read extracted-text cap (~5K tokens). Guards the token budget the
+    # search/fetch budgets exist to protect (the 522K-token incident).
+    _READ_CHAR_CAP = 20_000
+    _PDF_MAX_BYTES = 25 * 1024 * 1024  # PDFs blow past the default 2 MB cap
 
     def __init__(self, workspace: Path) -> None:
         self._workspace = Path(workspace)
@@ -119,9 +148,10 @@ class LiteratureToolHandler(ToolHandler):
         self._search_calls = 0
         self._fetch_calls = 0
         self._save_calls = 0
+        self._read_calls = 0
 
     def can_handle(self, tool_name: str) -> bool:
-        return tool_name in {"search_papers", "fetch_paper", "save_bibtex"}
+        return tool_name in {"search_papers", "fetch_paper", "save_bibtex", "read_reference"}
 
     async def handle(self, tool_name: str, tool_input: dict[str, Any]) -> str:
         # Budget guard — return a stop signal rather than execute the call.
@@ -147,6 +177,13 @@ class LiteratureToolHandler(ToolHandler):
                     "Use what's saved and write your output.",
                 }
             )
+        if tool_name == "read_reference" and self._read_calls >= self._MAX_READS:
+            return json.dumps(
+                {
+                    "error": f"read_reference budget exhausted ({self._MAX_READS} reads). "
+                    "Proceed with what you have read.",
+                }
+            )
 
         try:
             if tool_name == "search_papers":
@@ -158,60 +195,129 @@ class LiteratureToolHandler(ToolHandler):
             if tool_name == "save_bibtex":
                 self._save_calls += 1
                 return await self._save(tool_input)
+            if tool_name == "read_reference":
+                self._read_calls += 1
+                return await self._read_reference(tool_input)
         except Exception as e:
             logger.warning("Literature tool %s failed: %s", tool_name, e)
             return json.dumps({"error": str(e)})
         return json.dumps({"error": f"unknown tool: {tool_name}"})
 
     async def _search(self, inp: dict[str, Any]) -> str:
-        from . import arxiv, openalex
+        from ...config import get_settings
+        from .registry import search_sources
 
         query = inp["query"]
         limit = max(1, min(int(inp.get("limit", 10)), 50))
-        try:
-            result = await openalex.search_papers(query, limit=limit)
+
+        # Iterate the registry's search chain (OpenAlex → arXiv). Return the
+        # first source that yields papers; if none does, return the last
+        # source's (empty) result; if every source raised, return an error.
+        last_result: SearchResult | None = None
+        last_error: Exception | None = None
+        for source in search_sources(get_settings()):
+            try:
+                result = await source.search(query, limit)
+            except Exception as e:
+                last_error = e
+                logger.info("%s search failed (%s) — trying next source", source.name, e)
+                continue
+            last_result = result
             if result.papers:
-                return json.dumps(
-                    {
-                        "source": "openalex",
-                        "query": query,
-                        "count": len(result.papers),
-                        "papers": [_to_dict(p) for p in result.papers],
-                    }
-                )
-        except Exception as e:
-            logger.info("OpenAlex search failed (%s) — falling back to arXiv", e)
-        # Fallback
-        try:
-            result = await arxiv.search_papers(query, limit=limit)
+                break
+
+        if last_result is not None:
             return json.dumps(
                 {
-                    "source": "arxiv",
+                    "source": last_result.source,
                     "query": query,
-                    "count": len(result.papers),
-                    "papers": [_to_dict(p) for p in result.papers],
+                    "count": len(last_result.papers),
+                    "papers": [_to_dict(p) for p in last_result.papers],
                 }
             )
-        except Exception as e:
-            return json.dumps({"error": f"all search backends failed: {e}"})
+        return json.dumps({"error": f"all search backends failed: {last_error}"})
+
+    async def _resolve_doi(self, doi: str) -> tuple[str, PaperMetadata] | None:
+        """Resolve a DOI through the registry's fetch chain (OpenAlex → S2).
+
+        Returns ``(source_name, paper)`` for the first source that finds it,
+        else ``None``. Shared by ``_fetch`` and ``_save``.
+        """
+        from ...config import get_settings
+        from .registry import doi_fetch_sources
+
+        for source in doi_fetch_sources(get_settings()):
+            try:
+                paper = await source.fetch(doi)
+            except Exception as e:
+                logger.info("%s fetch failed: %s", source.name, e)
+                continue
+            if paper:
+                return source.name, paper
+        return None
 
     async def _fetch(self, inp: dict[str, Any]) -> str:
-        from . import openalex, semantic_scholar
-
         doi = inp["doi"].strip()
-        try:
-            paper = await openalex.fetch_by_doi(doi)
-            if paper:
-                return json.dumps({"source": "openalex", "paper": _to_dict(paper)})
-        except Exception as e:
-            logger.info("OpenAlex fetch failed (%s) — falling back to S2", e)
-        try:
-            paper = await semantic_scholar.fetch_by_doi(doi)
-            if paper:
-                return json.dumps({"source": "semantic_scholar", "paper": _to_dict(paper)})
-        except Exception as e:
-            logger.info("S2 fetch failed: %s", e)
+        resolved = await self._resolve_doi(doi)
+        if resolved is not None:
+            source_name, paper = resolved
+            return json.dumps({"source": source_name, "paper": _to_dict(paper)})
         return json.dumps({"error": f"paper not found for DOI {doi}"})
+
+    @staticmethod
+    def _download_target(pdf_url: str, settings: Any) -> tuple[str, dict[str, str]]:
+        """Resolve a PDF href to (download_url, headers).
+
+        Zotero attachment hrefs are ``.../file/view`` (an HTML viewer) and
+        require the API key; normalize to the ``.../file`` download endpoint
+        and attach the key. Everything else (open-access PDFs) downloads
+        unauthenticated as-is.
+        """
+        from urllib.parse import urlparse
+
+        host = urlparse(pdf_url).hostname or ""
+        if host == "api.zotero.org" and settings.zotero_api_key:
+            url = pdf_url[: -len("/view")] if pdf_url.endswith("/view") else pdf_url
+            return url, {"Zotero-API-Key": settings.zotero_api_key}
+        return pdf_url, {}
+
+    async def _read_reference(self, inp: dict[str, Any]) -> str:
+        from ...config import get_settings
+        from ..fetch.http import fetch_bytes
+        from .pdf import extract_pdf_text
+
+        settings = get_settings()
+        pdf_url = (inp.get("pdf_url") or "").strip()
+        doi = (inp.get("doi") or "").strip()
+
+        # No direct URL but a DOI → resolve an open-access PDF via the fetch chain.
+        if not pdf_url and doi:
+            resolved = await self._resolve_doi(doi)
+            if resolved is not None:
+                pdf_url = (resolved[1].pdf_url or "").strip()
+        if not pdf_url:
+            return json.dumps(
+                {
+                    "error": "no readable PDF for that reference — pass a `pdf_url`, "
+                    "or a `doi` that has an open-access PDF.",
+                }
+            )
+
+        url, headers = self._download_target(pdf_url, settings)
+        try:
+            data = await fetch_bytes(url, headers=headers, max_bytes=self._PDF_MAX_BYTES)
+        except Exception as e:
+            return json.dumps({"error": f"could not download PDF: {e}", "pdf_url": pdf_url})
+
+        text = extract_pdf_text(data, max_chars=self._READ_CHAR_CAP)
+        if not text.strip():
+            return json.dumps(
+                {
+                    "error": "PDF downloaded but no extractable text (likely a scanned image).",
+                    "pdf_url": pdf_url,
+                }
+            )
+        return json.dumps({"pdf_url": pdf_url, "chars": len(text), "text": text})
 
     async def _save(self, inp: dict[str, Any]) -> str:
         # If a literal BibTeX entry was provided, append it directly.
@@ -221,21 +327,11 @@ class LiteratureToolHandler(ToolHandler):
             entry = entry.strip()
             key = _extract_bibtex_key(entry)
         elif inp.get("doi"):
-            from . import openalex, semantic_scholar
-
             doi = inp["doi"].strip()
-            paper = None
-            try:
-                paper = await openalex.fetch_by_doi(doi)
-            except Exception:
-                pass
-            if paper is None:
-                try:
-                    paper = await semantic_scholar.fetch_by_doi(doi)
-                except Exception:
-                    pass
-            if paper is None:
+            resolved = await self._resolve_doi(doi)
+            if resolved is None:
                 return json.dumps({"error": f"could not fetch DOI {doi}"})
+            _source_name, paper = resolved
             entry = paper.to_bibtex()
             key = paper.bibtex_key
         else:
@@ -263,6 +359,7 @@ def _to_dict(p: PaperMetadata) -> dict[str, Any]:
         "journal": p.journal,
         "citations": p.citations,
         "bibtex_key": p.bibtex_key,
+        "pdf_url": p.pdf_url,  # lets the model pass it to read_reference
     }
 
 

@@ -50,7 +50,7 @@ async def fetch_by_doi(doi: str) -> PaperMetadata | None:
 
 
 def _parse(paper: dict) -> PaperMetadata:
-    authors = [a.get("name", "") for a in paper.get("authors", []) if a.get("name")]
+    authors = [a.get("name", "") for a in (paper.get("authors") or []) if a.get("name")]
     doi = (paper.get("externalIds") or {}).get("DOI", "")
     pdf_url = (paper.get("openAccessPdf") or {}).get("url", "")
     return PaperMetadata(

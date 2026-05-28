@@ -81,9 +81,33 @@ class Settings(BaseSettings):
     def data_module_enabled(self) -> bool:
         return self.allium_api_key is not None
 
+    # ── Local datasets + literature directory ────────────────────────────────
+    # Single env var that holds the researcher's BYOD ("bring your own data")
+    # corpus reusable across papers. Mixed content, extension-routed:
+    #   *.csv / *.tsv / *.jsonl / *.parquet / *.xlsx / *.txt → data files,
+    #     symlinked into `workspace/<paper_id>/data/` at paper creation so
+    #     `_list_user_data` picks them up and specialists can `read_file`
+    #     them through the standard sandbox.
+    #   *.bib → additional BibTeX, parsed alongside LITERATURE_BIBTEX_FILE in
+    #     `_load_reference_summary`.
+    # When unset, both pathways are no-ops; everything that worked pre-v0.8
+    # still works.
+    local_data_dir: str | None = None
+
     # ── Literature ────────────────────────────────────────────────────────────
     literature_bibtex_file: str | None = None
     semantic_scholar_api_key: str | None = None
+
+    # Zotero Web API (reference library). Set the key plus exactly one of
+    # user_id / group_id. The library's bibliographic items are merged into
+    # the reference summary alongside local .bib (see reference_libraries()).
+    zotero_api_key: str | None = None
+    zotero_user_id: str | None = None
+    zotero_group_id: str | None = None
+
+    @property
+    def zotero_enabled(self) -> bool:
+        return self.zotero_api_key is not None and (self.zotero_user_id is not None or self.zotero_group_id is not None)
 
     @property
     def literature_kb_enabled(self) -> bool:

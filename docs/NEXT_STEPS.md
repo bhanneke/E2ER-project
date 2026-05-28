@@ -1,5 +1,11 @@
 # Next steps for E2ER v3
 
+> **⚠️ SUPERSEDED (2026-05-28).** This document is May-12 vintage (221
+> tests, Allium-blocker framing) and no longer reflects the roadmap.
+> See **`docs/MODULARIZATION_PLAN.md`** for the current direction
+> (pluggable data/library providers → Zotero → Citavi). The lessons and
+> architecture-invariants sections below remain accurate and useful.
+
 End-of-session document — May 12, 2026. Captures (1) where we are after
 extensive live validation, (2) the one remaining blocker (Allium endpoint
 URL), and (3) lessons from the multi-run session.

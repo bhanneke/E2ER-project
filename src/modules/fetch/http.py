@@ -57,15 +57,37 @@ async def fetch_text(url: str, headers: dict | None = None) -> str:
         return content.decode("utf-8", errors="replace")
 
 
-async def fetch_bytes(url: str, headers: dict | None = None) -> bytes:
-    """Fetch URL and return raw bytes (for PDF downloads)."""
+def fetch_text_sync(url: str, headers: dict | None = None) -> str:
+    """Synchronous variant of ``fetch_text``.
+
+    For sync callers — notably the ``ReferenceLibrary`` providers, which are
+    consumed by the (sync) specialist prompt builder and so can't await.
+    Same SSRF check, timeout, and size cap.
+    """
     _check_url(url)
+    with httpx.Client(timeout=_TIMEOUT, follow_redirects=True) as client:
+        resp = client.get(url, headers=headers or {})
+        resp.raise_for_status()
+        content = resp.content
+        if len(content) > _MAX_BYTES:
+            content = content[:_MAX_BYTES]
+        return content.decode("utf-8", errors="replace")
+
+
+async def fetch_bytes(url: str, headers: dict | None = None, max_bytes: int | None = None) -> bytes:
+    """Fetch URL and return raw bytes (for PDF downloads).
+
+    ``max_bytes`` overrides the default 2 MB cap — PDFs routinely exceed it,
+    so the reference-reading path passes a larger limit.
+    """
+    _check_url(url)
+    cap = max_bytes if max_bytes is not None else _MAX_BYTES
     async with httpx.AsyncClient(timeout=_TIMEOUT, follow_redirects=True) as client:
         resp = await client.get(url, headers=headers or {})
         resp.raise_for_status()
         content = resp.content
-        if len(content) > _MAX_BYTES:
-            raise ValueError(f"Response too large: {len(content)} bytes > {_MAX_BYTES}")
+        if len(content) > cap:
+            raise ValueError(f"Response too large: {len(content)} bytes > {cap}")
         return content
 
 

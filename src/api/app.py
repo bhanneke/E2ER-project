@@ -87,6 +87,73 @@ _RUNNING: dict[str, asyncio.Task] = {}
 _UNPROVEN_TUPLE_CAP = 1.0
 
 
+# File extensions the paper-creation symlinker treats as "data" — these
+# get staged into `workspace/<id>/data/` so the existing _list_user_data
+# context builder picks them up. Extensions outside this set are
+# silently skipped (notably .bib, which is handled by
+# _load_reference_summary directly). Keep this list narrow: anything
+# linked here is auto-listed to every specialist's prompt, so a noisy
+# corpus would balloon the context.
+_LOCAL_DATA_EXTENSIONS = frozenset({".csv", ".tsv", ".jsonl", ".parquet", ".xlsx", ".txt"})
+
+
+def _link_local_data_dir_into_workspace(workspace: Path, local_data_dir: str | None) -> None:
+    """Symlink the user's BYOD corpus into the paper's data/ directory.
+
+    Idempotent. Skips silently when `local_data_dir` is unset, the path
+    doesn't exist, or it isn't a directory — none of those should
+    bring down paper creation. Logs at WARNING when something
+    actively goes wrong (e.g. a symlink couldn't be created) so the
+    operator notices in the uvicorn log without the API call failing.
+
+    Files with extensions outside `_LOCAL_DATA_EXTENSIONS` are
+    skipped — keeps PDFs, .bib (handled elsewhere), random binaries,
+    etc. out of the specialist context window.
+    """
+    if not local_data_dir:
+        return
+    source = Path(local_data_dir).expanduser()
+    if not source.is_dir():
+        logger.warning(
+            "LOCAL_DATA_DIR=%s is not a directory; skipping data-link step (paper creation continues normally)",
+            local_data_dir,
+        )
+        return
+
+    dest = workspace / "data"
+    dest.mkdir(parents=True, exist_ok=True)
+
+    linked = 0
+    for entry in source.iterdir():
+        if not entry.is_file():
+            continue
+        if entry.suffix.lower() not in _LOCAL_DATA_EXTENSIONS:
+            continue
+        target = dest / entry.name
+        if target.exists() or target.is_symlink():
+            # The paper's own data/ dir may already have a file with
+            # this name (rare — the paper was just created — but
+            # defensive). Don't overwrite.
+            continue
+        try:
+            target.symlink_to(entry.resolve())
+            linked += 1
+        except OSError as e:
+            logger.warning(
+                "could not symlink %s → %s: %s (paper creation continues)",
+                entry,
+                target,
+                e,
+            )
+    if linked:
+        logger.info(
+            "Staged %d file(s) from LOCAL_DATA_DIR=%s into %s",
+            linked,
+            local_data_dir,
+            dest,
+        )
+
+
 async def _tuple_is_proven(model: str, methodology: str, mode: str) -> bool:
     """Has any paper with this (model, methodology, mode) tuple completed?
 
@@ -266,6 +333,14 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
     settings = get_settings()
     workspace = Path(settings.workspace_root) / paper_id
     workspace.mkdir(parents=True, exist_ok=True)
+
+    # v0.8: stage the user's BYOD corpus into the paper's workspace via
+    # symlinks. Data-shaped files (csv/parquet/jsonl/xlsx/tsv/txt) land
+    # in `workspace/<id>/data/` so `_list_user_data` discovers them and
+    # specialists can `read_file('data/<name>')` through the standard
+    # FileToolHandler sandbox. Literature (.bib) is handled separately
+    # by `_load_reference_summary`; we don't symlink those.
+    _link_local_data_dir_into_workspace(workspace, settings.local_data_dir)
 
     if req.methodology not in {"empirical", "theoretical", "mixed"}:
         raise HTTPException(
@@ -1116,7 +1191,8 @@ async def _run_pipeline(
 ) -> None:
     from ..config import get_settings
     from ..core.strategist.runner import PipelineRunner
-    from ..modules.data.tools import ALLIUM_TOOLS, DeferredAlliumToolHandler
+    from ..modules.data.discovery_tools import DATA_DISCOVERY_TOOLS, SeriesDataToolHandler
+    from ..modules.data.registry import warehouses
     from ..modules.literature.tools import LITERATURE_TOOLS, LiteratureToolHandler
     from ..modules.llm.registry import get_backend
 
@@ -1128,10 +1204,17 @@ async def _run_pipeline(
     extra_tools: list[dict] = []
     extra_handlers: list = []
 
-    if settings.data_module_enabled:
-        extra_tools.extend(ALLIUM_TOOLS)
-        if settings.allium_api_key:
-            extra_handlers.append(DeferredAlliumToolHandler(paper_id, "pipeline", workspace))
+    # Warehouses (Allium) — each contributes its own guarded tools + handler
+    # (query_allium keeps the 5-rule validator + approval flow). Present only
+    # when configured (Allium key), matching the prior behaviour exactly.
+    for warehouse in warehouses(settings):
+        extra_tools.extend(warehouse.tools())
+        extra_handlers.append(warehouse.handler(paper_id, workspace))
+
+    # Series data (FRED/yfinance) + discovery — always on (yfinance needs no
+    # key). Agents call list_data_sources, in light of the RQ, then fetch_data.
+    extra_tools.extend(DATA_DISCOVERY_TOOLS)
+    extra_handlers.append(SeriesDataToolHandler())
 
     # Literature tools are always on — OpenAlex needs no API key.
     extra_tools.extend(LITERATURE_TOOLS)
