@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Lane C — Data
+
+- **Series data in the agent loop + RQ-aware discovery (M3a of
+  `docs/MODULARIZATION_PLAN.md`).** FRED and yfinance are no longer
+  CLI-only — specialists reach them in the tool loop. New `SeriesFetcher`
+  capability + data registry (`providers.py`, `registry.py`) mirror the
+  Lane-B pattern. Two new tools: `list_data_sources` (serves the registry
+  catalog so the agent picks the right source for the research question)
+  and a unified `fetch_data(provider, method, params)`. Allium is unchanged
+  — it keeps its guarded `query_allium` tool and is advertised in the
+  catalog (the 5 guardrails are untouched). Series tools are always on
+  (yfinance needs no key); budgeted (`_MAX_FETCHES=20`). M3b will fold
+  Allium behind a `Warehouse` capability into the same registry.
+
 ### Lane B — Literature
 
 - **Full-text `read_reference` tool (M2.5 of `docs/MODULARIZATION_PLAN.md`).**
