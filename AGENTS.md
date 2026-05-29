@@ -19,8 +19,10 @@ For any substantial change:
 4. Merge `dev` → `main` via a release PR only when a coherent set of
    changes is ready to ship.
 5. Tag from `main` (`v0.X.Y`) — the release workflow then builds the
-   wheel and creates the GitHub release. PyPI publish is gated on a
-   separate manual step until Phase 4 of the stability sprint lands.
+   wheel, creates the GitHub release, **and publishes to PyPI** via OIDC
+   (trusted publisher; live since 0.3.0). The workflow OWNS release
+   creation — do NOT `gh release create` the tag manually (it's idempotent
+   now, but a manual release historically skipped the PyPI publish).
 
 Hard rules:
 
@@ -60,12 +62,15 @@ Release procedure:
    git tag vX.Y.Z
    git push origin vX.Y.Z
    ```
-4. The release workflow runs: tests → version-consistency check → build →
-   GitHub release artifact.
+4. The release workflow runs: version-consistency check → tests → build →
+   GitHub release (created by the workflow, from the CHANGELOG section) →
+   **PyPI publish (OIDC)**. Do NOT create the GitHub release by hand.
 
 Skipping step 3 leaves the release un-cut no matter how much code lands
 on `main`. Doing step 3 without step 1 fails the version-check job by
-design.
+design. If a tag's run skipped publish, re-run the workflow run
+(`gh run rerun <id>`) — the release job is idempotent and the publish step
+uses `skip-existing`.
 
 ---
 
@@ -110,8 +115,9 @@ src/
   - Provider HTTP-shape contracts in `tests/lit/contract/`
 
 - **Lane C → Lane A**:
-  - `e2er-allium-query` bash wrapper subcommands (see
-    `scripts/e2er-allium-query`)
+  - `e2er-data <source> <command>` wrapper (packaged entry point; see
+    `scripts/e2er-data`). `scripts/e2er-allium-query` is the legacy
+    Allium-only wrapper, still present.
   - `data_dictionary.json` schema (pydantic model in `dictionary.py`)
   - Guardrail rejection-string contracts (model reads these as plain text)
   - Provider param-name contracts in `tests/data/contract/`
@@ -169,7 +175,7 @@ Makes release notes auto-organizable and shows which lanes are evolving.
   the intent matters: every fix is reviewable.
 - Do not skip CI for "obvious" doc-only fixes. Doc CI is fast (~30s).
 - Do not bypass the data-module guardrails or talk to Allium directly
-  from inside specialists. Use `e2er-allium-query`.
+  from inside specialists. Use `e2er-data` (or the legacy `e2er-allium-query`).
 
 ---
 

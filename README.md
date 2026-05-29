@@ -56,7 +56,7 @@ If you'd rather do it by hand:
 ```bash
 pip install e2er
 e2er install-skills      # bundles the skill files used by the specialists
-export LLM_BACKEND=claude_code   # or anthropic / openrouter / codex_cli / gemini_cli
+export LLM_BACKEND=claude_code   # or anthropic / openrouter / codex / gemini
 ```
 
 To verify your install without spending any tokens:
@@ -78,7 +78,7 @@ e2er migrate              # runs the schema migrations
 
 ```bash
 export GITHUB_TOKEN=ghp_...     # token with `repo` scope
-export GITHUB_OWNER=your-user-or-org
+export GITHUB_USERNAME=your-user-or-org
 ```
 
 ---
@@ -104,7 +104,7 @@ Open the dashboard at <http://127.0.0.1:8280> to see all papers, drill into per-
 Files for a paper land in two places:
 
 - `workspaces/<paper_id>/` on your filesystem — every artifact, every reviewer report, the replication package.
-- A dedicated GitHub repo per paper (if you've set `GITHUB_TOKEN` + `GITHUB_OWNER`), structured for direct Overleaf import.
+- A dedicated GitHub repo per paper (if you've set `GITHUB_TOKEN` + `GITHUB_USERNAME`), structured for direct Overleaf import.
 
 ---
 
@@ -115,8 +115,8 @@ E2ER is "bring your own LLM" — choose whichever you already have access to. Th
 | Backend | Setting | Cost per paper | Install |
 |---|---|---|---|
 | **Claude Code CLI** (Anthropic Max) | `LLM_BACKEND=claude_code` | $0/token | `npm i -g @anthropic-ai/claude-code` |
-| **Codex CLI** (ChatGPT Plus/Pro) | `LLM_BACKEND=codex_cli` | $0/token | `npm i -g @openai/codex` |
-| **Gemini CLI** (Google AI Pro/Ultra) | `LLM_BACKEND=gemini_cli` | $0/token | `npm i -g @google/gemini-cli` |
+| **Codex CLI** (ChatGPT Plus/Pro) | `LLM_BACKEND=codex` | $0/token | `npm i -g @openai/codex` |
+| **Gemini CLI** (Google AI Pro/Ultra) | `LLM_BACKEND=gemini` | $0/token | `npm i -g @google/gemini-cli` |
 | Anthropic SDK | `LLM_BACKEND=anthropic` | per-token | `export ANTHROPIC_API_KEY=...` |
 | OpenRouter | `LLM_BACKEND=openrouter` | per-token | `export OPENROUTER_API_KEY=...` (200+ models) |
 
@@ -245,7 +245,7 @@ export ZOTERO_USER_ID=1234567                      # (or ZOTERO_GROUP_ID for a g
 ```
 
 A compact reference list is injected into the prompts of the bibliography-relevant
-specialists (`literature_scanner`, `polish_bibliography`, `paper_drafter`, `revisor`),
+specialists (`literature_scanner`, `paper_drafter`, `section_writer`, `abstract_writer`, `revisor`),
 and any `.bib` is copied into the workspace so LaTeX compiles with `\bibliography{refs}`.
 
 ### Discovery and full text (open access)
@@ -401,7 +401,7 @@ The automated research space is developing quickly. Two projects most relevant t
   title        = {{E2ER: End-to-End Researcher, An Open-Source Pipeline
                    for Automated Empirical Research}},
   year         = {2026},
-  version      = {0.5.0},
+  version      = {0.8.0},
   url          = {https://github.com/bhanneke/E2ER-project},
   doi          = {10.5281/zenodo.20187238},
   license      = {MIT},
