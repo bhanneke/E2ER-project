@@ -199,7 +199,7 @@ async def _log_config() -> None:
     # what the user actually pays. The budget cap still functions as a
     # token-spend guardrail — useful for runaway protection — but the dollar
     # number in `/api/papers/<id>` is informational only.
-    if s.llm_backend in {"claude_code", "codex_cli", "gemini_cli"}:
+    if s.llm_backend in {"claude_code", "codex", "gemini"}:
         logger.warning(
             "Backend %s: cost values are Sonnet-rate ESTIMATES (synthetic). "
             "Actual user cost on a flat-rate plan is $0. Budget cap still "
@@ -482,7 +482,7 @@ async def get_paper(paper_id: str = Depends(_validate_uuid)) -> dict[str, Any]:
         # `total_cost_usd` itself stays unchanged for budget-cap math.
         backend_used = (row.get("backend") if isinstance(row, dict) else None) or get_settings().llm_backend
         if usage:
-            usage["cost_is_estimate"] = backend_used in {"claude_code", "codex_cli", "gemini_cli"}
+            usage["cost_is_estimate"] = backend_used in {"claude_code", "codex", "gemini"}
         return {**row, "usage": usage or {}}
     except Exception as e:
         logger.warning("get_paper usage fetch failed for paper_id=%s: %s", paper_id, e)

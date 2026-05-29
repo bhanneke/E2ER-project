@@ -158,20 +158,23 @@ class AlliumToolHandler(ToolHandler):
         primary_table = tool_input.get("primary_table", "")
         estimated_rows = tool_input.get("estimated_rows")
 
-        # Validate against all 5 guardrails
-        if self._dictionary:
-            result = await QueryValidator.validate_all(
-                sql=sql,
-                query_type=query_type,
-                fields_requested=fields,
-                aggregation_level=agg_level,
-                granularity_justification=rationale,
-                dictionary=self._dictionary,
-                paper_id=self._paper_id,
-                primary_table=primary_table,
-            )
-            if not result.valid:
-                return f"Query rejected by guardrails:\n{result.rejection_reason}"
+        # Validate against the guardrails. ALWAYS runs — the structural rules
+        # (no SELECT *, time-bound) and feasibility-first/approval gate do not
+        # need a data dictionary; only the field-whitelist (Rule 2) is gated on
+        # one (skipped with a warning when absent). A missing dictionary must
+        # NOT bypass validation wholesale.
+        result = await QueryValidator.validate_all(
+            sql=sql,
+            query_type=query_type,
+            fields_requested=fields,
+            aggregation_level=agg_level,
+            granularity_justification=rationale,
+            dictionary=self._dictionary,  # may be None
+            paper_id=self._paper_id,
+            primary_table=primary_table,
+        )
+        if not result.valid:
+            return f"Query rejected by guardrails:\n{result.rejection_reason}"
 
         # Log the query
         query_id = await log_query(

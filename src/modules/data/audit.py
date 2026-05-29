@@ -19,19 +19,25 @@ async def log_query(
 ) -> str:
     """Create a data_query_record and return its ID."""
     import json
+    import uuid
 
-    from ...db.client import fetch_one
+    from ...db.client import execute
 
-    row = await fetch_one(
+    # Generate the id app-side. Postgres has a uuid default, but SQLite's
+    # schema does not — relying on the default there left `id` NULL, which
+    # silently broke the approval-request join (NULL = NULL is never true),
+    # so pending production queries never surfaced for approval on SQLite.
+    record_id = str(uuid.uuid4())
+    await execute(
         """
         INSERT INTO data_query_records
-            (paper_id, specialist, query_sql, query_type, fields_requested,
+            (id, paper_id, specialist, query_sql, query_type, fields_requested,
              aggregation_level, estimated_rows, validation_status)
-        VALUES (%(paper_id)s, %(specialist)s, %(sql)s, %(qtype)s,
+        VALUES (%(id)s, %(paper_id)s, %(specialist)s, %(sql)s, %(qtype)s,
                 %(fields)s, %(agg)s, %(est_rows)s, 'pending')
-        RETURNING id
         """,
         {
+            "id": record_id,
             "paper_id": paper_id,
             "specialist": specialist,
             "sql": query_sql,
@@ -41,7 +47,7 @@ async def log_query(
             "est_rows": estimated_rows,
         },
     )
-    return str(row["id"]) if row else ""
+    return record_id
 
 
 async def mark_approved(query_id: str, approved_by: str = "auto") -> None:
@@ -67,17 +73,21 @@ async def mark_executed(query_id: str, actual_rows: int) -> None:
 
 
 async def create_approval_request(query_record_id: str, paper_id: str) -> str:
-    from ...db.client import fetch_one
+    import uuid
 
-    row = await fetch_one(
+    from ...db.client import execute
+
+    # App-side id (see log_query) so the approval row has a non-NULL id on
+    # SQLite and get_pending_queries' join works.
+    request_id = str(uuid.uuid4())
+    await execute(
         """
-        INSERT INTO data_approval_requests (query_record_id, paper_id)
-        VALUES (%(qid)s, %(pid)s)
-        RETURNING id
+        INSERT INTO data_approval_requests (id, query_record_id, paper_id)
+        VALUES (%(id)s, %(qid)s, %(pid)s)
         """,
-        {"qid": query_record_id, "pid": paper_id},
+        {"id": request_id, "qid": query_record_id, "pid": paper_id},
     )
-    return str(row["id"]) if row else ""
+    return request_id
 
 
 async def get_approval_status(query_id: str) -> str:
