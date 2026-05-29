@@ -26,6 +26,13 @@ Bug fixes from the 2026-05 full code review.
 - **Fix: tier-0 context builder handles explicit-null manifest fields**
   (`datasets: null` / `research_question: null`) instead of `TypeError`.
 
+### Lane B — Literature
+
+- **Fix: `store_paper` persists citation counts.** `citations` was in the
+  `ON CONFLICT DO UPDATE` clause but missing from the INSERT column list, so
+  inserts dropped the count and conflict-updates zeroed it. Added to the
+  insert.
+
 ### Lane C — Data
 
 - **Fix (safety): guardrails no longer fully bypassed without a data
@@ -54,6 +61,19 @@ Bug fixes from the 2026-05 full code review.
   blocked literal private IPs; a hostname (e.g. `metadata.google.internal`
   → 169.254.x, or `localhost`) slipped past. It now resolves the host and
   blocks if any resolved address is private/loopback/link-local.
+- **Fix: `e2er run --acknowledge-unproven` flag.** The CLI hardcoded
+  `acknowledge_unproven_tuple=True`, silently disabling the $1 first-run
+  floor (and the README documented a flag that didn't exist). The flag now
+  exists (default off → floor enforced for metered backends); the $0
+  flat-rate CLI backends (claude_code/codex/gemini) auto-acknowledge.
+- **Fix: single-order dispatch gets the cascade guard.** The missing-
+  canonical-artifact check ran only in `execute_parallel`; a lone specialist
+  could "succeed" without its artifact and starve downstream work. Extracted
+  `assert_artifacts_written`, now applied to both paths.
+- **Fix: `FileToolHandler` sandbox uses path containment, not a string
+  prefix** (a sibling workspace with a prefix name could escape).
+- **Fix: OpenRouter tool-only turns send `content=""`** instead of `null`
+  (some OpenAI-compatible servers reject `null` content + tool_calls).
 
 ## v0.8.0 — 2026-05-28
 

@@ -77,6 +77,19 @@ def _successful_contribution(paper_id: str, specialist: str) -> Contribution:
     return Contribution(paper_id=paper_id, specialist=specialist, output="ok", success=True)
 
 
+def _write_artifact(runner: PipelineRunner, specialist: str) -> None:
+    """A genuinely-successful specialist writes its canonical artifact; the
+    mocks must too, or the single-order cascade guard (assert_artifacts_written)
+    correctly trips on the missing file."""
+    from src.core.specialists.registry import SPECIALIST_ARTIFACTS
+
+    art = SPECIALIST_ARTIFACTS.get(specialist)
+    if art:
+        path = runner._workspace / art
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("ok")
+
+
 # ---------------------------------------------------------------------------
 # Hard guard: paper_drafter dropped on iteration >= 2
 # ---------------------------------------------------------------------------
@@ -96,6 +109,7 @@ async def test_paper_drafter_dropped_on_iteration_2(tmp_path, mock_llm, caplog):
 
     async def _capture(work_order, *args, **kwargs):
         dispatched.append(work_order.specialist)
+        _write_artifact(runner, work_order.specialist)
         return _successful_contribution(runner._paper_id, work_order.specialist)
 
     async def _capture_parallel(orders, *args, **kwargs):
@@ -135,6 +149,7 @@ async def test_paper_drafter_dropped_on_iteration_5(tmp_path, mock_llm):
 
     async def _capture(work_order, *args, **kwargs):
         dispatched.append(work_order.specialist)
+        _write_artifact(runner, work_order.specialist)
         return _successful_contribution(runner._paper_id, work_order.specialist)
 
     with patch("src.core.specialists.dispatcher.execute_work_order", side_effect=_capture):
@@ -165,6 +180,7 @@ async def test_paper_drafter_allowed_on_iteration_0_initial_phase(tmp_path, mock
 
     async def _capture(work_order, *args, **kwargs):
         dispatched.append(work_order.specialist)
+        _write_artifact(runner, work_order.specialist)
         return _successful_contribution(runner._paper_id, work_order.specialist)
 
     async def _capture_parallel(orders, *args, **kwargs):
@@ -198,6 +214,7 @@ async def test_paper_drafter_allowed_on_iteration_1(tmp_path, mock_llm):
 
     async def _capture(work_order, *args, **kwargs):
         dispatched.append(work_order.specialist)
+        _write_artifact(runner, work_order.specialist)
         return _successful_contribution(runner._paper_id, work_order.specialist)
 
     with patch("src.core.specialists.dispatcher.execute_work_order", side_effect=_capture):
@@ -224,6 +241,7 @@ async def test_legitimate_specialists_not_dropped_on_iteration_2(tmp_path, mock_
 
     async def _capture(work_order, *args, **kwargs):
         dispatched.append(work_order.specialist)
+        _write_artifact(runner, work_order.specialist)
         return _successful_contribution(runner._paper_id, work_order.specialist)
 
     async def _capture_parallel(orders, *args, **kwargs):
@@ -266,6 +284,7 @@ async def test_mixed_decision_keeps_non_drafter_work_orders(tmp_path, mock_llm):
 
     async def _capture(work_order, *args, **kwargs):
         dispatched.append(work_order.specialist)
+        _write_artifact(runner, work_order.specialist)
         return _successful_contribution(runner._paper_id, work_order.specialist)
 
     async def _capture_parallel(orders, *args, **kwargs):
@@ -330,6 +349,7 @@ async def test_revisor_dropped_on_iteration_2(tmp_path, mock_llm, caplog):
 
     async def _capture(work_order, *args, **kwargs):
         dispatched.append(work_order.specialist)
+        _write_artifact(runner, work_order.specialist)
         return _successful_contribution(runner._paper_id, work_order.specialist)
 
     async def _capture_parallel(orders, *args, **kwargs):
@@ -369,6 +389,7 @@ async def test_revisor_allowed_on_iteration_1(tmp_path, mock_llm):
 
     async def _capture(work_order, *args, **kwargs):
         dispatched.append(work_order.specialist)
+        _write_artifact(runner, work_order.specialist)
         return _successful_contribution(runner._paper_id, work_order.specialist)
 
     with patch("src.core.specialists.dispatcher.execute_work_order", side_effect=_capture):
@@ -389,6 +410,7 @@ async def test_revisor_and_paper_drafter_both_dropped(tmp_path, mock_llm, caplog
 
     async def _capture(work_order, *args, **kwargs):
         dispatched.append(work_order.specialist)
+        _write_artifact(runner, work_order.specialist)
         return _successful_contribution(runner._paper_id, work_order.specialist)
 
     async def _capture_parallel(orders, *args, **kwargs):

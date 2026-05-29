@@ -1001,7 +1001,7 @@ class PipelineRunner:
         # (strategist work orders carry parallel_group/context_tier but not paper_id)
         contract_orders = self._to_contract_orders(decision.work_orders)
         if len(contract_orders) == 1:
-            from ..specialists.dispatcher import execute_work_order
+            from ..specialists.dispatcher import assert_artifacts_written, execute_work_order
 
             c = await execute_work_order(
                 contract_orders[0],
@@ -1013,6 +1013,10 @@ class PipelineRunner:
                 self._backend_name,
             )
             contributions = [c]
+            # Same cascade guard execute_parallel applies — a lone non-tolerant
+            # specialist that "succeeded" without its canonical artifact must
+            # halt here, not starve downstream specialists.
+            assert_artifacts_written(contributions, self._workspace)
         else:
             contributions = await execute_with_dependencies(
                 contract_orders,

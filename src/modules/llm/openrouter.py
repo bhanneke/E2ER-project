@@ -151,7 +151,10 @@ class OpenRouterBackend(LLMBackend):
             msgs.append(
                 {
                     "role": "assistant",
-                    "content": msg.content,
+                    # Coerce None → "" : when the model returns only tool calls,
+                    # content is None, and some OpenAI-compatible servers reject
+                    # an assistant message with content=null + tool_calls.
+                    "content": msg.content or "",
                     "tool_calls": [
                         {
                             "id": tc.id,
