@@ -128,25 +128,28 @@ class LocalBibLibrary(ReferenceLibrary):
 
     name = "local_bibtex"
 
-    def __init__(self, bibtex_file: str | None, local_data_dir: str | None) -> None:
+    def __init__(self, bibtex_file: str | None, local_data_dir: str | None, recursive: bool = False) -> None:
         self._bibtex_file = bibtex_file
         self._local_data_dir = local_data_dir
+        self._recursive = recursive
 
     def _bib_paths(self) -> list[Path]:
+        from ..local_corpus import BIB_EXTENSIONS, iter_corpus_files, parse_corpus_roots
+
         paths: list[Path] = []
         if self._bibtex_file:
             primary = Path(self._bibtex_file).expanduser()
             if primary.is_file():
                 paths.append(primary)
-        if self._local_data_dir:
-            local_dir = Path(self._local_data_dir).expanduser()
-            if local_dir.is_dir():
-                resolved = {p.resolve() for p in paths}
-                for candidate in sorted(local_dir.iterdir()):
-                    if candidate.is_file() and candidate.suffix.lower() == ".bib":
-                        if candidate.resolve() in resolved:
-                            continue
-                        paths.append(candidate)
+        seen = {p.resolve() for p in paths}
+        for _root, candidate in iter_corpus_files(
+            parse_corpus_roots(self._local_data_dir), BIB_EXTENSIONS, self._recursive
+        ):
+            resolved = candidate.resolve()
+            if resolved in seen:
+                continue  # same file named in LITERATURE_BIBTEX_FILE
+            paths.append(candidate)
+            seen.add(resolved)
         return paths
 
     def entries(self) -> list[PaperMetadata]:

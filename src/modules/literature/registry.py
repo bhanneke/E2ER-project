@@ -49,7 +49,13 @@ def reference_libraries(settings: Settings) -> list[ReferenceLibrary]:
     """
     libraries: list[ReferenceLibrary] = []
     if settings.literature_bibtex_file or settings.local_data_dir:
-        libraries.append(LocalBibLibrary(settings.literature_bibtex_file, settings.local_data_dir))
+        libraries.append(
+            LocalBibLibrary(
+                settings.literature_bibtex_file,
+                settings.local_data_dir,
+                recursive=settings.local_data_dir_recursive,
+            )
+        )
     # Narrow zotero_api_key to str for the type checker (the zotero_enabled
     # property already implies this, but mypy can't see through a property).
     zotero_key = settings.zotero_api_key
