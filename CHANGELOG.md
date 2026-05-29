@@ -7,8 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Bug fixes from the 2026-05 full code review, plus the feedback-channel and
-local-corpus extensions.
+_Nothing yet._
+
+## v0.8.1 — 2026-05-30
+
+Stability + corpus extensions. Bug fixes from a full code review —
+**safety** (Allium guardrails no longer bypassed without a
+`data_dictionary.json`; SQLite Allium-approval workflow works; SSRF
+hostname resolution), **Lane-A robustness** (strategist JSON guards,
+mechanism-gate, resume-status, single-order cascade), **Lane B/C wins**
+(storage citations; OpenAlex/S2 null crash; `e2er run --acknowledge-
+unproven`; FileToolHandler sandbox; OpenRouter `content=""`). Plus
+user-driven additions: structured GitHub issue templates for data-source
+and literature-provider requests, and `LOCAL_DATA_DIR` extensions
+(comma-separated roots, recursive walk, PDFs staged into
+`workspace/literature/` with `read_reference(path=…)`).
 
 ### Cross-lane
 
