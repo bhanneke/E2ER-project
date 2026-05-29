@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Bug fixes from the 2026-05 full code review.
 
+### Lane A — Pipeline
+
+- **Fix: malformed strategist JSON no longer crashes the paper.**
+  `ceiling_check` and `run_self_attack` did a bare `json.loads` on LLM
+  output — truncated/invalid JSON raised and failed the whole run. They now
+  use the tolerant `extract_json` and skip malformed `WorkOrder`/finding
+  items instead of raising.
+- **Fix: a missing mechanism-reviewer score can no longer be silently
+  accepted.** The Rule-1 mechanism gate no-op'd when the mechanism score was
+  absent, letting a paper ACCEPT on the other reviewers' average. A missing
+  (but expected) mechanism score now forces `MAJOR_REVISION`.
+- **Fix: resume tolerates a bad/legacy persisted status.** `PaperStatus(
+  state.last_status)` could raise `ValueError` and wedge a completed paper
+  into FAILED on resume; it's now coerced with a safe fallback.
+- **Fix: tier-0 context builder handles explicit-null manifest fields**
+  (`datasets: null` / `research_question: null`) instead of `TypeError`.
+
 ### Lane B — Literature
 
 - **Fix: `store_paper` persists citation counts.** `citations` was in the
