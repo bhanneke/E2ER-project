@@ -7,7 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_Nothing yet._
+Bug fixes from the 2026-05 full code review.
+
+### Lane C — Data
+
+- **Fix (safety): guardrails no longer fully bypassed without a data
+  dictionary.** `_query_allium` only ran `validate_all` when a
+  `data_dictionary.json` was present, so a production query with no
+  dictionary ran with ZERO validation. Now the structural rules (no
+  `SELECT *`, time-bound) and feasibility-first/approval gate always fire;
+  only the field-whitelist (Rule 2) is dictionary-gated (skipped with a
+  warning).
+- **Fix: audit inserts generate app-side UUIDs.** `log_query` /
+  `create_approval_request` relied on a DB id default; SQLite has none, so
+  `id` was NULL and the approval-request join silently never surfaced
+  pending production queries on the default SQLite DB. Now both generate a
+  `uuid4()` client-side — the Allium approval workflow works on SQLite.
+
+### Cross-lane
+
+- **Fix: cost-estimate labeling for the codex/gemini backends.** `app.py`
+  checked `codex_cli`/`gemini_cli`, but the real backend literals are
+  `codex`/`gemini`, so synthetic cost figures were mislabeled as real.
+- **Fix: `literature_kb_enabled` honors `DATABASE_URL`.** It keyed off
+  legacy `postgres_url`/`db_password`, leaving the pgvector KB silently off
+  for the documented `DATABASE_URL=postgresql://…` path. Now derived from
+  the resolved DB URL.
+- **Fix (security): SSRF guard resolves hostnames.** `_check_url` only
+  blocked literal private IPs; a hostname (e.g. `metadata.google.internal`
+  → 169.254.x, or `localhost`) slipped past. It now resolves the host and
+  blocks if any resolved address is private/loopback/link-local.
 
 ## v0.8.0 — 2026-05-28
 

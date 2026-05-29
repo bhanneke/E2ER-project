@@ -7,9 +7,12 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 
-async def test_log_query_returns_id():
-    row = {"id": "query-uuid-1"}
-    with patch("src.db.client.fetch_one", new_callable=AsyncMock, return_value=row):
+async def test_log_query_returns_app_side_id():
+    # id is now generated app-side (works on SQLite, which has no id default)
+    # and passed in the INSERT params — not read back via RETURNING.
+    import uuid
+
+    with patch("src.db.client.execute", new_callable=AsyncMock) as mock_exec:
         from src.modules.data.audit import log_query
 
         query_id = await log_query(
@@ -21,22 +24,8 @@ async def test_log_query_returns_id():
             aggregation_level="transaction",
             estimated_rows=1000,
         )
-    assert query_id == "query-uuid-1"
-
-
-async def test_log_query_no_row_returns_empty():
-    with patch("src.db.client.fetch_one", new_callable=AsyncMock, return_value=None):
-        from src.modules.data.audit import log_query
-
-        query_id = await log_query(
-            paper_id="p",
-            specialist="s",
-            query_sql="SELECT x FROM t WHERE dt >= '2024-01-01'",
-            query_type="feasibility",
-            fields_requested=["x"],
-            aggregation_level="daily",
-        )
-    assert query_id == ""
+    uuid.UUID(query_id)  # valid uuid, never empty
+    assert mock_exec.call_args[0][1]["id"] == query_id
 
 
 async def test_mark_approved_calls_update():
@@ -62,12 +51,14 @@ async def test_mark_executed_records_row_count():
 
 
 async def test_create_approval_request_returns_id():
-    row = {"id": "approval-uuid-1"}
-    with patch("src.db.client.fetch_one", new_callable=AsyncMock, return_value=row):
+    import uuid
+
+    with patch("src.db.client.execute", new_callable=AsyncMock) as mock_exec:
         from src.modules.data.audit import create_approval_request
 
         approval_id = await create_approval_request("query-uuid-1", "paper-uuid")
-    assert approval_id == "approval-uuid-1"
+    uuid.UUID(approval_id)
+    assert mock_exec.call_args[0][1]["id"] == approval_id
 
 
 async def test_get_approval_status_pending():

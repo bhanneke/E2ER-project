@@ -83,11 +83,12 @@ class QueryValidator:
     def validate_aggregation_level(
         aggregation_level: str,
         granularity_justification: str,
-        dictionary: DataDictionary,
+        dictionary: DataDictionary | None,
     ) -> ValidationResult:
         if aggregation_level in ("transaction", "event"):
             warnings = ["Transaction/event-level query — will be flagged in human review."]
-            if not granularity_justification and not dictionary.granularity_justification:
+            dict_justification = dictionary.granularity_justification if dictionary else None
+            if not granularity_justification and not dict_justification:
                 warnings.append(
                     f"No granularity_justification provided for '{aggregation_level}' level. "
                     "Consider aggregating to daily/weekly unless transaction-level is essential."
@@ -137,16 +138,34 @@ class QueryValidator:
         fields_requested: list[str],
         aggregation_level: str,
         granularity_justification: str,
-        dictionary: DataDictionary,
+        dictionary: DataDictionary | None,
         paper_id: str,
         primary_table: str = "",
     ) -> ValidationResult:
+        # The structural guardrails (no SELECT *, time-bound) and the
+        # feasibility-first / approval gate do NOT depend on a data dictionary
+        # and MUST run unconditionally. Only the field-whitelist (Rule 2) is
+        # dictionary-gated — when no data_dictionary.json is present we skip
+        # it (with a warning) rather than skipping ALL validation. Previously
+        # a missing dictionary bypassed every rule, letting an unvalidated
+        # production query run.
         checks = [
             QueryValidator.validate_no_select_star(sql),
-            QueryValidator.validate_fields_in_dictionary(fields_requested, dictionary),
             QueryValidator.validate_time_bound(sql),
             QueryValidator.validate_aggregation_level(aggregation_level, granularity_justification, dictionary),
         ]
+        if dictionary is not None:
+            checks.append(QueryValidator.validate_fields_in_dictionary(fields_requested, dictionary))
+        else:
+            checks.append(
+                ValidationResult(
+                    valid=True,
+                    warnings=[
+                        "No data_dictionary.json — field-whitelist (Rule 2) skipped. "
+                        "SELECT*, time-bound, and feasibility-first guardrails still enforced."
+                    ],
+                )
+            )
         for c in checks:
             if not c.valid:
                 return c

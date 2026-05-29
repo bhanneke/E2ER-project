@@ -111,7 +111,11 @@ class Settings(BaseSettings):
 
     @property
     def literature_kb_enabled(self) -> bool:
-        return self.postgres_url is not None or self.db_password != "changeme"
+        # The pgvector KB requires Postgres. Derive from the *resolved* URL so
+        # the documented `DATABASE_URL=postgresql://…` path enables it — the
+        # old check only looked at the legacy postgres_url/db_password fields
+        # and left the KB silently off (keyword-only) for DATABASE_URL users.
+        return self.resolved_database_url.startswith("postgres")
 
     # ── GitHub ────────────────────────────────────────────────────────────────
     github_token: str | None = None
