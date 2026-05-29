@@ -77,6 +77,24 @@ def aggregate_reviews(scores: list[ReviewScore]) -> AggregationResult:
                 "Fundamental revision required before review can continue."
             ),
         )
+    # Rule 1b — the mechanism gate must actually run. If mechanism_reviewer is
+    # an expected reviewer but produced no parseable score, do NOT let the
+    # paper be ACCEPTED on the remaining reviewers' average — that silently
+    # skips the load-bearing gate. Require another review round.
+    if "mechanism_reviewer" in REVIEWER_SPECIALISTS and not mech_scores:
+        total_w = sum(s.weight for s in scores) or 1.0
+        avg = sum(s.score * s.weight for s in scores) / total_w
+        return AggregationResult(
+            verdict="MAJOR_REVISION",
+            weighted_avg=avg,
+            rule_triggered="Rule 1: mechanism review missing",
+            scores=scores,
+            rationale=(
+                "No parseable mechanism_reviewer score — the mechanism gate could "
+                "not run. The paper cannot be accepted without it; re-running the "
+                "review/revision round."
+            ),
+        )
 
     # Rule 2 — any reviewer hard floor
     hard_fail = [s for s in scores if s.score < 4]
