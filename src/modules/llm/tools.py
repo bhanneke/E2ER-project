@@ -70,8 +70,11 @@ class FileToolHandler(ToolHandler):
         self.workspace.mkdir(parents=True, exist_ok=True)
 
     def _resolve(self, path: str) -> Path:
+        # Use relative_to, not str.startswith — a string prefix check would let
+        # a sibling workspace whose path is a prefix (e.g. /w/abc vs /w/abc-x)
+        # escape the sandbox.
         resolved = (self.workspace / path).resolve()
-        if not str(resolved).startswith(str(self.workspace)):
+        if resolved != self.workspace and self.workspace not in resolved.parents:
             raise PermissionError(f"Path traversal not allowed: {path}")
         return resolved
 

@@ -90,14 +90,23 @@ def _ensure_api_up(deadline_seconds: float = 12.0) -> tuple[bool, str | None]:
     return False, (f"Failed to bring up uvicorn within {deadline_seconds:.0f}s. Check ~/.e2er/uvicorn.log for errors.")
 
 
-def _submit_paper(rq: str, methodology: str, mode: str, max_cost: float) -> dict | None:
+def _submit_paper(rq: str, methodology: str, mode: str, max_cost: float, acknowledge: bool = False) -> dict | None:
     """POST /api/papers and return the response body."""
     import httpx
+
+    from .config import get_settings
 
     # Derive a title: first sentence of the RQ, truncated.
     title = rq.split("?")[0].split(".")[0].strip()
     if len(title) > 80:
         title = title[:77] + "..."
+
+    # The $1 first-run floor protects against a runaway loop on an unvalidated
+    # (model, methodology, mode) tuple — but it only matters for metered API
+    # backends. The flat-rate CLI backends cost $0/token, so auto-acknowledge
+    # there; otherwise enforce the floor unless the user passed --acknowledge.
+    flat_rate = get_settings().llm_backend in {"claude_code", "codex", "gemini"}
+    acknowledge_unproven = acknowledge or flat_rate
 
     body = {
         "title": title,
@@ -110,7 +119,7 @@ def _submit_paper(rq: str, methodology: str, mode: str, max_cost: float) -> dict
         # actually passed instead of the default.
         "mode": mode,
         "max_specialists_per_phase": 6,
-        "acknowledge_unproven_tuple": True,
+        "acknowledge_unproven_tuple": acknowledge_unproven,
         "max_cost_usd": max_cost,
     }
     headers = {}
@@ -167,6 +176,7 @@ def run(
     mode: str = "single_pass",
     max_cost: float = 5.0,
     monitor_seconds: float = 1800.0,
+    acknowledge: bool = False,
 ) -> int:
     """Submit a paper and tail it. Entry point for `e2er run "<RQ>"`."""
     ok, err = _ensure_api_up()
@@ -176,7 +186,7 @@ def run(
 
     print(f"Submitting paper:\n  {rq[:120]}", file=sys.stderr)
     print(f"  methodology={methodology}, mode={mode}, max_cost=${max_cost}", file=sys.stderr)
-    resp = _submit_paper(rq, methodology, mode, max_cost)
+    resp = _submit_paper(rq, methodology, mode, max_cost, acknowledge=acknowledge)
     if not resp:
         return 5
 

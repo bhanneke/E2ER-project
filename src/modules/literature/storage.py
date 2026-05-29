@@ -18,10 +18,10 @@ async def store_paper(paper: PaperMetadata, paper_project_id: str) -> str:
     row = await fetch_one(
         """
         INSERT INTO literature_items
-            (paper_id, title, authors, year, doi, abstract, journal, url, pdf_url, source, raw)
+            (paper_id, title, authors, year, doi, abstract, journal, url, pdf_url, source, citations, raw)
         VALUES
             (%(pid)s, %(title)s, %(authors)s, %(year)s, %(doi)s, %(abstract)s,
-             %(journal)s, %(url)s, %(pdf_url)s, %(source)s, %(raw)s)
+             %(journal)s, %(url)s, %(pdf_url)s, %(source)s, %(citations)s, %(raw)s)
         ON CONFLICT (doi) DO UPDATE SET
             title = EXCLUDED.title, abstract = EXCLUDED.abstract,
             citations = EXCLUDED.citations, updated_at = NOW()
@@ -38,6 +38,7 @@ async def store_paper(paper: PaperMetadata, paper_project_id: str) -> str:
             "url": paper.url,
             "pdf_url": paper.pdf_url,
             "source": paper.source,
+            "citations": paper.citations,
             "raw": json.dumps(paper.raw),
         },
     )

@@ -178,10 +178,21 @@ async def execute_parallel(
         details = "; ".join(f"{c.specialist}: {c.error}" for c in failed)
         raise RuntimeError(f"All specialists failed in parallel batch: {details}")
 
-    # Cascade detection: a specialist that "succeeded" but didn't actually write
-    # its canonical artifact will starve downstream specialists. Reviewers and
-    # polish specialists are tolerant of partial failure (the aggregator handles
-    # gaps); everyone else writes a required upstream artifact.
+    # Cascade detection: a specialist that "succeeded" but didn't write its
+    # canonical artifact will starve downstream specialists.
+    assert_artifacts_written(contributions, workspace)
+
+    return contributions
+
+
+def assert_artifacts_written(contributions: list[Contribution], workspace: Path) -> None:
+    """Raise if a non-tolerant specialist didn't write its canonical artifact.
+
+    Reviewers and polish specialists are tolerant of partial failure (the
+    aggregator handles gaps); everyone else writes a required upstream
+    artifact. Shared by execute_parallel and the single-order dispatch path
+    so a lone specialist can't slip past the cascade guard.
+    """
     from .registry import POLISH_SPECIALISTS, REVIEWER_SPECIALISTS, SPECIALIST_ARTIFACTS
 
     tolerant = set(REVIEWER_SPECIALISTS) | set(POLISH_SPECIALISTS)
@@ -201,8 +212,6 @@ async def execute_parallel(
             f"Specialist(s) did not produce canonical artifact: {details}. "
             "Halting before downstream cascade — see specialist_failed events for details."
         )
-
-    return contributions
 
 
 async def execute_with_dependencies(

@@ -59,6 +59,12 @@ def main() -> None:
         default=1800.0,
         help="How long to tail the run before detaching. Default 30 min. ^C is safe — run continues in background.",
     )
+    run_p.add_argument(
+        "--acknowledge-unproven",
+        action="store_true",
+        help="Lift the $1 first-run floor for an unproven (model, methodology, mode) tuple "
+        "and use the full --max-cost. Auto-enabled on the $0 CLI backends (claude_code/codex/gemini).",
+    )
 
     status_p = subparsers.add_parser(
         "status",
@@ -147,6 +153,7 @@ def main() -> None:
                 mode=args.mode,
                 max_cost=args.max_cost,
                 monitor_seconds=args.monitor_seconds,
+                acknowledge=args.acknowledge_unproven,
             )
         )
     elif args.command == "init":
