@@ -18,7 +18,7 @@ def main() -> None:
     serve.add_argument("--port", type=int, default=8280, help="Port (default: 8280)")
     serve.add_argument("--reload", action="store_true", help="Auto-reload on code changes (dev mode)")
 
-    subparsers.add_parser("migrate", help="Run database migrations (sql/001 through sql/006)")
+    subparsers.add_parser("migrate", help="Run Postgres migrations (sql/001–010); SQLite auto-initializes")
 
     init_p = subparsers.add_parser(
         "init",

@@ -99,7 +99,7 @@ Edge cases and failure modes are particularly valuable for the evaluation framew
 
 - **Python 3.11+**. Type hints throughout.
 - **Lint**: `ruff check src/ tests/` and `ruff format src/ tests/`.
-- **Type-check**: `mypy src/` (strict mode is enabled).
+- **Type-check**: `mypy src/` (pragmatic, non-strict baseline — see pyproject [tool.mypy]).
 - **No `print` in library code** — use `from .logging_config import get_logger`.
 - **Tests are mock-only by default**: no network calls, no real LLM, no DB. Real-LLM tests live under `tests/e2e/` and are gated on `@pytest.mark.e2e`.
 - **Per the project rules**: SQL migrations are additive — never modify existing `sql/*.sql` files. Add a new one with the next number.
@@ -109,7 +109,7 @@ Edge cases and failure modes are particularly valuable for the evaluation framew
 ## PR process
 
 1. Open an issue first for non-trivial changes so we can scope it before you write code.
-2. Branch from `main`, keep PRs small and focused.
+2. Branch from `dev` (the integration branch; see AGENTS.md), keep PRs small and focused.
 3. CI runs `pytest tests/` — must be green before merge.
 4. PR description should call out user-facing changes and any new env vars.
 

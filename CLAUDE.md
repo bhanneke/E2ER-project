@@ -8,19 +8,27 @@ no CoS dependencies.
 
 ## Key architectural decisions
 
-### Owns the tool-use loop
-No Claude Code CLI subprocess. The pipeline runs `LLMBackend.tool_loop()` directly.
-This lets `AlliumToolHandler` intercept every tool call and run guardrails BEFORE
-any query reaches the Allium API.
+### Five LLM backends behind one `tool_loop` contract
+`LLM_BACKEND` selects the backend (`src/modules/llm/registry.py`):
+- `anthropic` — `anthropic.AsyncAnthropic`, prompt caching (SDK; owns the loop)
+- `openrouter` — `openai.AsyncOpenAI` → openrouter.ai (SDK; owns the loop)
+- `claude_code` — shells out to the `claude` CLI ($0 under a Max plan)
+- `codex` — shells out to the `codex` CLI ($0 under ChatGPT Plus/Pro)
+- `gemini` — shells out to the `gemini` CLI ($0 under Google AI Pro/Ultra)
 
-### Two LLM backends
-- `AnthropicBackend`: uses `anthropic.AsyncAnthropic`, supports prompt caching
-- `OpenRouterBackend`: uses `openai.AsyncOpenAI` pointed at `https://openrouter.ai/api/v1`
-Select via `LLM_BACKEND=anthropic|openrouter` in `.env`.
+The SDK backends run `LLMBackend.tool_loop()` in-process, so `AlliumToolHandler`
+intercepts every tool call and runs guardrails BEFORE any query reaches Allium.
+The CLI backends delegate the loop to the headless CLI and enforce the SAME
+Allium guardrails through the `e2er-data` / `e2er-allium-query` wrapper.
 
-### Data module is optional
-Set `DATA_MODULE_ENABLED=false` to run without Allium. Papers can be written from
-literature alone, or with manually provided data files in the workspace.
+### Data is discovered, not hardcoded
+Specialists call `list_data_sources` (what's available for the research question)
+then `fetch_data` (FRED/yfinance — yfinance is keyless and always on; FRED needs
+`FRED_API_KEY`) or the guarded `query_allium` (needs `ALLIUM_API_KEY` + query
+credits). There is **no `DATA_MODULE_ENABLED` toggle** — `data_module_enabled` is a
+computed property (`allium_api_key is not None`). To run without on-chain data,
+leave `ALLIUM_API_KEY` unset; papers can also run from literature alone or from
+files in the workspace `data/` dir (+ `LOCAL_DATA_DIR`).
 
 ### GitHub integration
 - `.gitignore` is ALWAYS the first commit — prevents Overleaf artifacts from polluting git
@@ -38,11 +46,14 @@ literature alone, or with manually provided data files in the workspace.
 ## Development setup
 
 ```bash
-pip install -e ".[pgvector,dev]"
-cd docker && docker compose up -d db
-python scripts/migrate.py
-uvicorn src.api.app:app --reload --port 8280
+pip install -e ".[dev]"            # add the pgvector extra for the Postgres KB
+e2er init                          # guided setup: backend, .env, skills
+e2er run "your research question"  # or: uvicorn src.api.app:app --reload --port 8280
 ```
+
+The DB defaults to **zero-config SQLite** at `~/.e2er/papers.db` (auto-created);
+set `DATABASE_URL=postgresql://…` for Postgres + pgvector, then run
+`python scripts/migrate.py` (migrations are Postgres-only; SQLite is auto-initialized).
 
 ## Running tests
 
@@ -57,10 +68,10 @@ ruff check src/ tests/
 src/
   config.py              — pydantic-settings, all BYOK config
   modules/
-    llm/                 — LLM backends + tool-use loop
-    data/                — Allium client + 5 guardrails + audit
+    llm/                 — 5 LLM backends + tool-use loop + registry
+    data/                — providers (Allium warehouse + FRED/yfinance) + registry + discovery/fetch tools + 5 guardrails + audit
     tracking/            — token usage + cost
-    literature/          — paper search (OA, S2, arXiv) + KB
+    literature/          — providers (OpenAlex/arXiv/S2 search + Zotero/local-.bib libraries) + registry + read_reference (PDF) + KB
     github/              — repo creation + artifact push
     fetch/               — SSRF-safe HTTP client
   core/
