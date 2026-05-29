@@ -100,15 +100,21 @@ LITERATURE_TOOLS: list[dict[str, Any]] = [
         "name": "read_reference",
         "description": (
             "Read the full text of a reference's PDF to deepen the literature review "
-            "(read what a paper actually says, not just its abstract). Pass `pdf_url` "
-            "(from a search_papers / fetch_paper result, or a reference list entry that "
-            "shows one) or a `doi` (the tool will resolve an open-access PDF). Returns "
-            "extracted text, truncated. Use sparingly — read only papers central to the "
+            "(read what a paper actually says, not just its abstract). Pass `path` "
+            "to read a PDF staged into the workspace from LOCAL_DATA_DIR (e.g. "
+            "literature/smith2024.pdf), or `pdf_url` (from a search_papers / "
+            "fetch_paper result, or a reference list entry that shows one), or a "
+            "`doi` (the tool will resolve an open-access PDF). Returns extracted "
+            "text, truncated. Use sparingly — read only papers central to the "
             "argument; it is token-expensive."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Workspace-relative path to a local PDF (e.g. literature/foo.pdf)",
+                },
                 "pdf_url": {
                     "type": "string",
                     "description": "Direct PDF URL — an open-access link or a Zotero attachment href",
@@ -287,8 +293,29 @@ class LiteratureToolHandler(ToolHandler):
         from .pdf import extract_pdf_text
 
         settings = get_settings()
+        local_path = (inp.get("path") or "").strip()
         pdf_url = (inp.get("pdf_url") or "").strip()
         doi = (inp.get("doi") or "").strip()
+
+        # Local PDF (staged from LOCAL_DATA_DIR into workspace/literature/).
+        # Sandboxed to the paper's workspace; no fetch, no auth needed.
+        if local_path:
+            ws = self._workspace.resolve()
+            target = (self._workspace / local_path).resolve()
+            try:
+                target.relative_to(ws)
+            except ValueError:
+                return json.dumps({"error": "path must be inside the workspace", "path": local_path})
+            if not target.is_file():
+                return json.dumps({"error": f"no file at workspace path {local_path!r}"})
+            try:
+                data = target.read_bytes()
+            except Exception as e:
+                return json.dumps({"error": f"could not read {local_path}: {e}"})
+            text = extract_pdf_text(data, max_chars=self._READ_CHAR_CAP)
+            if not text.strip():
+                return json.dumps({"error": "PDF read but no extractable text (scanned?)", "path": local_path})
+            return json.dumps({"path": local_path, "chars": len(text), "text": text})
 
         # No direct URL but a DOI → resolve an open-access PDF via the fetch chain.
         if not pdf_url and doi:

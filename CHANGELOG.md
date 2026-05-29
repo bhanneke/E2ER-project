@@ -7,7 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Bug fixes from the 2026-05 full code review.
+Bug fixes from the 2026-05 full code review, plus the feedback-channel and
+local-corpus extensions.
+
+### Cross-lane
+
+- **Structured GitHub issue templates** for the most common asks:
+  `data_source_request` (provider, auth, coverage, example RQ) and
+  `literature_provider_request` (capability, gap, auth). Both routed by
+  `lane-*` / `provider-request` labels. Generic feature requests still go
+  via `feature_request.md`.
 
 ### Lane A — Pipeline
 
@@ -32,6 +41,17 @@ Bug fixes from the 2026-05 full code review.
   `ON CONFLICT DO UPDATE` clause but missing from the INSERT column list, so
   inserts dropped the count and conflict-updates zeroed it. Added to the
   insert.
+- **`LOCAL_DATA_DIR` extensions.** Accepts a **comma-separated list** of
+  roots, an opt-in **`LOCAL_DATA_DIR_RECURSIVE=true`** to walk
+  subdirectories (paths under `workspace/data/` are preserved), and now
+  also **stages `*.pdf` into `workspace/literature/`**. The bib-relevant
+  specialists' reference summary lists those local PDFs so they can be
+  read via the new `read_reference(path=...)`. New
+  `src/modules/local_corpus.py` consolidates parsing/walking;
+  `LocalBibLibrary` uses it for `.bib` discovery across multiple roots.
+- **`read_reference`** accepts a new **`path`** argument (workspace-
+  relative) for the staged local PDFs — no download, no auth, sandboxed
+  under the workspace root.
 
 ### Lane C — Data
 

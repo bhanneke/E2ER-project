@@ -82,9 +82,23 @@ Two backends ship today: `AnthropicBackend` and `OpenRouterBackend` in `src/modu
 
 Per the Anthropic/OpenRouter precedent, configure the SDK client with `max_retries=5`.
 
-### 5. Bug reports / feedback
+### 5. Bug reports / feedback / "I want this provider"
 
-If a paper run produces something obviously broken, please open an issue with:
+The repo has structured GitHub issue templates for the most common asks
+(under `.github/ISSUE_TEMPLATE/`):
+
+- **Bug report** — something is broken or behaving unexpectedly.
+- **Feature request** — generic feature ideas.
+- **Data source request** — propose a new data provider (FRED-style series,
+  SQL warehouse, etc.). Fields cover provider, auth, coverage, and an
+  example RQ that needs it.
+- **Literature provider request** — propose a reference manager, search
+  source, or PDF resolver.
+
+Pick the most specific one when opening an issue; the data/literature
+forms route the request to the right lane.
+
+If a paper run produces something obviously broken, please include:
 
 - The research question that triggered it
 - The model + backend used

@@ -19,8 +19,9 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
-from src.api.app import _LOCAL_DATA_EXTENSIONS, _link_local_data_dir_into_workspace
+from src.api.app import _link_local_data_dir_into_workspace
 from src.core.specialists.base import _load_reference_summary
+from src.modules.local_corpus import DATA_EXTENSIONS as _LOCAL_DATA_EXTENSIONS
 
 # ---------------------------------------------------------------------------
 # Symlink staging at paper creation

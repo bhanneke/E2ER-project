@@ -276,6 +276,9 @@ def _build_user_prompt(work_order: WorkOrder) -> str:
     bib = _load_reference_summary(work_order.specialist)
     if bib:
         parts.append(f"\n{bib}")
+    local_pdfs = _list_local_pdfs_for_prompt(work_order.specialist, work_order.paper_id)
+    if local_pdfs:
+        parts.append(f"\n{local_pdfs}")
     # Reviewers get the full draft + supporting docs pre-loaded above.
     # Stop them from re-reading via read_file (each tool result re-enters
     # the conversation history on every subsequent turn — quadratic blow-up).
@@ -413,6 +416,33 @@ def _load_reference_summary(specialist: str) -> str:
     if len(all_papers) > 60:
         lines.append(f"  ... and {len(all_papers) - 60} more.")
     return "\n".join(lines)
+
+
+def _list_local_pdfs_for_prompt(specialist: str, paper_id: str) -> str:
+    """List PDFs that were staged into the paper's workspace from LOCAL_DATA_DIR.
+
+    Surfaced only to bib-relevant specialists, alongside the reference summary,
+    so they know they can read these in full via ``read_reference(path=...)``.
+    Returns "" when there's nothing to show.
+    """
+    if specialist not in _BIB_SPECIALISTS:
+        return ""
+    from ...config import get_settings
+
+    workspace = Path(get_settings().workspace_root) / paper_id
+    lit_dir = workspace / "literature"
+    if not lit_dir.is_dir():
+        return ""
+    pdfs = sorted(p.name for p in lit_dir.iterdir() if p.suffix.lower() == ".pdf")
+    if not pdfs:
+        return ""
+    listing = "\n".join(f"- literature/{p}" for p in pdfs[:30])
+    suffix = f"\n  ... and {len(pdfs) - 30} more." if len(pdfs) > 30 else ""
+    return (
+        "## Local PDFs (staged from LOCAL_DATA_DIR)\n"
+        "Read any of these in full via `read_reference(path=...)`:\n"
+        f"{listing}{suffix}"
+    )
 
 
 def _find_output_file(workspace: Path, specialist: str, expected: str) -> str:

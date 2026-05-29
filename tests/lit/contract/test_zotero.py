@@ -172,6 +172,7 @@ def _settings(**kwargs):
     base = {
         "literature_bibtex_file": None,
         "local_data_dir": None,
+        "local_data_dir_recursive": False,
         "zotero_enabled": False,
         "zotero_api_key": None,
         "zotero_user_id": None,

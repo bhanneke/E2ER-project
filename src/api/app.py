@@ -94,64 +94,77 @@ _UNPROVEN_TUPLE_CAP = 1.0
 # _load_reference_summary directly). Keep this list narrow: anything
 # linked here is auto-listed to every specialist's prompt, so a noisy
 # corpus would balloon the context.
-_LOCAL_DATA_EXTENSIONS = frozenset({".csv", ".tsv", ".jsonl", ".parquet", ".xlsx", ".txt"})
+def _stage_corpus_files(
+    workspace: Path,
+    local_data_dir: str | None,
+    recursive: bool,
+    suffixes,
+    dest_subdir: str,
+    label: str,
+) -> int:
+    """Symlink files from the LOCAL_DATA_DIR corpus into a workspace subdir.
 
+    Idempotent. Skips silently when ``local_data_dir`` is unset, no root
+    exists, or no matching files are found — misconfig must not break paper
+    creation. When ``recursive`` is True the destination path preserves the
+    relative path from the source root, so a corpus with structure (e.g.
+    ``data/raw/x.csv``) stays organized inside the workspace.
 
-def _link_local_data_dir_into_workspace(workspace: Path, local_data_dir: str | None) -> None:
-    """Symlink the user's BYOD corpus into the paper's data/ directory.
-
-    Idempotent. Skips silently when `local_data_dir` is unset, the path
-    doesn't exist, or it isn't a directory — none of those should
-    bring down paper creation. Logs at WARNING when something
-    actively goes wrong (e.g. a symlink couldn't be created) so the
-    operator notices in the uvicorn log without the API call failing.
-
-    Files with extensions outside `_LOCAL_DATA_EXTENSIONS` are
-    skipped — keeps PDFs, .bib (handled elsewhere), random binaries,
-    etc. out of the specialist context window.
+    ``LOCAL_DATA_DIR`` accepts a comma-separated list of paths.
     """
-    if not local_data_dir:
-        return
-    source = Path(local_data_dir).expanduser()
-    if not source.is_dir():
-        logger.warning(
-            "LOCAL_DATA_DIR=%s is not a directory; skipping data-link step (paper creation continues normally)",
-            local_data_dir,
-        )
-        return
+    from ..modules.local_corpus import iter_corpus_files, parse_corpus_roots
 
-    dest = workspace / "data"
+    if not local_data_dir:
+        return 0
+    roots = parse_corpus_roots(local_data_dir)
+    if not roots:
+        logger.warning(
+            "LOCAL_DATA_DIR=%s is not a directory (or all comma-separated paths are missing); "
+            "skipping %s-link step (paper creation continues normally)",
+            local_data_dir,
+            label,
+        )
+        return 0
+
+    dest = workspace / dest_subdir
     dest.mkdir(parents=True, exist_ok=True)
 
     linked = 0
-    for entry in source.iterdir():
-        if not entry.is_file():
-            continue
-        if entry.suffix.lower() not in _LOCAL_DATA_EXTENSIONS:
-            continue
-        target = dest / entry.name
+    for root, file_path in iter_corpus_files(roots, suffixes, recursive):
+        # Preserve relative path under recursion; otherwise just the basename
+        # (matches the pre-v0.8.1 behaviour).
+        rel = file_path.relative_to(root) if recursive else Path(file_path.name)
+        target = dest / rel
         if target.exists() or target.is_symlink():
-            # The paper's own data/ dir may already have a file with
-            # this name (rare — the paper was just created — but
-            # defensive). Don't overwrite.
-            continue
+            continue  # defensive: never overwrite a workspace file
         try:
-            target.symlink_to(entry.resolve())
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.symlink_to(file_path.resolve())
             linked += 1
         except OSError as e:
-            logger.warning(
-                "could not symlink %s → %s: %s (paper creation continues)",
-                entry,
-                target,
-                e,
-            )
+            logger.warning("could not symlink %s → %s: %s (paper creation continues)", file_path, target, e)
     if linked:
-        logger.info(
-            "Staged %d file(s) from LOCAL_DATA_DIR=%s into %s",
-            linked,
-            local_data_dir,
-            dest,
-        )
+        logger.info("Staged %d %s file(s) from LOCAL_DATA_DIR=%s into %s", linked, label, local_data_dir, dest)
+    return linked
+
+
+def _link_local_data_dir_into_workspace(
+    workspace: Path,
+    local_data_dir: str | None,
+    recursive: bool = False,
+) -> None:
+    """Stage the LOCAL_DATA_DIR corpus into the paper's workspace.
+
+    Data files (csv/tsv/jsonl/parquet/xlsx/txt) land in ``workspace/data/``
+    so specialists ``read_file`` them through the standard sandbox. PDFs
+    land in ``workspace/literature/`` so the ``read_reference`` tool can
+    extract them by local path. ``.bib`` files are handled separately by
+    ``_load_reference_summary`` and are not symlinked here.
+    """
+    from ..modules.local_corpus import DATA_EXTENSIONS, PDF_EXTENSIONS
+
+    _stage_corpus_files(workspace, local_data_dir, recursive, DATA_EXTENSIONS, "data", "data")
+    _stage_corpus_files(workspace, local_data_dir, recursive, PDF_EXTENSIONS, "literature", "PDF")
 
 
 async def _tuple_is_proven(model: str, methodology: str, mode: str) -> bool:
@@ -340,7 +353,7 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
     # specialists can `read_file('data/<name>')` through the standard
     # FileToolHandler sandbox. Literature (.bib) is handled separately
     # by `_load_reference_summary`; we don't symlink those.
-    _link_local_data_dir_into_workspace(workspace, settings.local_data_dir)
+    _link_local_data_dir_into_workspace(workspace, settings.local_data_dir, settings.local_data_dir_recursive)
 
     if req.methodology not in {"empirical", "theoretical", "mixed"}:
         raise HTTPException(

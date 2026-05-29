@@ -1,0 +1,69 @@
+name: Data source request
+description: Ask for support for a specific data source / API / pipeline.
+title: "data: <provider> — <what>"
+labels: ["enhancement", "lane-c", "provider-request"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form to propose a new data source for E2ER. Lane C is registry-pluggable
+        (see `docs/MODULARIZATION_PLAN.md`), so adding a provider is usually small —
+        but a clear description here makes it concrete.
+  - type: input
+    id: provider_name
+    attributes:
+      label: Provider name
+      placeholder: e.g. WRDS, Dune, CoinGecko, ECB SDW, Bloomberg
+    validations:
+      required: true
+  - type: input
+    id: docs_url
+    attributes:
+      label: API / docs URL
+      placeholder: link to the provider's API reference
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind
+      description: How the data is shaped at the source.
+      options:
+        - Series fetcher (parameterized reads — like FRED / yfinance)
+        - Warehouse (SQL or query-based — like Allium)
+        - Snapshot / bulk file
+        - Other (explain in notes)
+    validations:
+      required: true
+  - type: dropdown
+    id: auth
+    attributes:
+      label: Authentication
+      options:
+        - No key required
+        - Free API key (registration)
+        - Paid API key
+        - OAuth
+        - License-gated (institutional access)
+    validations:
+      required: true
+  - type: textarea
+    id: coverage
+    attributes:
+      label: Coverage — what does it provide?
+      description: 1–3 sentences. Frequency, geography, asset classes, etc.
+      placeholder: e.g. US Treasury / corporate yield curves, daily, 1962→present.
+    validations:
+      required: true
+  - type: textarea
+    id: research_question
+    attributes:
+      label: Example research question this would unlock
+      description: A concrete RQ that today can't be answered with E2ER's current sources.
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Other notes
+      description: Known rate limits, gotchas, similar providers, partial implementations, …
