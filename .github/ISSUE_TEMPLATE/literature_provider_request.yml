@@ -1,0 +1,59 @@
+name: Literature provider request
+description: Ask for support for a specific reference manager, search source, or PDF resolver.
+title: "lit: <provider> — <what>"
+labels: ["enhancement", "lane-b", "provider-request"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form to propose a new literature provider. Lane B has three
+        capability slots — `SearchSource`, `ReferenceLibrary`, and (via
+        `read_reference`) DOI→PDF resolvers — so most additions are drop-in.
+  - type: input
+    id: provider_name
+    attributes:
+      label: Provider name
+      placeholder: e.g. Citavi, Mendeley, Paperpile, Unpaywall, Crossref, CORE
+    validations:
+      required: true
+  - type: input
+    id: docs_url
+    attributes:
+      label: API / docs URL
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Capability
+      description: How this provider fits Lane B's seam.
+      options:
+        - Reference library (the researcher's own corpus — like Zotero / local .bib)
+        - Search source (web discovery by query / DOI — like OpenAlex / arXiv / S2)
+        - PDF resolver (DOI → full-text PDF — like Unpaywall / CORE)
+        - Other (explain in notes)
+    validations:
+      required: true
+  - type: dropdown
+    id: auth
+    attributes:
+      label: Authentication
+      options:
+        - No key required
+        - Free API key (registration)
+        - Paid API key
+        - OAuth
+        - Local export only (no online API)
+    validations:
+      required: true
+  - type: textarea
+    id: gap
+    attributes:
+      label: What gap does this close?
+      description: Which existing path is missing or weak today? (e.g. "Zotero PDFs aren't fetchable when files live outside Zotero cloud storage.")
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Other notes

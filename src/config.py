@@ -93,6 +93,10 @@ class Settings(BaseSettings):
     # When unset, both pathways are no-ops; everything that worked pre-v0.8
     # still works.
     local_data_dir: str | None = None
+    # Walk subdirectories of LOCAL_DATA_DIR rather than only top-level files.
+    # When True, file destinations under workspace/data/ preserve the
+    # relative path from the corpus root (so a/raw/x.csv → workspace/data/a/raw/x.csv).
+    local_data_dir_recursive: bool = False
 
     # ── Literature ────────────────────────────────────────────────────────────
     literature_bibtex_file: str | None = None
@@ -111,7 +115,11 @@ class Settings(BaseSettings):
 
     @property
     def literature_kb_enabled(self) -> bool:
-        return self.postgres_url is not None or self.db_password != "changeme"
+        # The pgvector KB requires Postgres. Derive from the *resolved* URL so
+        # the documented `DATABASE_URL=postgresql://…` path enables it — the
+        # old check only looked at the legacy postgres_url/db_password fields
+        # and left the KB silently off (keyword-only) for DATABASE_URL users.
+        return self.resolved_database_url.startswith("postgres")
 
     # ── GitHub ────────────────────────────────────────────────────────────────
     github_token: str | None = None

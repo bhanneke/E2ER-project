@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from ...logging_config import get_logger
-from ...modules.llm.base import LLMBackend
+from ...modules.llm.base import LLMBackend, extract_json
 from ...modules.llm.tools import FILE_TOOLS, FileToolHandler
 from ..strategist.actions import (
     CeilingCheckResult,
@@ -265,11 +265,20 @@ class StrategistEngine:
         self.total_usage = self.total_usage + result.usage
         await self._record_usage("ceiling_check", result.usage)
 
-        raw = json.loads(result.output) if result.output.startswith("{") else {}
+        # Tolerant parse: a malformed/truncated LLM payload must not crash the
+        # whole paper. extract_json handles fenced/loose output; on failure we
+        # default to the safe "proceed_to_review" verdict.
+        raw = extract_json(result.output) or {}
+        pivots = []
+        for w in raw.get("suggested_pivots") or []:
+            try:
+                pivots.append(WorkOrder(**w))
+            except Exception as e:
+                logger.warning("ceiling_check: skipping malformed pivot %s: %s", w, e)
         return CeilingCheckResult(
             verdict=raw.get("verdict", "proceed_to_review"),
             reason=raw.get("reason", ""),
-            suggested_pivots=[WorkOrder(**w) for w in raw.get("suggested_pivots", [])],
+            suggested_pivots=pivots,
             iteration=iteration,
         )
 
@@ -288,8 +297,13 @@ class StrategistEngine:
         self.total_usage = self.total_usage + result.usage
         await self._record_usage("self_attack", result.usage)
 
-        raw = json.loads(result.output) if result.output.startswith("{") else {}
-        findings = [SelfAttackFinding(**f) for f in raw.get("findings", [])]
+        raw = extract_json(result.output) or {}
+        findings = []
+        for f in raw.get("findings") or []:
+            try:
+                findings.append(SelfAttackFinding(**f))
+            except Exception as e:
+                logger.warning("self_attack: skipping malformed finding %s: %s", f, e)
         overall = raw.get("overall_severity", max((f.severity for f in findings), default=0))
         return SelfAttackReport(findings=findings, overall_severity=overall)
 

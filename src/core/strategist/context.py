@@ -23,11 +23,11 @@ def build_tier0_context(workspace: Path, paper_id: str) -> str:
         f"Paper: {data.get('title', 'Untitled')}",
         f"ID: {paper_id}",
         f"Methodology: {data.get('methodology', 'empirical')}",
-        f"Data Available: {', '.join(data.get('datasets', []))}",
+        f"Data Available: {', '.join(data.get('datasets') or [])}",
         f"Current Stage: {data.get('current_stage', 'unknown')}",
         "",
         "Research Question:",
-        sanitize_for_prompt(data.get("research_question", "TBD"), max_chars=2000),
+        sanitize_for_prompt(data.get("research_question") or "TBD", max_chars=2000),
     ]
     return "\n".join(lines)
 

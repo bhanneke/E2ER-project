@@ -19,6 +19,19 @@ from ..strategist.state import BudgetExceededError, CircuitBreakerError, PaperSt
 
 logger = get_logger(__name__)
 
+
+def _coerce_paper_status(value: str | None, fallback: PaperStatus) -> PaperStatus:
+    """Build a PaperStatus from a persisted string, tolerating bad/legacy
+    values. ``state.last_status`` is a free ``str`` field (could be hand-edited
+    or from an older schema); a raw ``PaperStatus(value)`` ValueError on resume
+    would crash an otherwise-complete paper into FAILED."""
+    try:
+        return PaperStatus(value) if value else fallback
+    except ValueError:
+        logger.warning("Resume: unrecognized persisted status %r — falling back to %s", value, fallback.value)
+        return fallback
+
+
 _MAX_ITERATIONS = 6
 _MAX_PIVOTS = 1
 # Maximum consecutive failures for a single non-tolerant specialist before
@@ -178,7 +191,7 @@ class PipelineRunner:
                 state.save(self._workspace)
             else:
                 # Resuming past revision — restore saved verdict
-                status = PaperStatus(state.last_status)
+                status = _coerce_paper_status(state.last_status, status)
 
             if not state.is_complete("replication"):
                 await _phase("replication", self._run_replication_phase)
@@ -193,7 +206,7 @@ class PipelineRunner:
             # Mirror state.last_status — typically `completed` — back to
             # the DB so the dashboard reflects reality.
             if state.last_status:
-                final_status = PaperStatus(state.last_status)
+                final_status = _coerce_paper_status(state.last_status, status)
                 await self._update_status(final_status)
                 status = final_status
 
@@ -988,7 +1001,7 @@ class PipelineRunner:
         # (strategist work orders carry parallel_group/context_tier but not paper_id)
         contract_orders = self._to_contract_orders(decision.work_orders)
         if len(contract_orders) == 1:
-            from ..specialists.dispatcher import execute_work_order
+            from ..specialists.dispatcher import assert_artifacts_written, execute_work_order
 
             c = await execute_work_order(
                 contract_orders[0],
@@ -1000,6 +1013,10 @@ class PipelineRunner:
                 self._backend_name,
             )
             contributions = [c]
+            # Same cascade guard execute_parallel applies — a lone non-tolerant
+            # specialist that "succeeded" without its canonical artifact must
+            # halt here, not starve downstream specialists.
+            assert_artifacts_written(contributions, self._workspace)
         else:
             contributions = await execute_with_dependencies(
                 contract_orders,

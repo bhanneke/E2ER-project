@@ -18,7 +18,7 @@ def main() -> None:
     serve.add_argument("--port", type=int, default=8280, help="Port (default: 8280)")
     serve.add_argument("--reload", action="store_true", help="Auto-reload on code changes (dev mode)")
 
-    subparsers.add_parser("migrate", help="Run database migrations (sql/001 through sql/006)")
+    subparsers.add_parser("migrate", help="Run Postgres migrations (sql/001–010); SQLite auto-initializes")
 
     init_p = subparsers.add_parser(
         "init",
@@ -58,6 +58,12 @@ def main() -> None:
         type=float,
         default=1800.0,
         help="How long to tail the run before detaching. Default 30 min. ^C is safe — run continues in background.",
+    )
+    run_p.add_argument(
+        "--acknowledge-unproven",
+        action="store_true",
+        help="Lift the $1 first-run floor for an unproven (model, methodology, mode) tuple "
+        "and use the full --max-cost. Auto-enabled on the $0 CLI backends (claude_code/codex/gemini).",
     )
 
     status_p = subparsers.add_parser(
@@ -147,6 +153,7 @@ def main() -> None:
                 mode=args.mode,
                 max_cost=args.max_cost,
                 monitor_seconds=args.monitor_seconds,
+                acknowledge=args.acknowledge_unproven,
             )
         )
     elif args.command == "init":

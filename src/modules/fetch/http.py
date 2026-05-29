@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ipaddress
+import socket
 from urllib.parse import urlparse
 
 import httpx
@@ -27,6 +28,16 @@ _PRIVATE_RANGES = [
 _ALLOWED_SCHEMES = {"http", "https"}
 
 
+def _is_blocked(addr: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    return (
+        addr.is_private
+        or addr.is_loopback
+        or addr.is_link_local  # incl. 169.254.0.0/16 (cloud metadata)
+        or addr.is_reserved
+        or any(addr in net for net in _PRIVATE_RANGES)
+    )
+
+
 def _check_url(url: str) -> None:
     parsed = urlparse(url)
     if parsed.scheme not in _ALLOWED_SCHEMES:
@@ -34,15 +45,31 @@ def _check_url(url: str) -> None:
     host = parsed.hostname or ""
     if not host:
         raise ValueError("URL has no host")
+
+    # Block private/loopback/link-local targets. For a literal IP, check it
+    # directly; for a hostname, resolve and check EVERY resolved address —
+    # otherwise a name like `metadata.google.internal` → 169.254.x slips past
+    # an IP-only check. (DNS rebinding between this check and the actual
+    # connection remains a theoretical gap; pinning the resolved IP would
+    # close it fully.)
     try:
-        addr = ipaddress.ip_address(host)
-        for net in _PRIVATE_RANGES:
-            if addr in net:
-                raise ValueError(f"SSRF blocked: {host} is a private address")
-    except ValueError as e:
-        if "SSRF" in str(e):
-            raise
-        # hostname, not IP — allow (DNS resolution not checked here)
+        candidates = [ipaddress.ip_address(host)]
+    except ValueError:
+        try:
+            port = parsed.port or (443 if parsed.scheme == "https" else 80)
+            infos = socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)
+        except socket.gaierror:
+            return  # DNS failure — let the real request surface the error
+        candidates = []
+        for info in infos:
+            try:
+                candidates.append(ipaddress.ip_address(info[4][0]))
+            except ValueError:
+                continue
+
+    for addr in candidates:
+        if _is_blocked(addr):
+            raise ValueError(f"SSRF blocked: {host} resolves to non-public address {addr}")
 
 
 async def fetch_text(url: str, headers: dict | None = None) -> str:

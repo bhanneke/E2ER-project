@@ -32,7 +32,14 @@ name: Release
 #        git checkout main && git pull
 #        git tag vX.Y.Z
 #        git push origin vX.Y.Z
-#   4. This workflow runs.
+#   4. This workflow runs — it creates the GitHub release AND publishes to
+#      PyPI. Do NOT manually `gh release create` the tag: this workflow owns
+#      release creation. (The `release` job is now idempotent so a manual
+#      release won't break it, but manual creation is unnecessary.)
+#
+# Re-publishing a tag whose run skipped publish: re-run the workflow run
+# (`gh run rerun <id>`). The idempotent `release` job + `skip-existing` on
+# the publish step make this safe.
 
 on:
   push:
@@ -160,10 +167,20 @@ jobs:
             echo "Release $TAG" > "$NOTES_FILE"
           fi
 
-          gh release create "$TAG" \
-            --title "$TAG" \
-            --notes-file "$NOTES_FILE" \
-            dist/*
+          # Idempotent: if the release already exists (e.g. created manually,
+          # or a prior partial run), update its notes + attach the wheel
+          # instead of failing. A failure here would skip the publish job
+          # (`needs: release`) and silently leave the version off PyPI.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG exists — updating notes and (re)uploading assets."
+            gh release edit "$TAG" --title "$TAG" --notes-file "$NOTES_FILE"
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" \
+              --title "$TAG" \
+              --notes-file "$NOTES_FILE" \
+              dist/*
+          fi
 
   publish:
     name: Publish to PyPI (OIDC)

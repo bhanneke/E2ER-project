@@ -9,6 +9,105 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## v0.8.1 — 2026-05-30
+
+Stability + corpus extensions. Bug fixes from a full code review —
+**safety** (Allium guardrails no longer bypassed without a
+`data_dictionary.json`; SQLite Allium-approval workflow works; SSRF
+hostname resolution), **Lane-A robustness** (strategist JSON guards,
+mechanism-gate, resume-status, single-order cascade), **Lane B/C wins**
+(storage citations; OpenAlex/S2 null crash; `e2er run --acknowledge-
+unproven`; FileToolHandler sandbox; OpenRouter `content=""`). Plus
+user-driven additions: structured GitHub issue templates for data-source
+and literature-provider requests, and `LOCAL_DATA_DIR` extensions
+(comma-separated roots, recursive walk, PDFs staged into
+`workspace/literature/` with `read_reference(path=…)`).
+
+### Cross-lane
+
+- **Structured GitHub issue templates** for the most common asks:
+  `data_source_request` (provider, auth, coverage, example RQ) and
+  `literature_provider_request` (capability, gap, auth). Both routed by
+  `lane-*` / `provider-request` labels. Generic feature requests still go
+  via `feature_request.md`.
+
+### Lane A — Pipeline
+
+- **Fix: malformed strategist JSON no longer crashes the paper.**
+  `ceiling_check` and `run_self_attack` did a bare `json.loads` on LLM
+  output — truncated/invalid JSON raised and failed the whole run. They now
+  use the tolerant `extract_json` and skip malformed `WorkOrder`/finding
+  items instead of raising.
+- **Fix: a missing mechanism-reviewer score can no longer be silently
+  accepted.** The Rule-1 mechanism gate no-op'd when the mechanism score was
+  absent, letting a paper ACCEPT on the other reviewers' average. A missing
+  (but expected) mechanism score now forces `MAJOR_REVISION`.
+- **Fix: resume tolerates a bad/legacy persisted status.** `PaperStatus(
+  state.last_status)` could raise `ValueError` and wedge a completed paper
+  into FAILED on resume; it's now coerced with a safe fallback.
+- **Fix: tier-0 context builder handles explicit-null manifest fields**
+  (`datasets: null` / `research_question: null`) instead of `TypeError`.
+
+### Lane B — Literature
+
+- **Fix: `store_paper` persists citation counts.** `citations` was in the
+  `ON CONFLICT DO UPDATE` clause but missing from the INSERT column list, so
+  inserts dropped the count and conflict-updates zeroed it. Added to the
+  insert.
+- **`LOCAL_DATA_DIR` extensions.** Accepts a **comma-separated list** of
+  roots, an opt-in **`LOCAL_DATA_DIR_RECURSIVE=true`** to walk
+  subdirectories (paths under `workspace/data/` are preserved), and now
+  also **stages `*.pdf` into `workspace/literature/`**. The bib-relevant
+  specialists' reference summary lists those local PDFs so they can be
+  read via the new `read_reference(path=...)`. New
+  `src/modules/local_corpus.py` consolidates parsing/walking;
+  `LocalBibLibrary` uses it for `.bib` discovery across multiple roots.
+- **`read_reference`** accepts a new **`path`** argument (workspace-
+  relative) for the staged local PDFs — no download, no auth, sandboxed
+  under the workspace root.
+
+### Lane C — Data
+
+- **Fix (safety): guardrails no longer fully bypassed without a data
+  dictionary.** `_query_allium` only ran `validate_all` when a
+  `data_dictionary.json` was present, so a production query with no
+  dictionary ran with ZERO validation. Now the structural rules (no
+  `SELECT *`, time-bound) and feasibility-first/approval gate always fire;
+  only the field-whitelist (Rule 2) is dictionary-gated (skipped with a
+  warning).
+- **Fix: audit inserts generate app-side UUIDs.** `log_query` /
+  `create_approval_request` relied on a DB id default; SQLite has none, so
+  `id` was NULL and the approval-request join silently never surfaced
+  pending production queries on the default SQLite DB. Now both generate a
+  `uuid4()` client-side — the Allium approval workflow works on SQLite.
+
+### Cross-lane
+
+- **Fix: cost-estimate labeling for the codex/gemini backends.** `app.py`
+  checked `codex_cli`/`gemini_cli`, but the real backend literals are
+  `codex`/`gemini`, so synthetic cost figures were mislabeled as real.
+- **Fix: `literature_kb_enabled` honors `DATABASE_URL`.** It keyed off
+  legacy `postgres_url`/`db_password`, leaving the pgvector KB silently off
+  for the documented `DATABASE_URL=postgresql://…` path. Now derived from
+  the resolved DB URL.
+- **Fix (security): SSRF guard resolves hostnames.** `_check_url` only
+  blocked literal private IPs; a hostname (e.g. `metadata.google.internal`
+  → 169.254.x, or `localhost`) slipped past. It now resolves the host and
+  blocks if any resolved address is private/loopback/link-local.
+- **Fix: `e2er run --acknowledge-unproven` flag.** The CLI hardcoded
+  `acknowledge_unproven_tuple=True`, silently disabling the $1 first-run
+  floor (and the README documented a flag that didn't exist). The flag now
+  exists (default off → floor enforced for metered backends); the $0
+  flat-rate CLI backends (claude_code/codex/gemini) auto-acknowledge.
+- **Fix: single-order dispatch gets the cascade guard.** The missing-
+  canonical-artifact check ran only in `execute_parallel`; a lone specialist
+  could "succeed" without its artifact and starve downstream work. Extracted
+  `assert_artifacts_written`, now applied to both paths.
+- **Fix: `FileToolHandler` sandbox uses path containment, not a string
+  prefix** (a sibling workspace with a prefix name could escape).
+- **Fix: OpenRouter tool-only turns send `content=""`** instead of `null`
+  (some OpenAI-compatible servers reject `null` content + tool_calls).
+
 ## v0.8.0 — 2026-05-28
 
 Pluggable data & literature providers. Specialists now **discover** data
