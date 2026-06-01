@@ -137,7 +137,22 @@ def main() -> None:
         help="Overwrite existing skill files. Default: skip files that already exist.",
     )
 
+    doctor_p = subparsers.add_parser(
+        "doctor",
+        help="Preflight: backend installed? skills + DB ok? which data/lit providers are live for this setup?",
+    )
+    doctor_p.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit a machine-readable JSON report instead of the human-readable summary.",
+    )
+
     args = parser.parse_args()
+
+    if args.command == "doctor":
+        from .doctor import main_doctor
+
+        sys.exit(main_doctor(json_output=args.json))
 
     if args.command == "install-skills":
         from .cli_install_skills import install_skills as _install

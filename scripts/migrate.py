@@ -7,7 +7,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
 async def main():
-    from src.db.client import execute, get_pool
+    from src.db.client import execute
 
     sql_dir = Path(__file__).parent.parent / "sql"
     migrations = sorted(sql_dir.glob("*.sql"))

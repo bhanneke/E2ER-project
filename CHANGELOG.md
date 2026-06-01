@@ -7,7 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_Nothing yet._
+### v0.9 M1 — `e2er doctor` user-facing preflight
+
+- **New `e2er doctor` command.** Answers "am I ready to spend a paper run?"
+  before the user does — checks the LLM backend (CLI on PATH for `$0`
+  backends, API key set for SDK backends), bundled skill files, DB (SQLite
+  default or Postgres reachable), and probes every configured data +
+  literature provider with a one-line "what this paper would have access
+  to." Verdict: ✅ Ready / ⚠️ Partial (paper runs work, some providers
+  unavailable) / ❌ Blocked (backend, DB, or skills missing — exact fix
+  surfaced). `--json` for scripting. Closes M1 of the v0.9 plan.
+- **Fast, quiet DB probe.** The Postgres reachability check uses a direct
+  `psycopg.AsyncConnection.connect(connect_timeout=5)` instead of going
+  through the runtime connection pool — preflight now fails in ~5s instead
+  of hanging 30s with retry spam when `DATABASE_URL` points at a Postgres
+  that isn't running. Error message includes the actionable hint: unset
+  `DATABASE_URL` / `POSTGRES_URL` to fall back to the zero-config SQLite
+  default.
+- **`scripts/live_check.py` refactored to a thin shim** over the new
+  `src.doctor.run_provider_checks` engine. Dev harness and user-facing
+  command now share the same probe code (DRY); live-check stays for nightly
+  CI and for catching provider drift before users do.
+
+## v0.8.1 — 2026-05-30
 
 ## v0.8.1 — 2026-05-30
 
