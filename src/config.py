@@ -102,6 +102,12 @@ class Settings(BaseSettings):
     literature_bibtex_file: str | None = None
     semantic_scholar_api_key: str | None = None
 
+    # Email used to identify this client to the OpenAlex / Crossref / Unpaywall
+    # polite pools (all keyless, all ask for a contact in every request). Each
+    # of those services prioritises requests from registered emails; the
+    # default keeps us in the polite pool with a stable address.
+    unpaywall_email: str = "research@e2er.app"
+
     # Zotero Web API (reference library). Set the key plus exactly one of
     # user_id / group_id. The library's bibliographic items are merged into
     # the reference summary alongside local .bib (see reference_libraries()).

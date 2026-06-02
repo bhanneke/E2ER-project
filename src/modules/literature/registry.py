@@ -20,6 +20,8 @@ own availability here without changing call sites.
 from __future__ import annotations
 
 from ...config import Settings
+from .oa_resolvers import OAResolver
+from .oa_resolvers import oa_pdf_resolvers as _oa_pdf_resolvers
 from .providers import (
     ArxivSource,
     LocalBibLibrary,
@@ -39,6 +41,17 @@ def search_sources(settings: Settings) -> list[SearchSource]:
 def doi_fetch_sources(settings: Settings) -> list[SearchSource]:
     """Ordered by-DOI resolution fallback chain (DOI-capable sources only)."""
     return [OpenAlexSource(), SemanticScholarSource()]
+
+
+def oa_pdf_resolvers(settings: Settings) -> list[OAResolver]:
+    """Ordered OA-PDF resolver chain (v0.9 M3).
+
+    Re-exported from :mod:`oa_resolvers` so all chain builders live
+    in one module. See :func:`oa_resolvers.oa_pdf_resolvers` for the
+    rationale on default ordering (Unpaywall → OpenAlex → Crossref →
+    Semantic Scholar).
+    """
+    return _oa_pdf_resolvers(settings)
 
 
 def reference_libraries(settings: Settings) -> list[ReferenceLibrary]:

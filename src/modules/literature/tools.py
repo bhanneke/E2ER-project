@@ -155,6 +155,11 @@ class LiteratureToolHandler(ToolHandler):
         self._fetch_calls = 0
         self._save_calls = 0
         self._read_calls = 0
+        # Per-paper-run OA-PDF cache (v0.9 M3). DOI → ``str`` PDF URL or
+        # ``None`` for "asked the chain, nobody had one". Avoids paying
+        # Unpaywall + Crossref + OpenAlex twice for the same DOI when a
+        # specialist reads the same reference more than once.
+        self._oa_pdf_cache: dict[str, str | None] = {}
 
     def can_handle(self, tool_name: str) -> bool:
         return tool_name in {"search_papers", "fetch_paper", "save_bibtex", "read_reference"}
@@ -262,6 +267,29 @@ class LiteratureToolHandler(ToolHandler):
                 return source.name, paper
         return None
 
+    async def _resolve_oa_pdf(self, doi: str) -> str | None:
+        """Resolve a DOI to an OA PDF URL via the OA-resolver chain
+        (Unpaywall → OpenAlex → Crossref → Semantic Scholar).
+
+        Per-instance cache: same DOI asked twice in a paper run pays
+        the chain once. ``None`` is cached too — a known-miss shouldn't
+        keep paying network calls on every retry.
+        """
+        from ...config import get_settings
+        from .registry import oa_pdf_resolvers
+
+        if doi in self._oa_pdf_cache:
+            return self._oa_pdf_cache[doi]
+        result: str | None = None
+        for resolver in oa_pdf_resolvers(get_settings()):
+            url = await resolver.resolve(doi)
+            if url:
+                logger.debug("OA PDF for %s found via %s", doi, resolver.name)
+                result = url
+                break
+        self._oa_pdf_cache[doi] = result
+        return result
+
     async def _fetch(self, inp: dict[str, Any]) -> str:
         doi = inp["doi"].strip()
         resolved = await self._resolve_doi(doi)
@@ -322,6 +350,12 @@ class LiteratureToolHandler(ToolHandler):
             resolved = await self._resolve_doi(doi)
             if resolved is not None:
                 pdf_url = (resolved[1].pdf_url or "").strip()
+            # If the metadata path didn't surface a PDF URL, fall through
+            # to the dedicated OA-PDF resolver chain (v0.9 M3) — Unpaywall
+            # + Crossref ``link[]`` together cover many DOIs OpenAlex
+            # leaves with a null ``oa_url``.
+            if not pdf_url:
+                pdf_url = (await self._resolve_oa_pdf(doi)) or ""
         if not pdf_url:
             return json.dumps(
                 {
