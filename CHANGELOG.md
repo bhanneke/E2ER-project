@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### v0.9 M3 — Open-access full-text reach
+
+- **New OA-PDF resolver chain** (`src/modules/literature/oa_resolvers.py`)
+  separate from the metadata-fetch chain. One job: produce an OA PDF
+  URL for a DOI. Default order: **Unpaywall → OpenAlex → Crossref →
+  Semantic Scholar**. Each adapter returns `str | None`; first hit
+  wins. Closes M3 of the v0.9 plan.
+- **`src/modules/literature/unpaywall.py`** — keyless polite-pool
+  resolver. `find_oa(doi, email)` returns full `PaperMetadata`;
+  `find_oa_pdf(doi, email)` is the chain entry point. Walks
+  `best_oa_location.url_for_pdf` → `best_oa_location.url` → the
+  full `oa_locations[]` list, so a paper with a green-OA copy in a
+  non-default repository still surfaces.
+- **`src/modules/literature/crossref.py`** — extended with
+  `find_oa_pdf(doi)` that scans the `message.link[]` array for
+  publisher-deposited `content-type: application/pdf` links. Catches
+  cases where the publisher's own DOI record points at a PDF that
+  Unpaywall hasn't indexed.
+- **New `unpaywall_email` setting** (default `research@e2er.app`)
+  identifies this client to the OpenAlex / Crossref / Unpaywall
+  polite pools — all keyless, all require a contact in every request.
+- **`LiteratureToolHandler._read_reference` falls through.** When the
+  metadata chain (`doi_fetch_sources`) returns a paper with no
+  `pdf_url`, the OA-PDF resolver chain runs. Per-handler-instance
+  cache (`_oa_pdf_cache: dict[str, str | None]`): same DOI asked
+  twice in a paper run pays the chain **once**; known-misses cache
+  too, so retries don't keep hammering Unpaywall + Crossref + OpenAlex.
+- **Live-validated** end-to-end: LeCun *Deep learning* (Nature 2015)
+  surfaces via Unpaywall (`hal.science`) and Crossref
+  (`nature.com/.../nature14539.pdf`); paywalled Science 2007 correctly
+  returns no OA URL across all four resolvers.
+- Tests: 24 in `tests/test_oa_resolvers.py` covering Unpaywall's
+  4-step URL preference, Crossref's PDF-link picker (case-insensitive,
+  missing-field, no-PDF), all four OA-resolver adapters (success +
+  miss + exception), default chain order, the per-handler-instance
+  cache (hit + miss + short-circuit-after-first-hit), and the
+  `_read_reference` fall-through path.
+
 ### v0.9 M2 — Citation-integrity gate
 
 - **New `e2er verify-citations` command + pre-review gate.** Mechanical,

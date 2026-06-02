@@ -66,6 +66,45 @@ async def fetch_by_doi(doi: str) -> PaperMetadata | None:
         return None
 
 
+def _pick_pdf_link(message: dict) -> str:
+    """Return the best PDF URL from a Crossref work's ``link`` array.
+
+    Crossref records carry publisher-deposited full-text links in
+    ``link[]``. Each entry has ``URL``, ``content-type``, and
+    ``intended-application`` (``text-mining`` / ``similarity-checking``
+    / ``unspecified``). We want PDFs intended for human readers, but
+    publishers are inconsistent about ``intended-application``, so the
+    practical filter is ``content-type == 'application/pdf'``.
+    """
+    for entry in message.get("link") or []:
+        if (entry.get("content-type") or "").lower() == "application/pdf":
+            url = entry.get("URL", "")
+            if url:
+                return url
+    return ""
+
+
+async def find_oa_pdf(doi: str) -> str | None:
+    """Lookup an OA PDF URL by DOI via the Crossref ``link`` array.
+
+    Used by the OA-PDF resolver chain (``oa_pdf_resolvers`` in the
+    registry) as a fallback when Unpaywall and OpenAlex have no copy.
+    Crossref's coverage is publisher-deposited links — narrower than
+    Unpaywall, but it catches cases where the publisher's own DOI
+    record points at a PDF that Unpaywall hasn't indexed.
+    """
+    url = f"{_BASE}/works/{urllib.parse.quote(doi, safe='/')}"
+    try:
+        text = await fetch_text(url, headers=_HEADERS)
+        data = json.loads(text)
+    except Exception as e:
+        logger.warning("Crossref OA-PDF fetch failed for %s: %s", doi, e)
+        return None
+    msg = data.get("message") or {}
+    pdf = _pick_pdf_link(msg)
+    return pdf or None
+
+
 def _parse(item: dict) -> PaperMetadata:
     # Crossref returns title and container-title as arrays of strings.
     title_arr = item.get("title") or []

@@ -123,6 +123,11 @@ async def test_doi_without_oa_pdf_errors():
     handler = LiteratureToolHandler(Path("/tmp"))
     paper = PaperMetadata(title="X", pdf_url="", source="openalex")
     handler._resolve_doi = AsyncMock(return_value=("openalex", paper))
+    # v0.9 M3: when the metadata chain returns no pdf_url, the handler
+    # falls through to the OA-PDF resolver chain (Unpaywall → OpenAlex →
+    # Crossref → S2). Mock that too so this test stays a pure
+    # "everyone-misses → error" check, not a live network call.
+    handler._resolve_oa_pdf = AsyncMock(return_value=None)
     result, _, _ = await _read(handler, {"doi": "10.1/x"})
     assert "no readable PDF" in json.loads(result)["error"]
 
