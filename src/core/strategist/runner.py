@@ -560,6 +560,30 @@ class PipelineRunner:
                     await self._update_status(PaperStatus.REJECTED, error=error)
                     return PaperStatus.REJECTED
 
+        # --- verify_citations pre-review gate (v0.9 M2) ---
+        # Mechanical anti-hallucination for references: every \cite
+        # resolves in references.bib AND in at least one of OpenAlex /
+        # S2 / Crossref. Default policy: hard-block on missing-in-bib
+        # only (LaTeX would also fail); ``unverifiable`` is warn-only
+        # because preprints / posters legitimately aren't indexed.
+        # Flip to hard-block with E2ER_STRICT_CITATION_INTEGRITY=true.
+        if draft_path.is_file():
+            from ..pipeline.verify_citations import verify_and_save as verify_citations_and_save
+
+            cite_report = await verify_citations_and_save(draft_path, self._workspace)
+            if not cite_report.passed:
+                missing = ", ".join(c.cite_key for c in cite_report.missing_checks[:5])
+                unverif = ", ".join(c.cite_key for c in cite_report.unverifiable_checks[:5])
+                pieces = []
+                if cite_report.missing_in_bib:
+                    pieces.append(f"{cite_report.missing_in_bib} cited key(s) missing from references.bib: {missing}")
+                if cite_report.strict and cite_report.unverifiable:
+                    pieces.append(f"{cite_report.unverifiable} unverifiable cite(s) (strict mode): {unverif}")
+                error = "verify_citations: " + "; ".join(pieces)
+                logger.error("Paper %s: %s", self._paper_id, error)
+                await self._update_status(PaperStatus.REJECTED, error=error)
+                return PaperStatus.REJECTED
+
         await self._update_status(PaperStatus.REVIEW)
 
         review_orders = [
