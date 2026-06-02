@@ -576,13 +576,9 @@ class PipelineRunner:
                 unverif = ", ".join(c.cite_key for c in cite_report.unverifiable_checks[:5])
                 pieces = []
                 if cite_report.missing_in_bib:
-                    pieces.append(
-                        f"{cite_report.missing_in_bib} cited key(s) missing from references.bib: {missing}"
-                    )
+                    pieces.append(f"{cite_report.missing_in_bib} cited key(s) missing from references.bib: {missing}")
                 if cite_report.strict and cite_report.unverifiable:
-                    pieces.append(
-                        f"{cite_report.unverifiable} unverifiable cite(s) (strict mode): {unverif}"
-                    )
+                    pieces.append(f"{cite_report.unverifiable} unverifiable cite(s) (strict mode): {unverif}")
                 error = "verify_citations: " + "; ".join(pieces)
                 logger.error("Paper %s: %s", self._paper_id, error)
                 await self._update_status(PaperStatus.REJECTED, error=error)

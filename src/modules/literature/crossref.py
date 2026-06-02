@@ -86,7 +86,7 @@ def _parse(item: dict) -> PaperMetadata:
     # created, as a `date-parts: [[YYYY, MM, DD]]` triple. Fall through.
     year: int | None = None
     for date_key in ("issued", "published-print", "published-online", "created"):
-        parts = ((item.get(date_key) or {}).get("date-parts") or [])
+        parts = (item.get(date_key) or {}).get("date-parts") or []
         if parts and parts[0]:
             try:
                 year = int(parts[0][0])

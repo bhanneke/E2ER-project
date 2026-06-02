@@ -241,7 +241,7 @@ async def test_verify_unverifiable_warn_by_default(tmp_path: Path):
     draft.write_text(r"See \cite{obscure}.", encoding="utf-8")
     bib = tmp_path / "references.bib"
     bib.write_text(
-        '@article{obscure, title={An obscure working paper nobody indexes}, year={2024}}',
+        "@article{obscure, title={An obscure working paper nobody indexes}, year={2024}}",
         encoding="utf-8",
     )
     empty = _empty_search()
@@ -261,7 +261,7 @@ async def test_verify_unverifiable_strict_fails(tmp_path: Path):
     draft.write_text(r"See \cite{obscure}.", encoding="utf-8")
     bib = tmp_path / "references.bib"
     bib.write_text(
-        '@article{obscure, title={An obscure working paper nobody indexes}, year={2024}}',
+        "@article{obscure, title={An obscure working paper nobody indexes}, year={2024}}",
         encoding="utf-8",
     )
     empty = _empty_search()
@@ -297,7 +297,7 @@ async def test_verify_falls_through_doi_chain_to_title_search(tmp_path: Path):
     draft.write_text(r"\cite{x2020}", encoding="utf-8")
     bib = tmp_path / "references.bib"
     bib.write_text(
-        '@article{x2020, title={The Exact Title}, year={2020}, doi={10.1/x}}',
+        "@article{x2020, title={The Exact Title}, year={2020}, doi={10.1/x}}",
         encoding="utf-8",
     )
     # All three DOI lookups fail; OpenAlex title search finds it.
@@ -323,7 +323,7 @@ async def test_verify_and_save_writes_json(tmp_path: Path):
     draft = tmp_path / "draft.tex"
     draft.write_text(r"\cite{good}", encoding="utf-8")
     bib = tmp_path / "references.bib"
-    bib.write_text('@article{good, title={Good}, year={2020}, doi={10.1/g}}', encoding="utf-8")
+    bib.write_text("@article{good, title={Good}, year={2020}, doi={10.1/g}}", encoding="utf-8")
     good = _stub_paper(doi="10.1/g", title="Good")
     with (
         patch("src.core.pipeline.verify_citations.openalex.fetch_by_doi", new=AsyncMock(return_value=good)),

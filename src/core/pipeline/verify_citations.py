@@ -427,9 +427,7 @@ async def verify(
         bib = {k: {"title": ""} for k in bibitem_keys}
 
     if not bib:
-        report.skipped_reason = (
-            f"no bibliography source found (.bib at {bib_path} missing and no \\bibitem in draft)"
-        )
+        report.skipped_reason = f"no bibliography source found (.bib at {bib_path} missing and no \\bibitem in draft)"
         logger.warning("verify_citations: %s", report.skipped_reason)
         return report
 
@@ -523,9 +521,7 @@ def render_human(report: CitationIntegrityReport) -> str:
         if len(report.missing_checks) > 20:
             lines.append(f"      … and {len(report.missing_checks) - 20} more")
     if report.unverifiable_checks:
-        lines.append(
-            "\n  ⚠ Unverifiable cites (in bib but no DOI/title match in OpenAlex/S2/Crossref):"
-        )
+        lines.append("\n  ⚠ Unverifiable cites (in bib but no DOI/title match in OpenAlex/S2/Crossref):")
         for c in report.unverifiable_checks[:20]:
             yr = f" ({c.bib_year})" if c.bib_year else ""
             lines.append(f"      - {c.cite_key}: {c.bib_title[:80]}{yr}")
