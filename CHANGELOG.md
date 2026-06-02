@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### v0.9 M2 — Citation-integrity gate
+
+- **New `e2er verify-citations` command + pre-review gate.** Mechanical,
+  deterministic anti-hallucination for references: parses every
+  `\cite`/`\citep`/`\citet`/`\citeauthor`/`\citeyear`/`\autocite`/
+  `\textcite`/`\parencite` (plus starred variants and `\bibitem` for
+  hand-rolled bibliographies) from the draft, then for each cited key
+  verifies the bib entry exists via OpenAlex → Semantic Scholar →
+  Crossref by DOI, then by fuzzy title+year match across the same
+  three sources. Emits `citation_integrity.json` with per-key status,
+  verifier source, matched DOI/title, plus a coverage report
+  (cited-but-not-bibbed, bibbed-but-not-cited).
+- **Verdict policy** (open question from the v0.9 plan, M2): default
+  is **hard-block on `missing_in_bib`** (cite key not in
+  `references.bib` — LaTeX would also fail, unambiguous bug) and
+  **warn-only on `unverifiable`** (working papers, conference posters,
+  industry whitepapers legitimately aren't in OpenAlex/S2/Crossref).
+  Flip to hard-block on unverifiable with
+  `E2ER_STRICT_CITATION_INTEGRITY=true`.
+- **Title-match heuristic, year-gate graduated by match strength:**
+  fuzzy matches (0.85 ≤ sim < 0.99) require year within ±1 to reject
+  unrelated papers from different decades; exact-title matches
+  (sim ≥ 0.99) accept any year. Live-test surfaced the failure mode
+  this fixes: OpenAlex's top hit for "Attention Is All You Need" was
+  a 2025 reprint; with a strict ±1 gate the canonical 2017 paper
+  would never verify.
+- **New `src/modules/literature/crossref.py`** — keyless Crossref
+  provider (`fetch_by_doi`, `search_papers`) mirroring the existing
+  OpenAlex / S2 modules. Joins the verifier chain for citation
+  integrity now; M3 will extend it for OA full-text resolution.
+- **Wired into the pre-review gate** in `strategist/runner.py` right
+  after `verify_numbers`: a paper with hallucinated cites (or, under
+  strict mode, unverifiable ones) is rejected before reviewer
+  specialists spend tokens — same gating pattern, same `REJECTED`
+  terminal status.
+- Tests: 29 new in `tests/test_verify_citations.py` covering parse
+  (8 cite-command variants + comments + escaped `\\%`), normalization
+  (DOI URL prefixes, accented titles, LaTeX braces), title-match
+  graduated year-gate, end-to-end happy path, missing-in-bib fail,
+  unverifiable warn-vs-strict, DOI-chain fallthrough to title search,
+  persistence to `citation_integrity.json`, and CLI registration.
+
 ### v0.9 M1 — `e2er doctor` user-facing preflight
 
 - **New `e2er doctor` command.** Answers "am I ready to spend a paper run?"

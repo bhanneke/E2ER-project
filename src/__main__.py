@@ -147,12 +147,45 @@ def main() -> None:
         help="Emit a machine-readable JSON report instead of the human-readable summary.",
     )
 
+    verify_cites_p = subparsers.add_parser(
+        "verify-citations",
+        help="Anti-hallucination gate: every \\cite{key} resolves to a real paper (OpenAlex / S2 / Crossref).",
+    )
+    verify_cites_p.add_argument("draft", help="Path to the LaTeX draft (paper_draft.tex).")
+    verify_cites_p.add_argument(
+        "--bib",
+        default=None,
+        help="Path to references.bib (default: <draft_dir>/references.bib).",
+    )
+    verify_cites_p.add_argument(
+        "--strict",
+        action="store_true",
+        help="Also fail on unverifiable cites (default: only missing-in-bib fails).",
+    )
+    verify_cites_p.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit the citation_integrity.json report on stdout instead of the human summary.",
+    )
+
     args = parser.parse_args()
 
     if args.command == "doctor":
         from .doctor import main_doctor
 
         sys.exit(main_doctor(json_output=args.json))
+
+    if args.command == "verify-citations":
+        from .core.pipeline.verify_citations import main_verify_citations
+
+        sys.exit(
+            main_verify_citations(
+                draft=args.draft,
+                bib=args.bib,
+                json_output=args.json,
+                strict=args.strict,
+            )
+        )
 
     if args.command == "install-skills":
         from .cli_install_skills import install_skills as _install
