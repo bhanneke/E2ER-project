@@ -124,6 +124,31 @@ _CITE_RE = re.compile(
 # Hand-rolled thebibliography environments — ``\\bibitem{key}``.
 _BIBITEM_RE = re.compile(r"\\bibitem(?:\[[^\]]*\])?\{([^}]+)\}")
 
+# End-of-environment marker — bounds the last bibitem's body.
+_END_THEBIB_RE = re.compile(r"\\end\{thebibliography\}")
+
+# DOI matcher for in-body DOI text. Accepts ``doi:`` / ``DOI:`` prefixes and
+# ``https://doi.org/`` URLs. Trailing punctuation is stripped later.
+_INBODY_DOI_RE = re.compile(
+    r"(?:doi:|DOI:|https?://(?:dx\.)?doi\.org/)?(10\.\d{4,9}/[-._;()/:A-Za-z0-9]+)",
+)
+
+# A 4-digit year wrapped in parentheses — the canonical author-block
+# terminator in in-tex APA/Chicago bibliographies. Captures the year.
+_BODY_YEAR_RE = re.compile(r"\((\d{4})[a-z]?\)\.?\s*")
+
+# Year in the bibitem ``[label]`` — fallback when the body's author block
+# uses a different format (``Welch and Goyal, 2008.`` instead of ``(2008)``).
+_LABEL_YEAR_RE = re.compile(r"\((\d{4})[a-z]?\)")
+
+# Italic/emph markup that almost always wraps the journal name. Used to
+# bound the title on the right.
+_JOURNAL_MARK_RE = re.compile(r"\\(?:textit|emph|textbf)\{")
+
+# LaTeX text-style commands whose content is plain text we want to keep:
+# ``\textit{Review of Financial Studies}`` → ``Review of Financial Studies``.
+_LATEX_TEXT_CMD_RE = re.compile(r"\\(?:textit|emph|textbf|texttt|textsc)\{([^}]*)\}")
+
 
 def parse_cite_keys(tex: str) -> list[str]:
     """Return every cite-key referenced in the LaTeX source, in order
@@ -146,6 +171,119 @@ def parse_bibitem_keys(tex: str) -> list[str]:
         if key:
             seen.setdefault(key, None)
     return list(seen.keys())
+
+
+def parse_bibitem_entries(tex: str) -> dict[str, dict]:
+    """Parse a hand-rolled ``thebibliography`` block into a bib-shaped
+    dict — ``{cite_key: {"title", "year", "doi"}}``.
+
+    Pre-M4.2 the citation gate's fallback for ``\\bibitem``-only papers
+    constructed entries with empty titles, so every cite came back
+    ``unverifiable`` with no real verifier call. The M4 live test
+    surfaced this: the Welch-Goyal replication's draft had 9 cites and
+    0 went to OpenAlex/S2/Crossref because the body text was discarded.
+
+    What we parse from each entry body:
+
+    - **DOI** — first ``10.xxxx/yyyy`` match anywhere in the body, with
+      optional ``doi:`` / ``https://doi.org/`` prefix. Trailing
+      punctuation stripped.
+    - **Year** — the first ``(YYYY)`` after the cite-key, falling back
+      to the year in the ``[label]`` if no parenthesised year appears
+      in the body.
+    - **Title** — the chunk between the closing ``(YYYY).`` of the
+      author block and the next ``\\textit{`` / ``\\emph{`` (which
+      almost always wraps the journal name). Falls back to "first
+      sentence after the year" when no italic journal marker is
+      present.
+
+    The verifier chain only needs *something* in ``bib_title`` /
+    ``bib_doi`` to start working — even a noisy title with trailing
+    punctuation is enough for the OpenAlex title-search to find the
+    canonical paper.
+    """
+    cleaned = _strip_comments(tex)
+    matches = list(_BIBITEM_RE.finditer(cleaned))
+    if not matches:
+        return {}
+
+    end_match = _END_THEBIB_RE.search(cleaned)
+    end_pos = end_match.start() if end_match else len(cleaned)
+
+    out: dict[str, dict] = {}
+    for i, m in enumerate(matches):
+        cite_key = m.group(1).strip()
+        if not cite_key:
+            continue
+        body_start = m.end()
+        body_end = matches[i + 1].start() if i + 1 < len(matches) else end_pos
+        body_raw = cleaned[body_start:body_end]
+
+        # Strip ``\textit{Foo}`` → ``Foo`` so the journal name is plain
+        # text in subsequent regex passes. Done early so the journal-
+        # marker bound (still present in ``body_raw``) can be used as
+        # the title's right edge BEFORE the strip.
+        journal_cut = _JOURNAL_MARK_RE.search(body_raw)
+        journal_pos = journal_cut.start() if journal_cut else len(body_raw)
+
+        body_clean = _LATEX_TEXT_CMD_RE.sub(r"\1", body_raw)
+        body_collapsed = " ".join(body_clean.split())
+
+        # DOI — anywhere in the body. Strip trailing punctuation that
+        # regex matchers commonly include.
+        doi = ""
+        dm = _INBODY_DOI_RE.search(body_collapsed)
+        if dm:
+            doi = dm.group(1).rstrip(".,;)")
+
+        # Year — body first, then [label].
+        year_match = _BODY_YEAR_RE.search(body_collapsed)
+        if year_match:
+            year_str: str = year_match.group(1)
+            year_end_in_collapsed = year_match.end()
+        else:
+            label_y = _LABEL_YEAR_RE.search(m.group(0))
+            year_str = label_y.group(1) if label_y else ""
+            year_end_in_collapsed = 0  # title-cut falls through
+
+        # Title — the chunk between the closing ``(YYYY).`` and the
+        # journal marker (whichever comes first). Re-cut on the
+        # collapsed string by recomputing the journal-marker position
+        # there; if the body had no italic marker, fall back to first
+        # sentence after the year.
+        title = ""
+        if year_end_in_collapsed:
+            after_year = body_collapsed[year_end_in_collapsed:]
+            # If there's an italic-wrapped journal name in body_raw, the
+            # right edge of the title is the start of that block. We
+            # already stripped the markup in body_clean, but the journal
+            # *content* is still a distinctive substring — find its
+            # position in the collapsed body and cut there.
+            right_edge = len(after_year)
+            if journal_cut:
+                inside = _LATEX_TEXT_CMD_RE.match(body_raw, journal_pos)
+                if inside:
+                    journal_text = " ".join(inside.group(1).split())
+                    idx = after_year.find(journal_text)
+                    if idx >= 0:
+                        right_edge = idx
+            title = after_year[:right_edge].strip()
+            # Drop trailing punctuation / comma before the journal name.
+            title = title.rstrip(" .,;:—-")
+            # Reject obviously-broken titles (single char, no spaces, etc.)
+            if len(title) < 5 or not any(c.isalpha() for c in title):
+                title = ""
+        if not title:
+            # Last-ditch fallback: whole body up to the journal marker,
+            # less the author block. Noisy but the OpenAlex title-search
+            # tolerates noise.
+            if year_match:
+                title = body_collapsed[year_end_in_collapsed:].rstrip(" .,;:—-")
+            else:
+                title = body_collapsed.rstrip(" .,;:—-")
+
+        out[cite_key] = {"title": title, "year": year_str, "doi": doi}
+    return out
 
 
 def _strip_comments(tex: str) -> str:
@@ -419,12 +557,20 @@ async def verify(
         bib_path = draft_path.parent / "references.bib"
     bib = load_bib(bib_path)
 
-    # Hand-rolled thebibliography: treat \bibitem keys like a degenerate
-    # bib (title-only would need an inner-tex parser; for v1 we only
-    # check that every \cite resolves to *some* \bibitem so LaTeX would
-    # link. External verification needs the .bib).
+    # Hand-rolled thebibliography: parse the \bibitem bodies (M4.2).
+    # Pre-M4.2 this fell back to ``{key: {"title": ""}}`` which made
+    # every cite unverifiable and effectively silenced the gate on the
+    # class of paper most likely to ship hallucinated cites. We now
+    # parse title / year / DOI out of the body so the verifier chain
+    # has something to actually look up.
     if not bib and bibitem_keys:
-        bib = {k: {"title": ""} for k in bibitem_keys}
+        bib = parse_bibitem_entries(tex)
+        # Defensive: if parse_bibitem_entries somehow missed a key the
+        # cite-key parser found, fall back to an empty entry for it so
+        # the cite reports as ``unverifiable`` rather than
+        # ``missing_in_bib`` (LaTeX would link it fine via \bibitem).
+        for k in bibitem_keys:
+            bib.setdefault(k, {"title": "", "year": "", "doi": ""})
 
     if not bib:
         report.skipped_reason = f"no bibliography source found (.bib at {bib_path} missing and no \\bibitem in draft)"

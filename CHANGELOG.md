@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### v0.9 M4.2 — `verify_citations` parses `\bibitem` bodies
+
+- **New `parse_bibitem_entries(tex)`** in `src/core/pipeline/verify_citations.py`:
+  parses the text between consecutive `\bibitem` commands (and between
+  the last `\bibitem` and `\end{thebibliography}`) into a bib-shaped
+  dict `{cite_key: {title, year, doi}}`. Extracts:
+  - **DOI** anywhere in the body (`10.xxxx/yyyy`, with optional `doi:`
+    / `https://doi.org/` prefix; trailing punctuation stripped).
+  - **Year** from the first `(YYYY)` in the body, falling back to the
+    `\bibitem[label]` year when the body uses an unparenthesised form.
+  - **Title** between the closing `(YYYY).` of the author block and
+    the start of the `\textit{...}` / `\emph{...}` block that wraps
+    the journal name. Falls back to "first sentence after the year"
+    when no italic journal marker is present.
+- **Replaces the degenerate fallback** in `verify()` that constructed
+  `{key: {"title": ""}}` for `\bibitem`-only papers. Pre-M4.2 every
+  cite came back `unverifiable` with explanation *"bib entry has
+  neither title nor DOI — nothing to verify"* — the M2 gate was
+  silent on exactly the class of paper most likely to ship
+  hallucinated cites.
+- **Live-validated on the actual M4 paper draft**:
+  - Before: `verified=0 unverifiable=9 missing_in_bib=0 total=9` →
+    false-pass under warn-only default.
+  - After: `verified=9 unverifiable=0 missing_in_bib=0 total=9` →
+    real pass; every Welch-Goyal-replication cite (welch2008,
+    clarkwest2007, campbell2008, rapach2010, goyal2024, paye2006,
+    timmermann2008, stambaugh1999, cochrane2008) resolves via
+    OpenAlex title-search.
+- Closes M4 finding #2. 8 new tests including the M4 regression
+  (exact Welch-Goyal `\bibitem` format), DOI extraction (raw + URL
+  form), label-only year fallback, multi-entry, no-journal-marker
+  fallback, end-to-end verify, and empty-body unverifiable
+  preservation.
+
 ### v0.9 M4.1 — Cost tracker zeros for flat-rate CLI backends
 
 - **`compute_cost(model, usage, backend=...)`** now returns
