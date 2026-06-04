@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### v0.9 M4.3 — Specialist output-contract enforcement
+
+- **New `src/core/specialists/contract_check.py`** validates that a
+  specialist's declared artifact (primary + any sidecars in
+  `SPECIALIST_SIDECAR_ARTIFACTS`) has non-trivial content before
+  `run_specialist` returns success. Rules per file extension:
+  - `.json` — must parse, and parsed value must not be `{}` / `[]` /
+    `null`. Empty containers are the M4 failure mode.
+  - `.md` / `.tex` / `.py` / `.txt` — at least 100 non-whitespace
+    characters. A real specialist output is always a paragraph or more.
+  - Other extensions — exists with size > 0.
+- **Wired into `run_specialist`**: when the tool_loop returns
+  `success=True` but contract check fails, the result is flipped to
+  `success=False` with the error prefixed `contract violation: …`.
+  The circuit breaker then trips after `_MAX_SPECIALIST_ATTEMPTS=3`
+  consecutive failures, halting the run with `PAUSED` instead of
+  paying the rest of the pipeline.
+- **Closes M4 finding #4 — the biggest of the three follow-ups**: in
+  the M4 paper run `econometrics_specialist` returned `success=True`
+  but `estimation_results.json` was literally `{}`. The pipeline then
+  burned 13.7M tokens / 29 specialist calls writing a paper around a
+  hollow result before the mechanism reviewer caught it. Post-M4.3
+  that single empty JSON file flips the econometrics specialist to
+  failure and the run pauses at the contract boundary instead.
+- **Tests**: 21 in `tests/test_contract_check.py` covering the M4
+  regression (`estimation_results.json == "{}"`), empty list/null/
+  whitespace JSON, invalid JSON, short prose/code, whitespace-only
+  files, missing files, nested relative paths, unknown extensions,
+  primary + sidecar combinations per specialist, and an
+  integration test that runs `run_specialist` with a fake backend
+  that writes a hollow sidecar and confirms the result is flipped
+  to `success=False` with the right error.
+- **Conftest mocks bulked**: pre-M4.3 the mock specialist outputs
+  were short stubs (e.g. `"Formula check passed."` = 22 chars). The
+  contract check would have false-tripped on them. Updated all
+  mocks in `_SPECIALIST_OUTPUTS` to be paragraph-length so they
+  match what a real (skill-driven) specialist emits at minimum
+  substance; mock sidecars added (`summary_statistics.json`,
+  `figure_spec.json`, `estimation_results.json`) so reflexive
+  mocks of `econometrics_specialist` / `data_analyst` still pass.
+
 ### v0.9 M4.2 — `verify_citations` parses `\bibitem` bodies
 
 - **New `parse_bibitem_entries(tex)`** in `src/core/pipeline/verify_citations.py`:

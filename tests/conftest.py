@@ -16,95 +16,189 @@ from src.modules.llm.base import LLMBackend, TokenUsage, ToolHandler, ToolLoopRe
 # Deterministic specialist outputs (filename, content)
 # ---------------------------------------------------------------------------
 
+# Mock specialist outputs. Each must clear the v0.9 M4.3
+# output-contract check (>= 100 non-whitespace chars for prose / code,
+# non-empty JSON) so the contract check doesn't false-trip on stubby
+# tests. The bodies match what a real (skill-driven) specialist would
+# emit at minimum substance — a paragraph or three, not a one-liner.
 _SPECIALIST_OUTPUTS: dict[str, tuple[str, str]] = {
     "idea_developer": (
         "paper_plan.md",
-        "# Paper Plan\n\n## Research Question\nDoes X affect Y?\n\n## Propositions\n- H1: X increases Y.",
+        "# Paper Plan\n\n## Research Question\nDoes X affect Y in the post-treatment "
+        "sample? We test this on a panel of N units over T periods.\n\n## Propositions\n"
+        "- H1: X increases Y monotonically.\n- H2: Effect heterogeneity by group.",
     ),
     "literature_scanner": (
         "literature_review.md",
-        "# Literature Review\n\n## Background\nPrior work establishes the baseline.",
+        "# Literature Review\n\n## Background\nPrior work establishes the baseline "
+        "relationship between X and Y in canonical settings. We extend along three "
+        "dimensions: identification, sample, and outcome.\n\n## Gaps\nNo prior paper "
+        "tests this jointly on the post-2020 sample.",
     ),
     "identification_strategist": (
         "identification_strategy.md",
-        "# Identification Strategy\n\nWe use difference-in-differences around the treatment date.",
+        "# Identification Strategy\n\nWe use a staggered difference-in-differences "
+        "design around the treatment date, with unit and time fixed effects. "
+        "Pre-trends are tested via event-study coefficients. Robustness: alternative "
+        "control groups, Callaway-Sant'Anna estimator.",
     ),
     "data_architect": (
         "data_dictionary.json",
-        json.dumps({"datasets": [], "fields": [], "time_filter": None}, indent=2),
+        json.dumps(
+            {
+                "datasets": [{"name": "panel", "freq": "monthly"}],
+                "fields": [{"name": "x", "type": "float"}, {"name": "y", "type": "float"}],
+                "time_filter": {"start": "2020-01-01", "end": "2024-12-31"},
+            },
+            indent=2,
+        ),
     ),
     "econometrics_specialist": (
         "econometric_spec.md",
-        "# Econometric Specification\n\nOLS with two-way fixed effects.",
+        "# Econometric Specification\n\nOLS with two-way fixed effects. Standard "
+        "errors clustered by unit. Pre-trend test via leads-and-lags event study. "
+        "Robustness: TWFE, CCDH-Sant'Anna, sun-and-abraham. Reporting horizon: "
+        "[-6, +12] months around treatment.",
     ),
     "data_analyst": (
         "data_summary.md",
-        "# Data Summary\n\nThe dataset contains 10,000 observations.",
+        "# Data Summary\n\nThe dataset contains 10,000 observations across 100 "
+        "units and 100 monthly periods. Outcome y has mean 0.05 (sd 0.12). Treatment "
+        "variable x is binary, with 40% of units treated at some point in the sample.",
     ),
     "theory_specialist": (
         "model_spec.md",
-        "# Formal Model\n\n## Setup\nAgents maximise utility subject to budget.\n\n"
-        "## Propositions\nP1: Equilibrium price is monotone in supply.",
+        "# Formal Model\n\n## Setup\nAgents maximise utility subject to budget. "
+        "Demand depends on price and income. Supply is competitive.\n\n"
+        "## Propositions\nP1: Equilibrium price is monotone in supply.\n"
+        "P2: Quantity adjusts to clear the market in the long run.",
     ),
     "paper_drafter": (
         "paper_draft.tex",
-        "\\documentclass{article}\n\\begin{document}\n\\title{Test}\n\\maketitle\nContent.\n\\end{document}",
+        "\\documentclass{article}\n\\begin{document}\n\\title{Test Paper}\n"
+        "\\maketitle\n\\section{Introduction}\nWe study whether X affects Y in a "
+        "panel of N units. Our main finding: a 1-unit increase in X raises Y by "
+        "0.04 (s.e. 0.01) on average, robust to controls.\n\\end{document}",
     ),
     "section_writer": (
         "paper_draft.tex",
-        "\\documentclass{article}\n\\begin{document}\n\\section{Introduction}\nTest.\n\\end{document}",
+        "\\documentclass{article}\n\\begin{document}\n\\section{Introduction}\n"
+        "We study whether X affects Y in a panel of N units. The headline finding "
+        "is a 1-unit increase in X raising Y by 0.04 on average, robust to "
+        "alternative specifications and sample restrictions.\n\\end{document}",
     ),
     "abstract_writer": (
         "abstract.tex",
-        "\\begin{abstract}\nWe study whether X affects Y.\n\\end{abstract}",
+        "\\begin{abstract}\nWe study whether X affects Y in a panel of N units "
+        "over T periods. Using staggered difference-in-differences, we find a "
+        "1-unit increase in X raises Y by 0.04 on average, robust to alternative "
+        "controls.\n\\end{abstract}",
     ),
     "latex_formatter": (
         "paper_draft.tex",
-        "\\documentclass{article}\n\\usepackage{booktabs}\n\\begin{document}\nFormatted.\n\\end{document}",
+        "\\documentclass{article}\n\\usepackage{booktabs}\n\\usepackage{amsmath}\n"
+        "\\begin{document}\nFormatted draft with tables and equations. "
+        "\\section{Results}\nMain estimate 0.04 (s.e. 0.01).\n\\end{document}",
     ),
-    # Reviewers: scores embedded in text so parse_review_output() finds them
+    # Reviewers: scores embedded in text so parse_review_output() finds them.
+    # Bodies bulked to clear the M4.3 100-char threshold; a real review is
+    # always longer than this.
     "mechanism_reviewer": (
         "review_mechanism.md",
-        "# Mechanism Review\n\nScore: 7/10\n\nThe mechanism is plausible and well-motivated.",
+        "# Mechanism Review\n\nScore: 7/10\n\nThe mechanism is plausible and "
+        "well-motivated. The causal chain from X to Y is grounded in the literature. "
+        "Minor concern: the heterogeneity story could be tighter.",
     ),
     "technical_reviewer": (
         "review_technical.md",
-        "# Technical Review\n\nScore: 7/10\n\nEconometrics are sound.",
+        "# Technical Review\n\nScore: 7/10\n\nEconometrics are sound. Standard "
+        "errors are correctly clustered. The pre-trend test passes at conventional "
+        "levels. Robustness to alternative DiD estimators is reported.",
     ),
     "literature_reviewer": (
         "review_literature.md",
-        "# Literature Review\n\nScore: 7/10\n\nWell-grounded in prior work.",
+        "# Literature Review Review\n\nScore: 7/10\n\nWell-grounded in prior work. "
+        "Citations to Welch-Goyal, Campbell-Shiller, and Lettau-Ludvigson are "
+        "appropriate. One omission: the recent Goyal-Welch update.",
     ),
     "writing_reviewer": (
         "review_writing.md",
-        "# Writing Review\n\nScore: 7/10\n\nProse is clear.",
+        "# Writing Review\n\nScore: 7/10\n\nProse is clear. The introduction "
+        "frames the contribution well. Tables are readable. Minor: some passive "
+        "constructions in section 3 could be tightened.",
     ),
     "data_reviewer": (
         "review_data.md",
-        "# Data Review\n\nScore: 7/10\n\nData sourcing is appropriate.",
+        "# Data Review\n\nScore: 7/10\n\nData sourcing is appropriate. The "
+        "sample period is well-justified. Frequency choice (monthly) matches the "
+        "outcome's dynamics. Missing-data treatment is documented.",
     ),
     "identification_reviewer": (
         "review_identification.md",
-        "# Identification Review\n\nScore: 7/10\n\nIdentification strategy is credible.",
+        "# Identification Review\n\nScore: 7/10\n\nIdentification strategy is "
+        "credible. Pre-trends are flat by inspection. Parallel-trends assumption "
+        "discussed honestly. Robust to event-study and Callaway-Sant'Anna.",
     ),
     # V3 extensions
     "self_attacker": (
         "self_attack_report.json",
         json.dumps({"findings": [], "overall_severity": 1}, indent=2),
     ),
-    "polish_formula": ("polish_formula.md", "Formula check passed."),
-    "polish_numerics": ("polish_numerics.md", "Numeric consistency verified."),
-    "polish_institutions": ("polish_institutions.md", "Institutional context accurate."),
-    "polish_bibliography": ("polish_bibliography.md", "Bibliography complete."),
-    "polish_equilibria": ("polish_equilibria.md", "Equilibrium conditions satisfied."),
+    "polish_formula": (
+        "polish_formula.md",
+        "# Formula Polish\n\nFormula check passed. All math-mode expressions "
+        "balance. Subscripts and superscripts are consistent. Notation matches "
+        "the standard convention for panel data econometrics.",
+    ),
+    "polish_numerics": (
+        "polish_numerics.md",
+        "# Numerics Polish\n\nNumeric consistency verified. Table values match "
+        "the estimation results JSON. Rounding is consistent at 3 significant "
+        "figures. No rounding errors > 0.005.",
+    ),
+    "polish_institutions": (
+        "polish_institutions.md",
+        "# Institutions Polish\n\nInstitutional context accurate. References to "
+        "the Fed, ECB, and regulatory framework are correct as of the sample end "
+        "date. Acronyms expanded on first use.",
+    ),
+    "polish_bibliography": (
+        "polish_bibliography.md",
+        "# Bibliography Polish\n\nBibliography complete. All cited references "
+        "appear in the bib file. Bibliography entries are formatted to one style "
+        "(APA). No duplicates by DOI.",
+    ),
+    "polish_equilibria": (
+        "polish_equilibria.md",
+        "# Equilibria Polish\n\nEquilibrium conditions satisfied. The first-order "
+        "conditions hold at the proposed equilibrium. Comparative statics signs "
+        "match the propositions in the model section.",
+    ),
     "revisor": (
         "paper_draft.tex",
-        "\\documentclass{article}\n\\begin{document}\nRevised draft.\n\\end{document}",
+        "\\documentclass{article}\n\\begin{document}\n\\section{Introduction}\n"
+        "Revised draft incorporating reviewer feedback. We tighten the "
+        "identification discussion and expand the robustness section.\n"
+        "\\end{document}",
     ),
     "replication_packager": (
         "replication/estimation.py",
-        "# Replication: estimation script\nimport pandas as pd\n",
+        "# Replication: estimation script\nimport pandas as pd\nimport "
+        "statsmodels.api as sm\n\n# Load and clean.\n# Estimate with TWFE.\n"
+        "# Output to estimation_results.json.\nprint('estimation complete')\n",
     ),
+}
+
+
+# Minimal valid sidecar contents the mock writes for specialists with
+# declared SPECIALIST_SIDECAR_ARTIFACTS. Real specialists fill these
+# with substantive content; the mock writes enough to clear the M4.3
+# contract check (parses as non-empty JSON with the field shape the
+# downstream consumers expect).
+_MOCK_SIDECAR_CONTENTS: dict[str, str] = {
+    "summary_statistics.json": json.dumps({"n_observations": 100, "outcome": {"mean": 0.0, "sd": 1.0}}),
+    "figure_spec.json": json.dumps({"figures": [{"name": "f1", "kind": "line"}]}),
+    "estimation_results.json": json.dumps({"main": {"coef": 0.04, "se": 0.01, "t": 4.0, "p": 0.001}}),
 }
 
 # JSON the strategist engine returns from decide() for "designing" status
@@ -193,6 +287,20 @@ class MockLLMBackend(LLMBackend):
                 if "/" in filename:
                     await tool_handler.handle("list_directory", {"path": "."})
                 await tool_handler.handle("write_file", {"path": filename, "content": content})
+                # v0.9 M4.3: real specialists with declared sidecars in
+                # SPECIALIST_SIDECAR_ARTIFACTS produce them alongside the
+                # primary file. The mock didn't pre-M4.3, so under the
+                # new output-contract check it would now flip every
+                # sidecar-bearing specialist to success=False. Write
+                # minimal valid sidecars per declared contract so the
+                # mock stays a faithful stand-in.
+                from src.core.specialists.registry import SPECIALIST_SIDECAR_ARTIFACTS
+
+                for sidecar in SPECIALIST_SIDECAR_ARTIFACTS.get(specialist, []):
+                    await tool_handler.handle(
+                        "write_file",
+                        {"path": sidecar, "content": _MOCK_SIDECAR_CONTENTS.get(sidecar, "{}")},
+                    )
             except Exception:
                 pass  # handler may reject; that's still a valid test signal
 

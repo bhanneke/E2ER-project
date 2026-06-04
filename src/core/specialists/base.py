@@ -105,8 +105,27 @@ async def run_specialist(
         result.usage.total_tokens,
     )
 
+    # v0.9 M4.3: output-contract enforcement. A specialist that
+    # returns success=True while its declared artifact is empty
+    # (e.g., M4's estimation_results.json == "{}") is a false-success
+    # — the pipeline would then write a paper around a hollow
+    # contract. Flip the result to failure so the circuit breaker
+    # trips after _MAX_SPECIALIST_ATTEMPTS instead of paying the
+    # rest of the run.
+    if result.success:
+        from .contract_check import check_specialist_artifacts
+
+        contract_failures = [c for c in check_specialist_artifacts(workspace, specialist) if not c.ok]
+        if contract_failures:
+            summary = "; ".join(f"{c.artifact}: {c.reason}" for c in contract_failures)
+            logger.warning("%s: contract violation — %s", specialist, summary)
+            result.success = False
+            existing = (result.error or "").strip()
+            prefix = f"{existing} | " if existing else ""
+            result.error = f"{prefix}contract violation: {summary}"
+
     # Pass backend_name so flat-rate CLI backends (claude_code / codex /
-    # gemini) cost as $0 — M4 finding #1 fix.
+    # gemini) cost as $0 — M4.1 fix.
     cost = compute_cost(model, result.usage, backend=backend_name)
     try:
         await save_usage(
