@@ -113,7 +113,10 @@ class PipelineRunner:
         from ...modules.tracking.costs import compute_cost
 
         spec_cost = sum(c.cost_usd or 0.0 for c in self._contributions)
-        strat_cost = float(compute_cost(self._model, self._strategist.total_usage))
+        # Pass backend so flat-rate CLI backends produce $0 here too —
+        # otherwise the in-memory fallback estimate trips the budget
+        # cap even with the DB-side cost stored as 0 (M4 finding #1).
+        strat_cost = float(compute_cost(self._model, self._strategist.total_usage, backend=self._backend_name))
         return spec_cost + strat_cost
 
     async def run(self) -> dict[str, Any]:

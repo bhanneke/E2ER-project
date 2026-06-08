@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### v0.9 M4.1 — Cost tracker zeros for flat-rate CLI backends
+
+- **`compute_cost(model, usage, backend=...)`** now returns
+  `Decimal("0")` when `backend` is `claude_code`, `codex`, or `gemini`.
+  The CLI help and v0.9 plan promise *"$0 if on the Claude Code /
+  Codex / Gemini CLI backends"*; this is the implementation that
+  makes that promise true. Closes M4 finding #1.
+- Updated three call sites to pass `backend`:
+  `core/specialists/base.py`, `modules/tracking/usage.py`,
+  `core/strategist/runner.py` (`_in_memory_spent` for the budget
+  cap's in-memory fallback). Test suite (`test_costs.py`) extended
+  to pin the new contract: identical 2M-token usage costs $18.00 on
+  `anthropic` and $0 on `claude_code`; unknown backend literals fall
+  back to SDK pricing (defensive — a config typo surfaces as
+  "expensive", not "free"); `backend=None` preserves legacy behaviour
+  exactly.
+- Background: in the M4 run, the default `--max-cost 5` cap tripped
+  after the first heavy specialist on the `claude_code` backend
+  (~$5.25 in fake compute_cost) — forcing an interactive
+  `resume --max-cost 100` to keep the paper moving. With M4.1, the
+  budget cap stays inactive on the $0 backends.
+
 ### v0.9 M3 — Open-access full-text reach
 
 - **New OA-PDF resolver chain** (`src/modules/literature/oa_resolvers.py`)

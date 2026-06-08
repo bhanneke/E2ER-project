@@ -105,7 +105,9 @@ async def run_specialist(
         result.usage.total_tokens,
     )
 
-    cost = compute_cost(model, result.usage)
+    # Pass backend_name so flat-rate CLI backends (claude_code / codex /
+    # gemini) cost as $0 — M4 finding #1 fix.
+    cost = compute_cost(model, result.usage, backend=backend_name)
     try:
         await save_usage(
             paper_id=paper_id,
