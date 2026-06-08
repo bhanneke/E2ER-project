@@ -12,6 +12,7 @@ import pytest
 
 from src.core.pipeline.verify_citations import (
     STATUS_MISSING_IN_BIB,
+    STATUS_UNVERIFIABLE,
     STATUS_VERIFIED_DOI,
     STATUS_VERIFIED_TITLE,
     _normalize_doi,
@@ -19,6 +20,7 @@ from src.core.pipeline.verify_citations import (
     _pick_title_match,
     _title_similar,
     load_bib,
+    parse_bibitem_entries,
     parse_bibitem_keys,
     parse_cite_keys,
     render_human,
@@ -79,6 +81,157 @@ def test_parse_bibitem_keys():
     \end{thebibliography}
     """
     assert parse_bibitem_keys(tex) == ["smith2020", "jones2019"]
+
+
+# ── parse_bibitem_entries (M4.2) ─────────────────────────────────────────────
+
+
+def test_parse_bibitem_entries_m4_regression():
+    """Exact format from the M4 Welch-Goyal paper that had 9/9 unverifiable."""
+    tex = r"""
+    \begin{thebibliography}{99}
+    \bibitem[Welch and Goyal(2008)]{welch2008}
+    Welch, I. and Goyal, A. (2008).
+    A comprehensive look at the empirical performance of equity premium prediction.
+    \textit{Review of Financial Studies}, 21(4), 1455--1508.
+    \end{thebibliography}
+    """
+    out = parse_bibitem_entries(tex)
+    assert "welch2008" in out
+    entry = out["welch2008"]
+    assert entry["year"] == "2008"
+    assert "comprehensive look" in entry["title"].lower()
+    assert "Review of Financial Studies" not in entry["title"]  # journal stripped
+    assert entry["doi"] == ""
+
+
+def test_parse_bibitem_entries_with_doi():
+    tex = r"""
+    \begin{thebibliography}{}
+    \bibitem{x2020}
+    Author, A. (2020). A great paper title. \textit{Journal}, 1(1), 1--10.
+    doi:10.1000/abc.1234
+    \end{thebibliography}
+    """
+    out = parse_bibitem_entries(tex)
+    assert out["x2020"]["doi"] == "10.1000/abc.1234"
+    assert out["x2020"]["year"] == "2020"
+
+
+def test_parse_bibitem_entries_doi_url_form():
+    tex = r"""\bibitem{y2021} Author (2021). Title. https://doi.org/10.5555/zzzz."""
+    out = parse_bibitem_entries(tex)
+    assert out["y2021"]["doi"] == "10.5555/zzzz"
+
+
+def test_parse_bibitem_entries_year_only_in_label():
+    """Body uses ``Author, 2008.`` instead of ``(2008).`` — fall back to label year."""
+    tex = r"""
+    \bibitem[Author(2008)]{a2008}
+    Author, A., 2008. The title. Journal, 1(1).
+    """
+    out = parse_bibitem_entries(tex)
+    assert out["a2008"]["year"] == "2008"
+
+
+def test_parse_bibitem_entries_multiple_entries():
+    tex = r"""
+    \begin{thebibliography}{}
+    \bibitem[Welch and Goyal(2008)]{welch2008}
+    Welch, I. and Goyal, A. (2008).
+    A comprehensive look at the empirical performance of equity premium prediction.
+    \textit{Review of Financial Studies}, 21(4), 1455--1508.
+
+    \bibitem[Clark and West(2007)]{clarkwest2007}
+    Clark, T. E. and West, K. D. (2007).
+    Approximately normal tests for equal predictive accuracy in nested models.
+    \textit{Journal of Econometrics}, 138(1), 291--311.
+    \end{thebibliography}
+    """
+    out = parse_bibitem_entries(tex)
+    assert set(out.keys()) == {"welch2008", "clarkwest2007"}
+    assert "comprehensive look" in out["welch2008"]["title"].lower()
+    assert "approximately normal" in out["clarkwest2007"]["title"].lower()
+    assert out["clarkwest2007"]["year"] == "2007"
+
+
+def test_parse_bibitem_entries_no_bibitems_returns_empty():
+    assert parse_bibitem_entries("just prose, no bibitem here") == {}
+
+
+def test_parse_bibitem_entries_no_journal_marker_falls_back():
+    """No \\textit{...} — title falls back to 'first sentence after year'."""
+    tex = r"""\bibitem{x} Author (2020). A no-journal-marker title. Conference, 2020."""
+    out = parse_bibitem_entries(tex)
+    # We don't promise a perfect cut without the journal marker, but the
+    # title MUST contain the recognisable subtitle and MUST NOT be empty.
+    title = out["x"]["title"].lower()
+    assert "no-journal-marker title" in title or "title" in title
+    assert out["x"]["title"]  # non-empty
+
+
+async def test_verify_uses_bibitem_bodies_end_to_end(tmp_path: Path):
+    """End-to-end: a \\bibitem-only paper with a parseable title goes from
+    'unverifiable' (pre-M4.2) to 'verified_title' (post-M4.2)."""
+    from unittest.mock import AsyncMock, patch
+
+    draft = tmp_path / "paper_draft.tex"
+    draft.write_text(
+        r"""
+        Per \cite{welch2008}, the historical mean is hard to beat.
+        \begin{thebibliography}{}
+        \bibitem[Welch and Goyal(2008)]{welch2008}
+        Welch, I. and Goyal, A. (2008).
+        A comprehensive look at the empirical performance of equity premium prediction.
+        \textit{Review of Financial Studies}, 21(4), 1455--1508.
+        \end{thebibliography}
+        """,
+        encoding="utf-8",
+    )
+    # No DOI in body → DOI chain fails; OpenAlex title-search returns
+    # the canonical paper.
+    canonical = PaperMetadata(
+        title="A Comprehensive Look at the Empirical Performance of Equity Premium Prediction",
+        year=2008,
+        doi="10.1093/rfs/hhm014",
+    )
+    title_hit = type("R", (), {"papers": [canonical]})()
+    empty = type("R", (), {"papers": []})()
+    with (
+        patch("src.core.pipeline.verify_citations.openalex.fetch_by_doi", new=AsyncMock(return_value=None)),
+        patch("src.core.pipeline.verify_citations.semantic_scholar.fetch_by_doi", new=AsyncMock(return_value=None)),
+        patch("src.core.pipeline.verify_citations.crossref.fetch_by_doi", new=AsyncMock(return_value=None)),
+        patch("src.core.pipeline.verify_citations.openalex.search_papers", new=AsyncMock(return_value=title_hit)),
+        patch("src.core.pipeline.verify_citations.semantic_scholar.search_papers", new=AsyncMock(return_value=empty)),
+        patch("src.core.pipeline.verify_citations.crossref.search_papers", new=AsyncMock(return_value=empty)),
+    ):
+        report = await verify(draft)  # No references.bib → bibitem path.
+    assert report.total_cites == 1
+    assert report.verified == 1
+    assert report.checks[0].status == STATUS_VERIFIED_TITLE
+    assert report.checks[0].verifier == "openalex"
+
+
+async def test_verify_bibitem_entry_with_empty_body_is_unverifiable(tmp_path: Path):
+    """If parse_bibitem_entries can't extract a title for an entry,
+    we still report ``unverifiable`` (not ``missing_in_bib``) so the
+    distinction between 'LaTeX would also fail' and 'bib content too
+    sparse to verify' is preserved."""
+    draft = tmp_path / "paper_draft.tex"
+    draft.write_text(
+        r"""
+        See \cite{minimal}.
+        \begin{thebibliography}{}
+        \bibitem{minimal}
+        \end{thebibliography}
+        """,
+        encoding="utf-8",
+    )
+    report = await verify(draft)
+    assert report.total_cites == 1
+    assert report.missing_in_bib == 0
+    assert report.unverifiable == 1
+    assert report.checks[0].status == STATUS_UNVERIFIABLE
 
 
 def test_load_bib(tmp_path: Path):
