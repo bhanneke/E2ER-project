@@ -16,11 +16,16 @@ when data and a code-execution tool are present — it MUST run its
 estimation script before writing the JSON. The specialist did the
 documented-honest thing. The documentation was wrong.
 
-**One-line fix**: amend
-`skills/files/econometrics/estimation-results-schema.md` to require
-execution when data + code-execution tool are both present, before
-the `{}`-is-honest fallback applies. The fallback stays for backends
-that genuinely can't execute.
+**One-line fix**: in `run_specialist`, after the tool_loop returns
+and before the M4.3 contract check, if the specialist is
+`econometrics_specialist` and `run_estimation.py` exists but
+`estimation_results.json` is empty/missing, the runner executes the
+script itself via `subprocess.run`. Backend-agnostic, deterministic,
+idempotent. The skill file's *"write `{}` not fabricated numbers"*
+rule stays correct; the runner just ensures execution happens when
+it can. See [**What needs to change** below](#what-needs-to-change)
+for the design rationale (including the rejected skill-file
+alternative).
 
 ## What I checked
 
@@ -110,50 +115,93 @@ that the skill never says *"…but if you can run it, run it."*
 
 ## What needs to change
 
-### Change #1 (load-bearing) — one paragraph in the skill file
+> **Design note (2026-06-10)**: First draft of this section proposed
+> a skill-file fix — one paragraph telling the specialist *"if you can
+> run, run."* Owner pushed back: *"It would be good to have that more
+> mechanically/deterministically solved."* That's right. A skill-file
+> nudge puts the load-bearing decision back on the LLM. The mechanical
+> fix below puts it on the runner.
 
-Amend `skills/files/econometrics/estimation-results-schema.md` to
-add an **execution requirement** before the `{}`-is-honest fallback:
+### The mechanical fix — runner-side post-specialist execution
 
-```markdown
-## When to write this file
+After the econometrics specialist's tool_loop returns and before the
+M4.3 contract check fires, the **runner** checks:
 
-**Execution requirement.** If the workspace has data files (in
-`data/`, `workspace/data/`, or any path your `data_analyst` peer
-wrote) AND your tool list includes a code-execution tool (Bash,
-python_executor, etc.), you **must** run your estimation script
-against that data and write the JSON from real output. Writing
-`{}` is only acceptable when execution is genuinely impossible —
-no data, no executor — not when you simply chose not to execute.
+- Does `run_estimation.py` exist in the workspace?
+- Is `estimation_results.json` missing, `{}`, `[]`, `null`, or
+  whitespace-only?
 
-**The honest-empty fallback** below applies only when the
-execution requirement above cannot be met.
+If both are true, the runner shells out and executes the script
+itself with a subprocess timeout, captures stdout/stderr to
+`run_estimation.log`, and lets the specialist's own output stand.
+Then M4.3's contract check runs as before.
+
+```python
+# Sketch — actual code in the fix PR.
+def maybe_execute_estimation_script(workspace: Path, specialist: str) -> None:
+    if specialist != "econometrics_specialist":
+        return
+    script = workspace / "run_estimation.py"
+    sidecar = workspace / "estimation_results.json"
+    if not script.is_file():
+        return  # specialist didn't write a script; nothing to run
+    if _sidecar_is_populated(sidecar):
+        return  # specialist already filled it; nothing to do
+    logger.info("post-specialist exec: running %s", script.name)
+    result = subprocess.run(
+        [sys.executable, str(script)],
+        cwd=workspace, capture_output=True, text=True,
+        timeout=600,
+    )
+    (workspace / "run_estimation.log").write_text(
+        f"rc={result.returncode}\n--- stdout ---\n{result.stdout}\n"
+        f"--- stderr ---\n{result.stderr}"
+    )
 ```
 
-The existing "honest empty" section stays — it's the right escape
-hatch for backends without execution tooling. The new paragraph is
-the missing precondition.
+Properties this has that the skill-file fix doesn't:
 
-### Change #2 (companion) — a small skill at `econometrics/run-estimation.md`
+- **Backend-agnostic.** The runner executes via `subprocess.run`,
+  not via the model's tool call. Works identically on `anthropic`,
+  `openrouter`, `claude_code`, `codex`, `gemini` — even on backends
+  that don't expose a code-execution tool to the model at all.
+- **Idempotent.** If the specialist did the right thing and
+  populated the sidecar, the runner sees the populated file and
+  does nothing. No duplicate work.
+- **Auditable.** `run_estimation.log` records the subprocess
+  invocation's exit code and full output. The next reviewer can
+  read it.
+- **Catches the M4 failure mode by construction.** It does not
+  depend on the LLM following any new instruction.
 
-Five-paragraph how-to-execute guide:
+### M4.3 stays as the safety net
 
-- Default invocation: `python run_estimation.py 2>&1 | tail -200`.
-- The `tail` keeps stdout summary inside the turn budget; full
-  artifacts go to disk.
-- After execution, **inspect** `estimation_results.json` — if it
-  came out empty / malformed, fix the script and re-run; don't
-  silently fall back to `{}`.
-- If the executor isn't in the tool list, that's when the fallback
-  applies — and emit one warning line so the strategist sees it.
+The post-specialist execution can fail too — the script might error
+on import, the data shape might not match, the timeout might fire.
+When that happens, `estimation_results.json` stays empty and M4.3
+flips the specialist to `success=False` exactly as today. The two
+mechanisms compose: the post-exec is the *positive* path (make the
+right thing happen), M4.3 is the *negative* path (refuse the wrong
+thing).
 
-### Change #3 (defensive, optional) — strategist visibility
+### What about the skill file
 
-When the strategist plans the econometrics phase on a backend with
-a code-execution tool, the dispatch could log a single line
-*"execution available — econometrics_specialist must run its
-script"*. Cheap, surfaces the expectation in the run log. Skip if
-felt over-engineered.
+Leave it alone for now. The skill's *"if you didn't run, write `{}`
+not fabricated numbers"* guidance is still correct in spirit. With
+the mechanical fix, the specialist's choice between *"run it
+myself"* and *"write `{}` and let the runner handle it"* becomes
+operationally equivalent — both paths produce a populated sidecar
+when execution is possible. A future skill update can simplify the
+guidance, but it's no longer load-bearing.
+
+### Why not generalise across specialists right now
+
+This fix is specific: `econometrics_specialist` + `run_estimation.py`
++ `estimation_results.json`. We could extend the same convention to
+`data_analyst` (e.g., `build_panel.py` → `summary_statistics.json`),
+or `replication_packager` (e.g., `replication/estimation.py` →
+already declared as the primary artifact). Start specific. If the
+re-run shows the convention works, generalise in a follow-up.
 
 ## Why M4.3 isn't enough alone
 
@@ -191,8 +239,9 @@ empirical RQ — the specialist will dutifully write `{}` every time.
 ## Proposed sequence
 
 1. Land this diagnosis doc (this PR).
-2. Land the skill-file fix as a small `fix(skills): econometrics
-   must execute…` PR.
+2. Land the **mechanical fix** as a small `fix(runner):
+   post-specialist execution for econometrics` PR — adds the
+   `maybe_execute_estimation_script` hook above plus tests.
 3. Re-run the M4 Welch-Goyal RQ on the `claude_code` backend.
 4. **If the re-run produces a real `estimation_results.json` and
    survives review** → M5 is done; pick a sharper RQ for the
@@ -200,8 +249,11 @@ empirical RQ — the specialist will dutifully write `{}` every time.
 5. **If it produces real results but fails review for a different
    reason** → file the new finding in `M4_FINDINGS.md` style; iterate
    per the v0.9 plan.
-6. **If it still writes `{}`** → the skill-file fix didn't reach the
-   model; investigate prompt assembly, tool availability per backend.
+6. **If `estimation_results.json` is still empty after the runner
+   ran the script** → the script itself errored. Read
+   `run_estimation.log` (which the post-exec writes), fix the script
+   or the data shape, re-run. This is a debuggable failure, not a
+   skill-prompt failure.
 
 ## Why this is a docs PR
 
