@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Runner-side post-specialist execution (M5 prerequisite)
+
+- **New `src/core/specialists/post_execution.py`** runs a specialist's
+  declared script via `subprocess.run` before M4.3's contract check
+  fires, when the script is on disk but the sidecar is empty. Closes
+  the load-bearing M5 prerequisite identified in
+  [`docs/M4_DIAGNOSIS.md`](docs/M4_DIAGNOSIS.md): in the M4 paper run,
+  the econometrics specialist wrote a correct `run_estimation.py` and
+  then chose to write `estimation_results.json` as `{}` (per the
+  skill file's *"don't fabricate, write empty"* rule), so the paper
+  shipped without findings and the mechanism reviewer correctly
+  rejected it.
+- **Mechanical, not prompt-based**: the runner executes via
+  `subprocess.run`, not via the model's tool call. Backend-agnostic
+  (works on every backend, even ones without code-execution tools
+  exposed to the model). Idempotent (no-op when the sidecar is
+  already populated). Auditable via `run_estimation.log` (subprocess
+  exit code + full stdout/stderr).
+- **Composes with M4.3 (not a replacement)**: post-exec is the
+  positive path *"make the right thing happen"*; M4.3 stays the
+  negative path *"refuse the wrong thing"*. If post-exec also fails
+  (script error, timeout, data-shape mismatch), the sidecar stays
+  empty and M4.3 flips the specialist to `success=False` exactly as
+  today.
+- **Registry-driven**: `EXECUTION_CONVENTIONS` maps specialist →
+  script + sidecar + audit log + timeout. Starts narrow with
+  `econometrics_specialist` + `run_estimation.py` +
+  `estimation_results.json` (the M4 case). Extending to
+  `data_analyst` (`build_panel.py` → `summary_statistics.json`) and
+  `replication_packager` is a single-line addition after the first
+  re-run validates the convention.
+- Tests: 16 new in `tests/test_post_execution.py` — the M4 case
+  (script writes populated JSON, sidecar gets populated, M4.3
+  passes), script-errors path (audit log captures traceback, M4.3
+  still rejects), exit-zero-without-writing path (M4.3 catches the
+  silent failure), idempotency (populated sidecar = no-op),
+  specialist without convention = no-op, plus six unit tests on
+  the `_is_sidecar_populated` JSON-rules helper.
+
 ### v0.9 M4.3 — Specialist output-contract enforcement
 
 - **New `src/core/specialists/contract_check.py`** validates that a

@@ -105,6 +105,27 @@ async def run_specialist(
         result.usage.total_tokens,
     )
 
+    # v0.9 post-M4.3: runner-side post-specialist execution. The
+    # positive path that complements M4.3's negative path — if the
+    # specialist wrote a known execution-script (e.g.
+    # `run_estimation.py` for econometrics_specialist) but didn't
+    # populate the sidecar, the runner shells out and executes the
+    # script itself. Backend-agnostic, idempotent, auditable.
+    # See docs/M4_DIAGNOSIS.md for the diagnosis this fixes.
+    if result.success:
+        from .post_execution import maybe_execute_specialist_script
+
+        attempt = maybe_execute_specialist_script(workspace, specialist)
+        if attempt.ran:
+            logger.info(
+                "%s: post-exec ran=%s rc=%s populated=%s reason=%s",
+                specialist,
+                attempt.ran,
+                attempt.returncode,
+                attempt.populated_sidecar,
+                attempt.reason,
+            )
+
     # v0.9 M4.3: output-contract enforcement. A specialist that
     # returns success=True while its declared artifact is empty
     # (e.g., M4's estimation_results.json == "{}") is a false-success
