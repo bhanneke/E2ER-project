@@ -46,7 +46,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   specialist without convention = no-op, plus six unit tests on
   the `_is_sidecar_populated` JSON-rules helper.
 
-### v0.9 M4.3 — Specialist output-contract enforcement
+## v0.8.2 — 2026-06-10
+
+Cumulative bugfix + capability release on the v0.8 line. Contains the
+seven milestones (M1-M3 + M4.1-M4.3) that were developed against the
+v0.9 plan in [`docs/V0.9_PLAN.md`](docs/V0.9_PLAN.md). They ship in
+v0.8.2 because **the v0.9.0 tag is now gated on M5 producing a paper
+that survives review under real conditions** — the v0.9 plan's own
+*"install → trust loop closed"* bar. M1-M4.x are necessary but not
+sufficient for that gate: the orchestration layer caught its own
+failures correctly in the M4 live run, but the pipeline has never
+produced a successful end-to-end paper. See
+[`docs/VERSIONING_RESET.md`](docs/VERSIONING_RESET.md) for the
+argument and [`docs/M4_FINDINGS.md`](docs/M4_FINDINGS.md) for the
+live-run findings the M4.x fixes close.
+
+The `Mi (v0.9 plan)` subsection headings below preserve the
+cross-reference to the v0.9 plan document; the work itself ships on
+the v0.8 line.
+
+### M4.3 (v0.9 plan) — Specialist output-contract enforcement
 
 - **New `src/core/specialists/contract_check.py`** validates that a
   specialist's declared artifact (primary + any sidecars in
@@ -87,7 +106,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `figure_spec.json`, `estimation_results.json`) so reflexive
   mocks of `econometrics_specialist` / `data_analyst` still pass.
 
-### v0.9 M4.2 — `verify_citations` parses `\bibitem` bodies
+### M4.2 (v0.9 plan) — `verify_citations` parses `\bibitem` bodies
 
 - **New `parse_bibitem_entries(tex)`** in `src/core/pipeline/verify_citations.py`:
   parses the text between consecutive `\bibitem` commands (and between
@@ -121,7 +140,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fallback, end-to-end verify, and empty-body unverifiable
   preservation.
 
-### v0.9 M4.1 — Cost tracker zeros for flat-rate CLI backends
+### M4.1 (v0.9 plan) — Cost tracker zeros for flat-rate CLI backends
 
 - **`compute_cost(model, usage, backend=...)`** now returns
   `Decimal("0")` when `backend` is `claude_code`, `codex`, or `gemini`.
@@ -143,7 +162,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `resume --max-cost 100` to keep the paper moving. With M4.1, the
   budget cap stays inactive on the $0 backends.
 
-### v0.9 M3 — Open-access full-text reach
+### M3 (v0.9 plan) — Open-access full-text reach
 
 - **New OA-PDF resolver chain** (`src/modules/literature/oa_resolvers.py`)
   separate from the metadata-fetch chain. One job: produce an OA PDF
@@ -181,7 +200,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cache (hit + miss + short-circuit-after-first-hit), and the
   `_read_reference` fall-through path.
 
-### v0.9 M2 — Citation-integrity gate
+### M2 (v0.9 plan) — Citation-integrity gate
 
 - **New `e2er verify-citations` command + pre-review gate.** Mechanical,
   deterministic anti-hallucination for references: parses every
@@ -223,7 +242,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unverifiable warn-vs-strict, DOI-chain fallthrough to title search,
   persistence to `citation_integrity.json`, and CLI registration.
 
-### v0.9 M1 — `e2er doctor` user-facing preflight
+### M1 (v0.9 plan) — `e2er doctor` user-facing preflight
 
 - **New `e2er doctor` command.** Answers "am I ready to spend a paper run?"
   before the user does — checks the LLM backend (CLI on PATH for `$0`
