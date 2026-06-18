@@ -141,6 +141,33 @@ def test_normalizes_alternate_output_onto_canonical_sidecar(tmp_path: Path):
     assert "analysis_output.json" in log
 
 
+# ── Relative workspace path (the runner's real call shape) ─────────────────
+
+
+def test_runs_with_relative_workspace_path(tmp_path: Path, monkeypatch):
+    """Regression: the runner passes a cwd-relative workspace path (e.g.
+    `Tests/workspaces/<id>`). The first version joined it onto
+    `cwd=workspace`, doubling the prefix
+    (`<ws>/<ws>/run_estimation.py`) so the subprocess exited 2 and the
+    sidecar stayed `{}`. Resolving the workspace to absolute fixes it.
+    The other tests use an absolute `tmp_path`, which masked this."""
+    ws = tmp_path / "Tests" / "workspaces" / "abc"
+    ws.mkdir(parents=True)
+    (ws / "run_estimation.py").write_text(
+        "import json, pathlib\n"
+        "pathlib.Path('estimation_results.json').write_text(json.dumps({'dp': {'oos_r2': 0.009}}))\n",
+        encoding="utf-8",
+    )
+    (ws / "estimation_results.json").write_text("{}", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    attempt = maybe_execute_specialist_script(Path("Tests/workspaces/abc"), "econometrics_specialist")
+    assert attempt.ran is True
+    assert attempt.returncode == 0, f"script failed: {attempt.reason}"
+    assert attempt.populated_sidecar is True
+    data = json.loads((ws / "estimation_results.json").read_text())
+    assert data["dp"]["oos_r2"] == 0.009
+
+
 # ── Sidecar already populated → no-op (idempotent) ─────────────────────────
 
 

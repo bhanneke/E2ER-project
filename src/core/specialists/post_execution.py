@@ -230,6 +230,12 @@ def maybe_execute_specialist_script(workspace: Path, specialist: str) -> Executi
     — every error path returns a populated record so the caller can log
     it without try/except.
     """
+    # The runner passes a workspace path relative to its cwd (e.g.
+    # ``Tests/workspaces/<id>``). Resolve to absolute up front: otherwise
+    # the subprocess below runs with ``cwd=workspace`` AND a
+    # workspace-relative script path, doubling the prefix
+    # (``<ws>/<ws>/run_estimation.py``) and failing with "No such file".
+    workspace = Path(workspace).resolve()
     convention = EXECUTION_CONVENTIONS.get(specialist)
     if convention is None:
         return ExecutionAttempt(
