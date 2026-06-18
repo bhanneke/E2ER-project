@@ -21,7 +21,11 @@ dependencies = [
     "arxiv>=2.1.0",
     "bibtexparser>=2.0.0b7",
     "pypdf>=4.0",
-    "pandas>=2.0",
+    # Cap below 3.0: pandas 3.0 removed legacy offset aliases ('M', 'Y', …).
+    # LLM-generated estimation scripts use `resample("M")` (the pre-3.0
+    # idiom), which raises on 3.x. Pin to the 2.x line the generated code
+    # targets. See docs/M4_RERUN_FINDINGS.md.
+    "pandas>=2.0,<3.0",
     "numpy>=1.26",
     "matplotlib>=3.8",
     "yfinance>=0.2.40",
