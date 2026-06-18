@@ -182,6 +182,23 @@ SPECIALIST_SIDECAR_ARTIFACTS: dict[str, list[str]] = {
     ],
 }
 
+# Best-effort sidecars: prompted (they stay in SPECIALIST_SIDECAR_ARTIFACTS,
+# so the multi-file output block still asks for them) and validated by
+# verify_numbers when present — but NOT hard-gated by the M4.3 contract
+# check at the specialist boundary.
+#
+# Why figure_spec.json is here: specialists have no general code-execution
+# tool (see modules/llm/claude_code.py), and a figure spec's values are
+# *derived* from the analysis the runner executes post-hoc — so the model
+# legitimately can't author populated figure values at the data-design
+# boundary. Hard-gating it there killed the M5 re-run in the design phase
+# (docs/M4_RERUN_FINDINGS.md). Figures are a paper-assembly concern: they
+# get authored in the iterative phase and checked by verify_numbers if
+# present, which is the right place to enforce them.
+SPECIALIST_OPTIONAL_SIDECARS: dict[str, frozenset[str]] = {
+    "data_analyst": frozenset({"figure_spec.json"}),
+}
+
 
 REVIEWER_SPECIALISTS = [
     "mechanism_reviewer",

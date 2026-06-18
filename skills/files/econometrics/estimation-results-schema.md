@@ -28,6 +28,30 @@ Two consumers depend on this file:
   real data, write `estimation_results.json` as `{}` rather than
   fabricating values. The empty file is the honest signal.
 
+## How estimation actually runs — write a script, the runner executes it
+
+You do **not** have a general code-execution tool: you can read data and
+write files, but you cannot run Python yourself. That is by design. So
+the way to "run estimation" is:
+
+1. Write your estimation code as a script named **exactly
+   `run_estimation.py`** in the workspace root. It must read the
+   workspace data files and write its numeric output to **exactly
+   `estimation_results.json`**.
+2. Finish your turn. After you return, the **runner executes
+   `run_estimation.py` for you** and validates that
+   `estimation_results.json` came out populated. The run is logged to
+   `run_estimation.log` (exit code + stdout/stderr) for the next reviewer.
+
+Naming matters: the runner looks for `run_estimation.py` →
+`estimation_results.json` first. If you must use other names it will try
+to discover the script by content, but the canonical names are the
+reliable path — use them.
+
+This means: when the workspace has data, the correct action is almost
+always **write `run_estimation.py`**, not give up. "I could not run
+estimation" is only true when there is genuinely no data to estimate on.
+
 ## Required shape
 
 A JSON object with one entry per estimated specification. Each entry
@@ -131,9 +155,15 @@ appear exactly once across the two files.
    that traces back from the citation. Convention:
    `> Source: estimation_results.json#main.coefficients.treatment`.
 
-## Failure modes — write `{}`, not no file
+## Failure modes — write `{}` only when estimation is genuinely impossible
 
-If you specified the model but did not run estimation:
+`{}` is the honest signal **only** when there is no data to estimate on
+(no usable files in the workspace). When data IS present, do not write
+`{}` and stop — write `run_estimation.py` (see above) and let the runner
+execute it. Writing `{}` while data is available, instead of writing the
+script, is the M4 failure mode and will fail the output-contract check.
+
+If estimation is genuinely impossible (no data):
 
 - Write `estimation_results.json` as `{}`.
 - The drafter sees an empty JSON and produces a "design without

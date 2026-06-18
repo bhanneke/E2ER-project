@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Post-specialist execution — script discovery + output normalization (M5 re-run fix)
+
+- **Hardens the runner-side execution from the previous entry** after the
+  M5 re-run failed in the design phase
+  ([`docs/M4_RERUN_FINDINGS.md`](docs/M4_RERUN_FINDINGS.md)). The first
+  version keyed on a single hardcoded `run_estimation.py` /
+  `estimation_results.json`; the re-run's specialist named its script
+  `analyze.py` writing `analysis_output.json`, so the runner found
+  nothing and no-op'd. The brittleness had moved from *"did the model run
+  the script?"* to *"did the model name it canonically?"* — still a
+  model-judgment dependency.
+- **Script discovery** (`_discover_script`): an ordered list of canonical
+  candidate names is tried first, then a `*.py` glob keeping the script
+  whose source references the target sidecar or a declared alternate
+  output. `ExecutionConvention` now carries `script_candidates` +
+  `output_candidates` instead of a single `script`.
+- **Output normalization** (`_normalize_output`): if the discovered
+  script writes a populated alternate output (`analysis_output.json`)
+  rather than the canonical sidecar, the runner copies it onto the
+  canonical name so M4.3 sees it. Recorded in the audit log and on
+  `ExecutionAttempt.normalized_from` / `.discovered`.
+- **`data_analyst` execution convention** added (script →
+  `summary_statistics.json`), same discovery/normalization machinery.
+- **`figure_spec.json` is now a best-effort sidecar**
+  (`registry.SPECIALIST_OPTIONAL_SIDECARS`): still prompted and checked
+  by verify_numbers when present, but no longer hard-gated by M4.3 at the
+  data-design boundary — it has no deterministic producer there (its
+  values derive from analysis the model can't run). This is what
+  unblocks the parallel design-phase batch.
+- **Skill nudge** (`econometrics/estimation-results-schema.md`): explains
+  the specialist has no code-execution tool, so the way to run estimation
+  is to write `run_estimation.py` → `estimation_results.json` and let the
+  runner execute it. Best-effort fast-path; discovery is the backstop.
+- Tests: +6 in `test_post_execution.py` (glob discovery, output
+  normalization, `data_analyst` convention) and +1 in
+  `test_contract_check.py` (best-effort `figure_spec.json` not gated).
+  Full suite green (841).
+
 ### Runner-side post-specialist execution (M5 prerequisite)
 
 - **New `src/core/specialists/post_execution.py`** runs a specialist's
