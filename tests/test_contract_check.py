@@ -145,12 +145,27 @@ def test_all_required_artifacts_present_passes(tmp_path: Path):
 
 
 def test_data_analyst_sidecars_checked(tmp_path: Path):
-    """data_analyst declares summary_statistics.json + figure_spec.json."""
+    """data_analyst's summary_statistics.json is hard-gated."""
     (tmp_path / "data_summary.md").write_text("# Data\n\n" + "Real content. " * 20, encoding="utf-8")
     (tmp_path / "summary_statistics.json").write_text("{}", encoding="utf-8")  # bad
     (tmp_path / "figure_spec.json").write_text(json.dumps({"figs": ["f1"]}), encoding="utf-8")
     failed = [c.artifact for c in check_specialist_artifacts(tmp_path, "data_analyst") if not c.ok]
     assert failed == ["summary_statistics.json"]
+
+
+def test_data_analyst_figure_spec_is_best_effort_not_gated(tmp_path: Path):
+    """figure_spec.json is a best-effort sidecar (SPECIALIST_OPTIONAL_SIDECARS):
+    an empty one must NOT fail the contract when the required artifacts are
+    present. This is the M5 re-run unblock — figures have no deterministic
+    producer at the data-design boundary."""
+    (tmp_path / "data_summary.md").write_text("# Data\n\n" + "Real content. " * 20, encoding="utf-8")
+    (tmp_path / "summary_statistics.json").write_text(json.dumps({"n": 407}), encoding="utf-8")
+    (tmp_path / "figure_spec.json").write_text("{}", encoding="utf-8")  # empty, but optional
+    checks = check_specialist_artifacts(tmp_path, "data_analyst")
+    failed = [c.artifact for c in checks if not c.ok]
+    assert failed == []
+    # figure_spec.json isn't even checked (skipped, not just passed).
+    assert "figure_spec.json" not in [c.artifact for c in checks]
 
 
 def test_unknown_specialist_returns_no_checks(tmp_path: Path):

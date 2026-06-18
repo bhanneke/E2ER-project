@@ -27,9 +27,14 @@ Coverage:
 - The specialist's PRIMARY artifact (``SPECIALIST_ARTIFACTS[name]``)
   is always checked.
 - Listed sidecars (``SPECIALIST_SIDECAR_ARTIFACTS[name]``) are
-  required and checked too. Optional sidecars not in the registry
-  (e.g., ``robustness_results.json`` for ``econometrics_specialist``)
-  are not checked — they're "produce if you ran the analysis".
+  required and checked too — EXCEPT those in
+  ``SPECIALIST_OPTIONAL_SIDECARS[name]`` (e.g. ``figure_spec.json`` for
+  ``data_analyst``), which are best-effort: still prompted and checked
+  by verify_numbers when present, but not hard-gated here because they
+  have no deterministic producer at the specialist boundary.
+- Optional sidecars not in the registry at all (e.g.,
+  ``robustness_results.json`` for ``econometrics_specialist``) are not
+  checked — they're "produce if you ran the analysis".
 - Specialists not in ``SPECIALIST_ARTIFACTS`` (none today, but if any
   appear) get no contract check — better to be silent than to false-
   trip on undeclared outputs.
@@ -127,12 +132,21 @@ def check_specialist_artifacts(workspace: Path, specialist: str) -> list[Contrac
     """
     # Imported lazily so this module stays dependency-light and can
     # be unit-tested without the registry side effects.
-    from .registry import SPECIALIST_ARTIFACTS, SPECIALIST_SIDECAR_ARTIFACTS
+    from .registry import (
+        SPECIALIST_ARTIFACTS,
+        SPECIALIST_OPTIONAL_SIDECARS,
+        SPECIALIST_SIDECAR_ARTIFACTS,
+    )
 
     checks: list[ContractCheck] = []
     primary = SPECIALIST_ARTIFACTS.get(specialist)
     if primary:
         checks.append(check_artifact_nonempty(workspace, primary))
+    # Best-effort sidecars are prompted + verify_numbers-checked when
+    # present, but not hard-gated here (no deterministic producer).
+    optional = SPECIALIST_OPTIONAL_SIDECARS.get(specialist, frozenset())
     for sidecar in SPECIALIST_SIDECAR_ARTIFACTS.get(specialist, []):
+        if sidecar in optional:
+            continue
         checks.append(check_artifact_nonempty(workspace, sidecar))
     return checks

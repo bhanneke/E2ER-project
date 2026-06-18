@@ -7,51 +7,51 @@ from pathlib import Path
 
 from src.core.specialists.post_execution import (
     EXECUTION_CONVENTIONS,
-    _is_sidecar_populated,
+    _is_populated,
     maybe_execute_specialist_script,
 )
 
-# ── _is_sidecar_populated ────────────────────────────────────────────────────
+# ── _is_populated ────────────────────────────────────────────────────
 
 
 def test_sidecar_populated_with_real_json(tmp_path: Path):
     path = tmp_path / "x.json"
     path.write_text(json.dumps({"main": {"coef": 0.04}}), encoding="utf-8")
-    assert _is_sidecar_populated(path) is True
+    assert _is_populated(path) is True
 
 
 def test_sidecar_not_populated_empty_dict(tmp_path: Path):
     path = tmp_path / "x.json"
     path.write_text("{}", encoding="utf-8")
-    assert _is_sidecar_populated(path) is False
+    assert _is_populated(path) is False
 
 
 def test_sidecar_not_populated_empty_list(tmp_path: Path):
     path = tmp_path / "x.json"
     path.write_text("[]", encoding="utf-8")
-    assert _is_sidecar_populated(path) is False
+    assert _is_populated(path) is False
 
 
 def test_sidecar_not_populated_null(tmp_path: Path):
     path = tmp_path / "x.json"
     path.write_text("null", encoding="utf-8")
-    assert _is_sidecar_populated(path) is False
+    assert _is_populated(path) is False
 
 
 def test_sidecar_not_populated_whitespace(tmp_path: Path):
     path = tmp_path / "x.json"
     path.write_text("   \n\t ", encoding="utf-8")
-    assert _is_sidecar_populated(path) is False
+    assert _is_populated(path) is False
 
 
 def test_sidecar_not_populated_invalid_json(tmp_path: Path):
     path = tmp_path / "x.json"
     path.write_text("{not json}", encoding="utf-8")
-    assert _is_sidecar_populated(path) is False
+    assert _is_populated(path) is False
 
 
 def test_sidecar_not_populated_missing(tmp_path: Path):
-    assert _is_sidecar_populated(tmp_path / "nope.json") is False
+    assert _is_populated(tmp_path / "nope.json") is False
 
 
 # ── No convention for the specialist → no-op ───────────────────────────────
@@ -67,10 +67,18 @@ def test_specialist_without_convention_is_noop(tmp_path: Path):
 def test_econometrics_registered_in_conventions():
     """If this fails, the wire-in has drifted away from the diagnosis."""
     convention = EXECUTION_CONVENTIONS["econometrics_specialist"]
-    assert convention.script == "run_estimation.py"
+    assert "run_estimation.py" in convention.script_candidates
+    # Canonical name must be tried first.
+    assert convention.script_candidates[0] == "run_estimation.py"
     assert convention.sidecar == "estimation_results.json"
     assert convention.log == "run_estimation.log"
     assert convention.timeout_seconds > 0
+
+
+def test_data_analyst_registered_in_conventions():
+    convention = EXECUTION_CONVENTIONS["data_analyst"]
+    assert convention.sidecar == "summary_statistics.json"
+    assert convention.script_candidates  # non-empty
 
 
 # ── Script missing → no-op ─────────────────────────────────────────────────
@@ -80,7 +88,57 @@ def test_no_script_in_workspace_is_noop(tmp_path: Path):
     attempt = maybe_execute_specialist_script(tmp_path, "econometrics_specialist")
     assert attempt.ran is False
     assert attempt.populated_sidecar is False
-    assert "not present" in attempt.reason
+    assert "no runnable script" in attempt.reason
+
+
+# ── Script discovery: non-canonical filename, found by content ─────────────
+
+
+def test_discovers_script_by_content_when_not_canonically_named(tmp_path: Path):
+    """A specialist that named its script something off-list but writes the
+    canonical sidecar must be discovered by content and executed. The
+    filename here is deliberately NOT in script_candidates, forcing the
+    glob path. (`analyze.py` IS a candidate and is covered by the fast path.)"""
+    (tmp_path / "welch_goyal_analysis.py").write_text(
+        "import json, pathlib\n"
+        "pathlib.Path('estimation_results.json').write_text("
+        "  json.dumps({'dp': {'oos_r2': 0.009}}))\n"
+        "print('analyzed')\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "estimation_results.json").write_text("{}", encoding="utf-8")
+    attempt = maybe_execute_specialist_script(tmp_path, "econometrics_specialist")
+    assert attempt.ran is True
+    assert attempt.returncode == 0
+    assert attempt.discovered is True
+    assert attempt.populated_sidecar is True
+    assert attempt.script == "welch_goyal_analysis.py"
+
+
+# ── Output normalization: script writes an alternate output name ───────────
+
+
+def test_normalizes_alternate_output_onto_canonical_sidecar(tmp_path: Path):
+    """The exact M5 re-run case: `analyze.py` writes `analysis_output.json`
+    (an alternate), not `estimation_results.json`. The runner runs it and
+    copies the populated alternate onto the canonical sidecar so M4.3 sees it."""
+    (tmp_path / "analyze.py").write_text(
+        "import json, pathlib\n"
+        "pathlib.Path('analysis_output.json').write_text("
+        "  json.dumps({'dp': {'is_r2': 0.011, 'oos_r2': 0.009, 'cw': 1.20}}))\n"
+        "print('done')\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "estimation_results.json").write_text("{}", encoding="utf-8")
+    attempt = maybe_execute_specialist_script(tmp_path, "econometrics_specialist")
+    assert attempt.ran is True
+    assert attempt.populated_sidecar is True
+    assert attempt.normalized_from == "analysis_output.json"
+    data = json.loads((tmp_path / "estimation_results.json").read_text())
+    assert data["dp"]["oos_r2"] == 0.009
+    # Audit log records the normalization.
+    log = (tmp_path / "run_estimation.log").read_text(encoding="utf-8")
+    assert "analysis_output.json" in log
 
 
 # ── Sidecar already populated → no-op (idempotent) ─────────────────────────
