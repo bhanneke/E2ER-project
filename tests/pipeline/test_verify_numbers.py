@@ -507,3 +507,67 @@ def test_fabricated_data_cell_still_caught(tmp_path: Path):
     )
     report = verify(draft, tmp_path)
     assert report.critical_mismatches, "0.80 vs source 0.50 should be a critical mismatch"
+
+
+# ---------------------------------------------------------------------------
+# PR-2: non-gating prose check + key-resolution feedback.
+# ---------------------------------------------------------------------------
+
+
+def _ws_with_est(tmp_path: Path, est: dict, draft: str) -> Path:
+    (tmp_path / "estimation_results.json").write_text(json.dumps(est), encoding="utf-8")
+    (tmp_path / "paper_draft.tex").write_text(draft, encoding="utf-8")
+    return tmp_path
+
+
+def test_prose_number_matched(tmp_path: Path):
+    est = {"main": {"coefficients": {"x": {"estimate": -0.231}}}}
+    ws = _ws_with_est(tmp_path, est, "The treatment effect is $-0.231$ overall.\n")
+    report = verify(tmp_path / "paper_draft.tex", ws)
+    assert report.prose_total >= 1
+    assert report.prose_matched >= 1
+
+
+def test_prose_near_miss_flagged_major_never_critical(tmp_path: Path):
+    est = {"main": {"coefficients": {"x": {"estimate": 0.50}}}}
+    ws = _ws_with_est(tmp_path, est, "We estimate an effect of $0.80$ in the text.\n")
+    report = verify(tmp_path / "paper_draft.tex", ws)
+    assert report.prose_mismatched >= 1
+    assert all(m.severity == "major" for m in report.prose_mismatches)
+    # Prose never gates: not in critical_mismatches, doesn't reject.
+    assert report.critical_mismatches == []
+
+
+def test_prose_unrelated_number_ignored(tmp_path: Path):
+    """A year with no close source value must NOT be flagged."""
+    est = {"main": {"coefficients": {"x": {"estimate": 0.0136}}}}
+    ws = _ws_with_est(tmp_path, est, "Our sample runs through the year 2024 across regimes.\n")
+    report = verify(tmp_path / "paper_draft.tex", ws)
+    assert report.prose_mismatched == 0
+
+
+def test_prose_does_not_gate_the_pipeline(tmp_path: Path):
+    """Even with a prose near-miss, with no table criticals the gate passes."""
+    est = {"main": {"coefficients": {"x": {"estimate": 0.50}}}}
+    ws = _ws_with_est(tmp_path, est, "The text claims $0.80$ but there are no tables.\n")
+    report = verify(tmp_path / "paper_draft.tex", ws)
+    assert report.critical_mismatches == []  # the runner gates on this only
+
+
+def test_table_spec_feedback_surfaced(tmp_path: Path):
+    """Unresolved table_spec refs from table_render_report.json are surfaced
+    with available spec keys so the drafter can fix them."""
+    (tmp_path / "estimation_results.json").write_text(
+        json.dumps({"full_dp": {"coefficients": {}}, "_meta": {}}), encoding="utf-8"
+    )
+    (tmp_path / "table_render_report.json").write_text(
+        json.dumps({"unresolved": [{"kind": "spec_key", "ref": "weird_key"}, {"kind": "stat", "ref": "cw_stat"}]}),
+        encoding="utf-8",
+    )
+    (tmp_path / "paper_draft.tex").write_text("No tables here.\n", encoding="utf-8")
+    report = verify(tmp_path / "paper_draft.tex", tmp_path)
+    refs = {e["ref"] for e in report.table_spec_unresolved}
+    assert {"weird_key", "cw_stat"} <= refs
+    spec_entry = next(e for e in report.table_spec_unresolved if e["ref"] == "weird_key")
+    assert "full_dp" in spec_entry["available_spec_keys"]
+    assert "_meta" not in spec_entry["available_spec_keys"]  # meta excluded

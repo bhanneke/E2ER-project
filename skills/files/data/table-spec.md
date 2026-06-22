@@ -86,9 +86,17 @@ flagged as unresolved.
 
 1. **Numbers come from code, never from you.** Author structure + labels +
    caption + notes only.
-2. **Every `spec_key` and `var`/`field` must be a real key** in
-   `estimation_results.json` / `robustness_results.json`. Check the actual JSON
-   the econometrics specialist produced; do not invent specification names.
+2. **Read `estimation_results.json` first and use its EXACT keys.** Open the
+   file, look at the top-level spec keys and the field names inside
+   (`coefficients`, `diagnostics`, `forecast_evaluation`), and copy them
+   verbatim into `spec_key` / `var` / `field`. The econometrics specialist
+   chooses the names — e.g. it may write `full_dp` (not `dp_full`) and
+   `clark_west_stat` (not `cw_stat`). Do not guess or abbreviate. The renderer
+   will auto-correct pure word-order differences (`dp_full` ↔ `full_dp`), but
+   it cannot invent a field that isn't there — a wrong/abbreviated name renders
+   `---` and is reported in `table_render_report.json`. After rendering, if
+   that report lists unresolved references, fix your `table_spec.json` to use
+   the exact keys it lists as available.
 3. `filename` ends in `.tex`, has no path separators, and is what you `\input`.
 4. `label` is what you `\ref`. Keep them consistent across the spec and prose.
 5. One table per results display (main results, robustness, …). Put each in its
