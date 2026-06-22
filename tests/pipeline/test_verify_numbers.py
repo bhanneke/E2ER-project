@@ -438,3 +438,72 @@ def test_critical_mismatches_property_filters_severity():
     crits = report.critical_mismatches
     assert len(crits) == 1
     assert crits[0].severity == "critical"
+
+
+# ---------------------------------------------------------------------------
+# PR-1 tokenizer fix: structural / panel-label tokens must NOT be extracted
+# (the false-positive class that rejected correct papers — M5 re-run 92626bf8),
+# while real data-cell numbers and genuine fabrications are still handled.
+# ---------------------------------------------------------------------------
+
+
+def test_multicolumn_panel_rows_not_extracted():
+    """\\multicolumn span counts and label years inside panel-header rows
+    must not be read as data values."""
+    tex = r"""
+\begin{table}
+\caption{Main}
+\label{tab:main}
+\begin{tabular}{lccccc}
+\toprule
+ & $\hat\beta$ & HAC SE & IS $R^2$ & OOS $R^2$ & CW \\
+\midrule
+\multicolumn{6}{l}{\emph{Panel A: Full sample} ($N\le 435$)} \\
+\midrule
+Dividend-price & 0.013578 & 0.008308 & 0.0077 & 0.0063 & 1.114 \\
+\midrule
+\multicolumn{6}{l}{\emph{Panel B: Post-2008} ($N=196$)} \\
+\midrule
+Dividend-price & 0.015081 & 0.030729 & 0.0032 & 0.0005 & 0.314 \\
+\bottomrule
+\end{tabular}
+\end{table}
+"""
+    nums = {n for n, _ in _extract_table_numbers(tex)}
+    # Structural / label tokens absent:
+    assert "6" not in nums  # \multicolumn{6}
+    assert "2008" not in nums  # "Post-2008"
+    assert "435" not in nums and "196" not in nums  # panel-label N's
+    # Real data-cell values present:
+    assert "0.013578" in nums and "1.114" in nums and "0.015081" in nums
+
+
+def test_cmidrule_and_multicolumn_header_ranges_not_extracted():
+    tex = r"""
+\begin{tabular}{lcccc}
+\toprule
+ & \multicolumn{2}{c}{CT-restricted} & \multicolumn{2}{c}{Rolling 120-month} \\
+\cmidrule(lr){2-3} \cmidrule(lr){4-5}
+Predictor & 0.0074 & 1.243 & -0.0258 & 0.455 \\
+\bottomrule
+\end{tabular}
+"""
+    nums = {n for n, _ in _extract_table_numbers(tex)}
+    for tok in ("2", "3", "4", "5", "120"):  # cmidrule ranges, span counts, label "120"
+        assert tok not in nums
+    assert "0.0074" in nums and "1.243" in nums
+
+
+def test_fabricated_data_cell_still_caught(tmp_path: Path):
+    """The fix must not gut the gate: a wrong number in a plain data row is
+    still a critical mismatch."""
+    (tmp_path / "estimation_results.json").write_text(
+        json.dumps({"main": {"coefficients": {"x": {"estimate": 0.50}}}}), encoding="utf-8"
+    )
+    draft = tmp_path / "paper_draft.tex"
+    draft.write_text(
+        "\\begin{tabular}{lc}\n\\toprule\nTreatment & 0.80 \\\\\n\\bottomrule\n\\end{tabular}\n",
+        encoding="utf-8",
+    )
+    report = verify(draft, tmp_path)
+    assert report.critical_mismatches, "0.80 vs source 0.50 should be a critical mismatch"

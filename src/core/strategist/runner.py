@@ -536,6 +536,17 @@ class PipelineRunner:
         """
         logger.info("Running review phase for paper %s", self._paper_id)
 
+        # Render results tables deterministically from the JSON sidecars
+        # BEFORE the gate runs. Numbers in tables/*.tex come from
+        # estimation_results.json / robustness_results.json, so they can't be
+        # fabricated; verify_numbers then only sees correct-by-construction
+        # tables (it does not resolve \input) plus any hand-written prose.
+        # Idempotent — safe to call again at compile time.
+        from ..renderer.tables import ensure_input_stubs, render_tables
+
+        render_tables(self._workspace)
+        ensure_input_stubs(self._workspace)
+
         # --- verify_numbers pre-review gate (v0.5.0; v0.6 auto-patch loop) ---
         from ..pipeline.verify_numbers import verify_and_save
 
@@ -1146,8 +1157,14 @@ class PipelineRunner:
     async def _run_compile_phase(self) -> None:
         """Compile paper_draft.tex to PDF. Non-fatal — PDF is a bonus output."""
         try:
+            # Re-render tables from the current spec + sidecars (a revision may
+            # have changed either), then backfill stubs for any dangling
+            # \input so a missing table can't abort the whole compile.
             from ..renderer.compiler import compile_latex
+            from ..renderer.tables import ensure_input_stubs, render_tables
 
+            render_tables(self._workspace)
+            ensure_input_stubs(self._workspace)
             pdf = await compile_latex(self._workspace)
             if pdf:
                 logger.info("Compiled PDF: %s", pdf)
