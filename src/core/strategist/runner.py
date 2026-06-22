@@ -1060,20 +1060,36 @@ class PipelineRunner:
             await self._update_status(PaperStatus.REJECTED, error=error_msg)
             return PaperStatus.REJECTED
 
-        if merge_result.fully_applied:
-            logger.info(
-                "Paper %s: applied %d edits, draft patched + diff written",
-                self._paper_id,
-                merge_result.n_applied,
-            )
+        # Partial application is progress, not failure. Edits the merger
+        # dropped — out-of-scope (its scope-enforcement job, e.g. an
+        # over-reaching `paper:full` edit when findings are section-scoped) or
+        # unmatchable (stale `find` text) — are logged but NOT fatal. Rejecting
+        # a near-complete paper that the in-scope edits already revised throws
+        # away good work; this mirrors the self-attack path's tolerance.
+        # REJECT only when the patch achieved nothing (no edit applied).
+        if merge_result.n_applied > 0:
+            if merge_result.failed:
+                dropped = "; ".join(f"[{r.edit.target}] {r.error}" for r in merge_result.failed[:3])
+                logger.warning(
+                    "Paper %s: applied %d edit(s); dropped %d (non-fatal): %s",
+                    self._paper_id,
+                    merge_result.n_applied,
+                    merge_result.n_failed,
+                    dropped,
+                )
+            else:
+                logger.info(
+                    "Paper %s: applied %d edits, draft patched + diff written",
+                    self._paper_id,
+                    merge_result.n_applied,
+                )
             await self._update_status(PaperStatus.COMPLETED)
             return PaperStatus.COMPLETED
 
+        # Nothing applied — the revision didn't happen (every edit was
+        # out-of-scope or unmatchable). Surface for operator revise + resume.
         first_failures = "; ".join(f"[{r.edit.target}] {r.error}" for r in merge_result.failed[:3])
-        error_msg = (
-            f"patch_revisor: {merge_result.n_applied} edits applied, "
-            f"{merge_result.n_failed} failed. First failures: {first_failures}"
-        )
+        error_msg = f"patch_revisor: 0 edits applied, {merge_result.n_failed} failed. First failures: {first_failures}"
         logger.warning("Paper %s: %s", self._paper_id, error_msg)
         await self._update_status(PaperStatus.REJECTED, error=error_msg)
         return PaperStatus.REJECTED

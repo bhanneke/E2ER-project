@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### patch_revisor: partial revision is progress, not rejection
+
+- **A MAJOR_REVISION no longer rejects the paper when only some edits land.**
+  The M5 validation run (`0495a50d`) cleared every gate — populated tables,
+  `verify_numbers` passed — then was REJECTED in revision because
+  `patch_revisor` emitted one over-reaching `paper:full` edit alongside two
+  good in-scope ones. The merger correctly dropped the out-of-scope edit (its
+  scope-enforcement job — whole-document edits are exactly what the pipeline
+  guards against), but `_run_patch_revision` treated *any* non-applied edit as
+  fatal (`fully_applied` → else REJECTED), throwing away a near-complete paper.
+- **Fix:** complete on progress. If at least one edit applied,
+  `_run_patch_revision` transitions to COMPLETED and logs the dropped edits
+  (out-of-scope or unmatchable) as non-fatal — mirroring the self-attack
+  path's tolerance. REJECTED only when the patch achieved nothing (zero edits
+  applied) or no patch file was produced (both unchanged). The merger and the
+  scope-enforcement invariant are untouched.
+- Tests: +1 (`test_patch_revision_wiring.py`) — in-scope edit applies +
+  out-of-scope `paper:full` dropped → COMPLETED with the in-scope edit landed.
+  Existing zero-applied → REJECTED cases still hold.
+
 ### Closed-loop table_spec key fix
 
 - **Results tables no longer ship with blank cells.** When a `table_spec`

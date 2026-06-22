@@ -12,8 +12,10 @@ This module pins:
    the verify_numbers report; serialised into the work order's
    `focus` so the patch_revisor can read them.
 3. Merger applies the patch → COMPLETED.
-4. Merger fails (missing patch file, failed edits, out-of-scope
-   edits) → REJECTED with a structured error.
+4. Patch achieves nothing (missing patch file, or zero edits applied)
+   → REJECTED with a structured error.
+4b. Partial application (some in-scope edits apply; others dropped as
+   out-of-scope or unmatchable) → COMPLETED — progress is not failure.
 5. MAJOR_REVISION with no actionable findings → COMPLETED with a
    warning (skipped patch_revisor entirely).
 """
@@ -326,6 +328,73 @@ async def test_failed_edits_yield_rejected_with_structured_error(tmp_path, mock_
     assert "patch_revisor" in error
     assert "[section:identification]" in error
     assert "not found" in error.lower()
+
+
+# ---------------------------------------------------------------------------
+# Partial application (in-scope edit applies, out-of-scope edit dropped) →
+# COMPLETED. Regression for the M5 run that REJECTED a paper because
+# patch_revisor over-reached with one `paper:full` edit alongside good ones.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_partial_application_with_out_of_scope_edit_completes(tmp_path, mock_llm):
+    """patch_revisor emits an in-scope edit that applies PLUS an over-reaching
+    out-of-scope `paper:full` edit. The merger drops the out-of-scope one
+    (scope enforcement), but the in-scope edit revised the draft — so the
+    paper COMPLETES, not REJECTED. Rejecting over one dropped edit threw away
+    a near-complete paper (M5 run 0495a50d)."""
+    runner = _runner(tmp_path, mock_llm)
+    ws = runner._workspace
+    _review_file(ws, "identification_reviewer", 3.0, "Major Revision")
+
+    seen: list[tuple[str, str | None]] = []
+
+    async def _capture_status(sql: str, params: dict | None = None):
+        if params and "s" in params and "papers" in sql.lower():
+            seen.append((params["s"], params.get("e")))
+
+    async def _mixed_patch(work_order, *args, **kwargs):
+        if work_order.specialist == "patch_revisor":
+            (ws / "paper_draft.tex.edits.json").write_text(
+                json.dumps(
+                    [
+                        {
+                            "target": "section:identification",  # in scope, applies
+                            "edit_type": "replace_text",
+                            "find": "parallel-trends assumption holds",
+                            "replace": "parallel-trends assumption is tested",
+                        },
+                        {
+                            "target": "paper:full",  # out-of-scope over-reach → dropped
+                            "edit_type": "replace_text",
+                            "find": "0.80",
+                            "replace": "0.50",
+                        },
+                    ]
+                )
+            )
+        return Contribution(paper_id=runner._paper_id, specialist=work_order.specialist, output="ok", success=True)
+
+    class _Result:
+        verdict = "MAJOR_REVISION"
+        weighted_avg = 3.0
+        rule_triggered = "weighted_avg < 5"
+        rationale = "test"
+
+    with (
+        patch("src.core.strategist.runner.aggregate_reviews", return_value=_Result()),
+        patch("src.core.specialists.dispatcher.execute_work_order", side_effect=_mixed_patch),
+        patch("src.db.client.execute", side_effect=_capture_status),
+    ):
+        result = await runner._run_revision_phase(PaperStatus.REVIEW)
+
+    assert result == PaperStatus.COMPLETED
+    # The in-scope edit landed; the out-of-scope one was dropped (draft unchanged there).
+    draft = (ws / "paper_draft.tex").read_text()
+    assert "parallel-trends assumption is tested" in draft
+    assert "0.80" in draft  # the paper:full edit was NOT applied
+    assert not [s for s, _e in seen if s == "rejected"]
 
 
 # ---------------------------------------------------------------------------
