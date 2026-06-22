@@ -55,6 +55,7 @@ Properties:
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -355,4 +356,61 @@ def maybe_execute_specialist_script(workspace: Path, specialist: str) -> Executi
         reason=reason,
         normalized_from=normalized_from,
         discovered=discovered,
+    )
+
+
+_RC_RE = re.compile(r"^# returncode: (\S+)", re.MULTILINE)
+
+
+def read_execution_error(workspace: Path, specialist: str) -> str | None:
+    """Recover v1's self-debugging loop without giving the model a code tool.
+
+    Specialists can't run their own code (sandboxed tool set), so the runner
+    executes their script post-hoc. When that script CRASHES, the bug (a bad
+    pandas/numpy idiom, etc.) is invisible to the model — it wrote the script
+    blind. This reads the crash captured in the convention's audit log
+    (``run_estimation.log``) so the runner can feed it back into the
+    specialist's NEXT attempt, turning "write blind → crash → fail" into
+    "write → see the traceback → fix → succeed".
+
+    Returns a ready-to-inject prompt section, or ``None`` when there's nothing
+    to feed back (no convention, sidecar already populated, no log, or the last
+    run exited cleanly).
+    """
+    convention = EXECUTION_CONVENTIONS.get(specialist)
+    if convention is None:
+        return None
+    workspace = Path(workspace).resolve()
+    if _is_populated(workspace / convention.sidecar):
+        return None  # the script already produced output — nothing to fix
+    log_path = workspace / convention.log
+    if not log_path.is_file():
+        return None
+    try:
+        log = log_path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+    m = _RC_RE.search(log)
+    if not m or m.group(1) == "0":
+        # No recorded run, or it exited cleanly — an empty sidecar then isn't a
+        # crash we can coach the model out of.
+        return None
+    rc = m.group(1)
+
+    # The traceback lives in the stderr section; the tail is the informative part.
+    stderr = log.split("--- stderr ---", 1)[-1].strip()
+    tail = "\n".join(stderr.splitlines()[-30:]) if stderr else "(no stderr captured)"
+
+    script_name = convention.script_candidates[0] if convention.script_candidates else "your script"
+
+    return (
+        "## Your previous script FAILED — fix it and rewrite\n"
+        "You do not have a tool to run code yourself; the runner executes the script "
+        f"you write (saved as `{script_name}`) and reports the result here. On the last "
+        f"attempt the runner ran it and it **crashed (exit code {rc})**, so "
+        f"`{convention.sidecar}` is still empty. Read the error below, fix the specific "
+        "bug, and rewrite the script so it runs cleanly and writes a populated "
+        f"`{convention.sidecar}`. Do not write `{{}}` — fix the code.\n\n"
+        f"```\n{tail}\n```"
     )
