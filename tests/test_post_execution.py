@@ -415,3 +415,125 @@ async def test_run_specialist_still_fails_when_script_errors(tmp_workspace: Path
     # Post-exec log written so the next reviewer can debug.
     log = (tmp_workspace / "run_estimation.log").read_text()
     assert "RuntimeError" in log or "script broken" in log
+
+
+# ── read_execution_error: feed a prior script crash back into the retry ────
+
+
+def test_read_execution_error_returns_feedback_on_crash(tmp_path: Path):
+    """A prior runner-side execution that crashed (rc=1, empty sidecar) yields
+    a feedback message carrying the traceback + the canonical sidecar name."""
+    from src.core.specialists.post_execution import read_execution_error
+
+    (tmp_path / "estimation_results.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "run_estimation.log").write_text(
+        "# post-specialist exec for econometrics_specialist\n"
+        "# script: run_estimation.py\n"
+        "# returncode: 1\n"
+        "--- stdout ---\n\n"
+        "--- stderr ---\n"
+        "Traceback (most recent call last):\n"
+        '  File "run_estimation.py", line 159, in out_of_sample\n'
+        "AttributeError: 'numpy.ndarray' object has no attribute 'values'\n",
+        encoding="utf-8",
+    )
+    fb = read_execution_error(tmp_path, "econometrics_specialist")
+    assert fb is not None
+    assert "AttributeError" in fb and "has no attribute 'values'" in fb
+    assert "estimation_results.json" in fb
+    assert "exit code 1" in fb
+
+
+def test_read_execution_error_none_when_exit_clean(tmp_path: Path):
+    from src.core.specialists.post_execution import read_execution_error
+
+    (tmp_path / "estimation_results.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "run_estimation.log").write_text("# returncode: 0\n--- stderr ---\n", encoding="utf-8")
+    assert read_execution_error(tmp_path, "econometrics_specialist") is None
+
+
+def test_read_execution_error_none_when_sidecar_populated(tmp_path: Path):
+    """Even with a crash log, a populated sidecar means it already succeeded."""
+    from src.core.specialists.post_execution import read_execution_error
+
+    (tmp_path / "estimation_results.json").write_text(json.dumps({"m": {"c": 1}}), encoding="utf-8")
+    (tmp_path / "run_estimation.log").write_text("# returncode: 1\n--- stderr ---\nboom", encoding="utf-8")
+    assert read_execution_error(tmp_path, "econometrics_specialist") is None
+
+
+def test_read_execution_error_none_without_log_or_convention(tmp_path: Path):
+    from src.core.specialists.post_execution import read_execution_error
+
+    (tmp_path / "estimation_results.json").write_text("{}", encoding="utf-8")
+    assert read_execution_error(tmp_path, "econometrics_specialist") is None  # no log
+    assert read_execution_error(tmp_path, "literature_scanner") is None  # no convention
+
+
+async def test_run_specialist_injects_prior_crash_into_prompt(tmp_workspace: Path, paper_id: str):
+    """End-to-end: a prior crash log is present; run_specialist injects the
+    traceback into the specialist's prompt so the retry can fix it."""
+    from typing import Any
+    from unittest.mock import patch
+
+    from src.core.specialists.base import run_specialist
+    from src.core.specialists.contracts import WorkOrder
+    from src.modules.llm.base import LLMBackend, TokenUsage, ToolHandler, ToolLoopResult
+
+    # Prior attempt left a crash log + empty sidecar.
+    (tmp_workspace / "estimation_results.json").write_text("{}", encoding="utf-8")
+    (tmp_workspace / "run_estimation.log").write_text(
+        "# returncode: 1\n--- stderr ---\nAttributeError: 'numpy.ndarray' object has no attribute 'values'\n",
+        encoding="utf-8",
+    )
+
+    captured: dict[str, str] = {}
+
+    class FakeFixesScript(LLMBackend):
+        async def tool_loop(
+            self,
+            system: str,
+            messages: list[dict[str, Any]],
+            tools: list[dict[str, Any]],
+            tool_handler: ToolHandler | None,
+            max_turns: int = 30,
+            *,
+            paper_id: str | None = None,
+            specialist: str | None = None,
+        ) -> ToolLoopResult:
+            captured["user"] = messages[0]["content"]
+            assert tool_handler is not None
+            await tool_handler.handle(
+                "write_file",
+                {"path": "econometric_spec.md", "content": "# Spec\n\n" + ("Real content. " * 20)},
+            )
+            # The "fixed" script writes a populated sidecar directly.
+            await tool_handler.handle(
+                "write_file",
+                {"path": "estimation_results.json", "content": json.dumps({"dp": {"oos_r2": 0.01}})},
+            )
+            return ToolLoopResult(success=True, output="fixed", tool_calls_made=2, usage=TokenUsage(1, 1))
+
+    work_order = WorkOrder(paper_id=paper_id, specialist="econometrics_specialist", focus="Estimate.", context_tier=1)
+
+    async def _noop(*a, **k):
+        return None
+
+    with (
+        patch("src.core.specialists.base.save_usage", new=_noop),
+        patch("src.core.specialists.base.compute_cost", return_value=0),
+        patch("src.db.client.execute", new=_noop),
+    ):
+        contribution = await run_specialist(
+            work_order,
+            backend=FakeFixesScript(),
+            workspace=tmp_workspace,
+            model="m",
+            extra_tools=[],
+            extra_handlers=[],
+            backend_name="mock",
+        )
+
+    # The crash traceback was injected into the prompt the specialist saw.
+    assert "AttributeError" in captured["user"]
+    assert "FAILED" in captured["user"]
+    assert contribution.success is True

@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Post-execution error feedback — specialists fix their own script crashes
+
+- **Recovers E2ER v1's self-debugging loop inside v3's sandbox.** v1's
+  analysis workers had `Bash(python3:*)` and iterated write→run→see-error→fix
+  within their turn, so codegen bugs (a bad pandas/numpy idiom) were fixed
+  silently. v3 sandboxes execution (no general code tool — the runner runs the
+  script post-hoc), so a bug like `'numpy.ndarray' has no attribute 'values'`
+  crashed the script, left `estimation_results.json` empty, and failed the
+  paper — the model never saw the traceback (it wrote the script blind). This
+  is what failed the capstone run (`c141a277`).
+- **Fix:** `post_execution.read_execution_error()` reads the crash captured in
+  the convention's audit log (`run_estimation.log`) — non-zero exit + empty
+  sidecar — and `run_specialist` injects that traceback into the specialist's
+  **next** attempt's prompt ("your script crashed: …, fix this bug, don't write
+  `{}`"). The model still never runs code; the runner does and just reports
+  back, so the security model is unchanged. Turns "write blind → crash → fail"
+  into "write → see the traceback → fix → succeed".
+- Self-limiting: returns `None` once the sidecar is populated (success) or the
+  last run exited cleanly. Covers `econometrics_specialist` + `data_analyst`
+  (the specialists with execution conventions).
+- Tests: +5 (`test_post_execution.py`) — feedback on crash, none on clean exit /
+  populated sidecar / missing log / no convention, plus an end-to-end check
+  that the traceback reaches the retry prompt and the fixed script succeeds.
+
 ### patch_revisor: partial revision is progress, not rejection
 
 - **A MAJOR_REVISION no longer rejects the paper when only some edits land.**

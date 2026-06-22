@@ -52,6 +52,17 @@ async def run_specialist(
     )
     user_prompt = _build_user_prompt(work_order)
 
+    # Self-correction loop: if a prior attempt's script was executed by the
+    # runner and CRASHED (the specialist can't run code itself), feed the
+    # captured traceback back in so this attempt fixes the bug instead of
+    # re-writing blind. Recovers v1's write→run→fix loop within the sandbox.
+    from .post_execution import read_execution_error
+
+    exec_feedback = read_execution_error(workspace, specialist)
+    if exec_feedback:
+        user_prompt = f"{user_prompt}\n\n{exec_feedback}"
+        logger.info("%s: prior runner execution crashed — injecting the traceback into this attempt", specialist)
+
     # CLI backend uses Claude Code's native tool names (Write/Read/Edit/Glob)
     # rather than the SDK's (write_file/read_file/...). Translate references
     # in both prompts so the model finds the tools it's told to call.
