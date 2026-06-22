@@ -105,14 +105,7 @@ select = ["E", "F", "I", "N", "W", "UP"]
 ignore = ["N805", "N806"]
 
 [tool.mypy]
-# Target 3.12 for type-checking. Not because we require 3.12 — the package
-# supports 3.11 (and pytest runs on 3.11 in CI to prove runtime compat) — but
-# because recent numpy ships PEP 695 `type` statements in its bundled stubs,
-# which mypy rejects as a syntax error under a < 3.12 target ("Type statement
-# is only supported in Python 3.12 and greater"), aborting before it checks any
-# of our code. 3.12 is a superset of 3.11, so our 3.11-compatible code still
-# type-checks cleanly.
-python_version = "3.12"
+python_version = "3.11"
 # Pragmatic baseline: catch real bugs (wrong types, optional-attr access,
 # variable shadowing) without grinding on annotation completeness for a
 # 10K-line codebase that wasn't type-checked from day one.
@@ -126,6 +119,20 @@ strict_equality = true
 #   disallow_untyped_defs / disallow_any_generics / no_any_return /
 #   warn_return_any — these can be ratcheted on later, file-by-file, via
 #   per-module overrides if you want to tighten gradually.
+
+[[tool.mypy.overrides]]
+# Don't parse numpy's bundled stubs. Recent numpy ships PEP 695 `type`
+# statements in numpy/__init__.pyi, which mypy rejects under our 3.11 target
+# ("Type statement is only supported in Python 3.12 and greater") and aborts
+# before checking our code — a CI break driven by numpy's release cadence, not
+# our types. `follow_imports = skip` only applies to .pyi stubs when
+# `follow_imports_for_stubs = true`, and the module list must include the
+# top-level `numpy` (where __init__.pyi lives), not just `numpy.*`. We already
+# don't type-check through numpy (ignore_missing_imports), so this only drops a
+# stub we never relied on. Version-robust.
+module = ["numpy", "numpy.*"]
+follow_imports = "skip"
+follow_imports_for_stubs = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
