@@ -56,3 +56,6 @@ docker-compose.override.yml
 
 # live_check.py output
 live_check_report.json
+
+# Claude Code agent worktrees (transient)
+.claude/worktrees/
