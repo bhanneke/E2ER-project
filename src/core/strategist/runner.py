@@ -541,11 +541,9 @@ class PipelineRunner:
         # estimation_results.json / robustness_results.json, so they can't be
         # fabricated; verify_numbers then only sees correct-by-construction
         # tables (it does not resolve \input) plus any hand-written prose.
-        # Idempotent — safe to call again at compile time.
-        from ..renderer.tables import ensure_input_stubs, render_tables
-
-        render_tables(self._workspace)
-        ensure_input_stubs(self._workspace)
+        # Closes the loop on unresolved table_spec references (one
+        # section_writer fix) so the results tables don't ship blank.
+        await self._resolve_table_spec()
 
         # --- verify_numbers pre-review gate (v0.5.0; v0.6 auto-patch loop) ---
         from ..pipeline.verify_numbers import verify_and_save
@@ -855,6 +853,120 @@ class PipelineRunner:
         self._contributions.append(contribution)
 
         return merge_patch_file(self._workspace, findings)
+
+    async def _resolve_table_spec(self) -> None:
+        """Render results tables and close the loop on cross-specialist key
+        drift.
+
+        The renderer auto-resolves order-insensitive key drift
+        (``dp_full`` ≡ ``full_dp``). Anything still unresolved is a genuinely
+        wrong/abbreviated/missing reference (e.g. the drafter wrote ``cw_stat``
+        where the JSON has ``clark_west_stat``) that leaves those cells ``---``.
+        Rather than ship a paper with blank cells, dispatch ONE ``section_writer``
+        call with the unresolved references and the real available keys, then
+        re-render. Deterministic normalization already covers the common case;
+        this handles the long tail.
+        """
+        from ..renderer.tables import ensure_input_stubs, render_tables
+
+        report = render_tables(self._workspace)
+        ensure_input_stubs(self._workspace)
+        if not report.unresolved:
+            return
+
+        feedback = self._build_table_spec_feedback(report.unresolved)
+        if feedback is None:
+            # No estimation JSON to reconcile against — nothing actionable.
+            return
+
+        logger.info(
+            "table_spec: %d unresolved reference(s) after normalization — dispatching "
+            "section_writer to correct table_spec.json",
+            len(report.unresolved),
+        )
+        from ..specialists.dispatcher import execute_work_order
+
+        order = WorkOrder(
+            paper_id=self._paper_id,
+            specialist="section_writer",
+            focus=feedback,
+            context_tier=2,
+        )
+        contribution = await execute_work_order(
+            order,
+            self._backend,
+            self._workspace,
+            self._model,
+            self._extra_tools,
+            self._extra_handlers,
+            self._backend_name,
+        )
+        self._contributions.append(contribution)
+
+        # Re-render with the corrected spec. Remaining unresolved refs stay
+        # `---` (and visible in table_render_report.json) — one fix attempt.
+        report2 = render_tables(self._workspace)
+        ensure_input_stubs(self._workspace)
+        if report2.unresolved:
+            logger.warning(
+                "table_spec: %d reference(s) still unresolved after section_writer fix — "
+                "rendered as --- (see table_render_report.json)",
+                len(report2.unresolved),
+            )
+        else:
+            logger.info("table_spec: all references resolved after section_writer fix")
+
+    def _build_table_spec_feedback(self, unresolved: list) -> str | None:
+        """Compose a directive for section_writer to fix table_spec.json,
+        listing the unresolved references and the EXACT keys/fields available
+        in the estimation JSON. Returns None when there's no JSON to reconcile.
+        """
+        import json
+
+        merged: dict[str, Any] = {}
+        for fn in ("estimation_results.json", "robustness_results.json"):
+            fp = self._workspace / fn
+            if not fp.is_file():
+                continue
+            try:
+                data = json.loads(fp.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                continue
+            if isinstance(data, dict):
+                merged.update(data)
+
+        spec_keys = sorted(k for k in merged if not k.startswith("_"))
+        if not spec_keys:
+            return None
+
+        fields: set[str] = set()
+        coeffs: set[str] = set()
+        for v in merged.values():
+            if not isinstance(v, dict):
+                continue
+            for ck in ("diagnostics", "forecast_evaluation"):
+                c = v.get(ck)
+                if isinstance(c, dict):
+                    fields.update(c.keys())
+            fields.update(k for k, val in v.items() if not isinstance(val, dict | list))
+            cf = v.get("coefficients")
+            if isinstance(cf, dict):
+                coeffs.update(cf.keys())
+
+        unresolved_lines = sorted({f"  - {u.kind}: {u.ref!r}" for u in unresolved})
+        return (
+            "Your `table_spec.json` references keys that do not exist in the "
+            "estimation JSON, so those table cells rendered blank (`---`). "
+            "Rewrite `table_spec.json` so that EVERY `spec_key`, coefficient "
+            "`var`, and stat `field` is an EXACT key present in the JSON below. "
+            "Do not invent or abbreviate names; copy them verbatim. Keep the "
+            "same table structure; only correct the keys. Output the corrected "
+            "`table_spec.json` (and only that file).\n\n"
+            "Unresolved references to fix:\n" + "\n".join(unresolved_lines) + "\n\n"
+            f"Available `spec_key` values (top-level keys): {spec_keys}\n"
+            f"Available stat `field` names: {sorted(fields)}\n"
+            f"Available coefficient `var` names: {sorted(coeffs)}\n"
+        )
 
     def _collect_revision_findings(self, scores: list) -> list:
         """Build the findings list for the MAJOR_REVISION patch_revisor call.

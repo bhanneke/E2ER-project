@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Closed-loop table_spec key fix
+
+- **Results tables no longer ship with blank cells.** When a `table_spec`
+  reference can't be resolved even after the renderer's order-insensitive
+  normalization (a genuinely wrong/abbreviated name — e.g. the drafter wrote
+  `cw_stat` where the JSON has `clark_west_stat`), `PipelineRunner` now
+  dispatches ONE `section_writer` fix with the unresolved references and the
+  EXACT keys/fields available in `estimation_results.json` /
+  `robustness_results.json`, then re-renders. Runs in `_run_review_phase`
+  right before the verify gate; one attempt, then any still-unresolved refs
+  stay `---` (and visible in `table_render_report.json`). Closes the loop the
+  PR-2 feedback opened — normalization handles the common case, this handles
+  the long tail.
+- Tests: +4 (`test_table_spec_closed_loop.py`) — feedback lists available keys,
+  no-op when nothing's unresolved, dispatch + fix lands the value.
+
 ### Table key-resolution + non-gating prose check (PR-2)
 
 - **Cross-specialist key drift is auto-resolved.** The PR-1 validation run
