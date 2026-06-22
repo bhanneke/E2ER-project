@@ -54,14 +54,45 @@ class UnresolvedRef:
 
 
 @dataclass
+class Normalized:
+    """A ``table_spec`` reference resolved by order-insensitive token match
+    (e.g. the drafter wrote ``dp_full`` but the JSON key is ``full_dp``)."""
+
+    table: str
+    kind: str  # "spec_key" | "coefficient"
+    requested: str
+    resolved: str
+
+
+@dataclass
 class RenderReport:
     rendered: list[str] = field(default_factory=list)  # filenames written under tables/
     unresolved: list[UnresolvedRef] = field(default_factory=list)
+    normalized: list[Normalized] = field(default_factory=list)  # order-insensitive key fixes
     errors: list[str] = field(default_factory=list)  # per-table render failures
     skipped_reason: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+def _token_set(name: str) -> frozenset[str]:
+    """Lowercased token set of a key, split on `_`, `-`, whitespace."""
+    return frozenset(t for t in re.split(r"[_\-\s]+", name.lower()) if t)
+
+
+def _resolve_by_tokens(target: str, available: Any) -> str | None:
+    """Find a key whose token set equals ``target``'s — an order-insensitive
+    match (``dp_full`` ≡ ``full_dp``). Returns the match ONLY when exactly one
+    candidate matches; never guesses on ambiguity or no match. This is the
+    deterministic fix for cross-specialist key-ordering drift (the
+    econometrics specialist names specs ``full_dp``; the drafter may write
+    ``dp_full``)."""
+    want = _token_set(target)
+    if not want:
+        return None
+    matches = [k for k in available if _token_set(k) == want]
+    return matches[0] if len(matches) == 1 else None
 
 
 def _fmt(value: Any, decimals: int = 3) -> str:
@@ -128,11 +159,26 @@ def _resolve_stat(spec: dict[str, Any], field_name: str) -> tuple[Any, bool]:
     return None, False
 
 
+def _stat_field_names(spec: dict[str, Any]) -> list[str]:
+    """All scalar-statistic field names available in a spec object —
+    diagnostics + forecast_evaluation keys plus scalar top-level keys."""
+    names: list[str] = []
+    for container_key in ("diagnostics", "forecast_evaluation"):
+        container = spec.get(container_key)
+        if isinstance(container, dict):
+            names.extend(container.keys())
+    names.extend(k for k, v in spec.items() if not isinstance(v, dict | list))
+    return names
+
+
 def _render_one_table(
     table: dict[str, Any],
     sources: dict[str, Any],
-) -> tuple[str, list[UnresolvedRef]]:
-    """Build the LaTeX for a single table. Returns (latex, unresolved_refs)."""
+) -> tuple[str, list[UnresolvedRef], list[Normalized]]:
+    """Build the LaTeX for a single table.
+
+    Returns (latex, unresolved_refs, normalized_refs).
+    """
     filename = str(table.get("filename", "table.tex"))
     label = str(table.get("label", ""))
     caption = str(table.get("caption", ""))
@@ -140,6 +186,10 @@ def _render_one_table(
     columns = table.get("columns") or []
     rows = table.get("rows") or []
     unresolved: list[UnresolvedRef] = []
+    normalized: list[Normalized] = []
+
+    # Spec keys eligible for matching (dict-valued; skip _meta etc.).
+    dict_keys = [k for k, v in sources.items() if isinstance(v, dict)]
 
     # Resolve each column's source spec object once.
     col_specs: list[dict[str, Any]] = []
@@ -147,8 +197,14 @@ def _render_one_table(
         spec_key = str(col.get("spec_key", ""))
         spec_obj = sources.get(spec_key)
         if not isinstance(spec_obj, dict):
-            unresolved.append(UnresolvedRef(filename, "spec_key", spec_key))
-            spec_obj = {}
+            # Order-insensitive retry (dp_full ≡ full_dp) before giving up.
+            nk = _resolve_by_tokens(spec_key, dict_keys)
+            if nk is not None:
+                spec_obj = sources[nk]
+                normalized.append(Normalized(filename, "spec_key", spec_key, nk))
+            else:
+                unresolved.append(UnresolvedRef(filename, "spec_key", spec_key))
+                spec_obj = {}
         col_specs.append(spec_obj)
 
     headers = [str(col.get("header", col.get("spec_key", ""))) for col in columns]
@@ -188,7 +244,15 @@ def _render_one_table(
                 coeffs = spec_obj.get("coefficients")
                 coef: Any = None
                 if isinstance(coeffs, dict) and coeffs:
-                    coef = next(iter(coeffs.values())) if primary else coeffs.get(var)
+                    if primary:
+                        coef = next(iter(coeffs.values()))
+                    else:
+                        coef = coeffs.get(var)
+                        if coef is None:
+                            nv = _resolve_by_tokens(var, coeffs.keys())
+                            if nv is not None:
+                                coef = coeffs.get(nv)
+                                normalized.append(Normalized(filename, "coefficient", var, nv))
                 if not isinstance(coef, dict):
                     # Only flag as unresolved when the column actually has a
                     # (non-empty) coefficient block AND a specific var was
@@ -213,6 +277,13 @@ def _render_one_table(
             cells: list[str] = []
             for col, spec_obj in zip(columns, col_specs):
                 value, found = _resolve_stat(spec_obj, field_name)
+                if not found and spec_obj:
+                    # Order-insensitive retry against the spec's actual fields.
+                    nf = _resolve_by_tokens(field_name, _stat_field_names(spec_obj))
+                    if nf is not None:
+                        value, found = _resolve_stat(spec_obj, nf)
+                        if found:
+                            normalized.append(Normalized(filename, "stat", field_name, nf))
                 if not found:
                     if spec_obj:  # only flag when the column resolved at all
                         unresolved.append(UnresolvedRef(filename, "stat", field_name, str(col.get("spec_key", ""))))
@@ -230,7 +301,7 @@ def _render_one_table(
         lines.append("\\end{tablenotes}")
     lines.append("\\end{threeparttable}")
     lines.append("\\end{table}")
-    return "\n".join(lines) + "\n", unresolved
+    return "\n".join(lines) + "\n", unresolved, normalized
 
 
 def _spec_name(spec_obj: dict[str, Any]) -> str:
@@ -280,7 +351,7 @@ def render_tables(workspace: Path) -> RenderReport:
             report.errors.append(f"invalid table filename: {filename!r}")
             continue
         try:
-            latex, unresolved = _render_one_table(table, sources)
+            latex, unresolved, normalized = _render_one_table(table, sources)
         except Exception as e:  # noqa: BLE001 — never let one bad table abort the rest
             logger.warning("render_tables: failed to render %s: %s", filename, e)
             report.errors.append(f"{filename}: {e!r}")
@@ -288,7 +359,14 @@ def render_tables(workspace: Path) -> RenderReport:
         (tables_dir / filename).write_text(latex, encoding="utf-8")
         report.rendered.append(filename)
         report.unresolved.extend(unresolved)
+        report.normalized.extend(normalized)
 
+    if report.normalized:
+        logger.info(
+            "render_tables: %d reference(s) resolved by order-insensitive token match "
+            "(e.g. dp_full->full_dp) — drafter key naming drifted from the JSON",
+            len(report.normalized),
+        )
     if report.unresolved:
         logger.warning(
             "render_tables: %d unresolved reference(s) across %d table(s) — see table_render_report.json",

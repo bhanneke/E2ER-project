@@ -228,3 +228,69 @@ def test_stub_does_not_overwrite_existing(tmp_path: Path):
 
 def test_stub_no_draft_returns_empty(tmp_path: Path):
     assert ensure_input_stubs(tmp_path) == []
+
+
+# ── PR-2: deterministic key/var/field normalization (order-insensitive) ────
+
+
+def _ws_keys(tmp_path: Path, est: dict, spec: dict) -> Path:
+    (tmp_path / "estimation_results.json").write_text(json.dumps(est), encoding="utf-8")
+    (tmp_path / "table_spec.json").write_text(json.dumps(spec), encoding="utf-8")
+    return tmp_path
+
+
+def test_spec_key_resolved_by_token_normalization(tmp_path: Path):
+    """The validated bug: econ named specs `full_dp`, the drafter wrote
+    `dp_full`. Token-set normalization resolves it; the table populates."""
+    est = {
+        "full_dp": {
+            "n_observations": 424,
+            "coefficients": {"dp": {"estimate": 0.0136, "p_value": 0.5}},
+            "forecast_evaluation": {"oos_r_squared": 0.0063},
+        }
+    }
+    spec = _spec(
+        [{"spec_key": "dp_full", "header": "dp"}],
+        [{"type": "stat", "field": "oos_r_squared", "label": "OOS", "decimals": 4}],
+    )
+    ws = _ws_keys(tmp_path, est, spec)
+    report = render_tables(ws)
+    assert report.unresolved == []
+    assert [(n.requested, n.resolved) for n in report.normalized] == [("dp_full", "full_dp")]
+    assert "0.0063" in (ws / "tables" / "main.tex").read_text()
+
+
+def test_coefficient_var_resolved_by_token_normalization(tmp_path: Path):
+    est = {"m1": {"coefficients": {"treat_post": {"estimate": -0.231, "se": 0.058, "p_value": 0.001}}}}
+    spec = _spec(
+        [{"spec_key": "m1", "header": "(1)"}], [{"type": "coefficient", "var": "post_treat", "label": "Effect"}]
+    )
+    ws = _ws_keys(tmp_path, est, spec)
+    report = render_tables(ws)
+    assert report.unresolved == []
+    assert any(n.kind == "coefficient" and n.resolved == "treat_post" for n in report.normalized)
+    assert "-0.231" in (ws / "tables" / "main.tex").read_text()
+
+
+def test_genuinely_different_field_name_stays_unresolved(tmp_path: Path):
+    """`cw_stat` vs the JSON's `clark_west_stat` are different token sets —
+    normalization must NOT guess; it stays unresolved (the feedback case)."""
+    est = {"m1": {"forecast_evaluation": {"clark_west_stat": 1.24}}}
+    spec = _spec([{"spec_key": "m1", "header": "(1)"}], [{"type": "stat", "field": "cw_stat", "label": "CW"}])
+    ws = _ws_keys(tmp_path, est, spec)
+    report = render_tables(ws)
+    assert report.normalized == []
+    assert any(u.kind == "stat" and u.ref == "cw_stat" for u in report.unresolved)
+
+
+def test_ambiguous_token_match_not_resolved(tmp_path: Path):
+    """Two source keys share the target's token set → never guess."""
+    est = {
+        "full_dp": {"forecast_evaluation": {"oos_r_squared": 0.1}},
+        "dp__full": {"forecast_evaluation": {"oos_r_squared": 0.2}},
+    }
+    spec = _spec([{"spec_key": "dp_full", "header": "x"}], [{"type": "stat", "field": "oos_r_squared", "label": "OOS"}])
+    ws = _ws_keys(tmp_path, est, spec)
+    report = render_tables(ws)
+    assert any(u.kind == "spec_key" and u.ref == "dp_full" for u in report.unresolved)
+    assert report.normalized == []

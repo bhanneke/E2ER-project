@@ -69,12 +69,26 @@ class VerificationReport:
     source_files_found: list[str] = field(default_factory=list)
     source_files_missing: list[str] = field(default_factory=list)
     skipped_reason: str | None = None
+    # PR-2: prose-number checking ("text = table number"). Deliberately
+    # NON-GATING — prose mismatches live in their own list and never become
+    # `critical`, so they never reject a paper (prose has many incidental
+    # numbers — years, section refs, %s — and we won't reintroduce false
+    # positives). They're an informational signal for reviewers / a human.
+    prose_total: int = 0
+    prose_matched: int = 0
+    prose_mismatched: int = 0
+    prose_mismatches: list[Mismatch] = field(default_factory=list)
+    # PR-2: key-resolution feedback. Unresolved table_spec references (after
+    # the renderer's order-insensitive normalization), with the available keys
+    # so the drafter can correct them. Surfaced from table_render_report.json.
+    table_spec_unresolved: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
     @property
     def critical_mismatches(self) -> list[Mismatch]:
+        # Only TABLE mismatches gate the pipeline; prose is informational.
         return [m for m in self.mismatches if m.severity == "critical"]
 
 
@@ -260,6 +274,117 @@ def _extract_table_numbers(tex_content: str) -> list[tuple[str, str]]:
     return results
 
 
+# Environments / commands stripped before extracting PROSE numbers, so we
+# don't double-count table cells or read \input paths, labels, refs, or cite
+# keys as numeric claims.
+_STRIP_FOR_PROSE: tuple[re.Pattern[str], ...] = (
+    re.compile(r"\\begin\{tabular\}.*?\\end\{tabular\}", re.DOTALL),
+    re.compile(r"\\input\{[^}]*\}"),
+    re.compile(r"\\(?:label|ref|eqref|cref|cite[a-z]*)\{[^}]*\}"),
+)
+
+
+def _extract_prose_numbers(tex_content: str) -> list[tuple[str, str]]:
+    """Extract numbers from PROSE — everything outside tabular environments.
+
+    Returns (number_string, short_context) tuples. Used by the non-gating
+    prose check; the same ``_NUMBER_RE`` as tables, run on the de-tabled text.
+    """
+    prose = tex_content
+    for pat in _STRIP_FOR_PROSE:
+        prose = pat.sub(" ", prose)
+    results: list[tuple[str, str]] = []
+    for m in _NUMBER_RE.finditer(prose):
+        num_str = m.group(1)
+        parsed = _parse_number(num_str)
+        if parsed is None or parsed == 0:
+            continue
+        s = max(0, m.start() - 30)
+        e = min(len(prose), m.end() + 20)
+        ctx = " ".join(prose[s:e].split())
+        results.append((num_str, f"prose: …{ctx}…"))
+    return results
+
+
+def _check_prose(
+    report: VerificationReport,
+    tex_content: str,
+    all_source_values: dict[str, float],
+    tolerance: float,
+) -> None:
+    """Non-gating prose check ("text = table number"). Flags only
+    near-misses (a prose number close to but off from a source value), capped
+    at ``major`` so it never rejects. Numbers with no close source — years,
+    section refs, percentages — are ignored, not flagged."""
+    prose_numbers = _extract_prose_numbers(tex_content)
+    report.prose_total = len(prose_numbers)
+    for num_str, context in prose_numbers:
+        draft_val = _parse_number(num_str)
+        if draft_val is None:
+            continue
+        if any(_values_match(draft_val, sv, tolerance) for sv in all_source_values.values()):
+            report.prose_matched += 1
+            continue
+        closest_key, closest_dist = "", float("inf")
+        for key, sv in all_source_values.items():
+            dist = abs(draft_val - sv)
+            if dist < closest_dist:
+                closest_dist, closest_key = dist, key
+        if closest_key and closest_dist < abs(draft_val) * 0.5:
+            sv = all_source_values[closest_key]
+            report.prose_mismatched += 1
+            report.prose_mismatches.append(
+                Mismatch(
+                    draft_value=num_str,
+                    source_key=closest_key,
+                    source_value=str(sv),
+                    table_context=context,
+                    severity="major",  # never critical — prose is non-gating
+                )
+            )
+        # else: no close source value — not a claim we can check; ignore.
+
+
+def _read_table_spec_feedback(workspace: Path) -> list[dict[str, Any]]:
+    """Surface unresolved ``table_spec`` references (after the renderer's
+    order-insensitive normalization) from ``table_render_report.json``,
+    annotated with the available spec keys so the drafter can correct them.
+    """
+    path = workspace / "table_render_report.json"
+    if not path.is_file():
+        return []
+    try:
+        rep = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return []
+    unresolved = rep.get("unresolved") or []
+    if not unresolved:
+        return []
+    available_specs: list[str] = []
+    for fn in ("estimation_results.json", "robustness_results.json"):
+        fp = workspace / fn
+        if not fp.is_file():
+            continue
+        try:
+            d = json.loads(fp.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        if isinstance(d, dict):
+            available_specs.extend(k for k in d if not k.startswith("_"))
+    seen: set[tuple[Any, Any]] = set()
+    out: list[dict[str, Any]] = []
+    for u in unresolved:
+        key = (u.get("kind"), u.get("ref"))
+        if key in seen:
+            continue
+        seen.add(key)
+        entry: dict[str, Any] = {"kind": u.get("kind"), "ref": u.get("ref")}
+        if u.get("kind") == "spec_key":
+            entry["available_spec_keys"] = sorted(set(available_specs))
+        out.append(entry)
+    return out
+
+
 def _find_source_jsons(workspace: Path) -> dict[str, Path]:
     """Locate authoritative JSON files at the workspace root.
 
@@ -301,6 +426,10 @@ def verify(
 
     tex_content = draft_path.read_text(encoding="utf-8", errors="replace")
 
+    # PR-2: key-resolution feedback is independent of numeric content — surface
+    # it before any of the source-JSON early returns below.
+    report.table_spec_unresolved = _read_table_spec_feedback(workspace)
+
     source_jsons = _find_source_jsons(workspace)
     report.source_files_found = sorted(str(p) for p in source_jsons.values())
     report.source_files_missing = sorted(fn for fn in _SOURCE_JSON_FILES if fn not in source_jsons)
@@ -334,8 +463,7 @@ def verify(
     report.total_values_in_tables = len(table_numbers)
 
     if not table_numbers:
-        logger.info("verify_numbers: no numbers in tables; nothing to check")
-        return report
+        logger.info("verify_numbers: no numbers in inline tables; checking prose only")
 
     for num_str, context in table_numbers:
         draft_val = _parse_number(num_str)
@@ -384,8 +512,12 @@ def verify(
 
     checked = report.matched + report.mismatched
     total = report.total_values_in_tables
-    report.coverage = checked / total if total > 0 else 0.0
+    report.coverage = checked / total if total > 0 else 1.0
     report.passed = report.mismatched == 0 or all(m.severity == "minor" for m in report.mismatches)
+
+    # PR-2: prose-number check (non-gating; never critical). The key-resolution
+    # feedback was already surfaced near the top (independent of numeric content).
+    _check_prose(report, tex_content, all_source_values, tolerance)
 
     return report
 

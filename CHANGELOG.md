@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Table key-resolution + non-gating prose check (PR-2)
+
+- **Cross-specialist key drift is auto-resolved.** The PR-1 validation run
+  completed but its results tables came out **blank**: the econometrics
+  specialist named specs `full_dp` while the drafter's `table_spec.json`
+  referenced `dp_full`, so every column rendered `---`. The renderer now does
+  **order-insensitive token matching** (`dp_full` ≡ `full_dp`) for `spec_key`,
+  coefficient `var`, and stat `field`, resolving the drift deterministically.
+  It matches only when exactly one candidate's token set is equal — never
+  guesses on ambiguity or genuinely-different names (`cw_stat` ≠
+  `clark_west_stat`). Resolutions are recorded in `table_render_report.json`
+  (`normalized`).
+- **Key-resolution feedback.** References still unresolved after normalization
+  (a truly wrong/abbreviated/missing name) are surfaced by `verify_numbers`
+  into `number_verification.json` (`table_spec_unresolved`), annotated with the
+  available spec keys, so the drafter can correct `table_spec.json`. The
+  `data/table-spec` skill now tells the drafter to read `estimation_results.json`
+  and copy its exact keys, and to reconcile against the render report.
+- **Prose-number check ("text = table number").** `verify_numbers` now also
+  checks numbers in prose (outside tables) against the JSON sources.
+  **Deliberately non-gating:** prose mismatches live in their own
+  `prose_mismatches` list, are capped at `major` (never `critical`), and only
+  flag *near-misses* — a prose number close to but off from a source value.
+  Incidental numbers (years, section refs, %s) with no close source are
+  ignored, so it reintroduces no false positives; it cannot reject a paper.
+- Tests: +4 renderer (token normalization, ambiguity refusal, genuinely-
+  different-name stays unresolved), +5 `verify_numbers` (prose match / major-
+  not-critical near-miss / unrelated-ignored / non-gating / feedback surfaced).
+- **Follow-up:** a closed-loop re-dispatch (auto-fix `table_spec.json` from the
+  feedback) is left for later; deterministic normalization already covers the
+  validated case, and the feedback makes the rest visible.
+
 ### Deterministic results tables — render numbers from JSON, not by hand (PR-1)
 
 - **Results-table numbers are now generated, not transcribed.** New
