@@ -267,6 +267,32 @@ The pipeline **does** reach the internet for literature, through guarded tools:
 
 ## Going deeper
 
+### How it works
+
+![How E2ER works — phases, specialists, and JSON artifact contracts](docs/figures/pipeline.svg)
+
+The figure shows the seven pipeline phases left-to-right
+(`initial → iterative → self_attack → polish → review → revision → replication`),
+the specialists in each phase, and — the key part — the **JSON artifact
+contracts** flowing from the specialist that produces them
+(`econometrics_specialist → estimation_results.json`,
+`paper_drafter → table_spec.json`, …). Results-table numbers are filled by a
+**deterministic renderer** from those JSON files (per `table_spec.json`), so they
+can't be fabricated; the two assurance gates that run before any reviewer —
+`verify_numbers` and `verify_citations` — then check the draft.
+
+This figure is **generated from the source of truth**, not hand-drawn:
+[`scripts/gen_pipeline_figure.py`](scripts/gen_pipeline_figure.py) reads the real
+specialist roster and artifact contracts from
+[`src/core/specialists/registry.py`](src/core/specialists/registry.py), so it can
+never drift from the code — rename a specialist or a sidecar and the figure (and
+its test) follow automatically. Regenerate with:
+
+```bash
+python scripts/gen_pipeline_figure.py   # writes docs/figures/pipeline.{dot,svg,pdf}
+# needs Graphviz for SVG/PDF:  brew install graphviz   (the .dot is always written)
+```
+
 For a high-level mental model before diving into the code:
 
 - **[Pipeline overview](docs/diagrams/pipeline_overview.md)** — full flow from idea to completion (mermaid diagram).
