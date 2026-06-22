@@ -120,6 +120,20 @@ strict_equality = true
 #   warn_return_any — these can be ratcheted on later, file-by-file, via
 #   per-module overrides if you want to tighten gradually.
 
+[[tool.mypy.overrides]]
+# Don't parse numpy's bundled stubs. Recent numpy ships PEP 695 `type`
+# statements in numpy/__init__.pyi, which mypy rejects under our 3.11 target
+# ("Type statement is only supported in Python 3.12 and greater") and aborts
+# before checking our code — a CI break driven by numpy's release cadence, not
+# our types. `follow_imports = skip` only applies to .pyi stubs when
+# `follow_imports_for_stubs = true`, and the module list must include the
+# top-level `numpy` (where __init__.pyi lives), not just `numpy.*`. We already
+# don't type-check through numpy (ignore_missing_imports), so this only drops a
+# stub we never relied on. Version-robust.
+module = ["numpy", "numpy.*"]
+follow_imports = "skip"
+follow_imports_for_stubs = true
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]

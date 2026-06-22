@@ -208,7 +208,15 @@ def _extract_table_numbers(tex_content: str) -> list[tuple[str, str]]:
     """
     results: list[tuple[str, str]] = []
 
-    rule_re = re.compile(r"\\(?:hline|midrule|toprule|bottomrule|cline\{[^}]*\}|addlinespace(?:\[[^\]]*\])?)\s*")
+    # Strip non-data rule commands before splitting into rows. `cmidrule`
+    # carries a numeric range arg (\cmidrule(lr){2-3}) that must not be read
+    # as data; include it alongside the other booktabs/array rules.
+    rule_re = re.compile(
+        r"\\(?:hline|midrule|toprule|bottomrule"
+        r"|cline\{[^}]*\}"
+        r"|cmidrule(?:\([^)]*\))?(?:\{[^}]*\})?"
+        r"|addlinespace(?:\[[^\]]*\])?)\s*"
+    )
 
     for i, match in enumerate(_TABULAR_RE.finditer(tex_content)):
         table_body = match.group(1)
@@ -228,6 +236,16 @@ def _extract_table_numbers(tex_content: str) -> list[tuple[str, str]]:
         for row_idx, row in enumerate(rows):
             row = row.strip()
             if not row:
+                continue
+            # Skip structural rows that span columns with \multicolumn:
+            # column-group headers and panel labels (e.g.
+            # "\multicolumn{6}{l}{Panel B: Post-2008}"). Extracting from them
+            # reads the span count ("6"), a label year ("2008"), or a window
+            # length ("120") as if it were a data value — the false-positive
+            # class that rejected correct papers (M5 re-run 92626bf8). Data
+            # rows are plain `label & value & value`; they never use
+            # \multicolumn.
+            if "\\multicolumn" in row:
                 continue
             cells = row.split("&")
             for cell_idx, cell in enumerate(cells):

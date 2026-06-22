@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Deterministic results tables — render numbers from JSON, not by hand (PR-1)
+
+- **Results-table numbers are now generated, not transcribed.** New
+  `src/core/renderer/tables.py::render_tables()` reads a declarative
+  `table_spec.json` (which specs are columns, which coefficients/statistics are
+  rows) and fills the cells straight from `estimation_results.json` /
+  `robustness_results.json` into `tables/<name>.tex`, which the draft
+  `\input`s. A results-table number can no longer be fabricated or
+  mis-transcribed — the failure mode the `verify_numbers` gate exists to catch,
+  removed at the source. First-party deterministic code called by the runner;
+  no LLM in the number path.
+- **The model authors only the spec.** New `data/table-spec` skill (mirrors
+  `data/figure-spec`); wired into `paper_drafter` / `section_writer`.
+  `table_spec.json` is a best-effort sidecar (`SPECIALIST_OPTIONAL_SIDECARS`) —
+  theory / design-without-estimates papers legitimately have none.
+  `latex/tables` and `writing/cite-numbers-by-source` updated to route numeric
+  tables through the spec (prose numbers still governed by cite-by-source).
+- **`verify_numbers` false positives fixed.** The gate no longer reads LaTeX
+  *structure* as data: `\multicolumn` rows (column-group headers, panel labels)
+  are skipped and `\cmidrule` range args are stripped. This is exactly what
+  rejected the M5 re-run (`92626bf8`) — `\multicolumn{6}`→"6",
+  "Post-2008"→"2008", "Rolling 120"→"120" flagged as mismatches. Genuine
+  fabrications in plain data rows are still caught (regression-tested).
+- **Renderer is defensive + auditable.** Never raises; dynamic coefficient
+  names, optional `forecast_evaluation`/`first_stage`, `null` fields, and
+  empty-`coefficients` combination specs all render `---`. A `table_spec`
+  reference to a missing key renders `---` AND is recorded in
+  `table_render_report.json` (a *detectable* missing reference, not a silent
+  wrong number). A pre-compile `ensure_input_stubs` guard backfills any
+  dangling `\input{tables/...}` so a missing table can't abort compilation.
+  Runner re-renders before both the verify gate and compile (idempotent).
+- Tests: +19 `test_table_renderer.py`, +3 `verify_numbers` regression
+  (multicolumn/cmidrule not extracted; fabrication still critical).
+- **Follow-up (PR-2, not in this change):** retarget `verify_numbers` to check
+  *prose* numbers ("text = table number") with conservative matching.
+
 ### Post-specialist execution — script discovery + output normalization (M5 re-run fix)
 
 - **Hardens the runner-side execution from the previous entry** after the
