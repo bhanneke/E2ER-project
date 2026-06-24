@@ -51,6 +51,18 @@ _MAX_SPECIALIST_ATTEMPTS = 3
 # converge and operator intervention is needed.
 _VERIFY_NUMBERS_AUTO_PATCH_BUDGET = 1
 
+# Deep revision: when reviewers reject the paper's RESEARCH (not its wording) —
+# MAJOR_REVISION or MECHANISM_FAIL — re-dispatch the research specialists
+# (data_analyst + econometrics_specialist) and the writer with the referee
+# reports as guidance, then re-render, re-draft, and re-review. patch_revisor
+# only edits prose; it cannot recompute an out-of-sample test or re-source a
+# dataset, so the substantive referee findings used to die in a terminal
+# REJECTED. This loop lets the pipeline respond to a referee like a researcher
+# does. Bounded to 1 round: each round is ~a dozen specialist calls + a full
+# re-review; one round is the right cost/benefit point and guarantees
+# termination.
+_MAX_DEEP_REVISIONS = 1
+
 
 class PipelineRunner:
     """Top-level orchestrator for a single paper."""
@@ -103,6 +115,8 @@ class PipelineRunner:
         # CircuitBreakerError and the run halts with status=PAUSED.
         self._failure_counts: dict[str, int] = {}
         self._last_specialist_errors: dict[str, str] = {}
+        # Deep-revision rounds spent this run (re-do-the-research loop).
+        self._deep_revision_count: int = 0
 
     def _in_memory_spent(self) -> float:
         """Sum of all specialist contribution costs + strategist usage cost.
@@ -635,26 +649,7 @@ class PipelineRunner:
         before writing). Reviewers are tolerant of partial failure in the
         cascade-detection layer, so missing files don't halt the pipeline.
         """
-        scores = []
-        seen = set()
-        for reviewer in REVIEWER_SPECIALISTS:
-            artifact = SPECIALIST_ARTIFACTS.get(reviewer, "")
-            if artifact:
-                path = self._workspace / artifact
-                if path.exists():
-                    score = parse_review_output(reviewer, path.read_text(encoding="utf-8"))
-                    if score:
-                        scores.append(score)
-                        seen.add(reviewer)
-        # Fallback: any reviewer whose file we couldn't parse, try the
-        # chat-side summary from the contribution row in memory.
-        for c in self._contributions:
-            if c.specialist in REVIEWER_SPECIALISTS and c.specialist not in seen:
-                score = parse_review_output(c.specialist, c.output)
-                if score:
-                    scores.append(score)
-                    seen.add(c.specialist)
-
+        scores = self._read_review_scores()
         if not scores:
             # Auto-completing on missing review evidence is dangerous: it
             # produces a "completed" paper with no review trail. Surface as
@@ -667,9 +662,75 @@ class PipelineRunner:
 
         result = aggregate_reviews(scores)
         logger.info("Review aggregation: %s (avg=%.2f)", result.verdict, result.weighted_avg)
+        self._write_review_aggregation(result)
 
-        aggregation_path = self._workspace / "review_aggregation.json"
-        aggregation_path.write_text(
+        if result.verdict in {"ACCEPT", "MINOR_REVISION"}:
+            await self._update_status(PaperStatus.COMPLETED)
+            return PaperStatus.COMPLETED
+
+        # Deep revision: MECHANISM_FAIL means the referees rejected the paper's
+        # RESEARCH (the mechanism isn't computed/convincing), which patch_revisor
+        # — a prose editor — cannot fix (it can't recompute an out-of-sample test
+        # or re-source a dataset). Re-do the analysis + writing against the
+        # referee findings, re-review, and re-decide. Bounded by
+        # _MAX_DEEP_REVISIONS. (MAJOR_REVISION stays on the lighter prose-patch
+        # path below; HARD_REJECT is unsalvageable and never loops.)
+        if result.verdict == "MECHANISM_FAIL" and self._deep_revision_count < _MAX_DEEP_REVISIONS:
+            self._deep_revision_count += 1
+            logger.info(
+                "Deep revision round %d/%d for paper %s — re-dispatching research specialists on the referee findings",
+                self._deep_revision_count,
+                _MAX_DEEP_REVISIONS,
+                self._paper_id,
+            )
+            await self._run_deep_revision_round()
+            # Re-run the full review machinery (re-render + gates + reviewers)
+            # on the revised research, then re-decide from the fresh scores.
+            review_status = await self._run_review_phase()
+            if review_status != PaperStatus.REVIEW:
+                # A gate rejected the re-analyzed draft (e.g. verify_numbers
+                # critical after re-estimation) — terminal this round.
+                return review_status
+            return await self._run_revision_phase(current_status)
+
+        # MAJOR_REVISION → the existing light prose patch (unchanged).
+        if result.verdict == "MAJOR_REVISION":
+            return await self._run_patch_revision(scores)
+
+        # HARD_REJECT, or MECHANISM_FAIL the deep round couldn't lift — distinct
+        # from FAILED (crash). The operator can revise + POST /resume.
+        logger.warning("Paper %s received %s", self._paper_id, result.verdict)
+        await self._update_status(
+            PaperStatus.REJECTED,
+            error=f"{result.verdict}: {result.rationale}",
+        )
+        return PaperStatus.REJECTED
+
+    def _read_review_scores(self) -> list:
+        """Parse each reviewer's score from its file on disk (canonical), with
+        the in-memory chat summary as a fallback for a reviewer whose file is
+        absent. Returns the list of parsed scores (possibly empty)."""
+        scores = []
+        seen = set()
+        for reviewer in REVIEWER_SPECIALISTS:
+            artifact = SPECIALIST_ARTIFACTS.get(reviewer, "")
+            if artifact:
+                path = self._workspace / artifact
+                if path.exists():
+                    score = parse_review_output(reviewer, path.read_text(encoding="utf-8"))
+                    if score:
+                        scores.append(score)
+                        seen.add(reviewer)
+        for c in self._contributions:
+            if c.specialist in REVIEWER_SPECIALISTS and c.specialist not in seen:
+                score = parse_review_output(c.specialist, c.output)
+                if score:
+                    scores.append(score)
+                    seen.add(c.specialist)
+        return scores
+
+    def _write_review_aggregation(self, result) -> None:
+        (self._workspace / "review_aggregation.json").write_text(
             json.dumps(
                 {
                     "verdict": result.verdict,
@@ -681,22 +742,83 @@ class PipelineRunner:
             )
         )
 
-        if result.verdict in {"ACCEPT", "MINOR_REVISION"}:
-            await self._update_status(PaperStatus.COMPLETED)
-            return PaperStatus.COMPLETED
+    def _referee_feedback_text(self, max_chars: int = 15000) -> str:
+        """Concatenate the reviewer reports from disk for the deep-revision
+        prompt — the substantive findings the research must address."""
+        parts: list[str] = []
+        for reviewer in REVIEWER_SPECIALISTS:
+            art = SPECIALIST_ARTIFACTS.get(reviewer, "")
+            if not art:
+                continue
+            p = self._workspace / art
+            if not p.is_file():
+                continue
+            try:
+                txt = p.read_text(encoding="utf-8").strip()
+            except OSError:
+                continue
+            if txt:
+                parts.append(f"## {reviewer}\n{txt}")
+        blob = "\n\n".join(parts)
+        return blob[:max_chars]
 
-        if result.verdict == "MAJOR_REVISION":
-            return await self._run_patch_revision(scores)
+    async def _run_deep_revision_round(self) -> None:
+        """Re-do the RESEARCH (not just the prose) in response to the referees,
+        then the writing. The caller re-reviews and re-decides.
 
-        # HARD_REJECT or MECHANISM_FAIL — distinct from FAILED (crash). The
-        # operator can revise the source artifacts and POST /resume to
-        # re-enter the pipeline at the appropriate phase.
-        logger.warning("Paper %s received %s", self._paper_id, result.verdict)
-        await self._update_status(
-            PaperStatus.REJECTED,
-            error=f"{result.verdict}: {result.rationale}",
+        Re-dispatches data_analyst → econometrics_specialist (data dependency)
+        with the referee reports as guidance, re-renders the deterministic
+        tables from the revised JSON, then re-dispatches section_writer to bring
+        the prose in line with the revised analysis.
+        """
+        from ..renderer.tables import ensure_input_stubs, render_tables
+        from ..specialists.dispatcher import execute_work_order
+
+        feedback = self._referee_feedback_text()
+        research_focus = (
+            "The reviewers rejected this paper's RESEARCH, not its wording. "
+            "Address their findings by RE-DOING your work: recompute every "
+            "required quantity and leave nothing null (e.g. out-of-sample R^2, "
+            "test statistics), fix the data and specification problems they "
+            "name, source the dataset the research question actually specifies, "
+            "and apply the standard corrections they cite. Rewrite your "
+            "script/output accordingly.\n\n=== Referee reports ===\n" + feedback
         )
-        return PaperStatus.REJECTED
+        for spec in ("data_analyst", "econometrics_specialist"):
+            order = WorkOrder(paper_id=self._paper_id, specialist=spec, focus=research_focus, context_tier=2)
+            c = await execute_work_order(
+                order,
+                self._backend,
+                self._workspace,
+                self._model,
+                self._extra_tools,
+                self._extra_handlers,
+                self._backend_name,
+            )
+            self._contributions.append(c)
+
+        # Tables follow the revised JSON; re-render before the writer edits prose.
+        render_tables(self._workspace)
+        ensure_input_stubs(self._workspace)
+
+        writer_focus = (
+            "Revise the paper to reflect the REVISED analysis (the updated "
+            "estimation_results.json / summary_statistics.json) and to address "
+            "the referee findings below. Report only what was actually computed "
+            "— do not claim or imply results that are still missing.\n\n"
+            "=== Referee reports ===\n" + feedback
+        )
+        order = WorkOrder(paper_id=self._paper_id, specialist="section_writer", focus=writer_focus, context_tier=2)
+        c = await execute_work_order(
+            order,
+            self._backend,
+            self._workspace,
+            self._model,
+            self._extra_tools,
+            self._extra_handlers,
+            self._backend_name,
+        )
+        self._contributions.append(c)
 
     async def _verify_numbers_auto_patch(self, report):
         """Try to auto-patch verify_numbers critical mismatches before REJECT.
