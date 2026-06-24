@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Deep revision loop — referees can send the research back, not just the prose
+
+- **`MECHANISM_FAIL` re-does the research instead of terminating.** When the
+  mechanism reviewer rejected a paper's *research* (mechanism not computed /
+  not convincing — score < 5), the verdict was a **terminal REJECTED**. The
+  only review-driven loop that existed, `patch_revisor`, edits prose — it
+  cannot recompute an out-of-sample test or re-source a dataset — so the
+  referee's substantive findings (sequential validation surfaced exactly this:
+  real papers rejected on "the decisive OOS test was never computed") had
+  nowhere to go. `_run_revision_phase` now treats `MECHANISM_FAIL` as a trigger:
+  it re-dispatches the **research specialists** (`data_analyst` →
+  `econometrics_specialist`) and the writer with the **referee reports as
+  guidance**, re-renders the deterministic tables, re-drafts, then **re-runs the
+  full review** (gates + reviewers) and re-decides — the way a researcher
+  responds to a referee.
+- **Bounded and terminating.** One deep round (`_MAX_DEEP_REVISIONS = 1`); the
+  re-review re-enters the revision phase with the budget spent, so a verdict the
+  round can't lift falls through to REJECTED. No infinite loop (regression-
+  tested). `MAJOR_REVISION` keeps its existing light prose-patch path unchanged;
+  `HARD_REJECT` stays terminal (unsalvageable).
+- Tests: +2 (`test_patch_revision_wiring.py`) — MECHANISM_FAIL → research
+  re-dispatch with referee feedback → re-review → COMPLETED; and the bounding
+  guarantee (exactly one deep round → REJECTED). All existing revision tests
+  unchanged.
+
 ### Post-execution error feedback — specialists fix their own script crashes
 
 - **Recovers E2ER v1's self-debugging loop inside v3's sandbox.** v1's
