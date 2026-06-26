@@ -221,6 +221,27 @@ class LiteratureToolHandler(ToolHandler):
         query = inp["query"]
         limit = max(1, min(int(inp.get("limit", 10)), 50))
 
+        settings = get_settings()
+        # On SQLite, consult the researcher's persisted local library first.
+        # The workspace dir name is the paper id (workspace_root/<uuid>).
+        if settings.literature_local_enabled:
+            try:
+                from .storage import search_literature
+
+                local = await search_literature(query, paper_project_id=self._workspace.name, limit=limit)
+            except Exception as e:  # noqa: BLE001
+                logger.debug("local literature search failed: %s", e)
+                local = []
+            if local:
+                return json.dumps(
+                    {
+                        "source": "local_library",
+                        "query": query,
+                        "count": len(local),
+                        "papers": [_local_row_to_dict(r) for r in local],
+                    }
+                )
+
         # Iterate the registry's search chain (OpenAlex → arXiv). Return the
         # first source that yields papers; if none does, return the last
         # source's (empty) result; if every source raised, return an error.
@@ -421,6 +442,28 @@ def _to_dict(p: PaperMetadata) -> dict[str, Any]:
         "citations": p.citations,
         "bibtex_key": p.bibtex_key,
         "pdf_url": p.pdf_url,  # lets the model pass it to read_reference
+    }
+
+
+def _local_row_to_dict(row: dict[str, Any]) -> dict[str, Any]:
+    """Shape a persisted literature_items row like a search result. ``authors``
+    is stored as a JSON string; decode it for the model."""
+    authors = row.get("authors")
+    if isinstance(authors, str):
+        try:
+            authors = json.loads(authors)
+        except (ValueError, TypeError):
+            authors = [authors] if authors else []
+    return {
+        "title": row.get("title"),
+        "authors": authors or [],
+        "year": row.get("year"),
+        "doi": row.get("doi") or "",
+        "abstract": (row.get("abstract") or "")[:1500],
+        "journal": row.get("journal") or "",
+        "citations": row.get("citations") or 0,
+        "pdf_url": row.get("pdf_url") or "",
+        "pdf_path": row.get("pdf_path") or "",
     }
 
 

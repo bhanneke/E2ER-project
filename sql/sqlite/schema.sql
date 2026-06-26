@@ -129,3 +129,40 @@ CREATE TABLE IF NOT EXISTS pipeline_events (
 );
 
 CREATE INDEX IF NOT EXISTS idx_events_paper ON pipeline_events(paper_id, created_at);
+
+-- ── literature_items (SQLite local library) ──────────────────────────────
+-- The Postgres schema's literature_items carries a pgvector `embedding` and a
+-- UNIQUE(doi) for the KB. On SQLite we persist the researcher's BYOD library
+-- (discovered from LITERATURE_DIR / a Zotero folder) so search_papers can serve
+-- it offline. DOI is NOT unique here — a BYOD library legitimately holds
+-- DOI-less items; dedup is enforced app-side per (paper_id, doi|title+year).
+CREATE TABLE IF NOT EXISTS literature_items (
+    id          TEXT PRIMARY KEY,
+    paper_id    TEXT REFERENCES papers(id) ON DELETE CASCADE,
+    title       TEXT NOT NULL,
+    authors     TEXT,            -- JSON array string
+    year        INTEGER,
+    doi         TEXT,
+    abstract    TEXT,
+    journal     TEXT,
+    url         TEXT,
+    pdf_url     TEXT,
+    pdf_path    TEXT,            -- workspace-relative path to a staged PDF
+    source      TEXT,
+    citations   INTEGER DEFAULT 0,
+    raw         TEXT,            -- JSON string
+    embedding   BLOB,            -- optional float32 vector (NULL unless enabled)
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_lit_paper ON literature_items(paper_id);
+CREATE INDEX IF NOT EXISTS idx_lit_doi ON literature_items(doi);
+
+CREATE TRIGGER IF NOT EXISTS literature_items_updated_at
+    AFTER UPDATE ON literature_items
+    FOR EACH ROW
+    WHEN NEW.updated_at = OLD.updated_at
+    BEGIN
+        UPDATE literature_items SET updated_at = datetime('now') WHERE id = NEW.id;
+    END;

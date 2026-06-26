@@ -16,8 +16,11 @@ class PaperMetadata:
     journal: str = ""
     url: str = ""
     pdf_url: str = ""
-    source: str = ""  # "openalex", "semantic_scholar", "arxiv", "bibtex"
+    source: str = ""  # "openalex", "semantic_scholar", "arxiv", "bibtex", "byod_pdf", "zotero_local"
     citations: int = 0
+    # Workspace-relative path to a staged PDF (BYOD/Zotero discovery), readable
+    # via the read_reference tool. Empty for web-sourced metadata.
+    pdf_path: str = ""
     raw: dict[str, Any] = field(default_factory=dict)
 
     @property
