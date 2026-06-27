@@ -168,7 +168,23 @@ def main() -> None:
         help="Emit the citation_integrity.json report on stdout instead of the human summary.",
     )
 
+    export_p = subparsers.add_parser(
+        "export",
+        help="Assemble a clean, structured project folder (paper/code/data/results/design/reviews) from a run.",
+    )
+    export_p.add_argument("paper_id", help="The paper UUID returned by `e2er run`.")
+    export_p.add_argument(
+        "--to",
+        default=None,
+        help="Destination root for the exported folder (default: OUTPUT_DIR / <LOCAL_DATA_DIR>/e2er_papers).",
+    )
+
     args = parser.parse_args()
+
+    if args.command == "export":
+        from .cli_export import export as _export
+
+        sys.exit(_export(paper_id=args.paper_id, to=args.to))
 
     if args.command == "doctor":
         from .doctor import main_doctor
