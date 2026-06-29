@@ -167,6 +167,36 @@ def _link_local_data_dir_into_workspace(
     _stage_corpus_files(workspace, local_data_dir, recursive, PDF_EXTENSIONS, "literature", "PDF")
 
 
+async def _ingest_literature_corpus(paper_id: str, workspace: Path, settings) -> None:
+    """Discover + persist the BYOD literature folder into SQLite. Best-effort —
+    a discovery/enrichment failure must never block paper creation.
+
+    Only runs on the SQLite backend (the local-library path); on Postgres the
+    pgvector KB is the literature store and this is a no-op.
+    """
+    from ..db.client import current_backend
+
+    lit_dirs = settings.resolved_literature_dirs()
+    if not lit_dirs or current_backend() != "sqlite":
+        return
+    from ..modules.literature.discovery import ingest_literature
+    from ..modules.local_corpus import parse_corpus_roots
+
+    roots = parse_corpus_roots(lit_dirs)
+    if not roots:
+        return
+    try:
+        await ingest_literature(
+            workspace,
+            paper_id,
+            roots,
+            max_items=settings.literature_max_ingest,
+            enrich=True,
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning("literature ingestion skipped for %s: %s (paper creation continues)", paper_id, e)
+
+
 async def _tuple_is_proven(model: str, methodology: str, mode: str) -> bool:
     """Has any paper with this (model, methodology, mode) tuple completed?
 
@@ -355,6 +385,13 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
     # by `_load_reference_summary`; we don't symlink those.
     _link_local_data_dir_into_workspace(workspace, settings.local_data_dir, settings.local_data_dir_recursive)
 
+    # v0.9 (BYOD-SQLite): import the staged tabular files into the paper's own
+    # data.db so specialists can `query_data("SELECT … FROM …")` instead of
+    # reading whole CSVs into pandas. Best-effort — never blocks paper creation.
+    from ..modules.data.byod_import import import_corpus_into_data_db
+
+    await import_corpus_into_data_db(workspace, settings.max_rows_per_paper)
+
     if req.methodology not in {"empirical", "theoretical", "mixed"}:
         raise HTTPException(
             status_code=400,
@@ -444,6 +481,10 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
         )
     except Exception as e:
         logger.warning("Could not persist paper to DB: %s", e)
+
+    # Discover + persist the BYOD literature folder into SQLite (FK needs the
+    # papers row above to exist first). Best-effort — never blocks creation.
+    await _ingest_literature_corpus(paper_id, workspace, settings)
 
     if settings.github_enabled:
         background_tasks.add_task(_create_github_repo, paper_id, req.title)
@@ -1205,6 +1246,7 @@ async def _run_pipeline(
     from ..config import get_settings
     from ..core.strategist.runner import PipelineRunner
     from ..modules.data.discovery_tools import DATA_DISCOVERY_TOOLS, SeriesDataToolHandler
+    from ..modules.data.query_tools import QUERY_DATA_TOOLS, QueryDataToolHandler
     from ..modules.data.registry import warehouses
     from ..modules.literature.tools import LITERATURE_TOOLS, LiteratureToolHandler
     from ..modules.llm.registry import get_backend
@@ -1226,8 +1268,15 @@ async def _run_pipeline(
 
     # Series data (FRED/yfinance) + discovery — always on (yfinance needs no
     # key). Agents call list_data_sources, in light of the RQ, then fetch_data.
+    # The handler takes the workspace so fetch_data can optionally materialize
+    # a pulled series into the paper's data.db (queryable via query_data).
     extra_tools.extend(DATA_DISCOVERY_TOOLS)
-    extra_handlers.append(SeriesDataToolHandler())
+    extra_handlers.append(SeriesDataToolHandler(workspace))
+
+    # query_data — read-only SQL over the paper's data.db (BYOD imports +
+    # materialized external series). Always on; specialists use it via skills.
+    extra_tools.extend(QUERY_DATA_TOOLS)
+    extra_handlers.append(QueryDataToolHandler(paper_id, workspace))
 
     # Literature tools are always on — OpenAlex needs no API key.
     extra_tools.extend(LITERATURE_TOOLS)

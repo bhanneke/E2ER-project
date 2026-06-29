@@ -37,13 +37,22 @@ def build_tier1_context(workspace: Path, paper_id: str) -> str:
     tier0 = build_tier0_context(workspace, paper_id)
     sections = [tier0, ""]
 
-    user_data = _list_user_data(workspace)
-    if user_data:
+    data_tables = _list_data_tables(workspace)
+    if data_tables:
         sections.append(
-            "## Researcher-Provided Data Files (workspace/data/)\n"
-            "Use the read_file tool to load any of these. Do NOT try to query Allium "
-            "for these — they are supplied directly by the researcher.\n\n" + user_data
+            "## Local Data Warehouse (data.db)\n"
+            "The researcher's data files (and any external series you materialize) are imported "
+            "as SQL tables in this paper's data.db. Query them with the `query_data` tool using "
+            "real SQL — aggregate, join, filter. Do NOT query Allium for these.\n\n" + data_tables
         )
+    else:
+        user_data = _list_user_data(workspace)
+        if user_data:
+            sections.append(
+                "## Researcher-Provided Data Files (workspace/data/)\n"
+                "Use the read_file tool to load any of these. Do NOT try to query Allium "
+                "for these — they are supplied directly by the researcher.\n\n" + user_data
+            )
 
     paper_plan = _read_artifact(workspace, "paper_plan.md")
     if paper_plan:
@@ -132,6 +141,40 @@ def build_self_attack_context(workspace: Path, paper_id: str) -> str:
     if econometrics:
         sections.append(f"## Econometric Specification\n{_truncate(econometrics, 2000)}")
     return "\n\n".join(sections)
+
+
+def _list_data_tables(workspace: Path) -> str:
+    """Describe the paper's data.db tables (name, columns+types, row count,
+    sample rows) so specialists know what they can `query_data`. Empty string
+    when there's no data.db."""
+    from ...db.paper_data_db import list_tables_catalog_sync
+
+    try:
+        catalog = list_tables_catalog_sync(workspace)
+    except Exception as e:
+        from ...logging_config import get_logger
+
+        get_logger(__name__).debug("data.db catalog read failed for %s: %s", workspace, e)
+        return ""
+    if not catalog:
+        return ""
+
+    lines: list[str] = []
+    for tbl in catalog:
+        cols = ", ".join(f"{c['name']} {c['type']}".strip() for c in tbl["columns"])
+        rc = tbl.get("row_count")
+        rc_str = f"{rc:,}" if isinstance(rc, int) else "?"
+        lines.append(f"### `{tbl['table']}` ({rc_str} rows)")
+        lines.append(f"Columns: {cols}")
+        samples = tbl.get("samples") or []
+        if samples:
+            col_names = [c["name"] for c in tbl["columns"]]
+            lines.append("Sample rows:")
+            for row in samples:
+                pairs = ", ".join(f"{n}={v!r}" for n, v in zip(col_names, row, strict=False))
+                lines.append(f"  - {pairs}")
+        lines.append("")
+    return "\n".join(lines).rstrip()
 
 
 def _list_user_data(workspace: Path) -> str:

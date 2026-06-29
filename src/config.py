@@ -102,6 +102,20 @@ class Settings(BaseSettings):
     literature_bibtex_file: str | None = None
     semantic_scholar_api_key: str | None = None
 
+    # BYOD literature folder: a directory of the researcher's own papers,
+    # discovered + persisted into SQLite at paper creation. May be a plain
+    # folder of PDFs OR a Zotero folder (auto-detected by a zotero.sqlite at
+    # the root). Comma-separated paths allowed. Falls back to local_data_dir.
+    literature_dir: str | None = None
+    # Route search_papers to the local SQLite library first (SQLite backend).
+    literature_local_search_enabled: bool = True
+    # Optional: local sentence-transformers embeddings for semantic local
+    # search (off by default; needs the pgvector extra). FTS/LIKE otherwise.
+    literature_embeddings_enabled: bool = False
+    # Cap on papers discovered+persisted from LITERATURE_DIR at paper creation
+    # (protects startup latency + CrossRef rate limits on huge libraries).
+    literature_max_ingest: int = 500
+
     # Email used to identify this client to the OpenAlex / Crossref / Unpaywall
     # polite pools (all keyless, all ask for a contact in every request). Each
     # of those services prioritises requests from registered emails; the
@@ -126,6 +140,19 @@ class Settings(BaseSettings):
         # old check only looked at the legacy postgres_url/db_password fields
         # and left the KB silently off (keyword-only) for DATABASE_URL users.
         return self.resolved_database_url.startswith("postgres")
+
+    def resolved_literature_dirs(self) -> str | None:
+        """The BYOD literature folder(s): ``literature_dir`` if set, else the
+        shared ``local_data_dir`` (so existing PDF-in-LOCAL_DATA_DIR setups
+        keep working with zero new config)."""
+        return self.literature_dir or self.local_data_dir
+
+    @property
+    def literature_local_enabled(self) -> bool:
+        """Local SQLite literature library is the active search backend: on the
+        SQLite backend with local search enabled (mirror of literature_kb_enabled
+        for the no-Postgres path)."""
+        return self.literature_local_search_enabled and not self.resolved_database_url.startswith("postgres")
 
     # ── GitHub ────────────────────────────────────────────────────────────────
     github_token: str | None = None

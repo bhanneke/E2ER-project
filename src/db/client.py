@@ -104,6 +104,15 @@ def _detect_backend_from_settings() -> str:
     return _backend
 
 
+def current_backend() -> str:
+    """Public accessor for the active DB backend ("postgres" or "sqlite").
+
+    Lets call sites (literature storage, BYOD ingestion) branch on the backend
+    without importing the underscore-prefixed internal helper.
+    """
+    return _detect_backend_from_settings()
+
+
 async def get_pool():
     """Postgres connection pool. Returns None on SQLite mode."""
     global _pool

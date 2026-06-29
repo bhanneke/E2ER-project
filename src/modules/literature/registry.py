@@ -25,6 +25,7 @@ from .oa_resolvers import oa_pdf_resolvers as _oa_pdf_resolvers
 from .providers import (
     ArxivSource,
     LocalBibLibrary,
+    LocalZoteroLibrary,
     OpenAlexSource,
     ReferenceLibrary,
     SearchSource,
@@ -69,6 +70,18 @@ def reference_libraries(settings: Settings) -> list[ReferenceLibrary]:
                 recursive=settings.local_data_dir_recursive,
             )
         )
+    # Local Zotero folder (zotero.sqlite) — cheap sqlite read, safe at prompt
+    # time. Only added when a literature dir actually contains a zotero.sqlite;
+    # plain PDF folders are NOT parsed here (per-call PDF parsing is too
+    # expensive) — they're served via the discovery→SQLite persistence path and
+    # the search_papers local routing + staged-PDF listing instead.
+    lit_dirs = getattr(settings, "literature_dir", None) or settings.local_data_dir
+    if lit_dirs:
+        from ..local_corpus import parse_corpus_roots
+        from .local_zotero import detect_zotero
+
+        if any(detect_zotero(root) is not None for root in parse_corpus_roots(lit_dirs)):
+            libraries.append(LocalZoteroLibrary(lit_dirs))
     # Narrow zotero_api_key to str for the type checker (the zotero_enabled
     # property already implies this, but mypy can't see through a property).
     zotero_key = settings.zotero_api_key
