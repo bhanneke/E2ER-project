@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from pydantic_settings import BaseSettings
@@ -153,6 +154,24 @@ class Settings(BaseSettings):
         SQLite backend with local search enabled (mirror of literature_kb_enabled
         for the no-Postgres path)."""
         return self.literature_local_search_enabled and not self.resolved_database_url.startswith("postgres")
+
+    # ── Structured export ─────────────────────────────────────────────────────
+    # At the end of a run (and on demand via `e2er export`), assemble a clean,
+    # portable project folder from the flat workspace. See
+    # docs/STRUCTURED_EXPORT_SPEC.md.
+    export_enabled: bool = True
+    output_dir: str | None = None  # where exported project folders land
+
+    def resolved_output_root(self) -> Path:
+        """Root dir for exported papers: OUTPUT_DIR, else
+        <first LOCAL_DATA_DIR>/e2er_papers, else ~/e2er-papers."""
+        if self.output_dir:
+            return Path(self.output_dir).expanduser()
+        if self.local_data_dir:
+            first = self.local_data_dir.split(",")[0].strip()
+            if first:
+                return Path(first).expanduser() / "e2er_papers"
+        return Path.home() / "e2er-papers"
 
     # ── GitHub ────────────────────────────────────────────────────────────────
     github_token: str | None = None

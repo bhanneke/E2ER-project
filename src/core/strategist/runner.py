@@ -328,6 +328,30 @@ class PipelineRunner:
             await self._run_github_push_phase()
         except Exception as e:
             logger.warning("Finalize: github push skipped: %s", e)
+        try:
+            await self._run_export_phase()
+        except Exception as e:
+            logger.warning("Finalize: structured export skipped: %s", e)
+
+    async def _run_export_phase(self) -> None:
+        """Assemble the clean, structured project folder from the workspace.
+
+        Runs at terminal status (completed/rejected/failed) so the user always
+        gets a navigable folder — even a rejected paper yields its reviews +
+        draft. Best-effort; gated on EXPORT_ENABLED.
+        """
+        from datetime import datetime
+
+        from ...config import get_settings
+        from ..export.structured import export_paper
+
+        settings = get_settings()
+        if not settings.export_enabled:
+            return
+        date_str = datetime.now().strftime("%Y%m%d")
+        dest_root = settings.resolved_output_root()
+        out = await asyncio.to_thread(export_paper, self._workspace, dest_root, date_str=date_str)
+        logger.info("Structured export for paper %s → %s", self._paper_id, out)
 
     async def _export_audit_log_only(self) -> None:
         """Write replication/audit_log.csv + data_queries.sql from the DB.
