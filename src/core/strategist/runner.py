@@ -795,6 +795,7 @@ class PipelineRunner:
         tables from the revised JSON, then re-dispatches section_writer to bring
         the prose in line with the revised analysis.
         """
+        from ..renderer.figures import ensure_figure_placeholders, render_figures
         from ..renderer.tables import ensure_input_stubs, render_tables
         from ..specialists.dispatcher import execute_work_order
 
@@ -824,6 +825,8 @@ class PipelineRunner:
         # Tables follow the revised JSON; re-render before the writer edits prose.
         render_tables(self._workspace)
         ensure_input_stubs(self._workspace)
+        render_figures(self._workspace)
+        ensure_figure_placeholders(self._workspace)
 
         writer_focus = (
             "Revise the paper to reflect the REVISED analysis (the updated "
@@ -1013,10 +1016,13 @@ class PipelineRunner:
         re-render. Deterministic normalization already covers the common case;
         this handles the long tail.
         """
+        from ..renderer.figures import ensure_figure_placeholders, render_figures
         from ..renderer.tables import ensure_input_stubs, render_tables
 
         report = render_tables(self._workspace)
         ensure_input_stubs(self._workspace)
+        render_figures(self._workspace)
+        ensure_figure_placeholders(self._workspace)
         if not report.unresolved:
             return
 
@@ -1053,6 +1059,8 @@ class PipelineRunner:
         # `---` (and visible in table_render_report.json) — one fix attempt.
         report2 = render_tables(self._workspace)
         ensure_input_stubs(self._workspace)
+        render_figures(self._workspace)
+        ensure_figure_placeholders(self._workspace)
         if report2.unresolved:
             logger.warning(
                 "table_spec: %d reference(s) still unresolved after section_writer fix — "
@@ -1435,10 +1443,13 @@ class PipelineRunner:
             # have changed either), then backfill stubs for any dangling
             # \input so a missing table can't abort the whole compile.
             from ..renderer.compiler import compile_latex
+            from ..renderer.figures import ensure_figure_placeholders, render_figures
             from ..renderer.tables import ensure_input_stubs, render_tables
 
             render_tables(self._workspace)
             ensure_input_stubs(self._workspace)
+            render_figures(self._workspace)
+            ensure_figure_placeholders(self._workspace)
             pdf = await compile_latex(self._workspace)
             if pdf:
                 logger.info("Compiled PDF: %s", pdf)
