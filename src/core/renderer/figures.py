@@ -18,7 +18,9 @@ runner, NOT an LLM specialist. Design rules mirror ``tables.py``:
 
 Supported ``figure_type`` values: ``coefficient`` (horizontal dot-and-whisker
 with CIs), ``event_study`` (point + error-bar path with treatment marker),
-``bar`` (category bars). Unknown types are skipped (reported), not guessed.
+``bar`` (category bars), ``time_series`` (one line per ``{label,x,y}`` series),
+and ``multi_panel`` (a grid of ``panels``, each itself one of the above).
+Unknown types are skipped (reported), not guessed.
 """
 
 from __future__ import annotations
@@ -122,11 +124,72 @@ def _render_bar(fig_spec: dict[str, Any], ax: Any) -> None:
             tick.set_ha("right")
 
 
+def _render_time_series(fig_spec: dict[str, Any], ax: Any) -> None:
+    series = fig_spec.get("series")
+    if not isinstance(series, list) or not series:
+        raise ValueError("time_series needs a non-empty 'series' list")
+    plotted = 0
+    have_labels = False
+    for s in series:
+        if not isinstance(s, dict):
+            continue
+        x = s.get("x")
+        y = _floats(s.get("y"))
+        if not isinstance(x, list) or y is None or len(x) != len(y):
+            continue
+        label = str(s.get("label", "")) or None
+        ax.plot(x, y, marker="o", markersize=3, linewidth=1.5, label=label)
+        have_labels = have_labels or label is not None
+        plotted += 1
+    if plotted == 0:
+        raise ValueError("time_series had no plottable {label,x,y} series")
+    ax.set_xlabel(str(fig_spec.get("x_label", "")))
+    ax.set_ylabel(str(fig_spec.get("y_label", "")))
+    if have_labels:
+        ax.legend(fontsize=8)
+    ax.grid(ls=":", alpha=0.4)
+
+
+# Single-axes renderers, dispatched by figure_type. multi_panel is composed
+# from these onto subplots (it needs the figure, not one axes — handled in
+# render_figures).
 _RENDERERS = {
     "coefficient": _render_coefficient,
     "event_study": _render_event_study,
     "bar": _render_bar,
+    "time_series": _render_time_series,
 }
+
+
+def _render_multi_panel(plt: Any, fig_spec: dict[str, Any]) -> Any:
+    """Compose a grid of sub-panels, each itself a single-axes figure_type.
+    Returns the matplotlib Figure. Raises if there are no usable panels."""
+    panels = fig_spec.get("panels")
+    if not isinstance(panels, list) or not panels:
+        raise ValueError("multi_panel needs a non-empty 'panels' list")
+    ncols = max(1, int(fig_spec.get("ncols") or 1))
+    nrows = -(-len(panels) // ncols)  # ceil division
+    fig, axes = plt.subplots(nrows, ncols, figsize=(6.0 * ncols, 4.0 * nrows), squeeze=False)
+    flat = [ax for row in axes for ax in row]
+    for i, panel in enumerate(panels):
+        ax = flat[i]
+        renderer = _RENDERERS.get(str(panel.get("figure_type", ""))) if isinstance(panel, dict) else None
+        if renderer is None:
+            ax.text(0.5, 0.5, "[unsupported panel]", ha="center", va="center", color="0.5")
+            ax.axis("off")
+            continue
+        try:
+            renderer(panel, ax)
+        except Exception:  # noqa: BLE001 — one bad panel must not abort the grid
+            ax.clear()
+            ax.text(0.5, 0.5, "[panel render error]", ha="center", va="center", color="0.5")
+            ax.axis("off")
+        title = panel.get("title")
+        if title:
+            ax.set_title(str(title), fontsize=10)
+    for j in range(len(panels), len(flat)):  # hide unused cells
+        flat[j].axis("off")
+    return fig
 
 
 def render_figures(workspace: Path) -> FigureRenderReport:
@@ -172,6 +235,21 @@ def render_figures(workspace: Path) -> FigureRenderReport:
             report.errors.append(f"invalid figure filename: {filename!r}")
             continue
         ftype = str(fig_spec.get("figure_type", ""))
+        if ftype == "multi_panel":
+            try:
+                fig = _render_multi_panel(plt, fig_spec)
+                fig.tight_layout()
+                fig.savefig(workspace / filename, format="pdf", bbox_inches="tight")
+                plt.close(fig)
+                report.rendered.append(filename)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("render_figures: failed to render %s: %s", filename, e)
+                report.skipped.append(f"{filename}: {e}")
+                try:
+                    plt.close("all")
+                except Exception:  # noqa: BLE001
+                    pass
+            continue
         renderer = _RENDERERS.get(ftype)
         if renderer is None:
             report.skipped.append(f"{filename}: unknown figure_type {ftype!r}")

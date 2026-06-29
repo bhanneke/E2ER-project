@@ -63,6 +63,76 @@ def test_renders_all_three_figure_types(tmp_path: Path):
     assert set(report2.rendered) == set(report.rendered)
 
 
+def test_time_series_multiple_lines(tmp_path: Path):
+    ws = _spec(
+        tmp_path,
+        [
+            {
+                "filename": "fig_ts.pdf",
+                "figure_type": "time_series",
+                "series": [
+                    {"label": "Direct", "x": [1, 2, 3], "y": [2.7, 1.7, 3.3]},
+                    {"label": "Routed", "x": [1, 2, 3], "y": [1.2, 0.9, 1.5]},
+                ],
+                "x_label": "month",
+                "y_label": "royalty %",
+            }
+        ],
+    )
+    report = render_figures(ws)
+    assert report.rendered == ["fig_ts.pdf"]
+    assert _is_pdf(ws / "fig_ts.pdf")
+
+
+def test_multi_panel_composes_sub_figures(tmp_path: Path):
+    ws = _spec(
+        tmp_path,
+        [
+            {
+                "filename": "fig_mp.pdf",
+                "figure_type": "multi_panel",
+                "ncols": 1,
+                "panels": [
+                    {
+                        "figure_type": "time_series",
+                        "title": "Panel A",
+                        "series": [{"label": "All", "x": [1, 2, 3], "y": [2.7, 1.7, 3.3]}],
+                    },
+                    {
+                        "figure_type": "bar",
+                        "title": "Panel B",
+                        "categories": ["Direct", "Blur"],
+                        "values": [15.6, 28.1],
+                    },
+                ],
+            }
+        ],
+    )
+    report = render_figures(ws)
+    assert report.rendered == ["fig_mp.pdf"]
+    assert _is_pdf(ws / "fig_mp.pdf")
+
+
+def test_multi_panel_tolerates_a_bad_panel(tmp_path: Path):
+    # one good panel + one unsupported type → still renders the grid
+    ws = _spec(
+        tmp_path,
+        [
+            {
+                "filename": "fig_mp2.pdf",
+                "figure_type": "multi_panel",
+                "ncols": 2,
+                "panels": [
+                    {"figure_type": "bar", "categories": ["a", "b"], "values": [1, 2]},
+                    {"figure_type": "sankey", "nodes": []},  # unsupported → placeholder cell
+                ],
+            }
+        ],
+    )
+    report = render_figures(ws)
+    assert report.rendered == ["fig_mp2.pdf"]
+
+
 def test_unknown_type_is_skipped_not_fatal(tmp_path: Path):
     ws = _spec(tmp_path, [{"filename": "x.pdf", "figure_type": "heatmap"}])
     report = render_figures(ws)
