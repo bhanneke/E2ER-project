@@ -61,8 +61,44 @@ def _sniff_delimiter(path: Path, default: str) -> str:
         return default
 
 
+def _estimate_csv_rows(path: Path, sample_lines: int = 2000) -> int:
+    """Estimate total data rows from file size + average sampled line length.
+    Cheap (reads only the head), so we can pick a sampling stride for a
+    multi-GB file without a full counting pass."""
+    try:
+        size = path.stat().st_size
+    except OSError:
+        return 0
+    consumed = 0
+    n = 0
+    with path.open("rb") as f:
+        header_len = len(f.readline())
+        for _ in range(sample_lines):
+            line = f.readline()
+            if not line:
+                break
+            consumed += len(line)
+            n += 1
+    if n == 0:
+        return 0
+    avg = consumed / n
+    return int(max(0, size - header_len) / avg) if avg > 0 else 0
+
+
+def _systematic_sample(df: pd.DataFrame, max_rows: int) -> pd.DataFrame:
+    """Cap an in-memory frame to <= max_rows by keeping every k-th row (order
+    preserved, full span) rather than the first N — so a time-ordered file isn't
+    truncated to its earliest period."""
+    if len(df) <= max_rows:
+        return df
+    stride = max(1, -(-len(df) // max_rows))  # ceil
+    idx = list(range(0, len(df), stride))[:max_rows]
+    return df.take(idx)
+
+
 def _load_flat_dataframe(path: Path, max_rows: int) -> pd.DataFrame:
-    """Read a non-CSV tabular file fully (capped). CSV/TSV use the chunked path."""
+    """Read a non-CSV tabular file fully, systematic-sampled to the cap.
+    CSV/TSV use the chunked path."""
     import pandas as pd
 
     suffix = path.suffix.lower()
@@ -72,9 +108,7 @@ def _load_flat_dataframe(path: Path, max_rows: int) -> pd.DataFrame:
         df = pd.read_json(path, lines=True)
     else:  # pragma: no cover - guarded by caller
         raise ValueError(f"not a flat-loadable file: {path}")
-    if len(df) > max_rows:
-        df = df.head(max_rows)
-    return df
+    return _systematic_sample(df, max_rows)
 
 
 def _import_one_file_sync(
@@ -95,8 +129,7 @@ def _import_one_file_sync(
         sheets = pd.read_excel(path, sheet_name=None)
         multi = len(sheets) > 1
         for sheet_name, df in sheets.items():
-            if len(df) > max_rows:
-                df = df.head(max_rows)
+            df = _systematic_sample(df, max_rows)
             label = f"{Path(rel_label).with_suffix('')}_{sheet_name}" if multi else rel_label
             table = unique_table_name(label, existing)
             rows = _materialize_dataframe_sync(db_path, table, df, if_exists="replace")
@@ -106,19 +139,37 @@ def _import_one_file_sync(
     if suffix in {".csv", ".tsv"}:
         sep = "\t" if suffix == ".tsv" else _sniff_delimiter(path, ",")
         table = unique_table_name(rel_label, existing)
-        total = 0
+        # Systematic sampling so a row cap on a time-ordered file still spans the
+        # whole period. head(N) once restricted a 16 GB NFT file to its earliest
+        # ~200k rows (all 2021, before aggregators existed) → the model built a
+        # bogus proxy and the paper was rejected. Stride from a cheap size-based
+        # estimate; stride==1 (file fits) keeps the old read-everything behaviour.
+        estimate = _estimate_csv_rows(path)
+        stride = max(1, round(estimate / max_rows)) if estimate > max_rows else 1
+        kept = 0
+        seen = 0
         first = True
         columns: list[str] = []
         for chunk in pd.read_csv(path, sep=sep, chunksize=_CSV_CHUNK):
-            if total >= max_rows:
+            if kept >= max_rows:
                 break
-            if total + len(chunk) > max_rows:
-                chunk = chunk.head(max_rows - total)
+            if stride > 1:
+                # keep rows whose GLOBAL index is a multiple of stride (order kept)
+                positions = [i for i in range(len(chunk)) if (seen + i) % stride == 0]
+                seen += len(chunk)
+                if not positions:
+                    continue
+                chunk = chunk.iloc[positions]
+            else:
+                seen += len(chunk)
+            if kept + len(chunk) > max_rows:
+                chunk = chunk.head(max_rows - kept)
             mode: Literal["replace", "append"] = "replace" if first else "append"
             _materialize_dataframe_sync(db_path, table, chunk, if_exists=mode)
             columns = list(chunk.columns)
-            total += len(chunk)
+            kept += len(chunk)
             first = False
+        total = kept
         if first:  # empty file → still create an empty table so the catalog shows it
             empty = pd.read_csv(path, sep=sep, nrows=0)
             _materialize_dataframe_sync(db_path, table, empty, if_exists="replace")
