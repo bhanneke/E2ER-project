@@ -385,12 +385,12 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
     # by `_load_reference_summary`; we don't symlink those.
     _link_local_data_dir_into_workspace(workspace, settings.local_data_dir, settings.local_data_dir_recursive)
 
-    # v0.9 (BYOD-SQLite): import the staged tabular files into the paper's own
-    # data.db so specialists can `query_data("SELECT … FROM …")` instead of
-    # reading whole CSVs into pandas. Best-effort — never blocks paper creation.
-    from ..modules.data.byod_import import import_corpus_into_data_db
-
-    await import_corpus_into_data_db(workspace, settings.max_rows_per_paper)
+    # NB: the heavy BYOD work — importing staged files into data.db and
+    # discovering/ingesting the literature corpus — runs in the background
+    # task (`_prepare_and_run`), NOT here. A multi-GB import + Zotero ingest
+    # took longer than the CLI's HTTP timeout and made `e2er run`'s POST time
+    # out (the paper still ran, but the client errored). Keeping create_paper
+    # fast lets the POST return immediately with the paper_id.
 
     if req.methodology not in {"empirical", "theoretical", "mixed"}:
         raise HTTPException(
@@ -482,15 +482,13 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
     except Exception as e:
         logger.warning("Could not persist paper to DB: %s", e)
 
-    # Discover + persist the BYOD literature folder into SQLite (FK needs the
-    # papers row above to exist first). Best-effort — never blocks creation.
-    await _ingest_literature_corpus(paper_id, workspace, settings)
-
     if settings.github_enabled:
         background_tasks.add_task(_create_github_repo, paper_id, req.title)
 
     # Use asyncio.create_task (not BackgroundTasks) so we get a handle for cancel.
-    task = asyncio.create_task(_run_pipeline(paper_id, workspace, req.mode, cap, req.methodology))
+    # _prepare_and_run does the heavy BYOD import + literature ingest FIRST (off
+    # the request path), then runs the pipeline — so the POST returns now.
+    task = asyncio.create_task(_prepare_and_run(paper_id, workspace, settings, req.mode, cap, req.methodology))
     _RUNNING[paper_id] = task
     task.add_done_callback(lambda _t: _RUNNING.pop(paper_id, None))
 
@@ -1234,6 +1232,36 @@ async def upload_data_file(paper_id: str, file: UploadFile = File(...)) -> dict[
 
 
 # --- Background tasks ---
+
+
+async def _prepare_and_run(
+    paper_id: str,
+    workspace: Path,
+    settings,
+    mode: str,
+    max_cost_usd: float,
+    methodology: str = "empirical",
+) -> None:
+    """Background entry: do the heavy BYOD prep (data.db import + literature
+    ingest) off the request path, THEN run the pipeline.
+
+    Kept out of create_paper so the POST returns immediately — a multi-GB import
+    + Zotero ingest otherwise blocks past the client's HTTP timeout. Each step is
+    best-effort and never raises; the import runs before the pipeline's data
+    specialists need data.db, and the literature ingest runs after the papers row
+    exists (FK).
+    """
+    from ..modules.data.byod_import import import_corpus_into_data_db
+
+    try:
+        await import_corpus_into_data_db(workspace, settings.max_rows_per_paper)
+    except Exception as e:  # noqa: BLE001 — best-effort; pipeline still runs
+        logger.warning("BYOD import failed for %s: %s (pipeline continues)", paper_id, e)
+    try:
+        await _ingest_literature_corpus(paper_id, workspace, settings)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("literature ingest failed for %s: %s (pipeline continues)", paper_id, e)
+    await _run_pipeline(paper_id, workspace, mode, max_cost_usd, methodology)
 
 
 async def _run_pipeline(
