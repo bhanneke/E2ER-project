@@ -44,10 +44,17 @@ async def run_specialist(
 
     skills_text = load_skills_for_specialist(specialist)
     has_allium = any((t.get("name") == "query_allium") for t in (extra_tools or []))
+    # A populated per-paper data.db means the researcher's data is queryable via
+    # the query_data tool — steer data specialists to SQL-explore it (see the
+    # inline mandate in _build_system_prompt).
+    from ...db.paper_data_db import has_data_db as _has_data_db
+
+    has_data_db = _has_data_db(workspace)
     system = _build_system_prompt(
         specialist,
         skills_text,
         has_allium=has_allium,
+        has_data_db=has_data_db,
         max_turns=_MAX_TURNS,
     )
     user_prompt = _build_user_prompt(work_order)
@@ -245,6 +252,7 @@ def _build_system_prompt(
     specialist: str,
     skills_text: str,
     has_allium: bool = False,
+    has_data_db: bool = False,
     max_turns: int = 80,
 ) -> str:
     name = specialist.replace("_", " ").title()
@@ -283,6 +291,31 @@ def _build_system_prompt(
         "but produce exactly one final write_file at the end.",
         "",
     ]
+    if specialist in _DATA_SPECIALISTS and has_data_db:
+        lines.extend(
+            [
+                "## Local Data Warehouse — query it before you model (DO NOT GUESS COLUMNS)",
+                "Your context includes a 'Local Data Warehouse (data.db)' block listing the "
+                "available tables, their columns + types, row counts, and sample rows. Run "
+                "read-only SQL against it with `e2er-data query sql \"SELECT ...\"` (via Bash; "
+                "use `e2er-data query tables` to list tables). On SDK backends the same "
+                "capability is the `query_data(sql)` tool. Use it:",
+                "- BEFORE defining any variable or treatment, inspect the REAL columns with "
+                "`SELECT DISTINCT <col>` / `GROUP BY` to see the actual values. Do NOT invent a "
+                "proxy for something the data already records (e.g. don't derive a treatment from "
+                "addresses when a labelled column exists) — a wrong proxy is a construct-validity "
+                "error referees reject.",
+                "- Profile and aggregate in SQL — counts, group means, time ranges, missingness — "
+                "rather than loading millions of rows into memory; query_data returns only the "
+                "window/aggregate you ask for.",
+                "- query_data calls are recorded for the replication package, so they double as your "
+                "data-provenance trail; document the key queries in your output.",
+                "The final reproducible estimation script may still read the data files with pandas — "
+                "but VERIFY column names + meanings via query_data first so it operates on real "
+                "fields, not assumptions.",
+                "",
+            ]
+        )
     if specialist == "data_analyst" and has_allium:
         lines.extend(
             [

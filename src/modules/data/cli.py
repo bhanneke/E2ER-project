@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import os
 import sys
 from pathlib import Path
@@ -528,6 +529,64 @@ def _add_save_to(p: argparse.ArgumentParser) -> None:
     )
 
 
+async def _audit_query_data(paper_id: str, specialist: str, sql: str, actual_rows: int) -> None:
+    """Record an executed query_data call to data_query_records (best-effort).
+    Logged as 'feasibility' (read-only, no approval) with aggregation_level
+    'local_data_db' so it's distinguishable from Allium and detectable as usage."""
+    try:
+        from .audit import log_query, mark_executed
+
+        record_id = await log_query(
+            paper_id=paper_id,
+            specialist=specialist,
+            query_sql=sql,
+            query_type="feasibility",
+            fields_requested=[],
+            aggregation_level="local_data_db",
+        )
+        await mark_executed(record_id, actual_rows)
+    except Exception:  # noqa: BLE001 — audit must never break a query
+        pass
+
+
+async def _run_query_sql(args: argparse.Namespace) -> str:
+    """Run a read-only SQL query against the paper's data.db warehouse.
+
+    The CLI-backend counterpart to the in-process ``query_data`` tool (which the
+    Claude Code CLI never sees). Resolves the workspace from E2ER_PAPER_ID,
+    runs the validated read-only query, records the audit row, and prints the
+    result as JSON for the model to read.
+    """
+    from ...db.paper_data_db import DataQueryError, read_only_query
+
+    workspace = _resolve_workspace(args.paper_id)
+    sql = args.sql
+    try:
+        result = await read_only_query(workspace, sql)
+    except DataQueryError as e:
+        return json.dumps({"error": str(e)})
+    await _audit_query_data(args.paper_id, args.specialist, sql, int(result.get("row_count", 0)))
+    payload: dict[str, Any] = {
+        "columns": result.get("columns", []),
+        "rows": result.get("rows", []),
+        "row_count": result.get("row_count", 0),
+    }
+    if result.get("truncated"):
+        payload["note"] = "results truncated; refine with LIMIT/WHERE/aggregation"
+    return json.dumps(payload, default=str)
+
+
+async def _run_query_tables(args: argparse.Namespace) -> str:
+    """List the data.db tables (name, columns+types, row count, sample rows) so
+    the model can discover what it can query."""
+    from ...db.paper_data_db import list_tables_catalog
+
+    catalog = await list_tables_catalog(_resolve_workspace(args.paper_id))
+    if not catalog:
+        return json.dumps({"tables": [], "note": "no data.db warehouse for this paper yet"})
+    return json.dumps({"tables": catalog}, default=str)
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="e2er-allium-query",
@@ -828,6 +887,18 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--limit", type=int, default=100, help="Max releases returned (default 100).")
 
+    # ── query — read-only SQL over the paper's local data.db warehouse ──────
+    # The CLI-backend path to the in-process `query_data` tool. Allow-listed as
+    # Bash(e2er-data:*), so the Claude Code CLI model can actually reach it.
+    query_parser = sources.add_parser(
+        "query",
+        help="Read-only SQL over the paper's local data warehouse (data.db).",
+    )
+    query_sub = query_parser.add_subparsers(dest="command", required=True)
+    p = query_sub.add_parser("sql", help='Run one read-only SELECT, e.g. e2er-data query sql "SELECT ..."')
+    p.add_argument("sql", help="A single read-only SQL SELECT/WITH statement (quote it).")
+    query_sub.add_parser("tables", help="List data.db tables: columns, row counts, sample rows.")
+
     return parser
 
 
@@ -860,6 +931,10 @@ _DISPATCH: dict[str, dict[str, Any]] = {
         "series-info": _run_fred_series_info,
         "search": _run_fred_search,
         "releases": _run_fred_releases,
+    },
+    "query": {
+        "sql": _run_query_sql,
+        "tables": _run_query_tables,
     },
 }
 
