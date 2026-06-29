@@ -51,6 +51,7 @@ SPECIALIST_SKILLS: dict[str, list[str]] = {
     ],
     "literature_scanner": ["base/researcher", "synthesis/context-builder"],
     "data_architect": [
+        "data/query-data",
         "data/blockchain",
         "data/crypto-defi",
         "base/economist",
@@ -65,6 +66,7 @@ SPECIALIST_SKILLS: dict[str, list[str]] = {
         "reasoning/identification",
     ],
     "econometrics_specialist": [
+        "data/query-data",
         "econometrics/iv-estimation",
         "econometrics/did",
         "econometrics/panel-data",
@@ -76,6 +78,7 @@ SPECIALIST_SKILLS: dict[str, list[str]] = {
         "econometrics/estimation-results-schema",
     ],
     "data_analyst": [
+        "data/query-data",
         "data/cleaning",
         "data/figure-spec",
         "econometrics/panel-data",
