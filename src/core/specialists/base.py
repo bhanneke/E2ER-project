@@ -294,10 +294,12 @@ def _build_system_prompt(
     if specialist in _DATA_SPECIALISTS and has_data_db:
         lines.extend(
             [
-                "## Local Data Warehouse — use `query_data` (DO NOT GUESS COLUMNS)",
+                "## Local Data Warehouse — query it before you model (DO NOT GUESS COLUMNS)",
                 "Your context includes a 'Local Data Warehouse (data.db)' block listing the "
-                "available tables, their columns + types, row counts, and sample rows. A "
-                "`query_data(sql)` tool runs read-only SQL against it. Use it:",
+                "available tables, their columns + types, row counts, and sample rows. Run "
+                "read-only SQL against it with `e2er-data query sql \"SELECT ...\"` (via Bash; "
+                "use `e2er-data query tables` to list tables). On SDK backends the same "
+                "capability is the `query_data(sql)` tool. Use it:",
                 "- BEFORE defining any variable or treatment, inspect the REAL columns with "
                 "`SELECT DISTINCT <col>` / `GROUP BY` to see the actual values. Do NOT invent a "
                 "proxy for something the data already records (e.g. don't derive a treatment from "
