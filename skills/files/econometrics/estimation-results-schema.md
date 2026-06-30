@@ -52,6 +52,17 @@ This means: when the workspace has data, the correct action is almost
 always **write `run_estimation.py`**, not give up. "I could not run
 estimation" is only true when there is genuinely no data to estimate on.
 
+## Your primary specification must be IDENTIFIED, not a raw gap
+
+The FIRST / headline specification you report must implement the design in
+`identification_strategy.md` — its fixed effects, controls, and clustering.
+A raw, unconditional difference in means (a two-coefficient `const + treatment`
+regression with no fixed effects or controls) is at most a *descriptive
+baseline*; reporting it as the main result is the single most common reason
+these papers score low on identification. Put the identified specification first
+(e.g. under a `main` key), and make its `diagnostics` reflect what was actually
+estimated (fixed-effects absorbed, number of clusters, within-R²) — not nulls.
+
 ## Required shape
 
 A JSON object with one entry per estimated specification. Each entry

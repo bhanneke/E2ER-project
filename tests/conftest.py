@@ -198,7 +198,14 @@ _SPECIALIST_OUTPUTS: dict[str, tuple[str, str]] = {
 _MOCK_SIDECAR_CONTENTS: dict[str, str] = {
     "summary_statistics.json": json.dumps({"n_observations": 100, "outcome": {"mean": 0.0, "sd": 1.0}}),
     "figure_spec.json": json.dumps({"figures": [{"name": "f1", "kind": "line"}]}),
-    "estimation_results.json": json.dumps({"main": {"coef": 0.04, "se": 0.01, "t": 4.0, "p": 0.001}}),
+    "estimation_results.json": json.dumps(
+        {
+            "main": {
+                "coefficients": {"treat": {"estimate": 0.04, "se": 0.01, "t_stat": 4.0, "p_value": 0.001}},
+                "diagnostics": {"n_observations": 100},
+            }
+        }
+    ),
 }
 
 # JSON the strategist engine returns from decide() for "designing" status

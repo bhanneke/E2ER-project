@@ -27,6 +27,14 @@ def test_no_mandate_for_non_data_specialist():
     assert "query_data" not in _prompt("paper_drafter", has_data_db=True)
 
 
+def test_econometrics_identified_spec_mandate():
+    # The headline-must-be-identified mandate fires for econometrics, not others.
+    p = _prompt("econometrics_specialist", has_data_db=True)
+    assert "IDENTIFIED specification" in p
+    assert "raw" in p and "identification_strategy.md" in p
+    assert "IDENTIFIED specification" not in _prompt("data_analyst", has_data_db=True)
+
+
 def test_query_data_skill_in_data_bundles():
     for spec in ("data_analyst", "data_architect", "econometrics_specialist"):
         assert "data/query-data" in SPECIALIST_SKILLS[spec], spec

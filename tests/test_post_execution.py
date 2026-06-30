@@ -292,7 +292,7 @@ async def test_run_specialist_runs_script_before_contract_check(tmp_workspace: P
                     "content": (
                         "import json, pathlib\n"
                         "pathlib.Path('estimation_results.json').write_text("
-                        "  json.dumps({'main': {'coef': 0.04, 'se': 0.01}}))\n"
+                        "  json.dumps({'main': {'coefficients': {'treat': {'estimate': 0.04, 'se': 0.01}}}}))\n"
                         "print('ran')\n"
                     ),
                 },
@@ -337,7 +337,7 @@ async def test_run_specialist_runs_script_before_contract_check(tmp_workspace: P
     # M4.3 contract check then passed.
     assert contribution.success is True, f"unexpected failure: {contribution.error}"
     data = json.loads((tmp_workspace / "estimation_results.json").read_text())
-    assert data["main"]["coef"] == 0.04
+    assert data["main"]["coefficients"]["treat"]["estimate"] == 0.04
     # Audit log is present.
     assert (tmp_workspace / "run_estimation.log").is_file()
 
@@ -509,7 +509,10 @@ async def test_run_specialist_injects_prior_crash_into_prompt(tmp_workspace: Pat
             # The "fixed" script writes a populated sidecar directly.
             await tool_handler.handle(
                 "write_file",
-                {"path": "estimation_results.json", "content": json.dumps({"dp": {"oos_r2": 0.01}})},
+                {
+                    "path": "estimation_results.json",
+                    "content": json.dumps({"dp": {"coefficients": {"dp": {"estimate": 0.01}}, "oos_r2": 0.01}}),
+                },
             )
             return ToolLoopResult(success=True, output="fixed", tool_calls_made=2, usage=TokenUsage(1, 1))
 
