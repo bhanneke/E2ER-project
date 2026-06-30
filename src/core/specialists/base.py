@@ -310,6 +310,10 @@ def _build_system_prompt(
                 "window/aggregate you ask for.",
                 "- query_data calls are recorded for the replication package, so they double as your "
                 "data-provenance trail; document the key queries in your output.",
+                "- Record the SAMPLE CONSTRUCTION: COUNT(*) the raw rows, then after each inclusion/"
+                "exclusion filter, so you can report a sample-flow (raw N -> each filter + rows dropped "
+                "-> final N). A missing sample-flow is a standard referee complaint; state how missing "
+                "values were handled (dropped vs. coded zero) too.",
                 "The final reproducible estimation script may still read the data files with pandas — "
                 "but VERIFY column names + meanings via query_data first so it operates on real "
                 "fields, not assumptions.",

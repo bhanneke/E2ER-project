@@ -27,6 +27,15 @@ def test_no_mandate_for_non_data_specialist():
     assert "query_data" not in _prompt("paper_drafter", has_data_db=True)
 
 
+def test_sample_flow_steering_in_data_mandate():
+    # data specialists are told to document the sample construction (sample-flow)
+    p = _prompt("data_analyst", has_data_db=True)
+    assert "SAMPLE CONSTRUCTION" in p
+    assert "sample-flow" in p
+    # gated on a data.db like the rest of the mandate
+    assert "SAMPLE CONSTRUCTION" not in _prompt("data_analyst", has_data_db=False)
+
+
 def test_econometrics_identified_spec_mandate():
     # The headline-must-be-identified mandate fires for econometrics, not others.
     p = _prompt("econometrics_specialist", has_data_db=True)
