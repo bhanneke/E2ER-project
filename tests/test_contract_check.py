@@ -6,7 +6,9 @@ import json
 from pathlib import Path
 
 from src.core.specialists.contract_check import (
+    _has_coefficients,
     check_artifact_nonempty,
+    check_has_regression,
     check_specialist_artifacts,
 )
 
@@ -138,7 +140,7 @@ def test_econometrics_specialist_m4_regression(tmp_path: Path):
 def test_all_required_artifacts_present_passes(tmp_path: Path):
     (tmp_path / "econometric_spec.md").write_text("# Spec\n\n" + "Real content. " * 30, encoding="utf-8")
     (tmp_path / "estimation_results.json").write_text(
-        json.dumps({"main": {"coef": 0.04, "se": 0.01}}), encoding="utf-8"
+        json.dumps({"main": {"coefficients": {"treat": {"estimate": 0.04, "se": 0.01}}}}), encoding="utf-8"
     )
     failed = [c for c in check_specialist_artifacts(tmp_path, "econometrics_specialist") if not c.ok]
     assert failed == []
@@ -248,3 +250,43 @@ async def test_run_specialist_flips_success_on_contract_violation(tmp_workspace:
 
 async def _async_noop(*args, **kwargs):
     return None
+
+
+# ── econometrics: results JSON must hold an actual regression ─────────────────
+
+
+def test_has_coefficients_finds_nested_block():
+    assert _has_coefficients({"main": {"coefficients": {"x": {"estimate": 1.0}}}})
+    assert _has_coefficients({"raw_gap": {"coefficients": {"const": {}, "t": {}}}})
+    assert not _has_coefficients({"_note": "n", "summary": {"mean": 3}})
+    assert not _has_coefficients({"main": {"coefficients": {}}})  # empty block
+
+
+def test_check_has_regression(tmp_path: Path):
+    good = tmp_path / "g"
+    good.mkdir()
+    (good / "estimation_results.json").write_text(
+        json.dumps({"main": {"coefficients": {"treat": {"estimate": -0.01, "p_value": 0.0}}}})
+    )
+    assert check_has_regression(good, "estimation_results.json").ok
+
+    bad = tmp_path / "b"
+    bad.mkdir()
+    (bad / "estimation_results.json").write_text(json.dumps({"_note": "x", "raw_gap_mean": 0.05}))
+    c = check_has_regression(bad, "estimation_results.json")
+    assert not c.ok and "coefficients" in c.reason
+
+
+def test_econometrics_gate_flags_descriptive_only(tmp_path: Path):
+    (tmp_path / "econometric_spec.md").write_text("# Spec\n" + "x " * 100)
+    (tmp_path / "estimation_results.json").write_text(json.dumps({"_note": "no model", "means": {"a": 1}}))
+    failed = [c for c in check_specialist_artifacts(tmp_path, "econometrics_specialist") if not c.ok]
+    assert any("no estimated regression" in c.reason for c in failed)
+
+
+def test_econometrics_gate_passes_with_real_regression(tmp_path: Path):
+    (tmp_path / "econometric_spec.md").write_text("# Spec\n" + "x " * 100)
+    (tmp_path / "estimation_results.json").write_text(
+        json.dumps({"main": {"coefficients": {"treat": {"estimate": -0.01}}, "diagnostics": {"n": 100}}})
+    )
+    assert all(c.ok for c in check_specialist_artifacts(tmp_path, "econometrics_specialist"))

@@ -316,6 +316,24 @@ def _build_system_prompt(
                 "",
             ]
         )
+    if specialist == "econometrics_specialist":
+        lines.extend(
+            [
+                "## Headline estimate MUST be the IDENTIFIED specification (not a raw gap)",
+                "Your primary result must implement the design in `identification_strategy.md` — its "
+                "fixed effects, controls, and clustering — and report it FIRST in "
+                "estimation_results.json under a clear primary key (e.g. `main`).",
+                "- A raw / unconditional difference in means (a two-coefficient `const + treatment` "
+                "regression with no fixed effects or controls) is at most a DESCRIPTIVE baseline. It "
+                "is NOT your headline estimate — reporting it as the main result is the single most "
+                "common reason these papers score low on identification.",
+                "- The identified spec's `diagnostics` must reflect what was actually estimated "
+                "(e.g. fixed-effects absorbed, number of clusters, within-R^2) — not nulls.",
+                "- If the identification strategy can't be estimated on the data, say so explicitly in "
+                "your spec and explain why; do not silently substitute a raw gap and move on.",
+                "",
+            ]
+        )
     if specialist == "data_analyst" and has_allium:
         lines.extend(
             [

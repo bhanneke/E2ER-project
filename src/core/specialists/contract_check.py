@@ -45,10 +45,21 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from ...logging_config import get_logger
 
 logger = get_logger(__name__)
+
+# Specialists whose results JSON must contain an actual estimated regression
+# (a non-empty ``coefficients`` block), not just descriptive summaries. The
+# basic non-empty check passes a ``{"raw_gap": …, "_note": …}`` descriptive
+# dump; a real run produced a clean FE regression while another produced only
+# descriptives (capping the data/identification review scores). The schema
+# (skills/files/econometrics/estimation-results-schema.md) already mandates
+# "one entry per estimated specification, each with coefficients and
+# diagnostics" — this enforces it deterministically at the boundary.
+_REGRESSION_REQUIRED: dict[str, str] = {"econometrics_specialist": "estimation_results.json"}
 
 
 # Minimum non-whitespace character count for prose / code artifacts.
@@ -124,6 +135,41 @@ def check_artifact_nonempty(workspace: Path, relative: str) -> ContractCheck:
     return ContractCheck(relative, True, "")
 
 
+def _has_coefficients(obj: Any) -> bool:
+    """True if ``obj`` contains any non-empty ``coefficients`` dict, anywhere in
+    its nested structure (specs may be top-level or nested, e.g. ``main_level``)."""
+    if isinstance(obj, dict):
+        coeffs = obj.get("coefficients")
+        if isinstance(coeffs, dict) and coeffs:
+            return True
+        return any(_has_coefficients(v) for v in obj.values())
+    if isinstance(obj, list):
+        return any(_has_coefficients(v) for v in obj)
+    return False
+
+
+def check_has_regression(workspace: Path, relative: str) -> ContractCheck:
+    """Verify a results JSON holds at least one estimated specification (a
+    non-empty ``coefficients`` block) — not a descriptive-only dump. Assumes the
+    basic non-empty/parse check already passed; degrades to ok on read error so
+    it never double-reports a problem the non-empty check already flagged."""
+    target = workspace / relative
+    try:
+        parsed = json.loads(target.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return ContractCheck(relative, True, "")
+    if _has_coefficients(parsed):
+        return ContractCheck(relative, True, "")
+    return ContractCheck(
+        relative,
+        False,
+        "no estimated regression: estimation_results.json has no non-empty 'coefficients' block "
+        "(descriptive-only output). Estimate at least one identified specification and write its "
+        "coefficients/SEs/p-values per the estimation-results-schema — descriptive summaries do not "
+        "substitute for the estimation.",
+    )
+
+
 def check_specialist_artifacts(workspace: Path, specialist: str) -> list[ContractCheck]:
     """Check every required artifact for ``specialist`` — the primary
     plus any declared sidecars. Returns one ``ContractCheck`` per
@@ -149,4 +195,13 @@ def check_specialist_artifacts(workspace: Path, specialist: str) -> list[Contrac
         if sidecar in optional:
             continue
         checks.append(check_artifact_nonempty(workspace, sidecar))
+
+    # Deterministic "an actual regression was run" gate. Only applied once the
+    # basic non-empty check for that file passed, so we don't pile a second
+    # failure on top of an already-flagged empty/invalid file.
+    regression_file = _REGRESSION_REQUIRED.get(specialist)
+    if regression_file:
+        base_failed = any(c.artifact == regression_file and not c.ok for c in checks)
+        if not base_failed:
+            checks.append(check_has_regression(workspace, regression_file))
     return checks
