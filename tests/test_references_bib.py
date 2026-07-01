@@ -60,6 +60,19 @@ def test_reference_summary_surfaces_cite_keys_and_cite_only_rule():
     assert "Do NOT invent citations" in out
 
 
+def test_bibtex_key_is_alphanumeric():
+    # no-year item used to yield "…n.d.…" (dots invalid in bibtex keys)
+    p = PaperMetadata(title="Fundamental Theory", authors=["Ranjan Pal"], year=None)
+    key = p.bibtex_key
+    assert key.isalnum() and "." not in key
+    # clean keys are unchanged (natural lastname+year+word)
+    q = PaperMetadata(title="Multihoming and X", authors=["Ada Liu"], year=2023)
+    assert q.bibtex_key == "liu2023multihoming"
+    # punctuated surname sanitized
+    r = PaperMetadata(title="A Study", authors=["Anne O'Neil"], year=2020)
+    assert r.bibtex_key.isalnum()
+
+
 def test_reference_summary_empty_for_non_bib_specialist():
     from src.core.specialists.base import _load_reference_summary
 
