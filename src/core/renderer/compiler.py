@@ -38,6 +38,24 @@ def _build_cmd(engine: str, main_file: str) -> list[str]:
     return ["pdflatex", "-interaction=nonstopmode", main_file]
 
 
+def _mirror_figures_into_subdir(workspace: Path) -> None:
+    """Copy root-level ``fig_*.pdf`` into a ``figures/`` subdir so both
+    ``\\includegraphics{fig_x.pdf}`` and ``…{figures/fig_x.pdf}`` resolve.
+    Best-effort; never raises."""
+    try:
+        figs = list(workspace.glob("fig_*.pdf"))
+        if not figs:
+            return
+        dest = workspace / "figures"
+        dest.mkdir(exist_ok=True)
+        for f in figs:
+            target = dest / f.name
+            if not target.exists() or target.stat().st_mtime < f.stat().st_mtime:
+                shutil.copy2(f, target)
+    except OSError as e:
+        logger.warning("could not mirror figures into figures/: %s", e)
+
+
 async def compile_latex(workspace: Path, main_file: str = "paper_draft.tex") -> Path | None:
     """Assemble (preamble + body + bibliography) and compile to PDF.
 
@@ -65,6 +83,11 @@ async def compile_latex(workspace: Path, main_file: str = "paper_draft.tex") -> 
         wrapped = assemble_document(body)
         tex_path.write_text(wrapped, encoding="utf-8")
         logger.info("Wrapped paper_draft.tex with preamble (body backup at %s)", backup)
+
+    # Figures render to the workspace root as `fig_*.pdf`, but drafters commonly
+    # reference them as `figures/fig_*.pdf`. Mirror them into a `figures/` subdir
+    # so both styles resolve (with the preamble's \graphicspath{{./}{figures/}}).
+    _mirror_figures_into_subdir(workspace)
 
     engine = _select_engine()
     if engine is None:
