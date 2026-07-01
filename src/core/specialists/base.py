@@ -510,6 +510,13 @@ def _load_reference_summary(specialist: str) -> str:
     has_pdf = any(p.pdf_url for p in all_papers)
     header = f"## Available References ({len(all_papers)} papers from {sources_label})"
     lines = [header]
+    lines.append(
+        "Cite ONLY from this list, using the exact `\\cite{key}` shown at the start of each entry — "
+        "these are the only keys that exist in the bibliography. Do NOT invent citations or cite "
+        "papers that are not listed here; a `\\cite{}` to any other key compiles as an undefined "
+        "reference. If the list doesn't cover a claim, rephrase without a citation rather than "
+        "fabricating one."
+    )
     if has_pdf:
         lines.append("Entries marked [PDF] can be read in full with the `read_reference` tool (pass the pdf_url).")
     lines.append("")
@@ -520,7 +527,7 @@ def _load_reference_summary(specialist: str) -> str:
         year = f" ({p.year})" if p.year else ""
         journal = f". _{p.journal}_" if p.journal else ""
         pdf = f" [PDF: {p.pdf_url}]" if p.pdf_url else ""
-        lines.append(f'- {authors}{year}. "{p.title}"{journal}{pdf}')
+        lines.append(f'- `\\cite{{{p.bibtex_key}}}` — {authors}{year}. "{p.title}"{journal}{pdf}')
     if len(all_papers) > 60:
         lines.append(f"  ... and {len(all_papers) - 60} more.")
     return "\n".join(lines)
