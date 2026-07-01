@@ -151,5 +151,35 @@ async def ingest_literature(workspace: Path, paper_id: str, roots: list[Path], m
             stored += 1
         except Exception as e:  # noqa: BLE001
             logger.debug("store_paper failed for %r: %s", item.title[:60], e)
+
+    # Write literature.bib so the drafter's \cite{key} entries actually resolve
+    # at compile time. save_bibtex (the SDK tool that normally builds this) is
+    # ignored on the CLI backends, so without this refs.bib stays empty and every
+    # citation is undefined. Keys match PaperMetadata.bibtex_key — the same key
+    # surfaced to the drafter in _load_reference_summary.
+    _write_literature_bib(workspace, items)
+
     logger.info("BYOD literature: discovered=%d stored=%d (paper %s)", len(items), stored, paper_id)
     return stored
+
+
+def _write_literature_bib(workspace: Path, items: list[PaperMetadata]) -> None:
+    """Write/merge the discovered library into workspace/literature.bib (deduped
+    by bibtex key). Best-effort; assemble_refs_bib later merges it into refs.bib."""
+    if not items:
+        return
+    try:
+        entries: dict[str, str] = {}
+        bib_path = Path(workspace) / "literature.bib"
+        if bib_path.is_file():  # preserve anything a save_bibtex call already wrote
+            for block in bib_path.read_text(encoding="utf-8").split("\n@"):
+                block = block if block.startswith("@") else "@" + block
+                if "{" in block and "," in block:
+                    entries.setdefault(block.split("{", 1)[1].split(",", 1)[0].strip(), block.strip())
+        for it in items:
+            if it.title:
+                entries[it.bibtex_key] = it.to_bibtex()
+        bib_path.write_text("\n\n".join(entries.values()) + "\n", encoding="utf-8")
+        logger.info("Wrote %d bib entries to %s", len(entries), bib_path.name)
+    except OSError as e:
+        logger.warning("could not write literature.bib: %s", e)
