@@ -91,9 +91,7 @@ async def compile_latex(workspace: Path, main_file: str = "paper_draft.tex") -> 
 
     engine = _select_engine()
     if engine is None:
-        logger.warning(
-            "No LaTeX compiler found (looked for latexmk, tectonic, pdflatex) — skipping PDF compilation"
-        )
+        logger.warning("No LaTeX compiler found (looked for latexmk, tectonic, pdflatex) — skipping PDF compilation")
         return None
 
     cmd = _build_cmd(engine, main_file)
