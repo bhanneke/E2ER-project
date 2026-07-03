@@ -43,6 +43,7 @@ Coverage:
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -170,6 +171,178 @@ def check_has_regression(workspace: Path, relative: str) -> ContractCheck:
     )
 
 
+# ── Identified-spec contract (declared vs estimated) ────────────────────────
+#
+# The binding quality problem after M5: econometrics rigor was high-variance
+# run-to-run — one run estimated the identification strategy's clean
+# collection×month TWFE (identification score 8), the next reported a weaker
+# spec (score 5) under identical steering. Prompts shift the odds; this
+# contract makes it deterministic: the identification strategist DECLARES the
+# primary spec machine-readably (identification_spec.json, see the
+# identification-spec-schema skill), and the econometrics specialist's
+# headline `main` entry must ECHO the declared fixed effects, controls, and
+# clustering. Echo fields are self-reported, so this enforces declared-vs-
+# reported consistency — it eliminates the "silently substitute a raw gap"
+# failure mode, raising the bar from "forgot" to "actively fabricates".
+
+_IDENTIFICATION_SPEC_FILE = "identification_spec.json"
+
+
+def _norm_token(value: Any) -> str:
+    """Case/punctuation-insensitive comparison key (``Collection`` ≡
+    ``collection``), but not fuzzy: ``month`` != ``year_month``."""
+    return re.sub(r"[^a-z0-9]", "", str(value).lower())
+
+
+def _declared_names(primary: dict, key: str) -> list[str]:
+    raw = primary.get(key)
+    if not isinstance(raw, list):
+        return []
+    return [str(x).strip() for x in raw if str(x).strip()]
+
+
+def check_matches_declared_spec(workspace: Path, results_relative: str) -> ContractCheck:
+    """Verify the headline estimate implements the DECLARED identification.
+
+    Reads ``identification_spec.json`` (written by identification_strategist);
+    when it exists and declares fixed effects / controls / clustering, the
+    results JSON must have a ``main`` entry with non-empty coefficients that
+    echoes them (``fixed_effects`` / ``controls`` / ``cluster_level`` +
+    ``n_clusters``). Degrades to ok when the spec is absent, unparseable, or
+    declares nothing checkable — old papers and clean natural experiments
+    (no FE, no controls, no clustering) pass untouched.
+    """
+    spec_path = workspace / _IDENTIFICATION_SPEC_FILE
+    if not spec_path.is_file():
+        return ContractCheck(results_relative, True, "")
+    try:
+        spec = json.loads(spec_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return ContractCheck(results_relative, True, "")
+    primary = spec.get("primary") if isinstance(spec, dict) else None
+    if not isinstance(primary, dict):
+        return ContractCheck(results_relative, True, "")
+
+    declared_fe = _declared_names(primary, "fixed_effects")
+    declared_controls = _declared_names(primary, "controls")
+    declared_cluster = str(primary.get("cluster_level") or "").strip()
+    wants_cluster = bool(declared_cluster) and _norm_token(declared_cluster) != "none"
+    if not declared_fe and not declared_controls and not wants_cluster:
+        return ContractCheck(results_relative, True, "")
+
+    try:
+        results = json.loads((workspace / results_relative).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        # Parse/read problems are owned by check_artifact_nonempty.
+        return ContractCheck(results_relative, True, "")
+    if not isinstance(results, dict):
+        return ContractCheck(results_relative, True, "")
+
+    problems: list[str] = []
+    main = results.get("main")
+    coefficients = main.get("coefficients") if isinstance(main, dict) else None
+    if not isinstance(main, dict) or not (isinstance(coefficients, dict) and coefficients):
+        problems.append(
+            "the headline estimate must live under the top-level key 'main' with a non-empty "
+            "'coefficients' block (identification_spec.json declares an identified design, so a "
+            "'main' entry implementing it is required)"
+        )
+    else:
+        echoed_fe = [str(x) for x in main.get("fixed_effects") or [] if str(x).strip()]
+        missing_fe = [f for f in declared_fe if not any(_norm_token(e) == _norm_token(f) for e in echoed_fe)]
+        if missing_fe:
+            problems.append(
+                f"main.fixed_effects {echoed_fe or '(absent)'} does not include the declared "
+                f"fixed effects {missing_fe} — estimate WITH those FE absorbed and echo them in "
+                "a 'fixed_effects' list on the 'main' entry"
+            )
+        echoed_controls = [str(x) for x in main.get("controls") or [] if str(x).strip()]
+        echoed_controls += list(coefficients.keys())
+        missing_controls = [
+            c for c in declared_controls if not any(_norm_token(e) == _norm_token(c) for e in echoed_controls)
+        ]
+        if missing_controls:
+            problems.append(
+                f"declared controls {missing_controls} appear neither in main.controls nor among "
+                "main.coefficients — include them in the estimation and echo them"
+            )
+        if wants_cluster:
+            echoed_cluster = str(main.get("cluster_level") or "").strip()
+            if _norm_token(echoed_cluster) != _norm_token(declared_cluster):
+                problems.append(
+                    f"identification_spec.json declares cluster_level {declared_cluster!r} but main "
+                    f"reports {echoed_cluster or 'nothing'!r} — cluster the SEs as declared and echo it"
+                )
+            n_clusters = main.get("n_clusters")
+            if not isinstance(n_clusters, int | float) or isinstance(n_clusters, bool) or n_clusters <= 0:
+                problems.append(
+                    "clustered SEs are declared but main.n_clusters is missing/invalid — report the "
+                    "actual cluster count"
+                )
+
+    if not problems:
+        return ContractCheck(results_relative, True, "")
+    return ContractCheck(
+        results_relative,
+        False,
+        "identified-spec contract: "
+        + "; ".join(problems)
+        + ". The declared primary design is in identification_spec.json — the headline 'main' entry "
+        "must implement and echo it (see the estimation-results-schema skill).",
+    )
+
+
+# ── Contract-violation feedback (self-correction across attempts) ───────────
+#
+# A contract violation flips the specialist result to failure, but before
+# this existed the WHY never reached the next attempt's prompt — the model
+# retried blind up to _MAX_SPECIALIST_ATTEMPTS times, then the run PAUSED.
+# (read_execution_error can't carry it: it early-returns when the sidecar is
+# populated, which is exactly the state after a populated-but-noncompliant
+# output.) The violation summary is persisted here and consumed — once — by
+# the specialist's next attempt.
+
+_FEEDBACK_DIR = ".contract_feedback"
+
+
+def write_contract_feedback(workspace: Path, specialist: str, summary: str) -> None:
+    """Persist a contract-violation summary for the specialist's next attempt.
+    Best-effort: never raises (a lost feedback note must not fail the run)."""
+    try:
+        feedback_dir = workspace / _FEEDBACK_DIR
+        feedback_dir.mkdir(parents=True, exist_ok=True)
+        (feedback_dir / f"{specialist}.txt").write_text(summary, encoding="utf-8")
+    except OSError as e:
+        logger.warning("could not persist contract feedback for %s: %s", specialist, e)
+
+
+def read_contract_feedback(workspace: Path, specialist: str) -> str | None:
+    """Return a ready-to-inject prompt section for a prior contract violation,
+    consuming the note (one violation feeds exactly one retry). ``None`` when
+    there's nothing to feed back."""
+    path = workspace / _FEEDBACK_DIR / f"{specialist}.txt"
+    if not path.is_file():
+        return None
+    try:
+        summary = path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    try:
+        path.unlink()
+    except OSError:
+        pass
+    if not summary:
+        return None
+    return (
+        "## PREVIOUS ATTEMPT REJECTED — OUTPUT-CONTRACT VIOLATION\n\n"
+        "Your previous attempt completed, but its output failed a deterministic "
+        "contract check and was rejected:\n\n"
+        f"{summary}\n\n"
+        "Fix exactly this in the current attempt. Keep everything else about your "
+        "approach unless the fix requires changing it."
+    )
+
+
 def check_specialist_artifacts(workspace: Path, specialist: str) -> list[ContractCheck]:
     """Check every required artifact for ``specialist`` — the primary
     plus any declared sidecars. Returns one ``ContractCheck`` per
@@ -203,5 +376,12 @@ def check_specialist_artifacts(workspace: Path, specialist: str) -> list[Contrac
     if regression_file:
         base_failed = any(c.artifact == regression_file and not c.ok for c in checks)
         if not base_failed:
-            checks.append(check_has_regression(workspace, regression_file))
+            regression_check = check_has_regression(workspace, regression_file)
+            checks.append(regression_check)
+            # Identified-spec contract: only meaningful once a regression
+            # exists at all ("estimate SOMETHING" precedes "estimate the
+            # DECLARED thing"), and layering both failures would muddy the
+            # retry feedback.
+            if regression_check.ok:
+                checks.append(check_matches_declared_spec(workspace, regression_file))
     return checks

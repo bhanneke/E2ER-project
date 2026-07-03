@@ -59,9 +59,29 @@ The FIRST / headline specification you report must implement the design in
 A raw, unconditional difference in means (a two-coefficient `const + treatment`
 regression with no fixed effects or controls) is at most a *descriptive
 baseline*; reporting it as the main result is the single most common reason
-these papers score low on identification. Put the identified specification first
-(e.g. under a `main` key), and make its `diagnostics` reflect what was actually
+these papers score low on identification. Put the identified specification
+under the top-level key **`main`** (mandatory name — the export and the
+contract gate assume it), and make its `diagnostics` reflect what was actually
 estimated (fixed-effects absorbed, number of clusters, within-R²) — not nulls.
+
+**This is deterministically enforced when `identification_spec.json` exists
+in the workspace** (the identification strategist writes it — read it before
+you estimate). The gate checks that your `main` entry ECHOES the declared
+design:
+
+- `main.fixed_effects` — a list naming every fixed effect actually absorbed;
+  must include all FE declared in the spec's `primary.fixed_effects`.
+- `main.controls` — a list naming the included controls (declared controls
+  may alternatively appear directly among `coefficients` keys).
+- `main.cluster_level` + `main.n_clusters` — required and matching when the
+  spec declares clustering.
+
+Echo what you ACTUALLY estimated. If the declared design turns out to be
+inestimable (e.g. the FE absorb all treatment variation), do not silently
+substitute a weaker spec under `main` — the gate will reject it. Follow the
+spec's `fallback` if one is declared, or state the problem explicitly in
+`econometric_spec.md` and put the honest spec under a non-`main` key so the
+mismatch is visible rather than laundered.
 
 ## Required shape
 
@@ -76,6 +96,9 @@ contains coefficients and diagnostics.
     "specification": "OLS with two-way fixed effects",
     "n_observations": 24890,
     "n_clusters": 6225,
+    "cluster_level": "unit",
+    "fixed_effects": ["unit", "time"],
+    "controls": ["x1"],
     "coefficients": {
       "treatment": {
         "estimate": -0.231,

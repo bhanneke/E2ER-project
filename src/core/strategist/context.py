@@ -78,6 +78,10 @@ def build_tier2_context(workspace: Path, paper_id: str) -> str:
         "literature_review.md",
         "data_summary.md",
         "identification_strategy.md",
+        # Machine-readable declared spec — the econometrics specialist's
+        # `main` entry is contract-gated against it, so it must be visible
+        # in the dispatch context, not just discoverable via read_file.
+        "identification_spec.json",
         "contributions.json",
         "econometric_spec.md",
     ]:
