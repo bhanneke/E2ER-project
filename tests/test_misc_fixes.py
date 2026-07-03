@@ -15,7 +15,13 @@ async def test_store_paper_inserts_citations():
     from src.modules.literature.storage import store_paper
 
     paper = PaperMetadata(title="X", doi="10.1/x", citations=42, source="openalex")
-    with patch("src.db.client.fetch_one", new=AsyncMock(return_value={"id": "row-1"})) as fo:
+    # Pin the Postgres path: store_paper routes on current_backend(), which
+    # depends on DATABASE_URL/DB_* env — locally a .env made this test take
+    # the pg branch while CI (no .env) took the SQLite branch and failed.
+    with (
+        patch("src.db.client.current_backend", return_value="postgres"),
+        patch("src.db.client.fetch_one", new=AsyncMock(return_value={"id": "row-1"})) as fo,
+    ):
         await store_paper(paper, "paper-1")
     sql, params = fo.await_args.args
     assert "citations" in sql

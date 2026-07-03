@@ -297,7 +297,7 @@ def _build_system_prompt(
                 "## Local Data Warehouse — query it before you model (DO NOT GUESS COLUMNS)",
                 "Your context includes a 'Local Data Warehouse (data.db)' block listing the "
                 "available tables, their columns + types, row counts, and sample rows. Run "
-                "read-only SQL against it with `e2er-data query sql \"SELECT ...\"` (via Bash; "
+                'read-only SQL against it with `e2er-data query sql "SELECT ..."` (via Bash; '
                 "use `e2er-data query tables` to list tables). On SDK backends the same "
                 "capability is the `query_data(sql)` tool. Use it:",
                 "- BEFORE defining any variable or treatment, inspect the REAL columns with "

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import Any
 
 from ...logging_config import get_logger
 from .models import PaperMetadata
@@ -53,7 +54,7 @@ def extract_pdf_metadata(path: Path) -> PaperMetadata:
         from pypdf import PdfReader
 
         reader = PdfReader(str(path))
-        info = reader.metadata or {}
+        info: Any = reader.metadata or {}
         title = (getattr(info, "title", None) or info.get("/Title") or "") if info else ""
         author_raw = (getattr(info, "author", None) or info.get("/Author") or "") if info else ""
         if author_raw:
