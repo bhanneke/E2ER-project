@@ -536,3 +536,66 @@ def test_cli_verify_citations_help_lists_subcommand():
     )
     assert r.returncode == 0
     assert "verify-citations" in r.stdout
+
+
+# ── Default bib fallback chain (the "gate silently skipped itself" fix) ─────
+# The standard pipeline writes literature.bib (ingest) and refs.bib
+# (assembled for compile) — never references.bib. The gate's default must
+# find them, otherwise it exits skipped/passed=True on every paper.
+
+
+async def test_verify_default_falls_back_to_literature_bib(tmp_path: Path):
+    draft = tmp_path / "paper_draft.tex"
+    draft.write_text(r"See \cite{ghost2024}.", encoding="utf-8")
+    (tmp_path / "literature.bib").write_text("@article{real2020, title={Real}, year={2020}}", encoding="utf-8")
+    report = await verify(draft)
+    assert not report.skipped_reason, "gate skipped despite literature.bib being present"
+    assert report.missing_in_bib == 1  # proves literature.bib was actually loaded
+    assert report.passed is False
+
+
+async def test_verify_default_prefers_refs_bib_over_literature_bib(tmp_path: Path):
+    draft = tmp_path / "paper_draft.tex"
+    draft.write_text(r"See \cite{merged2020}.", encoding="utf-8")
+    # merged2020 exists ONLY in refs.bib — if literature.bib won, it would
+    # report missing_in_bib.
+    (tmp_path / "refs.bib").write_text(
+        "@article{merged2020, title={Merged}, year={2020}, doi={10.1/m}}", encoding="utf-8"
+    )
+    (tmp_path / "literature.bib").write_text("@article{other2019, title={Other}, year={2019}}", encoding="utf-8")
+    stub = _stub_paper(doi="10.1/m", title="Merged")
+    with (
+        patch("src.core.pipeline.verify_citations.openalex.fetch_by_doi", new=AsyncMock(return_value=stub)),
+        patch("src.core.pipeline.verify_citations.semantic_scholar.fetch_by_doi", new=AsyncMock(return_value=None)),
+        patch("src.core.pipeline.verify_citations.crossref.fetch_by_doi", new=AsyncMock(return_value=None)),
+    ):
+        report = await verify(draft)
+    assert report.missing_in_bib == 0
+    assert report.verified == 1
+    assert report.passed is True
+
+
+async def test_gate_composition_with_assembled_refs_bib(tmp_path: Path):
+    """The runner assembles refs.bib from the ingested library and passes it
+    to the gate explicitly — a hallucinated cite must now fail, not skip."""
+    from src.core.renderer.templates import assemble_refs_bib
+
+    draft = tmp_path / "paper_draft.tex"
+    draft.write_text(r"Real \cite{real2020} and fake \cite{ghost2024}.", encoding="utf-8")
+    (tmp_path / "literature.bib").write_text(
+        "@article{real2020, title={Real}, year={2020}, doi={10.1/r}}", encoding="utf-8"
+    )
+    refs_bib = assemble_refs_bib(tmp_path)
+    assert refs_bib is not None and refs_bib.name == "refs.bib"
+
+    stub = _stub_paper(doi="10.1/r", title="Real")
+    with (
+        patch("src.core.pipeline.verify_citations.openalex.fetch_by_doi", new=AsyncMock(return_value=stub)),
+        patch("src.core.pipeline.verify_citations.semantic_scholar.fetch_by_doi", new=AsyncMock(return_value=None)),
+        patch("src.core.pipeline.verify_citations.crossref.fetch_by_doi", new=AsyncMock(return_value=None)),
+    ):
+        report = await verify(draft, bib_path=refs_bib)
+    assert report.total_cites == 2
+    assert report.verified == 1
+    assert report.missing_in_bib == 1
+    assert report.passed is False

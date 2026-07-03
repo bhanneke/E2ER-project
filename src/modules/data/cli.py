@@ -339,8 +339,31 @@ def _maybe_save_csv(result: dict, args: argparse.Namespace) -> None:
         return
 
     workspace = _resolve_workspace(args.paper_id)
-    target = workspace / "data" / save_to
+    data_root = workspace / "data"
+    target = data_root / save_to
     target.parent.mkdir(parents=True, exist_ok=True)
+
+    # workspace/data holds SYMLINKS to the researcher's original files (BYOD
+    # staging), and to_csv() writes through a symlink — a --save-to name that
+    # collides with a staged file would truncate the original outside the
+    # workspace. Never overwrite an existing path: pick a fresh suffixed name.
+    if target.is_symlink() or target.exists():
+        base, ext = target.stem, target.suffix or ".csv"
+        for i in range(1, 1000):
+            candidate = target.with_name(f"{base}_{i}{ext}")
+            if not candidate.is_symlink() and not candidate.exists():
+                result["save_renamed"] = f"{save_to!r} already exists in data/ (staged input?); saved under a new name"
+                target = candidate
+                break
+        else:
+            result["save_error"] = f"could not find a free filename for {save_to!r}"
+            return
+
+    # Belt-and-braces: after symlink handling the fully resolved target must
+    # still live under workspace/data (catches symlinked parent directories).
+    if not target.resolve().is_relative_to(data_root.resolve()):
+        result["save_error"] = f"--save-to resolves outside workspace/data/; got {save_to!r}"
+        return
 
     # Lazy import — avoid pulling pandas into the hot path for callers
     # that don't use --save-to.

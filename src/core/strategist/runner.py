@@ -619,14 +619,27 @@ class PipelineRunner:
         # Flip to hard-block with E2ER_STRICT_CITATION_INTEGRITY=true.
         if draft_path.is_file():
             from ..pipeline.verify_citations import verify_and_save as verify_citations_and_save
+            from ..renderer.templates import assemble_refs_bib
 
-            cite_report = await verify_citations_and_save(draft_path, self._workspace)
+            # Assemble refs.bib (literature.bib + user_refs.bib) NOW rather
+            # than waiting for the compile phase: the gate must check against
+            # the bibliography the PDF will actually be compiled with. Before
+            # this, the gate defaulted to references.bib — which nothing
+            # writes — and skipped itself on every standard-flow paper.
+            refs_bib = assemble_refs_bib(self._workspace)
+            cite_report = await verify_citations_and_save(draft_path, self._workspace, bib_path=refs_bib)
+            if cite_report.skipped_reason:
+                logger.warning(
+                    "Paper %s: verify_citations gate SKIPPED (not passed): %s",
+                    self._paper_id,
+                    cite_report.skipped_reason,
+                )
             if not cite_report.passed:
                 missing = ", ".join(c.cite_key for c in cite_report.missing_checks[:5])
                 unverif = ", ".join(c.cite_key for c in cite_report.unverifiable_checks[:5])
                 pieces = []
                 if cite_report.missing_in_bib:
-                    pieces.append(f"{cite_report.missing_in_bib} cited key(s) missing from references.bib: {missing}")
+                    pieces.append(f"{cite_report.missing_in_bib} cited key(s) missing from the bibliography: {missing}")
                 if cite_report.strict and cite_report.unverifiable:
                     pieces.append(f"{cite_report.unverifiable} unverifiable cite(s) (strict mode): {unverif}")
                 error = "verify_citations: " + "; ".join(pieces)

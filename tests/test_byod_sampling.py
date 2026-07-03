@@ -58,3 +58,18 @@ async def test_jsonl_cap_spans(tmp_path: Path):
     n, mx = res["rows"][0]
     assert n <= 10
     assert mx >= 80
+
+
+async def test_csv_cap_boundary_band_still_spans(tmp_path: Path):
+    """estimate/max_rows in (1, 1.5): round() gave stride 1, and the
+    kept>=max_rows break turned the 'representative sample' back into
+    head(N) — dropping the newest ~third of the file. ceil() fixes it."""
+    ws = tmp_path / "p"
+    (ws / "data").mkdir(parents=True)
+    (ws / "data" / "band.csv").write_text("t\n" + "\n".join(str(i) for i in range(140)) + "\n")
+    await import_corpus_into_data_db(ws, max_rows=100)
+    res = await read_only_query(ws, "SELECT COUNT(*) n, MIN(t) mn, MAX(t) mx FROM band")
+    n, mn, mx = res["rows"][0]
+    assert n <= 100
+    assert mn == 0
+    assert mx >= 120, f"boundary-band head-bias: max={mx} (rows 100-139 dropped)"
