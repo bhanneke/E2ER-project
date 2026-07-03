@@ -70,6 +70,18 @@ async def run_specialist(
         user_prompt = f"{user_prompt}\n\n{exec_feedback}"
         logger.info("%s: prior runner execution crashed — injecting the traceback into this attempt", specialist)
 
+    # Same loop for contract violations: if the prior attempt's output was
+    # rejected by check_specialist_artifacts, the WHY used to live only in
+    # result.error / the log — the retry was blind (and read_execution_error
+    # can't carry it: it early-returns when the sidecar is populated, which is
+    # exactly the populated-but-noncompliant state). Consume-once feedback.
+    from .contract_check import read_contract_feedback
+
+    contract_feedback = read_contract_feedback(workspace, specialist)
+    if contract_feedback:
+        user_prompt = f"{user_prompt}\n\n{contract_feedback}"
+        logger.info("%s: prior attempt violated its output contract — injecting the violation", specialist)
+
     # CLI backend uses Claude Code's native tool names (Write/Read/Edit/Glob)
     # rather than the SDK's (write_file/read_file/...). Translate references
     # in both prompts so the model finds the tools it's told to call.
@@ -162,6 +174,12 @@ async def run_specialist(
             existing = (result.error or "").strip()
             prefix = f"{existing} | " if existing else ""
             result.error = f"{prefix}contract violation: {summary}"
+            # Persist the violation for the NEXT attempt's prompt (consumed
+            # once by read_contract_feedback above) — without this the retry
+            # is blind and just re-fails until the circuit breaker pauses.
+            from .contract_check import write_contract_feedback
+
+            write_contract_feedback(workspace, specialist, summary)
 
     # Pass backend_name so flat-rate CLI backends (claude_code / codex /
     # gemini) cost as $0 — M4.1 fix.

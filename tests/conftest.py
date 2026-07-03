@@ -198,10 +198,28 @@ _SPECIALIST_OUTPUTS: dict[str, tuple[str, str]] = {
 _MOCK_SIDECAR_CONTENTS: dict[str, str] = {
     "summary_statistics.json": json.dumps({"n_observations": 100, "outcome": {"mean": 0.0, "sd": 1.0}}),
     "figure_spec.json": json.dumps({"figures": [{"name": "f1", "kind": "line"}]}),
+    # The spec + results pair is kept COHERENT (results echo the declared
+    # FE/clustering) so every mocked pipeline run exercises the full
+    # identified-spec contract the way a compliant real run would.
+    "identification_spec.json": json.dumps(
+        {
+            "primary": {
+                "estimator": "twfe_ols",
+                "fixed_effects": ["unit", "time"],
+                "controls": [],
+                "cluster_level": "unit",
+                "identifying_assumption": "Parallel trends conditional on unit and time FE.",
+            }
+        }
+    ),
     "estimation_results.json": json.dumps(
         {
             "main": {
                 "coefficients": {"treat": {"estimate": 0.04, "se": 0.01, "t_stat": 4.0, "p_value": 0.001}},
+                "fixed_effects": ["unit", "time"],
+                "controls": [],
+                "cluster_level": "unit",
+                "n_clusters": 40,
                 "diagnostics": {"n_observations": 100},
             }
         }

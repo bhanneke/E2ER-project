@@ -64,6 +64,11 @@ SPECIALIST_SKILLS: dict[str, list[str]] = {
         "causal-inference/judge-designs",
         "causal-inference/natural-experiments",
         "reasoning/identification",
+        # Machine-readable sidecar contract: identification_spec.json
+        # declares the primary FE/controls/clustering that the
+        # econometrics specialist's `main` entry must echo (the
+        # identified-spec contract in contract_check.py).
+        "causal-inference/identification-spec-schema",
     ],
     "econometrics_specialist": [
         "data/query-data",
@@ -179,6 +184,13 @@ SPECIALIST_SIDECAR_ARTIFACTS: dict[str, list[str]] = {
     "data_analyst": [
         "summary_statistics.json",
         "figure_spec.json",
+    ],
+    "identification_strategist": [
+        # Machine-readable core of identification_strategy.md: the declared
+        # primary FE/controls/clustering. Consumed by the identified-spec
+        # contract (contract_check.check_matches_declared_spec) which gates
+        # the econometrics specialist's `main` entry against it.
+        "identification_spec.json",
     ],
     "econometrics_specialist": [
         "estimation_results.json",
