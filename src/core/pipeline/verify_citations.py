@@ -521,7 +521,9 @@ async def verify(
 
     Args:
         draft_path: paper_draft.tex (or any .tex with \\cite commands)
-        bib_path: references.bib (defaults to draft_path.parent / "references.bib")
+        bib_path: the bibliography to check against. Defaults to the first
+                  existing of references.bib / refs.bib / literature.bib
+                  next to the draft.
         strict: if True, ``unverifiable`` cites also fail the gate.
                 None means "read from E2ER_STRICT_CITATION_INTEGRITY env".
         concurrency: parallel verifier calls (default 4 to be polite
@@ -554,7 +556,13 @@ async def verify(
         return report
 
     if bib_path is None:
-        bib_path = draft_path.parent / "references.bib"
+        # Fallback chain mirrors what the pipeline actually writes:
+        # references.bib (legacy/hand-supplied) → refs.bib (assembled for
+        # compile) → literature.bib (written at ingest). Before this chain
+        # existed the gate looked only for references.bib — which nothing
+        # in the standard flow writes — and silently skipped every paper.
+        candidates = [draft_path.parent / name for name in ("references.bib", "refs.bib", "literature.bib")]
+        bib_path = next((p for p in candidates if p.is_file()), candidates[0])
     bib = load_bib(bib_path)
 
     # Hand-rolled thebibliography: parse the \bibitem bodies (M4.2).

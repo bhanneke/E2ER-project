@@ -144,8 +144,10 @@ def _import_one_file_sync(
         # ~200k rows (all 2021, before aggregators existed) → the model built a
         # bogus proxy and the paper was rejected. Stride from a cheap size-based
         # estimate; stride==1 (file fits) keeps the old read-everything behaviour.
+        # ceil, not round: for files 1-1.5x the cap, round() gives stride 1 and
+        # the kept>=max_rows break silently reintroduces the head(N) bias.
         estimate = _estimate_csv_rows(path)
-        stride = max(1, round(estimate / max_rows)) if estimate > max_rows else 1
+        stride = max(1, -(-estimate // max_rows)) if estimate > max_rows else 1
         kept = 0
         seen = 0
         first = True
