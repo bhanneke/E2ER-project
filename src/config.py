@@ -220,6 +220,13 @@ class Settings(BaseSettings):
     claude_code_timeout: int = 1800  # 30 min hard cap per specialist invocation
     claude_code_max_turns: int = 60  # Default agentic-turn cap inside the CLI
     claude_code_cwd: str = ""  # Empty → use os.getcwd() at invocation time
+    # Model for the `claude` subprocesses (passed as `--model`). Empty → the
+    # CLI's own configured default, which is whatever the user last set via
+    # /model — a run can silently burn the priciest tier's usage credits that
+    # way (a July 2026 validation run died mid-pipeline on a Fable 5 credit
+    # ceiling because the interactive default leaked in). Pin it explicitly:
+    # e.g. CLAUDE_CODE_MODEL=claude-sonnet-4-6 (aliases like "sonnet" work).
+    claude_code_model: str = ""
 
     # ── Codex CLI backend (free under ChatGPT Plus/Pro plan) ──────────────────
     # Set LLM_BACKEND=codex to delegate to the `codex exec` subprocess.
@@ -253,6 +260,8 @@ class Settings(BaseSettings):
     def default_model(self) -> str:
         if self.llm_backend == "openrouter":
             return self.openrouter_model
+        if self.llm_backend == "claude_code" and self.claude_code_model:
+            return self.claude_code_model
         return self.anthropic_model
 
     model_config = {

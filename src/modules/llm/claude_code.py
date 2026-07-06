@@ -92,6 +92,7 @@ class ClaudeCodeBackend(LLMBackend):
         self._timeout = settings.claude_code_timeout
         self._max_turns_default = settings.claude_code_max_turns
         self._cwd = settings.claude_code_cwd or os.getcwd()
+        self._model = settings.claude_code_model
 
     async def tool_loop(
         self,
@@ -178,6 +179,7 @@ class ClaudeCodeBackend(LLMBackend):
                 paper_id=paper_id,
                 specialist=specialist,
                 workspace_root_abs=workspace_root_abs,
+                model=self._model,
             )
             last_result = result
             if result.success or not _is_transient_api_error(result.error or ""):
@@ -233,6 +235,7 @@ async def _invoke_cli(
     paper_id: str | None = None,
     specialist: str | None = None,
     workspace_root_abs: Path | None = None,
+    model: str = "",
 ) -> ToolLoopResult:
     """Run `claude -p` as a subprocess. Async-native version of v1's wrapper."""
     # Sanitize null bytes — upstream artifacts can embed \x00 which the
@@ -247,6 +250,11 @@ async def _invoke_cli(
         "--max-turns",
         str(max_turns),
     ]
+    # Pin the subprocess model when configured — without --model the CLI
+    # uses the user's interactive /model default, which can silently burn
+    # the priciest tier's usage credits (see claude_code_model in config).
+    if model:
+        cmd.extend(["--model", model])
     if allowed_tools:
         cmd.extend(["--allowedTools", ",".join(allowed_tools)])
 
