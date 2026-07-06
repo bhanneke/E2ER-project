@@ -252,3 +252,66 @@ async def test_tool_loop_flattens_messages_into_prompt(monkeypatch, tmp_path):
     sent = captured_input["data"].decode()
     assert "You are a research specialist." in sent
     assert "Write paper_plan.md for an NFT paper." in sent
+
+
+# ── CLAUDE_CODE_MODEL pins the subprocess model ──────────────────────────────
+# Without --model the CLI uses the user's interactive /model default; a July
+# 2026 validation run died mid-pipeline on a Fable 5 usage-credit ceiling
+# because the interactive default leaked into every specialist subprocess.
+
+
+async def _invoke_and_capture_argv(monkeypatch, tmp_path) -> list[str]:
+    from src.modules.llm.claude_code import ClaudeCodeBackend
+
+    backend = ClaudeCodeBackend()
+    summary = {
+        "type": "result",
+        "subtype": "success",
+        "result": "ok",
+        "is_error": False,
+        "num_turns": 1,
+        "usage": {"input_tokens": 1, "output_tokens": 1, "cache_read_input_tokens": 0},
+    }
+    proc = _mock_proc(stdout=(json.dumps(summary) + "\n").encode())
+    with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=proc)) as spawn:
+        await backend.tool_loop(
+            system="System prompt",
+            messages=[{"role": "user", "content": "Do the thing."}],
+            tools=[],
+            tool_handler=None,
+        )
+    return list(spawn.await_args.args)
+
+
+async def test_model_flag_passed_when_configured(monkeypatch, tmp_path):
+    _settings_for_cli(monkeypatch, tmp_path)
+    monkeypatch.setenv("CLAUDE_CODE_MODEL", "claude-sonnet-4-6")
+    from src.config import get_settings
+
+    get_settings.cache_clear()
+    argv = await _invoke_and_capture_argv(monkeypatch, tmp_path)
+    assert "--model" in argv
+    assert argv[argv.index("--model") + 1] == "claude-sonnet-4-6"
+
+
+async def test_no_model_flag_by_default(monkeypatch, tmp_path):
+    _settings_for_cli(monkeypatch, tmp_path)
+    # setenv("") not delenv: a developer's .env may set CLAUDE_CODE_MODEL,
+    # and pydantic-settings falls back to .env when the process env lacks
+    # the key — an explicit empty value pins the "unset" behaviour.
+    monkeypatch.setenv("CLAUDE_CODE_MODEL", "")
+    from src.config import get_settings
+
+    get_settings.cache_clear()
+    argv = await _invoke_and_capture_argv(monkeypatch, tmp_path)
+    assert "--model" not in argv
+
+
+def test_default_model_reflects_claude_code_model(monkeypatch, tmp_path):
+    _settings_for_cli(monkeypatch, tmp_path)
+    monkeypatch.setenv("CLAUDE_CODE_MODEL", "claude-sonnet-4-6")
+    from src.config import get_settings
+
+    get_settings.cache_clear()
+    assert get_settings().default_model == "claude-sonnet-4-6"
+    get_settings.cache_clear()
