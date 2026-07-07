@@ -181,6 +181,16 @@ class PipelineRunner:
                 state.mark_complete("iterative")
                 state.save(self._workspace)
 
+            # Deterministic estimation gate — NOT re-skipped on resume (no
+            # mark_complete): an empirical paper with a populated data
+            # warehouse must have a contract-clean estimation before ANY
+            # drafting-dependent phase runs. Run D (2026-07-07) showed the
+            # specialist-level contract alone is not enough: econometrics
+            # failed its contract once and the strategist simply moved on,
+            # so the pipeline spent self-attack/polish/review tokens on a
+            # paper drafted around `{}` — the M4 failure shape one level up.
+            await _phase("estimation_gate", self._enforce_estimation_gate)
+
             if self._mode == "iterative" and not state.is_complete("self_attack"):
                 status = await _phase("self_attack", self._run_self_attack_phase)
                 state.mark_complete("self_attack")
@@ -449,6 +459,86 @@ class PipelineRunner:
                 break
 
         return PaperStatus.CEILING_CHECK
+
+    async def _enforce_estimation_gate(self) -> None:
+        """Deterministic phase gate: an empirical paper with a populated data
+        warehouse may not proceed past the analysis phase without a
+        contract-clean estimation (non-empty, contains a regression, and
+        implements the declared identification spec when one exists).
+
+        The specialist-level contract flips a bad econometrics attempt to
+        failure, but nothing compelled the strategist to re-dispatch — it
+        could (and did) proceed to drafting around ``{}``. This gate closes
+        that hole mechanically: re-dispatch econometrics_specialist (its
+        consume-once contract feedback and any captured script traceback are
+        injected automatically) until the contract is clean, or trip the
+        circuit breaker into a resumable PAUSED — never a hollow paper.
+
+        Honest-failure escape: papers without a data warehouse (theory,
+        literature-only, design-without-estimates) are untouched.
+        """
+        if self._methodology != "empirical":
+            return
+        from ...db.paper_data_db import has_data_db
+
+        if not has_data_db(self._workspace):
+            return
+
+        from ..specialists.contract_check import check_specialist_artifacts
+        from ..specialists.dispatcher import execute_work_order
+
+        specialist = "econometrics_specialist"
+        while True:
+            failures = [c for c in check_specialist_artifacts(self._workspace, specialist) if not c.ok]
+            if not failures:
+                return
+            summary = "; ".join(f"{c.artifact}: {c.reason}" for c in failures)
+
+            attempts = self._failure_counts.get(specialist, 0)
+            if attempts >= _MAX_SPECIALIST_ATTEMPTS:
+                logger.error(
+                    "Estimation gate: circuit breaker tripped for paper %s — %s failed %d times; %s",
+                    self._paper_id,
+                    specialist,
+                    attempts,
+                    summary,
+                )
+                raise CircuitBreakerError(
+                    specialist=specialist,
+                    attempts=attempts,
+                    last_error=self._last_specialist_errors.get(specialist) or summary,
+                )
+
+            logger.warning(
+                "Estimation gate: blocking post-analysis phases for paper %s (attempt %d/%d) — %s",
+                self._paper_id,
+                attempts + 1,
+                _MAX_SPECIALIST_ATTEMPTS,
+                summary,
+            )
+            order = WorkOrder(
+                paper_id=self._paper_id,
+                specialist=specialist,
+                focus=(
+                    "The analysis phase ended WITHOUT a valid estimation, so the paper "
+                    "is blocked before drafting. Produce a working run_estimation.py and "
+                    "a populated estimation_results.json whose 'main' entry implements "
+                    "the declared identification (see identification_spec.json). Feedback "
+                    "from the failed attempt, if any, is included below."
+                ),
+                context_tier=2,
+            )
+            contribution = await execute_work_order(
+                order,
+                self._backend,
+                self._workspace,
+                self._model,
+                self._extra_tools,
+                self._extra_handlers,
+                self._backend_name,
+            )
+            self._contributions.append(contribution)
+            self._update_failure_counts([contribution])
 
     async def _run_self_attack_phase(self) -> PaperStatus:
         """Adversarial self-review to find critical flaws before external review."""
