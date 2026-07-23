@@ -100,6 +100,91 @@ async def db_check(settings) -> Check:
     return Check("db", PASS, f"resolved: {_mask_db_url(url)}")
 
 
+# ── BYOD corpus checks — the researcher's own data + papers (pure-local) ─────
+# No network. These validate what `create_paper` will actually stage into the
+# workspace, so a misconfigured LOCAL_DATA_DIR / LITERATURE_DIR surfaces here
+# instead of as a silent empty-corpus run.
+
+_DATA_EXTS = {".csv", ".tsv", ".jsonl", ".parquet", ".xlsx", ".txt"}
+
+
+def _iter_files(root: Path, recursive: bool):
+    globber = root.rglob("*") if recursive else root.glob("*")
+    return (p for p in globber if p.is_file())
+
+
+async def byod_local_data_check(settings) -> Check:
+    """Enumerate the researcher's BYOD dataset folder (LOCAL_DATA_DIR)."""
+    raw = settings.local_data_dir
+    if not raw:
+        return Check("byod.local_data_dir", SKIP, "LOCAL_DATA_DIR not set (no bring-your-own datasets)")
+    root = Path(raw).expanduser()
+    if not root.is_dir():
+        return Check("byod.local_data_dir", FAIL, f"LOCAL_DATA_DIR={raw} is not a directory")
+    counts: dict[str, int] = {}
+    for f in _iter_files(root, settings.local_data_dir_recursive):
+        ext = f.suffix.lower()
+        if ext in _DATA_EXTS or ext == ".bib":
+            counts[ext] = counts.get(ext, 0) + 1
+    n_data = sum(v for k, v in counts.items() if k in _DATA_EXTS)
+    if n_data == 0 and ".bib" not in counts:
+        return Check(
+            "byod.local_data_dir",
+            SKIP,
+            f"{root} has no data files ({'/'.join(sorted(e[1:] for e in _DATA_EXTS))})",
+        )
+    summary = ", ".join(f"{v} {k[1:]}" for k, v in sorted(counts.items()))
+    mode = "recursive" if settings.local_data_dir_recursive else "top-level"
+    return Check("byod.local_data_dir", PASS, f"{summary} ({mode} scan of {root})")
+
+
+def _bib_entry_count(path: Path) -> int:
+    try:
+        text = path.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return 0
+    return sum(1 for line in text.splitlines() if line.lstrip().startswith("@"))
+
+
+async def byod_literature_check(settings) -> Check:
+    """Report the active literature mode + corpus size (bibtex / PDFs / Zotero)."""
+    modes: list[str] = []
+
+    bib = settings.literature_bibtex_file
+    if bib:
+        bib_path = Path(bib).expanduser()
+        if bib_path.is_file():
+            modes.append(f"bibtex ({_bib_entry_count(bib_path)} entries)")
+        else:
+            return Check("byod.literature", FAIL, f"LITERATURE_BIBTEX_FILE={bib} not found")
+
+    dirs = settings.resolved_literature_dirs()
+    if dirs:
+        for raw in (d.strip() for d in dirs.split(",") if d.strip()):
+            root = Path(raw).expanduser()
+            if not root.is_dir():
+                return Check("byod.literature", FAIL, f"literature dir {raw} is not a directory")
+            if (root / "zotero.sqlite").is_file():
+                modes.append(f"Zotero library at {root}")
+            else:
+                n_pdf = sum(1 for _ in root.rglob("*.pdf"))
+                n_bib = sum(1 for _ in root.glob("*.bib"))
+                parts = []
+                if n_pdf:
+                    parts.append(f"{n_pdf} PDFs")
+                if n_bib:
+                    parts.append(f"{n_bib} .bib")
+                modes.append(f"{root}: {', '.join(parts) or 'no PDFs/.bib found'}")
+
+    if not modes:
+        return Check(
+            "byod.literature",
+            SKIP,
+            "no LITERATURE_BIBTEX_FILE / LITERATURE_DIR / LOCAL_DATA_DIR — OpenAlex-only",
+        )
+    return Check("byod.literature", PASS, "; ".join(modes))
+
+
 # ── Provider probes — what would this paper actually have access to? ─────────
 
 
@@ -237,11 +322,13 @@ async def run_provider_checks(settings) -> list[Check]:
 
 
 async def run_doctor(settings) -> list[Check]:
-    """Full preflight: setup (backend, skills, DB) + provider probes."""
+    """Full preflight: setup (backend, skills, DB) + BYOD corpus + provider probes."""
     return [
         await backend_check(settings),
         await skills_check(settings),
         await db_check(settings),
+        await byod_local_data_check(settings),
+        await byod_literature_check(settings),
         *await run_provider_checks(settings),
     ]
 

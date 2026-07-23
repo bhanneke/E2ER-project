@@ -91,24 +91,29 @@ def _ask_yes_no(prompt: str, default: bool = False) -> bool:
 # ---------------------------------------------------------------------------
 
 
+# Keys MUST match the config `llm_backend` Literal
+# (anthropic|openrouter|claude_code|codex|gemini) — they are written
+# verbatim as LLM_BACKEND into the generated .env. An earlier version
+# used `codex_cli`/`gemini_cli` here, which produced a .env that fails
+# Settings validation the moment it is loaded.
 _BACKEND_CHOICES: list[tuple[str, str]] = [
     ("claude_code", "Anthropic Max plan ($0/token — recommended)"),
     ("anthropic", "Anthropic SDK (per-token API)"),
     ("openrouter", "OpenRouter (per-token, 200+ models)"),
-    ("codex_cli", "ChatGPT Plus/Pro ($0/token)"),
-    ("gemini_cli", "Google AI Pro/Ultra ($0/token)"),
+    ("codex", "ChatGPT Plus/Pro ($0/token)"),
+    ("gemini", "Google AI Pro/Ultra ($0/token)"),
 ]
 
 _BACKEND_CLI_BINARY: dict[str, str] = {
     "claude_code": "claude",
-    "codex_cli": "codex",
-    "gemini_cli": "gemini",
+    "codex": "codex",
+    "gemini": "gemini",
 }
 
 _BACKEND_CLI_INSTALL: dict[str, str] = {
     "claude_code": "npm i -g @anthropic-ai/claude-code",
-    "codex_cli": "npm i -g @openai/codex",
-    "gemini_cli": "npm i -g @google/gemini-cli",
+    "codex": "npm i -g @openai/codex",
+    "gemini": "npm i -g @google/gemini-cli",
 }
 
 
@@ -166,6 +171,45 @@ _EXAMPLE_RQS: list[str] = [
 ]
 
 
+_DATA_DIR_README = """\
+# Bring your own data
+
+Drop datasets here (`.csv`, `.tsv`, `.jsonl`, `.parquet`, `.xlsx`, `.txt`).
+At paper creation they are staged into the run's workspace and imported into
+a per-paper `data.db` that specialists query with read-only SQL. Nothing here
+is uploaded anywhere. `.bib` files here are also read as extra references.
+
+Point the pipeline at a different folder by setting `LOCAL_DATA_DIR` in `.env`.
+"""
+
+_LIT_DIR_README = """\
+# Bring your own papers
+
+Drop your reference PDFs here, or point `LITERATURE_DIR` in `.env` at an
+existing folder of PDFs or a Zotero library (a folder containing
+`zotero.sqlite`). These are discovered and indexed for grounded citation and
+retrieval at paper creation.
+
+Your PDFs never leave this machine: exported paper bundles ship only the
+BibTeX corpus (`refs.bib`), never the source PDFs. Full text can also resolve
+open-access by DOI at run time, or you can supply a single BibTeX file via
+`LITERATURE_BIBTEX_FILE`.
+"""
+
+
+def _scaffold_project_dirs(root: Path) -> tuple[Path, Path]:
+    """Create ./data and ./literature with explanatory READMEs. Idempotent —
+    never clobbers files the user has already added. Returns the two paths."""
+    data_dir = root / "data"
+    lit_dir = root / "literature"
+    for d, readme in ((data_dir, _DATA_DIR_README), (lit_dir, _LIT_DIR_README)):
+        d.mkdir(parents=True, exist_ok=True)
+        readme_path = d / "README.md"
+        if not readme_path.exists():
+            readme_path.write_text(readme, encoding="utf-8")
+    return data_dir, lit_dir
+
+
 def _env_block(
     backend: str,
     use_data: bool,
@@ -173,6 +217,8 @@ def _env_block(
     database_url: str,
     github_token_pat: str,
     github_owner: str,
+    local_data_dir: str = "",
+    literature_dir: str = "",
 ) -> str:
     """Assemble the `.env` body with comments so the user can edit later."""
     lines = [
@@ -188,14 +234,24 @@ def _env_block(
         lines.append("# OPENROUTER_API_KEY=sk-or-v1-... (set in shell env, not here)")
     lines.append("")
 
-    lines.extend(
-        [
-            "# ── Data module ──────────────────────────────────────────────────",
-            f"DATA_MODULE_ENABLED={'true' if use_data else 'false'}",
-        ]
-    )
+    if local_data_dir or literature_dir:
+        lines.append("# ── Bring your own data + papers ─────────────────────────────────")
+        if local_data_dir:
+            lines.append(f"LOCAL_DATA_DIR={local_data_dir}")
+        if literature_dir:
+            lines.append(f"LITERATURE_DIR={literature_dir}")
+        lines.append("")
+
+    # The Allium data module enables itself whenever ALLIUM_API_KEY is
+    # present (config.data_module_enabled is derived from the key) — there
+    # is no DATA_MODULE_ENABLED setting, so we only leave a pointer here.
+    lines.append("# ── Data module (Allium blockchain warehouse) ────────────────────")
     if use_data:
-        lines.append("# ALLIUM_API_KEY=...           (set in shell env, not here)")
+        lines.append("# Set ALLIUM_API_KEY in your shell env to enable it:")
+        lines.append("#   export ALLIUM_API_KEY=...")
+    else:
+        lines.append("# Literature-only run. To add Allium blockchain data later, set")
+        lines.append("#   export ALLIUM_API_KEY=...   (yfinance + FRED need no key)")
     lines.append("")
 
     if bibtex_path:
@@ -224,14 +280,18 @@ def _env_block(
             ]
         )
 
-    if github_token_pat and github_owner:
+    if github_owner:
+        # config uses GITHUB_USERNAME (+ optional GITHUB_ORG), and
+        # github_enabled requires GITHUB_USERNAME plus GITHUB_TOKEN. The
+        # earlier GITHUB_OWNER key was silently ignored.
         lines.extend(
             [
                 "# ── GitHub (per-paper repo + Overleaf-ready push) ────────────────",
-                f"# GITHUB_TOKEN={github_token_pat}",
-                f"GITHUB_OWNER={github_owner}",
-                "# Move GITHUB_TOKEN to your shell env (not committed):",
-                f"#   export GITHUB_TOKEN={github_token_pat}",
+                f"GITHUB_USERNAME={github_owner}",
+                "# If pushing to an organization instead of your user account,",
+                f"#   GITHUB_ORG={github_owner}",
+                "# Set the token in your shell env (never commit it):",
+                f"#   export GITHUB_TOKEN={github_token_pat or '<personal-access-token-with-repo-scope>'}",
                 "",
             ]
         )
@@ -256,13 +316,44 @@ def _write_env(env_path: Path, content: str, force: bool) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def init(force: bool = False) -> int:
+def _init_defaults() -> int:
+    """Non-interactive setup (`e2er init --defaults`). Scaffolds data/ +
+    literature/, writes a claude_code .env, bundles skills. Safe in CI /
+    non-TTY — never calls input()."""
+    root = Path.cwd()
+    print("e2er init --defaults — non-interactive setup")
+    data_dir, lit_dir = _scaffold_project_dirs(root)
+    print(f"  ✓ scaffolded {data_dir}/ and {lit_dir}/ (drop your data + PDFs there)")
+    content = _env_block(
+        backend="claude_code",
+        use_data=False,
+        bibtex_path="",
+        database_url="",
+        github_token_pat="",
+        github_owner="",
+        local_data_dir="./data",
+        literature_dir="./literature",
+    )
+    _write_env(root / ".env", content, force=True)
+    try:
+        from .cli_install_skills import install_skills as _install
+
+        _install(backend="all", force=False)
+    except Exception as e:  # noqa: BLE001 — best-effort; setup still succeeded
+        print(f"  ! install-skills failed: {e} (run `e2er install-skills` later)")
+    print("  ✓ ready — verify with `e2er doctor`, then `e2er run \"<your RQ>\"`")
+    return 0
+
+
+def init(force: bool = False, defaults: bool = False) -> int:
     """Entry point for `e2er init`. Returns shell exit code."""
+    if defaults:
+        return _init_defaults()
     if not _is_tty():
         print(
-            "e2er init: stdin is not a terminal. Run interactively, or "
-            "set LLM_BACKEND in your shell + `e2er install-skills` + "
-            '`e2er run "<your RQ>" --methodology empirical`.'
+            "e2er init: stdin is not a terminal. Re-run with `e2er init --defaults` "
+            "for non-interactive setup, or set LLM_BACKEND in your shell + "
+            '`e2er install-skills` + `e2er run "<your RQ>" --methodology empirical`.'
         )
         return 2
 
@@ -354,6 +445,11 @@ def init(force: bool = False) -> int:
         )
     print()
 
+    # Scaffold the bring-your-own-data + papers folders so `e2er doctor`
+    # and the pipeline have somewhere to look (idempotent; never clobbers).
+    _scaffold_project_dirs(Path.cwd())
+    print("  ✓ data/ and literature/ ready (drop your datasets + PDFs there)")
+
     # Write .env
     print("Writing config...")
     env_path = Path.cwd() / ".env"
@@ -364,6 +460,8 @@ def init(force: bool = False) -> int:
         database_url=database_url,
         github_token_pat=github_token_pat,
         github_owner=github_owner,
+        local_data_dir="./data",
+        literature_dir="./literature",
     )
     _write_env(env_path, content, force=force)
 

@@ -22,12 +22,18 @@ def main() -> None:
 
     init_p = subparsers.add_parser(
         "init",
-        help="Guided first-paper setup: pick a backend, write .env, bundle skills, print example RQs.",
+        help="Guided first-paper setup: scaffold data/ + literature/, write .env, bundle skills.",
     )
     init_p.add_argument(
         "--force",
         action="store_true",
         help="Overwrite an existing .env without prompting.",
+    )
+    init_p.add_argument(
+        "--defaults",
+        action="store_true",
+        help="Non-interactive setup with sensible defaults (claude_code backend, "
+        "scaffold data/ + literature/, write .env). Works in CI / non-TTY.",
     )
 
     run_p = subparsers.add_parser(
@@ -223,7 +229,7 @@ def main() -> None:
     elif args.command == "init":
         from .cli_init import init as _init
 
-        sys.exit(_init(force=args.force))
+        sys.exit(_init(force=args.force, defaults=args.defaults))
     elif args.command == "status":
         from .cli_status import status as _status
 
