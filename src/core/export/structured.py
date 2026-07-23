@@ -60,6 +60,10 @@ EXPORT_MAP: dict[str, list[tuple[str, str | None]]] = {
         ("paper_plan.md", None),
         ("literature_review.md", None),
         ("identification_strategy.md", None),
+        # The machine-readable pre-registration sidecar — belongs with the
+        # design docs, not the misc/ catch-all. It is what `e2er verify`
+        # re-checks the estimation against.
+        ("identification_spec.json", None),
         ("econometric_spec.md", None),
         ("model_spec.md", None),
     ],
@@ -202,6 +206,13 @@ def export_paper(workspace: Path, dest_root: Path, *, date_str: str, slug: str |
     fig_src = workspace / "figures"
     if fig_src.is_dir():
         shutil.copytree(fig_src, out / "results" / "figures", dirs_exist_ok=True)
+
+    # Replication: the audit log + query SQL + replication estimation script
+    # (audit_log.csv, data_queries.sql, estimation.py). Previously dropped
+    # entirely — it is the backbone of a reproducible bundle.
+    repl_src = workspace / "replication"
+    if repl_src.is_dir():
+        shutil.copytree(repl_src, out / "replication", dirs_exist_ok=True)
 
     # misc/ — top-level files we didn't map (no silent loss), minus internal ones.
     for src in sorted(workspace.iterdir()):

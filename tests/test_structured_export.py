@@ -26,6 +26,14 @@ def _workspace(tmp_path: Path) -> Path:
         json.dumps({"main": {"coefficients": {"aggregator_routed": {"estimate": -0.0087, "p_value": 0.43}}}})
     )
     (ws / "identification_strategy.md").write_text("DiD around Oct 2022")
+    (ws / "identification_spec.json").write_text(
+        json.dumps({"primary": {"estimator": "did", "fixed_effects": ["unit", "time"], "controls": []}})
+    )
+    repl = ws / "replication"
+    repl.mkdir()
+    (repl / "audit_log.csv").write_text("step,detail\n1,queried\n")
+    (repl / "data_queries.sql").write_text("SELECT 1;")
+    (repl / "estimation.py").write_text("# replication entry point")
     (ws / "review_mechanism.md").write_text("# Referee\nContribution: 4/10")
     (ws / "review_aggregation.json").write_text(
         json.dumps({"verdict": "MECHANISM_FAIL", "weighted_avg": 4.0, "rationale": "proxy too weak"})
@@ -65,6 +73,23 @@ def test_export_builds_structured_tree(tmp_path: Path):
     assert (out / "reviews" / "review_mechanism.md").is_file()
     assert (out / "reviews" / "review_aggregation.json").is_file()
     assert (out / "README.md").is_file()
+
+
+def test_export_includes_spec_and_replication(tmp_path: Path):
+    """WS-P4.0: the machine-readable spec lands in design/ (not misc/) and
+    the replication/ dir is copied whole — both are needed by `e2er verify`
+    and for a reproducible bundle."""
+    ws = _workspace(tmp_path)
+    out = export_paper(ws, tmp_path / "out", date_str="20260627")
+
+    # identification_spec.json → design/, and NOT dumped into misc/
+    assert (out / "design" / "identification_spec.json").is_file()
+    assert not (out / "misc" / "identification_spec.json").exists()
+
+    # replication/ copied whole
+    assert (out / "replication" / "audit_log.csv").is_file()
+    assert (out / "replication" / "data_queries.sql").is_file()
+    assert (out / "replication" / "estimation.py").is_file()
 
 
 def test_readme_has_verdict_and_coef(tmp_path: Path):
