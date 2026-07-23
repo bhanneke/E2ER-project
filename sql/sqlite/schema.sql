@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS papers (
     methodology       TEXT NOT NULL DEFAULT 'empirical'
                       CHECK (methodology IN ('empirical', 'theoretical', 'mixed')),
     model             TEXT,
+    backend           TEXT,
     created_at        TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at        TEXT NOT NULL DEFAULT (datetime('now'))
 );

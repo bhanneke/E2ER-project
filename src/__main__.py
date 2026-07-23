@@ -54,6 +54,18 @@ def main() -> None:
         help="single_pass = fast (one design+draft+review pass). iterative = full loop with self-attack + revision.",
     )
     run_p.add_argument(
+        "--backend",
+        choices=["anthropic", "openrouter", "claude_code", "codex", "gemini"],
+        default=None,
+        help="Override the LLM backend for this paper (default: LLM_BACKEND from .env). "
+        "Lets you run the same RQ on different backends without restarting the server.",
+    )
+    run_p.add_argument(
+        "--model",
+        default=None,
+        help="Override the model for this paper (default: the backend's configured model).",
+    )
+    run_p.add_argument(
         "--max-cost",
         type=float,
         default=5.0,
@@ -224,6 +236,8 @@ def main() -> None:
                 max_cost=args.max_cost,
                 monitor_seconds=args.monitor_seconds,
                 acknowledge=args.acknowledge_unproven,
+                backend=args.backend,
+                model=args.model,
             )
         )
     elif args.command == "init":

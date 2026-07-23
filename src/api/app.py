@@ -325,6 +325,12 @@ class CreatePaperRequest(BaseModel):
     mode: str = Field(default="iterative", validation_alias=AliasChoices("mode", "pipeline_mode"))
     methodology: str = "empirical"  # empirical | theoretical | mixed
     bibtex_path: str | None = None
+    # Per-paper LLM backend + model override. Both default to None → the
+    # process-global settings.llm_backend / settings.default_model. Set them
+    # to run this paper on a specific backend (multi-model runs, the
+    # governance experiment) without restarting the server on a new env.
+    backend: str | None = None
+    model: str | None = None
     max_cost_usd: float | None = None  # falls back to settings.default_max_cost_usd
     # First-run guardrail: when no paper at the current (model, methodology, mode)
     # tuple has ever reached `completed`, the cap is forced to $1.00 unless the
@@ -398,12 +404,22 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
             detail=f"methodology must be one of empirical|theoretical|mixed, got {req.methodology!r}",
         )
 
+    # Per-paper backend override. None → the process-global default.
+    from ..modules.llm.registry import BACKENDS
+
+    if req.backend is not None and req.backend not in BACKENDS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"backend must be one of {'|'.join(BACKENDS)}, got {req.backend!r}",
+        )
+    effective_backend = req.backend or settings.llm_backend
+
     # First-run guardrail. Inspect the (model, methodology, mode) tuple. If
     # nothing has completed at this combination, force the cap to $1 unless
     # the requester explicitly acknowledges. This is the proactive defense
     # against the May 2026 "spend $8 chasing a Sonnet bug" failure: cheap
     # validation must succeed once before we trust an expensive cap.
-    current_model = settings.default_model
+    current_model = req.model or settings.default_model
     requested_cap = req.max_cost_usd if req.max_cost_usd is not None else settings.default_max_cost_usd
     proven = await _tuple_is_proven(current_model, req.methodology, req.mode)
     if not proven and requested_cap > _UNPROVEN_TUPLE_CAP and not req.acknowledge_unproven_tuple:
@@ -457,6 +473,7 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
         "mode": req.mode,
         "methodology": req.methodology,
         "model": current_model,
+        "backend": effective_backend,
         "current_stage": "idea",
     }
     (workspace / "manifest.json").write_text(json.dumps(manifest, indent=2))
@@ -464,9 +481,9 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
         await execute(
             """
             INSERT INTO papers (id, title, research_question, status, workspace,
-                                mode, methodology, model, max_cost_usd)
+                                mode, methodology, model, backend, max_cost_usd)
             VALUES (%(id)s, %(title)s, %(rq)s, 'idea', %(ws)s,
-                    %(mode)s, %(methodology)s, %(model)s, %(cap)s)
+                    %(mode)s, %(methodology)s, %(model)s, %(backend)s, %(cap)s)
             """,
             {
                 "id": paper_id,
@@ -476,6 +493,7 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
                 "mode": req.mode,
                 "methodology": req.methodology,
                 "model": current_model,
+                "backend": effective_backend,
                 "cap": cap,
             },
         )
@@ -488,7 +506,11 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
     # Use asyncio.create_task (not BackgroundTasks) so we get a handle for cancel.
     # _prepare_and_run does the heavy BYOD import + literature ingest FIRST (off
     # the request path), then runs the pipeline — so the POST returns now.
-    task = asyncio.create_task(_prepare_and_run(paper_id, workspace, settings, req.mode, cap, req.methodology))
+    task = asyncio.create_task(
+        _prepare_and_run(
+            paper_id, workspace, settings, req.mode, cap, req.methodology, effective_backend, current_model
+        )
+    )
     _RUNNING[paper_id] = task
     task.add_done_callback(lambda _t: _RUNNING.pop(paper_id, None))
 
@@ -597,7 +619,8 @@ async def resume_paper(paper_id: str, req: ResumeRequest | None = None) -> dict[
 
     try:
         row = await fetch_one(
-            "SELECT id, status, workspace, mode, max_cost_usd, methodology FROM papers WHERE id = %(id)s",
+            "SELECT id, status, workspace, mode, max_cost_usd, methodology, backend, model "
+            "FROM papers WHERE id = %(id)s",
             {"id": paper_id},
         )
     except Exception as e:
@@ -625,6 +648,8 @@ async def resume_paper(paper_id: str, req: ResumeRequest | None = None) -> dict[
     mode = row.get("mode") or "single_pass"
     cap = float(row.get("max_cost_usd") or 25.0)
     methodology = row.get("methodology") or "empirical"
+    backend_name = row.get("backend")  # None → server default at run time
+    model = row.get("model")
 
     # Optional cap raise (v0.5): if the request body provides a new
     # max_cost_usd, persist it before re-firing the runner so the
@@ -652,7 +677,7 @@ async def resume_paper(paper_id: str, req: ResumeRequest | None = None) -> dict[
     except Exception as e:
         logger.warning("Could not update status on resume %s: %s", paper_id, e)
 
-    task = asyncio.create_task(_run_pipeline(paper_id, workspace, mode, cap, methodology))
+    task = asyncio.create_task(_run_pipeline(paper_id, workspace, mode, cap, methodology, backend_name, model))
     _RUNNING[paper_id] = task
     task.add_done_callback(lambda _t: _RUNNING.pop(paper_id, None))
 
@@ -1241,6 +1266,8 @@ async def _prepare_and_run(
     mode: str,
     max_cost_usd: float,
     methodology: str = "empirical",
+    backend_name: str | None = None,
+    model: str | None = None,
 ) -> None:
     """Background entry: do the heavy BYOD prep (data.db import + literature
     ingest) off the request path, THEN run the pipeline.
@@ -1261,7 +1288,7 @@ async def _prepare_and_run(
         await _ingest_literature_corpus(paper_id, workspace, settings)
     except Exception as e:  # noqa: BLE001
         logger.warning("literature ingest failed for %s: %s (pipeline continues)", paper_id, e)
-    await _run_pipeline(paper_id, workspace, mode, max_cost_usd, methodology)
+    await _run_pipeline(paper_id, workspace, mode, max_cost_usd, methodology, backend_name, model)
 
 
 async def _run_pipeline(
@@ -1270,6 +1297,8 @@ async def _run_pipeline(
     mode: str,
     max_cost_usd: float,
     methodology: str = "empirical",
+    backend_name: str | None = None,
+    model: str | None = None,
 ) -> None:
     from ..config import get_settings
     from ..core.strategist.runner import PipelineRunner
@@ -1280,7 +1309,11 @@ async def _run_pipeline(
     from ..modules.llm.registry import get_backend
 
     settings = get_settings()
-    backend = get_backend(settings)
+    # Per-paper overrides (multi-model runs / experiment); fall back to the
+    # process-global config when unset.
+    effective_backend_name = backend_name or settings.llm_backend
+    effective_model = model or settings.default_model
+    backend = get_backend(settings, name=effective_backend_name)
 
     # Tools are unioned across all enabled providers; specialists' skill files
     # determine which they actually invoke.
@@ -1314,11 +1347,11 @@ async def _run_pipeline(
         paper_id=paper_id,
         workspace=workspace,
         backend=backend,
-        model=settings.default_model,
+        model=effective_model,
         mode=mode,
         extra_tools=extra_tools,
         extra_handlers=extra_handlers,
-        backend_name=settings.llm_backend,
+        backend_name=effective_backend_name,
         max_cost_usd=max_cost_usd,
         methodology=methodology,
     )

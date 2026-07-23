@@ -90,7 +90,15 @@ def _ensure_api_up(deadline_seconds: float = 12.0) -> tuple[bool, str | None]:
     return False, (f"Failed to bring up uvicorn within {deadline_seconds:.0f}s. Check ~/.e2er/uvicorn.log for errors.")
 
 
-def _submit_paper(rq: str, methodology: str, mode: str, max_cost: float, acknowledge: bool = False) -> dict | None:
+def _submit_paper(
+    rq: str,
+    methodology: str,
+    mode: str,
+    max_cost: float,
+    acknowledge: bool = False,
+    backend: str | None = None,
+    model: str | None = None,
+) -> dict | None:
     """POST /api/papers and return the response body."""
     import httpx
 
@@ -105,7 +113,9 @@ def _submit_paper(rq: str, methodology: str, mode: str, max_cost: float, acknowl
     # (model, methodology, mode) tuple — but it only matters for metered API
     # backends. The flat-rate CLI backends cost $0/token, so auto-acknowledge
     # there; otherwise enforce the floor unless the user passed --acknowledge.
-    flat_rate = get_settings().llm_backend in {"claude_code", "codex", "gemini"}
+    # Key the decision on the EFFECTIVE backend (the --backend override wins).
+    effective_backend = backend or get_settings().llm_backend
+    flat_rate = effective_backend in {"claude_code", "codex", "gemini"}
     acknowledge_unproven = acknowledge or flat_rate
 
     body = {
@@ -122,6 +132,10 @@ def _submit_paper(rq: str, methodology: str, mode: str, max_cost: float, acknowl
         "acknowledge_unproven_tuple": acknowledge_unproven,
         "max_cost_usd": max_cost,
     }
+    if backend:
+        body["backend"] = backend
+    if model:
+        body["model"] = model
     headers = {}
     if token := os.environ.get("E2ER_API_TOKEN"):
         headers["Authorization"] = f"Bearer {token}"
@@ -177,6 +191,8 @@ def run(
     max_cost: float = 5.0,
     monitor_seconds: float = 1800.0,
     acknowledge: bool = False,
+    backend: str | None = None,
+    model: str | None = None,
 ) -> int:
     """Submit a paper and tail it. Entry point for `e2er run "<RQ>"`."""
     ok, err = _ensure_api_up()
@@ -185,8 +201,13 @@ def run(
         return 4
 
     print(f"Submitting paper:\n  {rq[:120]}", file=sys.stderr)
-    print(f"  methodology={methodology}, mode={mode}, max_cost=${max_cost}", file=sys.stderr)
-    resp = _submit_paper(rq, methodology, mode, max_cost, acknowledge=acknowledge)
+    backend_note = f", backend={backend}" if backend else ""
+    model_note = f", model={model}" if model else ""
+    print(
+        f"  methodology={methodology}, mode={mode}, max_cost=${max_cost}{backend_note}{model_note}",
+        file=sys.stderr,
+    )
+    resp = _submit_paper(rq, methodology, mode, max_cost, acknowledge=acknowledge, backend=backend, model=model)
     if not resp:
         return 5
 

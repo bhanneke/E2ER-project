@@ -199,6 +199,24 @@ async def _ensure_sqlite_schema() -> None:
     async with aiosqlite.connect(str(path)) as conn:
         await conn.executescript(schema_path.read_text(encoding="utf-8"))
         await conn.commit()
+        # CREATE TABLE IF NOT EXISTS never alters a pre-existing table, so
+        # additive columns must be backfilled for DBs created by an older
+        # version. Each entry is an idempotent "add column if missing".
+        await _ensure_sqlite_columns(
+            conn,
+            "papers",
+            {"model": "TEXT", "backend": "TEXT"},
+        )
+        await conn.commit()
+
+
+async def _ensure_sqlite_columns(conn, table: str, columns: dict[str, str]) -> None:
+    """Add any missing columns to an existing SQLite table (idempotent)."""
+    cur = await conn.execute(f"PRAGMA table_info({table})")
+    existing = {row[1] for row in await cur.fetchall()}
+    for name, decl in columns.items():
+        if name not in existing:
+            await conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
 
 
 async def _sqlite_connect():
