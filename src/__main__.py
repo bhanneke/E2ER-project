@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
 
 
 def main() -> None:
@@ -109,6 +110,27 @@ def main() -> None:
         help="Lift the $1 first-run floor for an unproven (model, methodology, mode) tuple "
         "and use the full --max-cost. Auto-enabled on the $0 CLI backends (claude_code/codex/gemini).",
     )
+
+    matrix_p = subparsers.add_parser(
+        "run-matrix",
+        help="Run the same RQ across several backends (k backends × n repeats) for later comparison.",
+    )
+    matrix_p.add_argument("research_question", nargs="?", default=None, help="The RQ in quotes (or use --rq-file).")
+    matrix_p.add_argument("--rq-file", default=None, help="Read the research question from a file.")
+    matrix_p.add_argument(
+        "--backends",
+        default="claude_code,codex,gemini",
+        help="Comma-separated backends to run (default: claude_code,codex,gemini — the $0 CLI backends).",
+    )
+    matrix_p.add_argument("--repeats", type=int, default=3, help="Repeats per backend (default 3).")
+    matrix_p.add_argument("--methodology", choices=["empirical", "theoretical", "mixed"], default="empirical")
+    matrix_p.add_argument("--mode", choices=["single_pass", "iterative"], default="single_pass")
+    matrix_p.add_argument("--governance", choices=["off", "contracts", "full"], default=None)
+    matrix_p.add_argument("--max-cost", type=float, default=5.0, help="Per-paper cost cap (default $5).")
+    matrix_p.add_argument(
+        "--out", default=None, help="Output dir for bundles + matrix.json (default: ./matrix-<slug>/)."
+    )
+    matrix_p.add_argument("--monitor-seconds", type=float, default=3600.0, help="Max time to poll each paper.")
 
     status_p = subparsers.add_parser(
         "status",
@@ -251,6 +273,30 @@ def main() -> None:
         from .cli_verify import verify as _verify
 
         sys.exit(_verify(bundle=args.bundle, online=args.online, json_output=args.json))
+
+    if args.command == "run-matrix":
+        from .cli_run_matrix import run_matrix as _run_matrix
+
+        rq = args.research_question
+        if args.rq_file:
+            rq = Path(args.rq_file).expanduser().read_text(encoding="utf-8").strip()
+        if not rq:
+            print("run-matrix: provide a research question (positional) or --rq-file", file=sys.stderr)
+            sys.exit(2)
+        backends = [b.strip() for b in args.backends.split(",") if b.strip()]
+        sys.exit(
+            _run_matrix(
+                rq=rq,
+                backends=backends,
+                repeats=args.repeats,
+                methodology=args.methodology,
+                mode=args.mode,
+                max_cost=args.max_cost,
+                governance=args.governance,
+                out=args.out,
+                monitor_seconds=args.monitor_seconds,
+            )
+        )
 
     if args.command == "doctor":
         from .doctor import main_doctor

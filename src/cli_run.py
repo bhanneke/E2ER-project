@@ -100,16 +100,20 @@ def _submit_paper(
     model: str | None = None,
     governance: str | None = None,
     review_stages: list[str] | None = None,
+    title_suffix: str = "",
 ) -> dict | None:
     """POST /api/papers and return the response body."""
     import httpx
 
     from .config import get_settings
 
-    # Derive a title: first sentence of the RQ, truncated.
+    # Derive a title: first sentence of the RQ, truncated. run-matrix passes a
+    # title_suffix like " [claude_code/rep-1]" so sibling runs are labeled.
     title = rq.split("?")[0].split(".")[0].strip()
     if len(title) > 80:
         title = title[:77] + "..."
+    if title_suffix:
+        title = f"{title}{title_suffix}"
 
     # The $1 first-run floor protects against a runaway loop on an unvalidated
     # (model, methodology, mode) tuple — but it only matters for metered API
