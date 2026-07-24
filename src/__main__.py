@@ -194,6 +194,23 @@ def main() -> None:
         help="Emit the citation_integrity.json report on stdout instead of the human summary.",
     )
 
+    verify_p = subparsers.add_parser(
+        "verify",
+        help="Offline, keyless check that an exported bundle is internally consistent + untampered "
+        "(hashes, numbers, spec, citations).",
+    )
+    verify_p.add_argument("bundle", help="Path to an exported bundle directory (from `e2er export`).")
+    verify_p.add_argument(
+        "--online",
+        action="store_true",
+        help="Also re-verify citations against live registries (OpenAlex / S2 / Crossref). Default is fully offline.",
+    )
+    verify_p.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit a machine-readable JSON report instead of the human-readable summary.",
+    )
+
     export_p = subparsers.add_parser(
         "export",
         help="Assemble a clean, structured project folder (paper/code/data/results/design/reviews) from a run.",
@@ -211,6 +228,11 @@ def main() -> None:
         from .cli_export import export as _export
 
         sys.exit(_export(paper_id=args.paper_id, to=args.to))
+
+    if args.command == "verify":
+        from .cli_verify import verify as _verify
+
+        sys.exit(_verify(bundle=args.bundle, online=args.online, json_output=args.json))
 
     if args.command == "doctor":
         from .doctor import main_doctor
