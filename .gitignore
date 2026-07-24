@@ -62,3 +62,8 @@ live_check_report.json
 
 # Generated figure PDF byproduct (regenerate via scripts/gen_pipeline_figure.py)
 docs/figures/*.pdf
+
+# WS-F / WS-P3.2 run outputs (keep the experiments/*.yaml configs, ignore the
+# generated run dirs: results.csv, summary.md, exported bundles).
+experiments/*/
+matrix-*/
