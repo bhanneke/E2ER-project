@@ -92,6 +92,24 @@ def test_export_includes_spec_and_replication(tmp_path: Path):
     assert (out / "replication" / "estimation.py").is_file()
 
 
+def test_export_writes_provenance_manifest(tmp_path: Path):
+    """WS-P4.1: every bundle carries provenance.json inventorying all its
+    files (including the README written last) and derivation edges."""
+    ws = _workspace(tmp_path)
+    out = export_paper(ws, tmp_path / "out", date_str="20260627")
+    prov_path = out / "provenance.json"
+    assert prov_path.is_file()
+    prov = json.loads(prov_path.read_text())
+    assert prov["schema"] == "e2er-provenance/1"
+    # Inventories real bundle files, including the last-written README.
+    assert "paper/paper.tex" in prov["files"]
+    assert "README.md" in prov["files"]
+    assert "provenance.json" not in prov["files"]
+    # The synthetic workspace has estimation + data → at least those edges.
+    kinds = {e["type"] for e in prov["edges"]}
+    assert {"estimation", "data"} <= kinds
+
+
 def test_readme_discloses_governance_regime(tmp_path: Path):
     """WS-B: the bundle README must disclose the governance regime, and warn
     when it wasn't `full` (gates ran in shadow)."""

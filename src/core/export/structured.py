@@ -243,5 +243,12 @@ def export_paper(workspace: Path, dest_root: Path, *, date_str: str, slug: str |
         _copy_matches(workspace, out / "misc", src.name, None, copied_names)
 
     (out / "README.md").write_text(_render_readme(workspace, manifest, slug), encoding="utf-8")
+
+    # Provenance manifest LAST — it inventories (SHA-256) every other bundle
+    # file, so it must run after the README + all copies exist.
+    from .provenance import write_provenance
+
+    write_provenance(out, manifest, exported_at=date_str)
+
     logger.info("Exported paper %s → %s", workspace.name, out)
     return out

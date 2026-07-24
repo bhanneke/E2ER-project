@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/bhanneke/E2ER-project/docs/schemas/provenance.schema.json",
+  "title": "E2ER provenance manifest",
+  "description": "Content-addressed inventory + derivation graph for an exported E2ER paper bundle. Written at export time as provenance.json; re-checked offline by `e2er verify`. Published as a portable standard any pipeline's export could comply with.",
+  "type": "object",
+  "required": ["schema", "run", "files", "edges"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": "e2er-provenance/1",
+      "description": "Manifest schema version."
+    },
+    "run": {
+      "type": "object",
+      "required": ["governance", "e2er_version", "exported_at"],
+      "properties": {
+        "paper_id": { "type": ["string", "null"] },
+        "backend": { "type": ["string", "null"] },
+        "model": { "type": ["string", "null"] },
+        "governance": {
+          "type": "string",
+          "enum": ["off", "contracts", "full"],
+          "description": "Regime the run executed under. Under contracts/off the deterministic gates ran in shadow (did not block), so numbers/citations may not have been enforced."
+        },
+        "e2er_version": { "type": "string" },
+        "exported_at": { "type": "string" }
+      }
+    },
+    "files": {
+      "type": "object",
+      "description": "Bundle-relative POSIX path -> content hash + size. Covers every file except provenance.json itself.",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["sha256", "bytes"],
+        "properties": {
+          "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "bytes": { "type": "integer", "minimum": 0 }
+        },
+        "additionalProperties": false
+      }
+    },
+    "edges": {
+      "type": "array",
+      "description": "Derivation links reconstructed from the bundle's gate reports.",
+      "items": {
+        "type": "object",
+        "required": ["type"],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["table_cell", "citation", "figure", "estimation", "data"]
+          },
+          "output": { "type": "string" },
+          "source": { "type": ["string", "null"] },
+          "source_key": { "type": "string" },
+          "cell_value": { "type": ["string", "null"] },
+          "table_context": { "type": ["string", "null"] },
+          "key": { "type": ["string", "null"] },
+          "status": { "type": ["string", "null"] },
+          "registry": { "type": ["string", "null"] },
+          "external_id": { "type": ["string", "null"] },
+          "script": { "type": "string" },
+          "log": { "type": "string" },
+          "queries": { "type": "string" }
+        }
+      }
+    }
+  }
+}

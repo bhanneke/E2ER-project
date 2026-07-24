@@ -56,6 +56,16 @@ class Mismatch:
 
 
 @dataclass
+class MatchedCell:
+    """A table cell whose value DID trace to a source JSON key. Recorded so the
+    provenance manifest can emit a per-cell derivation edge (draft → source)."""
+
+    draft_value: str
+    source_key: str
+    table_context: str
+
+
+@dataclass
 class VerificationReport:
     """Result of programmatic number verification."""
 
@@ -66,6 +76,8 @@ class VerificationReport:
     unverifiable: int = 0
     coverage: float = 1.0
     mismatches: list[Mismatch] = field(default_factory=list)
+    # Cells that traced (draft value ↔ source key) — provenance, not gating.
+    matched_cells: list[MatchedCell] = field(default_factory=list)
     source_files_found: list[str] = field(default_factory=list)
     source_files_missing: list[str] = field(default_factory=list)
     skipped_reason: str | None = None
@@ -479,6 +491,7 @@ def verify(
 
         if best_match is not None:
             report.matched += 1
+            report.matched_cells.append(MatchedCell(draft_value=num_str, source_key=best_match, table_context=context))
             continue
 
         # No exact match — find closest source value to decide severity.
