@@ -74,6 +74,24 @@ def main() -> None:
         "blocks (gates still run in shadow and log what they would have caught).",
     )
     run_p.add_argument(
+        "--review-at",
+        action="append",
+        default=None,
+        metavar="STAGE",
+        choices=[
+            "initial",
+            "iterative",
+            "estimation_gate",
+            "self_attack",
+            "polish",
+            "review",
+            "revision",
+            "replication",
+        ],
+        help="Pause for human review after this pipeline stage (repeatable). The run pauses; "
+        "inspect/edit the workspace, then `e2er resume <paper_id>` to continue.",
+    )
+    run_p.add_argument(
         "--max-cost",
         type=float,
         default=5.0,
@@ -269,6 +287,7 @@ def main() -> None:
                 backend=args.backend,
                 model=args.model,
                 governance=args.governance,
+                review_stages=args.review_at,
             )
         )
     elif args.command == "init":

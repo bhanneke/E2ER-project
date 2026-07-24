@@ -15,7 +15,12 @@ from ..specialists.registry import POLISH_SPECIALISTS, REVIEWER_SPECIALISTS, SPE
 from ..strategist.actions import StrategistDecision
 from ..strategist.engine import StrategistEngine
 from ..strategist.review_aggregator import aggregate_reviews, parse_review_output
-from ..strategist.state import BudgetExceededError, CircuitBreakerError, PaperStatus
+from ..strategist.state import (
+    BudgetExceededError,
+    CircuitBreakerError,
+    HumanReviewRequestedError,
+    PaperStatus,
+)
 
 logger = get_logger(__name__)
 
@@ -80,6 +85,7 @@ class PipelineRunner:
         max_cost_usd: float | None = None,
         methodology: str = "empirical",
         governance: str = "full",
+        review_stages: list[str] | None = None,
     ) -> None:
         self._paper_id = paper_id
         self._workspace = workspace
@@ -89,6 +95,9 @@ class PipelineRunner:
         # Governance regime (experiment treatment): off | contracts | full.
         # Selects which gates BLOCK; non-blocking gates still compute + log.
         self._governance = governance
+        # Human-in-the-loop: stages after which the run pauses for the
+        # researcher to inspect/edit the workspace before continuing.
+        self._review_stages = set(review_stages or [])
         # Methodology drives phase routing (data_reviewer + replication_packager
         # are skipped for theoretical papers — pre-v0.5 they ran wastefully).
         self._methodology = methodology
@@ -167,6 +176,14 @@ class PipelineRunner:
             await log_event(self._paper_id, "phase_start", stage=name)
             result = await fn()
             await log_event(self._paper_id, "phase_end", stage=name)
+            # Human-in-the-loop checkpoint: pause AFTER this stage's work is
+            # done (and persisted) but before the next, if the researcher asked
+            # to review here and hasn't already approved it on a prior resume.
+            if self._should_pause_for_review(name, state):
+                state.mark_complete(name)
+                state.pending_review_stage = name
+                state.save(self._workspace)
+                raise HumanReviewRequestedError(name)
             return result
 
         try:
@@ -220,6 +237,12 @@ class PipelineRunner:
                 state.contributions_count = prior_contributions + len(self._contributions)
                 state.mark_complete("revision")
                 state.save(self._workspace)
+                # Revision bypasses _phase (it needs the status arg), so honor a
+                # checkpoint here explicitly.
+                if self._should_pause_for_review("revision", state):
+                    state.pending_review_stage = "revision"
+                    state.save(self._workspace)
+                    raise HumanReviewRequestedError("revision")
             else:
                 # Resuming past revision — restore saved verdict
                 status = _coerce_paper_status(state.last_status, status)
@@ -305,6 +328,21 @@ class PipelineRunner:
             )
             await self._update_status(PaperStatus.PAUSED, error=error_msg)
             return {"status": "paused", "reason": "budget_exhausted", "spent": be.spent, "cap": be.cap}
+        except HumanReviewRequestedError as hr:
+            # Clean, resumable pause at a researcher-chosen checkpoint. State
+            # (incl. the completed stage + pending_review_stage) was saved in
+            # _phase before the raise; resume approves it and continues.
+            state.save(self._workspace)
+            logger.info("Pipeline paused for human review after stage '%s' (paper %s)", hr.stage, self._paper_id)
+            await log_event(self._paper_id, "awaiting_review", stage=hr.stage, payload={"stage": hr.stage})
+            await self._update_status(
+                PaperStatus.PAUSED,
+                error=(
+                    f"Paused for human review after stage '{hr.stage}'. Inspect the workspace, "
+                    f"edit artifacts if needed, then resume (POST /api/papers/{{id}}/resume or `e2er resume`)."
+                ),
+            )
+            return {"status": "paused", "reason": "awaiting_review", "stage": hr.stage}
         except Exception as e:
             state.save(self._workspace)  # preserve progress on failure
             logger.error("Pipeline failed for paper %s: %s", self._paper_id, e)
@@ -477,6 +515,11 @@ class PipelineRunner:
         """True iff `gate` should BLOCK under the active regime."""
         enforced = self._GATE_ENFORCEMENT.get(self._governance, self._GATE_ENFORCEMENT["full"])
         return gate in enforced
+
+    def _should_pause_for_review(self, stage: str, state: Any) -> bool:
+        """True iff the run should pause after `stage` for human review — i.e.
+        the researcher requested a checkpoint here and hasn't approved it yet."""
+        return stage in self._review_stages and not state.is_approved(stage)
 
     async def _record_gate(self, gate: str, *, passed: bool, detail: str = "") -> bool:
         """Log a gate verdict and return whether it should BLOCK this run.

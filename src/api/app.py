@@ -335,6 +335,11 @@ class CreatePaperRequest(BaseModel):
     # (default "full"). The experiment's treatment variable — selects which
     # gates block; non-blocking gates still compute + log (shadow mode).
     governance: str | None = None
+    # Human-in-the-loop: pipeline stages after which the run pauses for the
+    # researcher to inspect/edit the workspace before continuing. Empty = no
+    # checkpoints (unattended, current behaviour). Validated against the real
+    # stage names (PIPELINE_STAGES).
+    review_stages: list[str] = []
     max_cost_usd: float | None = None  # falls back to settings.default_max_cost_usd
     # First-run guardrail: when no paper at the current (model, methodology, mode)
     # tuple has ever reached `completed`, the cap is forced to $1.00 unless the
@@ -427,6 +432,16 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
         )
     effective_governance = req.governance or settings.governance
 
+    # Human-in-the-loop review points. Validate against real stage names.
+    from ..core.strategist.state import PIPELINE_STAGES
+
+    bad_stages = [s for s in req.review_stages if s not in PIPELINE_STAGES]
+    if bad_stages:
+        raise HTTPException(
+            status_code=422,
+            detail=f"review_stages must be from {'|'.join(PIPELINE_STAGES)}; unknown: {', '.join(bad_stages)}",
+        )
+
     # First-run guardrail. Inspect the (model, methodology, mode) tuple. If
     # nothing has completed at this combination, force the cap to $1 unless
     # the requester explicitly acknowledges. This is the proactive defense
@@ -488,6 +503,7 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
         "model": current_model,
         "backend": effective_backend,
         "governance": effective_governance,
+        "review_stages": req.review_stages,
         "current_stage": "idea",
     }
     (workspace / "manifest.json").write_text(json.dumps(manifest, indent=2))
@@ -495,9 +511,11 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
         await execute(
             """
             INSERT INTO papers (id, title, research_question, status, workspace,
-                                mode, methodology, model, backend, governance, max_cost_usd)
+                                mode, methodology, model, backend, governance,
+                                review_stages, max_cost_usd)
             VALUES (%(id)s, %(title)s, %(rq)s, 'idea', %(ws)s,
-                    %(mode)s, %(methodology)s, %(model)s, %(backend)s, %(governance)s, %(cap)s)
+                    %(mode)s, %(methodology)s, %(model)s, %(backend)s, %(governance)s,
+                    %(review_stages)s, %(cap)s)
             """,
             {
                 "id": paper_id,
@@ -509,6 +527,7 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
                 "model": current_model,
                 "backend": effective_backend,
                 "governance": effective_governance,
+                "review_stages": json.dumps(req.review_stages),
                 "cap": cap,
             },
         )
@@ -532,6 +551,7 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
             effective_backend,
             current_model,
             effective_governance,
+            req.review_stages,
         )
     )
     _RUNNING[paper_id] = task
@@ -642,8 +662,8 @@ async def resume_paper(paper_id: str, req: ResumeRequest | None = None) -> dict[
 
     try:
         row = await fetch_one(
-            "SELECT id, status, workspace, mode, max_cost_usd, methodology, backend, model, governance "
-            "FROM papers WHERE id = %(id)s",
+            "SELECT id, status, workspace, mode, max_cost_usd, methodology, backend, model, governance, "
+            "review_stages FROM papers WHERE id = %(id)s",
             {"id": paper_id},
         )
     except Exception as e:
@@ -674,6 +694,22 @@ async def resume_paper(paper_id: str, req: ResumeRequest | None = None) -> dict[
     backend_name = row.get("backend")  # None → server default at run time
     model = row.get("model")
     governance = row.get("governance")  # None → server default at run time
+    try:
+        review_stages = json.loads(row.get("review_stages") or "[]")
+    except (TypeError, ValueError):
+        review_stages = []
+
+    # If this pause was a human-review checkpoint, approve the pending stage so
+    # the resumed run continues past it instead of immediately re-pausing.
+    try:
+        from ..core.pipeline.state import PipelineState
+
+        pstate = PipelineState.load(workspace, paper_id, mode)
+        if pstate.pending_review_stage:
+            pstate.approve(pstate.pending_review_stage)
+            pstate.save(workspace)
+    except Exception as e:  # noqa: BLE001 — approval is best-effort; resume proceeds
+        logger.warning("Could not clear review checkpoint on resume %s: %s", paper_id, e)
 
     # Optional cap raise (v0.5): if the request body provides a new
     # max_cost_usd, persist it before re-firing the runner so the
@@ -702,7 +738,7 @@ async def resume_paper(paper_id: str, req: ResumeRequest | None = None) -> dict[
         logger.warning("Could not update status on resume %s: %s", paper_id, e)
 
     task = asyncio.create_task(
-        _run_pipeline(paper_id, workspace, mode, cap, methodology, backend_name, model, governance)
+        _run_pipeline(paper_id, workspace, mode, cap, methodology, backend_name, model, governance, review_stages)
     )
     _RUNNING[paper_id] = task
     task.add_done_callback(lambda _t: _RUNNING.pop(paper_id, None))
@@ -1203,6 +1239,7 @@ async def paper_live_fragment(request: Request, paper_id: str = Depends(_validat
             "cost_pct": cost_pct,
             "events": events or [],
             "can_cancel": (paper.get("status") not in _TERMINAL_STATUSES) and (paper_id in _RUNNING),
+            "can_resume": (paper.get("status") == "paused") and (paper_id not in _RUNNING),
         },
     )
 
@@ -1295,6 +1332,7 @@ async def _prepare_and_run(
     backend_name: str | None = None,
     model: str | None = None,
     governance: str | None = None,
+    review_stages: list[str] | None = None,
 ) -> None:
     """Background entry: do the heavy BYOD prep (data.db import + literature
     ingest) off the request path, THEN run the pipeline.
@@ -1315,7 +1353,9 @@ async def _prepare_and_run(
         await _ingest_literature_corpus(paper_id, workspace, settings)
     except Exception as e:  # noqa: BLE001
         logger.warning("literature ingest failed for %s: %s (pipeline continues)", paper_id, e)
-    await _run_pipeline(paper_id, workspace, mode, max_cost_usd, methodology, backend_name, model, governance)
+    await _run_pipeline(
+        paper_id, workspace, mode, max_cost_usd, methodology, backend_name, model, governance, review_stages
+    )
 
 
 async def _run_pipeline(
@@ -1327,6 +1367,7 @@ async def _run_pipeline(
     backend_name: str | None = None,
     model: str | None = None,
     governance: str | None = None,
+    review_stages: list[str] | None = None,
 ) -> None:
     from ..config import get_settings
     from ..core.strategist.runner import PipelineRunner
@@ -1384,6 +1425,7 @@ async def _run_pipeline(
         max_cost_usd=max_cost_usd,
         methodology=methodology,
         governance=effective_governance,
+        review_stages=review_stages,
     )
     await runner.run()
 
