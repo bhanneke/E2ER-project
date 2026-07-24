@@ -25,6 +25,26 @@ import time
 from pathlib import Path
 
 
+def resolve_rq_input(rq: str | None, rq_file: str | None) -> str | None:
+    """Resolve the research question from a positional arg or a file.
+
+    A file may be an rq.json (from `e2er rq`, with a "research_question" key)
+    or plain text. Returns None when neither yields a non-empty RQ."""
+    if rq_file:
+        import json
+        from pathlib import Path
+
+        raw = Path(rq_file).expanduser().read_text(encoding="utf-8").strip()
+        try:
+            obj = json.loads(raw)
+            if isinstance(obj, dict) and obj.get("research_question"):
+                return str(obj["research_question"]).strip()
+        except (ValueError, TypeError):
+            pass
+        return raw or None
+    return rq
+
+
 def _api_root() -> str:
     """Resolve the API URL from settings; the user can override via E2ER_API_URL."""
     if url := os.environ.get("E2ER_API_URL"):

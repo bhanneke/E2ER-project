@@ -41,7 +41,12 @@ def main() -> None:
         "run",
         help="Submit a research question to the pipeline (one-command quickstart).",
     )
-    run_p.add_argument("research_question", help="The research question, in quotes.")
+    run_p.add_argument(
+        "research_question", nargs="?", default=None, help="The research question, in quotes (or use --rq-file)."
+    )
+    run_p.add_argument(
+        "--rq-file", default=None, help="Read the RQ from a file — an rq.json (from `e2er rq`) or plain text."
+    )
     run_p.add_argument(
         "--methodology",
         choices=["empirical", "theoretical", "mixed"],
@@ -251,6 +256,15 @@ def main() -> None:
         help="Emit a machine-readable JSON report instead of the human-readable summary.",
     )
 
+    rq_p = subparsers.add_parser(
+        "rq",
+        help="Sharpen a draft research question against your data + literature (advisory; never starts a run).",
+    )
+    rq_p.add_argument("--draft", required=True, help="Your draft research question, in quotes.")
+    rq_p.add_argument("--no-data", action="store_true", help="Skip the data-catalog context.")
+    rq_p.add_argument("--no-literature", action="store_true", help="Skip the local-literature context.")
+    rq_p.add_argument("--out", default=None, help="Write the structured rq.json to this path.")
+
     compare_p = subparsers.add_parser(
         "compare",
         help="Diff the design choices across a run-matrix (estimator/FE/controls/clustering/coefficient).",
@@ -296,6 +310,18 @@ def main() -> None:
         from .core.compare import compare as _compare
 
         sys.exit(_compare(paths=args.paths, out=args.out, json_output=args.json))
+
+    if args.command == "rq":
+        from .cli_rq import rq as _rq
+
+        sys.exit(
+            _rq(
+                draft=args.draft,
+                use_data=not args.no_data,
+                use_literature=not args.no_literature,
+                out=args.out,
+            )
+        )
 
     if args.command == "run-matrix":
         from .cli_run_matrix import run_matrix as _run_matrix
@@ -343,11 +369,16 @@ def main() -> None:
 
         sys.exit(_install(backend=args.backend, force=args.force))
     elif args.command == "run":
+        from .cli_run import resolve_rq_input
         from .cli_run import run as _run
 
+        rq_text = resolve_rq_input(args.research_question, args.rq_file)
+        if not rq_text:
+            print('e2er run: provide a research question (positional) or --rq-file. Example: e2er run "<RQ>"')
+            sys.exit(2)
         sys.exit(
             _run(
-                rq=args.research_question,
+                rq=rq_text,
                 methodology=args.methodology,
                 mode=args.mode,
                 max_cost=args.max_cost,
