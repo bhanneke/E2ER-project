@@ -79,12 +79,16 @@ class PipelineRunner:
         backend_name: str = "anthropic",
         max_cost_usd: float | None = None,
         methodology: str = "empirical",
+        governance: str = "full",
     ) -> None:
         self._paper_id = paper_id
         self._workspace = workspace
         self._backend = backend
         self._model = model
         self._mode = mode
+        # Governance regime (experiment treatment): off | contracts | full.
+        # Selects which gates BLOCK; non-blocking gates still compute + log.
+        self._governance = governance
         # Methodology drives phase routing (data_reviewer + replication_packager
         # are skipped for theoretical papers — pre-v0.5 they ran wastefully).
         self._methodology = methodology
@@ -460,6 +464,45 @@ class PipelineRunner:
 
         return PaperStatus.CEILING_CHECK
 
+    # Which mechanisms BLOCK under each regime. Everything not listed runs in
+    # shadow: it computes its verdict and writes its report, but does not halt
+    # the run. `full` is the current behaviour; `off` blocks on nothing.
+    _GATE_ENFORCEMENT: dict[str, frozenset[str]] = {
+        "full": frozenset({"contracts", "estimation", "numbers", "citations"}),
+        "contracts": frozenset({"contracts"}),
+        "off": frozenset(),
+    }
+
+    def _governance_enforces(self, gate: str) -> bool:
+        """True iff `gate` should BLOCK under the active regime."""
+        enforced = self._GATE_ENFORCEMENT.get(self._governance, self._GATE_ENFORCEMENT["full"])
+        return gate in enforced
+
+    async def _record_gate(self, gate: str, *, passed: bool, detail: str = "") -> bool:
+        """Log a gate verdict and return whether it should BLOCK this run.
+
+        Emits `gate_enforced` when the regime enforces this gate, else
+        `gate_shadow` — so a shadowed failure (fabrication the full stack
+        would have caught) is measured, not silently absent. The caller
+        blocks iff the return value is True (enforced) AND the gate failed.
+        """
+        from ...db.events import log_event
+
+        enforced = self._governance_enforces(gate)
+        await log_event(
+            self._paper_id,
+            "gate_enforced" if enforced else "gate_shadow",
+            stage=gate,
+            payload={
+                "gate": gate,
+                "passed": passed,
+                "enforced": enforced,
+                "regime": self._governance,
+                "detail": detail[:500],
+            },
+        )
+        return enforced
+
     async def _enforce_estimation_gate(self) -> None:
         """Deterministic phase gate: an empirical paper with a populated data
         warehouse may not proceed past the analysis phase without a
@@ -488,11 +531,23 @@ class PipelineRunner:
         from ..specialists.dispatcher import execute_work_order
 
         specialist = "econometrics_specialist"
+
+        # Shadow mode (contracts / off regimes): compute the verdict once,
+        # log it, and continue WITHOUT re-dispatching or blocking — so a
+        # hollow/estimate-less paper proceeds and is measured, not repaired.
+        if not self._governance_enforces("estimation"):
+            failures = [c for c in check_specialist_artifacts(self._workspace, specialist) if not c.ok]
+            detail = "; ".join(f"{c.artifact}: {c.reason}" for c in failures) or "clean"
+            await self._record_gate("estimation", passed=not failures, detail=detail)
+            return
+
         while True:
             failures = [c for c in check_specialist_artifacts(self._workspace, specialist) if not c.ok]
             if not failures:
+                await self._record_gate("estimation", passed=True, detail="clean")
                 return
             summary = "; ".join(f"{c.artifact}: {c.reason}" for c in failures)
+            await self._record_gate("estimation", passed=False, detail=summary)
 
             attempts = self._failure_counts.get(specialist, 0)
             if attempts >= _MAX_SPECIALIST_ATTEMPTS:
@@ -678,27 +733,35 @@ class PipelineRunner:
 
         draft_path = self._workspace / "paper_draft.tex"
         if draft_path.is_file():
+            # verify_and_save always runs and writes number_verification.json —
+            # so the report exists (and shadow fabrication is measurable) in
+            # every regime. Only the block/auto-patch is regime-gated.
             report = verify_and_save(draft_path, self._workspace)
-            if report.critical_mismatches:
-                # v0.6 step 5: try to auto-patch before rejecting. If the
-                # patch_revisor can fix the mismatches by editing the
-                # table cells the drafter got wrong, the paper continues
-                # to reviewers; otherwise REJECTED with the same error
-                # surface as v0.5.
+            enforce_numbers = self._governance_enforces("numbers")
+            if report.critical_mismatches and enforce_numbers:
+                # v0.6 step 5: try to auto-patch before rejecting. Auto-patch
+                # is an enforcement action (it repairs fabricated cells), so it
+                # is skipped in shadow — otherwise it would mask the very
+                # fabrication the experiment is measuring.
                 report = await self._verify_numbers_auto_patch(report)
-                if report.critical_mismatches:
-                    summary = "; ".join(
-                        f"{m.draft_value} vs {m.source_value} ({m.source_key}) at {m.table_context}"
-                        for m in report.critical_mismatches[:5]
-                    )
-                    error = (
-                        f"verify_numbers: {len(report.critical_mismatches)} critical "
-                        f"mismatch(es) between LaTeX tables and source JSON. "
-                        f"First {min(5, len(report.critical_mismatches))}: {summary}"
-                    )
-                    logger.error("Paper %s: %s", self._paper_id, error)
-                    await self._update_status(PaperStatus.REJECTED, error=error)
-                    return PaperStatus.REJECTED
+            failed_numbers = bool(report.critical_mismatches)
+            detail_numbers = ""
+            if failed_numbers:
+                summary = "; ".join(
+                    f"{m.draft_value} vs {m.source_value} ({m.source_key}) at {m.table_context}"
+                    for m in report.critical_mismatches[:5]
+                )
+                detail_numbers = (
+                    f"{len(report.critical_mismatches)} critical mismatch(es) between "
+                    f"LaTeX tables and source JSON. "
+                    f"First {min(5, len(report.critical_mismatches))}: {summary}"
+                )
+            await self._record_gate("numbers", passed=not failed_numbers, detail=detail_numbers)
+            if failed_numbers and enforce_numbers:
+                error = f"verify_numbers: {detail_numbers}"
+                logger.error("Paper %s: %s", self._paper_id, error)
+                await self._update_status(PaperStatus.REJECTED, error=error)
+                return PaperStatus.REJECTED
 
         # --- verify_citations pre-review gate (v0.9 M2) ---
         # Mechanical anti-hallucination for references: every \cite
@@ -717,6 +780,7 @@ class PipelineRunner:
             # this, the gate defaulted to references.bib — which nothing
             # writes — and skipped itself on every standard-flow paper.
             refs_bib = assemble_refs_bib(self._workspace)
+            # Always runs + writes citation_integrity.json (shadow-measurable).
             cite_report = await verify_citations_and_save(draft_path, self._workspace, bib_path=refs_bib)
             if cite_report.skipped_reason:
                 logger.warning(
@@ -724,7 +788,10 @@ class PipelineRunner:
                     self._paper_id,
                     cite_report.skipped_reason,
                 )
-            if not cite_report.passed:
+            enforce_cites = self._governance_enforces("citations")
+            failed_cites = not cite_report.passed
+            detail_cites = ""
+            if failed_cites:
                 missing = ", ".join(c.cite_key for c in cite_report.missing_checks[:5])
                 unverif = ", ".join(c.cite_key for c in cite_report.unverifiable_checks[:5])
                 pieces = []
@@ -732,7 +799,10 @@ class PipelineRunner:
                     pieces.append(f"{cite_report.missing_in_bib} cited key(s) missing from the bibliography: {missing}")
                 if cite_report.strict and cite_report.unverifiable:
                     pieces.append(f"{cite_report.unverifiable} unverifiable cite(s) (strict mode): {unverif}")
-                error = "verify_citations: " + "; ".join(pieces)
+                detail_cites = "; ".join(pieces)
+            await self._record_gate("citations", passed=not failed_cites, detail=detail_cites)
+            if failed_cites and enforce_cites:
+                error = "verify_citations: " + detail_cites
                 logger.error("Paper %s: %s", self._paper_id, error)
                 await self._update_status(PaperStatus.REJECTED, error=error)
                 return PaperStatus.REJECTED

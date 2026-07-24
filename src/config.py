@@ -18,6 +18,18 @@ class Settings(BaseSettings):
     openrouter_model: str = "anthropic/claude-sonnet-4-5"
     enable_prompt_caching: bool = True
 
+    # ── Governance regime (the experiment's treatment variable) ───────────────
+    # Which verification institutions BLOCK a run:
+    #   full      — every mechanism enforces (default; current behaviour)
+    #   contracts — specialist output contracts enforce; the deterministic
+    #               gates (estimation / numbers / citations) run in shadow
+    #   off       — nothing blocks; all gates run in shadow
+    # In shadow mode a gate still computes its verdict and writes its report,
+    # and the runner logs a `gate_shadow` event — so fabrication that WOULD
+    # have been caught is measured, not merely absent. Per-paper override via
+    # the API / `e2er run --governance`.
+    governance: Literal["off", "contracts", "full"] = "full"
+
     # ── Database ──────────────────────────────────────────────────────────────
     # Default: SQLite at ~/.e2er/papers.db (zero-setup, single-user).
     # Production / multi-user: set DATABASE_URL=postgresql://… (enables

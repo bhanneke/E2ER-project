@@ -144,6 +144,28 @@ def _render_readme(workspace: Path, manifest: dict, slug: str) -> str:
         "",
         f"**Verdict:** `{verdict}`" + (f" (weighted avg {avg}/10)" if isinstance(avg, (int, float)) else ""),
     ]
+
+    # Run provenance disclosure — the governance regime this paper ran under
+    # is load-bearing: under `contracts`/`off` the deterministic gates ran in
+    # SHADOW (computed + logged, but did not block), so numbers/citations may
+    # not have been enforced. Backend/model disclosed alongside.
+    regime = manifest.get("governance") or "full"
+    backend = manifest.get("backend")
+    model = manifest.get("model")
+    run_bits = [f"governance=`{regime}`"]
+    if backend:
+        run_bits.append(f"backend=`{backend}`")
+    if model:
+        run_bits.append(f"model=`{model}`")
+    lines += ["", "**Run:** " + ", ".join(run_bits)]
+    if regime != "full":
+        lines += [
+            "",
+            f"> ⚠️ Ran under the `{regime}` governance regime: the deterministic "
+            "verification gates ran in shadow (logged, not enforced). See the "
+            "`gate_shadow` events for what a full-governance run would have caught.",
+        ]
+
     if rationale:
         lines += ["", f"> {rationale}"]
 

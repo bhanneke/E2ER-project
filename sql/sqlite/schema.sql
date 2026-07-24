@@ -31,6 +31,8 @@ CREATE TABLE IF NOT EXISTS papers (
                       CHECK (methodology IN ('empirical', 'theoretical', 'mixed')),
     model             TEXT,
     backend           TEXT,
+    governance        TEXT NOT NULL DEFAULT 'full'
+                      CHECK (governance IN ('off', 'contracts', 'full')),
     created_at        TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at        TEXT NOT NULL DEFAULT (datetime('now'))
 );

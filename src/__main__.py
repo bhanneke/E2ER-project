@@ -66,6 +66,14 @@ def main() -> None:
         help="Override the model for this paper (default: the backend's configured model).",
     )
     run_p.add_argument(
+        "--governance",
+        choices=["off", "contracts", "full"],
+        default=None,
+        help="Governance regime for this paper (default: GOVERNANCE from .env, or 'full'). "
+        "full = all gates block; contracts = only specialist contracts block; off = nothing "
+        "blocks (gates still run in shadow and log what they would have caught).",
+    )
+    run_p.add_argument(
         "--max-cost",
         type=float,
         default=5.0,
@@ -238,6 +246,7 @@ def main() -> None:
                 acknowledge=args.acknowledge_unproven,
                 backend=args.backend,
                 model=args.model,
+                governance=args.governance,
             )
         )
     elif args.command == "init":

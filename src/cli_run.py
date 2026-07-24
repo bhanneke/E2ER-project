@@ -98,6 +98,7 @@ def _submit_paper(
     acknowledge: bool = False,
     backend: str | None = None,
     model: str | None = None,
+    governance: str | None = None,
 ) -> dict | None:
     """POST /api/papers and return the response body."""
     import httpx
@@ -136,6 +137,8 @@ def _submit_paper(
         body["backend"] = backend
     if model:
         body["model"] = model
+    if governance:
+        body["governance"] = governance
     headers = {}
     if token := os.environ.get("E2ER_API_TOKEN"):
         headers["Authorization"] = f"Bearer {token}"
@@ -193,6 +196,7 @@ def run(
     acknowledge: bool = False,
     backend: str | None = None,
     model: str | None = None,
+    governance: str | None = None,
 ) -> int:
     """Submit a paper and tail it. Entry point for `e2er run "<RQ>"`."""
     ok, err = _ensure_api_up()
@@ -203,11 +207,14 @@ def run(
     print(f"Submitting paper:\n  {rq[:120]}", file=sys.stderr)
     backend_note = f", backend={backend}" if backend else ""
     model_note = f", model={model}" if model else ""
+    gov_note = f", governance={governance}" if governance else ""
     print(
-        f"  methodology={methodology}, mode={mode}, max_cost=${max_cost}{backend_note}{model_note}",
+        f"  methodology={methodology}, mode={mode}, max_cost=${max_cost}{backend_note}{model_note}{gov_note}",
         file=sys.stderr,
     )
-    resp = _submit_paper(rq, methodology, mode, max_cost, acknowledge=acknowledge, backend=backend, model=model)
+    resp = _submit_paper(
+        rq, methodology, mode, max_cost, acknowledge=acknowledge, backend=backend, model=model, governance=governance
+    )
     if not resp:
         return 5
 

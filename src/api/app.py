@@ -331,6 +331,10 @@ class CreatePaperRequest(BaseModel):
     # governance experiment) without restarting the server on a new env.
     backend: str | None = None
     model: str | None = None
+    # Governance regime: off | contracts | full. None → settings.governance
+    # (default "full"). The experiment's treatment variable — selects which
+    # gates block; non-blocking gates still compute + log (shadow mode).
+    governance: str | None = None
     max_cost_usd: float | None = None  # falls back to settings.default_max_cost_usd
     # First-run guardrail: when no paper at the current (model, methodology, mode)
     # tuple has ever reached `completed`, the cap is forced to $1.00 unless the
@@ -414,6 +418,15 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
         )
     effective_backend = req.backend or settings.llm_backend
 
+    # Per-paper governance regime override. None → the process-global default.
+    _GOVERNANCE_REGIMES = {"off", "contracts", "full"}
+    if req.governance is not None and req.governance not in _GOVERNANCE_REGIMES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"governance must be one of {'|'.join(sorted(_GOVERNANCE_REGIMES))}, got {req.governance!r}",
+        )
+    effective_governance = req.governance or settings.governance
+
     # First-run guardrail. Inspect the (model, methodology, mode) tuple. If
     # nothing has completed at this combination, force the cap to $1 unless
     # the requester explicitly acknowledges. This is the proactive defense
@@ -474,6 +487,7 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
         "methodology": req.methodology,
         "model": current_model,
         "backend": effective_backend,
+        "governance": effective_governance,
         "current_stage": "idea",
     }
     (workspace / "manifest.json").write_text(json.dumps(manifest, indent=2))
@@ -481,9 +495,9 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
         await execute(
             """
             INSERT INTO papers (id, title, research_question, status, workspace,
-                                mode, methodology, model, backend, max_cost_usd)
+                                mode, methodology, model, backend, governance, max_cost_usd)
             VALUES (%(id)s, %(title)s, %(rq)s, 'idea', %(ws)s,
-                    %(mode)s, %(methodology)s, %(model)s, %(backend)s, %(cap)s)
+                    %(mode)s, %(methodology)s, %(model)s, %(backend)s, %(governance)s, %(cap)s)
             """,
             {
                 "id": paper_id,
@@ -494,6 +508,7 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
                 "methodology": req.methodology,
                 "model": current_model,
                 "backend": effective_backend,
+                "governance": effective_governance,
                 "cap": cap,
             },
         )
@@ -508,7 +523,15 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
     # the request path), then runs the pipeline — so the POST returns now.
     task = asyncio.create_task(
         _prepare_and_run(
-            paper_id, workspace, settings, req.mode, cap, req.methodology, effective_backend, current_model
+            paper_id,
+            workspace,
+            settings,
+            req.mode,
+            cap,
+            req.methodology,
+            effective_backend,
+            current_model,
+            effective_governance,
         )
     )
     _RUNNING[paper_id] = task
@@ -619,7 +642,7 @@ async def resume_paper(paper_id: str, req: ResumeRequest | None = None) -> dict[
 
     try:
         row = await fetch_one(
-            "SELECT id, status, workspace, mode, max_cost_usd, methodology, backend, model "
+            "SELECT id, status, workspace, mode, max_cost_usd, methodology, backend, model, governance "
             "FROM papers WHERE id = %(id)s",
             {"id": paper_id},
         )
@@ -650,6 +673,7 @@ async def resume_paper(paper_id: str, req: ResumeRequest | None = None) -> dict[
     methodology = row.get("methodology") or "empirical"
     backend_name = row.get("backend")  # None → server default at run time
     model = row.get("model")
+    governance = row.get("governance")  # None → server default at run time
 
     # Optional cap raise (v0.5): if the request body provides a new
     # max_cost_usd, persist it before re-firing the runner so the
@@ -677,7 +701,9 @@ async def resume_paper(paper_id: str, req: ResumeRequest | None = None) -> dict[
     except Exception as e:
         logger.warning("Could not update status on resume %s: %s", paper_id, e)
 
-    task = asyncio.create_task(_run_pipeline(paper_id, workspace, mode, cap, methodology, backend_name, model))
+    task = asyncio.create_task(
+        _run_pipeline(paper_id, workspace, mode, cap, methodology, backend_name, model, governance)
+    )
     _RUNNING[paper_id] = task
     task.add_done_callback(lambda _t: _RUNNING.pop(paper_id, None))
 
@@ -1268,6 +1294,7 @@ async def _prepare_and_run(
     methodology: str = "empirical",
     backend_name: str | None = None,
     model: str | None = None,
+    governance: str | None = None,
 ) -> None:
     """Background entry: do the heavy BYOD prep (data.db import + literature
     ingest) off the request path, THEN run the pipeline.
@@ -1288,7 +1315,7 @@ async def _prepare_and_run(
         await _ingest_literature_corpus(paper_id, workspace, settings)
     except Exception as e:  # noqa: BLE001
         logger.warning("literature ingest failed for %s: %s (pipeline continues)", paper_id, e)
-    await _run_pipeline(paper_id, workspace, mode, max_cost_usd, methodology, backend_name, model)
+    await _run_pipeline(paper_id, workspace, mode, max_cost_usd, methodology, backend_name, model, governance)
 
 
 async def _run_pipeline(
@@ -1299,6 +1326,7 @@ async def _run_pipeline(
     methodology: str = "empirical",
     backend_name: str | None = None,
     model: str | None = None,
+    governance: str | None = None,
 ) -> None:
     from ..config import get_settings
     from ..core.strategist.runner import PipelineRunner
@@ -1313,6 +1341,7 @@ async def _run_pipeline(
     # process-global config when unset.
     effective_backend_name = backend_name or settings.llm_backend
     effective_model = model or settings.default_model
+    effective_governance = governance or settings.governance
     backend = get_backend(settings, name=effective_backend_name)
 
     # Tools are unioned across all enabled providers; specialists' skill files
@@ -1354,6 +1383,7 @@ async def _run_pipeline(
         backend_name=effective_backend_name,
         max_cost_usd=max_cost_usd,
         methodology=methodology,
+        governance=effective_governance,
     )
     await runner.run()
 

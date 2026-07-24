@@ -205,7 +205,7 @@ async def _ensure_sqlite_schema() -> None:
         await _ensure_sqlite_columns(
             conn,
             "papers",
-            {"model": "TEXT", "backend": "TEXT"},
+            {"model": "TEXT", "backend": "TEXT", "governance": "TEXT NOT NULL DEFAULT 'full'"},
         )
         await conn.commit()
 

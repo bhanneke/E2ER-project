@@ -92,6 +92,30 @@ def test_export_includes_spec_and_replication(tmp_path: Path):
     assert (out / "replication" / "estimation.py").is_file()
 
 
+def test_readme_discloses_governance_regime(tmp_path: Path):
+    """WS-B: the bundle README must disclose the governance regime, and warn
+    when it wasn't `full` (gates ran in shadow)."""
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    (ws / "manifest.json").write_text(
+        json.dumps({"title": "Shadow Run", "research_question": "Q", "governance": "off", "backend": "claude_code"})
+    )
+    (ws / "paper_draft.tex").write_text("x")
+    out = export_paper(ws, tmp_path / "out", date_str="20260627")
+    readme = (out / "README.md").read_text()
+    assert "governance=`off`" in readme
+    assert "backend=`claude_code`" in readme
+    assert "shadow" in readme.lower()
+
+
+def test_readme_full_regime_no_shadow_warning(tmp_path: Path):
+    ws = _workspace(tmp_path)  # its manifest has no governance → defaults to full
+    out = export_paper(ws, tmp_path / "out", date_str="20260627")
+    readme = (out / "README.md").read_text()
+    assert "governance=`full`" in readme
+    assert "ran in shadow" not in readme.lower()
+
+
 def test_readme_has_verdict_and_coef(tmp_path: Path):
     ws = _workspace(tmp_path)
     out = export_paper(ws, tmp_path / "out", date_str="20260627")
