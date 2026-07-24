@@ -251,6 +251,24 @@ def main() -> None:
         help="Emit a machine-readable JSON report instead of the human-readable summary.",
     )
 
+    compare_p = subparsers.add_parser(
+        "compare",
+        help="Diff the design choices across a run-matrix (estimator/FE/controls/clustering/coefficient).",
+    )
+    compare_p.add_argument(
+        "paths",
+        nargs="+",
+        help="A matrix.json (from run-matrix), OR 2+ exported bundle directories to compare.",
+    )
+    compare_p.add_argument(
+        "--out", default=None, help="Output dir for comparison.json + report (default: alongside input)."
+    )
+    compare_p.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit comparison.json on stdout instead of the human-readable report.",
+    )
+
     export_p = subparsers.add_parser(
         "export",
         help="Assemble a clean, structured project folder (paper/code/data/results/design/reviews) from a run.",
@@ -273,6 +291,11 @@ def main() -> None:
         from .cli_verify import verify as _verify
 
         sys.exit(_verify(bundle=args.bundle, online=args.online, json_output=args.json))
+
+    if args.command == "compare":
+        from .core.compare import compare as _compare
+
+        sys.exit(_compare(paths=args.paths, out=args.out, json_output=args.json))
 
     if args.command == "run-matrix":
         from .cli_run_matrix import run_matrix as _run_matrix
