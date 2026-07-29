@@ -10,6 +10,7 @@ from ...modules.llm.base import CompositeToolHandler, LLMBackend, ToolHandler
 from ...modules.llm.tools import FILE_TOOLS, FileToolHandler
 from ...modules.tracking.costs import compute_cost
 from ...modules.tracking.usage import save_usage
+from ..governance import DEFAULT_REGIME, enforces
 from ..specialists.contracts import Contribution, WorkOrder
 
 logger = get_logger(__name__)
@@ -30,11 +31,16 @@ async def run_specialist(
     extra_tools: list[dict] | None = None,
     extra_handlers: list[ToolHandler] | None = None,
     backend_name: str = "anthropic",
+    governance: str = DEFAULT_REGIME,
 ) -> Contribution:
     """Execute a specialist using the pipeline's own tool-use loop.
 
     This replaces the Claude Code CLI subprocess pattern — we own the loop,
     which enables intercepting tool calls for guardrails.
+
+    ``governance`` selects whether the output-contract check BLOCKS (see
+    :mod:`src.core.governance`). It is always COMPUTED and logged; under
+    ``off`` the verdict is recorded in shadow and the run continues.
     """
     from ...skills.loader import load_skills_for_specialist
 
@@ -163,23 +169,40 @@ async def run_specialist(
     # contract. Flip the result to failure so the circuit breaker
     # trips after _MAX_SPECIALIST_ATTEMPTS instead of paying the
     # rest of the run.
+    #
+    # WS-B: the CHECK always runs; `governance` decides whether it blocks.
+    # Under `off` the violation is logged as `gate_shadow` and the hollow
+    # artifact is allowed through — that is the point of the control cell:
+    # measure what an ungoverned pipeline ships.
     if result.success:
         from .contract_check import check_specialist_artifacts
 
         contract_failures = [c for c in check_specialist_artifacts(workspace, specialist) if not c.ok]
         if contract_failures:
             summary = "; ".join(f"{c.artifact}: {c.reason}" for c in contract_failures)
-            logger.warning("%s: contract violation — %s", specialist, summary)
-            result.success = False
-            existing = (result.error or "").strip()
-            prefix = f"{existing} | " if existing else ""
-            result.error = f"{prefix}contract violation: {summary}"
-            # Persist the violation for the NEXT attempt's prompt (consumed
-            # once by read_contract_feedback above) — without this the retry
-            # is blind and just re-fails until the circuit breaker pauses.
-            from .contract_check import write_contract_feedback
+            enforced = enforces(governance, "contracts")
+            await _log_contract_gate(paper_id, specialist, summary, enforced=enforced, regime=governance)
+            if enforced:
+                logger.warning("%s: contract violation — %s", specialist, summary)
+                result.success = False
+                existing = (result.error or "").strip()
+                prefix = f"{existing} | " if existing else ""
+                result.error = f"{prefix}contract violation: {summary}"
+                # Persist the violation for the NEXT attempt's prompt (consumed
+                # once by read_contract_feedback above) — without this the retry
+                # is blind and just re-fails until the circuit breaker pauses.
+                from .contract_check import write_contract_feedback
 
-            write_contract_feedback(workspace, specialist, summary)
+                write_contract_feedback(workspace, specialist, summary)
+            else:
+                # No flip, no coaching retry, no circuit breaker — an
+                # ungoverned run proceeds on the artifact as written.
+                logger.warning(
+                    "%s: contract violation NOT enforced under governance=%s (shadow) — %s",
+                    specialist,
+                    governance,
+                    summary,
+                )
 
     # Pass backend_name so flat-rate CLI backends (claude_code / codex /
     # gemini) cost as $0 — M4.1 fix.
@@ -234,6 +257,37 @@ async def run_specialist(
         success=result.success,
         error=result.error or "",
     )
+
+
+async def _log_contract_gate(
+    paper_id: str,
+    specialist: str,
+    detail: str,
+    *,
+    enforced: bool,
+    regime: str,
+) -> None:
+    """Record a contract verdict in the same shape the three deterministic
+    gates use (`_record_gate` in the runner), so the experiment harvests
+    shadowed contract violations alongside shadowed gate failures."""
+    try:
+        from ...db.events import log_event
+
+        await log_event(
+            paper_id,
+            "gate_enforced" if enforced else "gate_shadow",
+            stage="contracts",
+            payload={
+                "gate": "contracts",
+                "passed": False,
+                "enforced": enforced,
+                "regime": regime,
+                "specialist": specialist,
+                "detail": detail[:500],
+            },
+        )
+    except Exception as e:  # noqa: BLE001 — measurement must never break a run
+        logger.debug("Could not log contract gate event: %s", e)
 
 
 _DATA_SPECIALISTS = frozenset(["data_analyst", "data_architect", "econometrics_specialist"])

@@ -14,6 +14,7 @@ import pytest
 
 from src.core.export.provenance import (
     PROVENANCE_FILE,
+    _source_key_file,
     build_provenance,
     inventory,
     write_provenance,
@@ -41,8 +42,15 @@ def _bundle(tmp_path: Path) -> Path:
         json.dumps(
             {
                 "matched": 1,
+                # source_key uses verify_numbers' real convention: the source
+                # FILENAME is the flatten prefix (pinned by
+                # test_source_key_convention_matches_verify_numbers below).
                 "matched_cells": [
-                    {"draft_value": "0.042", "source_key": "main.coefficients.treat.estimate", "table_context": "T1"}
+                    {
+                        "draft_value": "0.042",
+                        "source_key": "estimation_results.json.main.coefficients.treat.estimate",
+                        "table_context": "T1",
+                    }
                 ],
             }
         )
@@ -109,8 +117,31 @@ def test_table_cell_edge_attributes_source_file(tmp_path: Path):
     prov = build_provenance(b, MANIFEST, exported_at="20260627")
     cell = next(e for e in prov["edges"] if e["type"] == "table_cell")
     assert cell["cell_value"] == "0.042"
-    assert cell["source_key"] == "main.coefficients.treat.estimate"
+    assert cell["source_key"] == "estimation_results.json.main.coefficients.treat.estimate"
     assert cell["source"] == "results/estimation_results.json"
+
+
+def test_source_key_convention_matches_verify_numbers(tmp_path: Path):
+    """Pin the contract between the two modules: provenance resolves a cell's
+    source by matching the filename PREFIX in the key, so the key format
+    verify_numbers actually writes must stay prefixed. (An earlier version
+    re-flattened without the prefix and nulled every cell's source.)"""
+    from src.core.pipeline.verify_numbers import verify as verify_numbers
+
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    (ws / "estimation_results.json").write_text(json.dumps({"main": {"coefficients": {"treat": {"estimate": 0.042}}}}))
+    tex = ws / "paper.tex"
+    tex.write_text("\\begin{tabular}{c}\n0.042 \\\\\n\\end{tabular}\n")
+
+    report = verify_numbers(tex, ws)
+    assert report.matched_cells, "fixture should match at least one cell"
+    key = report.matched_cells[0].source_key
+    assert key.startswith("estimation_results.json.")
+
+    # And that real key must resolve through provenance's lookup.
+    b = _bundle(tmp_path)
+    assert _source_key_file(b, key) == "results/estimation_results.json"
 
 
 def test_citation_edge_carries_registry_and_doi(tmp_path: Path):

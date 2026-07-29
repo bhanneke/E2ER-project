@@ -66,14 +66,18 @@ def inventory(bundle: Path) -> dict[str, dict[str, Any]]:
 
 
 def _source_key_file(bundle: Path, source_key: str) -> str | None:
-    """Which results/*.json a flattened numeric key came from — using the same
-    flatten convention verify_numbers uses, so keys align exactly."""
-    from ..pipeline.verify_numbers import _SOURCE_JSON_FILES, _flatten_json
+    """Which results/*.json a flattened numeric key came from.
+
+    ``verify_numbers`` flattens each source file with the FILENAME as prefix
+    (``estimation_results.json.main.coefficients.x.estimate``), so the answer
+    is already encoded in the key — match the prefix rather than re-flattening
+    (a re-flatten without the same prefix produces keys that never match, which
+    silently nulled every cell's source attribution)."""
+    from ..pipeline.verify_numbers import _SOURCE_JSON_FILES
 
     for fn in _SOURCE_JSON_FILES:
-        data = _load_json(bundle / "results" / fn)
-        if data is not None and source_key in _flatten_json(data):
-            return f"results/{fn}"
+        if source_key == fn or source_key.startswith((f"{fn}.", f"{fn}[")):
+            return f"results/{fn}" if (bundle / "results" / fn).is_file() else None
     return None
 
 

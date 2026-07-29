@@ -341,7 +341,7 @@ def _init_defaults() -> int:
         _install(backend="all", force=False)
     except Exception as e:  # noqa: BLE001 — best-effort; setup still succeeded
         print(f"  ! install-skills failed: {e} (run `e2er install-skills` later)")
-    print("  ✓ ready — verify with `e2er doctor`, then `e2er run \"<your RQ>\"`")
+    print('  ✓ ready — verify with `e2er doctor`, then `e2er run "<your RQ>"`')
     return 0
 
 

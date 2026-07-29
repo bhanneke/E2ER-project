@@ -49,6 +49,48 @@ def test_backends_constant_matches_config_literal():
         Settings(llm_backend=b)  # raises if BACKENDS drifts from the Literal
 
 
+# ── model default follows the EFFECTIVE backend ─────────────────────────────
+
+
+def test_default_model_for_resolves_per_backend():
+    """The bug this pins: a paper overriding the backend used to inherit the
+    model configured for the process-global backend — so `--backend openrouter`
+    on an anthropic server sent a bare `claude-sonnet-4-5` (OpenRouter needs
+    the `anthropic/` prefix) and every specialist call failed."""
+    from src.config import Settings
+
+    s = Settings(
+        llm_backend="anthropic",
+        anthropic_model="claude-sonnet-4-5",
+        openrouter_model="anthropic/claude-sonnet-4-5",
+    )
+    assert s.default_model == "claude-sonnet-4-5"
+    assert s.default_model_for("openrouter") == "anthropic/claude-sonnet-4-5"
+    assert s.default_model_for("anthropic") == "claude-sonnet-4-5"
+    # CLI backends: bookkeeping labels, never another family's model id.
+    assert s.default_model_for("codex") == "codex-cli-default"
+    assert s.default_model_for("gemini") == "gemini-cli-default"
+
+
+def test_default_model_is_the_global_backends_case():
+    """`default_model` must stay exactly `default_model_for(LLM_BACKEND)` —
+    one resolution rule, so the two can't drift apart again."""
+    from src.config import Settings
+    from src.modules.llm.registry import BACKENDS
+
+    for b in BACKENDS:
+        s = Settings(llm_backend=b)
+        assert s.default_model == s.default_model_for(b)
+
+
+def test_configured_cli_model_wins_over_placeholder():
+    from src.config import Settings
+
+    s = Settings(llm_backend="anthropic", codex_model="gpt-5", gemini_model="gemini-3-pro")
+    assert s.default_model_for("codex") == "gpt-5"
+    assert s.default_model_for("gemini") == "gemini-3-pro"
+
+
 # ── request model: backend / model fields ───────────────────────────────────
 
 

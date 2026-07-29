@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from src.cli_verify import FAIL, PASS, _run_checks, verify
+from src.cli_verify import FAIL, PASS, SKIP, _run_checks, verify
 
 # Coefficient ≥ 1 so a tampered cell crosses verify_numbers' critical
 # threshold (its relative-error denominator is clamped to max(1, source),
@@ -96,6 +96,59 @@ def test_tamper_deleted_file_fails(tmp_path: Path):
     (bundle / "paper" / "refs.bib").unlink()
     assert verify(str(bundle), online=False) == 1
     assert _status(bundle, "integrity") == FAIL
+
+
+# ── a skipped check is not a passed check ────────────────────────────────────
+
+
+def _integrity_only_bundle(tmp_path: Path) -> Path:
+    """A bundle with no paper.tex — export is best-effort, so this really is
+    producible. Nothing but hashes can be checked."""
+    from src.core.export.provenance import write_provenance
+
+    b = tmp_path / "partial"
+    (b / "results").mkdir(parents=True)
+    (b / "results" / "notes.json").write_text("{}")
+    write_provenance(b, {"paper_id": "p1", "governance": "off"}, exported_at="20260627")
+    return b
+
+
+def test_partial_bundle_is_not_reported_as_verified(tmp_path: Path, capsys):
+    """The failure this guards: integrity PASS + every content check SKIP once
+    printed '✅ Bundle verified — hashes, numbers, spec, and citations are
+    internally consistent' and exited 0, having checked only hashes."""
+    bundle = _integrity_only_bundle(tmp_path)
+    assert _status(bundle, "integrity") == PASS
+    for name in ("numbers", "spec", "citations"):
+        assert _status(bundle, name) == SKIP
+
+    code = verify(str(bundle), online=False)
+    out = capsys.readouterr().out
+    assert code == 1
+    assert "NOT verified" in out
+    assert "✅" not in out
+
+
+def test_partial_verdict_names_the_skipped_checks(tmp_path: Path, capsys):
+    """Citations verifiable but no results JSON → pass, but say plainly which
+    checks did NOT run rather than implying the whole bundle was checked."""
+    from src.core.export.provenance import write_provenance
+
+    b = tmp_path / "cites-only"
+    (b / "paper").mkdir(parents=True)
+    (b / "paper" / "paper.tex").write_text("See \\cite{smith2021}.\n")
+    (b / "paper" / "refs.bib").write_text("@article{smith2021, title={X}, year={2021}}\n")
+    write_provenance(b, {"paper_id": "p1", "governance": "off"}, exported_at="20260627")
+
+    checks = {c.name: c.status for c in _run_checks(b, online=False)}
+    assert checks["citations"] == PASS
+    assert checks["numbers"] == SKIP
+    assert checks["spec"] == SKIP
+
+    assert verify(str(b), online=False) == 0
+    out = capsys.readouterr().out
+    assert "1 content check(s) passed (citations)" in out
+    assert "2 skipped (numbers, spec)" in out
 
 
 # ── offline path never touches the network ───────────────────────────────────

@@ -447,7 +447,9 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
     # the requester explicitly acknowledges. This is the proactive defense
     # against the May 2026 "spend $8 chasing a Sonnet bug" failure: cheap
     # validation must succeed once before we trust an expensive cap.
-    current_model = req.model or settings.default_model
+    # Resolve against the EFFECTIVE backend, not the global one — a paper on
+    # `--backend openrouter` must not inherit the anthropic model id.
+    current_model = req.model or settings.default_model_for(effective_backend)
     requested_cap = req.max_cost_usd if req.max_cost_usd is not None else settings.default_max_cost_usd
     proven = await _tuple_is_proven(current_model, req.methodology, req.mode)
     if not proven and requested_cap > _UNPROVEN_TUPLE_CAP and not req.acknowledge_unproven_tuple:
@@ -1381,7 +1383,7 @@ async def _run_pipeline(
     # Per-paper overrides (multi-model runs / experiment); fall back to the
     # process-global config when unset.
     effective_backend_name = backend_name or settings.llm_backend
-    effective_model = model or settings.default_model
+    effective_model = model or settings.default_model_for(effective_backend_name)
     effective_governance = governance or settings.governance
     backend = get_backend(settings, name=effective_backend_name)
 

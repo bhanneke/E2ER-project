@@ -9,6 +9,8 @@ from typing import Any
 
 from ...logging_config import get_logger
 from ...modules.llm.base import LLMBackend, ToolHandler
+from ..governance import DEFAULT_REGIME
+from ..governance import enforces as governance_enforces
 from ..specialists.contracts import Contribution, WorkOrder
 from ..specialists.dispatcher import execute_parallel, execute_with_dependencies
 from ..specialists.registry import POLISH_SPECIALISTS, REVIEWER_SPECIALISTS, SPECIALIST_ARTIFACTS
@@ -84,7 +86,7 @@ class PipelineRunner:
         backend_name: str = "anthropic",
         max_cost_usd: float | None = None,
         methodology: str = "empirical",
-        governance: str = "full",
+        governance: str = DEFAULT_REGIME,
         review_stages: list[str] | None = None,
     ) -> None:
         self._paper_id = paper_id
@@ -478,6 +480,7 @@ class PipelineRunner:
                         self._extra_tools,
                         self._extra_handlers,
                         self._backend_name,
+                        self._governance,
                     )
                     self._contributions.extend(pivot_contributions)
                     break  # one pivot per paper
@@ -502,19 +505,14 @@ class PipelineRunner:
 
         return PaperStatus.CEILING_CHECK
 
-    # Which mechanisms BLOCK under each regime. Everything not listed runs in
-    # shadow: it computes its verdict and writes its report, but does not halt
-    # the run. `full` is the current behaviour; `off` blocks on nothing.
-    _GATE_ENFORCEMENT: dict[str, frozenset[str]] = {
-        "full": frozenset({"contracts", "estimation", "numbers", "citations"}),
-        "contracts": frozenset({"contracts"}),
-        "off": frozenset(),
-    }
-
     def _governance_enforces(self, gate: str) -> bool:
-        """True iff `gate` should BLOCK under the active regime."""
-        enforced = self._GATE_ENFORCEMENT.get(self._governance, self._GATE_ENFORCEMENT["full"])
-        return gate in enforced
+        """True iff `gate` should BLOCK under the active regime.
+
+        The matrix itself lives in :mod:`src.core.governance` because the
+        specialist layer (output contracts, cascade guard) consults the same
+        table — when it didn't, `off` and `contracts` behaved identically.
+        """
+        return governance_enforces(self._governance, gate)
 
     def _should_pause_for_review(self, stage: str, state: Any) -> bool:
         """True iff the run should pause after `stage` for human review — i.e.
@@ -634,6 +632,7 @@ class PipelineRunner:
                 self._extra_tools,
                 self._extra_handlers,
                 self._backend_name,
+                self._governance,
             )
             self._contributions.append(contribution)
             self._update_failure_counts([contribution])
@@ -736,6 +735,7 @@ class PipelineRunner:
             self._extra_tools,
             self._extra_handlers,
             self._backend_name,
+            self._governance,
         )
         self._contributions.extend(contributions)
         return PaperStatus.POLISH
@@ -870,6 +870,7 @@ class PipelineRunner:
             self._extra_tools,
             self._extra_handlers,
             self._backend_name,
+            self._governance,
         )
         self._contributions.extend(contributions)
         return PaperStatus.REVIEW
@@ -1035,6 +1036,7 @@ class PipelineRunner:
                 self._extra_tools,
                 self._extra_handlers,
                 self._backend_name,
+                self._governance,
             )
             self._contributions.append(c)
 
@@ -1060,6 +1062,7 @@ class PipelineRunner:
             self._extra_tools,
             self._extra_handlers,
             self._backend_name,
+            self._governance,
         )
         self._contributions.append(c)
 
@@ -1214,6 +1217,7 @@ class PipelineRunner:
             self._extra_tools,
             self._extra_handlers,
             self._backend_name,
+            self._governance,
         )
         self._contributions.append(contribution)
 
@@ -1268,6 +1272,7 @@ class PipelineRunner:
             self._extra_tools,
             self._extra_handlers,
             self._backend_name,
+            self._governance,
         )
         self._contributions.append(contribution)
 
@@ -1537,7 +1542,7 @@ class PipelineRunner:
         # (strategist work orders carry parallel_group/context_tier but not paper_id)
         contract_orders = self._to_contract_orders(decision.work_orders)
         if len(contract_orders) == 1:
-            from ..specialists.dispatcher import assert_artifacts_written, execute_work_order
+            from ..specialists.dispatcher import execute_work_order, guard_artifacts
 
             c = await execute_work_order(
                 contract_orders[0],
@@ -1547,12 +1552,14 @@ class PipelineRunner:
                 self._extra_tools,
                 self._extra_handlers,
                 self._backend_name,
+                self._governance,
             )
             contributions = [c]
             # Same cascade guard execute_parallel applies — a lone non-tolerant
             # specialist that "succeeded" without its canonical artifact must
-            # halt here, not starve downstream specialists.
-            assert_artifacts_written(contributions, self._workspace)
+            # halt here, not starve downstream specialists (unless the regime
+            # shadows it, in which case the verdict is logged and the run goes on).
+            await guard_artifacts(contributions, self._workspace, self._governance)
         else:
             contributions = await execute_with_dependencies(
                 contract_orders,
@@ -1562,6 +1569,7 @@ class PipelineRunner:
                 self._extra_tools,
                 self._extra_handlers,
                 self._backend_name,
+                self._governance,
             )
         self._update_failure_counts(contributions)
         return contributions
@@ -1649,6 +1657,7 @@ class PipelineRunner:
             self._extra_tools,
             self._extra_handlers,
             self._backend_name,
+            self._governance,
         )
         self._contributions.append(contribution)
 

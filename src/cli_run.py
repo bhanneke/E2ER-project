@@ -25,8 +25,13 @@ import time
 from pathlib import Path
 
 
+class RQInputError(Exception):
+    """The RQ source was given but could not be read — reported as a one-line
+    CLI message, never a traceback."""
+
+
 def resolve_rq_input(rq: str | None, rq_file: str | None) -> str | None:
-    """Resolve the research question from a positional arg or a file.
+    """Resolve the research question from a positional/``--rq`` arg or a file.
 
     A file may be an rq.json (from `e2er rq`, with a "research_question" key)
     or plain text. Returns None when neither yields a non-empty RQ."""
@@ -34,7 +39,11 @@ def resolve_rq_input(rq: str | None, rq_file: str | None) -> str | None:
         import json
         from pathlib import Path
 
-        raw = Path(rq_file).expanduser().read_text(encoding="utf-8").strip()
+        path = Path(rq_file).expanduser()
+        try:
+            raw = path.read_text(encoding="utf-8").strip()
+        except OSError as e:
+            raise RQInputError(f"could not read --rq-file {path}: {e.strerror or e}") from e
         try:
             obj = json.loads(raw)
             if isinstance(obj, dict) and obj.get("research_question"):

@@ -186,9 +186,7 @@ async def test_byod_local_data_recursive(tmp_path):
     (sub / "deep.csv").write_text("x\n")
     top = await byod_local_data_check(_byod_settings(local_data_dir=str(tmp_path)))
     assert top.status == SKIP  # top-level scan misses the nested file
-    rec = await byod_local_data_check(
-        _byod_settings(local_data_dir=str(tmp_path), local_data_dir_recursive=True)
-    )
+    rec = await byod_local_data_check(_byod_settings(local_data_dir=str(tmp_path), local_data_dir_recursive=True))
     assert rec.status == PASS and "1 csv" in rec.detail
 
 

@@ -205,29 +205,70 @@ def _run_checks(bundle: Path, online: bool) -> list[Check]:
     return checks
 
 
+# The checks that actually verify CONTENT. Integrity (hashing files against
+# provenance.json) proves only that the bundle is unchanged since export — a
+# bundle can be perfectly self-consistent and still have had nothing checked.
+_CONTENT_CHECKS = frozenset({"numbers", "spec", "citations"})
+
+
+def _verdict(checks: list[Check]) -> tuple[str, int]:
+    """Final banner + exit code.
+
+    A SKIP is NOT a pass. Export is best-effort and can emit a partial bundle
+    (e.g. no paper.tex → numbers/spec/citations all skip); reporting that as
+    "verified" would be the single most misleading thing this command could
+    say, since the whole point is cheap, honest verification.
+    """
+    fails = [c for c in checks if c.status == FAIL]
+    if fails:
+        return f"❌ Verification FAILED — {len(fails)} check(s) did not pass: {', '.join(c.name for c in fails)}.", 1
+
+    content = [c for c in checks if c.name.split(".")[0] in _CONTENT_CHECKS]
+    verified = [c.name for c in content if c.status == PASS]
+    skipped = [c.name for c in content if c.status == SKIP]
+
+    if not verified:
+        return (
+            "⚠️  NOT verified — the bundle is intact, but every content check was skipped "
+            f"({', '.join(skipped) or 'none ran'}). An incomplete bundle proves nothing "
+            "about its numbers, spec, or citations.",
+            1,
+        )
+    if skipped:
+        return (
+            f"✅ Bundle verified — {len(verified)} content check(s) passed ({', '.join(verified)}); "
+            f"{len(skipped)} skipped ({', '.join(skipped)}).",
+            0,
+        )
+    return "✅ Bundle verified — hashes, numbers, spec, and citations are internally consistent.", 0
+
+
 def _render(checks: list[Check]) -> str:
     width = max((len(c.name) for c in checks), default=0)
     sym = {PASS: "✓", SKIP: "·", FAIL: "✗"}
     lines = [f"  {sym[c.status]} [{c.status}] {c.name.ljust(width)}  {c.detail}" for c in checks]
-    n_fail = sum(c.status == FAIL for c in checks)
-    if n_fail == 0:
-        lines.append("\n✅ Bundle verified — hashes, numbers, spec, and citations are internally consistent.")
-    else:
-        lines.append(f"\n❌ Verification FAILED — {n_fail} check(s) did not pass (see above).")
+    lines.append("\n" + _verdict(checks)[0])
     return "\n".join(lines)
 
 
 def verify(bundle: str, *, online: bool = False, json_output: bool = False) -> int:
-    """Entry point for ``e2er verify``. Exit 0 iff no check FAILed."""
+    """Entry point for ``e2er verify``. Exit 0 iff nothing FAILed AND at least
+    one content check (numbers/spec/citations) actually ran."""
     bundle_path = Path(bundle)
     if not bundle_path.is_dir():
         print(f"e2er verify: {bundle} is not a directory", file=sys.stderr)
         return 2
     checks = _run_checks(bundle_path, online)
+    banner, code = _verdict(checks)
     if json_output:
         from dataclasses import asdict
 
-        print(json.dumps({"checks": [asdict(c) for c in checks]}, indent=2))
+        print(
+            json.dumps(
+                {"checks": [asdict(c) for c in checks], "verdict": banner, "verified": code == 0},
+                indent=2,
+            )
+        )
     else:
         print(_render(checks))
-    return 1 if any(c.status == FAIL for c in checks) else 0
+    return code

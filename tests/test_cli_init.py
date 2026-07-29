@@ -276,9 +276,7 @@ class TestScaffolding:
         assert (data_dir / "README.md").read_text() == "custom\n"
 
     def test_env_block_includes_byod_dirs(self):
-        body = _env_block(
-            "claude_code", False, "", "", "", "", local_data_dir="./data", literature_dir="./literature"
-        )
+        body = _env_block("claude_code", False, "", "", "", "", local_data_dir="./data", literature_dir="./literature")
         assert "LOCAL_DATA_DIR=./data" in body
         assert "LITERATURE_DIR=./literature" in body
 

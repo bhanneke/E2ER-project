@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import sys
-from pathlib import Path
 
 
 def main() -> None:
@@ -42,7 +41,12 @@ def main() -> None:
         help="Submit a research question to the pipeline (one-command quickstart).",
     )
     run_p.add_argument(
-        "research_question", nargs="?", default=None, help="The research question, in quotes (or use --rq-file)."
+        "research_question", nargs="?", default=None, help="The research question, in quotes (or use --rq/--rq-file)."
+    )
+    # Explicit --rq. Without it argparse prefix-expands `--rq "…"` to
+    # `--rq-file "…"` and tries to OPEN the question as a filename.
+    run_p.add_argument(
+        "--rq", dest="rq_opt", default=None, help="The research question, in quotes (same as positional)."
     )
     run_p.add_argument(
         "--rq-file", default=None, help="Read the RQ from a file — an rq.json (from `e2er rq`) or plain text."
@@ -120,7 +124,10 @@ def main() -> None:
         "run-matrix",
         help="Run the same RQ across several backends (k backends × n repeats) for later comparison.",
     )
-    matrix_p.add_argument("research_question", nargs="?", default=None, help="The RQ in quotes (or use --rq-file).")
+    matrix_p.add_argument(
+        "research_question", nargs="?", default=None, help="The RQ in quotes (or use --rq/--rq-file)."
+    )
+    matrix_p.add_argument("--rq", dest="rq_opt", default=None, help="The RQ in quotes (same as positional).")
     matrix_p.add_argument("--rq-file", default=None, help="Read the research question from a file.")
     matrix_p.add_argument(
         "--backends",
@@ -324,13 +331,16 @@ def main() -> None:
         )
 
     if args.command == "run-matrix":
+        from .cli_run import RQInputError, resolve_rq_input
         from .cli_run_matrix import run_matrix as _run_matrix
 
-        rq = args.research_question
-        if args.rq_file:
-            rq = Path(args.rq_file).expanduser().read_text(encoding="utf-8").strip()
+        try:
+            rq = resolve_rq_input(args.research_question or args.rq_opt, args.rq_file)
+        except RQInputError as e:
+            print(f"run-matrix: {e}", file=sys.stderr)
+            sys.exit(2)
         if not rq:
-            print("run-matrix: provide a research question (positional) or --rq-file", file=sys.stderr)
+            print("run-matrix: provide a research question (positional or --rq) or --rq-file", file=sys.stderr)
             sys.exit(2)
         backends = [b.strip() for b in args.backends.split(",") if b.strip()]
         sys.exit(
@@ -369,12 +379,16 @@ def main() -> None:
 
         sys.exit(_install(backend=args.backend, force=args.force))
     elif args.command == "run":
-        from .cli_run import resolve_rq_input
+        from .cli_run import RQInputError, resolve_rq_input
         from .cli_run import run as _run
 
-        rq_text = resolve_rq_input(args.research_question, args.rq_file)
+        try:
+            rq_text = resolve_rq_input(args.research_question or args.rq_opt, args.rq_file)
+        except RQInputError as e:
+            print(f"e2er run: {e}", file=sys.stderr)
+            sys.exit(2)
         if not rq_text:
-            print('e2er run: provide a research question (positional) or --rq-file. Example: e2er run "<RQ>"')
+            print('e2er run: provide a research question (positional or --rq) or --rq-file. Example: e2er run "<RQ>"')
             sys.exit(2)
         sys.exit(
             _run(

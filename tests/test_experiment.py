@@ -74,6 +74,29 @@ def test_gate_event_stats_handles_string_and_dict_payloads():
     assert _gate_event_stats(events) == (1, 1)
 
 
+def test_shadowed_contract_violations_are_harvested():
+    """The specialist-contract layer emits the same event shape as the three
+    deterministic gates, so an `off` run's suppressed contract failures show up
+    in shadow_gate_failures rather than vanishing."""
+    events = [
+        {
+            "event_type": "gate_shadow",
+            "payload": {
+                "gate": "contracts",
+                "passed": False,
+                "enforced": False,
+                "regime": "off",
+                "specialist": "econometrics_specialist",
+            },
+        },
+        {
+            "event_type": "gate_shadow",
+            "payload": {"gate": "contracts", "passed": False, "check": "missing_artifact", "regime": "off"},
+        },
+    ]
+    assert _gate_event_stats(events) == (2, 0)
+
+
 def test_load_config(tmp_path: Path):
     p = tmp_path / "c.yaml"
     p.write_text("name: t\nresearch_questions:\n  - Q1\nregimes: [off, full]\nrepeats: 2\n")
