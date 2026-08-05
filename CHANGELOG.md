@@ -106,6 +106,29 @@ check.
   and the governance experiment. `papers.backend` column added, with an
   idempotent SQLite backfill for existing databases.
 
+### Fixed — the governance experiment's own measuring instrument
+
+Found by running the pilot (3 regimes × 3 repeats) for the first time. The
+metric would have reported **zero fabrication on a run carrying 166 fabricated
+numbers**, so a successful-looking experiment would have produced a confidently
+wrong null.
+
+- **Prose numbers were invisible to `fabrication_count`.** The harvester counted
+  only table cells (`mismatches[].severity == "critical"`). Pilot run `ab95fcba`
+  reported `total_values_in_tables: 0` with an empty `mismatches` list — and
+  `prose_total: 278`, `prose_mismatched: 166`. Measured fabrication: 0.
+  `prose_mismatched` is now counted and reported as its own column.
+- **Skipped checks were counted as clean ones.** A citation check that finds no
+  bibliography writes `passed: true, total_cites: 0, skipped_reason: …`; the
+  harvester read the zeros as "no fabrication". Same skipped-is-not-verified
+  error as B-4 in `e2er verify`. Rows now carry `checks_skipped` and `measured`,
+  and per-regime means are taken over measured runs only.
+- **Non-completed runs contributed structural zeros.** Bundles are exported only
+  when a run completes, so `rejected`/`failed` runs — exactly the ones most
+  likely to carry fabrication — harvested nothing and averaged in as 0. This
+  biased the experiment *toward the null it exists to test*. Harvesting now
+  falls back to the paper's workspace, which holds the same reports.
+
 ### Fixed — five bugs found by a full review of the above
 
 - **The `contracts` regime was dead code, and `off` still blocked.** The regime

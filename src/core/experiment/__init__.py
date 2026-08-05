@@ -44,14 +44,23 @@ ROW_FIELDS = (
     "status",
     "completed",
     "critical_mismatches",
+    "prose_mismatched",
     "missing_in_bib",
     "unverifiable",
     "total_cites",
     "fabrication_count",
+    "checks_skipped",
+    "measured",
     "shadow_gate_failures",
     "enforced_gate_blocks",
     "bundle_path",
 )
+
+# Report locations. Export bundles nest them; a raw workspace keeps them flat.
+# Harvesting must read BOTH — a run that ends `rejected` never gets exported,
+# yet it is exactly the run whose fabrication we most want to count.
+_NUMBERS_REPORT = ("results/number_verification.json", "number_verification.json")
+_CITATIONS_REPORT = ("reviews/citation_integrity.json", "citation_integrity.json")
 
 
 @dataclass
@@ -106,18 +115,44 @@ def _load_json(path: Path) -> Any:
         return None
 
 
-def _critical_mismatches(bundle: Path) -> int:
-    nv = _load_json(bundle / "results" / "number_verification.json")
-    if not isinstance(nv, dict):
-        return 0
-    return sum(1 for m in nv.get("mismatches", []) if isinstance(m, dict) and m.get("severity") == "critical")
+def _find_report(root: Path, candidates: tuple[str, ...]) -> dict | None:
+    for rel in candidates:
+        d = _load_json(root / rel)
+        if isinstance(d, dict):
+            return d
+    return None
 
 
-def _citation_stats(bundle: Path) -> tuple[int, int, int]:
-    ci = _load_json(bundle / "reviews" / "citation_integrity.json")
-    if not isinstance(ci, dict):
-        return 0, 0, 0
-    return int(ci.get("missing_in_bib", 0)), int(ci.get("unverifiable", 0)), int(ci.get("total_cites", 0))
+def _number_stats(root: Path) -> tuple[int, int, bool]:
+    """(critical table mismatches, prose mismatches, skipped).
+
+    Counts prose mismatches as well as table cells. The first pilot run carried
+    166 prose mismatches out of 278 prose numbers while `mismatches` (table
+    cells only) was empty — so counting cells alone reported zero fabrication
+    on a run that was full of it.
+
+    `skipped` is true when the check could not actually run. A verifier that
+    examined nothing reports `passed: true`; treating that as "clean" is the
+    same skipped-is-not-verified error as B-4 in `e2er verify`.
+    """
+    nv = _find_report(root, _NUMBERS_REPORT)
+    if nv is None:
+        return 0, 0, True
+    crit = sum(1 for m in nv.get("mismatches", []) if isinstance(m, dict) and m.get("severity") == "critical")
+    prose = int(nv.get("prose_mismatched", 0) or 0)
+    examined = int(nv.get("total_values_in_tables", 0) or 0) + int(nv.get("prose_total", 0) or 0)
+    skipped = bool(nv.get("skipped_reason")) or examined == 0
+    return crit, prose, skipped
+
+
+def _citation_stats(root: Path) -> tuple[int, int, int, bool]:
+    """(missing_in_bib, unverifiable, total_cites, skipped)."""
+    ci = _find_report(root, _CITATIONS_REPORT)
+    if ci is None:
+        return 0, 0, 0, True
+    total = int(ci.get("total_cites", 0) or 0)
+    skipped = bool(ci.get("skipped_reason")) or total == 0
+    return int(ci.get("missing_in_bib", 0) or 0), int(ci.get("unverifiable", 0) or 0), total, skipped
 
 
 def _gate_event_stats(events: list[dict]) -> tuple[int, int]:
@@ -149,10 +184,25 @@ def harvest_run(
     status: str,
     bundle_path: str | None,
     events: list[dict],
+    workspace_path: str | None = None,
 ) -> dict:
-    bundle = Path(bundle_path) if bundle_path else None
-    crit = _critical_mismatches(bundle) if bundle else 0
-    missing, unverif, total = _citation_stats(bundle) if bundle else (0, 0, 0)
+    # Prefer the export bundle; fall back to the raw workspace so runs that end
+    # `rejected`/`failed` after producing reports are still measured instead of
+    # silently contributing a structural zero.
+    root: Path | None = None
+    if bundle_path:
+        root = Path(bundle_path)
+    elif workspace_path and Path(workspace_path).is_dir():
+        root = Path(workspace_path)
+
+    if root is None:
+        crit = prose = missing = unverif = total = 0
+        num_skipped = cite_skipped = True
+    else:
+        crit, prose, num_skipped = _number_stats(root)
+        missing, unverif, total, cite_skipped = _citation_stats(root)
+
+    skipped = [n for n, s in (("numbers", num_skipped), ("citations", cite_skipped)) if s]
     shadow_fail, enforced_block = _gate_event_stats(events)
     return {
         "rq_idx": rq_idx,
@@ -163,13 +213,18 @@ def harvest_run(
         "status": status,
         "completed": int(status == "completed"),
         "critical_mismatches": crit,
+        "prose_mismatched": prose,
         "missing_in_bib": missing,
         "unverifiable": unverif,
         "total_cites": total,
-        "fabrication_count": crit + missing + unverif,
+        "fabrication_count": crit + prose + missing + unverif,
+        # A 0 from a check that never ran is not evidence of no fabrication.
+        # `measured` marks the rows the per-regime means may legitimately use.
+        "checks_skipped": ",".join(skipped),
+        "measured": int(len(skipped) < 2),
         "shadow_gate_failures": shadow_fail,
         "enforced_gate_blocks": enforced_block,
-        "bundle_path": bundle_path or "",
+        "bundle_path": bundle_path or (str(root) if root else ""),
     }
 
 
@@ -179,6 +234,7 @@ SubmitFn = Callable[..., "str | None"]
 PollFn = Callable[[str, float], str]
 ExportFn = Callable[[str, Path], "Path | None"]
 EventsFn = Callable[[str], list]
+WorkspaceFn = Callable[[str], "str | None"]
 
 
 def run_experiment(
@@ -189,6 +245,7 @@ def run_experiment(
     poll_fn: PollFn,
     export_fn: ExportFn,
     events_fn: EventsFn,
+    workspace_fn: WorkspaceFn | None = None,
     monitor_seconds: float = 3600.0,
 ) -> list[dict]:
     """RQs × regimes × backends × repeats → results.csv + summary.md. Rows are
@@ -238,6 +295,7 @@ def run_experiment(
                                 status=status,
                                 bundle_path=str(bundle) if bundle else None,
                                 events=events_fn(paper_id),
+                                workspace_path=workspace_fn(paper_id) if workspace_fn else None,
                             )
                         )
                     write_results(out, rows)
@@ -268,11 +326,16 @@ def write_summary(out_dir: Path, rows: list[dict], config: ExperimentConfig) -> 
         f"{len(rows)} runs — {len(config.research_questions)} RQ(s) × {len(config.regimes)} "
         f"regime(s) × {len(config.backends)} backend(s) × {config.repeats} repeat(s).",
         "",
+        "Fabrication means are taken over MEASURED runs only — runs where at least one "
+        "content check actually examined something. A run whose checks were skipped "
+        "(no bibliography, no table values) reports 0, and averaging that 0 in would "
+        "read as 'no fabrication' when it means 'not looked at'.",
+        "",
         "## Per-regime means",
         "",
-        "| regime | n | completion | mean fabrication | mean critical mismatches | "
-        "mean missing_in_bib | mean unverifiable | mean shadow gate failures |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- |",
+        "| regime | n | measured | completion | mean fabrication | mean critical mismatches | "
+        "mean prose mismatches | mean missing_in_bib | mean unverifiable | mean shadow gate failures |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     by_regime: dict[str, list[dict]] = defaultdict(list)
     for r in rows:
@@ -281,12 +344,25 @@ def write_summary(out_dir: Path, rows: list[dict], config: ExperimentConfig) -> 
         rs = by_regime.get(regime, [])
         if not rs:
             continue
+        ms = [r for r in rs if r.get("measured")]
+        fab = f"{_mean(ms, 'fabrication_count'):.2f}" if ms else "n/a"
+        crit = f"{_mean(ms, 'critical_mismatches'):.2f}" if ms else "n/a"
+        prose = f"{_mean(ms, 'prose_mismatched'):.2f}" if ms else "n/a"
+        miss = f"{_mean(ms, 'missing_in_bib'):.2f}" if ms else "n/a"
+        unv = f"{_mean(ms, 'unverifiable'):.2f}" if ms else "n/a"
         lines.append(
-            f"| {regime} | {len(rs)} | {_mean(rs, 'completed'):.2f} | {_mean(rs, 'fabrication_count'):.2f} | "
-            f"{_mean(rs, 'critical_mismatches'):.2f} | {_mean(rs, 'missing_in_bib'):.2f} | "
-            f"{_mean(rs, 'unverifiable'):.2f} | {_mean(rs, 'shadow_gate_failures'):.2f} |"
+            f"| {regime} | {len(rs)} | {len(ms)} | {_mean(rs, 'completed'):.2f} | {fab} | "
+            f"{crit} | {prose} | {miss} | {unv} | {_mean(rs, 'shadow_gate_failures'):.2f} |"
         )
     lines.append("")
+    unmeasured = [r for r in rows if not r.get("measured")]
+    if unmeasured:
+        lines += [
+            f"**{len(unmeasured)}/{len(rows)} runs were not measurable** "
+            "(no content check examined anything): "
+            + ", ".join(f"{r['regime']}/rep{r['repeat']} ({r['status']})" for r in unmeasured),
+            "",
+        ]
 
     variance = _design_dispersion(rows, config)
     if variance:
@@ -348,6 +424,21 @@ def _default_export(paper_id: str, dest: Path) -> Path | None:
     return _export_bundle(paper_id, dest)
 
 
+def _default_workspace(paper_id: str) -> str | None:
+    """The paper's workspace dir, so a non-completed run is still measurable."""
+    import httpx
+
+    from ...cli_run import _api_root
+
+    try:
+        r = httpx.get(f"{_api_root()}/api/papers/{paper_id}", timeout=15.0)
+        if r.status_code != 200:
+            return None
+        return (r.json() or {}).get("workspace") or None
+    except httpx.HTTPError:
+        return None
+
+
 def _default_events(paper_id: str) -> list:
     import httpx
 
@@ -374,5 +465,6 @@ def run_from_config(config: ExperimentConfig, out_dir: str | Path, monitor_secon
         poll_fn=_default_poll,
         export_fn=_default_export,
         events_fn=_default_events,
+        workspace_fn=_default_workspace,
         monitor_seconds=monitor_seconds,
     )
