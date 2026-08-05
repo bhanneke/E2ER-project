@@ -1,0 +1,27 @@
+# Single validation cell — can ONE paper complete end to end?
+#
+# Pilot run 1 (2026-08-03/04) completed 0 of 9. Eight died on `claude` CLI
+# subprocess errors consistent with plan usage limits, with three specialists
+# running concurrently. This cell changes exactly one thing —
+# MAX_CONCURRENT_SPECIALISTS=1 — and asks whether completion is achievable at
+# all before another full 3x3 is worth running.
+#
+# `off` is deliberate: under it the gates shadow rather than block, so a
+# contract violation cannot halt the run. That isolates "can the pipeline
+# finish" from "do the gates stop it".
+#
+#   MAX_CONCURRENT_SPECIALISTS=1 python scripts/experiment_driver.py \
+#       experiments/validation_cell.yaml --monitor-seconds 10800
+#
+# Public data only.
+name: validation_cell
+research_questions:
+  - >-
+    Has the January 2024 spot-Bitcoin-ETF approval reduced the persistence of
+    Bitcoin's high-volatility regime relative to the pre-approval window?
+regimes: ["off"]
+repeats: 1
+backends: [claude_code]
+max_cost: 5.0
+methodology: empirical
+mode: single_pass
