@@ -45,8 +45,12 @@ def test_harvest_run_computes_fabrication(tmp_path: Path):
         events=events,
     )
     assert row["critical_mismatches"] == 2  # only the criticals, not the major
-    assert row["missing_in_bib"] == 1 and row["unverifiable"] == 2
-    assert row["fabrication_count"] == 5  # 2 + 1 + 2
+    assert row["missing_in_bib"] == 1 and row["cites_unverifiable"] == 2
+    # Contradicted or absent only: 2 critical cells + 1 cite missing from the
+    # bib. The 2 unverifiable cites could not be traced either way and are
+    # reported apart, never summed into fabrication.
+    assert row["fabrication_count"] == 3
+    assert row["unverified_count"] == 2
     assert row["shadow_gate_failures"] == 1
     assert row["completed"] == 1
 

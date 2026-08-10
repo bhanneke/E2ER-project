@@ -43,12 +43,20 @@ ROW_FIELDS = (
     "paper_id",
     "status",
     "completed",
+    # Contradicted or absent — the draft asserts something the sources refute.
     "critical_mismatches",
     "prose_mismatched",
     "missing_in_bib",
-    "unverifiable",
-    "total_cites",
     "fabrication_count",
+    # Untraceable — the check could not tie the claim to a source either way.
+    # Kept OUT of fabrication_count: a derived quantity and a fabricated one
+    # are indistinguishable here, and folding them together is what inflated
+    # the validation cell to 315.
+    "values_unverifiable",
+    "prose_unverifiable",
+    "cites_unverifiable",
+    "unverified_count",
+    "total_cites",
     "checks_skipped",
     "measured",
     "shadow_gate_failures",
@@ -123,13 +131,28 @@ def _find_report(root: Path, candidates: tuple[str, ...]) -> dict | None:
     return None
 
 
-def _number_stats(root: Path) -> tuple[int, int, bool]:
-    """(critical table mismatches, prose mismatches, skipped).
+@dataclass
+class _NumberStats:
+    """What the number check established about one run."""
 
-    Counts prose mismatches as well as table cells. The first pilot run carried
-    166 prose mismatches out of 278 prose numbers while `mismatches` (table
-    cells only) was empty — so counting cells alone reported zero fabrication
-    on a run that was full of it.
+    critical: int = 0  # table cells contradicting a source
+    prose_mismatched: int = 0  # prose numbers contradicting an associated source
+    values_unverifiable: int = 0  # table cells traceable to nothing
+    prose_unverifiable: int = 0  # prose numbers traceable to nothing
+    skipped: bool = True
+
+
+def _number_stats(root: Path) -> _NumberStats:
+    """Split the number report into contradicted vs merely untraceable.
+
+    Both halves matter and they are not the same claim. Counting only table
+    cells reported zero fabrication on pilot run ab95fcba, which carried 166
+    prose mismatches out of 278 prose numbers. Counting every prose mismatch
+    then over-corrected: 79% of the validation cell's 284 were matcher
+    artifacts. With the matcher fixed (`verify_numbers._check_prose`), a
+    mismatch means an associated source value disagrees; everything the check
+    could not tie to a source is `*_unverifiable` and is reported apart from
+    fabrication.
 
     `skipped` is true when the check could not actually run. A verifier that
     examined nothing reports `passed: true`; treating that as "clean" is the
@@ -137,12 +160,15 @@ def _number_stats(root: Path) -> tuple[int, int, bool]:
     """
     nv = _find_report(root, _NUMBERS_REPORT)
     if nv is None:
-        return 0, 0, True
-    crit = sum(1 for m in nv.get("mismatches", []) if isinstance(m, dict) and m.get("severity") == "critical")
-    prose = int(nv.get("prose_mismatched", 0) or 0)
+        return _NumberStats()
     examined = int(nv.get("total_values_in_tables", 0) or 0) + int(nv.get("prose_total", 0) or 0)
-    skipped = bool(nv.get("skipped_reason")) or examined == 0
-    return crit, prose, skipped
+    return _NumberStats(
+        critical=sum(1 for m in nv.get("mismatches", []) if isinstance(m, dict) and m.get("severity") == "critical"),
+        prose_mismatched=int(nv.get("prose_mismatched", 0) or 0),
+        values_unverifiable=int(nv.get("unverifiable", 0) or 0),
+        prose_unverifiable=int(nv.get("prose_unverifiable", 0) or 0),
+        skipped=bool(nv.get("skipped_reason")) or examined == 0,
+    )
 
 
 def _citation_stats(root: Path) -> tuple[int, int, int, bool]:
@@ -196,13 +222,14 @@ def harvest_run(
         root = Path(workspace_path)
 
     if root is None:
-        crit = prose = missing = unverif = total = 0
-        num_skipped = cite_skipped = True
+        nums = _NumberStats()
+        missing = cite_unverif = total = 0
+        cite_skipped = True
     else:
-        crit, prose, num_skipped = _number_stats(root)
-        missing, unverif, total, cite_skipped = _citation_stats(root)
+        nums = _number_stats(root)
+        missing, cite_unverif, total, cite_skipped = _citation_stats(root)
 
-    skipped = [n for n, s in (("numbers", num_skipped), ("citations", cite_skipped)) if s]
+    skipped = [n for n, s in (("numbers", nums.skipped), ("citations", cite_skipped)) if s]
     shadow_fail, enforced_block = _gate_event_stats(events)
     return {
         "rq_idx": rq_idx,
@@ -212,12 +239,17 @@ def harvest_run(
         "paper_id": paper_id or "",
         "status": status,
         "completed": int(status == "completed"),
-        "critical_mismatches": crit,
-        "prose_mismatched": prose,
+        "critical_mismatches": nums.critical,
+        "prose_mismatched": nums.prose_mismatched,
         "missing_in_bib": missing,
-        "unverifiable": unverif,
+        # Positively contradicted or absent. Nothing that merely failed to
+        # trace belongs here.
+        "fabrication_count": nums.critical + nums.prose_mismatched + missing,
+        "values_unverifiable": nums.values_unverifiable,
+        "prose_unverifiable": nums.prose_unverifiable,
+        "cites_unverifiable": cite_unverif,
+        "unverified_count": nums.values_unverifiable + nums.prose_unverifiable + cite_unverif,
         "total_cites": total,
-        "fabrication_count": crit + prose + missing + unverif,
         # A 0 from a check that never ran is not evidence of no fabrication.
         # `measured` marks the rows the per-regime means may legitimately use.
         "checks_skipped": ",".join(skipped),
@@ -326,15 +358,22 @@ def write_summary(out_dir: Path, rows: list[dict], config: ExperimentConfig) -> 
         f"{len(rows)} runs — {len(config.research_questions)} RQ(s) × {len(config.regimes)} "
         f"regime(s) × {len(config.backends)} backend(s) × {config.repeats} repeat(s).",
         "",
-        "Fabrication means are taken over MEASURED runs only — runs where at least one "
+        "Means are taken over MEASURED runs only — runs where at least one "
         "content check actually examined something. A run whose checks were skipped "
         "(no bibliography, no table values) reports 0, and averaging that 0 in would "
         "read as 'no fabrication' when it means 'not looked at'.",
         "",
+        "`fabrication` counts claims the sources positively contradict or lack: table "
+        "cells disagreeing with a source value, prose numbers disagreeing with a source "
+        "value named in the same sentence, and citations with no bibliography entry. "
+        "`unverified` counts claims the check could not trace either way — a derived "
+        "quantity and a fabricated one look identical there, so the two are reported "
+        "separately and never summed.",
+        "",
         "## Per-regime means",
         "",
         "| regime | n | measured | completion | mean fabrication | mean critical mismatches | "
-        "mean prose mismatches | mean missing_in_bib | mean unverifiable | mean shadow gate failures |",
+        "mean prose mismatches | mean missing_in_bib | mean unverified | mean shadow gate failures |",
         "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     by_regime: dict[str, list[dict]] = defaultdict(list)
@@ -349,7 +388,7 @@ def write_summary(out_dir: Path, rows: list[dict], config: ExperimentConfig) -> 
         crit = f"{_mean(ms, 'critical_mismatches'):.2f}" if ms else "n/a"
         prose = f"{_mean(ms, 'prose_mismatched'):.2f}" if ms else "n/a"
         miss = f"{_mean(ms, 'missing_in_bib'):.2f}" if ms else "n/a"
-        unv = f"{_mean(ms, 'unverifiable'):.2f}" if ms else "n/a"
+        unv = f"{_mean(ms, 'unverified_count'):.2f}" if ms else "n/a"
         lines.append(
             f"| {regime} | {len(rs)} | {len(ms)} | {_mean(rs, 'completed'):.2f} | {fab} | "
             f"{crit} | {prose} | {miss} | {unv} | {_mean(rs, 'shadow_gate_failures'):.2f} |"

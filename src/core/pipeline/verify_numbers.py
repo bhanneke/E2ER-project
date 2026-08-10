@@ -86,9 +86,19 @@ class VerificationReport:
     # `critical`, so they never reject a paper (prose has many incidental
     # numbers — years, section refs, %s — and we won't reintroduce false
     # positives). They're an informational signal for reviewers / a human.
+    #
+    # `prose_total` counts only CHECKABLE numbers — see `_is_checkable_prose`.
+    # It is the honest denominator: matched + mismatched + unverifiable.
     prose_total: int = 0
     prose_matched: int = 0
     prose_mismatched: int = 0
+    # Checkable, but traceable to no source value. Could be a legitimately
+    # derived quantity or a fabrication — the check cannot tell, so this is
+    # reported separately and never counted as a mismatch.
+    prose_unverifiable: int = 0
+    # Numbers dropped before checking because they are not empirical claims
+    # (LaTeX markup, years/dates, single-significant-digit magnitudes).
+    prose_excluded: int = 0
     prose_mismatches: list[Mismatch] = field(default_factory=list)
     # PR-2: key-resolution feedback. Unresolved table_spec references (after
     # the renderer's order-insensitive normalization), with the available keys
@@ -96,12 +106,25 @@ class VerificationReport:
     table_spec_unresolved: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        # `conclusive` is a property, so asdict() misses it — and the saved
+        # JSON is what reviewers and the experiment harvester read.
+        return {**asdict(self), "conclusive": self.conclusive}
 
     @property
     def critical_mismatches(self) -> list[Mismatch]:
         # Only TABLE mismatches gate the pipeline; prose is informational.
         return [m for m in self.mismatches if m.severity == "critical"]
+
+    @property
+    def conclusive(self) -> bool:
+        """Did the check reach a verdict on anything at all?
+
+        `passed` is a gating decision and stays True when there was nothing to
+        gate on. Whether the run has evidential value is a separate question,
+        and a caller must be able to tell the two apart — otherwise a draft
+        with no inline tables reads exactly like a clean one.
+        """
+        return (self.total_values_in_tables + self.prose_total) > 0
 
 
 # JSON filenames that the analyst + econometrics specialist must produce.
@@ -293,19 +316,209 @@ _STRIP_FOR_PROSE: tuple[re.Pattern[str], ...] = (
     re.compile(r"\\begin\{tabular\}.*?\\end\{tabular\}", re.DOTALL),
     re.compile(r"\\input\{[^}]*\}"),
     re.compile(r"\\(?:label|ref|eqref|cref|cite[a-z]*)\{[^}]*\}"),
+    # The bibliography is other people's titles, not this paper's claims.
+    # "\newblock Bitcoin ETFs attract \$4.6 billion in first month" was read
+    # as a claim about a mean high-volatility duration of 4.2 days.
+    re.compile(r"\\begin\{thebibliography\}.*?\\end\{thebibliography\}", re.DOTALL),
+)
+
+# LaTeX commands whose numeric arguments are typesetting parameters, not
+# empirical claims. Every one of these produced a "fabrication" in the
+# 2026-08-05 validation cell: `\documentclass[12pt]` was reported as the
+# number 12 mismatching a VIX mean of 16.82.
+_MARKUP_COMMANDS = (
+    "documentclass",
+    "usepackage",
+    "geometry",
+    "setlength",
+    "addtolength",
+    "setcounter",
+    "renewcommand",
+    "newcommand",
+    "definecolor",
+    "includegraphics",
+    "hspace",
+    "vspace",
+    "fontsize",
+    "resizebox",
+    "scalebox",
+    "adjustbox",
+    "raisebox",
+    "rule",
+    "captionsetup",
+    "titlespacing",
+    "arraystretch",
+)
+_MARKUP_RE = re.compile(
+    r"\\(?:" + "|".join(_MARKUP_COMMANDS) + r")\b(?:\s*\[[^\]]*\])*(?:\s*\{[^{}]*\})*",
+)
+# Row-spacing arguments on a line break: `\\[6pt]`.
+_ROW_SPACING_RE = re.compile(r"\\\\\s*\[[^\]]*\]")
+# `\begin{document}` splits typesetting setup from authored text. Only used
+# when present — the unit tests (and fragments) have no preamble at all.
+_BEGIN_DOC_RE = re.compile(r"\\begin\{document\}")
+
+# A bare four-digit year is a date reference, not a measurement. Dates in
+# ISO/slash form are stripped wholesale by `_DATE_PATTERNS` first.
+_YEAR_RE = re.compile(r"(?:19|20)\d{2}")
+
+# Source-key path components too generic to establish that a prose number
+# refers to a particular quantity. Without this, `summary_statistics.json.*`
+# would associate every key with any sentence containing "summary".
+_GENERIC_KEY_TOKENS = frozenset(
+    {
+        "json",
+        "summary",
+        "statistics",
+        "stats",
+        "results",
+        "result",
+        "estimation",
+        "robustness",
+        "figure",
+        "spec",
+        "data",
+        "main",
+        "value",
+        "values",
+        "all",
+        "overall",
+        "table",
+        "row",
+        "col",
+        "and",
+        "the",
+        "for",
+    }
+)
+_KEY_TOKEN_SPLIT = re.compile(r"[^A-Za-z]+")
+
+# Source keys carry no units, so a percentage in the prose cannot be compared
+# to a bare source number: "annualized volatility 59\%" is not a claim about
+# `n_high_vol_episodes = 52`, and "a 95\% confidence interval" is not a claim
+# about anything. Percent-marked numbers are only checkable against keys that
+# name a rate.
+_RATE_KEY_TOKENS = frozenset(
+    {"pct", "percent", "percentage", "rate", "share", "ratio", "prob", "probability", "pval", "pvalue"}
+)
+
+# How much text either side of a prose number counts as its neighbourhood
+# when looking for a source-key token. Roughly one clause — wide enough for
+# "the VIX averages 19.2", narrow enough that the paper's general vocabulary
+# ("ETF", "volatility") doesn't associate every number with every key.
+_ASSOC_WINDOW = 40
+_WORD_RE = re.compile(r"[a-z]+")
+
+# A number carrying a unit refers to a quantity measured in that unit. The
+# source JSON carries no units, so such a claim is only checkable against a
+# key that names the same one — "extends 2.6 years" is not a statement about
+# `mean_high_vol_duration = 4.2` (days), and "\$4.6 billion" is not a
+# statement about anything in these files.
+_UNIT_WORDS = frozenset(
+    {
+        "year",
+        "month",
+        "week",
+        "day",
+        "hour",
+        "minute",
+        "second",
+        "billion",
+        "million",
+        "trillion",
+        "thousand",
+        "basis",
+        "bp",
+        "bps",
+        "lag",
+        "obs",
+        "observation",
+    }
+)
+_UNIT_AFTER_RE = re.compile(r"^[\s~,]*(?:\\[,;:! ])?\s*([A-Za-z]+)")
+_CURRENCY_BEFORE_RE = re.compile(r"(?:\\\$|[$€£])\s*$")
+# `$\delta_{21} = 0.14$`, `$p_{11} = 0.94$` — the number's referent is the
+# symbol on the left, not any English word nearby. Unless a source key names
+# that symbol, the claim cannot be checked.
+_SYMBOL_ASSIGN_RES: tuple[re.Pattern[str], ...] = (
+    re.compile(r"\\([A-Za-z]+)(?:_\{?\w+\}?)?\s*=\s*[$\\(]*$"),
+    re.compile(r"(?:^|[\s$({])([A-Za-z]+)_\{?\w+\}?\s*=\s*[$\\(]*$"),
 )
 
 
-def _extract_prose_numbers(tex_content: str) -> list[tuple[str, str]]:
-    """Extract numbers from PROSE — everything outside tabular environments.
+def _significant_digits(num_str: str) -> int:
+    """Count significant digits in a number as the draft displays it.
 
-    Returns (number_string, short_context) tuples. Used by the non-gating
-    prose check; the same ``_NUMBER_RE`` as tables, run on the de-tabled text.
+    ``4`` → 1, ``4.2`` → 2, ``0.0136`` → 3. A single significant digit
+    carries too little information to verify against anything: "over \\$4
+    billion" sits within 50% of any source value in [2, 6].
     """
-    prose = tex_content
+    s = num_str.replace(",", "").strip().lstrip("+-").lstrip("0")
+    s = s.replace(".", "").lstrip("0")
+    return len(s)
+
+
+def _key_tokens(source_key: str) -> frozenset[str]:
+    """Distinctive words in a flattened source key, for association."""
+    toks = {t.lower() for t in _KEY_TOKEN_SPLIT.split(source_key) if len(t) >= 3}
+    return frozenset(toks - _GENERIC_KEY_TOKENS)
+
+
+def _window_words(window: str) -> frozenset[str]:
+    """Whole words in a number's neighbourhood, plus de-pluralised forms.
+
+    Whole words, not substrings: matching "pre" inside "rep*re*sents" once
+    associated a GARCH parameter with an Ethereum volatility mean.
+    """
+    words = set(_WORD_RE.findall(window))
+    return frozenset(words | {w[:-1] for w in words if w.endswith("s") and len(w) > 3})
+
+
+def _strip_latex_machinery(tex_content: str) -> str:
+    """Remove typesetting parameters so they never read as numeric claims."""
+    doc = _BEGIN_DOC_RE.search(tex_content)
+    prose = tex_content[doc.end() :] if doc else tex_content
     for pat in _STRIP_FOR_PROSE:
         prose = pat.sub(" ", prose)
-    results: list[tuple[str, str]] = []
+    prose = _MARKUP_RE.sub(" ", prose)
+    prose = _ROW_SPACING_RE.sub(" ", prose)
+    for pat in _DATE_PATTERNS:
+        prose = pat.sub(" ", prose)
+    return prose
+
+
+@dataclass
+class _ProseNumber:
+    """A number found in authored text, with what we need to judge it."""
+
+    num_str: str
+    context: str  # short, for the report
+    words: frozenset[str]  # neighbouring words, for association
+    is_percent: bool
+    unit: str | None = None  # "years", "billion", currency…
+    symbol: str | None = None  # LaTeX symbol it is assigned to
+
+
+def _unit_after(prose: str, end: int) -> str | None:
+    m = _UNIT_AFTER_RE.match(prose[end : end + 24])
+    if not m:
+        return None
+    word = m.group(1).lower().rstrip("s")
+    return word if word in _UNIT_WORDS else None
+
+
+def _symbol_before(before: str) -> str | None:
+    for pat in _SYMBOL_ASSIGN_RES:
+        m = pat.search(before)
+        if m:
+            return m.group(1).lower()
+    return None
+
+
+def _extract_prose_numbers(tex_content: str) -> list[_ProseNumber]:
+    """Extract numbers from PROSE — everything outside tabular environments."""
+    prose = _strip_latex_machinery(tex_content)
+    results: list[_ProseNumber] = []
     for m in _NUMBER_RE.finditer(prose):
         num_str = m.group(1)
         parsed = _parse_number(num_str)
@@ -314,8 +527,35 @@ def _extract_prose_numbers(tex_content: str) -> list[tuple[str, str]]:
         s = max(0, m.start() - 30)
         e = min(len(prose), m.end() + 20)
         ctx = " ".join(prose[s:e].split())
-        results.append((num_str, f"prose: …{ctx}…"))
+        ws = max(0, m.start() - _ASSOC_WINDOW)
+        we = min(len(prose), m.end() + _ASSOC_WINDOW)
+        before = prose[ws : m.start()]
+        unit = _unit_after(prose, m.end())
+        if unit is None and _CURRENCY_BEFORE_RE.search(before):
+            unit = "currency"
+        results.append(
+            _ProseNumber(
+                num_str=num_str,
+                context=f"prose: …{ctx}…",
+                words=_window_words(" ".join(prose[ws:we].split()).lower()),
+                is_percent=m.group(0).rstrip().endswith("%"),
+                unit=unit,
+                symbol=_symbol_before(before),
+            )
+        )
     return results
+
+
+def _is_checkable_prose(num_str: str) -> bool:
+    """Is this prose number an empirical claim we could verify at all?
+
+    Excludes years (date references, not measurements) and single-significant
+    -digit magnitudes, which are within 50% of far too many source values to
+    say anything about.
+    """
+    if _YEAR_RE.fullmatch(num_str.strip()):
+        return False
+    return _significant_digits(num_str) >= 2
 
 
 def _check_prose(
@@ -324,37 +564,65 @@ def _check_prose(
     all_source_values: dict[str, float],
     tolerance: float,
 ) -> None:
-    """Non-gating prose check ("text = table number"). Flags only
-    near-misses (a prose number close to but off from a source value), capped
-    at ``major`` so it never rejects. Numbers with no close source — years,
-    section refs, percentages — are ignored, not flagged."""
-    prose_numbers = _extract_prose_numbers(tex_content)
-    report.prose_total = len(prose_numbers)
-    for num_str, context in prose_numbers:
-        draft_val = _parse_number(num_str)
+    """Non-gating prose check ("text = table number").
+
+    A prose number is a *mismatch* only when the surrounding sentence names
+    the source quantity it is close to. Numeric proximity alone establishes
+    nothing: with a few dozen source values spread across orders of
+    magnitude, almost every number in a paper sits within 50% of one of
+    them. Flagging on proximity alone made 79% of the flags in the
+    2026-08-05 validation cell artifacts — a title's "2024" paired against a
+    sample count of 1677, "\\$4 billion" against a duration mean of 4.2 —
+    with 119 of 284 flags resolving to a single source key.
+
+    Numbers we cannot tie to a source key are counted as
+    ``prose_unverifiable``, never as mismatches: they may be legitimately
+    derived quantities, and the check has no way to tell.
+    """
+    tokens_by_key = {key: _key_tokens(key) for key in all_source_values}
+    for pn in _extract_prose_numbers(tex_content):
+        draft_val = _parse_number(pn.num_str)
         if draft_val is None:
             continue
+        if not _is_checkable_prose(pn.num_str):
+            report.prose_excluded += 1
+            continue
+        report.prose_total += 1
+
         if any(_values_match(draft_val, sv, tolerance) for sv in all_source_values.values()):
             report.prose_matched += 1
             continue
+
+        # Only source values whose key is named nearby are candidates.
         closest_key, closest_dist = "", float("inf")
         for key, sv in all_source_values.items():
+            tokens = tokens_by_key[key]
+            if not (tokens & pn.words):
+                continue
+            if pn.is_percent and not (tokens & _RATE_KEY_TOKENS):
+                continue
+            if pn.unit and pn.unit not in tokens:
+                continue
+            if pn.symbol and pn.symbol not in tokens:
+                continue
             dist = abs(draft_val - sv)
             if dist < closest_dist:
                 closest_dist, closest_key = dist, key
+
         if closest_key and closest_dist < abs(draft_val) * 0.5:
             sv = all_source_values[closest_key]
             report.prose_mismatched += 1
             report.prose_mismatches.append(
                 Mismatch(
-                    draft_value=num_str,
+                    draft_value=pn.num_str,
                     source_key=closest_key,
                     source_value=str(sv),
-                    table_context=context,
+                    table_context=pn.context,
                     severity="major",  # never critical — prose is non-gating
                 )
             )
-        # else: no close source value — not a claim we can check; ignore.
+        else:
+            report.prose_unverifiable += 1
 
 
 def _read_table_spec_feedback(workspace: Path) -> list[dict[str, Any]]:
@@ -525,12 +793,20 @@ def verify(
 
     checked = report.matched + report.mismatched
     total = report.total_values_in_tables
-    report.coverage = checked / total if total > 0 else 1.0
+    # Coverage over zero table values is 0.0, not 1.0. Reporting a vacuous
+    # 1.0 made "the draft has no inline tables" indistinguishable from
+    # "every cell traced to a source" — the reading that let run ab95fcba
+    # record perfect coverage over nothing.
+    report.coverage = checked / total if total > 0 else 0.0
     report.passed = report.mismatched == 0 or all(m.severity == "minor" for m in report.mismatches)
 
     # PR-2: prose-number check (non-gating; never critical). The key-resolution
     # feedback was already surfaced near the top (independent of numeric content).
     _check_prose(report, tex_content, all_source_values, tolerance)
+
+    if not report.conclusive:
+        report.skipped_reason = "draft contains no table values and no checkable prose numbers; nothing was verified"
+        logger.warning("verify_numbers: %s", report.skipped_reason)
 
     return report
 

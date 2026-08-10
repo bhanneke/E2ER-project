@@ -90,8 +90,24 @@ class CitationIntegrityReport:
     skipped_reason: str | None = None
     strict: bool = False
 
+    @property
+    def conclusive(self) -> bool:
+        """Did the gate reach a definite verdict on every cite it looked at?
+
+        `passed` is the gating decision and, in warn mode, stays True with any
+        number of unverifiable cites — deliberately, because working papers
+        and posters legitimately aren't indexed. That makes `passed` alone
+        unsafe to read as "the citations are sound": the 2026-08-05 validation
+        cell reported passed=True with 11 of 18 cites unverifiable. This
+        carries the missing half of that sentence. Derived, not stored, so it
+        cannot drift from the counts it summarises.
+        """
+        return self.total_cites > 0 and self.unverifiable == 0
+
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        # `conclusive` is a property, so asdict() misses it — and the saved
+        # JSON is what reviewers and the experiment harvester read.
+        return {**asdict(self), "conclusive": self.conclusive}
 
     @property
     def unverifiable_checks(self) -> list[CitationCheck]:
@@ -686,8 +702,16 @@ def render_human(report: CitationIntegrityReport) -> str:
             f"\n  · Bibliography has {len(report.bibbed_uncited)} entries that are never cited "
             "(housekeeping — not a failure)."
         )
-    if report.passed:
+    if report.passed and report.conclusive:
         lines.append("\n✅ Passed — every cited key resolves and exists in a verifier.")
+    elif report.passed:
+        # Warn mode with unverifiable cites. Not a clean bill of health: say
+        # what was actually established rather than printing a bare ✅.
+        lines.append(
+            f"\n⚠️  Passed the gate (warn mode) but INCONCLUSIVE — "
+            f"{report.unverifiable} of {report.total_cites} cites could not be verified. "
+            "Set E2ER_STRICT_CITATION_INTEGRITY=1 to fail on these."
+        )
     elif report.missing_in_bib:
         lines.append("\n❌ Failed — cited keys missing from references.bib (LaTeX would also fail).")
     else:
