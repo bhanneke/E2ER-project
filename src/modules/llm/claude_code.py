@@ -71,6 +71,30 @@ _DEFAULT_ALLOWED_TOOLS = [
     "Bash(e2er-allium-query:*)",
 ]
 
+# Specialists that write an execution script (see EXECUTION_CONVENTIONS in
+# core/specialists/post_execution.py) additionally get `e2er-run`, so they can
+# run what they just wrote, read the traceback, and fix it — v1's write→run→fix
+# loop, which v3 dropped when it took code execution away from specialists.
+#
+# `e2er-run` is a gatekeeper like `e2er-data`: one workspace-relative .py file,
+# no arguments, no traversal, hard timeout. It is NOT `Bash(python3:*)` — that
+# would be arbitrary shell, and unlike v1 we have no container around it.
+#
+# The orchestrator still re-runs the final script through post_execution, so
+# provenance comes from that run, not from whatever the model did while
+# iterating.
+_SCRIPT_WRITING_SPECIALISTS = frozenset({"econometrics_specialist", "data_analyst"})
+_RUN_TOOL = "Bash(e2er-run:*)"
+
+
+def allowed_tools_for(specialist: str | None) -> list[str]:
+    """CLI tool allowlist for a specialist. Script writers get `e2er-run`."""
+    tools = list(_DEFAULT_ALLOWED_TOOLS)
+    if specialist in _SCRIPT_WRITING_SPECIALISTS:
+        tools.append(_RUN_TOOL)
+    return tools
+
+
 # `scripts/` (containing the wrappers) is inserted at the front of PATH
 # for the subprocess so the model can invoke them by bare name.
 _SCRIPTS_DIR = Path(__file__).resolve().parent.parent.parent.parent / "scripts"
@@ -134,8 +158,9 @@ class ClaudeCodeBackend(LLMBackend):
         prompt = "\n\n".join(prompt_parts)
 
         # Hint the CLI at allowed tools. Caller-supplied `tools` list is
-        # ignored (different naming scheme) — we just allow the standard set.
-        allowed_tools = _DEFAULT_ALLOWED_TOOLS
+        # ignored (different naming scheme) — we just allow the standard set,
+        # plus `e2er-run` for the specialists that write execution scripts.
+        allowed_tools = allowed_tools_for(specialist)
 
         # Per-specialist working directory: the CLI's `Write` tool resolves
         # relative paths against cwd. If we run the CLI from the project

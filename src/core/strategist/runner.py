@@ -9,7 +9,7 @@ from typing import Any
 
 from ...logging_config import get_logger
 from ...modules.llm.base import LLMBackend, ToolHandler
-from ..governance import DEFAULT_REGIME
+from ..governance import DEFAULT_REGIME, KIND_RELIABILITY
 from ..governance import enforces as governance_enforces
 from ..specialists.contracts import Contribution, WorkOrder
 from ..specialists.dispatcher import execute_parallel, execute_with_dependencies
@@ -573,17 +573,34 @@ class PipelineRunner:
 
         specialist = "econometrics_specialist"
 
-        # Shadow mode (contracts / off regimes): compute the verdict once,
-        # log it, and continue WITHOUT re-dispatching or blocking — so a
-        # hollow/estimate-less paper proceeds and is measured, not repaired.
+        # Shadow mode applies to VERIFICATION failures only. A hollow or
+        # unparseable estimation file is a reliability failure: the run is
+        # broken, and repairing it is not "governing" the paper. Previously
+        # this returned early under `off`, so a crashed estimation script was
+        # never retried and the drafter wrote tables over `{}`.
         if not self._governance_enforces("estimation"):
             failures = [c for c in check_specialist_artifacts(self._workspace, specialist) if not c.ok]
+            # getattr: reliability is the safe default, so anything that
+            # predates the kind field (or a test double) still blocks.
+            reliability = [c for c in failures if getattr(c, "kind", KIND_RELIABILITY) == KIND_RELIABILITY]
             detail = "; ".join(f"{c.artifact}: {c.reason}" for c in failures) or "clean"
             await self._record_gate("estimation", passed=not failures, detail=detail)
-            return
+            if not reliability:
+                return
+            logger.warning(
+                "Estimation gate: %d reliability failure(s) under governance=%s — repairing anyway (%s)",
+                len(reliability),
+                self._governance,
+                "; ".join(f"{c.artifact}: {c.reason}" for c in reliability),
+            )
 
         while True:
             failures = [c for c in check_specialist_artifacts(self._workspace, specialist) if not c.ok]
+            if not self._governance_enforces("estimation"):
+                # Repair loop entered for reliability only: stop as soon as the
+                # file is real, without demanding the verification contracts a
+                # shadowed regime is meant to leave alone.
+                failures = [c for c in failures if getattr(c, "kind", KIND_RELIABILITY) == KIND_RELIABILITY]
             if not failures:
                 await self._record_gate("estimation", passed=True, detail="clean")
                 return
@@ -1012,8 +1029,7 @@ class PipelineRunner:
         tables from the revised JSON, then re-dispatches section_writer to bring
         the prose in line with the revised analysis.
         """
-        from ..renderer.figures import ensure_figure_placeholders, render_figures
-        from ..renderer.tables import ensure_input_stubs, render_tables
+        from ..renderer.complete import render_all_or_halt
         from ..specialists.dispatcher import execute_work_order
 
         feedback = self._referee_feedback_text()
@@ -1040,11 +1056,10 @@ class PipelineRunner:
             )
             self._contributions.append(c)
 
-        # Tables follow the revised JSON; re-render before the writer edits prose.
-        render_tables(self._workspace)
-        ensure_input_stubs(self._workspace)
-        render_figures(self._workspace)
-        ensure_figure_placeholders(self._workspace)
+        # Tables follow the revised JSON; re-render before the writer edits
+        # prose. Halts if the revised analysis still can't fill them — a hole
+        # here is what the writer papers over with its own numbers.
+        render_all_or_halt(self._workspace)
 
         writer_focus = (
             "Revise the paper to reflect the REVISED analysis (the updated "
@@ -1236,13 +1251,11 @@ class PipelineRunner:
         re-render. Deterministic normalization already covers the common case;
         this handles the long tail.
         """
-        from ..renderer.figures import ensure_figure_placeholders, render_figures
-        from ..renderer.tables import ensure_input_stubs, render_tables
+        from ..renderer.complete import render_all
+        from ..renderer.tables import render_tables
 
         report = render_tables(self._workspace)
-        ensure_input_stubs(self._workspace)
-        render_figures(self._workspace)
-        ensure_figure_placeholders(self._workspace)
+        render_all(self._workspace)  # no halt yet — the repair attempt below is the point
         if not report.unresolved:
             return
 
@@ -1276,20 +1289,13 @@ class PipelineRunner:
         )
         self._contributions.append(contribution)
 
-        # Re-render with the corrected spec. Remaining unresolved refs stay
-        # `---` (and visible in table_render_report.json) — one fix attempt.
-        report2 = render_tables(self._workspace)
-        ensure_input_stubs(self._workspace)
-        render_figures(self._workspace)
-        ensure_figure_placeholders(self._workspace)
-        if report2.unresolved:
-            logger.warning(
-                "table_spec: %d reference(s) still unresolved after section_writer fix — "
-                "rendered as --- (see table_render_report.json)",
-                len(report2.unresolved),
-            )
-        else:
-            logger.info("table_spec: all references resolved after section_writer fix")
+        # Re-render with the corrected spec. This is the last repair attempt,
+        # so anything still unresolved halts: shipping `---` cells is what
+        # invited the drafter to write its own tables over them.
+        from ..renderer.complete import render_all_or_halt
+
+        render_all_or_halt(self._workspace)
+        logger.info("table_spec: all references resolved after section_writer fix")
 
     def _build_table_spec_feedback(self, unresolved: list) -> str | None:
         """Compose a directive for section_writer to fix table_spec.json,
@@ -1668,13 +1674,12 @@ class PipelineRunner:
             # have changed either), then backfill stubs for any dangling
             # \input so a missing table can't abort the whole compile.
             from ..renderer.compiler import compile_latex
-            from ..renderer.figures import ensure_figure_placeholders, render_figures
-            from ..renderer.tables import ensure_input_stubs, render_tables
+            from ..renderer.complete import render_all
 
-            render_tables(self._workspace)
-            ensure_input_stubs(self._workspace)
-            render_figures(self._workspace)
-            ensure_figure_placeholders(self._workspace)
+            # Best-effort by design: this runs in `_best_effort_finalize`, where
+            # the point is to get *something* compiled out of a run that may
+            # already have failed. Stubs are appropriate here and only here.
+            render_all(self._workspace)
             pdf = await compile_latex(self._workspace)
             if pdf:
                 logger.info("Compiled PDF: %s", pdf)

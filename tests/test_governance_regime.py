@@ -113,13 +113,15 @@ async def test_record_gate_enforced_when_enforced():
 # ── behavioral: estimation-gate shadow does not re-dispatch or raise ─────────
 
 
-async def test_estimation_gate_shadow_does_not_dispatch(tmp_path: Path):
-    """In a non-enforcing regime, a failing econometrics contract is logged
-    and the run continues — no re-dispatch, no circuit breaker."""
+async def test_estimation_gate_shadow_does_not_dispatch_for_verification(tmp_path: Path):
+    """In a non-enforcing regime a failing VERIFICATION contract is logged and
+    the run continues — no re-dispatch, no circuit breaker."""
+    from src.core.specialists.contract_check import KIND_VERIFICATION, ContractCheck
+
     r = _bare_runner("off")
     r._workspace = tmp_path
 
-    failing = [SimpleNamespace(ok=False, artifact="estimation_results.json", reason="empty")]
+    failing = [ContractCheck("estimation_results.json", False, "no coefficients block", kind=KIND_VERIFICATION)]
     dispatch = AsyncMock(side_effect=AssertionError("must not re-dispatch in shadow mode"))
     with (
         patch("src.db.paper_data_db.has_data_db", return_value=True),
@@ -128,10 +130,49 @@ async def test_estimation_gate_shadow_does_not_dispatch(tmp_path: Path):
         patch("src.db.events.log_event", new=AsyncMock()) as le,
     ):
         await r._enforce_estimation_gate()  # returns cleanly, no raise
-    # It logged a shadow verdict for the estimation gate.
     assert le.call_args[0][1] == "gate_shadow"
     assert le.call_args[1]["payload"]["gate"] == "estimation"
     assert le.call_args[1]["payload"]["passed"] is False
+
+
+async def test_estimation_gate_repairs_reliability_even_under_off(tmp_path: Path):
+    """An EMPTY estimation file is a broken run, not an ungoverned one, so the
+    gate re-dispatches to repair it in every regime.
+
+    This test previously asserted the opposite. Letting `{}` through under
+    `off` is what produced the 2026-08-05 cell: the crashed script's traceback
+    was never fed back, and the drafter wrote four tables over the hole.
+    """
+    from src.core.specialists.contract_check import KIND_RELIABILITY, ContractCheck
+
+    r = _bare_runner("off")
+    r._workspace = tmp_path
+    # The repair path actually dispatches, so it needs the dispatch arguments
+    # and the circuit-breaker bookkeeping.
+    r._backend = None
+    r._model = "claude-test"
+    r._extra_tools = []
+    r._extra_handlers = []
+    r._backend_name = "mock"
+    r._contributions = []
+    r._last_specialist_errors = {}
+
+    empty = [ContractCheck("estimation_results.json", False, "empty JSON ('{}')", kind=KIND_RELIABILITY)]
+    dispatch = AsyncMock(
+        return_value=SimpleNamespace(success=True, error=None, specialist="econometrics_specialist", paper_id="p-test")
+    )
+    with (
+        patch("src.db.paper_data_db.has_data_db", return_value=True),
+        patch(
+            "src.core.specialists.contract_check.check_specialist_artifacts",
+            side_effect=[empty, empty, []],
+        ),
+        patch("src.core.specialists.dispatcher.execute_work_order", new=dispatch),
+        patch("src.db.events.log_event", new=AsyncMock()),
+    ):
+        await r._enforce_estimation_gate()
+
+    assert dispatch.await_count == 1, "a hollow estimation file must be repaired, even under `off`"
 
 
 async def test_estimation_gate_skips_non_empirical():

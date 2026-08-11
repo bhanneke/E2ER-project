@@ -10,7 +10,7 @@ from ...modules.llm.base import CompositeToolHandler, LLMBackend, ToolHandler
 from ...modules.llm.tools import FILE_TOOLS, FileToolHandler
 from ...modules.tracking.costs import compute_cost
 from ...modules.tracking.usage import save_usage
-from ..governance import DEFAULT_REGIME, enforces
+from ..governance import DEFAULT_REGIME, enforces_check
 from ..specialists.contracts import Contribution, WorkOrder
 
 logger = get_logger(__name__)
@@ -65,10 +65,11 @@ async def run_specialist(
     )
     user_prompt = _build_user_prompt(work_order)
 
-    # Self-correction loop: if a prior attempt's script was executed by the
-    # runner and CRASHED (the specialist can't run code itself), feed the
-    # captured traceback back in so this attempt fixes the bug instead of
-    # re-writing blind. Recovers v1's write→run→fix loop within the sandbox.
+    # Cross-attempt half of the self-correction loop: if a PRIOR attempt's
+    # script crashed when the runner executed it, feed the captured traceback
+    # into this attempt. Script-writing specialists can now also run their own
+    # code in-session via `e2er-run`, which is the cheap loop; this remains the
+    # backstop for a crash that only shows up in the runner's clean re-run.
     from .post_execution import read_execution_error
 
     exec_feedback = read_execution_error(workspace, specialist)
@@ -170,39 +171,43 @@ async def run_specialist(
     # trips after _MAX_SPECIALIST_ATTEMPTS instead of paying the
     # rest of the run.
     #
-    # WS-B: the CHECK always runs; `governance` decides whether it blocks.
-    # Under `off` the violation is logged as `gate_shadow` and the hollow
-    # artifact is allowed through — that is the point of the control cell:
-    # measure what an ungoverned pipeline ships.
+    # WS-B: the CHECK always runs; `governance` decides whether a VERIFICATION
+    # failure blocks. A RELIABILITY failure (missing, unparseable, `{}`) blocks
+    # in every regime — it means the run is broken, not that the paper is
+    # ungoverned, and letting it through is what produced the 2026-08-05 cell.
     if result.success:
         from .contract_check import check_specialist_artifacts
 
         contract_failures = [c for c in check_specialist_artifacts(workspace, specialist) if not c.ok]
         if contract_failures:
+            # Reliability failures (file missing, unparseable, `{}`) block in
+            # EVERY regime — they mean the run is broken, not that the paper is
+            # ungoverned. Only verification failures follow the matrix.
+            blocking = [c for c in contract_failures if enforces_check(governance, "contracts", c.kind)]
+            shadowed = [c for c in contract_failures if c not in blocking]
             summary = "; ".join(f"{c.artifact}: {c.reason}" for c in contract_failures)
-            enforced = enforces(governance, "contracts")
-            await _log_contract_gate(paper_id, specialist, summary, enforced=enforced, regime=governance)
-            if enforced:
-                logger.warning("%s: contract violation — %s", specialist, summary)
+            await _log_contract_gate(paper_id, specialist, summary, enforced=bool(blocking), regime=governance)
+            if shadowed:
+                logger.warning(
+                    "%s: %d verification violation(s) NOT enforced under governance=%s (shadow) — %s",
+                    specialist,
+                    len(shadowed),
+                    governance,
+                    "; ".join(f"{c.artifact}: {c.reason}" for c in shadowed),
+                )
+            if blocking:
+                block_summary = "; ".join(f"{c.artifact}: {c.reason}" for c in blocking)
+                logger.warning("%s: contract violation — %s", specialist, block_summary)
                 result.success = False
                 existing = (result.error or "").strip()
                 prefix = f"{existing} | " if existing else ""
-                result.error = f"{prefix}contract violation: {summary}"
+                result.error = f"{prefix}contract violation: {block_summary}"
                 # Persist the violation for the NEXT attempt's prompt (consumed
                 # once by read_contract_feedback above) — without this the retry
                 # is blind and just re-fails until the circuit breaker pauses.
                 from .contract_check import write_contract_feedback
 
-                write_contract_feedback(workspace, specialist, summary)
-            else:
-                # No flip, no coaching retry, no circuit breaker — an
-                # ungoverned run proceeds on the artifact as written.
-                logger.warning(
-                    "%s: contract violation NOT enforced under governance=%s (shadow) — %s",
-                    specialist,
-                    governance,
-                    summary,
-                )
+                write_contract_feedback(workspace, specialist, block_summary)
 
     # Pass backend_name so flat-rate CLI backends (claude_code / codex /
     # gemini) cost as $0 — M4.1 fix.
@@ -292,6 +297,11 @@ async def _log_contract_gate(
 
 _DATA_SPECIALISTS = frozenset(["data_analyst", "data_architect", "econometrics_specialist"])
 
+# Specialists that write an execution script and can therefore run it. Kept in
+# step with EXECUTION_CONVENTIONS (post_execution) and the CLI allowlist
+# (modules/llm/claude_code.allowed_tools_for) — a test pins the three together.
+_SCRIPT_WRITING_SPECIALISTS = frozenset(["data_analyst", "econometrics_specialist"])
+
 
 # Tool-name aliases. The Anthropic SDK exposes JSON-schema tools named
 # `write_file`, `read_file`, `edit_file`, `list_directory` (defined in
@@ -363,6 +373,28 @@ def _build_system_prompt(
         "but produce exactly one final write_file at the end.",
         "",
     ]
+    if specialist in _SCRIPT_WRITING_SPECIALISTS:
+        lines.extend(
+            [
+                "## RUN YOUR SCRIPT BEFORE YOU FINISH (do not hand over untested code)",
+                "You write an execution script, and you can execute it: "
+                "`e2er-run <your_script.py>` (via Bash). It runs one workspace-relative "
+                ".py file and prints its stdout and traceback.",
+                "The loop you are expected to follow:",
+                "  1. write the script",
+                "  2. `e2er-run` it",
+                "  3. read the traceback and FIX it",
+                "  4. repeat until it exits cleanly and its results file is populated",
+                "Code that has not been executed is a hypothesis. A script that crashes "
+                "leaves your results file empty, and the pipeline then has nothing to put "
+                "in the paper's tables — which is exactly how a draft ends up with "
+                "invented numbers. Do not end your turn on a script you have not run.",
+                "Common crashes worth pre-empting: comparing tz-aware and tz-naive "
+                "timestamps, joining on mismatched dtypes, and indexing a column that "
+                "the real data does not have.",
+                "",
+            ]
+        )
     if specialist in _DATA_SPECIALISTS and has_data_db:
         lines.extend(
             [

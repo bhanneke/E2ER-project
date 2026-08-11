@@ -30,6 +30,10 @@ limits, not verification institutions — no regime should turn them off.
 
 from __future__ import annotations
 
+#: Re-exported so callers reason about check kinds without importing the
+#: specialist layer. Defined there because that is where checks are produced.
+from .specialists.contract_check import KIND_RELIABILITY, KIND_VERIFICATION  # noqa: F401
+
 REGIMES: tuple[str, ...] = ("off", "contracts", "full")
 DEFAULT_REGIME = "full"
 
@@ -47,3 +51,24 @@ def enforces(regime: str, gate: str) -> bool:
     """True iff `gate` should BLOCK under `regime`. Unknown regime → `full`,
     so a typo fails closed (all institutions on) rather than silently open."""
     return gate in _ENFORCEMENT.get(regime, _ENFORCEMENT[DEFAULT_REGIME])
+
+
+def enforces_check(regime: str, gate: str, kind: str) -> bool:
+    """True iff a check of `kind` should BLOCK under `regime`.
+
+    Reliability checks block in EVERY regime, including ``off``. Whether the
+    estimation script ran and wrote a parseable non-empty result is a question
+    about the pipeline, not about the paper, and the answer is the same in
+    every arm of the experiment.
+
+    Conflating the two is what made the ``off`` cell meaningless. In the
+    2026-08-05 validation cell the estimation script crashed on a timezone
+    comparison and wrote ``{}``; because ``off`` shadowed the artifact check,
+    nothing flipped the specialist to failure, the captured traceback was
+    never fed back for a retry, and the drafter wrote four tables of invented
+    numbers over the hole. The run measured a broken pipeline, not an
+    ungoverned one, and fabrication was confounded with completion.
+    """
+    if kind == KIND_RELIABILITY:
+        return True
+    return enforces(regime, gate)

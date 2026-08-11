@@ -7,7 +7,7 @@ from pathlib import Path
 
 from ...logging_config import get_logger
 from ...modules.llm.base import LLMBackend, ToolHandler
-from ..governance import DEFAULT_REGIME, enforces
+from ..governance import DEFAULT_REGIME
 from ..specialists.base import run_specialist
 from ..specialists.contracts import Contribution, WorkOrder
 
@@ -237,17 +237,18 @@ async def guard_artifacts(
 ) -> None:
     """Cascade guard, governance-aware (WS-B).
 
-    The check always runs and its verdict is always logged. Under a regime
-    that enforces contracts it raises (halting the run before downstream
-    specialists starve); under ``off`` it records a `gate_shadow` event and
-    lets the run continue on the missing artifact — the ungoverned control.
+    A missing canonical artifact is a RELIABILITY failure: the specialist did
+    not produce what it was asked to produce, and downstream specialists will
+    starve. That is a broken run in any regime, so this guard always halts and
+    is not switchable. Governance decides whether the paper's *claims* are
+    verified, never whether the pipeline is allowed to be broken.
     """
     missing = find_missing_artifacts(contributions, workspace)
     if not missing:
         return
 
     details = _cascade_details(missing)
-    enforced = enforces(governance, "contracts")
+    enforced = True
     paper_id = contributions[0].paper_id if contributions else ""
     if paper_id:
         try:
