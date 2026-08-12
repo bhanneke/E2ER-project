@@ -119,6 +119,20 @@ Reliability is not a treatment condition. A crashed script is a bug in every arm
 
 ---
 
+## Status
+
+All six recommendations are implemented, in `eff7ae1` (1–4) and `a49bc1b`
+(5–6). 1,197 tests pass. What is NOT done is the thing that matters most:
+**none of this has been exercised by a live run.** The evidence below is from
+unit tests and from replaying the fixes against the stored failing workspace.
+A governed run at concurrency 1 is the next step, and until it happens these
+are fixes in principle.
+
+Three tests that asserted the old semantics were rewritten rather than deleted,
+each carrying a note about why the previous expectation was wrong. If you are
+reading a diff and one of them looks like a weakened assertion, that is the
+reliability/verification split, not a concession.
+
 ## Recommendations
 
 Structural, in dependency order. The first two are the ones that matter.
