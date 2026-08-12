@@ -370,7 +370,14 @@ def _maybe_save_csv(result: dict, args: argparse.Namespace) -> None:
     try:
         import pandas as pd
 
+        from .normalize import normalize_for_materialization
+
         df = pd.DataFrame(items)
+        # Same guarantee as the data.db path: whatever the provider returned,
+        # the specialist reads tz-naive UTC.
+        df, norm_notes = normalize_for_materialization(df)
+        if norm_notes:
+            result["normalized"] = norm_notes
         df.to_csv(target, index=False)
         result["saved_to"] = str(target.relative_to(workspace))
         result["saved_rows"] = len(df)

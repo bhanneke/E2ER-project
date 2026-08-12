@@ -86,6 +86,21 @@ _DEFAULT_ALLOWED_TOOLS = [
 _SCRIPT_WRITING_SPECIALISTS = frozenset({"econometrics_specialist", "data_analyst"})
 _RUN_TOOL = "Bash(e2er-run:*)"
 
+#: How much of a backend error to keep. 500 chars was too little: the
+#: 2026-08-03 pilot lost eight cells to an unexplained CLI failure because
+#: every copy of the message was clipped before the informative part. A
+#: traceback's payload is at the END, so keep both ends.
+_MAX_ERROR_CHARS = 4000
+
+
+def _clip(text: str, limit: int = _MAX_ERROR_CHARS) -> str:
+    """Trim to `limit`, keeping the head AND tail — errors bury the cause last."""
+    if len(text) <= limit:
+        return text
+    head = limit // 2
+    tail = limit - head
+    return f"{text[:head]}\n… [{len(text) - limit} chars omitted] …\n{text[-tail:]}"
+
 
 def allowed_tools_for(specialist: str | None) -> list[str]:
     """CLI tool allowlist for a specialist. Script writers get `e2er-run`."""
@@ -366,13 +381,29 @@ async def _invoke_cli(
             timeout=timeout,
         )
     except TimeoutError:
+        # B-6. Since Python 3.11 `asyncio.TimeoutError` IS the builtin
+        # `TimeoutError`, which is also an `OSError` subclass — so a socket or
+        # pipe timeout raised from inside `communicate()` lands here too and
+        # used to be reported as the wall-clock deadline. That produced
+        # impossible messages during the 2026-08-03 pilot diagnosis ("timed
+        # out after 69s (limit 1800s)") and sent us looking for a hung CLI
+        # that was never hung. Distinguish by elapsed time: only the outer
+        # `wait_for` can fire at (or after) the limit.
         proc.kill()
         await proc.wait()
         elapsed = time.monotonic() - start
+        deadline_fired = elapsed >= timeout * 0.95
+        if deadline_fired:
+            error = f"Claude Code timed out after {elapsed:.0f}s (limit {timeout}s)"
+        else:
+            error = (
+                f"Claude Code I/O timeout after {elapsed:.0f}s, well inside the {timeout}s limit — "
+                "this is a pipe/socket timeout from the subprocess, not the wall-clock deadline"
+            )
         return ToolLoopResult(
             success=False,
             output="",
-            error=f"Claude Code timed out after {elapsed:.0f}s (limit {timeout}s)",
+            error=error,
             duration_seconds=elapsed,
         )
 
@@ -381,7 +412,7 @@ async def _invoke_cli(
     stderr = stderr_bytes.decode("utf-8", errors="replace")
 
     if proc.returncode != 0:
-        error_msg = stderr.strip() or f"Exit code {proc.returncode}: {stdout.strip()[:500]}"
+        error_msg = stderr.strip() or f"Exit code {proc.returncode}: {_clip(stdout.strip())}"
         return ToolLoopResult(
             success=False,
             output="",
@@ -397,10 +428,21 @@ async def _invoke_cli(
     # error_max_turns: process exits 0 but the agent didn't finish. The
     # CLI returns subtype="error_max_turns" or is_error=True.
     if raw.get("subtype") == "error_max_turns" or raw.get("is_error"):
+        # Include the CLI's OWN message. Without it this read "hit
+        # max_turns=80" for every is_error, including the eight pilot cells
+        # that failed after 0-4 output tokens with stop_reason="stop_sequence"
+        # — nothing like a turn-limit exhaustion, and we could not tell,
+        # because the one string that would have said so was dropped here and
+        # clipped to 500 chars everywhere else.
+        detail = _clip(str(raw.get("result") or raw.get("error") or "").strip())
+        subtype = raw.get("subtype", "is_error")
+        error = f"Claude Code returned {subtype} (max_turns={max_turns}, tool_calls={tool_calls_made})"
+        if detail:
+            error = f"{error}: {detail}"
         return ToolLoopResult(
             success=False,
             output=output_text,
-            error=f"Claude Code hit max_turns={max_turns} ({raw.get('subtype', 'is_error')})",
+            error=error,
             tool_calls_made=tool_calls_made,
             usage=usage,
             duration_seconds=duration,

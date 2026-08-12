@@ -264,7 +264,7 @@ async def guard_artifacts(
                     "enforced": enforced,
                     "regime": governance,
                     "check": "missing_artifact",
-                    "detail": details[:500],
+                    "detail": details[:2000],
                 },
             )
         except Exception as e:  # noqa: BLE001 — measurement must never break a run

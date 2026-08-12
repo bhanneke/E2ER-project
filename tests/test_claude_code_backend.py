@@ -195,7 +195,8 @@ async def test_tool_loop_handles_cli_not_found(monkeypatch, tmp_path):
 # ---------------------------------------------------------------------------
 
 
-async def test_tool_loop_timeout_kills_subprocess(monkeypatch, tmp_path):
+async def _timeout_result(monkeypatch, tmp_path, *, timeout: float):
+    """Drive tool_loop into its TimeoutError branch with a given deadline."""
     _settings_for_cli(monkeypatch, tmp_path)
     from src.modules.llm.claude_code import ClaudeCodeBackend
 
@@ -206,6 +207,7 @@ async def test_tool_loop_timeout_kills_subprocess(monkeypatch, tmp_path):
 
     with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=proc)):
         backend = ClaudeCodeBackend()
+        backend._timeout = timeout
         result = await backend.tool_loop(
             system="x",
             messages=[{"role": "user", "content": "x"}],
@@ -213,9 +215,30 @@ async def test_tool_loop_timeout_kills_subprocess(monkeypatch, tmp_path):
             tool_handler=None,
             max_turns=5,
         )
+    return result, proc
+
+
+async def test_tool_loop_timeout_kills_subprocess(monkeypatch, tmp_path):
+    """A deadline that really did elapse reports as the wall-clock timeout."""
+    result, proc = await _timeout_result(monkeypatch, tmp_path, timeout=0)
 
     assert not result.success
     assert "timed out" in (result.error or "").lower()
+    proc.kill.assert_called_once()
+
+
+async def test_inner_timeout_is_not_reported_as_the_deadline(monkeypatch, tmp_path):
+    """B-6: since 3.11 `TimeoutError` is also an `OSError`, so a pipe/socket
+    timeout inside `communicate()` reaches the same handler. Reporting it as
+    the wall-clock deadline produced impossible messages during the 2026-08-03
+    pilot ("timed out after 69s (limit 1800s)") and sent the diagnosis after a
+    hang that never happened."""
+    result, proc = await _timeout_result(monkeypatch, tmp_path, timeout=1800)
+
+    assert not result.success
+    error = (result.error or "").lower()
+    assert "i/o timeout" in error
+    assert "not the wall-clock deadline" in error
     proc.kill.assert_called_once()
 
 

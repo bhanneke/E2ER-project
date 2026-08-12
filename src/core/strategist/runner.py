@@ -296,7 +296,7 @@ class PipelineRunner:
                 payload={
                     "specialist": cb.specialist,
                     "attempts": cb.attempts,
-                    "last_error": (cb.last_error or "")[:500],
+                    "last_error": (cb.last_error or "")[:2000],
                 },
             )
             await self._best_effort_finalize()
@@ -539,7 +539,7 @@ class PipelineRunner:
                 "passed": passed,
                 "enforced": enforced,
                 "regime": self._governance,
-                "detail": detail[:500],
+                "detail": detail[:2000],
             },
         )
         return enforced

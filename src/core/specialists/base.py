@@ -288,7 +288,7 @@ async def _log_contract_gate(
                 "enforced": enforced,
                 "regime": regime,
                 "specialist": specialist,
-                "detail": detail[:500],
+                "detail": detail[:2000],
             },
         )
     except Exception as e:  # noqa: BLE001 — measurement must never break a run

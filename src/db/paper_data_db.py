@@ -108,6 +108,12 @@ def _materialize_dataframe_sync(
     *,
     if_exists: Literal["fail", "replace", "append"] = "replace",
 ) -> int:
+    from ..modules.data.normalize import normalize_for_materialization
+
+    # tz-aware timestamps in, tz-naive UTC out. Generated analysis code
+    # compares against plain `pd.Timestamp(...)` and crashes otherwise.
+    df, _ = normalize_for_materialization(df)
+
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(db_path))
     try:
