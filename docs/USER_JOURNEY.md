@@ -27,7 +27,7 @@ because two specialists returned nothing. Two halted on the same missing file �
 after being cut off at the 30-minute cap and once after finishing on its own in
 24 minutes. Every halt was correct. Every halt discarded completed analysis.
 
-Two distinct problems, in order of severity:
+Three distinct problems, in order of severity:
 
 1. **The econometrics specialist does not write its declared artifact.**
    Reproduced twice, and not a timeout (Finding 5.2). While this holds, no run
@@ -35,9 +35,19 @@ Two distinct problems, in order of severity:
    in any regime.
 2. **The long-lived API server holds code and configuration from whenever it
    started**, and every entry point silently reuses it (Findings 2.1, 2.2).
+3. **The pipeline is not running on the dependencies it declares.** The project
+   was never installed into the interpreter that runs it, so three declared
+   constraints are unsatisfied — including `pandas<3.0`, which is pinned
+   specifically to keep generated estimation scripts working and is violated by
+   the pandas 3.0.2 that ran every cell here (Finding 1.2). The test suite says
+   so, in 32 failures nobody was reading.
 
 Of the findings below, three are cosmetic, five can invalidate or destroy a run
-without warning, and one of those invalidated a run during this session.
+without warning, and one of those invalidated a run during this session. Two
+further findings (5.3, 5.4) come from reading the two failed runs' event rows
+rather than from the operator's path: the repair loop written for this exact
+failure is unreachable, and the gate event does not record which check did the
+blocking.
 
 ---
 
@@ -102,11 +112,92 @@ WARNING | src.modules.literature.pdf | pypdf not installed — cannot extract PD
 
 Local PDF reading is a headline feature ("bring your own papers"). Without
 `pypdf` it degrades to OpenAlex metadata. `doctor` catches it, which is the
-system working — but it is a packaging gap, not a user configuration error, and
-it should not be reachable from a clean install.
+system working.
 
-*Fix:* move `pypdf` from an extra into the base dependency set, or state the
-extra in the install line.
+*Correction (2026-08-19).* This document originally called that a packaging gap
+and proposed moving `pypdf` into the base dependency set. That is wrong:
+`pyproject.toml:23` already declares `pypdf>=4.0` as a base dependency. The
+actual condition is worse and explains more:
+
+```
+$ python3.12 -c "import importlib.metadata as m; m.version('e2er')"
+PackageNotFoundError
+pypdf         MISSING          (declared: pypdf>=4.0)
+bibtexparser  1.4.4            (declared: bibtexparser>=2.0.0b7)
+pandas        3.0.2            (declared: pandas>=2.0,<3.0)
+```
+
+The project was never installed into the interpreter that runs the pipeline.
+Nothing depends on it being installed: every entry point resolves `src` from the
+repository root via `sys.path`, so the pipeline runs, the server serves, and the
+specialists work — on whatever the ambient Homebrew interpreter happens to
+contain. Three declared constraints are unsatisfied there, and none of them
+fails loudly. `pypdf` is the only one `doctor` reports.
+
+The pandas constraint is the serious one, because it lands directly on the path
+this experiment measures. `pyproject.toml:28` pins `pandas>=2.0,<3.0`, and the
+comment above the pin states the reason: pandas 3.0 removed the legacy offset
+aliases, and "LLM-generated estimation scripts use `resample("M")` (the pre-3.0
+idiom), which raises on 3.x". The interpreter that ran every cell in this
+document has pandas 3.0.2. Probing it:
+
+```
+resample("M")           ValueError: 'M' is no longer supported for offsets. Please use 'ME' instead.
+resample("Y")           ValueError: 'Y' is no longer supported for offsets. Please use 'YE' instead.
+date_range(freq="M")    ValueError: 'M' is no longer supported for offsets. Please use 'ME' instead.
+resample("ME")          OK
+```
+
+So the specialist writing `run_estimation.py` was working against an environment
+the project explicitly forbids, in exactly the way the pin was written to
+prevent. This does not explain the missing `econometric_spec.md` — that file
+needs no pandas — but it is a plausible contributor to the 24 to 30 minutes the
+specialist spent in the write/run/fix loop (Finding 4b.1), and it means the debug
+loop's measured expense is partly the cost of a misconfigured environment rather
+than an intrinsic property of the design. Any run intended as evidence should
+first assert the declared constraints hold.
+
+The bibtexparser breakage is the quieter one, and not reported anywhere:
+
+```
+WARNING | src.modules.literature.bibtex | Failed to parse …/curated.bib:
+        module 'bibtexparser' has no attribute 'parse_file'
+```
+
+`LocalBibLibrary.entries()` catches the parse failure, logs at WARNING, and
+returns an empty list. A user who points `LITERATURE_BIBTEX_FILE` at a real
+library gets a specialist prompt with no bibliography block in it and no error —
+the same degrade-to-output shape the contracts work is meant to eliminate, in a
+module the contracts do not cover. This did not affect the runs in this document
+(there is no `.env` in the worktree and both settings default to `None`, so no
+library was configured), but it is live for anyone who configures one.
+
+The test suite already reports all of this, and nobody was reading it. On this
+interpreter `pytest tests/` gives **32 failed, 1174 passed**, and every one of
+the 32 traces to an unsatisfied declared dependency:
+
+| file | n | cause |
+|---|---|---|
+| `test_verify_citations.py` | 10 | bibtexparser 1.x |
+| `test_local_data_dir.py` | 7 | bibtexparser 1.x |
+| `test_cli_verify.py` | 3 | bibtexparser 1.x |
+| `lit/contract/test_read_reference.py` | 3 | pypdf missing |
+| `lit/contract/test_provider_registry.py` | 3 | bibtexparser 1.x |
+| `test_local_corpus_extensions.py` | 2 | bibtexparser 1.x |
+| `test_external_verify.py` | 2 | bibtexparser 1.x |
+| `test_data_normalize.py` | 2 | pandas 3.x (`datetime64[us]` vs `[ns]`) |
+
+None are in the specialist, contract, or governance modules. A green suite is
+one `pip install -e ".[dev]"` away, and it would have flagged the pandas
+violation before the canary ran rather than after.
+
+*Fix:* install the project into the interpreter that actually runs the pipeline,
+in a virtualenv rather than the Homebrew Python, and have `doctor` compare
+installed distributions against the declared dependency set instead of
+import-probing one library at a time — a dependency the project pins and the
+environment violates should be a `doctor` failure, not a silent one. Separately,
+a `.bib` library that fails to parse should surface as a failure, not as an empty
+bibliography.
 
 ---
 
@@ -362,6 +453,79 @@ written before the analysis is also the more defensible artifact.
 
 *Cost of not fixing:* no run reaches drafting, so no run is measurable, so the
 experiment has no observations in any regime.
+
+*Status (2026-08-19):* the prompt half is implemented in
+`src/core/specialists/base.py` — a Write Order block that names the artifact and
+puts it ahead of the script, an early-write deadline moved from turn 40 to turn
+10 for script-writing specialists, and the removal of a contradiction that had
+been telling this specialist "One specialist = one artifact" and "produce exactly
+one final write_file at the end" while its work order asked for three files. Two
+caveats. First, this is a behavioural fix: it makes compliance likelier, it does
+not make the artifact deterministic, so the next canary is the test. Second, it
+does not touch Finding 5.3 below.
+
+**Finding 5.3 — the repair loop built for this failure never runs.**
+
+Two mechanisms cover this failure class, and the wrong one wins. Reading the
+two runs' `pipeline_events` rows:
+
+```
+2026-08-12 23:54:43  gate_enforced  contracts  {"check": "missing_artifact", ...}
+2026-08-12 23:54:43  failed         RuntimeError: Specialist(s) did not produce
+                                    canonical artifact: econometrics_specialist
+                                    -> econometric_spec.md missing
+2026-08-15 00:29:32  gate_enforced  contracts  {"specialist": "econometrics_specialist", ...}
+2026-08-15 00:29:32  failed         RuntimeError: All specialists failed in
+                                    parallel batch: ... econometric_spec.md: file not written
+```
+
+Both halts are raised inside the analysis phase — the first by `guard_artifacts`
+(`src/core/specialists/dispatcher.py:233`), the second by the specialist-boundary
+contract check (`src/core/specialists/base.py:179`). The strategist's estimation
+gate (`runner.py:547`) is a *later* phase, and it contains a repair loop that
+re-dispatches `econometrics_specialist` up to three times with the contract
+feedback and any script traceback injected into the retry prompt. Its own comment
+says it exists because "the specialist-level contract flips a bad econometrics
+attempt to failure, but nothing compelled the strategist to re-dispatch". It
+never gets the chance: the phase raises first, so the run ends after one attempt.
+
+The asymmetry is the odd part. An `estimation_results.json` that exists but is
+hollow reaches the gate and gets three repair attempts. An `econometric_spec.md`
+that is *missing* gets zero. The halt itself is right — writing a placeholder
+would be the degrade-to-output failure this project is built against — but
+halting and repairing are not alternatives, and the repair path is currently
+dead code for the case it names.
+
+**Finding 5.4 — the gate event cannot tell you which check stopped the run.**
+
+The resume attempt failed two contracts at once, and the event records both in
+one string:
+
+```json
+{"gate": "contracts", "enforced": true, "regime": "off",
+ "detail": "econometric_spec.md: file not written;
+            estimation_results.json: identified-spec contract: declared controls
+            ['log_vix', 'd_dgs2', 'halving_window'] appear neither in
+            main.controls nor among main.coefficients ..."}
+```
+
+The code is correct: `enforced` is `bool(blocking)`, and only the missing file
+was blocking — the identified-spec mismatch is a verification check, which
+regime `off` shadows, and it was logged as shadowed in the process log. But
+`detail` concatenates blocking and shadowed failures indiscriminately, and
+`detail` is what survives into the database. An analyst reading these rows would
+attribute the halt to a verification check that this regime deliberately did not
+enforce. Since the whole experiment is a comparison of what each regime enforces,
+the one field that records enforcement should not be ambiguous about it. A
+`blocked_by` / `shadowed` split in the payload is additive and would not disturb
+existing fields.
+
+Second, substantively: the estimation the specialist *did* produce omitted all
+three declared controls from its headline specification. Under `contracts` or
+`full` that blocks; under `off` it is shadowed and the paper would have carried a
+main result that does not implement its own declared design. That is the
+experiment's treatment effect appearing in a single cell, and it is worth
+retaining as an illustration.
 
 ---
 

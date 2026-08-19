@@ -62,6 +62,7 @@ async def run_specialist(
         has_allium=has_allium,
         has_data_db=has_data_db,
         max_turns=_MAX_TURNS,
+        sidecars=work_order.sidecar_artifacts,
     )
     user_prompt = _build_user_prompt(work_order)
 
@@ -302,6 +303,22 @@ _DATA_SPECIALISTS = frozenset(["data_analyst", "data_architect", "econometrics_s
 # (modules/llm/claude_code.allowed_tools_for) — a test pins the three together.
 _SCRIPT_WRITING_SPECIALISTS = frozenset(["data_analyst", "econometrics_specialist"])
 
+# What each script-writing specialist can already put in its narrative artifact
+# BEFORE running anything — i.e. the part of the artifact that is design, not
+# result. Used by the Write Order block in `_build_system_prompt`.
+_FIRST_WRITE_CONTENT: dict[str, str] = {
+    "econometrics_specialist": (
+        "the estimating equation, the sample, the fixed effects, the controls, the "
+        "clustering, and what each robustness check is meant to test — all of it is "
+        "in `identification_strategy.md` and your work order"
+    ),
+    "data_analyst": (
+        "the data sources, the intended sample construction (raw N -> each inclusion/"
+        "exclusion filter -> final N), and the variable definitions — all of it is in "
+        "`data_dictionary.json` and your work order"
+    ),
+}
+
 
 # Tool-name aliases. The Anthropic SDK exposes JSON-schema tools named
 # `write_file`, `read_file`, `edit_file`, `list_directory` (defined in
@@ -336,7 +353,10 @@ def _build_system_prompt(
     has_allium: bool = False,
     has_data_db: bool = False,
     max_turns: int = 80,
+    sidecars: list[str] | tuple[str, ...] = (),
 ) -> str:
+    from ..specialists.registry import SPECIALIST_ARTIFACTS
+
     name = specialist.replace("_", " ").title()
     # Early-write deadline: aim to have a first version of the canonical
     # artifact written by the half-way point. For data-heavy specialists
@@ -344,6 +364,18 @@ def _build_system_prompt(
     # For light specialists (reviewers, polish) it's effectively "write
     # promptly" — they'll finish well before the cap.
     early_write_by = max(10, max_turns // 2)
+    if specialist in _SCRIPT_WRITING_SPECIALISTS:
+        # Script writers spend most of their budget in the write -> e2er-run
+        # -> fix loop, so "by mid-budget" lands while they are still deep in
+        # debugging and the narrative artifact never gets written at all.
+        # The 2026-08-12 canary reproduced this twice for
+        # econometrics_specialist: run_estimation.py, summary_statistics.json,
+        # figure_spec.json and robustness_results.json all written,
+        # econometric_spec.md missing — once cut off at the timeout, once
+        # finishing on its own in 24 minutes inside a 30-minute cap. So it is
+        # not a budget problem, it is an ordering problem: their first write
+        # belongs BEFORE the script, not after it. See docs/USER_JOURNEY.md.
+        early_write_by = max(5, max_turns // 8)
     lines = [
         f"You are the {name} specialist in an end-to-end empirical research pipeline.",
         "You produce high-quality academic research outputs.",
@@ -361,19 +393,70 @@ def _build_system_prompt(
         "- If you're paginating data: limit one page per call, write what you have",
         "  to the artifact, then page only if the analysis genuinely requires it.",
         "",
-        "## Output Discipline (strict)",
-        "1. Your work order names ONE output file. Write that single file with `write_file`.",
-        "2. Do not create indexes, summaries, completion reports, status files, "
-        "checklists, READMEs, manifests, or any auxiliary deliverables. "
-        "One specialist = one artifact.",
-        "3. Do not invent additional filenames. The orchestrator only collects "
-        "the canonical artifact named in the work order.",
-        "4. After the single write_file call succeeds, end your turn — no further commentary, no follow-up files.",
-        "5. If you need to gather information, use read_file or other tools, "
-        "but produce exactly one final write_file at the end.",
-        "",
     ]
+    # Output discipline. The single-artifact rule below is the right rule for
+    # writers, reviewers and polish specialists. It is FALSE for a specialist
+    # whose work order carries sidecars (and, for the script writers, an
+    # analysis script): telling those "one specialist = one artifact" and
+    # "produce exactly one final write_file at the end" contradicts the work
+    # order they are handed, and the file they drop is the narrative one —
+    # which is the file the pipeline gates on.
+    if sidecars:
+        lines.extend(
+            [
+                "## Output Discipline (strict)",
+                "1. Your work order names a primary artifact AND one or more "
+                "machine-readable sidecar files. ALL of them are required — the "
+                "pipeline halts if any is missing.",
+                "2. Beyond those files (and any analysis script you need in order to "
+                "produce them), do not create indexes, completion reports, status "
+                "files, checklists, READMEs, or manifests.",
+                "3. Do not invent filenames for the deliverables. The orchestrator "
+                "collects only the files named in the work order — anything else you "
+                "write is scratch, and no downstream stage will read it.",
+                "4. After the last required write_file succeeds, end your turn — no further commentary.",
+                "",
+            ]
+        )
+    else:
+        lines.extend(
+            [
+                "## Output Discipline (strict)",
+                "1. Your work order names ONE output file. Write that single file with `write_file`.",
+                "2. Do not create indexes, summaries, completion reports, status files, "
+                "checklists, READMEs, manifests, or any auxiliary deliverables. "
+                "One specialist = one artifact.",
+                "3. Do not invent additional filenames. The orchestrator only collects "
+                "the canonical artifact named in the work order.",
+                "4. After the single write_file call succeeds, end your turn — no "
+                "further commentary, no follow-up files.",
+                "5. If you need to gather information, use read_file or other tools, "
+                "but produce exactly one final write_file at the end.",
+                "",
+            ]
+        )
     if specialist in _SCRIPT_WRITING_SPECIALISTS:
+        lines.extend(
+            [
+                "## Write Order — the narrative artifact comes FIRST",
+                f"Write `{SPECIALIST_ARTIFACTS.get(specialist, 'your canonical artifact')}` "
+                "BEFORE you write or run any script, and do it from the design you were "
+                "already given (your work order plus the design documents in your "
+                f"context): {_FIRST_WRITE_CONTENT.get(specialist, 'what you intend to do and why')}. "
+                "None of that depends on results, so none of it is a reason to wait.",
+                "Then, and only then:",
+                "  - write your analysis script and iterate on it (see the next section)",
+                "  - come back and fill the realized numbers into the artifact you already wrote",
+                "Two reasons this order is not negotiable. A specification written before "
+                "the analysis is the artifact a referee wants; one written afterwards is a "
+                "description of whatever the code happened to produce, and it cannot "
+                "contradict the code even when the code is wrong. And debugging is where "
+                "budgets die — if you run out of turns in the write/run/fix loop with the "
+                "narrative file already on disk, the pipeline continues; without it, every "
+                "downstream stage halts and all of your script work is discarded.",
+                "",
+            ]
+        )
         lines.extend(
             [
                 "## RUN YOUR SCRIPT BEFORE YOU FINISH (do not hand over untested code)",
@@ -536,6 +619,11 @@ def _build_user_prompt(work_order: WorkOrder) -> str:
                 f"Machine-readable sidecars (your skills define the schema):\n"
                 f"{sidecar_lines}\n\n"
                 f"Rules:\n"
+                f"- Write `./{work_order.output_file}` FIRST, from the design you were "
+                f"given, before you write or run any script. Its design content — what "
+                f"you intend to do and why — does not depend on results, and if you run "
+                f"out of turns while debugging, a file that exists is the difference "
+                f"between a pipeline that continues and one that halts.\n"
                 f"- Do NOT create subdirectories. Do NOT add prefixes like "
                 f"`workspace/`, `{work_order.specialist}/`, `output/`. Each "
                 f"file must appear at the exact path shown above, relative "
