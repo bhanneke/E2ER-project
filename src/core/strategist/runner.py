@@ -70,6 +70,16 @@ _VERIFY_NUMBERS_AUTO_PATCH_BUDGET = 1
 # termination.
 _MAX_DEEP_REVISIONS = 1
 
+# Repair attempts for table_spec.json before the render halt fires. One attempt
+# was demonstrably too few: the 2026-08-20 canary went from 12 unresolved
+# references to 4 in a single section_writer pass and then halted with the
+# remainder fixable. Each attempt costs one specialist call, and the loop stops
+# early the moment an attempt fails to reduce the count — a reference that is
+# genuinely ambiguous (`ar1` where the JSON holds `ar1_pre` and `ar1_post`) will
+# not become resolvable by asking a second time, so the budget is only spent
+# while it is buying progress.
+_MAX_TABLE_SPEC_REPAIRS = 3
+
 
 class PipelineRunner:
     """Top-level orchestrator for a single paper."""
@@ -1246,63 +1256,96 @@ class PipelineRunner:
         (``dp_full`` ≡ ``full_dp``). Anything still unresolved is a genuinely
         wrong/abbreviated/missing reference (e.g. the drafter wrote ``cw_stat``
         where the JSON has ``clark_west_stat``) that leaves those cells ``---``.
-        Rather than ship a paper with blank cells, dispatch ONE ``section_writer``
-        call with the unresolved references and the real available keys, then
+        Rather than ship a paper with blank cells, dispatch ``section_writer``
+        with the unresolved references and the real available keys, then
         re-render. Deterministic normalization already covers the common case;
         this handles the long tail.
+
+        Repair iterates up to ``_MAX_TABLE_SPEC_REPAIRS`` times because one pass
+        empirically fixes most but not all of a bad spec, and stops the moment a
+        pass stops reducing the unresolved count — an ambiguous reference does
+        not get less ambiguous on the second ask.
         """
         from ..renderer.complete import render_all
         from ..renderer.tables import render_tables
 
         report = render_tables(self._workspace)
-        render_all(self._workspace)  # no halt yet — the repair attempt below is the point
+        render_all(self._workspace)  # no halt yet — the repair attempts below are the point
         if not report.unresolved:
             return
 
-        feedback = self._build_table_spec_feedback(report.unresolved)
-        if feedback is None:
-            # No estimation JSON to reconcile against — nothing actionable.
-            return
-
-        logger.info(
-            "table_spec: %d unresolved reference(s) after normalization — dispatching "
-            "section_writer to correct table_spec.json",
-            len(report.unresolved),
-        )
         from ..specialists.dispatcher import execute_work_order
 
-        order = WorkOrder(
-            paper_id=self._paper_id,
-            specialist="section_writer",
-            focus=feedback,
-            context_tier=2,
-        )
-        contribution = await execute_work_order(
-            order,
-            self._backend,
-            self._workspace,
-            self._model,
-            self._extra_tools,
-            self._extra_handlers,
-            self._backend_name,
-            self._governance,
-        )
-        self._contributions.append(contribution)
+        remaining = len(report.unresolved)
+        for attempt in range(1, _MAX_TABLE_SPEC_REPAIRS + 1):
+            feedback = self._build_table_spec_feedback(report.unresolved)
+            if feedback is None:
+                # No estimation JSON to reconcile against — nothing actionable.
+                return
 
-        # Re-render with the corrected spec. This is the last repair attempt,
-        # so anything still unresolved halts: shipping `---` cells is what
-        # invited the drafter to write its own tables over them.
+            logger.info(
+                "table_spec: %d unresolved reference(s) after normalization — dispatching "
+                "section_writer to correct table_spec.json (attempt %d/%d)",
+                remaining,
+                attempt,
+                _MAX_TABLE_SPEC_REPAIRS,
+            )
+            order = WorkOrder(
+                paper_id=self._paper_id,
+                specialist="section_writer",
+                focus=feedback,
+                context_tier=2,
+            )
+            contribution = await execute_work_order(
+                order,
+                self._backend,
+                self._workspace,
+                self._model,
+                self._extra_tools,
+                self._extra_handlers,
+                self._backend_name,
+                self._governance,
+            )
+            self._contributions.append(contribution)
+
+            report = render_tables(self._workspace)
+            if not report.unresolved:
+                logger.info("table_spec: all references resolved after %d repair attempt(s)", attempt)
+                break
+            if len(report.unresolved) >= remaining:
+                logger.info(
+                    "table_spec: repair stalled at %d unresolved reference(s) on attempt %d — "
+                    "another pass would repeat it",
+                    len(report.unresolved),
+                    attempt,
+                )
+                break
+            remaining = len(report.unresolved)
+
+        # Re-render for real. Anything still unresolved halts: shipping `---`
+        # cells is what invited the drafter to write its own tables over them.
         from ..renderer.complete import render_all_or_halt
 
         render_all_or_halt(self._workspace)
-        logger.info("table_spec: all references resolved after section_writer fix")
 
     def _build_table_spec_feedback(self, unresolved: list) -> str | None:
         """Compose a directive for section_writer to fix table_spec.json,
-        listing the unresolved references and the EXACT keys/fields available
-        in the estimation JSON. Returns None when there's no JSON to reconcile.
+        listing the unresolved references and the EXACT fields available WITHIN
+        EACH spec object. Returns None when there's no JSON to reconcile.
+
+        The inventory is grouped by spec key rather than flattened into one
+        list, because a flat list invites the very error it is meant to prevent.
+        The 2026-08-20 canary asked for ``pct_change`` in a ``bootstrap`` column
+        when the field exists only under ``main`` — a plausible move for a
+        drafter told those field names were "available" without being told
+        where. A stat resolves only within its own column's spec object;
+        borrowing across columns would print one specification's number under
+        another specification's heading, which is the fabrication this whole
+        module exists to prevent.
         """
         import json
+
+        from ..renderer.tables import _nested_paths, _scalar_at
 
         merged: dict[str, Any] = {}
         for fn in ("estimation_results.json", "robustness_results.json"):
@@ -1320,33 +1363,52 @@ class PipelineRunner:
         if not spec_keys:
             return None
 
-        fields: set[str] = set()
-        coeffs: set[str] = set()
-        for v in merged.values():
-            if not isinstance(v, dict):
+        blocks: list[str] = []
+        for key in spec_keys:
+            spec = merged[key]
+            if not isinstance(spec, dict):
                 continue
+            fields: set[str] = set()
             for ck in ("diagnostics", "forecast_evaluation"):
-                c = v.get(ck)
+                c = spec.get(ck)
                 if isinstance(c, dict):
-                    fields.update(c.keys())
-            fields.update(k for k, val in v.items() if not isinstance(val, dict | list))
-            cf = v.get("coefficients")
-            if isinstance(cf, dict):
-                coeffs.update(cf.keys())
+                    fields.update(k for k, v in c.items() if not isinstance(v, dict | list))
+            fields.update(k for k, v in spec.items() if not isinstance(v, dict | list))
+            # Nested scalars are reachable too, under their path with dots
+            # flattened to underscores — that is the form the renderer's
+            # token-subset descent matches.
+            for path, node in _nested_paths(spec).items():
+                if "." not in path:
+                    continue
+                head = path.partition(".")[0]
+                if path.count(".") == 1 and head in ("diagnostics", "forecast_evaluation"):
+                    continue  # already listed above under its bare name
+                if _scalar_at(path, node)[1]:
+                    fields.add(path.replace(".", "_"))
+            cf = spec.get("coefficients")
+            coeffs = sorted(cf) if isinstance(cf, dict) else []
+            blocks.append(f"  {key}:\n    stat `field`: {sorted(fields)}\n    coefficient `var`: {coeffs}")
 
-        unresolved_lines = sorted({f"  - {u.kind}: {u.ref!r}" for u in unresolved})
+        unresolved_lines = sorted(
+            {f"  - {u.kind} {u.ref!r}" + (f" in column {u.column!r}" if u.column else "") for u in unresolved}
+        )
         return (
             "Your `table_spec.json` references keys that do not exist in the "
             "estimation JSON, so those table cells rendered blank (`---`). "
             "Rewrite `table_spec.json` so that EVERY `spec_key`, coefficient "
-            "`var`, and stat `field` is an EXACT key present in the JSON below. "
+            "`var`, and stat `field` is an EXACT name from the inventory below. "
             "Do not invent or abbreviate names; copy them verbatim. Keep the "
-            "same table structure; only correct the keys. Output the corrected "
-            "`table_spec.json` (and only that file).\n\n"
+            "same table structure; only correct the keys.\n\n"
+            "Two rules the inventory encodes:\n"
+            "  1. A stat `field` resolves ONLY inside its own column's spec "
+            "object. If a field is listed under one spec key and not another, a "
+            "column on that other spec key CANNOT use it — drop the row, or drop "
+            "that column from the row. Never borrow a number across columns.\n"
+            "  2. Ambiguous names do not resolve. If you want `ar1` and the "
+            "inventory offers `ar1_pre` and `ar1_post`, name the one you mean.\n\n"
             "Unresolved references to fix:\n" + "\n".join(unresolved_lines) + "\n\n"
-            f"Available `spec_key` values (top-level keys): {spec_keys}\n"
-            f"Available stat `field` names: {sorted(fields)}\n"
-            f"Available coefficient `var` names: {sorted(coeffs)}\n"
+            "Available references, by spec key:\n" + "\n".join(blocks) + "\n\n"
+            "Output the corrected `table_spec.json` (and only that file).\n"
         )
 
     def _collect_revision_findings(self, scores: list) -> list:
