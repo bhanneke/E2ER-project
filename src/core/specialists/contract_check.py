@@ -349,6 +349,18 @@ def write_contract_feedback(workspace: Path, specialist: str, summary: str) -> N
         logger.warning("could not persist contract feedback for %s: %s", specialist, e)
 
 
+def has_contract_feedback(workspace: Path, specialist: str) -> bool:
+    """Whether a violation note is waiting for this specialist's next attempt.
+
+    Non-consuming, unlike :func:`read_contract_feedback` — for callers that
+    only need to know whether the next attempt will be *coached* (retrying a
+    contract violation with the reason in the prompt) or *blind* (retrying a
+    crash or a timeout). Reading it to decide that would eat the note the
+    retry is about to consume.
+    """
+    return (workspace / _FEEDBACK_DIR / f"{specialist}.txt").is_file()
+
+
 def read_contract_feedback(workspace: Path, specialist: str) -> str | None:
     """Return a ready-to-inject prompt section for a prior contract violation,
     consuming the note (one violation feeds exactly one retry). ``None`` when

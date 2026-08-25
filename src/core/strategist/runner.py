@@ -12,7 +12,11 @@ from ...modules.llm.base import LLMBackend, ToolHandler
 from ..governance import DEFAULT_REGIME, KIND_RELIABILITY
 from ..governance import enforces as governance_enforces
 from ..specialists.contracts import Contribution, WorkOrder
-from ..specialists.dispatcher import execute_parallel, execute_with_dependencies
+from ..specialists.dispatcher import (
+    MAX_SPECIALIST_ATTEMPTS,
+    execute_parallel,
+    execute_with_dependencies,
+)
 from ..specialists.registry import POLISH_SPECIALISTS, REVIEWER_SPECIALISTS, SPECIALIST_ARTIFACTS
 from ..strategist.actions import StrategistDecision
 from ..strategist.engine import StrategistEngine
@@ -47,7 +51,11 @@ _MAX_PIVOTS = 1
 # - retrying past the third attempt never recovered the data layer
 # 3 is the cheapest threshold that doesn't false-trip on transient errors
 # (one bad attempt + one retry + one confirmation that it's not transient).
-_MAX_SPECIALIST_ATTEMPTS = 3
+#
+# Defined in the dispatcher so the sequential path (here) and the parallel
+# path (execute_parallel) share ONE budget. They used to disagree: this
+# constant was local, so parallel batches got no retry at all.
+_MAX_SPECIALIST_ATTEMPTS = MAX_SPECIALIST_ATTEMPTS
 # v0.6 step 5: budget for the verify_numbers auto-patch loop. When the
 # pre-review gate finds critical mismatches, the runner dispatches
 # patch_revisor with the mismatch findings, re-runs verify_numbers, and

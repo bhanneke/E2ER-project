@@ -13,6 +13,23 @@ from ..specialists.contracts import Contribution, WorkOrder
 
 logger = get_logger(__name__)
 
+# Attempts per work order, counting the first. Shared with the runner's
+# sequential path, which imports it as `_MAX_SPECIALIST_ATTEMPTS` — one budget,
+# one number, whichever path a specialist happens to be dispatched from.
+#
+# The parallel path used to have no retry at all, and that asymmetry killed the
+# 2026-08-20 canary. `data_architect` returned a zero-tool-call turn, the
+# contract check correctly flipped it to a failure, and because the batch held
+# exactly one work order (concurrency 1) "1/1 specialists failed" was also
+# "every specialist failed". Three seconds from one flaky turn to a dead run.
+#
+# The retry is not a blind re-roll. `run_specialist` persists the violation
+# (`write_contract_feedback`) and the next attempt consumes it into its prompt
+# (`read_contract_feedback`), so attempt 2 is told exactly what attempt 1 got
+# wrong. That coaching machinery was built for this and, until now, only the
+# sequential path could reach it.
+MAX_SPECIALIST_ATTEMPTS = 3
+
 
 def _inject_context(work_order: WorkOrder, workspace: Path) -> WorkOrder:
     """Populate work_order.context and ensure output_file is set.
@@ -135,6 +152,10 @@ async def execute_parallel(
 ) -> list[Contribution]:
     """Execute multiple work orders concurrently, bounded by max_concurrent_specialists.
 
+    Each work order gets up to MAX_SPECIALIST_ATTEMPTS attempts; a contract
+    violation on one attempt is fed back into the next one's prompt. Only a work
+    order that exhausts its budget counts as failed.
+
     Per-specialist failures are caught inside execute_work_order and surface as
     Contribution(success=False). This wrapper logs an aggregate failure summary
     and raises if every specialist in the batch failed (so callers fail fast
@@ -156,26 +177,72 @@ async def execute_parallel(
     sem = asyncio.Semaphore(get_settings().max_concurrent_specialists)
 
     async def _bounded(wo: WorkOrder) -> Contribution:
-        async with sem:
-            return await execute_work_order(
-                wo,
-                backend,
-                workspace,
-                model,
-                extra_tools,
-                extra_handlers,
-                backend_name,
-                governance,
-            )
+        """One work order, retried until it succeeds or exhausts its budget.
+
+        The semaphore is acquired per attempt rather than held across the whole
+        retry chain, so a specialist working through its retries doesn't also
+        squat a concurrency slot its peers could be using.
+        """
+        from .contract_check import has_contract_feedback
+
+        contribution: Contribution | None = None
+        for attempt in range(1, MAX_SPECIALIST_ATTEMPTS + 1):
+            if contribution is not None:
+                # Retries cost real money, and a parallel batch runs entirely
+                # between the runner's phase-boundary budget checks — re-check
+                # rather than let a retrying batch spend past the cap.
+                await check_budget_by_paper_id(wo.paper_id)
+                logger.warning(
+                    "%s: attempt %d/%d failed (%s) — retrying %s",
+                    wo.specialist,
+                    attempt - 1,
+                    MAX_SPECIALIST_ATTEMPTS,
+                    (contribution.error or "no error recorded")[:200],
+                    (
+                        "with the contract violation fed back into the prompt"
+                        if has_contract_feedback(workspace, wo.specialist)
+                        else "(no contract feedback to feed back — blind retry)"
+                    ),
+                )
+            async with sem:
+                contribution = await execute_work_order(
+                    wo,
+                    backend,
+                    workspace,
+                    model,
+                    extra_tools,
+                    extra_handlers,
+                    backend_name,
+                    governance,
+                )
+            if contribution.success:
+                if attempt > 1:
+                    logger.info(
+                        "%s: recovered on attempt %d/%d",
+                        wo.specialist,
+                        attempt,
+                        MAX_SPECIALIST_ATTEMPTS,
+                    )
+                return contribution
+
+        assert contribution is not None  # the loop runs at least once
+        logger.error(
+            "%s: exhausted %d attempts — %s",
+            wo.specialist,
+            MAX_SPECIALIST_ATTEMPTS,
+            (contribution.error or "no error recorded")[:200],
+        )
+        return contribution
 
     contributions = await asyncio.gather(*(_bounded(wo) for wo in work_orders))
 
     failed = [c for c in contributions if not c.success]
     if failed:
         logger.warning(
-            "execute_parallel: %d/%d specialists failed: %s",
+            "execute_parallel: %d/%d specialists failed after %d attempts each: %s",
             len(failed),
             len(contributions),
+            MAX_SPECIALIST_ATTEMPTS,
             ", ".join(f"{c.specialist}({(c.error or '?')[:60]})" for c in failed),
         )
 
