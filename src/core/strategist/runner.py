@@ -175,6 +175,15 @@ class PipelineRunner:
         # Initialise outside try/except so the except branch can reference state
         # if setup itself fails. Without this, a crash in load() or _update_status()
         # propagates silently from the background task with no event log.
+        # Stamp WHICH CODE is about to run, before anything can fail. Lands in
+        # the paper's event stream, so it travels with the run into the export
+        # bundle and the experiment harvest — the only place an after-the-fact
+        # reader can check the result against the code that produced it.
+        from ..run_identity import identity_summary, run_identity
+
+        logger.info("Run identity for paper %s: %s", self._paper_id, identity_summary())
+        await log_event(self._paper_id, "run_identity", payload=run_identity())
+
         state: PipelineState | None = None
         try:
             state = PipelineState.load(self._workspace, self._paper_id, self._mode)

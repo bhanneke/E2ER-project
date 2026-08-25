@@ -41,6 +41,11 @@ ROW_FIELDS = (
     "backend",
     "repeat",
     "paper_id",
+    # Which code produced this row. Harvested from the run's own `run_identity`
+    # event — i.e. reported by the server process that ran it, not assumed from
+    # the driver's working tree. See src/core/run_identity.py.
+    "code_sha",
+    "code_dirty",
     "status",
     "completed",
     # Contradicted or absent — the draft asserts something the sources refute.
@@ -181,16 +186,40 @@ def _citation_stats(root: Path) -> tuple[int, int, int, bool]:
     return int(ci.get("missing_in_bib", 0) or 0), int(ci.get("unverifiable", 0) or 0), total, skipped
 
 
+def _payload(event: dict) -> dict:
+    """An event's payload as a dict. The API hands it back as JSON text over
+    HTTP and as a dict from the DB driver, so both have to be tolerated."""
+    payload = event.get("payload")
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except (ValueError, TypeError):
+            payload = {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _identity_from_events(events: list[dict]) -> tuple[str, str]:
+    """(code_sha, code_dirty) from the run's `run_identity` event.
+
+    Empty strings when the run predates the stamp or never emitted it — which
+    is itself the finding: that row cannot be attributed to a commit. `dirty`
+    stays distinct from `unknown`, because a clean tree and an unasked question
+    are different claims about the same SHA.
+    """
+    for e in events or []:
+        if e.get("event_type") != "run_identity":
+            continue
+        p = _payload(e)
+        sha = p.get("git_short_sha") or p.get("git_sha") or ""
+        dirty = p.get("git_dirty")
+        return str(sha), ("" if dirty is None else ("dirty" if dirty else "clean"))
+    return "", ""
+
+
 def _gate_event_stats(events: list[dict]) -> tuple[int, int]:
     shadow_fail = enforced_block = 0
     for e in events or []:
-        payload = e.get("payload")
-        if isinstance(payload, str):
-            try:
-                payload = json.loads(payload)
-            except (ValueError, TypeError):
-                payload = {}
-        payload = payload if isinstance(payload, dict) else {}
+        payload = _payload(e)
         if payload.get("passed") is not False:
             continue
         if e.get("event_type") == "gate_shadow":
@@ -231,12 +260,15 @@ def harvest_run(
 
     skipped = [n for n, s in (("numbers", nums.skipped), ("citations", cite_skipped)) if s]
     shadow_fail, enforced_block = _gate_event_stats(events)
+    code_sha, code_dirty = _identity_from_events(events)
     return {
         "rq_idx": rq_idx,
         "regime": regime,
         "backend": backend,
         "repeat": repeat,
         "paper_id": paper_id or "",
+        "code_sha": code_sha,
+        "code_dirty": code_dirty,
         "status": status,
         "completed": int(status == "completed"),
         "critical_mismatches": nums.critical,
@@ -394,6 +426,7 @@ def write_summary(out_dir: Path, rows: list[dict], config: ExperimentConfig) -> 
             f"{crit} | {prose} | {miss} | {unv} | {_mean(rs, 'shadow_gate_failures'):.2f} |"
         )
     lines.append("")
+    lines += _provenance_lines(rows)
     unmeasured = [r for r in rows if not r.get("measured")]
     if unmeasured:
         lines += [
@@ -411,6 +444,42 @@ def write_summary(out_dir: Path, rows: list[dict], config: ExperimentConfig) -> 
         lines.append("")
 
     (out_dir / "summary.md").write_text("\n".join(lines), encoding="utf-8")
+
+
+def _provenance_lines(rows: list[dict]) -> list[str]:
+    """Say which code produced these rows, and say so loudly when the answer is
+    not "one clean commit".
+
+    A cell whose runs came from different commits is not n repeats of one
+    pipeline; it is one run each of n pipelines, and its variance is
+    uninterpretable. That is worth a sentence in the summary rather than a
+    column a reader has to notice.
+    """
+    shas = {r.get("code_sha", "") for r in rows if r.get("code_sha")}
+    unstamped = [r for r in rows if not r.get("code_sha")]
+    dirty = [r for r in rows if r.get("code_dirty") == "dirty"]
+    if not shas and not unstamped:
+        return []
+
+    out = ["## Provenance", ""]
+    if shas:
+        out.append(f"Code: {', '.join(sorted(shas))} (reported by the server process that ran each paper).")
+    if len(shas) > 1:
+        out.append(
+            "**These runs did NOT come from one commit.** Between-run variance here "
+            "mixes the pipeline's variance with the difference between versions of it, "
+            "and the cell should not be reported as repeats of a single system."
+        )
+    if dirty:
+        out.append(
+            f"**{len(dirty)}/{len(rows)} run(s) came from a DIRTY working tree** — the commit "
+            "does not fully describe the code that ran, so those rows are not reproducible "
+            "from the SHA alone."
+        )
+    if unstamped:
+        out.append(f"{len(unstamped)}/{len(rows)} run(s) carry no identity stamp and cannot be attributed to a commit.")
+    out.append("")
+    return out
 
 
 def _design_dispersion(rows: list[dict], config: ExperimentConfig) -> list[str]:
@@ -490,6 +559,50 @@ def _default_events(paper_id: str) -> list:
         return []
 
 
+def server_identity() -> dict:
+    """The identity the live server reports for itself, or {} if it won't say."""
+    import httpx
+
+    from ...cli_run import _api_root
+
+    try:
+        r = httpx.get(f"{_api_root()}/health", timeout=15.0)
+        if r.status_code != 200:
+            return {}
+        return (r.json() or {}).get("identity") or {}
+    except httpx.HTTPError:
+        return {}
+
+
+def check_server_is_current(identity: dict) -> str | None:
+    """Warn if the server is running code older than the working tree.
+
+    The server does not reload on edit, so a server started before your last
+    commit is still running the old code — and it will answer every request
+    perfectly while doing so. This is exactly how the 2026-08-20 canary was
+    measured against pre-fix code. Returns a warning string, or None when the
+    server matches the tree (or when there is no way to tell).
+    """
+    from ..run_identity import _git
+
+    server_sha = identity.get("git_sha")
+    local_sha = _git("rev-parse", "HEAD")
+    if not server_sha or not local_sha:
+        return None
+    if server_sha == local_sha:
+        if identity.get("git_dirty"):
+            return (
+                f"Server is at {server_sha[:7]} with UNCOMMITTED changes — results from this "
+                "run will not be reproducible from that SHA alone."
+            )
+        return None
+    return (
+        f"Server is running {server_sha[:7]} but the working tree is at {local_sha[:7]}. "
+        "The API does not reload on edit: this run will measure the code the server "
+        "booted with, NOT your current tree. Restart the server before spending a run."
+    )
+
+
 def run_from_config(config: ExperimentConfig, out_dir: str | Path, monitor_seconds: float = 3600.0) -> list[dict]:
     """Run the experiment against a live (or auto-started) API server."""
     from ...cli_run import _ensure_api_up
@@ -497,6 +610,16 @@ def run_from_config(config: ExperimentConfig, out_dir: str | Path, monitor_secon
     ok, err = _ensure_api_up()
     if not ok:
         raise RuntimeError(f"experiment driver: API not reachable: {err}")
+
+    # Ask the server what it is running, before spending hours on the answer.
+    identity = server_identity()
+    out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "run_identity.json").write_text(json.dumps(identity, indent=2), encoding="utf-8")
+    warning = check_server_is_current(identity)
+    if warning:
+        print(f"WARNING: {warning}")
+
     return run_experiment(
         config,
         out_dir,

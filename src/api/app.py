@@ -228,6 +228,12 @@ async def _tuple_is_proven(model: str, methodology: str, mode: str) -> bool:
 @app.on_event("startup")
 async def _log_config() -> None:
     s = get_settings()
+    # Capture identity NOW, at boot, so the cached SHA is the one this process
+    # actually loaded. Capturing lazily on first run would record whatever the
+    # tree had drifted to by then — the stale-server hazard, one level up.
+    from ..core.run_identity import identity_summary
+
+    logger.info("Run identity: %s", identity_summary())
     logger.info(
         "E2ER v3 starting | backend=%s model=%s data=%s lit_kb=%s github=%s default_cap=$%.2f",
         s.llm_backend,
@@ -1086,7 +1092,12 @@ async def get_usage_summary() -> dict[str, Any]:
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "service": "e2er-v3"}
+    """Health plus the identity of THIS process — the authoritative answer to
+    "which code is the server actually running?". The server does not reload on
+    edit, so a client must ask rather than assume."""
+    from ..core.run_identity import run_identity
+
+    return {"status": "ok", "service": "e2er-v3", "identity": run_identity()}
 
 
 # --- Dashboard (Jinja2 + HTMX) ---
