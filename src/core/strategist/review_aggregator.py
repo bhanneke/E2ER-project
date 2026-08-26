@@ -12,6 +12,14 @@ class ReviewScore:
     recommendation: str  # accept, major_revision, minor_revision, reject
     comments: str = ""
     weight: float = 1.0
+    # Where the score was read from: "file" (the reviewer wrote its artifact) or
+    # "transcript" (the file was absent and the score was salvaged from the
+    # reviewer's reply text). A salvaged score still counts toward the verdict,
+    # but it means no review FILE exists — so the deep-revision round has no
+    # referee report to work from and the export bundle ships without one.
+    # Recording it makes a degraded panel visible in the artifact instead of
+    # only in a log line.
+    source: str = "file"
 
 
 @dataclass

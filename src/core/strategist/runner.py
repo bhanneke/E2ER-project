@@ -1010,22 +1010,54 @@ class PipelineRunner:
             if c.specialist in REVIEWER_SPECIALISTS and c.specialist not in seen:
                 score = parse_review_output(c.specialist, c.output)
                 if score:
+                    # Salvaged from the reply text because no file was written.
+                    # The verdict still gets its score, but no review FILE
+                    # exists — so _referee_feedback_text has nothing to hand the
+                    # revision round, and the bundle ships without the report.
+                    score.source = "transcript"
                     scores.append(score)
                     seen.add(c.specialist)
         return scores
 
     def _write_review_aggregation(self, result) -> None:
-        (self._workspace / "review_aggregation.json").write_text(
-            json.dumps(
-                {
-                    "verdict": result.verdict,
-                    "weighted_avg": result.weighted_avg,
-                    "rule_triggered": result.rule_triggered,
-                    "rationale": result.rationale,
-                },
-                indent=2,
-            )
-        )
+        # Panel composition travels WITH the verdict. A verdict computed on two
+        # reviewers and one computed on six were previously indistinguishable in
+        # this file — the shortfall existed only as a log warning, which no
+        # reader of the artifact (or of the export bundle) ever sees.
+        doc: dict[str, Any] = {
+            "verdict": result.verdict,
+            "weighted_avg": result.weighted_avg,
+            "rule_triggered": result.rule_triggered,
+            "rationale": result.rationale,
+        }
+        # Omitted, not zeroed, when the scores aren't available: an absent panel
+        # block means "not recorded", where `reported: 0` would assert that no
+        # reviewer reported. Writing the verdict must never depend on this.
+        scores = getattr(result, "scores", None)
+        if scores is not None:
+            reported = [s.reviewer for s in scores]
+            salvaged = [s.reviewer for s in scores if getattr(s, "source", "file") != "file"]
+            doc["panel"] = {
+                "expected": len(REVIEWER_SPECIALISTS),
+                "reported": len(reported),
+                "complete": len(reported) == len(REVIEWER_SPECIALISTS),
+                "missing": sorted(set(REVIEWER_SPECIALISTS) - set(reported)),
+                # Scored from the reviewer's reply text because it never wrote
+                # its file: the score counts, but no report exists for the
+                # revision round or the bundle.
+                "scored_without_a_review_file": sorted(salvaged),
+                "scores": [
+                    {
+                        "reviewer": s.reviewer,
+                        "score": s.score,
+                        "recommendation": s.recommendation,
+                        "weight": s.weight,
+                        "source": getattr(s, "source", "file"),
+                    }
+                    for s in scores
+                ],
+            }
+        (self._workspace / "review_aggregation.json").write_text(json.dumps(doc, indent=2))
 
     def _referee_feedback_text(self, max_chars: int = 15000) -> str:
         """Concatenate the reviewer reports from disk for the deep-revision
