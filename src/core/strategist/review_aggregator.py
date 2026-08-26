@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 
@@ -214,16 +215,50 @@ def parse_review_output(reviewer: str, raw_output: str) -> ReviewScore | None:
     if score is None:
         return None
 
-    rec_match = re.search(
-        r"(accept|minor.revision|major.revision|reject)",
-        raw_output,
-        re.IGNORECASE,
-    )
-    recommendation = rec_match.group(1).lower().replace(" ", "_") if rec_match else "major_revision"
-
     return ReviewScore(
         reviewer=reviewer,
         score=min(10.0, max(0.0, score)),
-        recommendation=recommendation,
+        recommendation=parse_recommendation(raw_output),
         comments=raw_output[:500],
     )
+
+
+# accept | minor revision | major revision | reject, tolerating the separators
+# reviewers actually use ("Major Revision", "major-revision", "major_revision").
+_REC_ALTERNATIVES = r"accept|minor[\s_-]*revision|major[\s_-]*revision|reject"
+
+
+def parse_recommendation(raw_output: str) -> str:
+    """The reviewer's stated recommendation.
+
+    Prefers the mandatory closing line the reviewer prompt calls
+    "parser-enforced"::
+
+        RECOMMENDATION: Major Revision
+
+    Canary #5 (2026-08-26) is why this is anchored. The previous version ran an
+    unanchored substring search over the whole review body and took the FIRST
+    hit, so `accept` matched inside "unacceptable" and `reject` inside
+    "rejected". All six reviewers stated "Major Revision"; five were recorded as
+    something else — three `accept` (from "unacceptable", "acceptable",
+    "Acceptable") and two `reject` (from "rejected"). Only `technical_reviewer`
+    came out right, and only because its prose happened to reach the real line
+    before either word appeared.
+
+    The fallback scan uses WORD BOUNDARIES and takes the LAST match rather than
+    the first: `\\baccept\\b` cannot match "acceptable", and the recommendation
+    is stated at the end, after any prose that discusses accepting or rejecting.
+
+    Defaults to ``major_revision`` when nothing parses — the neutral verdict,
+    neither waving a paper through nor failing it on a parse miss.
+    """
+    for pattern, flags in (
+        # The mandatory closing line. Tolerates markdown around the label and
+        # the value: "**RECOMMENDATION:** Reject", "## RECOMMENDATION: Accept".
+        (rf"^[\s*#>\-]*RECOMMENDATION[\s*:\-]*({_REC_ALTERNATIVES})", re.IGNORECASE | re.MULTILINE),
+        (rf"\b({_REC_ALTERNATIVES})\b", re.IGNORECASE),
+    ):
+        matches = re.findall(pattern, raw_output, flags)
+        if matches:
+            return re.sub(r"[\s_-]+", "_", matches[-1].strip().lower())
+    return "major_revision"
