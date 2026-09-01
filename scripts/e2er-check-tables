@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# Table-spec checker for E2ER specialists — the write→render→fix loop.
+#
+# WHY THIS EXISTS
+#
+# `e2er-run` gave the two script-writing specialists a guarded way to run what
+# they wrote and read the traceback. `table_spec.json` is written just as
+# blind by paper_drafter and repaired just as blind by section_writer, and
+# neither can render — so a spec that references a key the analysis JSON does
+# not have is only discovered by the orchestrator, a whole dispatch later.
+#
+# Canary #6 is the cost: a `comparison` column asked for fields that would have
+# to be computed, ten references went unresolved, and the repair pass made it
+# worse (7 -> 10) because it was guessing too.
+#
+# GUARANTEES
+#
+#   * takes NO arguments — there is nothing to smuggle. The workspace is
+#     always the current directory, which the runner sets to the paper's
+#     workspace (modules/llm/claude_code.py sets cwd=workspaces/<paper_id>).
+#   * read-only with respect to anything the pipeline trusts: it re-renders,
+#     which is idempotent, and the runner re-renders again before the verify
+#     gate and compile, so provenance comes from that render.
+#
+# Exit codes:  0 = everything resolved · 1 = unresolved references · 2 = could
+# not check (no spec / unparseable / bad usage)
+#
+# Usage:  e2er-check-tables
+
+set -euo pipefail
+
+if [ "$#" -ne 0 ]; then
+  echo "e2er-check-tables: takes no arguments (checks table_spec.json in the current workspace)" >&2
+  exit 2
+fi
+
+# Capture the workspace BEFORE cd'ing to the project root — unlike e2er-data,
+# this tool's subject is the directory it was called from.
+WORKSPACE="$(pwd -P)"
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$PROJECT_ROOT"
+
+# The runner injects E2ER_PYTHON pointing at its own sys.executable, so the
+# subprocess uses the interpreter that loaded the project. Fall back to common
+# names so a manual invocation from a shell also works.
+if [[ -n "${E2ER_PYTHON:-}" ]] && [[ -x "$E2ER_PYTHON" ]]; then
+    PY="$E2ER_PYTHON"
+elif command -v python3.12 >/dev/null 2>&1; then
+    PY="$(command -v python3.12)"
+elif command -v python3.11 >/dev/null 2>&1; then
+    PY="$(command -v python3.11)"
+elif command -v python3 >/dev/null 2>&1; then
+    PY="$(command -v python3)"
+else
+    echo "e2er-check-tables: cannot find a Python interpreter. The project requires Python 3.11+." >&2
+    exit 2
+fi
+
+exec "$PY" -m src.core.renderer.check_tables "$WORKSPACE"
