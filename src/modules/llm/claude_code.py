@@ -86,6 +86,19 @@ _DEFAULT_ALLOWED_TOOLS = [
 _SCRIPT_WRITING_SPECIALISTS = frozenset({"econometrics_specialist", "data_analyst"})
 _RUN_TOOL = "Bash(e2er-run:*)"
 
+# Specialists that author or repair table_spec.json. paper_drafter writes it as a
+# sidecar; section_writer repairs it when the render halt fires. Neither can
+# render, so both write blind — the same defect e2er-run fixed for scripts, one
+# artifact over. `e2er-check-tables` renders the spec and reports the unresolved
+# references plus the keys each column's object actually has.
+#
+# It takes no arguments and its subject is always cwd (the paper's workspace),
+# so there is nothing to smuggle. It is a report, not a gate: the runner
+# re-renders deterministically before the verify gate and compile, so provenance
+# still comes from that render.
+_SPEC_WRITING_SPECIALISTS = frozenset({"paper_drafter", "section_writer"})
+_CHECK_TABLES_TOOL = "Bash(e2er-check-tables:*)"
+
 #: How much of a backend error to keep. 500 chars was too little: the
 #: 2026-08-03 pilot lost eight cells to an unexplained CLI failure because
 #: every copy of the message was clipped before the informative part. A
@@ -103,10 +116,16 @@ def _clip(text: str, limit: int = _MAX_ERROR_CHARS) -> str:
 
 
 def allowed_tools_for(specialist: str | None) -> list[str]:
-    """CLI tool allowlist for a specialist. Script writers get `e2er-run`."""
+    """CLI tool allowlist for a specialist.
+
+    Script writers get `e2er-run`; table_spec authors get `e2er-check-tables`.
+    Both are the same idea: see what you wrote before the orchestrator does.
+    """
     tools = list(_DEFAULT_ALLOWED_TOOLS)
     if specialist in _SCRIPT_WRITING_SPECIALISTS:
         tools.append(_RUN_TOOL)
+    if specialist in _SPEC_WRITING_SPECIALISTS:
+        tools.append(_CHECK_TABLES_TOOL)
     return tools
 
 

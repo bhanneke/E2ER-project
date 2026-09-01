@@ -19,7 +19,11 @@ import pytest
 
 from src.core.specialists.base import _SCRIPT_WRITING_SPECIALISTS, _build_system_prompt
 from src.core.specialists.post_execution import EXECUTION_CONVENTIONS
-from src.modules.llm.claude_code import _DEFAULT_ALLOWED_TOOLS, allowed_tools_for
+from src.modules.llm.claude_code import (
+    _DEFAULT_ALLOWED_TOOLS,
+    _SPEC_WRITING_SPECIALISTS,
+    allowed_tools_for,
+)
 
 WRAPPER = Path(__file__).resolve().parent.parent / "scripts" / "e2er-run"
 
@@ -32,7 +36,21 @@ def test_script_writers_get_the_runner():
         assert "Bash(e2er-run:*)" in allowed_tools_for(specialist)
 
 
-@pytest.mark.parametrize("specialist", ["paper_drafter", "section_writer", "referee_1", None])
+def test_spec_writers_get_the_checker():
+    """paper_drafter authors table_spec.json and section_writer repairs it.
+    Both wrote blind until `e2er-check-tables` — the same gap `e2er-run` closed
+    for scripts, one artifact over."""
+    for specialist in _SPEC_WRITING_SPECIALISTS:
+        assert "Bash(e2er-check-tables:*)" in allowed_tools_for(specialist)
+
+
+def test_the_two_grants_do_not_displace_each_other():
+    assert "Bash(e2er-run:*)" in allowed_tools_for("econometrics_specialist")
+    assert "Bash(e2er-check-tables:*)" not in allowed_tools_for("econometrics_specialist")
+    assert "Bash(e2er-run:*)" not in allowed_tools_for("paper_drafter")
+
+
+@pytest.mark.parametrize("specialist", ["referee_1", "abstract_writer", "literature_scanner", None])
 def test_everyone_else_gets_the_default_set(specialist):
     assert allowed_tools_for(specialist) == _DEFAULT_ALLOWED_TOOLS
 

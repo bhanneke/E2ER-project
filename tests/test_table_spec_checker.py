@@ -325,3 +325,7 @@ def test_wrapper_checks_the_directory_it_was_called_from(canary6: Path):
     assert proc.returncode == EXIT_UNRESOLVED, proc.stderr
     assert "comparison" in proc.stdout
     assert "delta_p11" in proc.stdout
+
+
+# The tool grant itself is asserted in tests/test_specialist_run_loop.py, which
+# is where the CLI tool profiles live.

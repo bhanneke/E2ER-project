@@ -97,11 +97,27 @@ flagged as unresolved.
    `---` and is reported in `table_render_report.json`. After rendering, if
    that report lists unresolved references, fix your `table_spec.json` to use
    the exact keys it lists as available.
-3. `filename` ends in `.tex`, has no path separators, and is what you `\input`.
-4. `label` is what you `\ref`. Keep them consistent across the spec and prose.
-5. One table per results display (main results, robustness, …). Put each in its
+3. **Check the spec before you finish: run `e2er-check-tables`.** It renders
+   your `table_spec.json` against the analysis JSON and prints every reference
+   that did not resolve, together with the field names each column's object
+   actually has. It takes no arguments. Exit 0 means everything resolved; exit
+   1 lists what to fix. Iterate until it exits 0 — do not hand back a spec you
+   have not checked.
+
+   The renderer LOOKS UP each field inside its own column's object and never
+   computes. So a 'Change' / 'Difference' / '% change' column cannot ask for
+   the same fields as the level columns; it can only use keys that already
+   exist in that object, such as `delta_*` / `pct_change_*`. If the comparison
+   you want has not been computed, ask for it in the analysis rather than
+   naming a field that is not there.
+
+   Every `{"type": "stat"}` row needs a non-empty `field`. A row with an
+   empty `field` resolves to nothing and is reported as unresolved.
+4. `filename` ends in `.tex`, has no path separators, and is what you `\input`.
+5. `label` is what you `\ref`. Keep them consistent across the spec and prose.
+6. One table per results display (main results, robustness, …). Put each in its
    own entry in the `tables` list.
-6. `caption`, `notes`, `header`, and row `label` are LaTeX — write them as you
+7. `caption`, `notes`, `header`, and row `label` are LaTeX — write them as you
    want them typeset (math like `$R^2$` is fine).
 
 ## What still goes in hand-written LaTeX
