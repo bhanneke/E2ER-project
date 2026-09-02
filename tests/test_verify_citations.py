@@ -437,12 +437,75 @@ async def test_verify_skipped_when_no_cites(tmp_path: Path):
     assert report.passed is True  # skipped == pass per the verify_numbers convention
 
 
-async def test_verify_skipped_when_no_bib(tmp_path: Path):
+async def test_citing_with_no_bibliography_fails_rather_than_skips(tmp_path: Path):
+    """A draft that cites with no bibliography is the hallucinated-citation
+    case, not an unmeasurable one.
+
+    This used to skip with passed=True. The 2026-09-01 repeats cell shows what
+    that costs: paper 7274dddc cited 14 distinct keys and ee229dca 19, both
+    with no .bib and no \\bibitem, and the gate and the experiment's
+    fabrication count reported both clean.
+    """
     draft = tmp_path / "draft.tex"
-    draft.write_text(r"See \cite{foo}.", encoding="utf-8")
-    # No references.bib + no \bibitem → skipped.
+    draft.write_text(r"See \cite{foo} and \citep{bar, baz}.", encoding="utf-8")
+
     report = await verify(draft)
-    assert report.skipped_reason and "no bibliography" in report.skipped_reason
+
+    assert report.skipped_reason is None, "no bibliography is a finding, not a skip"
+    assert report.passed is False
+    assert report.total_cites == 3
+    assert report.missing_in_bib == 3
+    assert report.bibliography_source is None
+    assert {c.cite_key for c in report.missing_checks} == {"foo", "bar", "baz"}
+
+
+async def test_bibliography_source_records_the_bib_actually_used(tmp_path: Path):
+    draft = tmp_path / "draft.tex"
+    draft.write_text(r"\cite{x2020}", encoding="utf-8")
+    bib = tmp_path / "references.bib"
+    bib.write_text("@article{x2020, title={T}, year={2020}}", encoding="utf-8")
+
+    none_ = AsyncMock(return_value=None)
+    empty = AsyncMock(return_value=_search_with())
+    with (
+        patch("src.core.pipeline.verify_citations.openalex.fetch_by_doi", new=none_),
+        patch("src.core.pipeline.verify_citations.semantic_scholar.fetch_by_doi", new=none_),
+        patch("src.core.pipeline.verify_citations.crossref.fetch_by_doi", new=none_),
+        patch("src.core.pipeline.verify_citations.openalex.search_papers", new=empty),
+        patch("src.core.pipeline.verify_citations.semantic_scholar.search_papers", new=empty),
+        patch("src.core.pipeline.verify_citations.crossref.search_papers", new=empty),
+    ):
+        report = await verify(draft)
+
+    assert report.bibliography_source == str(bib)
+    assert report.missing_in_bib == 0
+
+
+async def test_bibitem_only_draft_records_its_source(tmp_path: Path):
+    """A hand-rolled thebibliography still counts as a bibliography."""
+    draft = tmp_path / "draft.tex"
+    draft.write_text(
+        r"\cite{k1}"
+        "\n\\begin{thebibliography}{9}\n"
+        r"\bibitem{k1} A. Author. A Real Title. Journal, 2020."
+        "\n\\end{thebibliography}\n",
+        encoding="utf-8",
+    )
+    none_ = AsyncMock(return_value=None)
+    empty = AsyncMock(return_value=_search_with())
+    with (
+        patch("src.core.pipeline.verify_citations.openalex.fetch_by_doi", new=none_),
+        patch("src.core.pipeline.verify_citations.semantic_scholar.fetch_by_doi", new=none_),
+        patch("src.core.pipeline.verify_citations.crossref.fetch_by_doi", new=none_),
+        patch("src.core.pipeline.verify_citations.openalex.search_papers", new=empty),
+        patch("src.core.pipeline.verify_citations.semantic_scholar.search_papers", new=empty),
+        patch("src.core.pipeline.verify_citations.crossref.search_papers", new=empty),
+    ):
+        report = await verify(draft)
+
+    assert report.skipped_reason is None
+    assert report.missing_in_bib == 0
+    assert report.bibliography_source == "\\bibitem entries in draft"
 
 
 async def test_verify_falls_through_doi_chain_to_title_search(tmp_path: Path):

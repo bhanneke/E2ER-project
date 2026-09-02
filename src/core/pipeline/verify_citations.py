@@ -89,6 +89,11 @@ class CitationIntegrityReport:
     checks: list[CitationCheck] = field(default_factory=list)
     skipped_reason: str | None = None
     strict: bool = False
+    #: Where the bibliography came from, or None when the draft had none at all.
+    #: Distinguishes "checked against a bibliography and found gaps" from
+    #: "there was no bibliography", which are very different claims about a
+    #: draft that reports missing_in_bib > 0.
+    bibliography_source: str | None = None
 
     @property
     def conclusive(self) -> bool:
@@ -596,10 +601,34 @@ async def verify(
         for k in bibitem_keys:
             bib.setdefault(k, {"title": "", "year": "", "doi": ""})
 
-    if not bib:
-        report.skipped_reason = f"no bibliography source found (.bib at {bib_path} missing and no \\bibitem in draft)"
-        logger.warning("verify_citations: %s", report.skipped_reason)
-        return report
+    if bib:
+        report.bibliography_source = str(bib_path) if bib_path.is_file() else "\\bibitem entries in draft"
+    else:
+        # A draft that cites with NO bibliography at all is not "unmeasurable" —
+        # it is the hallucinated-citation failure this gate exists to catch, and
+        # LaTeX would emit an undefined reference for every one of these keys.
+        #
+        # Skipping here reported passed=True over 14 unbacked cites in the
+        # 2026-09-01 repeats cell (paper 7274dddc: bendavid2018etfs,
+        # parkinson1980extreme, cameron2008bootstrap, …), and zeroed
+        # `missing_in_bib` in the experiment's fabrication count — the same
+        # skipped-is-not-verified error the `conclusive` property above was
+        # added to fix. A check that examined nothing is not a check that found
+        # nothing.
+        #
+        # So there is no early return: every cite key falls through to
+        # `_bounded`, which already classifies a key absent from `bib` as
+        # missing_in_bib, and the verdict below fails. `bibliography_source`
+        # stays None to record that the bibliography was absent rather than
+        # merely incomplete. Whether that failure blocks is the governance
+        # regime's call (`_governance_enforces("citations")`), unchanged here.
+        logger.warning(
+            "verify_citations: draft cites %d key(s) but no bibliography source exists "
+            "(.bib at %s missing and no \\bibitem in draft) — every cite reports as "
+            "missing_in_bib",
+            len(cite_keys),
+            bib_path,
+        )
 
     report.total_cites = len(cite_keys)
 
