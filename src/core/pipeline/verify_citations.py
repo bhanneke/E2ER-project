@@ -604,13 +604,21 @@ async def verify(
     if bib:
         report.bibliography_source = str(bib_path) if bib_path.is_file() else "\\bibitem entries in draft"
     else:
-        # A draft that cites with NO bibliography at all is not "unmeasurable" —
-        # it is the hallucinated-citation failure this gate exists to catch, and
-        # LaTeX would emit an undefined reference for every one of these keys.
+        # A draft that cites with NO bibliography at all is not "unmeasurable".
+        # Nothing can verify those keys, and LaTeX emits an undefined reference
+        # for every one of them, so the draft does not compile.
         #
-        # Skipping here reported passed=True over 14 unbacked cites in the
-        # 2026-09-01 repeats cell (paper 7274dddc: bendavid2018etfs,
-        # parkinson1980extreme, cameron2008bootstrap, …), and zeroed
+        # Note what this is NOT evidence of. In the 2026-09-01 repeats cell
+        # (paper 7274dddc, 14 keys; ee229dca, 19) the cited works are largely
+        # REAL papers recalled from model memory — parkinson1980extreme and
+        # bendavid2018etfs both exist; cameron2008bootstrap is even present in
+        # examples/e2er_v1_bitcoin_institutionalization/references.bib. The
+        # defect is that no bibliography was ever materialised for the run, not
+        # that the model invented sources. `missing_in_bib` means "no entry
+        # backs this key", which is exactly what happened; do not read it as
+        # "fabricated".
+        #
+        # Skipping here reported passed=True over all of them and zeroed
         # `missing_in_bib` in the experiment's fabrication count — the same
         # skipped-is-not-verified error the `conclusive` property above was
         # added to fix. A check that examined nothing is not a check that found

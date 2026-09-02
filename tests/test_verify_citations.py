@@ -438,13 +438,15 @@ async def test_verify_skipped_when_no_cites(tmp_path: Path):
 
 
 async def test_citing_with_no_bibliography_fails_rather_than_skips(tmp_path: Path):
-    """A draft that cites with no bibliography is the hallucinated-citation
-    case, not an unmeasurable one.
+    """A draft that cites with no bibliography is a finding, not a skip.
 
     This used to skip with passed=True. The 2026-09-01 repeats cell shows what
     that costs: paper 7274dddc cited 14 distinct keys and ee229dca 19, both
     with no .bib and no \\bibitem, and the gate and the experiment's
     fabrication count reported both clean.
+
+    The keys themselves are largely real papers recalled from memory, so this
+    asserts "unverifiable and uncompilable", not "fabricated".
     """
     draft = tmp_path / "draft.tex"
     draft.write_text(r"See \cite{foo} and \citep{bar, baz}.", encoding="utf-8")
