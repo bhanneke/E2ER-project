@@ -21,6 +21,7 @@ from src.core.specialists.base import _SCRIPT_WRITING_SPECIALISTS, _build_system
 from src.core.specialists.post_execution import EXECUTION_CONVENTIONS
 from src.modules.llm.claude_code import (
     _DEFAULT_ALLOWED_TOOLS,
+    _LITERATURE_SPECIALISTS,
     _SPEC_WRITING_SPECIALISTS,
     allowed_tools_for,
 )
@@ -44,13 +45,25 @@ def test_spec_writers_get_the_checker():
         assert "Bash(e2er-check-tables:*)" in allowed_tools_for(specialist)
 
 
+def test_literature_specialists_get_the_literature_bridge():
+    """tool_loop ignores `tools`, so LITERATURE_TOOLS are unreachable on CLI
+    backends. e2er-lit is the only path to a bibliography there."""
+    for specialist in _LITERATURE_SPECIALISTS:
+        assert "Bash(e2er-lit:*)" in allowed_tools_for(specialist)
+
+
+def test_specialists_that_neither_find_nor_cite_literature_do_not_get_it():
+    for specialist in ("econometrics_specialist", "data_analyst", "referee_1", None):
+        assert "Bash(e2er-lit:*)" not in allowed_tools_for(specialist)
+
+
 def test_the_two_grants_do_not_displace_each_other():
     assert "Bash(e2er-run:*)" in allowed_tools_for("econometrics_specialist")
     assert "Bash(e2er-check-tables:*)" not in allowed_tools_for("econometrics_specialist")
     assert "Bash(e2er-run:*)" not in allowed_tools_for("paper_drafter")
 
 
-@pytest.mark.parametrize("specialist", ["referee_1", "abstract_writer", "literature_scanner", None])
+@pytest.mark.parametrize("specialist", ["referee_1", "abstract_writer", "identification_strategist", None])
 def test_everyone_else_gets_the_default_set(specialist):
     assert allowed_tools_for(specialist) == _DEFAULT_ALLOWED_TOOLS
 

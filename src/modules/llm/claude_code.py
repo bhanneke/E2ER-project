@@ -99,6 +99,19 @@ _RUN_TOOL = "Bash(e2er-run:*)"
 _SPEC_WRITING_SPECIALISTS = frozenset({"paper_drafter", "section_writer"})
 _CHECK_TABLES_TOOL = "Bash(e2er-check-tables:*)"
 
+# Specialists that discover literature or cite it. `tool_loop` below ignores the
+# `tools` argument entirely — the CLI only has its native set plus what is
+# allow-listed here — so LITERATURE_TOOLS (search_papers, save_bibtex, …) are
+# unreachable on every CLI backend. `e2er-lit` is their bridge, exactly as
+# `e2er-data` is the data module's.
+#
+# literature_scanner discovers and records; paper_drafter and section_writer
+# need `e2er-lit list` to know which keys are actually citable. In the
+# 2026-09-01 repeats cell none of them could reach any of it: no run wrote a
+# bibliography, and both reviewed drafts cited from memory.
+_LITERATURE_SPECIALISTS = frozenset({"literature_scanner", "paper_drafter", "section_writer"})
+_LIT_TOOL = "Bash(e2er-lit:*)"
+
 #: How much of a backend error to keep. 500 chars was too little: the
 #: 2026-08-03 pilot lost eight cells to an unexplained CLI failure because
 #: every copy of the message was clipped before the informative part. A
@@ -118,10 +131,14 @@ def _clip(text: str, limit: int = _MAX_ERROR_CHARS) -> str:
 def allowed_tools_for(specialist: str | None) -> list[str]:
     """CLI tool allowlist for a specialist.
 
-    Script writers get `e2er-run`; table_spec authors get `e2er-check-tables`.
-    Both are the same idea: see what you wrote before the orchestrator does.
+    Script writers get `e2er-run`; table_spec authors get `e2er-check-tables`;
+    literature discoverers and citers get `e2er-lit`. All three are the same
+    idea: reach the thing the SDK backends reach, and see what you wrote before
+    the orchestrator does.
     """
     tools = list(_DEFAULT_ALLOWED_TOOLS)
+    if specialist in _LITERATURE_SPECIALISTS:
+        tools.append(_LIT_TOOL)
     if specialist in _SCRIPT_WRITING_SPECIALISTS:
         tools.append(_RUN_TOOL)
     if specialist in _SPEC_WRITING_SPECIALISTS:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import time
 from pathlib import Path
 
@@ -571,6 +572,9 @@ def _build_user_prompt(work_order: WorkOrder) -> str:
     bib = _load_reference_summary(work_order.specialist)
     if bib:
         parts.append(f"\n{bib}")
+    workspace_bib = _workspace_bib_for_prompt(work_order.specialist, work_order.paper_id)
+    if workspace_bib:
+        parts.append(f"\n{workspace_bib}")
     local_pdfs = _list_local_pdfs_for_prompt(work_order.specialist, work_order.paper_id)
     if local_pdfs:
         parts.append(f"\n{local_pdfs}")
@@ -761,6 +765,61 @@ def _list_local_pdfs_for_prompt(specialist: str, paper_id: str) -> str:
         "## Local PDFs (staged from LOCAL_DATA_DIR)\n"
         "Read any of these in full via `read_reference(path=...)`:\n"
         f"{listing}{suffix}"
+    )
+
+
+_BIB_ENTRY_RE = re.compile(r"^@\w+\s*\{\s*([^,\s]+)", re.MULTILINE)
+_BIB_FIELD_RE = re.compile(r"^\s*(title|year)\s*=\s*[{\"]?(.*?)[}\"]?,?\s*$", re.MULTILINE | re.IGNORECASE)
+
+
+def _workspace_bib_for_prompt(specialist: str, paper_id: str, limit: int = 40) -> str:
+    """List the keys in the workspace's literature.bib — the only citable ones.
+
+    Deterministic counterpart to `e2er-lit list`. The 2026-09-01 repeats cell
+    failed precisely because the model was never *told* what it could cite: on
+    CLI backends the literature tools are unreachable (see
+    `modules/llm/claude_code.py`), no bibliography was written, and both
+    reviewed drafts cited real papers from memory that nothing backed. Putting
+    the key list in the prompt does not depend on the model choosing to call
+    anything.
+
+    Returns "" when there is no bibliography, which is itself the signal: the
+    citation instructions below only make sense once something is citable.
+    """
+    if specialist not in _BIB_SPECIALISTS:
+        return ""
+    from ...config import get_settings
+
+    bib_path = Path(get_settings().workspace_root) / paper_id / "literature.bib"
+    if not bib_path.is_file():
+        return ""
+    try:
+        text = bib_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+
+    entries: list[tuple[str, str, str]] = []
+    for block in text.split("\n@"):
+        block = block if block.lstrip().startswith("@") else "@" + block
+        m = _BIB_ENTRY_RE.search(block)
+        if not m:
+            continue
+        fields = {k.lower(): v.strip().rstrip(",").strip('{}" ') for k, v in _BIB_FIELD_RE.findall(block)}
+        entries.append((m.group(1), fields.get("year", ""), fields.get("title", "")))
+    if not entries:
+        return ""
+
+    shown = entries[:limit]
+    lines = [f"- \\cite{{{k}}}  {y or '????'}  {t[:110]}" for k, y, t in shown]
+    more = f"\n  ... and {len(entries) - limit} more in literature.bib." if len(entries) > limit else ""
+    return (
+        f"## Citable References ({len(entries)} in literature.bib)\n"
+        "These keys are the ONLY ones that resolve. Cite them exactly as shown. "
+        "A key that is not in this list does not compile — LaTeX emits an undefined "
+        "reference and the citation gate reports it as missing_in_bib. Do not cite "
+        "from memory.\n"
+        'If you need a work that is not here, run `e2er-lit search "<query>"` first; '
+        "that records it and makes its key citable.\n" + "\n".join(lines) + more
     )
 
 
