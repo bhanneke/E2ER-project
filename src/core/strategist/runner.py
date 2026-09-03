@@ -9,13 +9,24 @@ from typing import Any
 
 from ...logging_config import get_logger
 from ...modules.llm.base import LLMBackend, ToolHandler
+from ..governance import DEFAULT_REGIME, KIND_RELIABILITY
+from ..governance import enforces as governance_enforces
 from ..specialists.contracts import Contribution, WorkOrder
-from ..specialists.dispatcher import execute_parallel, execute_with_dependencies
+from ..specialists.dispatcher import (
+    MAX_SPECIALIST_ATTEMPTS,
+    execute_parallel,
+    execute_with_dependencies,
+)
 from ..specialists.registry import POLISH_SPECIALISTS, REVIEWER_SPECIALISTS, SPECIALIST_ARTIFACTS
 from ..strategist.actions import StrategistDecision
 from ..strategist.engine import StrategistEngine
 from ..strategist.review_aggregator import aggregate_reviews, parse_review_output
-from ..strategist.state import BudgetExceededError, CircuitBreakerError, PaperStatus
+from ..strategist.state import (
+    BudgetExceededError,
+    CircuitBreakerError,
+    HumanReviewRequestedError,
+    PaperStatus,
+)
 
 logger = get_logger(__name__)
 
@@ -40,7 +51,11 @@ _MAX_PIVOTS = 1
 # - retrying past the third attempt never recovered the data layer
 # 3 is the cheapest threshold that doesn't false-trip on transient errors
 # (one bad attempt + one retry + one confirmation that it's not transient).
-_MAX_SPECIALIST_ATTEMPTS = 3
+#
+# Defined in the dispatcher so the sequential path (here) and the parallel
+# path (execute_parallel) share ONE budget. They used to disagree: this
+# constant was local, so parallel batches got no retry at all.
+_MAX_SPECIALIST_ATTEMPTS = MAX_SPECIALIST_ATTEMPTS
 # v0.6 step 5: budget for the verify_numbers auto-patch loop. When the
 # pre-review gate finds critical mismatches, the runner dispatches
 # patch_revisor with the mismatch findings, re-runs verify_numbers, and
@@ -63,6 +78,16 @@ _VERIFY_NUMBERS_AUTO_PATCH_BUDGET = 1
 # termination.
 _MAX_DEEP_REVISIONS = 1
 
+# Repair attempts for table_spec.json before the render halt fires. One attempt
+# was demonstrably too few: the 2026-08-20 canary went from 12 unresolved
+# references to 4 in a single section_writer pass and then halted with the
+# remainder fixable. Each attempt costs one specialist call, and the loop stops
+# early the moment an attempt fails to reduce the count — a reference that is
+# genuinely ambiguous (`ar1` where the JSON holds `ar1_pre` and `ar1_post`) will
+# not become resolvable by asking a second time, so the budget is only spent
+# while it is buying progress.
+_MAX_TABLE_SPEC_REPAIRS = 3
+
 
 class PipelineRunner:
     """Top-level orchestrator for a single paper."""
@@ -79,12 +104,20 @@ class PipelineRunner:
         backend_name: str = "anthropic",
         max_cost_usd: float | None = None,
         methodology: str = "empirical",
+        governance: str = DEFAULT_REGIME,
+        review_stages: list[str] | None = None,
     ) -> None:
         self._paper_id = paper_id
         self._workspace = workspace
         self._backend = backend
         self._model = model
         self._mode = mode
+        # Governance regime (experiment treatment): off | contracts | full.
+        # Selects which gates BLOCK; non-blocking gates still compute + log.
+        self._governance = governance
+        # Human-in-the-loop: stages after which the run pauses for the
+        # researcher to inspect/edit the workspace before continuing.
+        self._review_stages = set(review_stages or [])
         # Methodology drives phase routing (data_reviewer + replication_packager
         # are skipped for theoretical papers — pre-v0.5 they ran wastefully).
         self._methodology = methodology
@@ -142,6 +175,15 @@ class PipelineRunner:
         # Initialise outside try/except so the except branch can reference state
         # if setup itself fails. Without this, a crash in load() or _update_status()
         # propagates silently from the background task with no event log.
+        # Stamp WHICH CODE is about to run, before anything can fail. Lands in
+        # the paper's event stream, so it travels with the run into the export
+        # bundle and the experiment harvest — the only place an after-the-fact
+        # reader can check the result against the code that produced it.
+        from ..run_identity import identity_summary, run_identity
+
+        logger.info("Run identity for paper %s: %s", self._paper_id, identity_summary())
+        await log_event(self._paper_id, "run_identity", payload=run_identity())
+
         state: PipelineState | None = None
         try:
             state = PipelineState.load(self._workspace, self._paper_id, self._mode)
@@ -163,6 +205,14 @@ class PipelineRunner:
             await log_event(self._paper_id, "phase_start", stage=name)
             result = await fn()
             await log_event(self._paper_id, "phase_end", stage=name)
+            # Human-in-the-loop checkpoint: pause AFTER this stage's work is
+            # done (and persisted) but before the next, if the researcher asked
+            # to review here and hasn't already approved it on a prior resume.
+            if self._should_pause_for_review(name, state):
+                state.mark_complete(name)
+                state.pending_review_stage = name
+                state.save(self._workspace)
+                raise HumanReviewRequestedError(name)
             return result
 
         try:
@@ -216,6 +266,12 @@ class PipelineRunner:
                 state.contributions_count = prior_contributions + len(self._contributions)
                 state.mark_complete("revision")
                 state.save(self._workspace)
+                # Revision bypasses _phase (it needs the status arg), so honor a
+                # checkpoint here explicitly.
+                if self._should_pause_for_review("revision", state):
+                    state.pending_review_stage = "revision"
+                    state.save(self._workspace)
+                    raise HumanReviewRequestedError("revision")
             else:
                 # Resuming past revision — restore saved verdict
                 status = _coerce_paper_status(state.last_status, status)
@@ -267,7 +323,7 @@ class PipelineRunner:
                 payload={
                     "specialist": cb.specialist,
                     "attempts": cb.attempts,
-                    "last_error": (cb.last_error or "")[:500],
+                    "last_error": (cb.last_error or "")[:2000],
                 },
             )
             await self._best_effort_finalize()
@@ -301,6 +357,21 @@ class PipelineRunner:
             )
             await self._update_status(PaperStatus.PAUSED, error=error_msg)
             return {"status": "paused", "reason": "budget_exhausted", "spent": be.spent, "cap": be.cap}
+        except HumanReviewRequestedError as hr:
+            # Clean, resumable pause at a researcher-chosen checkpoint. State
+            # (incl. the completed stage + pending_review_stage) was saved in
+            # _phase before the raise; resume approves it and continues.
+            state.save(self._workspace)
+            logger.info("Pipeline paused for human review after stage '%s' (paper %s)", hr.stage, self._paper_id)
+            await log_event(self._paper_id, "awaiting_review", stage=hr.stage, payload={"stage": hr.stage})
+            await self._update_status(
+                PaperStatus.PAUSED,
+                error=(
+                    f"Paused for human review after stage '{hr.stage}'. Inspect the workspace, "
+                    f"edit artifacts if needed, then resume (POST /api/papers/{{id}}/resume or `e2er resume`)."
+                ),
+            )
+            return {"status": "paused", "reason": "awaiting_review", "stage": hr.stage}
         except Exception as e:
             state.save(self._workspace)  # preserve progress on failure
             logger.error("Pipeline failed for paper %s: %s", self._paper_id, e)
@@ -436,6 +507,7 @@ class PipelineRunner:
                         self._extra_tools,
                         self._extra_handlers,
                         self._backend_name,
+                        self._governance,
                     )
                     self._contributions.extend(pivot_contributions)
                     break  # one pivot per paper
@@ -459,6 +531,45 @@ class PipelineRunner:
                 break
 
         return PaperStatus.CEILING_CHECK
+
+    def _governance_enforces(self, gate: str) -> bool:
+        """True iff `gate` should BLOCK under the active regime.
+
+        The matrix itself lives in :mod:`src.core.governance` because the
+        specialist layer (output contracts, cascade guard) consults the same
+        table — when it didn't, `off` and `contracts` behaved identically.
+        """
+        return governance_enforces(self._governance, gate)
+
+    def _should_pause_for_review(self, stage: str, state: Any) -> bool:
+        """True iff the run should pause after `stage` for human review — i.e.
+        the researcher requested a checkpoint here and hasn't approved it yet."""
+        return stage in self._review_stages and not state.is_approved(stage)
+
+    async def _record_gate(self, gate: str, *, passed: bool, detail: str = "") -> bool:
+        """Log a gate verdict and return whether it should BLOCK this run.
+
+        Emits `gate_enforced` when the regime enforces this gate, else
+        `gate_shadow` — so a shadowed failure (fabrication the full stack
+        would have caught) is measured, not silently absent. The caller
+        blocks iff the return value is True (enforced) AND the gate failed.
+        """
+        from ...db.events import log_event
+
+        enforced = self._governance_enforces(gate)
+        await log_event(
+            self._paper_id,
+            "gate_enforced" if enforced else "gate_shadow",
+            stage=gate,
+            payload={
+                "gate": gate,
+                "passed": passed,
+                "enforced": enforced,
+                "regime": self._governance,
+                "detail": detail[:2000],
+            },
+        )
+        return enforced
 
     async def _enforce_estimation_gate(self) -> None:
         """Deterministic phase gate: an empirical paper with a populated data
@@ -488,11 +599,40 @@ class PipelineRunner:
         from ..specialists.dispatcher import execute_work_order
 
         specialist = "econometrics_specialist"
+
+        # Shadow mode applies to VERIFICATION failures only. A hollow or
+        # unparseable estimation file is a reliability failure: the run is
+        # broken, and repairing it is not "governing" the paper. Previously
+        # this returned early under `off`, so a crashed estimation script was
+        # never retried and the drafter wrote tables over `{}`.
+        if not self._governance_enforces("estimation"):
+            failures = [c for c in check_specialist_artifacts(self._workspace, specialist) if not c.ok]
+            # getattr: reliability is the safe default, so anything that
+            # predates the kind field (or a test double) still blocks.
+            reliability = [c for c in failures if getattr(c, "kind", KIND_RELIABILITY) == KIND_RELIABILITY]
+            detail = "; ".join(f"{c.artifact}: {c.reason}" for c in failures) or "clean"
+            await self._record_gate("estimation", passed=not failures, detail=detail)
+            if not reliability:
+                return
+            logger.warning(
+                "Estimation gate: %d reliability failure(s) under governance=%s — repairing anyway (%s)",
+                len(reliability),
+                self._governance,
+                "; ".join(f"{c.artifact}: {c.reason}" for c in reliability),
+            )
+
         while True:
             failures = [c for c in check_specialist_artifacts(self._workspace, specialist) if not c.ok]
+            if not self._governance_enforces("estimation"):
+                # Repair loop entered for reliability only: stop as soon as the
+                # file is real, without demanding the verification contracts a
+                # shadowed regime is meant to leave alone.
+                failures = [c for c in failures if getattr(c, "kind", KIND_RELIABILITY) == KIND_RELIABILITY]
             if not failures:
+                await self._record_gate("estimation", passed=True, detail="clean")
                 return
             summary = "; ".join(f"{c.artifact}: {c.reason}" for c in failures)
+            await self._record_gate("estimation", passed=False, detail=summary)
 
             attempts = self._failure_counts.get(specialist, 0)
             if attempts >= _MAX_SPECIALIST_ATTEMPTS:
@@ -536,6 +676,7 @@ class PipelineRunner:
                 self._extra_tools,
                 self._extra_handlers,
                 self._backend_name,
+                self._governance,
             )
             self._contributions.append(contribution)
             self._update_failure_counts([contribution])
@@ -638,6 +779,7 @@ class PipelineRunner:
             self._extra_tools,
             self._extra_handlers,
             self._backend_name,
+            self._governance,
         )
         self._contributions.extend(contributions)
         return PaperStatus.POLISH
@@ -678,27 +820,35 @@ class PipelineRunner:
 
         draft_path = self._workspace / "paper_draft.tex"
         if draft_path.is_file():
+            # verify_and_save always runs and writes number_verification.json —
+            # so the report exists (and shadow fabrication is measurable) in
+            # every regime. Only the block/auto-patch is regime-gated.
             report = verify_and_save(draft_path, self._workspace)
-            if report.critical_mismatches:
-                # v0.6 step 5: try to auto-patch before rejecting. If the
-                # patch_revisor can fix the mismatches by editing the
-                # table cells the drafter got wrong, the paper continues
-                # to reviewers; otherwise REJECTED with the same error
-                # surface as v0.5.
+            enforce_numbers = self._governance_enforces("numbers")
+            if report.critical_mismatches and enforce_numbers:
+                # v0.6 step 5: try to auto-patch before rejecting. Auto-patch
+                # is an enforcement action (it repairs fabricated cells), so it
+                # is skipped in shadow — otherwise it would mask the very
+                # fabrication the experiment is measuring.
                 report = await self._verify_numbers_auto_patch(report)
-                if report.critical_mismatches:
-                    summary = "; ".join(
-                        f"{m.draft_value} vs {m.source_value} ({m.source_key}) at {m.table_context}"
-                        for m in report.critical_mismatches[:5]
-                    )
-                    error = (
-                        f"verify_numbers: {len(report.critical_mismatches)} critical "
-                        f"mismatch(es) between LaTeX tables and source JSON. "
-                        f"First {min(5, len(report.critical_mismatches))}: {summary}"
-                    )
-                    logger.error("Paper %s: %s", self._paper_id, error)
-                    await self._update_status(PaperStatus.REJECTED, error=error)
-                    return PaperStatus.REJECTED
+            failed_numbers = bool(report.critical_mismatches)
+            detail_numbers = ""
+            if failed_numbers:
+                summary = "; ".join(
+                    f"{m.draft_value} vs {m.source_value} ({m.source_key}) at {m.table_context}"
+                    for m in report.critical_mismatches[:5]
+                )
+                detail_numbers = (
+                    f"{len(report.critical_mismatches)} critical mismatch(es) between "
+                    f"LaTeX tables and source JSON. "
+                    f"First {min(5, len(report.critical_mismatches))}: {summary}"
+                )
+            await self._record_gate("numbers", passed=not failed_numbers, detail=detail_numbers)
+            if failed_numbers and enforce_numbers:
+                error = f"verify_numbers: {detail_numbers}"
+                logger.error("Paper %s: %s", self._paper_id, error)
+                await self._update_status(PaperStatus.REJECTED, error=error)
+                return PaperStatus.REJECTED
 
         # --- verify_citations pre-review gate (v0.9 M2) ---
         # Mechanical anti-hallucination for references: every \cite
@@ -717,6 +867,7 @@ class PipelineRunner:
             # this, the gate defaulted to references.bib — which nothing
             # writes — and skipped itself on every standard-flow paper.
             refs_bib = assemble_refs_bib(self._workspace)
+            # Always runs + writes citation_integrity.json (shadow-measurable).
             cite_report = await verify_citations_and_save(draft_path, self._workspace, bib_path=refs_bib)
             if cite_report.skipped_reason:
                 logger.warning(
@@ -724,7 +875,10 @@ class PipelineRunner:
                     self._paper_id,
                     cite_report.skipped_reason,
                 )
-            if not cite_report.passed:
+            enforce_cites = self._governance_enforces("citations")
+            failed_cites = not cite_report.passed
+            detail_cites = ""
+            if failed_cites:
                 missing = ", ".join(c.cite_key for c in cite_report.missing_checks[:5])
                 unverif = ", ".join(c.cite_key for c in cite_report.unverifiable_checks[:5])
                 pieces = []
@@ -732,7 +886,10 @@ class PipelineRunner:
                     pieces.append(f"{cite_report.missing_in_bib} cited key(s) missing from the bibliography: {missing}")
                 if cite_report.strict and cite_report.unverifiable:
                     pieces.append(f"{cite_report.unverifiable} unverifiable cite(s) (strict mode): {unverif}")
-                error = "verify_citations: " + "; ".join(pieces)
+                detail_cites = "; ".join(pieces)
+            await self._record_gate("citations", passed=not failed_cites, detail=detail_cites)
+            if failed_cites and enforce_cites:
+                error = "verify_citations: " + detail_cites
                 logger.error("Paper %s: %s", self._paper_id, error)
                 await self._update_status(PaperStatus.REJECTED, error=error)
                 return PaperStatus.REJECTED
@@ -757,6 +914,7 @@ class PipelineRunner:
             self._extra_tools,
             self._extra_handlers,
             self._backend_name,
+            self._governance,
         )
         self._contributions.extend(contributions)
         return PaperStatus.REVIEW
@@ -852,22 +1010,54 @@ class PipelineRunner:
             if c.specialist in REVIEWER_SPECIALISTS and c.specialist not in seen:
                 score = parse_review_output(c.specialist, c.output)
                 if score:
+                    # Salvaged from the reply text because no file was written.
+                    # The verdict still gets its score, but no review FILE
+                    # exists — so _referee_feedback_text has nothing to hand the
+                    # revision round, and the bundle ships without the report.
+                    score.source = "transcript"
                     scores.append(score)
                     seen.add(c.specialist)
         return scores
 
     def _write_review_aggregation(self, result) -> None:
-        (self._workspace / "review_aggregation.json").write_text(
-            json.dumps(
-                {
-                    "verdict": result.verdict,
-                    "weighted_avg": result.weighted_avg,
-                    "rule_triggered": result.rule_triggered,
-                    "rationale": result.rationale,
-                },
-                indent=2,
-            )
-        )
+        # Panel composition travels WITH the verdict. A verdict computed on two
+        # reviewers and one computed on six were previously indistinguishable in
+        # this file — the shortfall existed only as a log warning, which no
+        # reader of the artifact (or of the export bundle) ever sees.
+        doc: dict[str, Any] = {
+            "verdict": result.verdict,
+            "weighted_avg": result.weighted_avg,
+            "rule_triggered": result.rule_triggered,
+            "rationale": result.rationale,
+        }
+        # Omitted, not zeroed, when the scores aren't available: an absent panel
+        # block means "not recorded", where `reported: 0` would assert that no
+        # reviewer reported. Writing the verdict must never depend on this.
+        scores = getattr(result, "scores", None)
+        if scores is not None:
+            reported = [s.reviewer for s in scores]
+            salvaged = [s.reviewer for s in scores if getattr(s, "source", "file") != "file"]
+            doc["panel"] = {
+                "expected": len(REVIEWER_SPECIALISTS),
+                "reported": len(reported),
+                "complete": len(reported) == len(REVIEWER_SPECIALISTS),
+                "missing": sorted(set(REVIEWER_SPECIALISTS) - set(reported)),
+                # Scored from the reviewer's reply text because it never wrote
+                # its file: the score counts, but no report exists for the
+                # revision round or the bundle.
+                "scored_without_a_review_file": sorted(salvaged),
+                "scores": [
+                    {
+                        "reviewer": s.reviewer,
+                        "score": s.score,
+                        "recommendation": s.recommendation,
+                        "weight": s.weight,
+                        "source": getattr(s, "source", "file"),
+                    }
+                    for s in scores
+                ],
+            }
+        (self._workspace / "review_aggregation.json").write_text(json.dumps(doc, indent=2))
 
     def _referee_feedback_text(self, max_chars: int = 15000) -> str:
         """Concatenate the reviewer reports from disk for the deep-revision
@@ -898,8 +1088,7 @@ class PipelineRunner:
         tables from the revised JSON, then re-dispatches section_writer to bring
         the prose in line with the revised analysis.
         """
-        from ..renderer.figures import ensure_figure_placeholders, render_figures
-        from ..renderer.tables import ensure_input_stubs, render_tables
+        from ..renderer.complete import render_all_or_halt
         from ..specialists.dispatcher import execute_work_order
 
         feedback = self._referee_feedback_text()
@@ -922,14 +1111,14 @@ class PipelineRunner:
                 self._extra_tools,
                 self._extra_handlers,
                 self._backend_name,
+                self._governance,
             )
             self._contributions.append(c)
 
-        # Tables follow the revised JSON; re-render before the writer edits prose.
-        render_tables(self._workspace)
-        ensure_input_stubs(self._workspace)
-        render_figures(self._workspace)
-        ensure_figure_placeholders(self._workspace)
+        # Tables follow the revised JSON; re-render before the writer edits
+        # prose. Halts if the revised analysis still can't fill them — a hole
+        # here is what the writer papers over with its own numbers.
+        render_all_or_halt(self._workspace)
 
         writer_focus = (
             "Revise the paper to reflect the REVISED analysis (the updated "
@@ -947,6 +1136,7 @@ class PipelineRunner:
             self._extra_tools,
             self._extra_handlers,
             self._backend_name,
+            self._governance,
         )
         self._contributions.append(c)
 
@@ -1101,6 +1291,7 @@ class PipelineRunner:
             self._extra_tools,
             self._extra_handlers,
             self._backend_name,
+            self._governance,
         )
         self._contributions.append(contribution)
 
@@ -1114,71 +1305,96 @@ class PipelineRunner:
         (``dp_full`` ≡ ``full_dp``). Anything still unresolved is a genuinely
         wrong/abbreviated/missing reference (e.g. the drafter wrote ``cw_stat``
         where the JSON has ``clark_west_stat``) that leaves those cells ``---``.
-        Rather than ship a paper with blank cells, dispatch ONE ``section_writer``
-        call with the unresolved references and the real available keys, then
+        Rather than ship a paper with blank cells, dispatch ``section_writer``
+        with the unresolved references and the real available keys, then
         re-render. Deterministic normalization already covers the common case;
         this handles the long tail.
+
+        Repair iterates up to ``_MAX_TABLE_SPEC_REPAIRS`` times because one pass
+        empirically fixes most but not all of a bad spec, and stops the moment a
+        pass stops reducing the unresolved count — an ambiguous reference does
+        not get less ambiguous on the second ask.
         """
-        from ..renderer.figures import ensure_figure_placeholders, render_figures
-        from ..renderer.tables import ensure_input_stubs, render_tables
+        from ..renderer.complete import render_all
+        from ..renderer.tables import render_tables
 
         report = render_tables(self._workspace)
-        ensure_input_stubs(self._workspace)
-        render_figures(self._workspace)
-        ensure_figure_placeholders(self._workspace)
+        render_all(self._workspace)  # no halt yet — the repair attempts below are the point
         if not report.unresolved:
             return
 
-        feedback = self._build_table_spec_feedback(report.unresolved)
-        if feedback is None:
-            # No estimation JSON to reconcile against — nothing actionable.
-            return
-
-        logger.info(
-            "table_spec: %d unresolved reference(s) after normalization — dispatching "
-            "section_writer to correct table_spec.json",
-            len(report.unresolved),
-        )
         from ..specialists.dispatcher import execute_work_order
 
-        order = WorkOrder(
-            paper_id=self._paper_id,
-            specialist="section_writer",
-            focus=feedback,
-            context_tier=2,
-        )
-        contribution = await execute_work_order(
-            order,
-            self._backend,
-            self._workspace,
-            self._model,
-            self._extra_tools,
-            self._extra_handlers,
-            self._backend_name,
-        )
-        self._contributions.append(contribution)
+        remaining = len(report.unresolved)
+        for attempt in range(1, _MAX_TABLE_SPEC_REPAIRS + 1):
+            feedback = self._build_table_spec_feedback(report.unresolved)
+            if feedback is None:
+                # No estimation JSON to reconcile against — nothing actionable.
+                return
 
-        # Re-render with the corrected spec. Remaining unresolved refs stay
-        # `---` (and visible in table_render_report.json) — one fix attempt.
-        report2 = render_tables(self._workspace)
-        ensure_input_stubs(self._workspace)
-        render_figures(self._workspace)
-        ensure_figure_placeholders(self._workspace)
-        if report2.unresolved:
-            logger.warning(
-                "table_spec: %d reference(s) still unresolved after section_writer fix — "
-                "rendered as --- (see table_render_report.json)",
-                len(report2.unresolved),
+            logger.info(
+                "table_spec: %d unresolved reference(s) after normalization — dispatching "
+                "section_writer to correct table_spec.json (attempt %d/%d)",
+                remaining,
+                attempt,
+                _MAX_TABLE_SPEC_REPAIRS,
             )
-        else:
-            logger.info("table_spec: all references resolved after section_writer fix")
+            order = WorkOrder(
+                paper_id=self._paper_id,
+                specialist="section_writer",
+                focus=feedback,
+                context_tier=2,
+            )
+            contribution = await execute_work_order(
+                order,
+                self._backend,
+                self._workspace,
+                self._model,
+                self._extra_tools,
+                self._extra_handlers,
+                self._backend_name,
+                self._governance,
+            )
+            self._contributions.append(contribution)
+
+            report = render_tables(self._workspace)
+            if not report.unresolved:
+                logger.info("table_spec: all references resolved after %d repair attempt(s)", attempt)
+                break
+            if len(report.unresolved) >= remaining:
+                logger.info(
+                    "table_spec: repair stalled at %d unresolved reference(s) on attempt %d — "
+                    "another pass would repeat it",
+                    len(report.unresolved),
+                    attempt,
+                )
+                break
+            remaining = len(report.unresolved)
+
+        # Re-render for real. Anything still unresolved halts: shipping `---`
+        # cells is what invited the drafter to write its own tables over them.
+        from ..renderer.complete import render_all_or_halt
+
+        render_all_or_halt(self._workspace)
 
     def _build_table_spec_feedback(self, unresolved: list) -> str | None:
         """Compose a directive for section_writer to fix table_spec.json,
-        listing the unresolved references and the EXACT keys/fields available
-        in the estimation JSON. Returns None when there's no JSON to reconcile.
+        listing the unresolved references and the EXACT fields available WITHIN
+        EACH spec object. Returns None when there's no JSON to reconcile.
+
+        The inventory is grouped by spec key rather than flattened into one
+        list, because a flat list invites the very error it is meant to prevent.
+        The 2026-08-20 canary asked for ``pct_change`` in a ``bootstrap`` column
+        when the field exists only under ``main`` — a plausible move for a
+        drafter told those field names were "available" without being told
+        where. A stat resolves only within its own column's spec object;
+        borrowing across columns would print one specification's number under
+        another specification's heading, which is the fabrication this whole
+        module exists to prevent.
         """
         import json
+
+        from ..renderer.tables import _nested_paths, _scalar_at
 
         merged: dict[str, Any] = {}
         for fn in ("estimation_results.json", "robustness_results.json"):
@@ -1196,33 +1412,52 @@ class PipelineRunner:
         if not spec_keys:
             return None
 
-        fields: set[str] = set()
-        coeffs: set[str] = set()
-        for v in merged.values():
-            if not isinstance(v, dict):
+        blocks: list[str] = []
+        for key in spec_keys:
+            spec = merged[key]
+            if not isinstance(spec, dict):
                 continue
+            fields: set[str] = set()
             for ck in ("diagnostics", "forecast_evaluation"):
-                c = v.get(ck)
+                c = spec.get(ck)
                 if isinstance(c, dict):
-                    fields.update(c.keys())
-            fields.update(k for k, val in v.items() if not isinstance(val, dict | list))
-            cf = v.get("coefficients")
-            if isinstance(cf, dict):
-                coeffs.update(cf.keys())
+                    fields.update(k for k, v in c.items() if not isinstance(v, dict | list))
+            fields.update(k for k, v in spec.items() if not isinstance(v, dict | list))
+            # Nested scalars are reachable too, under their path with dots
+            # flattened to underscores — that is the form the renderer's
+            # token-subset descent matches.
+            for path, node in _nested_paths(spec).items():
+                if "." not in path:
+                    continue
+                head = path.partition(".")[0]
+                if path.count(".") == 1 and head in ("diagnostics", "forecast_evaluation"):
+                    continue  # already listed above under its bare name
+                if _scalar_at(path, node)[1]:
+                    fields.add(path.replace(".", "_"))
+            cf = spec.get("coefficients")
+            coeffs = sorted(cf) if isinstance(cf, dict) else []
+            blocks.append(f"  {key}:\n    stat `field`: {sorted(fields)}\n    coefficient `var`: {coeffs}")
 
-        unresolved_lines = sorted({f"  - {u.kind}: {u.ref!r}" for u in unresolved})
+        unresolved_lines = sorted(
+            {f"  - {u.kind} {u.ref!r}" + (f" in column {u.column!r}" if u.column else "") for u in unresolved}
+        )
         return (
             "Your `table_spec.json` references keys that do not exist in the "
             "estimation JSON, so those table cells rendered blank (`---`). "
             "Rewrite `table_spec.json` so that EVERY `spec_key`, coefficient "
-            "`var`, and stat `field` is an EXACT key present in the JSON below. "
+            "`var`, and stat `field` is an EXACT name from the inventory below. "
             "Do not invent or abbreviate names; copy them verbatim. Keep the "
-            "same table structure; only correct the keys. Output the corrected "
-            "`table_spec.json` (and only that file).\n\n"
+            "same table structure; only correct the keys.\n\n"
+            "Two rules the inventory encodes:\n"
+            "  1. A stat `field` resolves ONLY inside its own column's spec "
+            "object. If a field is listed under one spec key and not another, a "
+            "column on that other spec key CANNOT use it — drop the row, or drop "
+            "that column from the row. Never borrow a number across columns.\n"
+            "  2. Ambiguous names do not resolve. If you want `ar1` and the "
+            "inventory offers `ar1_pre` and `ar1_post`, name the one you mean.\n\n"
             "Unresolved references to fix:\n" + "\n".join(unresolved_lines) + "\n\n"
-            f"Available `spec_key` values (top-level keys): {spec_keys}\n"
-            f"Available stat `field` names: {sorted(fields)}\n"
-            f"Available coefficient `var` names: {sorted(coeffs)}\n"
+            "Available references, by spec key:\n" + "\n".join(blocks) + "\n\n"
+            "Output the corrected `table_spec.json` (and only that file).\n"
         )
 
     def _collect_revision_findings(self, scores: list) -> list:
@@ -1424,7 +1659,7 @@ class PipelineRunner:
         # (strategist work orders carry parallel_group/context_tier but not paper_id)
         contract_orders = self._to_contract_orders(decision.work_orders)
         if len(contract_orders) == 1:
-            from ..specialists.dispatcher import assert_artifacts_written, execute_work_order
+            from ..specialists.dispatcher import execute_work_order, guard_artifacts
 
             c = await execute_work_order(
                 contract_orders[0],
@@ -1434,12 +1669,14 @@ class PipelineRunner:
                 self._extra_tools,
                 self._extra_handlers,
                 self._backend_name,
+                self._governance,
             )
             contributions = [c]
             # Same cascade guard execute_parallel applies — a lone non-tolerant
             # specialist that "succeeded" without its canonical artifact must
-            # halt here, not starve downstream specialists.
-            assert_artifacts_written(contributions, self._workspace)
+            # halt here, not starve downstream specialists (unless the regime
+            # shadows it, in which case the verdict is logged and the run goes on).
+            await guard_artifacts(contributions, self._workspace, self._governance)
         else:
             contributions = await execute_with_dependencies(
                 contract_orders,
@@ -1449,6 +1686,7 @@ class PipelineRunner:
                 self._extra_tools,
                 self._extra_handlers,
                 self._backend_name,
+                self._governance,
             )
         self._update_failure_counts(contributions)
         return contributions
@@ -1536,6 +1774,7 @@ class PipelineRunner:
             self._extra_tools,
             self._extra_handlers,
             self._backend_name,
+            self._governance,
         )
         self._contributions.append(contribution)
 
@@ -1546,13 +1785,12 @@ class PipelineRunner:
             # have changed either), then backfill stubs for any dangling
             # \input so a missing table can't abort the whole compile.
             from ..renderer.compiler import compile_latex
-            from ..renderer.figures import ensure_figure_placeholders, render_figures
-            from ..renderer.tables import ensure_input_stubs, render_tables
+            from ..renderer.complete import render_all
 
-            render_tables(self._workspace)
-            ensure_input_stubs(self._workspace)
-            render_figures(self._workspace)
-            ensure_figure_placeholders(self._workspace)
+            # Best-effort by design: this runs in `_best_effort_finalize`, where
+            # the point is to get *something* compiled out of a run that may
+            # already have failed. Stubs are appropriate here and only here.
+            render_all(self._workspace)
             pdf = await compile_latex(self._workspace)
             if pdf:
                 logger.info("Compiled PDF: %s", pdf)

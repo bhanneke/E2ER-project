@@ -893,6 +893,225 @@ async def test_execute_parallel_raises_when_all_fail(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# Parallel-batch retry (v1.0 plan, Phase 1.1)
+#
+# Before this, execute_parallel called each work order exactly once. At
+# MAX_CONCURRENT_SPECIALISTS=1 a batch holds one work order, so "1/1 failed"
+# was also "every specialist failed" and a single flaky turn killed a
+# 30-minute run in three seconds — the 2026-08-20 canary #2 death. The retry
+# machinery (write_contract_feedback / read_contract_feedback,
+# _MAX_SPECIALIST_ATTEMPTS) already existed but only the sequential path
+# could reach it.
+# ---------------------------------------------------------------------------
+
+
+def _order(paper_id: str, specialist: str) -> object:
+    from src.core.specialists.contracts import WorkOrder as ContractWorkOrder
+
+    return ContractWorkOrder(
+        paper_id=paper_id,
+        specialist=specialist,
+        focus="work",
+        parallel_group=0,
+        context_tier=0,
+    )
+
+
+def _flaky_backend(target: str, fail_first: int):
+    """MockLLMBackend that raises for `target`'s first `fail_first` calls."""
+    from tests.conftest import MockLLMBackend
+
+    class _Flaky(MockLLMBackend):
+        def __init__(self) -> None:
+            super().__init__()
+            self.attempts = 0
+
+        async def tool_loop(self, system, messages, tools, tool_handler, max_turns=30, **kw):
+            if self._detect_specialist(system) == target:
+                self.attempts += 1
+                if self.attempts <= fail_first:
+                    raise RuntimeError(f"simulated transient failure #{self.attempts}")
+            return await super().tool_loop(system, messages, tools, tool_handler, max_turns, **kw)
+
+    return _Flaky()
+
+
+async def test_execute_parallel_retries_a_transient_failure(tmp_path):
+    """A work order that fails once and then succeeds must not fail the batch."""
+    from src.core.specialists.dispatcher import execute_parallel
+
+    paper_id = str(uuid.uuid4())
+    workspace = tmp_path / paper_id
+    workspace.mkdir()
+
+    backend = _flaky_backend("idea_developer", fail_first=1)
+
+    with (
+        patch("src.db.client.execute", new_callable=AsyncMock),
+        patch("src.modules.tracking.usage.save_usage", new_callable=AsyncMock),
+    ):
+        contributions = await execute_parallel(
+            [_order(paper_id, "idea_developer")], backend, workspace, "m", [], [], "mock"
+        )
+
+    assert len(contributions) == 1
+    assert contributions[0].success is True
+    assert backend.attempts == 2, "should have retried exactly once"
+
+
+async def test_execute_parallel_does_not_retry_a_success(tmp_path):
+    """The budget is a ceiling, not a quota — a first-attempt success costs one call."""
+    from src.core.specialists.dispatcher import execute_parallel
+
+    paper_id = str(uuid.uuid4())
+    workspace = tmp_path / paper_id
+    workspace.mkdir()
+
+    backend = _flaky_backend("idea_developer", fail_first=0)
+
+    with (
+        patch("src.db.client.execute", new_callable=AsyncMock),
+        patch("src.modules.tracking.usage.save_usage", new_callable=AsyncMock),
+    ):
+        contributions = await execute_parallel(
+            [_order(paper_id, "idea_developer")], backend, workspace, "m", [], [], "mock"
+        )
+
+    assert contributions[0].success is True
+    assert backend.attempts == 1
+
+
+async def test_execute_parallel_retry_budget_is_bounded(tmp_path):
+    """A permanently broken specialist stops at MAX_SPECIALIST_ATTEMPTS, and the
+    batch still raises rather than retrying forever."""
+    from src.core.specialists.dispatcher import MAX_SPECIALIST_ATTEMPTS, execute_parallel
+
+    paper_id = str(uuid.uuid4())
+    workspace = tmp_path / paper_id
+    workspace.mkdir()
+
+    backend = _flaky_backend("idea_developer", fail_first=99)
+
+    with (
+        patch("src.db.client.execute", new_callable=AsyncMock),
+        patch("src.modules.tracking.usage.save_usage", new_callable=AsyncMock),
+        pytest.raises(RuntimeError, match="All specialists failed"),
+    ):
+        await execute_parallel([_order(paper_id, "idea_developer")], backend, workspace, "m", [], [], "mock")
+
+    assert backend.attempts == MAX_SPECIALIST_ATTEMPTS
+
+
+async def test_execute_parallel_shares_the_runner_attempt_budget(tmp_path):  # noqa: ARG001
+    """One budget, two dispatch paths. If these ever diverge again, a specialist
+    gets a different number of chances depending on how it happened to be
+    dispatched — which is how the parallel path ended up with none."""
+    from src.core.specialists.dispatcher import MAX_SPECIALIST_ATTEMPTS
+    from src.core.strategist.runner import _MAX_SPECIALIST_ATTEMPTS
+
+    assert _MAX_SPECIALIST_ATTEMPTS is MAX_SPECIALIST_ATTEMPTS
+
+
+async def test_execute_parallel_retry_is_coached_by_the_contract_violation(tmp_path):
+    """Regression for canary #2 (2026-08-20).
+
+    `data_architect` returned success with tools_called=0 and wrote no
+    data_dictionary.json. The contract check correctly flipped it to a failure
+    under regime `off` (reliability blocks in every regime) — and the run died
+    on the spot because the batch had no retry. Now it retries, and the
+    violation is fed into the next attempt's prompt.
+    """
+    from src.core.specialists.contract_check import has_contract_feedback
+    from src.core.specialists.dispatcher import execute_parallel
+    from src.modules.llm.base import ToolLoopResult
+    from src.modules.tracking.usage import TokenUsage
+    from tests.conftest import MockLLMBackend
+
+    paper_id = str(uuid.uuid4())
+    workspace = tmp_path / paper_id
+    workspace.mkdir()
+
+    class _SilentThenWrites(MockLLMBackend):
+        """Attempt 1 is the canary's zero-tool-call turn; attempt 2 behaves."""
+
+        def __init__(self) -> None:
+            super().__init__()
+            self.attempts = 0
+            self.prompts: list[str] = []
+
+        async def tool_loop(self, system, messages, tools, tool_handler, max_turns=30, **kw):
+            if self._detect_specialist(system) == "data_architect":
+                self.attempts += 1
+                self.prompts.append(str(messages[0]["content"]))
+                if self.attempts == 1:
+                    return ToolLoopResult(
+                        success=True,
+                        output="Here is the data dictionary: ...",
+                        usage=TokenUsage(input_tokens=100, output_tokens=50),
+                        tool_calls_made=0,
+                    )
+            return await super().tool_loop(system, messages, tools, tool_handler, max_turns, **kw)
+
+    backend = _SilentThenWrites()
+
+    with (
+        patch("src.db.client.execute", new_callable=AsyncMock),
+        patch("src.modules.tracking.usage.save_usage", new_callable=AsyncMock),
+    ):
+        contributions = await execute_parallel(
+            [_order(paper_id, "data_architect")],
+            backend,
+            workspace,
+            "m",
+            [],
+            [],
+            "mock",
+            "off",
+        )
+
+    assert backend.attempts == 2, "the zero-tool-call turn must be retried"
+    assert contributions[0].success is True
+    assert (workspace / "data_dictionary.json").exists()
+
+    # The retry was coached, not blind: attempt 2's prompt carried the violation.
+    assert "OUTPUT-CONTRACT VIOLATION" in backend.prompts[1]
+    assert "data_dictionary.json" in backend.prompts[1]
+    assert "OUTPUT-CONTRACT VIOLATION" not in backend.prompts[0]
+    # And the note is consumed exactly once — it must not leak into a later phase.
+    assert not has_contract_feedback(workspace, "data_architect")
+
+
+async def test_execute_parallel_rechecks_budget_before_retrying(tmp_path):
+    """Retries spend real money between the runner's phase-boundary checks, so a
+    batch that blows the cap mid-retry must stop rather than buy two more
+    attempts for every specialist in the group."""
+    from src.core.specialists.dispatcher import execute_parallel
+    from src.core.strategist.state import BudgetExceededError
+
+    paper_id = str(uuid.uuid4())
+    workspace = tmp_path / paper_id
+    workspace.mkdir()
+
+    backend = _flaky_backend("idea_developer", fail_first=99)
+    calls = {"n": 0}
+
+    async def _budget(_paper_id: str) -> None:
+        calls["n"] += 1
+        if calls["n"] > 1:  # the pre-batch check passes; the pre-retry check does not
+            raise BudgetExceededError(spent=99.0, cap=10.0)
+
+    with (
+        patch("src.db.client.execute", new_callable=AsyncMock),
+        patch("src.modules.tracking.usage.save_usage", new_callable=AsyncMock),
+        patch("src.modules.tracking.usage.check_budget_by_paper_id", side_effect=_budget),
+        pytest.raises(BudgetExceededError),
+    ):
+        await execute_parallel([_order(paper_id, "idea_developer")], backend, workspace, "m", [], [], "mock")
+
+    assert backend.attempts == 1, "the cap must stop the retry, not the retry the cap"
+
+
+# ---------------------------------------------------------------------------
 # Bundle 1: Safety & auditability
 # ---------------------------------------------------------------------------
 

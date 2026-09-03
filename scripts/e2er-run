@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+# Guarded script runner for E2ER specialists — the write→run→fix loop.
+#
+# WHY THIS EXISTS
+#
+# E2ER v1 (inside 100xOS) gave the estimation and analysis stages
+# `Bash(python3:*)`, so a specialist wrote its script, ran it, saw the
+# traceback, and fixed it — many times inside one session. v3 removed code
+# execution from specialists entirely and had the orchestrator run the script
+# afterwards instead. That is better for provenance and much worse for
+# reliability: the model writes blind, and one crash costs a whole new
+# dispatch.
+#
+# The 2026-08-05 validation cell is the cost. `run_estimation.py` died on a
+# tz-aware/naive comparison, wrote `{}`, and the paper was drafted over the
+# hole with hand-written tables.
+#
+# We cannot simply restore `Bash(python3:*)`: v1 was contained by Docker and
+# an egress firewall, and `python3 -c "import os; os.system(...)"` is arbitrary
+# shell. So execution comes through this wrapper, matching how `e2er-data`
+# gates data access.
+#
+# GUARANTEES
+#
+#   * runs exactly one .py file, resolved inside the current workspace
+#   * rejects absolute paths, `..` traversal, symlinks out of the workspace,
+#     and anything that is not a regular .py file
+#   * no arguments are forwarded to the script (nothing to smuggle)
+#   * hard timeout, so a runaway script cannot hold a specialist open
+#
+# This does NOT sandbox what the Python itself does. It narrows the blast
+# radius to "code this pipeline was going to execute anyway": the orchestrator
+# re-runs the same file through post_execution for the record.
+#
+# Usage:  e2er-run <script.py>          (relative to the workspace)
+
+set -euo pipefail
+
+TIMEOUT_SECONDS="${E2ER_RUN_TIMEOUT:-600}"
+
+if [ "$#" -ne 1 ]; then
+  echo "usage: e2er-run <script.py>   (one workspace-relative path, no arguments)" >&2
+  exit 2
+fi
+
+TARGET="$1"
+
+case "$TARGET" in
+  /*) echo "e2er-run: absolute paths are not allowed: $TARGET" >&2; exit 2 ;;
+  *..*) echo "e2er-run: '..' is not allowed in the path: $TARGET" >&2; exit 2 ;;
+  *.py) ;;
+  *) echo "e2er-run: only .py files may be run: $TARGET" >&2; exit 2 ;;
+esac
+
+WORKSPACE="$(pwd -P)"
+RESOLVED="$(cd "$(dirname "$TARGET")" 2>/dev/null && pwd -P)/$(basename "$TARGET")" || {
+  echo "e2er-run: no such directory for $TARGET" >&2
+  exit 2
+}
+
+case "$RESOLVED" in
+  "$WORKSPACE"/*) ;;
+  *) echo "e2er-run: refusing to run outside the workspace: $RESOLVED" >&2; exit 2 ;;
+esac
+
+if [ ! -f "$RESOLVED" ]; then
+  echo "e2er-run: not a regular file: $TARGET" >&2
+  exit 2
+fi
+
+PYTHON_BIN="${E2ER_PYTHON:-python3}"
+
+# `timeout` is coreutils on Linux, gtimeout via brew on macOS. Fall back to
+# running unguarded rather than refusing to run at all.
+# Note: macOS ships bash 3.2, where "${ARR[@]}" on an empty array trips
+# `set -u`. Branch on the command instead of building a possibly-empty array.
+echo "e2er-run: executing $TARGET (timeout ${TIMEOUT_SECONDS}s)" >&2
+if command -v timeout >/dev/null 2>&1; then
+  exec timeout "$TIMEOUT_SECONDS" "$PYTHON_BIN" "$RESOLVED"
+elif command -v gtimeout >/dev/null 2>&1; then
+  exec gtimeout "$TIMEOUT_SECONDS" "$PYTHON_BIN" "$RESOLVED"
+else
+  exec "$PYTHON_BIN" "$RESOLVED"
+fi

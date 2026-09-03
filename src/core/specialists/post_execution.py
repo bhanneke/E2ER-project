@@ -347,6 +347,24 @@ def maybe_execute_specialist_script(workspace: Path, specialist: str) -> Executi
         logger.warning("post-specialist exec: %s exited %s", rel_script, rc)
         reason = f"script exited with code {rc}"
 
+    # A failed script must leave NO usable sidecar. `{}` on disk is worse than
+    # nothing, because every `.exists()` check downstream passes and the hole
+    # only surfaces later as unresolved table references — or, in the
+    # 2026-08-05 cell, as four hand-written tables. Quarantine rather than
+    # delete, so the evidence survives for the audit trail.
+    if not populated and sidecar_path.exists():
+        quarantine = sidecar_path.with_suffix(f".rejected{sidecar_path.suffix}")
+        try:
+            sidecar_path.replace(quarantine)
+            logger.warning(
+                "post-specialist exec: quarantined unpopulated %s -> %s",
+                convention.sidecar,
+                quarantine.name,
+            )
+            reason += f"; unpopulated sidecar quarantined as {quarantine.name}"
+        except OSError as e:
+            logger.warning("post-specialist exec: could not quarantine %s: %s", convention.sidecar, e)
+
     return ExecutionAttempt(
         specialist=specialist,
         script=rel_script,

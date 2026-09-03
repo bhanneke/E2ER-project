@@ -47,6 +47,33 @@ class BudgetExceededError(Exception):
         super().__init__(f"Budget exceeded: spent ${spent:.2f}, cap ${cap:.2f}")
 
 
+# The runner's stage sequence (the keys checkpointed to .pipeline_state.json).
+# Shared so the API can validate a requested review point against real stages.
+PIPELINE_STAGES: tuple[str, ...] = (
+    "initial",
+    "iterative",
+    "estimation_gate",
+    "self_attack",
+    "polish",
+    "review",
+    "revision",
+    "replication",
+)
+
+
+class HumanReviewRequestedError(Exception):
+    """Raised by the runner after a stage the researcher asked to review, to
+    pause the run cleanly (status=PAUSED) for inspection before the next stage.
+
+    PipelineRunner.run() catches this, records an `awaiting_review` event with
+    the stage, and returns gracefully. Resuming (after the operator approves
+    the pending stage) continues at the next incomplete stage."""
+
+    def __init__(self, stage: str) -> None:
+        self.stage = stage
+        super().__init__(f"Human review requested after stage '{stage}'")
+
+
 class CircuitBreakerError(Exception):
     """Raised when a non-tolerant specialist has failed ``max_attempts`` times in a row.
 

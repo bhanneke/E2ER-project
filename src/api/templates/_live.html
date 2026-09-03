@@ -15,6 +15,12 @@
             hx-confirm="Cancel this run?"
             hx-swap="none">Cancel</button>
   {% endif %}
+  {% if can_resume %}
+    <button class="btn-primary"
+            hx-post="/api/papers/{{ paper.id }}/resume"
+            hx-confirm="Resume this run?"
+            hx-swap="none">Resume</button>
+  {% endif %}
 </div>
 
 {% if paper.last_error %}

@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# Literature gatekeeper for E2ER specialists — search, record, cite.
+#
+# WHY THIS EXISTS
+#
+# ClaudeCodeBackend.tool_loop ignores `tools` and `tool_handler`: the CLI uses
+# its own native tool set, allowed via --allowedTools. So on every CLI backend
+# (claude_code, codex, gemini) the literature tools registered in api/app.py —
+# search_papers, fetch_paper, save_bibtex, read_reference — are unreachable.
+# The data module has `e2er-data`, Allium has `e2er-allium-query`, script
+# execution has `e2er-run`, table specs have `e2er-check-tables`. Literature
+# had nothing, so specialists on CLI backends could not search and could not
+# write a bibliography.
+#
+# The 2026-09-01 repeats cell is the cost: no run produced a .bib at all, both
+# reviewed drafts cited real papers from memory that nothing backed, and LaTeX
+# had an undefined reference for every key.
+#
+# Implementation is a thin shim over `python -m src.modules.literature.cli`,
+# which drives the SAME LiteratureToolHandler and provider chain the SDK
+# backends use.
+#
+# Usage:
+#   e2er-lit search "regime switching bitcoin volatility" [--limit 10]
+#   e2er-lit list
+#   e2er-lit save --doi 10.1093/rfs/hhab123
+#   e2er-lit read --doi 10.1093/rfs/hhab123
+
+set -euo pipefail
+
+# The workspace is the directory we were called from — the runner sets the
+# CLI subprocess's cwd to workspaces/<paper_id>. Capture it BEFORE cd'ing to
+# the project root, and hand it to the Python side explicitly.
+export E2ER_WORKSPACE="$(pwd -P)"
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$PROJECT_ROOT"
+
+if [[ -n "${E2ER_PYTHON:-}" ]] && [[ -x "$E2ER_PYTHON" ]]; then
+    PY="$E2ER_PYTHON"
+elif command -v python3.12 >/dev/null 2>&1; then
+    PY="$(command -v python3.12)"
+elif command -v python3.11 >/dev/null 2>&1; then
+    PY="$(command -v python3.11)"
+elif command -v python3 >/dev/null 2>&1; then
+    PY="$(command -v python3)"
+else
+    echo "e2er-lit: cannot find a Python interpreter. The project requires Python 3.11+." >&2
+    exit 2
+fi
+
+exec "$PY" -m src.modules.literature.cli "$@"

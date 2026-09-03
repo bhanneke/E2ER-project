@@ -26,6 +26,14 @@ def _workspace(tmp_path: Path) -> Path:
         json.dumps({"main": {"coefficients": {"aggregator_routed": {"estimate": -0.0087, "p_value": 0.43}}}})
     )
     (ws / "identification_strategy.md").write_text("DiD around Oct 2022")
+    (ws / "identification_spec.json").write_text(
+        json.dumps({"primary": {"estimator": "did", "fixed_effects": ["unit", "time"], "controls": []}})
+    )
+    repl = ws / "replication"
+    repl.mkdir()
+    (repl / "audit_log.csv").write_text("step,detail\n1,queried\n")
+    (repl / "data_queries.sql").write_text("SELECT 1;")
+    (repl / "estimation.py").write_text("# replication entry point")
     (ws / "review_mechanism.md").write_text("# Referee\nContribution: 4/10")
     (ws / "review_aggregation.json").write_text(
         json.dumps({"verdict": "MECHANISM_FAIL", "weighted_avg": 4.0, "rationale": "proxy too weak"})
@@ -65,6 +73,65 @@ def test_export_builds_structured_tree(tmp_path: Path):
     assert (out / "reviews" / "review_mechanism.md").is_file()
     assert (out / "reviews" / "review_aggregation.json").is_file()
     assert (out / "README.md").is_file()
+
+
+def test_export_includes_spec_and_replication(tmp_path: Path):
+    """WS-P4.0: the machine-readable spec lands in design/ (not misc/) and
+    the replication/ dir is copied whole — both are needed by `e2er verify`
+    and for a reproducible bundle."""
+    ws = _workspace(tmp_path)
+    out = export_paper(ws, tmp_path / "out", date_str="20260627")
+
+    # identification_spec.json → design/, and NOT dumped into misc/
+    assert (out / "design" / "identification_spec.json").is_file()
+    assert not (out / "misc" / "identification_spec.json").exists()
+
+    # replication/ copied whole
+    assert (out / "replication" / "audit_log.csv").is_file()
+    assert (out / "replication" / "data_queries.sql").is_file()
+    assert (out / "replication" / "estimation.py").is_file()
+
+
+def test_export_writes_provenance_manifest(tmp_path: Path):
+    """WS-P4.1: every bundle carries provenance.json inventorying all its
+    files (including the README written last) and derivation edges."""
+    ws = _workspace(tmp_path)
+    out = export_paper(ws, tmp_path / "out", date_str="20260627")
+    prov_path = out / "provenance.json"
+    assert prov_path.is_file()
+    prov = json.loads(prov_path.read_text())
+    assert prov["schema"] == "e2er-provenance/1"
+    # Inventories real bundle files, including the last-written README.
+    assert "paper/paper.tex" in prov["files"]
+    assert "README.md" in prov["files"]
+    assert "provenance.json" not in prov["files"]
+    # The synthetic workspace has estimation + data → at least those edges.
+    kinds = {e["type"] for e in prov["edges"]}
+    assert {"estimation", "data"} <= kinds
+
+
+def test_readme_discloses_governance_regime(tmp_path: Path):
+    """WS-B: the bundle README must disclose the governance regime, and warn
+    when it wasn't `full` (gates ran in shadow)."""
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    (ws / "manifest.json").write_text(
+        json.dumps({"title": "Shadow Run", "research_question": "Q", "governance": "off", "backend": "claude_code"})
+    )
+    (ws / "paper_draft.tex").write_text("x")
+    out = export_paper(ws, tmp_path / "out", date_str="20260627")
+    readme = (out / "README.md").read_text()
+    assert "governance=`off`" in readme
+    assert "backend=`claude_code`" in readme
+    assert "shadow" in readme.lower()
+
+
+def test_readme_full_regime_no_shadow_warning(tmp_path: Path):
+    ws = _workspace(tmp_path)  # its manifest has no governance → defaults to full
+    out = export_paper(ws, tmp_path / "out", date_str="20260627")
+    readme = (out / "README.md").read_text()
+    assert "governance=`full`" in readme
+    assert "ran in shadow" not in readme.lower()
 
 
 def test_readme_has_verdict_and_coef(tmp_path: Path):

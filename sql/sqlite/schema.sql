@@ -30,6 +30,10 @@ CREATE TABLE IF NOT EXISTS papers (
     methodology       TEXT NOT NULL DEFAULT 'empirical'
                       CHECK (methodology IN ('empirical', 'theoretical', 'mixed')),
     model             TEXT,
+    backend           TEXT,
+    governance        TEXT NOT NULL DEFAULT 'full'
+                      CHECK (governance IN ('off', 'contracts', 'full')),
+    review_stages     TEXT,
     created_at        TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at        TEXT NOT NULL DEFAULT (datetime('now'))
 );

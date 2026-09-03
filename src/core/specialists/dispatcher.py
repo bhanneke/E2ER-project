@@ -7,10 +7,28 @@ from pathlib import Path
 
 from ...logging_config import get_logger
 from ...modules.llm.base import LLMBackend, ToolHandler
+from ..governance import DEFAULT_REGIME
 from ..specialists.base import run_specialist
 from ..specialists.contracts import Contribution, WorkOrder
 
 logger = get_logger(__name__)
+
+# Attempts per work order, counting the first. Shared with the runner's
+# sequential path, which imports it as `_MAX_SPECIALIST_ATTEMPTS` — one budget,
+# one number, whichever path a specialist happens to be dispatched from.
+#
+# The parallel path used to have no retry at all, and that asymmetry killed the
+# 2026-08-20 canary. `data_architect` returned a zero-tool-call turn, the
+# contract check correctly flipped it to a failure, and because the batch held
+# exactly one work order (concurrency 1) "1/1 specialists failed" was also
+# "every specialist failed". Three seconds from one flaky turn to a dead run.
+#
+# The retry is not a blind re-roll. `run_specialist` persists the violation
+# (`write_contract_feedback`) and the next attempt consumes it into its prompt
+# (`read_contract_feedback`), so attempt 2 is told exactly what attempt 1 got
+# wrong. That coaching machinery was built for this and, until now, only the
+# sequential path could reach it.
+MAX_SPECIALIST_ATTEMPTS = 3
 
 
 def _inject_context(work_order: WorkOrder, workspace: Path) -> WorkOrder:
@@ -72,6 +90,7 @@ async def execute_work_order(
     extra_tools: list[dict] | None = None,
     extra_handlers: list[ToolHandler] | None = None,
     backend_name: str = "anthropic",
+    governance: str = DEFAULT_REGIME,
 ) -> Contribution:
     """Execute a single work order."""
     from ...db.events import log_event
@@ -92,6 +111,7 @@ async def execute_work_order(
             extra_tools=extra_tools,
             extra_handlers=extra_handlers,
             backend_name=backend_name,
+            governance=governance,
         )
         await log_event(
             work_order.paper_id,
@@ -128,8 +148,13 @@ async def execute_parallel(
     extra_tools: list[dict] | None = None,
     extra_handlers: list[ToolHandler] | None = None,
     backend_name: str = "anthropic",
+    governance: str = DEFAULT_REGIME,
 ) -> list[Contribution]:
     """Execute multiple work orders concurrently, bounded by max_concurrent_specialists.
+
+    Each work order gets up to MAX_SPECIALIST_ATTEMPTS attempts; a contract
+    violation on one attempt is fed back into the next one's prompt. Only a work
+    order that exhausts its budget counts as failed.
 
     Per-specialist failures are caught inside execute_work_order and surface as
     Contribution(success=False). This wrapper logs an aggregate failure summary
@@ -152,25 +177,72 @@ async def execute_parallel(
     sem = asyncio.Semaphore(get_settings().max_concurrent_specialists)
 
     async def _bounded(wo: WorkOrder) -> Contribution:
-        async with sem:
-            return await execute_work_order(
-                wo,
-                backend,
-                workspace,
-                model,
-                extra_tools,
-                extra_handlers,
-                backend_name,
-            )
+        """One work order, retried until it succeeds or exhausts its budget.
+
+        The semaphore is acquired per attempt rather than held across the whole
+        retry chain, so a specialist working through its retries doesn't also
+        squat a concurrency slot its peers could be using.
+        """
+        from .contract_check import has_contract_feedback
+
+        contribution: Contribution | None = None
+        for attempt in range(1, MAX_SPECIALIST_ATTEMPTS + 1):
+            if contribution is not None:
+                # Retries cost real money, and a parallel batch runs entirely
+                # between the runner's phase-boundary budget checks — re-check
+                # rather than let a retrying batch spend past the cap.
+                await check_budget_by_paper_id(wo.paper_id)
+                logger.warning(
+                    "%s: attempt %d/%d failed (%s) — retrying %s",
+                    wo.specialist,
+                    attempt - 1,
+                    MAX_SPECIALIST_ATTEMPTS,
+                    (contribution.error or "no error recorded")[:200],
+                    (
+                        "with the contract violation fed back into the prompt"
+                        if has_contract_feedback(workspace, wo.specialist)
+                        else "(no contract feedback to feed back — blind retry)"
+                    ),
+                )
+            async with sem:
+                contribution = await execute_work_order(
+                    wo,
+                    backend,
+                    workspace,
+                    model,
+                    extra_tools,
+                    extra_handlers,
+                    backend_name,
+                    governance,
+                )
+            if contribution.success:
+                if attempt > 1:
+                    logger.info(
+                        "%s: recovered on attempt %d/%d",
+                        wo.specialist,
+                        attempt,
+                        MAX_SPECIALIST_ATTEMPTS,
+                    )
+                return contribution
+
+        assert contribution is not None  # the loop runs at least once
+        logger.error(
+            "%s: exhausted %d attempts — %s",
+            wo.specialist,
+            MAX_SPECIALIST_ATTEMPTS,
+            (contribution.error or "no error recorded")[:200],
+        )
+        return contribution
 
     contributions = await asyncio.gather(*(_bounded(wo) for wo in work_orders))
 
     failed = [c for c in contributions if not c.success]
     if failed:
         logger.warning(
-            "execute_parallel: %d/%d specialists failed: %s",
+            "execute_parallel: %d/%d specialists failed after %d attempts each: %s",
             len(failed),
             len(contributions),
+            MAX_SPECIALIST_ATTEMPTS,
             ", ".join(f"{c.specialist}({(c.error or '?')[:60]})" for c in failed),
         )
 
@@ -180,23 +252,22 @@ async def execute_parallel(
 
     # Cascade detection: a specialist that "succeeded" but didn't write its
     # canonical artifact will starve downstream specialists.
-    assert_artifacts_written(contributions, workspace)
+    await guard_artifacts(contributions, workspace, governance)
 
     return contributions
 
 
-def assert_artifacts_written(contributions: list[Contribution], workspace: Path) -> None:
-    """Raise if a non-tolerant specialist didn't write its canonical artifact.
+def find_missing_artifacts(contributions: list[Contribution], workspace: Path) -> list[tuple[str, str, str]]:
+    """Non-tolerant specialists that "succeeded" without writing their canonical
+    artifact, as (specialist, artifact, error) triples.
 
     Reviewers and polish specialists are tolerant of partial failure (the
-    aggregator handles gaps); everyone else writes a required upstream
-    artifact. Shared by execute_parallel and the single-order dispatch path
-    so a lone specialist can't slip past the cascade guard.
+    aggregator handles gaps); everyone else writes a required upstream artifact.
     """
     from .registry import POLISH_SPECIALISTS, REVIEWER_SPECIALISTS, SPECIALIST_ARTIFACTS
 
     tolerant = set(REVIEWER_SPECIALISTS) | set(POLISH_SPECIALISTS)
-    missing_artifacts = []
+    missing: list[tuple[str, str, str]] = []
     for c in contributions:
         if c.specialist in tolerant:
             continue
@@ -204,14 +275,78 @@ def assert_artifacts_written(contributions: list[Contribution], workspace: Path)
         if not artifact:
             continue
         if not (workspace / artifact).exists():
-            missing_artifacts.append((c.specialist, artifact, c.error or "(no error)"))
+            missing.append((c.specialist, artifact, c.error or "(no error)"))
+    return missing
 
-    if missing_artifacts:
-        details = "; ".join(f"{spec} -> {artifact} missing ({err[:400]})" for spec, artifact, err in missing_artifacts)
+
+def _cascade_details(missing: list[tuple[str, str, str]]) -> str:
+    return "; ".join(f"{spec} -> {artifact} missing ({err[:400]})" for spec, artifact, err in missing)
+
+
+def assert_artifacts_written(contributions: list[Contribution], workspace: Path) -> None:
+    """Raise if a non-tolerant specialist didn't write its canonical artifact.
+
+    The unconditional (always-enforcing) form. Prefer :func:`guard_artifacts`
+    on the live dispatch paths, which honours the governance regime.
+    """
+    missing = find_missing_artifacts(contributions, workspace)
+    if missing:
+        raise RuntimeError(
+            f"Specialist(s) did not produce canonical artifact: {_cascade_details(missing)}. "
+            "Halting before downstream cascade — see specialist_failed events for details."
+        )
+
+
+async def guard_artifacts(
+    contributions: list[Contribution],
+    workspace: Path,
+    governance: str = DEFAULT_REGIME,
+) -> None:
+    """Cascade guard, governance-aware (WS-B).
+
+    A missing canonical artifact is a RELIABILITY failure: the specialist did
+    not produce what it was asked to produce, and downstream specialists will
+    starve. That is a broken run in any regime, so this guard always halts and
+    is not switchable. Governance decides whether the paper's *claims* are
+    verified, never whether the pipeline is allowed to be broken.
+    """
+    missing = find_missing_artifacts(contributions, workspace)
+    if not missing:
+        return
+
+    details = _cascade_details(missing)
+    enforced = True
+    paper_id = contributions[0].paper_id if contributions else ""
+    if paper_id:
+        try:
+            from ...db.events import log_event
+
+            await log_event(
+                paper_id,
+                "gate_enforced" if enforced else "gate_shadow",
+                stage="contracts",
+                payload={
+                    "gate": "contracts",
+                    "passed": False,
+                    "enforced": enforced,
+                    "regime": governance,
+                    "check": "missing_artifact",
+                    "detail": details[:2000],
+                },
+            )
+        except Exception as e:  # noqa: BLE001 — measurement must never break a run
+            logger.debug("Could not log cascade-guard event: %s", e)
+
+    if enforced:
         raise RuntimeError(
             f"Specialist(s) did not produce canonical artifact: {details}. "
             "Halting before downstream cascade — see specialist_failed events for details."
         )
+    logger.warning(
+        "Cascade guard NOT enforced under governance=%s (shadow) — continuing without: %s",
+        governance,
+        details,
+    )
 
 
 async def execute_with_dependencies(
@@ -222,6 +357,7 @@ async def execute_with_dependencies(
     extra_tools: list[dict] | None = None,
     extra_handlers: list[ToolHandler] | None = None,
     backend_name: str = "anthropic",
+    governance: str = DEFAULT_REGIME,
 ) -> list[Contribution]:
     """Execute work orders grouped by parallel_group — groups run sequentially,
     within each group specialists run in parallel.
@@ -242,6 +378,7 @@ async def execute_with_dependencies(
             extra_tools,
             extra_handlers,
             backend_name,
+            governance,
         )
         all_contributions.extend(contributions)
 

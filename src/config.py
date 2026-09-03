@@ -18,6 +18,18 @@ class Settings(BaseSettings):
     openrouter_model: str = "anthropic/claude-sonnet-4-5"
     enable_prompt_caching: bool = True
 
+    # ── Governance regime (the experiment's treatment variable) ───────────────
+    # Which verification institutions BLOCK a run:
+    #   full      — every mechanism enforces (default; current behaviour)
+    #   contracts — specialist output contracts enforce; the deterministic
+    #               gates (estimation / numbers / citations) run in shadow
+    #   off       — nothing blocks; all gates run in shadow
+    # In shadow mode a gate still computes its verdict and writes its report,
+    # and the runner logs a `gate_shadow` event — so fabrication that WOULD
+    # have been caught is measured, not merely absent. Per-paper override via
+    # the API / `e2er run --governance`.
+    governance: Literal["off", "contracts", "full"] = "full"
+
     # ── Database ──────────────────────────────────────────────────────────────
     # Default: SQLite at ~/.e2er/papers.db (zero-setup, single-user).
     # Production / multi-user: set DATABASE_URL=postgresql://… (enables
@@ -256,13 +268,35 @@ class Settings(BaseSettings):
     # Set to '*' explicitly to allow any origin (only do this for non-secret deploys).
     cors_origins: str = "http://localhost:8280,http://127.0.0.1:8280"
 
+    def default_model_for(self, backend: str) -> str:
+        """The configured model for an EXPLICIT backend.
+
+        Per-paper backend overrides (`e2er run --backend`, `run-matrix`, the
+        governance experiment) must resolve their model against the backend
+        the paper actually runs on — not the process-global one. Falling back
+        to `default_model` there sends e.g. a bare `claude-sonnet-4-5` to
+        OpenRouter (which needs the `anthropic/` prefix), and every call in
+        the run fails.
+
+        For the CLI backends the returned string is bookkeeping only (the
+        subprocess reads its own `*_model` setting, and cost is flat-rate $0)
+        — but it labels the run in `papers.model`, `compare`, and the
+        experiment results, so it must name the right family.
+        """
+        if backend == "openrouter":
+            return self.openrouter_model
+        if backend == "claude_code":
+            return self.claude_code_model or self.anthropic_model
+        if backend == "codex":
+            return self.codex_model or "codex-cli-default"
+        if backend == "gemini":
+            return self.gemini_model or "gemini-cli-default"
+        return self.anthropic_model
+
     @property
     def default_model(self) -> str:
-        if self.llm_backend == "openrouter":
-            return self.openrouter_model
-        if self.llm_backend == "claude_code" and self.claude_code_model:
-            return self.claude_code_model
-        return self.anthropic_model
+        """Model for the process-global backend (`LLM_BACKEND`)."""
+        return self.default_model_for(self.llm_backend)
 
     model_config = {
         "env_file": ".env",

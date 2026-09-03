@@ -8,8 +8,11 @@ from unittest.mock import AsyncMock, patch
 from src.doctor import (
     FAIL,
     PASS,
+    SKIP,
     Check,
     backend_check,
+    byod_literature_check,
+    byod_local_data_check,
     db_check,
     main_doctor,
     render_human,
@@ -130,6 +133,91 @@ def test_main_doctor_json_mode_emits_json(capsys):
 
     payload = _j.loads(capsys.readouterr().out)
     assert payload["checks"][0]["name"] == "x"
+
+
+# ── BYOD corpus checks (pure-local, no network) ─────────────────────────────
+
+
+def _byod_settings(**kw):
+    """Settings stub for the BYOD checks. resolved_literature_dirs is a
+    method on the real Settings, so mirror it as a callable here."""
+    base = dict(
+        local_data_dir=None,
+        local_data_dir_recursive=False,
+        literature_bibtex_file=None,
+        literature_dir=None,
+    )
+    base.update(kw)
+    ldir = base.get("literature_dir")
+    ldata = base.get("local_data_dir")
+    ns = SimpleNamespace(**base)
+    ns.resolved_literature_dirs = lambda: ldir or ldata
+    return ns
+
+
+async def test_byod_local_data_unset_skips():
+    c = await byod_local_data_check(_byod_settings())
+    assert c.status == SKIP
+
+
+async def test_byod_local_data_missing_dir_fails(tmp_path):
+    c = await byod_local_data_check(_byod_settings(local_data_dir=str(tmp_path / "nope")))
+    assert c.status == FAIL and "not a directory" in c.detail
+
+
+async def test_byod_local_data_empty_dir_skips(tmp_path):
+    c = await byod_local_data_check(_byod_settings(local_data_dir=str(tmp_path)))
+    assert c.status == SKIP
+
+
+async def test_byod_local_data_counts_files(tmp_path):
+    (tmp_path / "a.csv").write_text("x\n")
+    (tmp_path / "b.csv").write_text("x\n")
+    (tmp_path / "c.parquet").write_bytes(b"\x00")
+    (tmp_path / "ignore.md").write_text("x\n")
+    c = await byod_local_data_check(_byod_settings(local_data_dir=str(tmp_path)))
+    assert c.status == PASS
+    assert "2 csv" in c.detail and "1 parquet" in c.detail
+
+
+async def test_byod_local_data_recursive(tmp_path):
+    sub = tmp_path / "raw"
+    sub.mkdir()
+    (sub / "deep.csv").write_text("x\n")
+    top = await byod_local_data_check(_byod_settings(local_data_dir=str(tmp_path)))
+    assert top.status == SKIP  # top-level scan misses the nested file
+    rec = await byod_local_data_check(_byod_settings(local_data_dir=str(tmp_path), local_data_dir_recursive=True))
+    assert rec.status == PASS and "1 csv" in rec.detail
+
+
+async def test_byod_literature_nothing_skips():
+    c = await byod_literature_check(_byod_settings())
+    assert c.status == SKIP
+
+
+async def test_byod_literature_bibtex_counts_entries(tmp_path):
+    bib = tmp_path / "refs.bib"
+    bib.write_text("@article{a, title={A}}\n@book{b, title={B}}\n")
+    c = await byod_literature_check(_byod_settings(literature_bibtex_file=str(bib)))
+    assert c.status == PASS and "2 entries" in c.detail
+
+
+async def test_byod_literature_missing_bibtex_fails(tmp_path):
+    c = await byod_literature_check(_byod_settings(literature_bibtex_file=str(tmp_path / "gone.bib")))
+    assert c.status == FAIL
+
+
+async def test_byod_literature_pdf_folder(tmp_path):
+    (tmp_path / "p1.pdf").write_bytes(b"%PDF")
+    (tmp_path / "p2.pdf").write_bytes(b"%PDF")
+    c = await byod_literature_check(_byod_settings(literature_dir=str(tmp_path)))
+    assert c.status == PASS and "2 PDFs" in c.detail
+
+
+async def test_byod_literature_zotero_detected(tmp_path):
+    (tmp_path / "zotero.sqlite").write_bytes(b"\x00")
+    c = await byod_literature_check(_byod_settings(literature_dir=str(tmp_path)))
+    assert c.status == PASS and "Zotero" in c.detail
 
 
 # ── CLI integration: `e2er doctor` (via the __main__ argparse) ──────────────

@@ -60,6 +60,10 @@ EXPORT_MAP: dict[str, list[tuple[str, str | None]]] = {
         ("paper_plan.md", None),
         ("literature_review.md", None),
         ("identification_strategy.md", None),
+        # The machine-readable pre-registration sidecar — belongs with the
+        # design docs, not the misc/ catch-all. It is what `e2er verify`
+        # re-checks the estimation against.
+        ("identification_spec.json", None),
         ("econometric_spec.md", None),
         ("model_spec.md", None),
     ],
@@ -140,6 +144,28 @@ def _render_readme(workspace: Path, manifest: dict, slug: str) -> str:
         "",
         f"**Verdict:** `{verdict}`" + (f" (weighted avg {avg}/10)" if isinstance(avg, (int, float)) else ""),
     ]
+
+    # Run provenance disclosure — the governance regime this paper ran under
+    # is load-bearing: under `contracts`/`off` the deterministic gates ran in
+    # SHADOW (computed + logged, but did not block), so numbers/citations may
+    # not have been enforced. Backend/model disclosed alongside.
+    regime = manifest.get("governance") or "full"
+    backend = manifest.get("backend")
+    model = manifest.get("model")
+    run_bits = [f"governance=`{regime}`"]
+    if backend:
+        run_bits.append(f"backend=`{backend}`")
+    if model:
+        run_bits.append(f"model=`{model}`")
+    lines += ["", "**Run:** " + ", ".join(run_bits)]
+    if regime != "full":
+        lines += [
+            "",
+            f"> ⚠️ Ran under the `{regime}` governance regime: the deterministic "
+            "verification gates ran in shadow (logged, not enforced). See the "
+            "`gate_shadow` events for what a full-governance run would have caught.",
+        ]
+
     if rationale:
         lines += ["", f"> {rationale}"]
 
@@ -203,6 +229,13 @@ def export_paper(workspace: Path, dest_root: Path, *, date_str: str, slug: str |
     if fig_src.is_dir():
         shutil.copytree(fig_src, out / "results" / "figures", dirs_exist_ok=True)
 
+    # Replication: the audit log + query SQL + replication estimation script
+    # (audit_log.csv, data_queries.sql, estimation.py). Previously dropped
+    # entirely — it is the backbone of a reproducible bundle.
+    repl_src = workspace / "replication"
+    if repl_src.is_dir():
+        shutil.copytree(repl_src, out / "replication", dirs_exist_ok=True)
+
     # misc/ — top-level files we didn't map (no silent loss), minus internal ones.
     for src in sorted(workspace.iterdir()):
         if not src.is_file() or src.name in copied_names or src.name in _MISC_EXCLUDE or src.name.startswith("."):
@@ -210,5 +243,12 @@ def export_paper(workspace: Path, dest_root: Path, *, date_str: str, slug: str |
         _copy_matches(workspace, out / "misc", src.name, None, copied_names)
 
     (out / "README.md").write_text(_render_readme(workspace, manifest, slug), encoding="utf-8")
+
+    # Provenance manifest LAST — it inventories (SHA-256) every other bundle
+    # file, so it must run after the README + all copies exist.
+    from .provenance import write_provenance
+
+    write_provenance(out, manifest, exported_at=date_str)
+
     logger.info("Exported paper %s → %s", workspace.name, out)
     return out

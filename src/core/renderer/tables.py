@@ -55,13 +55,16 @@ class UnresolvedRef:
 
 @dataclass
 class Normalized:
-    """A ``table_spec`` reference resolved by order-insensitive token match
-    (e.g. the drafter wrote ``dp_full`` but the JSON key is ``full_dp``)."""
+    """A ``table_spec`` reference resolved by something other than an exact key
+    hit — an order-insensitive token match (the drafter wrote ``dp_full`` but
+    the JSON key is ``full_dp``), or a nested-path match (``p_HH_pre`` found at
+    ``transition_probabilities_pre.p_HH``). Recorded so every substitution
+    behind a rendered number stays auditable."""
 
     table: str
-    kind: str  # "spec_key" | "coefficient"
+    kind: str  # "spec_key" | "coefficient" | "stat"
     requested: str
-    resolved: str
+    resolved: str  # a key, or a dotted path when resolved by descent
 
 
 @dataclass
@@ -169,6 +172,94 @@ def _stat_field_names(spec: dict[str, Any]) -> list[str]:
             names.extend(container.keys())
     names.extend(k for k, v in spec.items() if not isinstance(v, dict | list))
     return names
+
+
+def _path_tokens(path: str) -> frozenset[str]:
+    """Token set of a dotted path — dots are separators like `_` and `-`."""
+    return _token_set(path.replace(".", "_"))
+
+
+def _nested_paths(spec: dict[str, Any], max_depth: int = 3) -> dict[str, Any]:
+    """Dotted path -> node for everything nested inside a spec object.
+
+    ``coefficients`` is excluded at the top level: coefficient cells are their
+    own row type with their own resolution path, and letting a ``stat`` row
+    reach into them would let two different table constructs resolve to the
+    same number by accident.
+    """
+    out: dict[str, Any] = {}
+
+    def walk(node: dict[str, Any], prefix: str, depth: int) -> None:
+        if depth > max_depth:
+            return
+        for k, v in node.items():
+            if not prefix and k in ("coefficients", "_meta"):
+                continue
+            path = f"{prefix}.{k}" if prefix else k
+            out[path] = v
+            if isinstance(v, dict):
+                walk(v, path, depth + 1)
+
+    walk(spec, "", 1)
+    return out
+
+
+def _resolve_nested_stat(spec: dict[str, Any], field_name: str) -> tuple[Any, bool, str]:
+    """Last-resort resolution for a stat nested below the three places
+    ``_resolve_stat`` looks — e.g. the spec asks for ``p_HH_pre`` and the
+    sidecar holds it at ``transition_probabilities_pre.p_HH``.
+
+    The rule is deliberately narrow, because a wrong match here puts a wrong
+    number in a published table. The requested name's tokens must be a SUBSET
+    of the candidate path's tokens, and among the SHALLOWEST candidates there
+    must be exactly ONE. Ambiguity resolves to "not found", never to a guess —
+    ``delta_p_HH`` matching both ``delta_p_HH`` and ``delta_p_LL`` would be
+    refused, and only the fact that ``pre``/``post`` discriminate the
+    transition-probability blocks makes those resolvable.
+
+    Every hit is recorded in ``table_render_report.json``, so the substitution
+    is auditable rather than silent.
+
+    Returns ``(value, found, resolved_path)``.
+    """
+    want = _token_set(field_name)
+    if not want:
+        return None, False, ""
+    candidates = [
+        (path, node) for path, node in _nested_paths(spec).items() if "." in path and want <= _path_tokens(path)
+    ]
+    if not candidates:
+        return None, False, ""
+    depth = min(path.count(".") for path, _ in candidates)
+    shallowest = [(path, node) for path, node in candidates if path.count(".") == depth]
+
+    scalars = [_scalar_at(path, node) for path, node in shallowest]
+    if any(not ok for _, ok, _ in scalars):
+        # At least one candidate is a container rather than a number, so which
+        # one was meant is genuinely open. Refuse.
+        return None, False, ""
+
+    first = scalars[0][0]
+    if not all(value == first for value, _, _ in scalars):
+        return None, False, ""
+    # Either one candidate, or several that agree exactly — the ambiguity is
+    # nominal (``p_HH_pre`` sits at both ``transition_probabilities_pre.p_HH``
+    # and ``logistic_regression.implied_p_HH_pre``, same number), so no choice
+    # between competing values is being made. Record every path that agreed.
+    return first, True, " == ".join(path for _, _, path in scalars)
+
+
+def _scalar_at(path: str, node: Any) -> tuple[Any, bool, str]:
+    """The scalar a nested node stands for: itself, or — for an estimate-shaped
+    object (``estimate``/``se``/``p_value``) — its point estimate."""
+    if isinstance(node, dict):
+        est = node.get("estimate")
+        if "estimate" in node and not isinstance(est, dict | list):
+            return est, True, f"{path}.estimate"
+        return None, False, path
+    if isinstance(node, list):
+        return None, False, path
+    return node, True, path
 
 
 def _render_one_table(
@@ -284,6 +375,11 @@ def _render_one_table(
                         value, found = _resolve_stat(spec_obj, nf)
                         if found:
                             normalized.append(Normalized(filename, "stat", field_name, nf))
+                if not found and spec_obj:
+                    # Still nothing at the three flat locations — descend.
+                    value, found, npath = _resolve_nested_stat(spec_obj, field_name)
+                    if found:
+                        normalized.append(Normalized(filename, "stat", field_name, npath))
                 if not found:
                     if spec_obj:  # only flag when the column resolved at all
                         unresolved.append(UnresolvedRef(filename, "stat", field_name, str(col.get("spec_key", ""))))

@@ -7,29 +7,45 @@
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20187238.svg)](https://doi.org/10.5281/zenodo.20187238)
 [![PyPI](https://img.shields.io/pypi/v/e2er.svg)](https://pypi.org/project/e2er/)
 
-Hand E2ER a research question; get back a LaTeX paper with citations, an
-internal peer-review pass, and a runnable replication package — typically
-in ~25 minutes.
+E2ER is an open-source, end-to-end pipeline for empirical research. You bring
+your own data and your own papers, pose a research question, and steer a
+human-in-the-loop workflow that returns a LaTeX paper with citations, an
+internal peer-review pass, and a runnable replication package — typically in
+~25 minutes.
+
+What makes it a research instrument rather than a draft generator is that
+**every number, citation, and design choice is mechanically verifiable.**
+Results-table cells are filled by a deterministic renderer from JSON sidecars
+(never hand-typed); two gates check the draft before any reviewer runs; every
+exported bundle carries a content-addressed provenance manifest; and
+`e2er verify` re-establishes — offline, no API keys, in under a minute — that
+a finished bundle is internally consistent and untampered. Generation is
+nearly free; E2ER's aim is to make *verification* cheap too.
 
 ```bash
 pip install e2er
-e2er init                           # interactive setup wizard (~1 min)
-e2er run "<your research question>" --methodology empirical --max-cost 5
+e2er init --defaults                         # scaffold data/ + literature/, write .env
+e2er run "<your research question>"          # → a paper in workspaces/<id>/
 ```
 
-`e2er init` walks you through picking an LLM backend, checks the prerequisites, writes `.env`, bundles the skill files, and prints example research questions to copy. See **[First run](#first-run)** below for what happens after you hit Enter on `e2er run`.
+`e2er init --defaults` sets up non-interactively (or run `e2er init` for the
+guided wizard). New here? The **[For reviewers](#for-reviewers)** tour goes
+from a 2-minute browse to reproducing a result, and it opens with a no-key,
+$0 step.
 
 ---
 
 ## Table of contents
 
+- [The workflow](#the-workflow)
+- [For reviewers](#for-reviewers)
 - [Install](#install)
 - [First run](#first-run)
 - [Pick a backend](#pick-a-backend)
 - [What you get](#what-you-get)
 - [Methodologies](#methodologies)
 - [Costs](#costs)
-- [Resume a paused paper](#resume-a-paused-paper)
+- [Check, tail, cancel, resume](#check-tail-cancel-resume)
 - [Data sources](#data-sources)
 - [Literature](#literature)
 - [Going deeper](#going-deeper)
@@ -37,6 +53,90 @@ e2er run "<your research question>" --methodology empirical --max-cost 5
 - [Troubleshooting](#troubleshooting)
 - [Development (contributing)](#development-contributing)
 - [Citing · Related work · Contact](#citing)
+
+---
+
+## The workflow
+
+E2ER is organized around four things a researcher actually does.
+
+**1 · Bring your own data and your own papers.** Drop datasets in `data/`
+(`.csv`, `.parquet`, `.xlsx`, …) and reference PDFs — or a Zotero library — in
+`literature/`. `e2er init` scaffolds both; `e2er doctor` reports what it found
+and which literature mode is active. Your PDFs never leave your machine:
+exported bundles ship only the BibTeX corpus, never the source PDFs. See
+[Data sources](#data-sources) and [Literature](#literature).
+
+**2 · Sharpen the research question.** `e2er rq --draft "<rough question>"`
+reads your data catalogue and local library and returns a precise, feasible
+research question with candidate variables, identification options, and
+feasibility notes. It only advises — it never starts a run. You decide, then:
+
+**3 · Run a human-in-the-loop workflow.** `e2er run "<RQ>"` runs the pipeline.
+Add `--review-at <stage>` to pause at chosen phases for inspection and
+`e2er resume` to continue. Run the same question across models —
+`e2er run-matrix "<RQ>" --backends claude_code,codex,gemini --repeats 3` — and
+then `e2er compare matrix.json` diffs the machine-readable design choices each
+model made (estimator, fixed effects, controls, clustering, the coefficient of
+interest). This is coverage of the solution space, **not** selection: no run is
+promoted, and any decision to carry one forward must be pre-committed.
+
+**4 · Everything is verifiable.** Every run writes deterministic gate reports;
+every export bundle carries a content-addressed `provenance.json` (SHA-256 of
+every file plus the derivation graph). `e2er verify <bundle>` re-establishes
+offline that the bundle is internally consistent and untampered. The governance
+regime is a first-class knob — `e2er run --governance off|contracts|full`
+selects which gates *block*; in `off`/`contracts` the deterministic gates still
+run in **shadow** (compute + log, don't block), so what they would have caught
+is measured rather than hidden.
+
+| Command | What it does |
+|---|---|
+| `e2er init [--defaults]` | Scaffold `data/` + `literature/`, write `.env`, bundle skills |
+| `e2er doctor` | Preflight: backend, DB, and your bring-your-own data + literature |
+| `e2er rq --draft "…"` | Sharpen a draft RQ against your data + library (advisory) |
+| `e2er run "…" [--governance …] [--review-at …]` | Run the pipeline for one RQ |
+| `e2er run-matrix "…" --backends a,b,c` | Same RQ across k backends × n repeats |
+| `e2er compare matrix.json` | Diff the design choices across the matrix |
+| `e2er export <paper_id>` | Assemble a clean bundle (+ `provenance.json`) |
+| `e2er verify <bundle> [--online]` | Offline re-check: hashes, numbers, spec, citations |
+
+---
+
+## For reviewers
+
+A short tour, from a 2-minute browse to reproducing a governance result. It
+opens with a step that needs no API keys and costs nothing.
+
+**T0 — 2 minutes, in the browser.** Skim [What you get](#what-you-get) and the
+[Examples](#examples): real artifacts from real runs, including the gate
+reports — the rejected fabricated citations, a spec-contract violation coached
+to compliance, a phase-gate halt. The claim to check is that the numbers,
+citations, and design choices are all traceable to machine-readable sources.
+
+**T1 — 10 minutes, no keys, $0.** `e2er verify <bundle>` re-establishes a
+bundle's integrity **offline**: it re-hashes every file against
+`provenance.json`, re-traces each results-table cell to its source JSON,
+re-checks the identification contract, and confirms every `\cite` resolves in
+the bibliography (`--online` re-queries the live registries). Recomputation is
+authoritative, so an edited number or a deleted reference is caught. A curated,
+ready-to-verify showcase bundle (`examples/showcase/`) ships from the next
+tagged release; until then, verify any bundle you produce with `e2er export`.
+
+**T2 — under an hour, $0 with a CLI subscription.** `e2er init --defaults` →
+drop your own CSVs into `data/` and PDFs into `literature/` → `e2er doctor` →
+`e2er run "<your RQ>"` on one of the flat-rate CLI backends. Pinned model,
+public data, stated runtime.
+
+**T3 — the governance experiment.** `e2er run --governance off|contracts|full`
+reproduces a single study cell; under `off` the gates run in shadow, so you can
+watch fabrication happen **and** see it measured. `scripts/experiment_driver.py`
+runs the full RQ × regime × N grid and writes `results.csv` + `summary.md` with
+the per-regime fabrication means — turning the governance switch into a measured
+comparison of fabrication and variance across regimes.
+
+The submission also ships a companion artifact — a catalogue of
+automated-research systems (RISE) — that situates E2ER against the landscape.
 
 ---
 
@@ -149,6 +249,16 @@ Every paper produces this artifact set in `workspaces/<paper_id>/`:
 | `replication/data_queries.sql` | All data queries used in the paper |
 | `replication/audit_log.csv` | Complete data-access audit trail |
 
+Run `e2er export <paper_id>` to assemble these into a clean, navigable bundle
+(`paper/ code/ data/ results/ design/ reviews/ replication/`) with a
+content-addressed **`provenance.json`** manifest — a SHA-256 inventory of every
+file plus the derivation graph tying each table cell to its source JSON key and
+each citation to its registry record. `e2er verify <bundle>` re-checks that
+bundle offline (see [For reviewers](#for-reviewers)). The gate reports
+themselves — `number_verification.json` (every table number vs. the JSON
+sidecars) and `citation_integrity.json` (every `\cite` vs. OpenAlex / Semantic
+Scholar / Crossref) — ship in the bundle too.
+
 If `GITHUB_TOKEN` is set, all of the above are also pushed to a dedicated paper repo with an Overleaf-compatible layout.
 
 ---
@@ -200,12 +310,17 @@ The dashboard's "Resume" button does the same thing through the UI.
 
 ## Data sources
 
-Specialists **discover** data sources in light of the research question: they
-call `list_data_sources` to see what's available and what each is for, then
-pull series data with a unified `fetch_data` tool (or `query_allium` for
-on-chain data). To run literature-only papers, just leave the data keys unset
-— or supply your own files in the workspace's `data/` directory (and via
-`LOCAL_DATA_DIR`).
+**Bring your own data.** `e2er init` scaffolds a `data/` folder (pointed at by
+`LOCAL_DATA_DIR`); drop `.csv` / `.tsv` / `.jsonl` / `.parquet` / `.xlsx` /
+`.txt` files there and they are staged into each run's workspace, imported into
+a per-paper SQLite warehouse, and queryable by the specialists.
+`e2er doctor` reports the datasets it found.
+
+On top of that, specialists **discover** built-in data sources in light of the
+research question: they call `list_data_sources` to see what's available and
+what each is for, then pull series data with a unified `fetch_data` tool (or
+`query_allium` for on-chain data). To run literature-only papers, just leave the
+data keys unset.
 
 | Source | Coverage | Setup | In-loop tool |
 |---|---|---|---|
@@ -231,7 +346,14 @@ We gratefully acknowledge **[Allium](https://allium.so)** for supporting this re
 
 ## Literature
 
-Two complementary paths: **your own references**, and **open-access discovery + full text**.
+**Bring your own papers.** `e2er init` scaffolds a `literature/` folder
+(`LITERATURE_DIR`). Point it at a folder of reference PDFs, a Zotero library (a
+folder with a `zotero.sqlite`), or a single `.bib` file — three modes, pick
+whichever you have. `e2er doctor` reports which mode is active and how many
+papers it found. Your PDFs stay on your machine; exported bundles carry only the
+`.bib` corpus. Full text also resolves open-access by DOI at run time.
+
+Two complementary paths in detail: **your own references**, and **open-access discovery + full text**.
 
 ### Your reference library
 

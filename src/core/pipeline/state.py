@@ -22,6 +22,12 @@ class PipelineState:
     pivot_count: int = 0
     contributions_count: int = 0
     last_status: str = "in_progress"
+    # Human-in-the-loop checkpoints. approved_stages are review points the
+    # operator has already cleared (so resume doesn't re-pause there);
+    # pending_review_stage is the stage a current pause is waiting on. Both
+    # default empty, so state files written by older versions load unchanged.
+    approved_stages: list[str] = field(default_factory=list)
+    pending_review_stage: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def mark_complete(self, stage: str) -> None:
@@ -31,6 +37,16 @@ class PipelineState:
 
     def is_complete(self, stage: str) -> bool:
         return stage in self.completed_stages
+
+    def is_approved(self, stage: str) -> bool:
+        return stage in self.approved_stages
+
+    def approve(self, stage: str) -> None:
+        """Clear a pending review checkpoint so resume proceeds past it."""
+        if stage not in self.approved_stages:
+            self.approved_stages.append(stage)
+        if self.pending_review_stage == stage:
+            self.pending_review_stage = None
 
     def save(self, workspace: Path) -> None:
         # Atomic write + backup of previous good state. Without this, a crash

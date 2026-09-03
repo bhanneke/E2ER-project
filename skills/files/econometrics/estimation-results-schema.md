@@ -171,6 +171,46 @@ consumed identically by verify_numbers and the drafter.
 Do NOT duplicate the main spec into both files. Each value should
 appear exactly once across the two files.
 
+### Every spec object needs the same scalars — tables render in ROWS
+
+A results table has one column per specification and one row per
+statistic, and the renderer fills a row across *every* column. So a
+scalar that exists for `main` but not for your robustness entries
+leaves that row half-empty — and an unresolvable reference halts the
+render rather than shipping a table with blank cells.
+
+Concretely: if you report `n_observations`, sample counts
+(`n_pre_treatment` / `n_post_treatment`), a threshold, or any other
+sample-defining scalar for `main`, report **the same fields under the
+same names for every other spec object**, in both files. Recompute them
+for that specification — do not copy `main`'s value across, because an
+alternative measure or sample generally has a different N.
+
+```json
+{
+  "rv5_measure": {
+    "specification": "5-day realized volatility threshold",
+    "n_observations": 415,
+    "n_pre_treatment": 192,
+    "n_post_treatment": 223,
+    "threshold_percentile": 75,
+    "delta_p_HH": 0.018
+  }
+}
+```
+
+The headline estimate alone is not enough. A robustness column carrying
+only its point estimate cannot be tabulated next to `main`.
+
+### Report every robustness check you specified
+
+If `econometric_spec.md` declares seven robustness checks, the sidecar
+should carry seven entries. Declaring checks in prose and emitting two
+of them is the same failure as writing `{}` while data is available:
+the paper claims work the artifacts do not contain. If a check turned
+out to be infeasible, say so explicitly in `econometric_spec.md` rather
+than silently dropping it.
+
 ## Rules
 
 1. **Plain numbers, not strings.** `-0.231`, not `"-0.231"` and not

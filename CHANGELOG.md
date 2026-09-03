@@ -7,6 +7,174 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### The researcher workflow — bring your own data and papers, branch across models, verify everything
+
+This is the release's headline: E2ER stops being "a pipeline you configure"
+and becomes a workflow a researcher directs. Four pillars, each with a
+first-class command.
+
+**(a) Bring your own data and your own papers.** `e2er init` now scaffolds
+`data/` and `literature/` with READMEs explaining what each accepts, writes
+`LOCAL_DATA_DIR` / `LITERATURE_DIR` into `.env`, and gained `--defaults` for
+non-interactive/CI setup. `e2er doctor` gained two pure-local checks
+(`byod_local_data`, `byod_literature`) that report what E2ER can actually see
+— file counts by type, recursion, the three literature modes — so "why isn't
+my data being used?" is answerable without a run. Fixed `e2er init`
+environment drift: it wrote backend keys the config rejects (`codex_cli`,
+`gemini_cli` instead of `codex`, `gemini`) and a `DATA_MODULE_ENABLED` toggle
+that hasn't existed since data-module enablement became a computed property.
+A test now instantiates `Settings(llm_backend=key)` for every key `init` can
+write, so that class of drift can't come back.
+
+**(b) Create a research question.** New `e2er rq --draft "<rough question>"`:
+gathers the project's available data sources and local literature, makes one
+backend call, and returns a structured `rq.json` — research question,
+rationale, candidate variables, identification options, feasibility notes.
+It is **advisory only and never creates a paper** (test-pinned): the
+researcher reads it, edits it, and decides. `e2er run --rq-file rq.json`
+consumes the result.
+
+**(c) Different models, different versions, one comparison.** New
+`e2er run-matrix "<RQ>" --backends a,b,c --repeats N` runs the same question
+across k backends × n repeats into labeled sibling papers plus a
+`matrix.json`. New `e2er compare <matrix.json|bundles>` then diffs what the
+models actually *decided*: a design-choice matrix over `identification_spec.json`,
+per-field agreement (modal share for scalars, mean pairwise Jaccard for sets),
+within- vs between-backend variance, and divergent-field flags. The report
+leads with the point: this is **measurement, not selection** — no run is
+promoted, nothing is auto-picked, and the preamble says so, because the value
+is seeing the solution space, not shopping for a result.
+
+Human-in-the-loop: `e2er run --review-at STAGE` (repeatable) pauses the run
+after any pipeline stage. Inspect or edit the workspace, then
+`e2er resume <paper_id>` approves that checkpoint and continues — built on the
+existing pause/resume + `.pipeline_state.json` machinery, with a Resume button
+in the web UI.
+
+**(d) Everything verifiable.** Every export bundle now carries
+`provenance.json`: a SHA-256 inventory of every file plus a derivation graph
+reconstructed from the gate reports already in the bundle — table cells → the
+source JSON key they trace to, citations → registry + DOI, figures → the
+figure spec, estimation → the executed script and its log, data → the recorded
+queries. Schema at `docs/schemas/provenance.schema.json`.
+
+New `e2er verify <bundle>` is the reviewer's cheap-verification moment:
+offline, keyless, sub-second. It re-hashes every file against the manifest,
+**recomputes** the numbers and spec checks from the bundled artifacts (the
+recomputation is authoritative — an edited report is caught, not trusted), and
+resolves every `\cite` against `refs.bib`, treating the bundled registry
+result as a snapshot. `--online` re-queries the live registries. A tampered
+number, a tampered report, a deleted file, and a broken citation are each
+caught. Export also now includes `identification_spec.json` (under `design/`)
+and the `replication/` directory, without which the spec check had nothing to
+check.
+
+### Governance regimes — the institutions became a switch, so their effect is measurable
+
+- **`--governance off | contracts | full`** (also `GOVERNANCE` in `.env`,
+  persisted per paper). `full` is the existing behaviour; `contracts` keeps
+  only the specialist output contracts; `off` blocks on nothing.
+- **Shadow mode.** A mechanism that isn't enforced still **runs**: it computes
+  its verdict and logs `gate_shadow` instead of `gate_enforced`. So an
+  ungoverned run doesn't merely fail differently — what the institutions
+  *would* have caught is recorded, which is what makes fabrication measurable
+  rather than absent. The regime is disclosed in the export bundle's README
+  and in `provenance.json`, so a bundle can't quietly hide how it was produced.
+- **New `src/core/governance.py`** holds the single enforcement matrix, read by
+  both the strategist runner (the three deterministic gates) and the specialist
+  layer (output contracts + cascade guard). Unknown regime strings fail closed
+  to `full`.
+- **Experiment driver** (`scripts/experiment_driver.py` + a YAML config, e.g.
+  `experiments/governance_pilot.yaml`): runs the same RQs across regimes × N
+  repeats and harvests per-run fabrication counts (critical number mismatches +
+  citations missing from the bib + unverifiable citations), completion, and
+  shadow/enforced gate failures into `results.csv` + `summary.md`.
+
+### Cross-pipeline citation audit
+
+- New `scripts/verify_external_paper.py` / `src/core/external_verify.py` runs
+  E2ER's citation-verification chain (OpenAlex → Semantic Scholar → Crossref)
+  over papers E2ER did not write, from their `.bib` reference lists, producing
+  per-paper and aggregate "X% of citations verify" reports. Lets the same
+  mechanical check be pointed at other pipelines' output.
+
+### Per-paper backend and model override
+
+- `e2er run --backend <name> [--model <id>]` overrides the LLM backend for a
+  single paper without restarting the server (the backend used to be
+  process-global via cached settings). This is the enabler for `run-matrix`
+  and the governance experiment. `papers.backend` column added, with an
+  idempotent SQLite backfill for existing databases.
+
+### Fixed — the governance experiment's own measuring instrument
+
+Found by running the pilot (3 regimes × 3 repeats) for the first time. The
+metric would have reported **zero fabrication on a run carrying 166 fabricated
+numbers**, so a successful-looking experiment would have produced a confidently
+wrong null.
+
+- **Prose numbers were invisible to `fabrication_count`.** The harvester counted
+  only table cells (`mismatches[].severity == "critical"`). Pilot run `ab95fcba`
+  reported `total_values_in_tables: 0` with an empty `mismatches` list — and
+  `prose_total: 278`, `prose_mismatched: 166`. Measured fabrication: 0.
+  `prose_mismatched` is now counted and reported as its own column.
+- **Skipped checks were counted as clean ones.** A citation check that finds no
+  bibliography writes `passed: true, total_cites: 0, skipped_reason: …`; the
+  harvester read the zeros as "no fabrication". Same skipped-is-not-verified
+  error as B-4 in `e2er verify`. Rows now carry `checks_skipped` and `measured`,
+  and per-regime means are taken over measured runs only.
+- **Non-completed runs contributed structural zeros.** Bundles are exported only
+  when a run completes, so `rejected`/`failed` runs — exactly the ones most
+  likely to carry fabrication — harvested nothing and averaged in as 0. This
+  biased the experiment *toward the null it exists to test*. Harvesting now
+  falls back to the paper's workspace, which holds the same reports.
+
+### Fixed — five bugs found by a full review of the above
+
+- **The `contracts` regime was dead code, and `off` still blocked.** The regime
+  reached the three deterministic gates but not the specialist-contract layer,
+  which is where output contracts are actually enforced. Under `--governance
+  off` a missing canonical artifact still raised (run FAILED) and a hollow one
+  still flipped the specialist to failure, tripping the circuit breaker after
+  three attempts (run PAUSED). `off` and `contracts` were therefore
+  indistinguishable, and the experiment's control cell was not a control. The
+  regime is now threaded runner → dispatcher → `run_specialist`; under `off`
+  the contract check still runs and logs `gate_shadow`, but does not flip
+  success, write coaching feedback, or raise. Operational limits (budget cap,
+  backend errors, the circuit breaker itself) remain regime-independent — they
+  are not verification institutions.
+- **Per-paper backend override picked the wrong model.** The model default was
+  resolved against the process-global backend, so `--backend openrouter`
+  without an explicit `--model` sent a bare `claude-sonnet-4-5` to OpenRouter
+  (which needs the `anthropic/` prefix) and every specialist call failed — on
+  exactly the multi-backend path `run-matrix` and the experiment use. Adds
+  `Settings.default_model_for(backend)`; `default_model` is now defined as
+  `default_model_for(llm_backend)`, so the two cannot drift.
+- **`provenance.json` recorded `source: null` for every table cell.**
+  `verify_numbers` records source keys prefixed with the source *filename*;
+  the provenance builder re-flattened the JSON without that prefix, so the
+  lookup never matched and per-cell attribution — the headline of the
+  provenance work — was null 100% of the time. Now matches the filename
+  prefix. (The original test used an unprefixed key and so passed against the
+  bug; it now runs the real producer.)
+- **`e2er verify` claimed success when it had checked almost nothing.** The
+  verdict counted only failures, so a partial bundle — export is best-effort
+  and can omit `paper.tex` — printed "Bundle verified — hashes, numbers, spec,
+  and citations are internally consistent" and exited 0 having verified only
+  hashes. A skip is not a pass: the verdict now names what ran and what was
+  skipped, and exits non-zero when no content check ran at all.
+- **`e2er run --rq "<RQ>"` crashed with a traceback.** argparse prefix-expanded
+  `--rq` to `--rq-file` and tried to open the research question as a filename.
+  `run` and `run-matrix` now take an explicit `--rq`, and an unreadable
+  `--rq-file` reports one line instead of a stack trace.
+
+### README reframed around the workflow
+
+- The README now leads with the four-pillar workflow and the verification
+  thesis rather than a feature list, adds a command table and a "For reviewers"
+  section (a keyless, $0 path from install to a verified bundle), and surfaces
+  the BYOD scaffolding and the three literature modes.
+
 ### Deep revision loop — referees can send the research back, not just the prose
 
 - **`MECHANISM_FAIL` re-does the research instead of terminating.** When the
