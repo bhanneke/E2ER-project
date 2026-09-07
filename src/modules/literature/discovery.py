@@ -14,8 +14,10 @@ Best-effort throughout — never raises into paper creation. Bounded by
 from __future__ import annotations
 
 import asyncio
+import re
 from pathlib import Path
 
+from ...config import Settings
 from ...logging_config import get_logger
 from ..local_corpus import PDF_EXTENSIONS, iter_corpus_files
 from .local_pdf_meta import extract_pdf_metadata
@@ -183,3 +185,105 @@ def _write_literature_bib(workspace: Path, items: list[PaperMetadata]) -> None:
         logger.info("Wrote %d bib entries to %s", len(entries), bib_path.name)
     except OSError as e:
         logger.warning("could not write literature.bib: %s", e)
+
+
+_BIB_ENTRY_RE = re.compile(r"^@\w+\s*\{\s*[^,\s]+", re.MULTILINE)
+
+
+def bib_entry_count(workspace: Path) -> int:
+    """How many entries ``workspace/literature.bib`` already holds (0 if absent)."""
+    path = Path(workspace) / "literature.bib"
+    if not path.is_file():
+        return 0
+    try:
+        return len(_BIB_ENTRY_RE.findall(path.read_text(encoding="utf-8", errors="replace")))
+    except OSError:
+        return 0
+
+
+async def acquire_literature(
+    workspace: Path,
+    paper_id: str,
+    queries: list[str],
+    settings: Settings,
+    limit: int = 30,
+) -> int:
+    """Search the web providers for this paper's own research question and record
+    the hits in ``literature.bib``. Returns the number of entries written.
+
+    WHY THIS IS A STAGE AND NOT A TOOL
+
+    E2ER v1 ran a literature agent as a mandatory pipeline step: it wrote
+    ``bibliography.bib`` from the 100xOS pgvector knowledge base before the
+    drafter started, and its papers still pass v3's own citation gate today
+    (31/33 and 37/38 cites verified, zero missing_in_bib, measured 2026-09-04).
+
+    v3 is standalone — no knowledge base, no ingested corpus — and replaced that
+    step with LITERATURE_TOOLS, which ``tool_loop`` ignores on every CLI backend.
+    Adding the ``e2er-lit`` bash bridge made the capability *reachable* and
+    changed nothing: canary #7 was granted it, told about it in its skill file,
+    and never called it. The drafter then cited 23 keys from memory against a
+    ``references.bib`` that did not exist.
+
+    So this does not ask. It runs before any specialist does, and the drafter
+    finds a real bibliography already on disk — v1's arrangement, restored.
+
+    Skipped when a bibliography already exists: BYOD/Zotero users have their own
+    library and must not have web hits merged into it silently.
+
+    Best-effort: a failing provider is skipped, a failing store is logged, and a
+    dead network costs the bibliography rather than the run. The caller wraps
+    this as a backstop — a paper with no bibliography is a bad paper, but a
+    crashed run is worse.
+    """
+    from .registry import search_sources
+    from .storage import store_paper
+
+    existing = bib_entry_count(workspace)
+    if existing:
+        logger.info("literature.bib already holds %d entries for %s — acquisition skipped", existing, paper_id)
+        return 0
+
+    wanted = [q.strip() for q in queries if q and q.strip()]
+    if not wanted:
+        logger.warning("literature acquisition for %s got no query to search with", paper_id)
+        return 0
+
+    sources = search_sources(settings)
+    found: dict[str, PaperMetadata] = {}
+    for query in wanted:
+        for source in sources:
+            try:
+                result = await source.search(query, limit)
+            except Exception as e:  # noqa: BLE001 — try the next source
+                logger.info("%s search failed (%s) — trying next source", source.name, e)
+                continue
+            if result.papers:
+                for paper in result.papers:
+                    if paper.title:
+                        found.setdefault(paper.bibtex_key, paper)
+                break
+
+    if not found:
+        logger.warning(
+            "literature acquisition found nothing for %s (%d query/queries, %d source(s)) — "
+            "the drafter will have no bibliography and every cite will report missing_in_bib",
+            paper_id,
+            len(wanted),
+            len(sources),
+        )
+        return 0
+
+    items = list(found.values())
+    _write_literature_bib(workspace, items)
+
+    # Parity with the BYOD path: persist so search_papers can serve these
+    # offline. Per-item best-effort — a storage failure must not cost the bib.
+    for item in items:
+        try:
+            await store_paper(item, paper_id)
+        except Exception as e:  # noqa: BLE001
+            logger.debug("store_paper failed for %r: %s", item.title[:60], e)
+
+    logger.info("literature acquisition: %d entries written for %s", len(items), paper_id)
+    return len(items)

@@ -13,12 +13,24 @@ logger = get_logger(__name__)
 _BASE = "https://api.openalex.org"
 _EMAIL = "research@e2er.app"  # polite pool
 
+# OpenAlex 400s on these two in ``search``; every other punctuation mark a
+# research question or title carries — quotes, parens, ampersands, colons,
+# commas, hyphens, slashes — is accepted (probed against the live API
+# 2026-09-07). Stripping matters because the caller searches with the paper's
+# own research question, which normally ends in '?': the whole provider then
+# fails and acquisition silently falls through to the next source.
+_REJECTED_CHARS = str.maketrans({"?": " ", "*": " "})
+
+
+def _sanitize(query: str) -> str:
+    return " ".join(query.translate(_REJECTED_CHARS).split())
+
 
 async def search_papers(query: str, limit: int = 20) -> SearchResult:
     """Search OpenAlex for papers matching the query."""
     params = urllib.parse.urlencode(
         {
-            "search": query,
+            "search": _sanitize(query),
             "per-page": min(limit, 50),
             "mailto": _EMAIL,
         }

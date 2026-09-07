@@ -197,6 +197,29 @@ async def _ingest_literature_corpus(paper_id: str, workspace: Path, settings) ->
         logger.warning("literature ingestion skipped for %s: %s (paper creation continues)", paper_id, e)
 
 
+async def _acquire_literature(paper_id: str, workspace: Path, settings, research_question: str, title: str) -> None:
+    """Put a real bibliography on disk BEFORE any specialist runs.
+
+    Unlike ``_ingest_literature_corpus`` (which needs a BYOD folder and only
+    runs on SQLite), this always runs — it is the standalone replacement for
+    v1's mandatory literature agent. See
+    :func:`src.modules.literature.discovery.acquire_literature` for why it is a
+    stage rather than a tool the drafter may choose to call.
+
+    Self-skipping when a bibliography already exists, so the BYOD/Zotero path
+    above wins when the researcher brought their own library.
+    """
+    from ..modules.literature.discovery import acquire_literature
+
+    await acquire_literature(
+        workspace,
+        paper_id,
+        [research_question, title],
+        settings,
+        limit=settings.literature_acquire_limit,
+    )
+
+
 async def _tuple_is_proven(model: str, methodology: str, mode: str) -> bool:
     """Has any paper with this (model, methodology, mode) tuple completed?
 
@@ -560,6 +583,8 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
             current_model,
             effective_governance,
             req.review_stages,
+            req.research_question,
+            req.title,
         )
     )
     _RUNNING[paper_id] = task
@@ -1346,15 +1371,17 @@ async def _prepare_and_run(
     model: str | None = None,
     governance: str | None = None,
     review_stages: list[str] | None = None,
+    research_question: str = "",
+    title: str = "",
 ) -> None:
     """Background entry: do the heavy BYOD prep (data.db import + literature
-    ingest) off the request path, THEN run the pipeline.
+    ingest + literature acquisition) off the request path, THEN run the pipeline.
 
     Kept out of create_paper so the POST returns immediately — a multi-GB import
     + Zotero ingest otherwise blocks past the client's HTTP timeout. Each step is
     best-effort and never raises; the import runs before the pipeline's data
-    specialists need data.db, and the literature ingest runs after the papers row
-    exists (FK).
+    specialists need data.db, and the literature steps run after the papers row
+    exists (FK) but before any specialist can cite anything.
     """
     from ..modules.data.byod_import import import_corpus_into_data_db
 
@@ -1366,6 +1393,14 @@ async def _prepare_and_run(
         await _ingest_literature_corpus(paper_id, workspace, settings)
     except Exception as e:  # noqa: BLE001
         logger.warning("literature ingest failed for %s: %s (pipeline continues)", paper_id, e)
+    # Runs second so the BYOD library above wins; acquisition self-skips when a
+    # bibliography already exists. Must precede _run_pipeline: the drafter reads
+    # literature.bib from the prompt, and a cite with no bib entry is a hard fail
+    # at the citation gate and an undefined reference at compile time.
+    try:
+        await _acquire_literature(paper_id, workspace, settings, research_question, title)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("literature acquisition failed for %s: %s (pipeline continues)", paper_id, e)
     await _run_pipeline(
         paper_id, workspace, mode, max_cost_usd, methodology, backend_name, model, governance, review_stages
     )

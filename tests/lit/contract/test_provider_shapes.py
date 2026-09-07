@@ -90,6 +90,30 @@ async def test_openalex_search_parses_documented_response():
 
 
 @pytest.mark.asyncio
+async def test_openalex_search_strips_the_characters_the_api_rejects():
+    """A research question ends in '?' and OpenAlex 400s on it (probed live
+    2026-09-07; '*' too, nothing else). Unstripped, the provider fails outright
+    and acquisition silently falls through to a weaker source."""
+    from src.modules.literature.openalex import search_papers
+
+    seen: dict[str, str] = {}
+
+    async def _capture(url: str) -> str:
+        seen["url"] = url
+        return json.dumps({"meta": {"count": 0}, "results": []})
+
+    with patch("src.modules.literature.openalex.fetch_text", new=_capture):
+        result = await search_papers("Did spot ETFs change volatility? A study*")
+
+    search_param = seen["url"].split("search=", 1)[1].split("&", 1)[0]
+    assert "%3F" not in search_param and "?" not in search_param
+    assert "*" not in search_param and "%2A" not in search_param
+    assert "volatility" in search_param
+    # The caller asked for the original question; the report echoes it back.
+    assert result.query == "Did spot ETFs change volatility? A study*"
+
+
+@pytest.mark.asyncio
 async def test_openalex_search_handles_empty_results():
     """An empty results list must return an empty papers list, not crash."""
     from src.modules.literature.openalex import search_papers

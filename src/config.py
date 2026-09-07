@@ -128,6 +128,11 @@ class Settings(BaseSettings):
     # Cap on papers discovered+persisted from LITERATURE_DIR at paper creation
     # (protects startup latency + CrossRef rate limits on huge libraries).
     literature_max_ingest: int = 500
+    # How many hits per query the always-on acquisition stage records when no
+    # bibliography exists yet. Two queries (research question + title) run, so
+    # the ceiling is roughly twice this before de-duplication. Sized for a
+    # normal reference list, not a survey.
+    literature_acquire_limit: int = 30
 
     # Email used to identify this client to the OpenAlex / Crossref / Unpaywall
     # polite pools (all keyless, all ask for a contact in every request). Each
