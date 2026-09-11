@@ -90,6 +90,43 @@ def test_the_bundle_verifies_clean():
     assert checks["citations"].status == "PASS"
 
 
+def test_provenance_records_a_cell_edge_for_every_traced_number():
+    """The bundle shipped with 34 edges, every one a citation, and no table_cell
+    edge at all — because the run's gate report recorded no matched cells and
+    the graph is derived from it. It claimed every number traces to a file while
+    carrying no trace for any number."""
+    prov = json.loads((BUNDLE / "provenance.json").read_text(encoding="utf-8"))
+    cells = [e for e in prov["edges"] if e.get("type") == "table_cell"]
+
+    assert cells, "derivation graph has no table_cell edges"
+    for edge in cells[:20]:
+        assert edge.get("source_key"), f"cell edge without a source key: {edge}"
+        assert edge.get("cell_value") is not None
+        assert edge.get("table_context")
+
+
+def test_empty_derivation_graph_fails_integrity(tmp_path: Path):
+    """Hashes prove nothing was modified. They say nothing about whether the
+    graph was ever populated, so integrity has to check both."""
+    import shutil
+
+    from src.cli_verify import _check_integrity
+
+    bundle = tmp_path / "b"
+    shutil.copytree(BUNDLE, bundle)
+
+    prov = json.loads((bundle / "provenance.json").read_text(encoding="utf-8"))
+    assert _check_integrity(bundle).status == "PASS"
+
+    # Strip the cell edges, leaving the hashes untouched and correct.
+    prov["edges"] = [e for e in prov["edges"] if e.get("type") != "table_cell"]
+    (bundle / "provenance.json").write_text(json.dumps(prov), encoding="utf-8")
+
+    check = _check_integrity(bundle)
+    assert check.status == "FAIL"
+    assert "derivation graph is empty" in check.detail
+
+
 def test_rendered_tables_with_no_traced_cells_is_not_a_pass(tmp_path: Path):
     """The guard itself: a paper that ships rendered tables and traces nothing
     in them must not print the same tick as one that checked every number."""

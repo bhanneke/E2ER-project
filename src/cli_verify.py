@@ -84,7 +84,30 @@ def _check_integrity(bundle: Path) -> Check:
         if extra:
             bits.append(f"{len(extra)} unlisted ({', '.join(extra[:3])})")
         return Check("integrity", FAIL, "; ".join(bits))
-    return Check("integrity", PASS, f"{len(files)} files hash-verified against provenance.json")
+    if _bundle_has_rendered_tables(bundle) and not _table_cell_edges(prov):
+        # Hashes prove nothing was modified; they say nothing about whether the
+        # derivation graph was ever populated. A bundle that ships rendered
+        # tables and records no cell→source edge asserts a provenance claim it
+        # cannot support.
+        return Check(
+            "integrity",
+            FAIL,
+            f"{len(files)} files hash-verified, but provenance records no table_cell "
+            "edges while the paper ships rendered tables — the derivation graph is empty",
+        )
+    return Check(
+        "integrity",
+        PASS,
+        f"{len(files)} files hash-verified against provenance.json; "
+        f"{_table_cell_edges(prov)} table cell(s) traced in the derivation graph",
+    )
+
+
+def _table_cell_edges(prov: dict) -> int:
+    edges = prov.get("edges")
+    if not isinstance(edges, list):
+        return 0
+    return sum(1 for e in edges if isinstance(e, dict) and e.get("type") == "table_cell")
 
 
 # ── workspace reconstruction for the reuse-based checks ──────────────────────

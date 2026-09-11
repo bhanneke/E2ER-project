@@ -1,25 +1,1764 @@
 {
-  "passed": true,
-  "total_values_in_tables": 0,
-  "matched": 0,
-  "mismatched": 0,
+  "passed": false,
+  "total_values_in_tables": 347,
+  "matched": 346,
+  "mismatched": 1,
   "unverifiable": 0,
-  "coverage": 0.0,
-  "mismatches": [],
-  "matched_cells": [],
+  "coverage": 1.0,
+  "mismatches": [
+    {
+      "draft_value": "-6",
+      "source_key": "figure_spec.json.figures[4].series[0].y[151]",
+      "source_value": "-5.964",
+      "table_context": "tab:event_study (Event study in six-month bins, and tests of parallel pre-tre...), row 4, col 1",
+      "severity": "major"
+    }
+  ],
+  "matched_cells": [
+    {
+      "draft_value": "5",
+      "source_key": "summary_statistics.json.macro.dgs10_proxy_tnx.max",
+      "table_context": "tab:sumstats (Summary statistics, coin-month panel...), row 1, col 4"
+    },
+    {
+      "draft_value": "5",
+      "source_key": "summary_statistics.json.macro.dgs10_proxy_tnx.max",
+      "table_context": "tab:sumstats (Summary statistics, coin-month panel...), row 1, col 6"
+    },
+    {
+      "draft_value": "0.394",
+      "source_key": "summary_statistics.json.outcome.mean",
+      "table_context": "tab:sumstats (Summary statistics, coin-month panel...), row 2, col 2"
+    },
+    {
+      "draft_value": "0.296",
+      "source_key": "summary_statistics.json.outcome.sd",
+      "table_context": "tab:sumstats (Summary statistics, coin-month panel...), row 2, col 3"
+    },
+    {
+      "draft_value": "0.217",
+      "source_key": "summary_statistics.json.outcome.p25",
+      "table_context": "tab:sumstats (Summary statistics, coin-month panel...), row 2, col 4"
+    },
+    {
+      "draft_value": "0.396",
+      "source_key": "summary_statistics.json.outcome.mean",
+      "table_context": "tab:sumstats (Summary statistics, coin-month panel...), row 2, col 5"
+    },
+    {
+      "draft_value": "0.587",
+      "source_key": "summary_statistics.json.outcome.p75",
+      "table_context": "tab:sumstats (Summary statistics, coin-month panel...), row 2, col 6"
+    },
+    {
+      "draft_value": "0.351",
+      "source_key": "summary_statistics.json.outcome_rho.mean",
+      "table_context": "tab:sumstats (Summary statistics, coin-month panel...), row 3, col 2"
+    },
+    {
+      "draft_value": "0.247",
+      "source_key": "summary_statistics.json.outcome_rho.sd",
+      "table_context": "tab:sumstats (Summary statistics, coin-month panel...), row 3, col 3"
+    },
+    {
+      "draft_value": "0.213",
+      "source_key": "summary_statistics.json.outcome.p25",
+      "table_context": "tab:sumstats (Summary statistics, coin-month panel...), row 3, col 4"
+    },
+    {
+      "draft_value": "0.377",
+      "source_key": "summary_statistics.json.outcome_rho.median",
+      "table_context": "tab:sumstats (Summary statistics, coin-month panel...), row 3, col 5"
+    },
+    {
+      "draft_value": "0.528",
+      "source_key": "summary_statistics.json.outcome_rho.p75",
+      "table_context": "tab:sumstats (Summary statistics, coin-month panel...), row 3, col 6"
+    },
+    {
+      "draft_value": "2",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.DOT.pooled_daily_beta_pre",
+      "table_context": "tab:sumstats (Summary statistics, coin-month panel...), row 4, col 1"
+    },
+    {
+      "draft_value": "0.184",
+      "source_key": "summary_statistics.json.outcome_rho2.mean",
+      "table_context": "tab:sumstats (Summary statistics, coin-month panel...), row 4, col 2"
+    },
+    {
+      "draft_value": "0.155",
+      "source_key": "summary_statistics.json.outcome_rho2.sd",
+      "table_context": "tab:sumstats (Summary statistics, coin-month panel...), row 4, col 3"
+    },
+    {
+      "draft_value": "0.061",
+      "source_key": "summary_statistics.json.outcome_rho2.p25",
+      "table_context": "tab:sumstats (Summary statistics, coin-month panel...), row 4, col 4"
+    },
+    {
+      "draft_value": "0.142",
+      "source_key": "summary_statistics.json.outcome_rho2.median",
+      "table_context": "tab:sumstats (Summary statistics, coin-month panel...), row 4, col 5"
+    },
+    {
+      "draft_value": "0.278",
+      "source_key": "summary_statistics.json.outcome_rho2.p75",
+      "table_context": "tab:sumstats (Summary statistics, coin-month panel...), row 4, col 6"
+    },
+    {
+      "draft_value": "1.693",
+      "source_key": "summary_statistics.json.outcome_beta.mean",
+      "table_context": "tab:sumstats (Summary statistics, coin-month panel...), row 5, col 2"
+    },
+    {
+      "draft_value": "1.807",
+      "source_key": "summary_statistics.json.outcome_beta.sd",
+      "table_context": "tab:sumstats (Summary statistics, coin-month panel...), row 5, col 3"
+    },
+    {
+      "draft_value": "0.842",
+      "source_key": "summary_statistics.json.outcome_beta.p25",
+      "table_context": "tab:sumstats (Summary statistics, coin-month panel...), row 5, col 4"
+    },
+    {
+      "draft_value": "1.609",
+      "source_key": "summary_statistics.json.outcome_beta.median",
+      "table_context": "tab:sumstats (Summary statistics, coin-month panel...), row 5, col 5"
+    },
+    {
+      "draft_value": "2.433",
+      "source_key": "summary_statistics.json.outcome_beta.p75",
+      "table_context": "tab:sumstats (Summary statistics, coin-month panel...), row 5, col 6"
+    },
+    {
+      "draft_value": "1.545",
+      "source_key": "summary_statistics.json.ln_sigma_ratio.mean",
+      "table_context": "tab:sumstats (Summary statistics, coin-month panel...), row 6, col 2"
+    },
+    {
+      "draft_value": "0.576",
+      "source_key": "summary_statistics.json.ln_sigma_ratio.sd",
+      "table_context": "tab:sumstats (Summary statistics, coin-month panel...), row 6, col 3"
+    },
+    {
+      "draft_value": "1.156",
+      "source_key": "summary_statistics.json.ln_sigma_ratio.p25",
+      "table_context": "tab:sumstats (Summary statistics, coin-month panel...), row 6, col 4"
+    },
+    {
+      "draft_value": "1.514",
+      "source_key": "summary_statistics.json.ln_sigma_ratio.median",
+      "table_context": "tab:sumstats (Summary statistics, coin-month panel...), row 6, col 5"
+    },
+    {
+      "draft_value": "1.905",
+      "source_key": "summary_statistics.json.ln_sigma_ratio.p75",
+      "table_context": "tab:sumstats (Summary statistics, coin-month panel...), row 6, col 6"
+    },
+    {
+      "draft_value": "20.869",
+      "source_key": "summary_statistics.json.n_days_m.mean",
+      "table_context": "tab:sumstats (Summary statistics, coin-month panel...), row 7, col 2"
+    },
+    {
+      "draft_value": "1.181",
+      "source_key": "summary_statistics.json.n_days_m.sd",
+      "table_context": "tab:sumstats (Summary statistics, coin-month panel...), row 7, col 3"
+    },
+    {
+      "draft_value": "20.000",
+      "source_key": "summary_statistics.json.n_days_m.p25",
+      "table_context": "tab:sumstats (Summary statistics, coin-month panel...), row 7, col 4"
+    },
+    {
+      "draft_value": "21.000",
+      "source_key": "summary_statistics.json.n_days_m.median",
+      "table_context": "tab:sumstats (Summary statistics, coin-month panel...), row 7, col 5"
+    },
+    {
+      "draft_value": "22.000",
+      "source_key": "summary_statistics.json.n_days_m.p75",
+      "table_context": "tab:sumstats (Summary statistics, coin-month panel...), row 7, col 6"
+    },
+    {
+      "draft_value": "0.0334",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ALTIDX_EW.d_mean_fisherz",
+      "table_context": "tab:sumstats (Summary statistics, coin-month panel...), row 9, col 2"
+    },
+    {
+      "draft_value": "0.0105",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.BTC.d_mean_rho",
+      "table_context": "tab:sumstats (Summary statistics, coin-month panel...), row 10, col 2"
+    },
+    {
+      "draft_value": "0.382",
+      "source_key": "summary_statistics.json.subsample_pre_2024_01_10.outcome.mean",
+      "table_context": "tab:rawcontrast (Raw pre/post contrast in mean correlation with SPY...), row 2, col 2"
+    },
+    {
+      "draft_value": "0.391",
+      "source_key": "summary_statistics.json.outcome.mean",
+      "table_context": "tab:rawcontrast (Raw pre/post contrast in mean correlation with SPY...), row 2, col 3"
+    },
+    {
+      "draft_value": "0.009",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.BTC.d_mean_rho",
+      "table_context": "tab:rawcontrast (Raw pre/post contrast in mean correlation with SPY...), row 2, col 4"
+    },
+    {
+      "draft_value": "9",
+      "source_key": "summary_statistics.json.by_group.never_treated_controls.n_units",
+      "table_context": "tab:rawcontrast (Raw pre/post contrast in mean correlation with SPY...), row 3, col 1"
+    },
+    {
+      "draft_value": "0.341",
+      "source_key": "summary_statistics.json.subsample_pre_2024_01_10.rho.mean",
+      "table_context": "tab:rawcontrast (Raw pre/post contrast in mean correlation with SPY...), row 3, col 2"
+    },
+    {
+      "draft_value": "0.352",
+      "source_key": "summary_statistics.json.outcome_rho.mean",
+      "table_context": "tab:rawcontrast (Raw pre/post contrast in mean correlation with SPY...), row 3, col 3"
+    },
+    {
+      "draft_value": "0.011",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ALTIDX_EW.d_mean_rho",
+      "table_context": "tab:rawcontrast (Raw pre/post contrast in mean correlation with SPY...), row 3, col 4"
+    },
+    {
+      "draft_value": "1",
+      "source_key": "summary_statistics.json.estimation_panel_coverage.months_lost_to_factor_publication_lag",
+      "table_context": "tab:main (The spot-ETF listing and Bitcoin's equity co-movement: diffe...), row 1, col 2"
+    },
+    {
+      "draft_value": "2",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.DOT.pooled_daily_beta_pre",
+      "table_context": "tab:main (The spot-ETF listing and Bitcoin's equity co-movement: diffe...), row 1, col 3"
+    },
+    {
+      "draft_value": "3",
+      "source_key": "estimation_results.json.bai_perron.differential_fisherz.n_breaks_lwz",
+      "table_context": "tab:main (The spot-ETF listing and Bitcoin's equity co-movement: diffe...), row 1, col 4"
+    },
+    {
+      "draft_value": "4",
+      "source_key": "summary_statistics.json.macro.dgs10_proxy_tnx.median",
+      "table_context": "tab:main (The spot-ETF listing and Bitcoin's equity co-movement: diffe...), row 1, col 5"
+    },
+    {
+      "draft_value": "5",
+      "source_key": "summary_statistics.json.macro.dgs10_proxy_tnx.max",
+      "table_context": "tab:main (The spot-ETF listing and Bitcoin's equity co-movement: diffe...), row 1, col 6"
+    },
+    {
+      "draft_value": "30",
+      "source_key": "summary_statistics.json.subsample_post_2024_01_10.n_months",
+      "table_context": "tab:main (The spot-ETF listing and Bitcoin's equity co-movement: diffe...), row 1, col 6"
+    },
+    {
+      "draft_value": "-0.0212",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ADA.d_mean_rho",
+      "table_context": "tab:main (The spot-ETF listing and Bitcoin's equity co-movement: diffe...), row 2, col 2"
+    },
+    {
+      "draft_value": "-0.0212",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ADA.d_mean_rho",
+      "table_context": "tab:main (The spot-ETF listing and Bitcoin's equity co-movement: diffe...), row 2, col 3"
+    },
+    {
+      "draft_value": "-0.0212",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ADA.d_mean_rho",
+      "table_context": "tab:main (The spot-ETF listing and Bitcoin's equity co-movement: diffe...), row 2, col 4"
+    },
+    {
+      "draft_value": "-0.0092",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ADA.d_mean_fisherz",
+      "table_context": "tab:main (The spot-ETF listing and Bitcoin's equity co-movement: diffe...), row 2, col 5"
+    },
+    {
+      "draft_value": "-0.0272",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.DOT.d_mean_fisherz",
+      "table_context": "tab:main (The spot-ETF listing and Bitcoin's equity co-movement: diffe...), row 2, col 6"
+    },
+    {
+      "draft_value": "0.0170",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ALTIDX_EW.d_mean_rho",
+      "table_context": "tab:main (The spot-ETF listing and Bitcoin's equity co-movement: diffe...), row 3, col 2"
+    },
+    {
+      "draft_value": "0.0246",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ALTIDX_EW.d_pooled_daily_rho",
+      "table_context": "tab:main (The spot-ETF listing and Bitcoin's equity co-movement: diffe...), row 3, col 3"
+    },
+    {
+      "draft_value": "0.0229",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ALTIDX_EW.d_pooled_daily_rho",
+      "table_context": "tab:main (The spot-ETF listing and Bitcoin's equity co-movement: diffe...), row 3, col 4"
+    },
+    {
+      "draft_value": "0.0159",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ALTIDX_EW.d_mean_rho",
+      "table_context": "tab:main (The spot-ETF listing and Bitcoin's equity co-movement: diffe...), row 3, col 5"
+    },
+    {
+      "draft_value": "0.0182",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ALTIDX_EW.d_mean_rho",
+      "table_context": "tab:main (The spot-ETF listing and Bitcoin's equity co-movement: diffe...), row 3, col 6"
+    },
+    {
+      "draft_value": "2",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.DOT.pooled_daily_beta_pre",
+      "table_context": "tab:main (The spot-ETF listing and Bitcoin's equity co-movement: diffe...), row 4, col 1"
+    },
+    {
+      "draft_value": "0.0006",
+      "source_key": "summary_statistics.json.clock.baseline_used_is_equity_close",
+      "table_context": "tab:main (The spot-ETF listing and Bitcoin's equity co-movement: diffe...), row 4, col 2"
+    },
+    {
+      "draft_value": "0.0213",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ALTIDX_EW.d_pooled_daily_rho",
+      "table_context": "tab:main (The spot-ETF listing and Bitcoin's equity co-movement: diffe...), row 4, col 3"
+    },
+    {
+      "draft_value": "0.0006",
+      "source_key": "summary_statistics.json.clock.baseline_used_is_equity_close",
+      "table_context": "tab:main (The spot-ETF listing and Bitcoin's equity co-movement: diffe...), row 4, col 4"
+    },
+    {
+      "draft_value": "0.0001",
+      "source_key": "summary_statistics.json.clock.baseline_used_is_equity_close",
+      "table_context": "tab:main (The spot-ETF listing and Bitcoin's equity co-movement: diffe...), row 4, col 5"
+    },
+    {
+      "draft_value": "0.0014",
+      "source_key": "summary_statistics.json.clock.baseline_used_is_equity_close",
+      "table_context": "tab:main (The spot-ETF listing and Bitcoin's equity co-movement: diffe...), row 4, col 6"
+    },
+    {
+      "draft_value": "31",
+      "source_key": "summary_statistics.json.subsample_pre_2024_01_10.n_months",
+      "table_context": "tab:main (The spot-ETF listing and Bitcoin's equity co-movement: diffe...), row 5, col 2"
+    },
+    {
+      "draft_value": "10",
+      "source_key": "summary_statistics.json.n_units",
+      "table_context": "tab:main (The spot-ETF listing and Bitcoin's equity co-movement: diffe...), row 5, col 3"
+    },
+    {
+      "draft_value": "31",
+      "source_key": "summary_statistics.json.subsample_pre_2024_01_10.n_months",
+      "table_context": "tab:main (The spot-ETF listing and Bitcoin's equity co-movement: diffe...), row 5, col 4"
+    },
+    {
+      "draft_value": "36",
+      "source_key": "robustness_results.json.no_donut.n_pre_treatment",
+      "table_context": "tab:main (The spot-ETF listing and Bitcoin's equity co-movement: diffe...), row 5, col 5"
+    },
+    {
+      "draft_value": "624",
+      "source_key": "estimation_results.json.daily_rolling_did.n_pre_treatment",
+      "table_context": "tab:main (The spot-ETF listing and Bitcoin's equity co-movement: diffe...), row 5, col 6"
+    },
+    {
+      "draft_value": "23",
+      "source_key": "summary_statistics.json.n_days_m.max",
+      "table_context": "tab:main (The spot-ETF listing and Bitcoin's equity co-movement: diffe...), row 6, col 2"
+    },
+    {
+      "draft_value": "10",
+      "source_key": "summary_statistics.json.n_units",
+      "table_context": "tab:main (The spot-ETF listing and Bitcoin's equity co-movement: diffe...), row 6, col 3"
+    },
+    {
+      "draft_value": "23",
+      "source_key": "summary_statistics.json.n_days_m.max",
+      "table_context": "tab:main (The spot-ETF listing and Bitcoin's equity co-movement: diffe...), row 6, col 4"
+    },
+    {
+      "draft_value": "24",
+      "source_key": "robustness_results.json.no_donut.n_post_treatment",
+      "table_context": "tab:main (The spot-ETF listing and Bitcoin's equity co-movement: diffe...), row 6, col 5"
+    },
+    {
+      "draft_value": "481",
+      "source_key": "estimation_results.json.daily_rolling_did.n_post_treatment",
+      "table_context": "tab:main (The spot-ETF listing and Bitcoin's equity co-movement: diffe...), row 6, col 6"
+    },
+    {
+      "draft_value": "10",
+      "source_key": "summary_statistics.json.n_units",
+      "table_context": "tab:main (The spot-ETF listing and Bitcoin's equity co-movement: diffe...), row 7, col 2"
+    },
+    {
+      "draft_value": "10",
+      "source_key": "summary_statistics.json.n_units",
+      "table_context": "tab:main (The spot-ETF listing and Bitcoin's equity co-movement: diffe...), row 7, col 3"
+    },
+    {
+      "draft_value": "10",
+      "source_key": "summary_statistics.json.n_units",
+      "table_context": "tab:main (The spot-ETF listing and Bitcoin's equity co-movement: diffe...), row 7, col 4"
+    },
+    {
+      "draft_value": "10",
+      "source_key": "summary_statistics.json.n_units",
+      "table_context": "tab:main (The spot-ETF listing and Bitcoin's equity co-movement: diffe...), row 7, col 5"
+    },
+    {
+      "draft_value": "10",
+      "source_key": "summary_statistics.json.n_units",
+      "table_context": "tab:main (The spot-ETF listing and Bitcoin's equity co-movement: diffe...), row 7, col 6"
+    },
+    {
+      "draft_value": "540",
+      "source_key": "estimation_results.json.main.n_observations",
+      "table_context": "tab:main (The spot-ETF listing and Bitcoin's equity co-movement: diffe...), row 8, col 2"
+    },
+    {
+      "draft_value": "20",
+      "source_key": "summary_statistics.json.n_days_m.p25",
+      "table_context": "tab:main (The spot-ETF listing and Bitcoin's equity co-movement: diffe...), row 8, col 3"
+    },
+    {
+      "draft_value": "540",
+      "source_key": "estimation_results.json.main.n_observations",
+      "table_context": "tab:main (The spot-ETF listing and Bitcoin's equity co-movement: diffe...), row 8, col 4"
+    },
+    {
+      "draft_value": "600",
+      "source_key": "robustness_results.json.window_60d.n_pre_treatment",
+      "table_context": "tab:main (The spot-ETF listing and Bitcoin's equity co-movement: diffe...), row 8, col 5"
+    },
+    {
+      "draft_value": "11,050",
+      "source_key": "estimation_results.json.daily_rolling_did.n_observations",
+      "table_context": "tab:main (The spot-ETF listing and Bitcoin's equity co-movement: diffe...), row 8, col 6"
+    },
+    {
+      "draft_value": "-0.0212",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ADA.d_mean_rho",
+      "table_context": "tab:inference (Inference procedures for the baseline estimate under a singl...), row 2, col 2"
+    },
+    {
+      "draft_value": "0.0170",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ALTIDX_EW.d_mean_rho",
+      "table_context": "tab:inference (Inference procedures for the baseline estimate under a singl...), row 3, col 2"
+    },
+    {
+      "draft_value": "-0.0181",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ADA.d_mean_rho",
+      "table_context": "tab:inference (Inference procedures for the baseline estimate under a singl...), row 4, col 2"
+    },
+    {
+      "draft_value": "0.3822",
+      "source_key": "summary_statistics.json.subsample_pre_2024_01_10.outcome.mean",
+      "table_context": "tab:inference (Inference procedures for the baseline estimate under a singl...), row 5, col 2"
+    },
+    {
+      "draft_value": "0.665",
+      "source_key": "estimation_results.json.main.p_value_ri",
+      "table_context": "tab:inference (Inference procedures for the baseline estimate under a singl...), row 6, col 2"
+    },
+    {
+      "draft_value": "0.80",
+      "source_key": "summary_statistics.json.subsample_pre_2024_01_10.rho.max",
+      "table_context": "tab:inference (Inference procedures for the baseline estimate under a singl...), row 7, col 2"
+    },
+    {
+      "draft_value": "0.467",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ETH.d_mean_beta",
+      "table_context": "tab:inference (Inference procedures for the baseline estimate under a singl...), row 8, col 2"
+    },
+    {
+      "draft_value": "199",
+      "source_key": "estimation_results.json.main.n_placebo_assignments",
+      "table_context": "tab:inference (Inference procedures for the baseline estimate under a singl...), row 9, col 2"
+    },
+    {
+      "draft_value": "0.0619",
+      "source_key": "summary_statistics.json.outcome_rho2.p25",
+      "table_context": "tab:inference (Inference procedures for the baseline estimate under a singl...), row 10, col 2"
+    },
+    {
+      "draft_value": "95",
+      "source_key": "figure_spec.json.figures[3].series[0].y[254]",
+      "table_context": "tab:inference (Inference procedures for the baseline estimate under a singl...), row 11, col 1"
+    },
+    {
+      "draft_value": "-0.1426",
+      "source_key": "estimation_results.json.main.ri_ci95_lower",
+      "table_context": "tab:inference (Inference procedures for the baseline estimate under a singl...), row 11, col 2"
+    },
+    {
+      "draft_value": "95",
+      "source_key": "figure_spec.json.figures[3].series[0].y[254]",
+      "table_context": "tab:inference (Inference procedures for the baseline estimate under a singl...), row 12, col 1"
+    },
+    {
+      "draft_value": "0.1002",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.AVAX.d_mean_fisherz",
+      "table_context": "tab:inference (Inference procedures for the baseline estimate under a singl...), row 12, col 2"
+    },
+    {
+      "draft_value": "95",
+      "source_key": "figure_spec.json.figures[3].series[0].y[254]",
+      "table_context": "tab:inference (Inference procedures for the baseline estimate under a singl...), row 13, col 1"
+    },
+    {
+      "draft_value": "-0.1065",
+      "source_key": "summary_statistics.json.raw_contrast.MKT.did_raw.beta",
+      "table_context": "tab:inference (Inference procedures for the baseline estimate under a singl...), row 13, col 2"
+    },
+    {
+      "draft_value": "95",
+      "source_key": "figure_spec.json.figures[3].series[0].y[254]",
+      "table_context": "tab:inference (Inference procedures for the baseline estimate under a singl...), row 14, col 1"
+    },
+    {
+      "draft_value": "0.0386",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ALTIDX_EW.d_mean_fisherz",
+      "table_context": "tab:inference (Inference procedures for the baseline estimate under a singl...), row 14, col 2"
+    },
+    {
+      "draft_value": "540",
+      "source_key": "estimation_results.json.main.n_observations",
+      "table_context": "tab:inference (Inference procedures for the baseline estimate under a singl...), row 15, col 2"
+    },
+    {
+      "draft_value": "-7",
+      "source_key": "figure_spec.json.figures[4].series[0].y[107]",
+      "table_context": "tab:event_study (Event study in six-month bins, and tests of parallel pre-tre...), row 2, col 1"
+    },
+    {
+      "draft_value": "0.2026",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.DOGE.d_mean_beta",
+      "table_context": "tab:event_study (Event study in six-month bins, and tests of parallel pre-tre...), row 2, col 2"
+    },
+    {
+      "draft_value": "0.0517",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ADA.d_mean_beta",
+      "table_context": "tab:event_study (Event study in six-month bins, and tests of parallel pre-tre...), row 3, col 2"
+    },
+    {
+      "draft_value": "0.0774",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.AVAX.d_mean_rho",
+      "table_context": "tab:event_study (Event study in six-month bins, and tests of parallel pre-tre...), row 4, col 2"
+    },
+    {
+      "draft_value": "0.0273",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.DOGE.d_mean_fisherz",
+      "table_context": "tab:event_study (Event study in six-month bins, and tests of parallel pre-tre...), row 5, col 2"
+    },
+    {
+      "draft_value": "-5",
+      "source_key": "figure_spec.json.figures[4].series[0].y[105]",
+      "table_context": "tab:event_study (Event study in six-month bins, and tests of parallel pre-tre...), row 6, col 1"
+    },
+    {
+      "draft_value": "0.0586",
+      "source_key": "summary_statistics.json.outcome_rho2.p25",
+      "table_context": "tab:event_study (Event study in six-month bins, and tests of parallel pre-tre...), row 6, col 2"
+    },
+    {
+      "draft_value": "0.0425",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.BCH.d_mean_fisherz",
+      "table_context": "tab:event_study (Event study in six-month bins, and tests of parallel pre-tre...), row 7, col 2"
+    },
+    {
+      "draft_value": "-4",
+      "source_key": "figure_spec.json.figures[4].series[0].y[101]",
+      "table_context": "tab:event_study (Event study in six-month bins, and tests of parallel pre-tre...), row 8, col 1"
+    },
+    {
+      "draft_value": "0.0914",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.AVAX.d_mean_fisherz",
+      "table_context": "tab:event_study (Event study in six-month bins, and tests of parallel pre-tre...), row 8, col 2"
+    },
+    {
+      "draft_value": "0.0258",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.XRP.d_mean_rho",
+      "table_context": "tab:event_study (Event study in six-month bins, and tests of parallel pre-tre...), row 9, col 2"
+    },
+    {
+      "draft_value": "-3",
+      "source_key": "figure_spec.json.figures[4].series[0].y[1331]",
+      "table_context": "tab:event_study (Event study in six-month bins, and tests of parallel pre-tre...), row 10, col 1"
+    },
+    {
+      "draft_value": "0.1689",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ALTIDX_EW.d_mean_beta",
+      "table_context": "tab:event_study (Event study in six-month bins, and tests of parallel pre-tre...), row 10, col 2"
+    },
+    {
+      "draft_value": "0.0364",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ALTIDX_EW.d_mean_fisherz",
+      "table_context": "tab:event_study (Event study in six-month bins, and tests of parallel pre-tre...), row 11, col 2"
+    },
+    {
+      "draft_value": "0.0029",
+      "source_key": "summary_statistics.json.clock.baseline_used_is_equity_close",
+      "table_context": "tab:event_study (Event study in six-month bins, and tests of parallel pre-tre...), row 12, col 2"
+    },
+    {
+      "draft_value": "0.0367",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ALTIDX_EW.d_mean_fisherz",
+      "table_context": "tab:event_study (Event study in six-month bins, and tests of parallel pre-tre...), row 13, col 2"
+    },
+    {
+      "draft_value": "1",
+      "source_key": "summary_statistics.json.estimation_panel_coverage.months_lost_to_factor_publication_lag",
+      "table_context": "tab:event_study (Event study in six-month bins, and tests of parallel pre-tre...), row 14, col 1"
+    },
+    {
+      "draft_value": "0.1406",
+      "source_key": "summary_statistics.json.outcome_rho2.median",
+      "table_context": "tab:event_study (Event study in six-month bins, and tests of parallel pre-tre...), row 14, col 2"
+    },
+    {
+      "draft_value": "0.0443",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ETH.d_pooled_daily_rho",
+      "table_context": "tab:event_study (Event study in six-month bins, and tests of parallel pre-tre...), row 15, col 2"
+    },
+    {
+      "draft_value": "2",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.DOT.pooled_daily_beta_pre",
+      "table_context": "tab:event_study (Event study in six-month bins, and tests of parallel pre-tre...), row 16, col 1"
+    },
+    {
+      "draft_value": "0.0206",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ALTIDX_EW.d_pooled_daily_rho",
+      "table_context": "tab:event_study (Event study in six-month bins, and tests of parallel pre-tre...), row 16, col 2"
+    },
+    {
+      "draft_value": "0.0258",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.XRP.d_mean_rho",
+      "table_context": "tab:event_study (Event study in six-month bins, and tests of parallel pre-tre...), row 17, col 2"
+    },
+    {
+      "draft_value": "3",
+      "source_key": "estimation_results.json.bai_perron.differential_fisherz.n_breaks_lwz",
+      "table_context": "tab:event_study (Event study in six-month bins, and tests of parallel pre-tre...), row 18, col 1"
+    },
+    {
+      "draft_value": "0.0886",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.LINK.d_mean_fisherz",
+      "table_context": "tab:event_study (Event study in six-month bins, and tests of parallel pre-tre...), row 18, col 2"
+    },
+    {
+      "draft_value": "0.0358",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ALTIDX_EW.d_mean_fisherz",
+      "table_context": "tab:event_study (Event study in six-month bins, and tests of parallel pre-tre...), row 19, col 2"
+    },
+    {
+      "draft_value": "9.185",
+      "source_key": "estimation_results.json.event_study.pre_trend_f_stat",
+      "table_context": "tab:event_study (Event study in six-month bins, and tests of parallel pre-tre...), row 20, col 2"
+    },
+    {
+      "draft_value": "0.0024",
+      "source_key": "summary_statistics.json.clock.baseline_used_is_equity_close",
+      "table_context": "tab:event_study (Event study in six-month bins, and tests of parallel pre-tre...), row 21, col 2"
+    },
+    {
+      "draft_value": "0.80",
+      "source_key": "summary_statistics.json.subsample_pre_2024_01_10.rho.max",
+      "table_context": "tab:event_study (Event study in six-month bins, and tests of parallel pre-tre...), row 22, col 2"
+    },
+    {
+      "draft_value": "17.36",
+      "source_key": "estimation_results.json.event_study.pre_trend_placebo_F_median",
+      "table_context": "tab:event_study (Event study in six-month bins, and tests of parallel pre-tre...), row 23, col 2"
+    },
+    {
+      "draft_value": "84.30",
+      "source_key": "estimation_results.json.event_study.pre_trend_placebo_F_max",
+      "table_context": "tab:event_study (Event study in six-month bins, and tests of parallel pre-tre...), row 24, col 2"
+    },
+    {
+      "draft_value": "-0.00144",
+      "source_key": "summary_statistics.json.clock.baseline_used_is_equity_close",
+      "table_context": "tab:event_study (Event study in six-month bins, and tests of parallel pre-tre...), row 25, col 2"
+    },
+    {
+      "draft_value": "0.00132",
+      "source_key": "summary_statistics.json.clock.baseline_used_is_equity_close",
+      "table_context": "tab:event_study (Event study in six-month bins, and tests of parallel pre-tre...), row 26, col 2"
+    },
+    {
+      "draft_value": "0.70",
+      "source_key": "summary_statistics.json.outcome_rho2.max",
+      "table_context": "tab:event_study (Event study in six-month bins, and tests of parallel pre-tre...), row 27, col 2"
+    },
+    {
+      "draft_value": "540",
+      "source_key": "estimation_results.json.main.n_observations",
+      "table_context": "tab:event_study (Event study in six-month bins, and tests of parallel pre-tre...), row 28, col 2"
+    },
+    {
+      "draft_value": "1.4033",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.BTC.pooled_daily_beta_pre",
+      "table_context": "tab:returns_interacted (Bitcoin's equity loading before and after the listing, estim...), row 2, col 2"
+    },
+    {
+      "draft_value": "0.1327",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.GLD.pooled_daily_rho_pre",
+      "table_context": "tab:returns_interacted (Bitcoin's equity loading before and after the listing, estim...), row 3, col 2"
+    },
+    {
+      "draft_value": "-0.4148",
+      "source_key": "estimation_results.json.returns_interacted_BTC.coefficients.r_spy_x_post.estimate",
+      "table_context": "tab:returns_interacted (Bitcoin's equity loading before and after the listing, estim...), row 4, col 2"
+    },
+    {
+      "draft_value": "0.2302",
+      "source_key": "summary_statistics.json.subsample_pre_2024_01_10.rho.sd",
+      "table_context": "tab:returns_interacted (Bitcoin's equity loading before and after the listing, estim...), row 5, col 2"
+    },
+    {
+      "draft_value": "0.00139",
+      "source_key": "summary_statistics.json.clock.baseline_used_is_equity_close",
+      "table_context": "tab:returns_interacted (Bitcoin's equity loading before and after the listing, estim...), row 6, col 2"
+    },
+    {
+      "draft_value": "0.00183",
+      "source_key": "summary_statistics.json.clock.baseline_used_is_equity_close",
+      "table_context": "tab:returns_interacted (Bitcoin's equity loading before and after the listing, estim...), row 7, col 2"
+    },
+    {
+      "draft_value": "-0.00101",
+      "source_key": "summary_statistics.json.clock.baseline_used_is_equity_close",
+      "table_context": "tab:returns_interacted (Bitcoin's equity loading before and after the listing, estim...), row 8, col 2"
+    },
+    {
+      "draft_value": "0.00140",
+      "source_key": "summary_statistics.json.clock.baseline_used_is_equity_close",
+      "table_context": "tab:returns_interacted (Bitcoin's equity loading before and after the listing, estim...), row 9, col 2"
+    },
+    {
+      "draft_value": "-0.3221",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.BTC.d_pooled_daily_beta",
+      "table_context": "tab:returns_interacted (Bitcoin's equity loading before and after the listing, estim...), row 10, col 2"
+    },
+    {
+      "draft_value": "0.2394",
+      "source_key": "summary_statistics.json.subsample_pre_2024_01_10.outcome.p25",
+      "table_context": "tab:returns_interacted (Bitcoin's equity loading before and after the listing, estim...), row 11, col 2"
+    },
+    {
+      "draft_value": "0.30",
+      "source_key": "summary_statistics.json.outcome.sd",
+      "table_context": "tab:returns_interacted (Bitcoin's equity loading before and after the listing, estim...), row 12, col 2"
+    },
+    {
+      "draft_value": "2",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.DOT.pooled_daily_beta_pre",
+      "table_context": "tab:returns_interacted (Bitcoin's equity loading before and after the listing, estim...), row 13, col 1"
+    },
+    {
+      "draft_value": "0.1611",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ALTIDX_EW.d_mean_beta",
+      "table_context": "tab:returns_interacted (Bitcoin's equity loading before and after the listing, estim...), row 13, col 2"
+    },
+    {
+      "draft_value": "6",
+      "source_key": "estimation_results.json.descriptive_raw_gap.diagnostics.newey_west_lags",
+      "table_context": "tab:returns_interacted (Bitcoin's equity loading before and after the listing, estim...), row 14, col 2"
+    },
+    {
+      "draft_value": "1,128",
+      "source_key": "estimation_results.json.returns_interacted_BTC.n_observations",
+      "table_context": "tab:returns_interacted (Bitcoin's equity loading before and after the listing, estim...), row 15, col 2"
+    },
+    {
+      "draft_value": "-0.0798",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.did_raw.beta",
+      "table_context": "tab:ddd (Returns-level triple difference: the differential change in ...), row 2, col 2"
+    },
+    {
+      "draft_value": "0.1619",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ALTIDX_EW.d_mean_beta",
+      "table_context": "tab:ddd (Returns-level triple difference: the differential change in ...), row 3, col 2"
+    },
+    {
+      "draft_value": "-0.3945",
+      "source_key": "summary_statistics.json.subsample_post_2024_01_10.outcome.min",
+      "table_context": "tab:ddd (Returns-level triple difference: the differential change in ...), row 4, col 2"
+    },
+    {
+      "draft_value": "0.1029",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.GLD.pooled_daily_beta_pre",
+      "table_context": "tab:ddd (Returns-level triple difference: the differential change in ...), row 5, col 2"
+    },
+    {
+      "draft_value": "0.0835",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.BTC.d_mean_beta",
+      "table_context": "tab:ddd (Returns-level triple difference: the differential change in ...), row 6, col 2"
+    },
+    {
+      "draft_value": "0.364",
+      "source_key": "summary_statistics.json.subsample_pre_2024_01_10.rho.median",
+      "table_context": "tab:ddd (Returns-level triple difference: the differential change in ...), row 7, col 2"
+    },
+    {
+      "draft_value": "2",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.DOT.pooled_daily_beta_pre",
+      "table_context": "tab:ddd (Returns-level triple difference: the differential change in ...), row 8, col 1"
+    },
+    {
+      "draft_value": "0.0018",
+      "source_key": "summary_statistics.json.clock.baseline_used_is_equity_close",
+      "table_context": "tab:ddd (Returns-level triple difference: the differential change in ...), row 8, col 2"
+    },
+    {
+      "draft_value": "10",
+      "source_key": "summary_statistics.json.n_units",
+      "table_context": "tab:ddd (Returns-level triple difference: the differential change in ...), row 9, col 2"
+    },
+    {
+      "draft_value": "1,128",
+      "source_key": "estimation_results.json.returns_interacted_BTC.n_observations",
+      "table_context": "tab:ddd (Returns-level triple difference: the differential change in ...), row 10, col 2"
+    },
+    {
+      "draft_value": "11,280",
+      "source_key": "estimation_results.json.returns_ddd.n_observations",
+      "table_context": "tab:ddd (Returns-level triple difference: the differential change in ...), row 11, col 2"
+    },
+    {
+      "draft_value": "0.1203",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.DOGE.d_pooled_daily_rho",
+      "table_context": "tab:dcc (DCC--GARCH(1,1) with a post-listing shift in the long-run co...), row 2, col 2"
+    },
+    {
+      "draft_value": "0.0674",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.AVAX.d_pooled_daily_rho",
+      "table_context": "tab:dcc (DCC--GARCH(1,1) with a post-listing shift in the long-run co...), row 3, col 2"
+    },
+    {
+      "draft_value": "0.0121",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ALTIDX_EW.d_mean_rho",
+      "table_context": "tab:dcc (DCC--GARCH(1,1) with a post-listing shift in the long-run co...), row 4, col 2"
+    },
+    {
+      "draft_value": "0.9749",
+      "source_key": "summary_statistics.json.raw_contrast.MKT.by_asset.SLV.mean_beta_post",
+      "table_context": "tab:dcc (DCC--GARCH(1,1) with a post-listing shift in the long-run co...), row 5, col 2"
+    },
+    {
+      "draft_value": "0.9869",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.SLV.mean_beta_post",
+      "table_context": "tab:dcc (DCC--GARCH(1,1) with a post-listing shift in the long-run co...), row 6, col 2"
+    },
+    {
+      "draft_value": "0.3804",
+      "source_key": "summary_statistics.json.outcome_rho.median",
+      "table_context": "tab:dcc (DCC--GARCH(1,1) with a post-listing shift in the long-run co...), row 7, col 2"
+    },
+    {
+      "draft_value": "0.20",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.DOGE.d_mean_beta",
+      "table_context": "tab:dcc (DCC--GARCH(1,1) with a post-listing shift in the long-run co...), row 8, col 2"
+    },
+    {
+      "draft_value": "104.82",
+      "source_key": "estimation_results.json.dcc_garch_btc_spy.diagnostics.loglik",
+      "table_context": "tab:dcc (DCC--GARCH(1,1) with a post-listing shift in the long-run co...), row 9, col 2"
+    },
+    {
+      "draft_value": "1,255",
+      "source_key": "estimation_results.json.dcc_garch_btc_spy.n_observations",
+      "table_context": "tab:dcc (DCC--GARCH(1,1) with a post-listing shift in the long-run co...), row 10, col 2"
+    },
+    {
+      "draft_value": "-0.0212",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ADA.d_mean_rho",
+      "table_context": "tab:decomposition (Decomposing the beta change into a co-movement margin and a ...), row 2, col 2"
+    },
+    {
+      "draft_value": "-0.1890",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.BCH.d_pooled_daily_beta",
+      "table_context": "tab:decomposition (Decomposing the beta change into a co-movement margin and a ...), row 2, col 3"
+    },
+    {
+      "draft_value": "-0.1128",
+      "source_key": "summary_statistics.json.raw_contrast.MKT.by_asset.XRP.d_pooled_daily_beta",
+      "table_context": "tab:decomposition (Decomposing the beta change into a co-movement margin and a ...), row 2, col 4"
+    },
+    {
+      "draft_value": "0.0170",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ALTIDX_EW.d_mean_rho",
+      "table_context": "tab:decomposition (Decomposing the beta change into a co-movement margin and a ...), row 3, col 2"
+    },
+    {
+      "draft_value": "0.1431",
+      "source_key": "summary_statistics.json.outcome_rho2.median",
+      "table_context": "tab:decomposition (Decomposing the beta change into a co-movement margin and a ...), row 3, col 3"
+    },
+    {
+      "draft_value": "0.0297",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.DOGE.d_mean_fisherz",
+      "table_context": "tab:decomposition (Decomposing the beta change into a co-movement margin and a ...), row 3, col 4"
+    },
+    {
+      "draft_value": "0.0619",
+      "source_key": "summary_statistics.json.outcome_rho2.p25",
+      "table_context": "tab:decomposition (Decomposing the beta change into a co-movement margin and a ...), row 4, col 2"
+    },
+    {
+      "draft_value": "0.4510",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.BTC.mean_fisherz_post",
+      "table_context": "tab:decomposition (Decomposing the beta change into a co-movement margin and a ...), row 4, col 3"
+    },
+    {
+      "draft_value": "0.0935",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.AVAX.d_mean_fisherz",
+      "table_context": "tab:decomposition (Decomposing the beta change into a co-movement margin and a ...), row 4, col 4"
+    },
+    {
+      "draft_value": "2",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.DOT.pooled_daily_beta_pre",
+      "table_context": "tab:decomposition (Decomposing the beta change into a co-movement margin and a ...), row 5, col 1"
+    },
+    {
+      "draft_value": "0.0006",
+      "source_key": "summary_statistics.json.clock.baseline_used_is_equity_close",
+      "table_context": "tab:decomposition (Decomposing the beta change into a co-movement margin and a ...), row 5, col 2"
+    },
+    {
+      "draft_value": "0.0010",
+      "source_key": "summary_statistics.json.clock.baseline_used_is_equity_close",
+      "table_context": "tab:decomposition (Decomposing the beta change into a co-movement margin and a ...), row 5, col 3"
+    },
+    {
+      "draft_value": "0.0057",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.BTC.d_mean_rho",
+      "table_context": "tab:decomposition (Decomposing the beta change into a co-movement margin and a ...), row 5, col 4"
+    },
+    {
+      "draft_value": "540",
+      "source_key": "estimation_results.json.main.n_observations",
+      "table_context": "tab:decomposition (Decomposing the beta change into a co-movement margin and a ...), row 6, col 2"
+    },
+    {
+      "draft_value": "540",
+      "source_key": "estimation_results.json.main.n_observations",
+      "table_context": "tab:decomposition (Decomposing the beta change into a co-movement margin and a ...), row 6, col 3"
+    },
+    {
+      "draft_value": "540",
+      "source_key": "estimation_results.json.main.n_observations",
+      "table_context": "tab:decomposition (Decomposing the beta change into a co-movement margin and a ...), row 6, col 4"
+    },
+    {
+      "draft_value": "-0.0212",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ADA.d_mean_rho",
+      "table_context": "tab:power (Minimum detectable effects and pre-specified power bars...), row 2, col 2"
+    },
+    {
+      "draft_value": "0.975",
+      "source_key": "summary_statistics.json.raw_contrast.MKT.by_asset.SLV.mean_beta_post",
+      "table_context": "tab:power (Minimum detectable effects and pre-specified power bars...), row 3, col 1"
+    },
+    {
+      "draft_value": "0.80",
+      "source_key": "summary_statistics.json.subsample_pre_2024_01_10.rho.max",
+      "table_context": "tab:power (Minimum detectable effects and pre-specified power bars...), row 3, col 1"
+    },
+    {
+      "draft_value": "2.8016",
+      "source_key": "estimation_results.json.power_analysis.mde_multiplier",
+      "table_context": "tab:power (Minimum detectable effects and pre-specified power bars...), row 3, col 2"
+    },
+    {
+      "draft_value": "0.0170",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ALTIDX_EW.d_mean_rho",
+      "table_context": "tab:power (Minimum detectable effects and pre-specified power bars...), row 4, col 2"
+    },
+    {
+      "draft_value": "0.0619",
+      "source_key": "summary_statistics.json.outcome_rho2.p25",
+      "table_context": "tab:power (Minimum detectable effects and pre-specified power bars...), row 5, col 2"
+    },
+    {
+      "draft_value": "0.0534",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ADA.d_mean_beta",
+      "table_context": "tab:power (Minimum detectable effects and pre-specified power bars...), row 6, col 2"
+    },
+    {
+      "draft_value": "0.041",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.BCH.d_mean_fisherz",
+      "table_context": "tab:power (Minimum detectable effects and pre-specified power bars...), row 7, col 2"
+    },
+    {
+      "draft_value": "0.128",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.SOL.d_mean_beta",
+      "table_context": "tab:power (Minimum detectable effects and pre-specified power bars...), row 8, col 2"
+    },
+    {
+      "draft_value": "0.148",
+      "source_key": "summary_statistics.json.raw_contrast.MKT.by_asset.GLD.mean_rho_pre",
+      "table_context": "tab:power (Minimum detectable effects and pre-specified power bars...), row 9, col 2"
+    },
+    {
+      "draft_value": "95",
+      "source_key": "figure_spec.json.figures[3].series[0].y[254]",
+      "table_context": "tab:power (Minimum detectable effects and pre-specified power bars...), row 10, col 1"
+    },
+    {
+      "draft_value": "-0.122",
+      "source_key": "summary_statistics.json.raw_contrast.MKT.by_asset.BCH.d_pooled_daily_beta",
+      "table_context": "tab:power (Minimum detectable effects and pre-specified power bars...), row 10, col 2"
+    },
+    {
+      "draft_value": "95",
+      "source_key": "figure_spec.json.figures[3].series[0].y[254]",
+      "table_context": "tab:power (Minimum detectable effects and pre-specified power bars...), row 11, col 1"
+    },
+    {
+      "draft_value": "0.086",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.BTC.d_mean_beta",
+      "table_context": "tab:power (Minimum detectable effects and pre-specified power bars...), row 11, col 2"
+    },
+    {
+      "draft_value": "95",
+      "source_key": "figure_spec.json.figures[3].series[0].y[254]",
+      "table_context": "tab:power (Minimum detectable effects and pre-specified power bars...), row 12, col 1"
+    },
+    {
+      "draft_value": "-0.091",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.DOT.d_mean_beta",
+      "table_context": "tab:power (Minimum detectable effects and pre-specified power bars...), row 12, col 2"
+    },
+    {
+      "draft_value": "95",
+      "source_key": "figure_spec.json.figures[3].series[0].y[254]",
+      "table_context": "tab:power (Minimum detectable effects and pre-specified power bars...), row 13, col 1"
+    },
+    {
+      "draft_value": "0.033",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ALTIDX_EW.d_mean_fisherz",
+      "table_context": "tab:power (Minimum detectable effects and pre-specified power bars...), row 13, col 2"
+    },
+    {
+      "draft_value": "0.10",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.AVAX.d_mean_fisherz",
+      "table_context": "tab:power (Minimum detectable effects and pre-specified power bars...), row 14, col 2"
+    },
+    {
+      "draft_value": "540",
+      "source_key": "estimation_results.json.main.n_observations",
+      "table_context": "tab:power (Minimum detectable effects and pre-specified power bars...), row 15, col 2"
+    },
+    {
+      "draft_value": "1",
+      "source_key": "summary_statistics.json.estimation_panel_coverage.months_lost_to_factor_publication_lag",
+      "table_context": "tab:robustness_sample (Robustness: sample construction, outcome construction and re...), row 1, col 2"
+    },
+    {
+      "draft_value": "2",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.DOT.pooled_daily_beta_pre",
+      "table_context": "tab:robustness_sample (Robustness: sample construction, outcome construction and re...), row 1, col 3"
+    },
+    {
+      "draft_value": "3",
+      "source_key": "estimation_results.json.bai_perron.differential_fisherz.n_breaks_lwz",
+      "table_context": "tab:robustness_sample (Robustness: sample construction, outcome construction and re...), row 1, col 4"
+    },
+    {
+      "draft_value": "4",
+      "source_key": "summary_statistics.json.macro.dgs10_proxy_tnx.median",
+      "table_context": "tab:robustness_sample (Robustness: sample construction, outcome construction and re...), row 1, col 5"
+    },
+    {
+      "draft_value": "5",
+      "source_key": "summary_statistics.json.macro.dgs10_proxy_tnx.max",
+      "table_context": "tab:robustness_sample (Robustness: sample construction, outcome construction and re...), row 1, col 6"
+    },
+    {
+      "draft_value": "2026",
+      "source_key": "figure_spec.json.figures[0].panels[0].series[0].x[0]",
+      "table_context": "tab:robustness_sample (Robustness: sample construction, outcome construction and re...), row 1, col 6"
+    },
+    {
+      "draft_value": "-0.0217",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ADA.d_mean_rho",
+      "table_context": "tab:robustness_sample (Robustness: sample construction, outcome construction and re...), row 2, col 2"
+    },
+    {
+      "draft_value": "-0.0353",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.DOT.d_mean_rho",
+      "table_context": "tab:robustness_sample (Robustness: sample construction, outcome construction and re...), row 2, col 3"
+    },
+    {
+      "draft_value": "-0.0184",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ADA.d_mean_rho",
+      "table_context": "tab:robustness_sample (Robustness: sample construction, outcome construction and re...), row 2, col 4"
+    },
+    {
+      "draft_value": "-0.0212",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ADA.d_mean_rho",
+      "table_context": "tab:robustness_sample (Robustness: sample construction, outcome construction and re...), row 2, col 5"
+    },
+    {
+      "draft_value": "-0.0088",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ADA.d_mean_fisherz",
+      "table_context": "tab:robustness_sample (Robustness: sample construction, outcome construction and re...), row 2, col 6"
+    },
+    {
+      "draft_value": "0.0169",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ALTIDX_EW.d_mean_rho",
+      "table_context": "tab:robustness_sample (Robustness: sample construction, outcome construction and re...), row 3, col 2"
+    },
+    {
+      "draft_value": "0.0165",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ALTIDX_EW.d_mean_rho",
+      "table_context": "tab:robustness_sample (Robustness: sample construction, outcome construction and re...), row 3, col 3"
+    },
+    {
+      "draft_value": "0.0173",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ALTIDX_EW.d_mean_rho",
+      "table_context": "tab:robustness_sample (Robustness: sample construction, outcome construction and re...), row 3, col 4"
+    },
+    {
+      "draft_value": "0.0187",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ALTIDX_EW.d_mean_rho",
+      "table_context": "tab:robustness_sample (Robustness: sample construction, outcome construction and re...), row 3, col 5"
+    },
+    {
+      "draft_value": "0.0157",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ALTIDX_EW.d_mean_rho",
+      "table_context": "tab:robustness_sample (Robustness: sample construction, outcome construction and re...), row 3, col 6"
+    },
+    {
+      "draft_value": "0.80",
+      "source_key": "summary_statistics.json.subsample_pre_2024_01_10.rho.max",
+      "table_context": "tab:robustness_sample (Robustness: sample construction, outcome construction and re...), row 4, col 2"
+    },
+    {
+      "draft_value": "0.60",
+      "source_key": "robustness_results.json.excl_extreme_news.p_value_ri_space",
+      "table_context": "tab:robustness_sample (Robustness: sample construction, outcome construction and re...), row 4, col 3"
+    },
+    {
+      "draft_value": "1.00",
+      "source_key": "summary_statistics.json.estimation_panel_coverage.months_lost_to_factor_publication_lag",
+      "table_context": "tab:robustness_sample (Robustness: sample construction, outcome construction and re...), row 4, col 4"
+    },
+    {
+      "draft_value": "0.80",
+      "source_key": "summary_statistics.json.subsample_pre_2024_01_10.rho.max",
+      "table_context": "tab:robustness_sample (Robustness: sample construction, outcome construction and re...), row 4, col 5"
+    },
+    {
+      "draft_value": "0.90",
+      "source_key": "robustness_results.json.sample_extended_2026.p_value_ri_space",
+      "table_context": "tab:robustness_sample (Robustness: sample construction, outcome construction and re...), row 4, col 6"
+    },
+    {
+      "draft_value": "0.0533",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ADA.d_mean_beta",
+      "table_context": "tab:robustness_sample (Robustness: sample construction, outcome construction and re...), row 5, col 2"
+    },
+    {
+      "draft_value": "0.0520",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ADA.d_mean_beta",
+      "table_context": "tab:robustness_sample (Robustness: sample construction, outcome construction and re...), row 5, col 3"
+    },
+    {
+      "draft_value": "0.0544",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ADA.d_mean_beta",
+      "table_context": "tab:robustness_sample (Robustness: sample construction, outcome construction and re...), row 5, col 4"
+    },
+    {
+      "draft_value": "0.0589",
+      "source_key": "summary_statistics.json.outcome_rho2.p25",
+      "table_context": "tab:robustness_sample (Robustness: sample construction, outcome construction and re...), row 5, col 5"
+    },
+    {
+      "draft_value": "0.0496",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ETH.d_mean_rho",
+      "table_context": "tab:robustness_sample (Robustness: sample construction, outcome construction and re...), row 5, col 6"
+    },
+    {
+      "draft_value": "2",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.DOT.pooled_daily_beta_pre",
+      "table_context": "tab:robustness_sample (Robustness: sample construction, outcome construction and re...), row 6, col 1"
+    },
+    {
+      "draft_value": "0.0006",
+      "source_key": "summary_statistics.json.clock.baseline_used_is_equity_close",
+      "table_context": "tab:robustness_sample (Robustness: sample construction, outcome construction and re...), row 6, col 2"
+    },
+    {
+      "draft_value": "0.0015",
+      "source_key": "summary_statistics.json.clock.baseline_used_is_equity_close",
+      "table_context": "tab:robustness_sample (Robustness: sample construction, outcome construction and re...), row 6, col 3"
+    },
+    {
+      "draft_value": "0.0004",
+      "source_key": "summary_statistics.json.clock.baseline_used_is_equity_close",
+      "table_context": "tab:robustness_sample (Robustness: sample construction, outcome construction and re...), row 6, col 4"
+    },
+    {
+      "draft_value": "0.0006",
+      "source_key": "summary_statistics.json.clock.baseline_used_is_equity_close",
+      "table_context": "tab:robustness_sample (Robustness: sample construction, outcome construction and re...), row 6, col 5"
+    },
+    {
+      "draft_value": "0.0001",
+      "source_key": "summary_statistics.json.clock.baseline_used_is_equity_close",
+      "table_context": "tab:robustness_sample (Robustness: sample construction, outcome construction and re...), row 6, col 6"
+    },
+    {
+      "draft_value": "21",
+      "source_key": "summary_statistics.json.n_days_m.median",
+      "table_context": "tab:robustness_sample (Robustness: sample construction, outcome construction and re...), row 7, col 2"
+    },
+    {
+      "draft_value": "23",
+      "source_key": "summary_statistics.json.n_days_m.max",
+      "table_context": "tab:robustness_sample (Robustness: sample construction, outcome construction and re...), row 7, col 3"
+    },
+    {
+      "draft_value": "23",
+      "source_key": "summary_statistics.json.n_days_m.max",
+      "table_context": "tab:robustness_sample (Robustness: sample construction, outcome construction and re...), row 7, col 4"
+    },
+    {
+      "draft_value": "23",
+      "source_key": "summary_statistics.json.n_days_m.max",
+      "table_context": "tab:robustness_sample (Robustness: sample construction, outcome construction and re...), row 7, col 5"
+    },
+    {
+      "draft_value": "30",
+      "source_key": "summary_statistics.json.subsample_post_2024_01_10.n_months",
+      "table_context": "tab:robustness_sample (Robustness: sample construction, outcome construction and re...), row 7, col 6"
+    },
+    {
+      "draft_value": "520",
+      "source_key": "estimation_results.json.bai_perron.btc_rolling_beta.ssr_by_m.2",
+      "table_context": "tab:robustness_sample (Robustness: sample construction, outcome construction and re...), row 8, col 2"
+    },
+    {
+      "draft_value": "540",
+      "source_key": "estimation_results.json.main.n_observations",
+      "table_context": "tab:robustness_sample (Robustness: sample construction, outcome construction and re...), row 8, col 3"
+    },
+    {
+      "draft_value": "540",
+      "source_key": "estimation_results.json.main.n_observations",
+      "table_context": "tab:robustness_sample (Robustness: sample construction, outcome construction and re...), row 8, col 4"
+    },
+    {
+      "draft_value": "540",
+      "source_key": "estimation_results.json.main.n_observations",
+      "table_context": "tab:robustness_sample (Robustness: sample construction, outcome construction and re...), row 8, col 5"
+    },
+    {
+      "draft_value": "610",
+      "source_key": "summary_statistics.json.n_observations",
+      "table_context": "tab:robustness_sample (Robustness: sample construction, outcome construction and re...), row 8, col 6"
+    },
+    {
+      "draft_value": "1",
+      "source_key": "summary_statistics.json.estimation_panel_coverage.months_lost_to_factor_publication_lag",
+      "table_context": "tab:robustness_spec (Robustness: equity leg, differential macro loadings and post...), row 1, col 2"
+    },
+    {
+      "draft_value": "2",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.DOT.pooled_daily_beta_pre",
+      "table_context": "tab:robustness_spec (Robustness: equity leg, differential macro loadings and post...), row 1, col 3"
+    },
+    {
+      "draft_value": "3",
+      "source_key": "estimation_results.json.bai_perron.differential_fisherz.n_breaks_lwz",
+      "table_context": "tab:robustness_spec (Robustness: equity leg, differential macro loadings and post...), row 1, col 4"
+    },
+    {
+      "draft_value": "4",
+      "source_key": "summary_statistics.json.macro.dgs10_proxy_tnx.median",
+      "table_context": "tab:robustness_spec (Robustness: equity leg, differential macro loadings and post...), row 1, col 5"
+    },
+    {
+      "draft_value": "5",
+      "source_key": "summary_statistics.json.macro.dgs10_proxy_tnx.max",
+      "table_context": "tab:robustness_spec (Robustness: equity leg, differential macro loadings and post...), row 1, col 6"
+    },
+    {
+      "draft_value": "6",
+      "source_key": "estimation_results.json.descriptive_raw_gap.diagnostics.newey_west_lags",
+      "table_context": "tab:robustness_spec (Robustness: equity leg, differential macro loadings and post...), row 1, col 7"
+    },
+    {
+      "draft_value": "-0.0239",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.DOT.d_mean_fisherz",
+      "table_context": "tab:robustness_spec (Robustness: equity leg, differential macro loadings and post...), row 2, col 2"
+    },
+    {
+      "draft_value": "-0.0496",
+      "source_key": "estimation_results.json.event_study.monthly_path_point_estimates.-19",
+      "table_context": "tab:robustness_spec (Robustness: equity leg, differential macro loadings and post...), row 2, col 3"
+    },
+    {
+      "draft_value": "0.0195",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ALTIDX_EW.d_mean_rho",
+      "table_context": "tab:robustness_spec (Robustness: equity leg, differential macro loadings and post...), row 2, col 4"
+    },
+    {
+      "draft_value": "-0.2613",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.LTC.d_pooled_daily_beta",
+      "table_context": "tab:robustness_spec (Robustness: equity leg, differential macro loadings and post...), row 2, col 5"
+    },
+    {
+      "draft_value": "-0.0439",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.did_raw.pooled_daily_rho",
+      "table_context": "tab:robustness_spec (Robustness: equity leg, differential macro loadings and post...), row 2, col 6"
+    },
+    {
+      "draft_value": "-0.0066",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.BNB.d_mean_rho",
+      "table_context": "tab:robustness_spec (Robustness: equity leg, differential macro loadings and post...), row 2, col 7"
+    },
+    {
+      "draft_value": "0.0174",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ALTIDX_EW.d_mean_rho",
+      "table_context": "tab:robustness_spec (Robustness: equity leg, differential macro loadings and post...), row 3, col 2"
+    },
+    {
+      "draft_value": "0.0145",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ALTIDX_EW.d_mean_rho",
+      "table_context": "tab:robustness_spec (Robustness: equity leg, differential macro loadings and post...), row 3, col 3"
+    },
+    {
+      "draft_value": "0.0201",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ALTIDX_EW.d_mean_rho",
+      "table_context": "tab:robustness_spec (Robustness: equity leg, differential macro loadings and post...), row 3, col 4"
+    },
+    {
+      "draft_value": "0.0316",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ALTIDX_EW.d_mean_fisherz",
+      "table_context": "tab:robustness_spec (Robustness: equity leg, differential macro loadings and post...), row 3, col 5"
+    },
+    {
+      "draft_value": "0.0193",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ALTIDX_EW.d_mean_rho",
+      "table_context": "tab:robustness_spec (Robustness: equity leg, differential macro loadings and post...), row 3, col 6"
+    },
+    {
+      "draft_value": "0.0189",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ALTIDX_EW.d_mean_rho",
+      "table_context": "tab:robustness_spec (Robustness: equity leg, differential macro loadings and post...), row 3, col 7"
+    },
+    {
+      "draft_value": "0.80",
+      "source_key": "summary_statistics.json.subsample_pre_2024_01_10.rho.max",
+      "table_context": "tab:robustness_spec (Robustness: equity leg, differential macro loadings and post...), row 4, col 2"
+    },
+    {
+      "draft_value": "0.30",
+      "source_key": "summary_statistics.json.outcome.sd",
+      "table_context": "tab:robustness_spec (Robustness: equity leg, differential macro loadings and post...), row 4, col 3"
+    },
+    {
+      "draft_value": "0.80",
+      "source_key": "summary_statistics.json.subsample_pre_2024_01_10.rho.max",
+      "table_context": "tab:robustness_spec (Robustness: equity leg, differential macro loadings and post...), row 4, col 4"
+    },
+    {
+      "draft_value": "0.10",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.AVAX.d_mean_fisherz",
+      "table_context": "tab:robustness_spec (Robustness: equity leg, differential macro loadings and post...), row 4, col 5"
+    },
+    {
+      "draft_value": "0.60",
+      "source_key": "robustness_results.json.excl_extreme_news.p_value_ri_space",
+      "table_context": "tab:robustness_spec (Robustness: equity leg, differential macro loadings and post...), row 4, col 6"
+    },
+    {
+      "draft_value": "1.00",
+      "source_key": "summary_statistics.json.estimation_panel_coverage.months_lost_to_factor_publication_lag",
+      "table_context": "tab:robustness_spec (Robustness: equity leg, differential macro loadings and post...), row 4, col 7"
+    },
+    {
+      "draft_value": "0.0549",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ADA.d_mean_beta",
+      "table_context": "tab:robustness_spec (Robustness: equity leg, differential macro loadings and post...), row 5, col 2"
+    },
+    {
+      "draft_value": "0.0458",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ETH.d_pooled_daily_rho",
+      "table_context": "tab:robustness_spec (Robustness: equity leg, differential macro loadings and post...), row 5, col 3"
+    },
+    {
+      "draft_value": "0.0536",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ADA.d_mean_beta",
+      "table_context": "tab:robustness_spec (Robustness: equity leg, differential macro loadings and post...), row 5, col 4"
+    },
+    {
+      "draft_value": "0.0991",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.AVAX.d_mean_fisherz",
+      "table_context": "tab:robustness_spec (Robustness: equity leg, differential macro loadings and post...), row 5, col 5"
+    },
+    {
+      "draft_value": "0.0605",
+      "source_key": "summary_statistics.json.outcome_rho2.p25",
+      "table_context": "tab:robustness_spec (Robustness: equity leg, differential macro loadings and post...), row 5, col 6"
+    },
+    {
+      "draft_value": "0.0594",
+      "source_key": "summary_statistics.json.outcome_rho2.p25",
+      "table_context": "tab:robustness_spec (Robustness: equity leg, differential macro loadings and post...), row 5, col 7"
+    },
+    {
+      "draft_value": "23",
+      "source_key": "summary_statistics.json.n_days_m.max",
+      "table_context": "tab:robustness_spec (Robustness: equity leg, differential macro loadings and post...), row 6, col 2"
+    },
+    {
+      "draft_value": "23",
+      "source_key": "summary_statistics.json.n_days_m.max",
+      "table_context": "tab:robustness_spec (Robustness: equity leg, differential macro loadings and post...), row 6, col 3"
+    },
+    {
+      "draft_value": "23",
+      "source_key": "summary_statistics.json.n_days_m.max",
+      "table_context": "tab:robustness_spec (Robustness: equity leg, differential macro loadings and post...), row 6, col 4"
+    },
+    {
+      "draft_value": "2",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.DOT.pooled_daily_beta_pre",
+      "table_context": "tab:robustness_spec (Robustness: equity leg, differential macro loadings and post...), row 6, col 5"
+    },
+    {
+      "draft_value": "9",
+      "source_key": "summary_statistics.json.by_group.never_treated_controls.n_units",
+      "table_context": "tab:robustness_spec (Robustness: equity leg, differential macro loadings and post...), row 6, col 6"
+    },
+    {
+      "draft_value": "14",
+      "source_key": "robustness_results.json.subwindow_post_election.n_post_treatment",
+      "table_context": "tab:robustness_spec (Robustness: equity leg, differential macro loadings and post...), row 6, col 7"
+    },
+    {
+      "draft_value": "540",
+      "source_key": "estimation_results.json.main.n_observations",
+      "table_context": "tab:robustness_spec (Robustness: equity leg, differential macro loadings and post...), row 7, col 2"
+    },
+    {
+      "draft_value": "540",
+      "source_key": "estimation_results.json.main.n_observations",
+      "table_context": "tab:robustness_spec (Robustness: equity leg, differential macro loadings and post...), row 7, col 3"
+    },
+    {
+      "draft_value": "540",
+      "source_key": "estimation_results.json.main.n_observations",
+      "table_context": "tab:robustness_spec (Robustness: equity leg, differential macro loadings and post...), row 7, col 4"
+    },
+    {
+      "draft_value": "330",
+      "source_key": "robustness_results.json.subwindow_pre_halving.n_observations",
+      "table_context": "tab:robustness_spec (Robustness: equity leg, differential macro loadings and post...), row 7, col 5"
+    },
+    {
+      "draft_value": "400",
+      "source_key": "robustness_results.json.subwindow_pre_election.n_observations",
+      "table_context": "tab:robustness_spec (Robustness: equity leg, differential macro loadings and post...), row 7, col 6"
+    },
+    {
+      "draft_value": "450",
+      "source_key": "robustness_results.json.subwindow_post_election.n_observations",
+      "table_context": "tab:robustness_spec (Robustness: equity leg, differential macro loadings and post...), row 7, col 7"
+    },
+    {
+      "draft_value": "0.0195",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ALTIDX_EW.d_mean_rho",
+      "table_context": "tab:macro (Letting the macro volatility regime load differentially on B...), row 2, col 2"
+    },
+    {
+      "draft_value": "0.0201",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ALTIDX_EW.d_mean_rho",
+      "table_context": "tab:macro (Letting the macro volatility regime load differentially on B...), row 3, col 2"
+    },
+    {
+      "draft_value": "0.0100",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.BTC.d_mean_rho",
+      "table_context": "tab:macro (Letting the macro volatility regime load differentially on B...), row 4, col 2"
+    },
+    {
+      "draft_value": "0.0018",
+      "source_key": "summary_statistics.json.clock.baseline_used_is_equity_close",
+      "table_context": "tab:macro (Letting the macro volatility regime load differentially on B...), row 5, col 2"
+    },
+    {
+      "draft_value": "-0.00034",
+      "source_key": "summary_statistics.json.clock.baseline_used_is_equity_close",
+      "table_context": "tab:macro (Letting the macro volatility regime load differentially on B...), row 6, col 2"
+    },
+    {
+      "draft_value": "0.00029",
+      "source_key": "summary_statistics.json.clock.baseline_used_is_equity_close",
+      "table_context": "tab:macro (Letting the macro volatility regime load differentially on B...), row 7, col 2"
+    },
+    {
+      "draft_value": "0.80",
+      "source_key": "summary_statistics.json.subsample_pre_2024_01_10.rho.max",
+      "table_context": "tab:macro (Letting the macro volatility regime load differentially on B...), row 8, col 2"
+    },
+    {
+      "draft_value": "0.0536",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ADA.d_mean_beta",
+      "table_context": "tab:macro (Letting the macro volatility regime load differentially on B...), row 9, col 2"
+    },
+    {
+      "draft_value": "2",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.DOT.pooled_daily_beta_pre",
+      "table_context": "tab:macro (Letting the macro volatility regime load differentially on B...), row 10, col 1"
+    },
+    {
+      "draft_value": "0.0083",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.BTC.d_mean_rho",
+      "table_context": "tab:macro (Letting the macro volatility regime load differentially on B...), row 10, col 2"
+    },
+    {
+      "draft_value": "540",
+      "source_key": "estimation_results.json.main.n_observations",
+      "table_context": "tab:macro (Letting the macro volatility regime load differentially on B...), row 11, col 2"
+    },
+    {
+      "draft_value": "1",
+      "source_key": "summary_statistics.json.estimation_panel_coverage.months_lost_to_factor_publication_lag",
+      "table_context": "tab:placebos (Placebo assets and a placebo event...), row 1, col 2"
+    },
+    {
+      "draft_value": "2",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.DOT.pooled_daily_beta_pre",
+      "table_context": "tab:placebos (Placebo assets and a placebo event...), row 1, col 3"
+    },
+    {
+      "draft_value": "3",
+      "source_key": "estimation_results.json.bai_perron.differential_fisherz.n_breaks_lwz",
+      "table_context": "tab:placebos (Placebo assets and a placebo event...), row 1, col 4"
+    },
+    {
+      "draft_value": "2021",
+      "source_key": "figure_spec.json.figures[0].panels[0].series[0].x[0]",
+      "table_context": "tab:placebos (Placebo assets and a placebo event...), row 1, col 4"
+    },
+    {
+      "draft_value": "-0.0400",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.DOT.d_pooled_daily_rho",
+      "table_context": "tab:placebos (Placebo assets and a placebo event...), row 2, col 2"
+    },
+    {
+      "draft_value": "-0.0340",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.DOT.d_mean_rho",
+      "table_context": "tab:placebos (Placebo assets and a placebo event...), row 2, col 3"
+    },
+    {
+      "draft_value": "0.0412",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.BCH.d_mean_fisherz",
+      "table_context": "tab:placebos (Placebo assets and a placebo event...), row 2, col 4"
+    },
+    {
+      "draft_value": "0.0170",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ALTIDX_EW.d_mean_rho",
+      "table_context": "tab:placebos (Placebo assets and a placebo event...), row 3, col 2"
+    },
+    {
+      "draft_value": "0.0170",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ALTIDX_EW.d_mean_rho",
+      "table_context": "tab:placebos (Placebo assets and a placebo event...), row 3, col 3"
+    },
+    {
+      "draft_value": "0.0165",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ALTIDX_EW.d_mean_rho",
+      "table_context": "tab:placebos (Placebo assets and a placebo event...), row 3, col 4"
+    },
+    {
+      "draft_value": "0.50",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ETH.mean_fisherz_post",
+      "table_context": "tab:placebos (Placebo assets and a placebo event...), row 4, col 2"
+    },
+    {
+      "draft_value": "0.70",
+      "source_key": "summary_statistics.json.outcome_rho2.max",
+      "table_context": "tab:placebos (Placebo assets and a placebo event...), row 4, col 3"
+    },
+    {
+      "draft_value": "0.40",
+      "source_key": "summary_statistics.json.outcome.median",
+      "table_context": "tab:placebos (Placebo assets and a placebo event...), row 4, col 4"
+    },
+    {
+      "draft_value": "0.0534",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ADA.d_mean_beta",
+      "table_context": "tab:placebos (Placebo assets and a placebo event...), row 5, col 2"
+    },
+    {
+      "draft_value": "0.0534",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ADA.d_mean_beta",
+      "table_context": "tab:placebos (Placebo assets and a placebo event...), row 5, col 3"
+    },
+    {
+      "draft_value": "0.0517",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ADA.d_mean_beta",
+      "table_context": "tab:placebos (Placebo assets and a placebo event...), row 5, col 4"
+    },
+    {
+      "draft_value": "2",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.DOT.pooled_daily_beta_pre",
+      "table_context": "tab:placebos (Placebo assets and a placebo event...), row 6, col 1"
+    },
+    {
+      "draft_value": "0.0011",
+      "source_key": "summary_statistics.json.clock.baseline_used_is_equity_close",
+      "table_context": "tab:placebos (Placebo assets and a placebo event...), row 6, col 2"
+    },
+    {
+      "draft_value": "0.0009",
+      "source_key": "summary_statistics.json.clock.baseline_used_is_equity_close",
+      "table_context": "tab:placebos (Placebo assets and a placebo event...), row 6, col 3"
+    },
+    {
+      "draft_value": "0.0022",
+      "source_key": "summary_statistics.json.clock.baseline_used_is_equity_close",
+      "table_context": "tab:placebos (Placebo assets and a placebo event...), row 6, col 4"
+    },
+    {
+      "draft_value": "23",
+      "source_key": "summary_statistics.json.n_days_m.max",
+      "table_context": "tab:placebos (Placebo assets and a placebo event...), row 7, col 2"
+    },
+    {
+      "draft_value": "23",
+      "source_key": "summary_statistics.json.n_days_m.max",
+      "table_context": "tab:placebos (Placebo assets and a placebo event...), row 7, col 3"
+    },
+    {
+      "draft_value": "21",
+      "source_key": "summary_statistics.json.n_days_m.median",
+      "table_context": "tab:placebos (Placebo assets and a placebo event...), row 7, col 4"
+    },
+    {
+      "draft_value": "540",
+      "source_key": "estimation_results.json.main.n_observations",
+      "table_context": "tab:placebos (Placebo assets and a placebo event...), row 8, col 2"
+    },
+    {
+      "draft_value": "540",
+      "source_key": "estimation_results.json.main.n_observations",
+      "table_context": "tab:placebos (Placebo assets and a placebo event...), row 8, col 3"
+    },
+    {
+      "draft_value": "310",
+      "source_key": "summary_statistics.json.subsample_pre_2024_01_10.n_observations",
+      "table_context": "tab:placebos (Placebo assets and a placebo event...), row 8, col 4"
+    },
+    {
+      "draft_value": "1",
+      "source_key": "summary_statistics.json.estimation_panel_coverage.months_lost_to_factor_publication_lag",
+      "table_context": "tab:robustness_windows (Robustness: rolling-window length in the daily panel...), row 1, col 2"
+    },
+    {
+      "draft_value": "30",
+      "source_key": "summary_statistics.json.subsample_post_2024_01_10.n_months",
+      "table_context": "tab:robustness_windows (Robustness: rolling-window length in the daily panel...), row 1, col 2"
+    },
+    {
+      "draft_value": "2",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.DOT.pooled_daily_beta_pre",
+      "table_context": "tab:robustness_windows (Robustness: rolling-window length in the daily panel...), row 1, col 3"
+    },
+    {
+      "draft_value": "60",
+      "source_key": "summary_statistics.json.sample_flow[9].dropped",
+      "table_context": "tab:robustness_windows (Robustness: rolling-window length in the daily panel...), row 1, col 3"
+    },
+    {
+      "draft_value": "3",
+      "source_key": "estimation_results.json.bai_perron.differential_fisherz.n_breaks_lwz",
+      "table_context": "tab:robustness_windows (Robustness: rolling-window length in the daily panel...), row 1, col 4"
+    },
+    {
+      "draft_value": "90",
+      "source_key": "robustness_results.json.window_90d.rolling_window_days",
+      "table_context": "tab:robustness_windows (Robustness: rolling-window length in the daily panel...), row 1, col 4"
+    },
+    {
+      "draft_value": "-0.0272",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.DOT.d_mean_fisherz",
+      "table_context": "tab:robustness_windows (Robustness: rolling-window length in the daily panel...), row 2, col 2"
+    },
+    {
+      "draft_value": "-0.0183",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ADA.d_mean_rho",
+      "table_context": "tab:robustness_windows (Robustness: rolling-window length in the daily panel...), row 2, col 3"
+    },
+    {
+      "draft_value": "-0.0169",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ADA.d_mean_rho",
+      "table_context": "tab:robustness_windows (Robustness: rolling-window length in the daily panel...), row 2, col 4"
+    },
+    {
+      "draft_value": "0.0182",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ALTIDX_EW.d_mean_rho",
+      "table_context": "tab:robustness_windows (Robustness: rolling-window length in the daily panel...), row 3, col 2"
+    },
+    {
+      "draft_value": "0.0208",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ALTIDX_EW.d_pooled_daily_rho",
+      "table_context": "tab:robustness_windows (Robustness: rolling-window length in the daily panel...), row 3, col 3"
+    },
+    {
+      "draft_value": "0.0210",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ALTIDX_EW.d_pooled_daily_rho",
+      "table_context": "tab:robustness_windows (Robustness: rolling-window length in the daily panel...), row 3, col 4"
+    },
+    {
+      "draft_value": "368",
+      "source_key": "estimation_results.json.daily_rolling_did.n_effective_blocks",
+      "table_context": "tab:robustness_windows (Robustness: rolling-window length in the daily panel...), row 4, col 2"
+    },
+    {
+      "draft_value": "180",
+      "source_key": "robustness_results.json.window_60d.n_effective_blocks",
+      "table_context": "tab:robustness_windows (Robustness: rolling-window length in the daily panel...), row 4, col 3"
+    },
+    {
+      "draft_value": "117",
+      "source_key": "robustness_results.json.window_90d.n_effective_blocks",
+      "table_context": "tab:robustness_windows (Robustness: rolling-window length in the daily panel...), row 4, col 4"
+    },
+    {
+      "draft_value": "11,050",
+      "source_key": "estimation_results.json.daily_rolling_did.n_observations",
+      "table_context": "tab:robustness_windows (Robustness: rolling-window length in the daily panel...), row 5, col 2"
+    },
+    {
+      "draft_value": "10,810",
+      "source_key": "robustness_results.json.window_60d.n_observations",
+      "table_context": "tab:robustness_windows (Robustness: rolling-window length in the daily panel...), row 5, col 3"
+    },
+    {
+      "draft_value": "10,570",
+      "source_key": "robustness_results.json.window_90d.n_observations",
+      "table_context": "tab:robustness_windows (Robustness: rolling-window length in the daily panel...), row 5, col 4"
+    }
+  ],
   "source_files_found": [
-    "workspaces/e432cf3f-9008-4202-8ee6-ff09a93948ec/estimation_results.json",
-    "workspaces/e432cf3f-9008-4202-8ee6-ff09a93948ec/figure_spec.json",
-    "workspaces/e432cf3f-9008-4202-8ee6-ff09a93948ec/robustness_results.json",
-    "workspaces/e432cf3f-9008-4202-8ee6-ff09a93948ec/summary_statistics.json"
+    "/Users/hanneke/.e2er/showcase-run/workspaces/e432cf3f-9008-4202-8ee6-ff09a93948ec/estimation_results.json",
+    "/Users/hanneke/.e2er/showcase-run/workspaces/e432cf3f-9008-4202-8ee6-ff09a93948ec/figure_spec.json",
+    "/Users/hanneke/.e2er/showcase-run/workspaces/e432cf3f-9008-4202-8ee6-ff09a93948ec/robustness_results.json",
+    "/Users/hanneke/.e2er/showcase-run/workspaces/e432cf3f-9008-4202-8ee6-ff09a93948ec/summary_statistics.json"
   ],
   "source_files_missing": [],
   "skipped_reason": null,
-  "prose_total": 276,
-  "prose_matched": 268,
+  "prose_total": 307,
+  "prose_matched": 292,
   "prose_mismatched": 4,
-  "prose_unverifiable": 4,
-  "prose_excluded": 145,
+  "prose_unverifiable": 11,
+  "prose_excluded": 214,
   "prose_mismatches": [
     {
       "draft_value": "27",
