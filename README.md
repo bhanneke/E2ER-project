@@ -110,6 +110,13 @@ is measured rather than hidden.
 | `e2er export <paper_id>` | Assemble a clean bundle (+ `provenance.json`) |
 | `e2er verify <bundle> [--online]` | Offline re-check: hashes, numbers, spec, citations |
 
+**Going deeper.** [`docs/WORKFLOW.md`](docs/WORKFLOW.md) is the technical
+account: the phase sequence, what each of the four gates actually checks, what
+the governance regime changes, and — stated plainly rather than left to be
+discovered — what the system does *not* establish.
+[`docs/diagrams/workflow.md`](docs/diagrams/workflow.md) is the same thing as a
+picture, including where a human decides and which gates block in which regime.
+
 ---
 
 ## For reviewers
