@@ -1,0 +1,55 @@
+{
+  "passed": true,
+  "total_values_in_tables": 0,
+  "matched": 0,
+  "mismatched": 0,
+  "unverifiable": 0,
+  "coverage": 0.0,
+  "mismatches": [],
+  "matched_cells": [],
+  "source_files_found": [
+    "workspaces/e432cf3f-9008-4202-8ee6-ff09a93948ec/estimation_results.json",
+    "workspaces/e432cf3f-9008-4202-8ee6-ff09a93948ec/figure_spec.json",
+    "workspaces/e432cf3f-9008-4202-8ee6-ff09a93948ec/robustness_results.json",
+    "workspaces/e432cf3f-9008-4202-8ee6-ff09a93948ec/summary_statistics.json"
+  ],
+  "source_files_missing": [],
+  "skipped_reason": null,
+  "prose_total": 276,
+  "prose_matched": 268,
+  "prose_mismatched": 4,
+  "prose_unverifiable": 4,
+  "prose_excluded": 145,
+  "prose_mismatches": [
+    {
+      "draft_value": "27",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.by_asset.ADA.n_months_post",
+      "source_value": "30.0",
+      "table_context": "prose: \u2026tistics.json#sample_flow[0].n 27{,}430 raw daily bar\u2026",
+      "severity": "major"
+    },
+    {
+      "draft_value": "25",
+      "source_key": "robustness_results.json.placebo_dates_pre.n_post_treatment",
+      "source_value": "23.0",
+      "table_context": "prose: \u2026tes_pre.diagnostics.placebo_q025 % src: robustness_r\u2026",
+      "severity": "major"
+    },
+    {
+      "draft_value": "8.85",
+      "source_key": "summary_statistics.json.raw_contrast.SPY.control_group_mean.n_control_coins",
+      "source_value": "9.0",
+      "table_context": "prose: \u2026e percent critical value near $8.85$ for a one-parameter\u2026",
+      "severity": "major"
+    },
+    {
+      "draft_value": "21.99",
+      "source_key": "estimation_results.json.bai_perron.differential_fisherz.ssr_by_m.0",
+      "source_value": "18.177513",
+      "table_context": "prose: \u2026omputed: 140.4082 / 6.38654 = 21.99, from estimation_re\u2026",
+      "severity": "major"
+    }
+  ],
+  "table_spec_unresolved": [],
+  "conclusive": true
+}

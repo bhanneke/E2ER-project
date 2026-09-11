@@ -1,0 +1,22 @@
+\begin{table}[t]
+\centering
+\begin{threeparttable}
+\caption{Decomposing the beta change into a co-movement margin and a relative-volatility margin}
+\label{tab:decomposition}
+\begin{tabular}{lccc}
+\toprule
+ & Fisher-$z$ correlation & Monthly equity beta & $\ln(\sigma_i/\sigma_{mkt})$ \\
+\midrule
+$\hat\tau$: BTC $\times$ Post & -0.0212 & -0.1890 & -0.1128*** \\
+ & (0.0170) & (0.1431) & (0.0297) \\
+SD of the randomization distribution & 0.0619 & 0.4510 & 0.0935 \\
+Within $R^2$ & 0.0006 & 0.0010 & 0.0057 \\
+$N$ & 540 & 540 & 540 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}[flushleft]
+\footnotesize
+\item All three columns use the same coin-month panel, the same coin and calendar-month fixed effects and the same treatment indicator, and differ only in the outcome. Because $\beta_{im} = \rho_{im}\,(\sigma_{i,m}/\sigma_{mkt,m})$, the beta column is the product of the other two margins: a flat correlation combined with a decline in relative volatility produces a decline in beta that is a volatility result rather than a co-movement result. Standard errors in parentheses are cluster-robust on coin and are not the inferential basis; each coefficient should be judged against the standard deviation of its own randomization distribution, reported in the row beneath. The randomization $p$-values are 0.67 for the correlation outcome, 0.80 for beta and 0.20 for the log volatility ratio, the last of which is one step above the floor of 0.10 imposed by having nine placebo donors.
+\end{tablenotes}
+\end{threeparttable}
+\end{table}

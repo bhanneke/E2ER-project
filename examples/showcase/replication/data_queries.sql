@@ -1,0 +1,3 @@
+-- E2ER v3 data queries for replication
+-- paper_id: e432cf3f-9008-4202-8ee6-ff09a93948ec
+-- generated: 2026-09-11T10:51:38.887201+00:00

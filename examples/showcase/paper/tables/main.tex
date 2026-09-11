@@ -1,0 +1,24 @@
+\begin{table}[t]
+\centering
+\begin{threeparttable}
+\caption{The spot-ETF listing and Bitcoin's equity co-movement: difference-in-differences estimates}
+\label{tab:main}
+\begin{tabular}{lccccc}
+\toprule
+ & (1) Baseline & (2) BDM collapse & (3) Two-way cluster & (4) No donut & (5) Daily 30d panel \\
+\midrule
+$\hat\tau$: BTC $\times$ Post & -0.0212 & -0.0212 & -0.0212 & -0.0092 & -0.0272 \\
+ & (0.0170) & (0.0246) & (0.0229) & (0.0159) & (0.0182) \\
+Within $R^2$ & 0.0006 & 0.0213 & 0.0006 & 0.0001 & 0.0014 \\
+Pre-treatment periods & 31 & 10 & 31 & 36 & 624 \\
+Post-treatment periods & 23 & 10 & 23 & 24 & 481 \\
+Clusters & 10 & 10 & 10 & 10 & 10 \\
+$N$ & 540 & 20 & 540 & 600 & 11,050 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}[flushleft]
+\footnotesize
+\item The outcome is the Fisher-$z$ transform of the within-period correlation between the asset's daily return and the return on SPY. Columns (1)--(4) are coin-month panels with coin and calendar-month fixed effects; column (2) collapses the panel to one pre-mean and one post-mean per coin, which removes serial correlation in the idiosyncratic error by construction; column (4) dates treatment to the January 2024 listing and retains the 2023m8--2024m1 donut months. Column (5) is an asset-day panel in the Fisher-$z$ of a 30-day rolling correlation with asset and date fixed effects, whose overlapping windows leave roughly 368 independent blocks rather than 11,050 independent draws. Standard errors in parentheses are cluster-robust on the unit dimension and are reported for convention only: with a single treated unit they have no valid asymptotic justification and are severely downward-biased. Any significance markers derive from those invalid cluster-robust $p$-values and must not be read as inference. The inferential basis of this paper is randomization inference over a grid of counterfactual treatment assignments, reported for the baseline specification in Table~\ref{tab:inference} and alongside every robustness row.
+\end{tablenotes}
+\end{threeparttable}
+\end{table}

@@ -1,0 +1,524 @@
+{
+  "schema": "e2er-provenance/1",
+  "run": {
+    "paper_id": "e432cf3f-9008-4202-8ee6-ff09a93948ec",
+    "backend": "claude_code",
+    "model": "claude-sonnet-4-5",
+    "governance": "full",
+    "e2er_version": "0.8.2",
+    "exported_at": "20260911"
+  },
+  "files": {
+    "README.md": {
+      "sha256": "35e8cfa5e1847fcc85441d0802f6c07b489222bb46f70aaaca61a0869deee5da",
+      "bytes": 1377
+    },
+    "code/run_estimation.py": {
+      "sha256": "b441ce1098f9ca066bcaa771ce2f84d314d2161d64933b5f93e47d9a11501d06",
+      "bytes": 70795
+    },
+    "code/scratch/build_panel.py": {
+      "sha256": "05bf11e757847fb6338845e1f849ca7b404288d7e47d298def256e786b2e6703",
+      "bytes": 40340
+    },
+    "code/scratch/inspect_json.py": {
+      "sha256": "202f922fa32bca3c79258e67fea6e90f1e15a577fba4046427707dc17df4443d",
+      "bytes": 592
+    },
+    "code/scratch/probe.py": {
+      "sha256": "47a6a63199ee151701ff71e61b2bec3907d7c4709a40b28af669a478c96cc8ee",
+      "bytes": 2448
+    },
+    "code/scratch/report_numbers.py": {
+      "sha256": "3dec8000e5218df32e5ddfe4bac53dd34a909719e6ff5f2f23143c49949a5e5e",
+      "bytes": 2835
+    },
+    "code/scratch/validate_sidecars.py": {
+      "sha256": "b9ccffab8635dc1f86ba192e12bbeeac5575244f5f1148924e63f8742500ece9",
+      "bytes": 3296
+    },
+    "data/data_dictionary.json": {
+      "sha256": "3b54e0ba62778644a81195d77c630540aa2a38edf97a9ede570058d328ba19bf",
+      "bytes": 89071
+    },
+    "data/data_summary.md": {
+      "sha256": "285377de56fb3d7802ea146bcaa3f689ea028c406d8aaebfb24a2ec0a1ef1966",
+      "bytes": 44213
+    },
+    "design/econometric_spec.md": {
+      "sha256": "ae90ccb7350cd91962305222186259ceb37394abbc47bdb5c186331fb625e5ec",
+      "bytes": 65239
+    },
+    "design/identification_spec.json": {
+      "sha256": "fcb66c40773ab48b3fb96a96d558c2d828f35db846a6952c83f38ec8442fd5f1",
+      "bytes": 2446
+    },
+    "design/identification_strategy.md": {
+      "sha256": "42aa7aa611a4155a12cab1cadf7cc8348772326b710bda981ecb32f8b18035fb",
+      "bytes": 43508
+    },
+    "design/literature_review.md": {
+      "sha256": "e519715654e6f5358360d57b013437819410fa54af546865b0c42a236379a585",
+      "bytes": 62832
+    },
+    "design/paper_plan.md": {
+      "sha256": "a480534a2cc7dacb2c7783c5413fea04f6969c7bf3b2eafa0e2f3714322442cf",
+      "bytes": 45562
+    },
+    "misc/fig_etf_cumulative_turnover.pdf": {
+      "sha256": "709af75daf36fa48f0854d0fc8af9543f68d98c20a846377b96f291b11e457bf",
+      "bytes": 39922
+    },
+    "misc/fig_gbtc_discount.pdf": {
+      "sha256": "08f8f5aeea753df794ad003d6ede50c9cf62908b1a314b93f6395634cea55bf9",
+      "bytes": 40825
+    },
+    "misc/fig_prepost_correlation_change.pdf": {
+      "sha256": "29d702a79240c12636c8ff52303ab0d5b582699c875a6bd24f36d88f0c124131",
+      "bytes": 18120
+    },
+    "misc/fig_rolling_btc_spy.pdf": {
+      "sha256": "2dd7cd77a904068f0330ed8400748555d46aa92b264b3c3a28d417ce08dab1ab",
+      "bytes": 64907
+    },
+    "misc/fig_rolling_overlay_controls.pdf": {
+      "sha256": "17111429cbbff3618bc159db160c8e08ed2f736bd36fe1724d5da61678aff18b",
+      "bytes": 109562
+    },
+    "misc/figure_render_report.json": {
+      "sha256": "4cc68247e9fd59ad70db4af0400224b3883f6d82c691aef9d06ea52648be2aed",
+      "bytes": 284
+    },
+    "misc/paper_draft.tex.applied.diff": {
+      "sha256": "c9fc21195772ee62cf0443954e99cbd101ff6c2648df2fd7d36777260fda6cc3",
+      "bytes": 14256
+    },
+    "misc/paper_draft.tex.edits.json": {
+      "sha256": "ec4f6503f012e85539017aa71ed0f03d4035c4d9dcb16710c095400c5db944ce",
+      "bytes": 37646
+    },
+    "misc/refs.bib": {
+      "sha256": "37f84e23ec1a68d6efe700e133bae88506537a9141c253bc3a17d546b06c041a",
+      "bytes": 17518
+    },
+    "paper/abstract.tex": {
+      "sha256": "4e6faf86b4ddbda0af257bc748c56f399ed1df4cf62a025c7b90aad62411cef1",
+      "bytes": 2855
+    },
+    "paper/paper.tex": {
+      "sha256": "d80fc8e5b3416bf7a821133ce2b97aa0bfce2f936df2256962f30c36768ad4de",
+      "bytes": 104564
+    },
+    "paper/refs.bib": {
+      "sha256": "d89feb69a8afde2bc5b50414060982891b38e8edf57231652f732536f2c9043a",
+      "bytes": 17548
+    },
+    "paper/tables/....tex": {
+      "sha256": "c9c6965c53d20f099e4fded9445f0b7bf6d291a7d8f4f37962d875c67b511448",
+      "bytes": 66
+    },
+    "paper/tables/complementary.tex": {
+      "sha256": "2e11bb3df83fa49f7151a6f2f338be8da21e1c06ec92c5e786f99802508f694c",
+      "bytes": 2165
+    },
+    "paper/tables/dcc.tex": {
+      "sha256": "c5cf3c45751198d0ffd6b7e2bb5d10d8b0f9d78bf897e6fb0426265c07d913f7",
+      "bytes": 1847
+    },
+    "paper/tables/decomposition.tex": {
+      "sha256": "edbfe758b6a62d6853d2cc3edfd2eabae01db27b2739dbfb658718350df07910",
+      "bytes": 1538
+    },
+    "paper/tables/event_study.tex": {
+      "sha256": "8b6cf067662831da6eacdcb344aedb890ce7d8ad2ba3271e17d22ff17ecae52c",
+      "bytes": 2071
+    },
+    "paper/tables/inference.tex": {
+      "sha256": "0fe45e9bae5715941473bd529d2fbc2cb54deb381af8f07ad44f0c278200d79f",
+      "bytes": 1979
+    },
+    "paper/tables/macro_controls.tex": {
+      "sha256": "8e03a3d98679dbac69096ea07c74bac966a7d5e55fd18e410e15679838a3b976",
+      "bytes": 1645
+    },
+    "paper/tables/main.tex": {
+      "sha256": "aaf092406d1a88e0db64b5d3bf8024f15c96501d53b5dd1de086aac6b8a718b1",
+      "bytes": 2047
+    },
+    "paper/tables/placebos.tex": {
+      "sha256": "eb91445050f48d4e791b115847d358017df87e98d5d8c882e05ca4534aea5343",
+      "bytes": 1759
+    },
+    "paper/tables/power.tex": {
+      "sha256": "8fd84ca590ec2f116b514683ceb26a2ea90d764a7b01aafd6b07780923771b4e",
+      "bytes": 2062
+    },
+    "paper/tables/rawcontrast.tex": {
+      "sha256": "74d2a4bd73b70ceabb42c02d1fed6667753cef587d759549e50df3a911448db1",
+      "bytes": 1825
+    },
+    "paper/tables/returns_ddd.tex": {
+      "sha256": "7792118a7d1d18dab23726956dfae2253ced7e25599640c11618fc92e4272bf4",
+      "bytes": 1864
+    },
+    "paper/tables/returns_interacted.tex": {
+      "sha256": "e83f90c39c4456cead51f04fc6ced31887ff35a80f5a7fb2216d4636e974969e",
+      "bytes": 1763
+    },
+    "paper/tables/robustness_sample.tex": {
+      "sha256": "1ea01ae71bb9b4d674f2edb1ee90cbe7b449f4cffc3ba6cee58fbe020eef8d3d",
+      "bytes": 1891
+    },
+    "paper/tables/robustness_spec.tex": {
+      "sha256": "f0ed35962833ca779cd7277d463cca1440861a55f1f8f3d7b7a11fc4f7b0e3cb",
+      "bytes": 2169
+    },
+    "paper/tables/robustness_windows.tex": {
+      "sha256": "4b1da8e1dcba210fed90e8b7a4be65733184f5d69a3285cdc14674aeaa07a976",
+      "bytes": 1117
+    },
+    "paper/tables/sumstats.tex": {
+      "sha256": "3b59824c28b2efa2f294a923ced3220f0b10b789d353d80c97d10679f9aa09fa",
+      "bytes": 2260
+    },
+    "replication/audit_log.csv": {
+      "sha256": "ec4c2f5d007c66e617ae6ba079ea264d8d7829c6a2112ee32d5ede13e5ae9ae2",
+      "bytes": 152
+    },
+    "replication/data_queries.sql": {
+      "sha256": "22f31e5237075e4b242f4013e5eb509e9bfb3c83b3ebe2145428275e00a158b9",
+      "bytes": 137
+    },
+    "results/estimation_results.json": {
+      "sha256": "4765d2a27bc31d66760951a25f915d99085b7f4278521a0d55aeb14eefecf323",
+      "bytes": 24810
+    },
+    "results/figure_spec.json": {
+      "sha256": "aa1ff6949533ed6bee25728bd886a30e81185c1b463a9ba1b9a565223e32f093",
+      "bytes": 566341
+    },
+    "results/number_verification.json": {
+      "sha256": "e80297cf191140dcd53ed9b4e4b5652d3e08a926fc800817aae9554082f420d1",
+      "bytes": 1922
+    },
+    "results/robustness_results.json": {
+      "sha256": "b77d26e6037072e1c743d48b55aadd7f4a33e00af6ef6499704b2f01d1182cb6",
+      "bytes": 26242
+    },
+    "results/summary_statistics.json": {
+      "sha256": "aaaf7134d6333f90024471a0627106478a611d4428335975f2850d9cc10d9fa6",
+      "bytes": 36644
+    },
+    "results/table_render_report.json": {
+      "sha256": "cbb8c5f159ebef04e6aba0222ba9abbc61e0c2d41ddeb2ec1a8e43573877a571",
+      "bytes": 406
+    },
+    "results/table_spec.json": {
+      "sha256": "71f3739e3a8efd25c7986bdbb98565a05065d2b98d5b204ede74cf247bfea44d",
+      "bytes": 30812
+    },
+    "reviews/citation_integrity.json": {
+      "sha256": "1e848970a0263317324ffe6425c5f4102bd2641bcb1aef4a30e99062f451032a",
+      "bytes": 14777
+    },
+    "reviews/review_aggregation.json": {
+      "sha256": "412b473f4f4100d110b910b28c5ea2caf5c4b6021ad8c21a45790dd860b9b0a8",
+      "bytes": 1544
+    },
+    "reviews/review_data.md": {
+      "sha256": "db8ed1e8bca1dc80ffe44c3bf630b8bc1dd14048789cb58b8c63a00f56dde76d",
+      "bytes": 42375
+    },
+    "reviews/review_identification.md": {
+      "sha256": "6a89ce9028285c09f8ac57f48e22635fe772bed6833eb1384314c7e252f2ba9e",
+      "bytes": 44261
+    },
+    "reviews/review_literature.md": {
+      "sha256": "74b218dd43979dfc49a6e6ff045c86e7df35cb6a50ffc39480ae0f7dba5e99cb",
+      "bytes": 23394
+    },
+    "reviews/review_mechanism.md": {
+      "sha256": "98dc62fc705b446d20fa4bc1b6e92c07ecefba05a497d6cfd114ee65d790155d",
+      "bytes": 29328
+    },
+    "reviews/review_technical.md": {
+      "sha256": "c62e143a76fd755aa31e4daba8c559e96ab9973dff914bc9d8ef3cbc03e0143b",
+      "bytes": 56481
+    },
+    "reviews/review_writing.md": {
+      "sha256": "0dda5ad6e67720a30d0d3cfd00857cc2a4e6a4805c6dc276675d608fcb08e0ff",
+      "bytes": 31844
+    }
+  },
+  "edges": [
+    {
+      "type": "citation",
+      "output": "paper/paper.tex",
+      "key": "barberis2003style",
+      "status": "verified_doi",
+      "registry": "openalex",
+      "external_id": "doi:10.1016/s0304-405x(03)00064-3"
+    },
+    {
+      "type": "citation",
+      "output": "paper/paper.tex",
+      "key": "barberis2004comovement",
+      "status": "verified_doi",
+      "registry": "openalex",
+      "external_id": "doi:10.1016/j.jfineco.2004.04.003"
+    },
+    {
+      "type": "citation",
+      "output": "paper/paper.tex",
+      "key": "khatib2026from",
+      "status": "verified_doi",
+      "registry": "openalex",
+      "external_id": "doi:10.1016/j.iref.2026.105664"
+    },
+    {
+      "type": "citation",
+      "output": "paper/paper.tex",
+      "key": "glosten2020etf",
+      "status": "verified_doi",
+      "registry": "openalex",
+      "external_id": "doi:10.1287/mnsc.2019.3427"
+    },
+    {
+      "type": "citation",
+      "output": "paper/paper.tex",
+      "key": "israeli2017is",
+      "status": "verified_doi",
+      "registry": "openalex",
+      "external_id": "doi:10.1007/s11142-017-9400-8"
+    },
+    {
+      "type": "citation",
+      "output": "paper/paper.tex",
+      "key": "pindyck1993the",
+      "status": "verified_doi",
+      "registry": "openalex",
+      "external_id": "doi:10.2307/2118460"
+    },
+    {
+      "type": "citation",
+      "output": "paper/paper.tex",
+      "key": "vijh1994sp",
+      "status": "verified_doi",
+      "registry": "openalex",
+      "external_id": "doi:10.1093/rfs/7.1.215"
+    },
+    {
+      "type": "citation",
+      "output": "paper/paper.tex",
+      "key": "boyer2011stylerelated",
+      "status": "verified_doi",
+      "registry": "openalex",
+      "external_id": "doi:10.1111/j.1540-6261.2010.01633.x"
+    },
+    {
+      "type": "citation",
+      "output": "paper/paper.tex",
+      "key": "greenwood2007excess",
+      "status": "verified_doi",
+      "registry": "openalex",
+      "external_id": "doi:10.1093/rfs/hhm052"
+    },
+    {
+      "type": "citation",
+      "output": "paper/paper.tex",
+      "key": "froot1999how",
+      "status": "verified_doi",
+      "registry": "openalex",
+      "external_id": "doi:10.1016/s0304-405x(99)00020-3"
+    },
+    {
+      "type": "citation",
+      "output": "paper/paper.tex",
+      "key": "shleifer1986do",
+      "status": "verified_doi",
+      "registry": "openalex",
+      "external_id": "doi:10.1111/j.1540-6261.1986.tb04518.x"
+    },
+    {
+      "type": "citation",
+      "output": "paper/paper.tex",
+      "key": "harris1986price",
+      "status": "verified_doi",
+      "registry": "openalex",
+      "external_id": "doi:10.1111/j.1540-6261.1986.tb04550.x"
+    },
+    {
+      "type": "citation",
+      "output": "paper/paper.tex",
+      "key": "chen2004the",
+      "status": "verified_doi",
+      "registry": "openalex",
+      "external_id": "doi:10.1111/j.1540-6261.2004.00683.x"
+    },
+    {
+      "type": "citation",
+      "output": "paper/paper.tex",
+      "key": "da2017exchange",
+      "status": "verified_doi",
+      "registry": "openalex",
+      "external_id": "doi:10.1111/eufm.12137"
+    },
+    {
+      "type": "citation",
+      "output": "paper/paper.tex",
+      "key": "bendavid2014do",
+      "status": "verified_doi",
+      "registry": "openalex",
+      "external_id": "doi:10.1111/jofi.12727"
+    },
+    {
+      "type": "citation",
+      "output": "paper/paper.tex",
+      "key": "brown2020etf",
+      "status": "verified_doi",
+      "registry": "openalex",
+      "external_id": "doi:10.1093/rof/rfaa027"
+    },
+    {
+      "type": "citation",
+      "output": "paper/paper.tex",
+      "key": "baltussen2018indexing",
+      "status": "verified_doi",
+      "registry": "openalex",
+      "external_id": "doi:10.1016/j.jfineco.2018.07.016"
+    },
+    {
+      "type": "citation",
+      "output": "paper/paper.tex",
+      "key": "coles2022on",
+      "status": "verified_doi",
+      "registry": "openalex",
+      "external_id": "doi:10.1016/j.jfineco.2022.05.007"
+    },
+    {
+      "type": "citation",
+      "output": "paper/paper.tex",
+      "key": "bendavid2017exchangetraded",
+      "status": "verified_doi",
+      "registry": "openalex",
+      "external_id": "doi:10.1146/annurev-financial-110716-032538"
+    },
+    {
+      "type": "citation",
+      "output": "paper/paper.tex",
+      "key": "liu2020risks",
+      "status": "verified_doi",
+      "registry": "openalex",
+      "external_id": "doi:10.1093/rfs/hhaa113"
+    },
+    {
+      "type": "citation",
+      "output": "paper/paper.tex",
+      "key": "liu2022common",
+      "status": "verified_doi",
+      "registry": "openalex",
+      "external_id": "doi:10.1111/jofi.13119"
+    },
+    {
+      "type": "citation",
+      "output": "paper/paper.tex",
+      "key": "biais2023equilibrium",
+      "status": "verified_doi",
+      "registry": "openalex",
+      "external_id": "doi:10.1111/jofi.13206"
+    },
+    {
+      "type": "citation",
+      "output": "paper/paper.tex",
+      "key": "hu2019cryptocurrencies",
+      "status": "verified_doi",
+      "registry": "openalex",
+      "external_id": "doi:10.1111/fima.12300"
+    },
+    {
+      "type": "citation",
+      "output": "paper/paper.tex",
+      "key": "makarov2019trading",
+      "status": "verified_doi",
+      "registry": "openalex",
+      "external_id": "doi:10.1016/j.jfineco.2019.07.001"
+    },
+    {
+      "type": "citation",
+      "output": "paper/paper.tex",
+      "key": "griffin2020is",
+      "status": "verified_doi",
+      "registry": "openalex",
+      "external_id": "doi:10.1111/jofi.12903"
+    },
+    {
+      "type": "citation",
+      "output": "paper/paper.tex",
+      "key": "bouri2016on",
+      "status": "verified_doi",
+      "registry": "openalex",
+      "external_id": "doi:10.1016/j.frl.2016.09.025"
+    },
+    {
+      "type": "citation",
+      "output": "paper/paper.tex",
+      "key": "baur2017bitcoin",
+      "status": "verified_doi",
+      "registry": "openalex",
+      "external_id": "doi:10.1016/j.intfin.2017.12.004"
+    },
+    {
+      "type": "citation",
+      "output": "paper/paper.tex",
+      "key": "corbet2018exploring",
+      "status": "verified_doi",
+      "registry": "openalex",
+      "external_id": "doi:10.1016/j.econlet.2018.01.004"
+    },
+    {
+      "type": "citation",
+      "output": "paper/paper.tex",
+      "key": "conlon2020safe",
+      "status": "verified_doi",
+      "registry": "openalex",
+      "external_id": "doi:10.1016/j.frl.2020.101607"
+    },
+    {
+      "type": "citation",
+      "output": "paper/paper.tex",
+      "key": "corbet2020the",
+      "status": "verified_doi",
+      "registry": "openalex",
+      "external_id": "doi:10.1016/j.frl.2020.101554"
+    },
+    {
+      "type": "citation",
+      "output": "paper/paper.tex",
+      "key": "guliyev2025from",
+      "status": "verified_doi",
+      "registry": "openalex",
+      "external_id": "doi:10.5195/ledger.2025.393"
+    },
+    {
+      "type": "citation",
+      "output": "paper/paper.tex",
+      "key": "tang2026the",
+      "status": "verified_doi",
+      "registry": "openalex",
+      "external_id": "doi:10.61173/mpgy2h45"
+    },
+    {
+      "type": "citation",
+      "output": "paper/paper.tex",
+      "key": "pucher2026falsenews",
+      "status": "verified_title",
+      "registry": "openalex",
+      "external_id": null
+    },
+    {
+      "type": "estimation",
+      "output": "results/estimation_results.json",
+      "script": "code/run_estimation.py"
+    }
+  ]
+}

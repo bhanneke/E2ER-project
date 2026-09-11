@@ -1,0 +1,22 @@
+{
+  "primary": {
+    "estimator": "twfe_did",
+    "unit_of_analysis": "coin-month",
+    "outcome": "fisher_z_corr_equity",
+    "treatment": "etf_listed",
+    "fixed_effects": ["coin", "year_month"],
+    "controls": [],
+    "cluster_level": "coin",
+    "identifying_assumption": "Absent the US spot ETF listing, the Fisher-z equity co-movement of Bitcoin and of never-ETF'd crypto assets would have followed parallel paths in expectation. Coin fixed effects absorb fixed differences in the level of equity integration; year-month fixed effects absorb every shock common to crypto assets (Fed pivot expectations, falling rate volatility, the AI-driven equity rally, the crypto cycle), so the 2024 macro regime is differenced out. Controls are deliberately empty: volume, market capitalisation and realized volatility are mediators of the ETF treatment, not confounders, so conditioning on them would absorb part of the effect. Treatment is BTC x post-2024m2 in the headline sample; eventually-treated coins (ETH, SOL, XRP) are excluded from the headline control group, so no already-treated units enter as comparisons. Sample: 2021m1-2025m12 with a donut excluding 2023m8-2024m1 (Grayscale-ruling anticipation, false-news events, listing week, GBTC transition). Residual threat not removed by this design: Bitcoin-specific post-treatment shocks (the April 2024 halving, the November 2024 election), addressed via the pre-halving and pre-election sub-window estimates, the prior-halving placebo, and the session triple-difference with coin-month fixed effects. With one treated unit the clustered p-value is reported but is not the inferential basis: randomization inference over a combined placebo-in-space-and-time grid is primary, with Conley-Taber and the Bertrand-Duflo-Mullainathan collapse alongside."
+  },
+  "fallback": {
+    "estimator": "ols",
+    "unit_of_analysis": "month",
+    "outcome": "fisher_z_corr_equity",
+    "treatment": "post_etf",
+    "fixed_effects": [],
+    "controls": [],
+    "cluster_level": "none",
+    "when": "Only if the never-treated control-coin panel cannot be constructed. Bitcoin-only time series of monthly Fisher-z equity correlation regressed on a post-2024m2 indicator with HAC (Newey-West) errors and the break date validated by Andrews sup-Wald. This is descriptive, not identified - it cannot separate the ETF from the 2024 macro regime - and must be labelled as such in every table reporting it."
+  }
+}

@@ -1,0 +1,745 @@
+% !TeX program = pdflatex
+% Paper draft — body text.
+% Paper ID: e432cf3f-9008-4202-8ee6-ff09a93948ec
+%
+% NUMBER PROVENANCE. Every numeric value in the prose below carries a
+% "% src:" comment naming the sidecar file and the dotted key path it comes
+% from; derived quantities carry a "% computed:" comment showing the
+% arithmetic. Numbers inside \input{tables/...} are rendered deterministically
+% from table_spec.json against estimation_results.json and
+% robustness_results.json and are therefore not hand-written here.
+
+\documentclass[12pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{threeparttable}
+\usepackage{graphicx}
+\usepackage{natbib}
+\usepackage[margin=1in]{geometry}
+\usepackage{setspace}
+\usepackage{hyperref}
+\hypersetup{colorlinks=true,citecolor=blue,linkcolor=blue,urlcolor=blue}
+
+\bibliographystyle{chicago}
+
+\title{No Cash Flows, New Owners:\\ Spot Bitcoin ETFs and the Origins of Co-movement}
+
+\author{}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+\noindent On January 10, 2024 the SEC approved eleven US spot Bitcoin exchange-traded products, and trading began the following morning. The approval changed who could conveniently hold Bitcoin and in what wrapper; it changed nothing about the asset itself. We use this access shock to ask whether the identity of the marginal investor determines an asset's factor structure in a setting where the cash-flow channel that confounds the index-inclusion literature is unavailable by construction: Bitcoin has no earnings, so a change in its equity loading cannot be a change in the correlation of its cash-flow news. Our design is a difference-in-differences on a panel of monthly equity co-movement for Bitcoin and nine never-listed cryptocurrencies, with coin and calendar-month fixed effects, and with randomization inference over a grid of placebo assignments as the governing inference procedure, because there is exactly one treated unit. We find no detectable change. The estimated differential shift in Bitcoin's Fisher-$z$ correlation with the S\&P 500 is
+% src: estimation_results.json#main.coefficients.d_etf_listed.estimate
+$-0.0212$, equivalent to under two correlation points and of the wrong sign for the broadened-access hypothesis, with a randomization $p$-value of
+% src: estimation_results.json#main.p_value_ri
+$0.665$ and a randomization 95\% interval running from
+% src: estimation_results.json#power_analysis.ri_ci95_lower_correlation_units
+% src: estimation_results.json#power_analysis.ri_ci95_upper_correlation_units
+$-0.122$ to $+0.086$ in correlation units. The result survives six methodologically distinct estimators, an endogenous break-dating procedure that locates no break at the approval, and a grid of placebo assets and placebo dates. Three findings qualify it. Bitcoin's volatility relative to the equity market fell after the listing even though its correlation did not move, which is the margin a broader investor base plausibly operates on. The sign, though not the null, reverses when the macro volatility regime is allowed to load differentially on Bitcoin, so the estimate is robustly null rather than robustly negative. And with 80\% power the design could only have detected a correlation increase of about
+% src: estimation_results.json#power_analysis.mde_correlation_units_ri
+$0.148$; it excludes increases above roughly $0.086$, which rules out the upper half of the range the index-inclusion literature reports, but it cannot rule out an increase of half that magnitude. We read the evidence as bounding the ETF-attributable component of the 2024 co-movement environment rather than as a rejection of the habitat hypothesis.
+
+\bigskip
+\noindent\textbf{Keywords:} co-movement, exchange-traded funds, investor clienteles, Bitcoin, difference-in-differences, randomization inference
+
+\noindent\textbf{JEL:} G12, G14, G23, G11
+\end{abstract}
+
+\newpage
+\onehalfspacing
+
+%==============================================================
+\section{Introduction}
+%==============================================================
+
+On January 10, 2024 the Securities and Exchange Commission approved eleven applications to list spot Bitcoin exchange-traded products on US national exchanges, and those products began trading the following morning.
+% src: summary_statistics.json#etf.n_spot_funds_approved
+An asset that US wealth-management channels could previously reach only through a futures wrapper carrying roll costs, through a closed-end trust that had spent two years at a deep discount to its own net asset value, or by opening an account at a crypto exchange and arranging self-custody, became a line item with a CUSIP, a daily net asset value, ordinary brokerage custody, margin eligibility, and a path into model portfolios. Nothing about Bitcoin changed. The issuance schedule, the block interval, the protocol and the continuously traded global spot market were identical on January 12 to what they had been on January 9. What changed was who could conveniently hold the asset, and in what wrapper.
+
+That distinction is what makes the event worth studying, and it is why we treat it as a shock to the investor base rather than as a news event. A news event moves a price and is arbitraged away; the approval was among the most heavily anticipated regulatory decisions in the history of the asset class, and by the time the products listed the news was in the price. An access shock is different in kind. It changes the composition of the marginal holder, and a change in composition operates on the return-generating process rather than on the level. Second moments cannot be pre-traded the way a level can, which is the reason this paper measures factor loadings rather than announcement returns.
+
+The question is old and the setting is new. Does the identity of the marginal investor determine an asset's factor structure? The category and habitat literature says yes: assets held by a common clientele co-move because that clientele's flows are correlated, whether or not anything about the assets themselves has changed \citep{barberis2003style,barberis2004comovement}. The fundamentals view says no, or at least says that the observed co-movement increases in that literature reflect genuine correlation in cash-flow news. Every test of the two views in equity markets has to argue the fundamentals channel away. Bitcoin does not have one. There are no earnings, no analyst revisions, and no cash-flow news that could become more correlated with aggregate earnings news, which is the specific mechanism the fundamentals view relies on. We are careful about how far that claim reaches. Bitcoin has fundamentals in the broader sense — hashrate, halvings, on-chain activity, exchange failures, and a regulatory environment that a US election can reprice — and a common real-rate factor pricing both Bitcoin and equities is a discount-rate channel requiring no change in ownership at all. What the setting shuts off is narrower than "no fundamentals" and sharper than anything available in an equity cross-section: the cash-flow-news channel specifically, for an entire asset class, continuously, around a large and precisely dated treatment.
+
+Our research design is a difference-in-differences in a second moment. For each of ten cryptocurrencies and each calendar month we compute the within-month correlation between the coin's daily return and the return on SPY, apply the Fisher-$z$ transform, and regress the result on a Bitcoin-times-post indicator with coin and calendar-month fixed effects. The coin fixed effects absorb permanent differences in how integrated each asset is with equities; the month fixed effects absorb every shock common to crypto in a given month, which is what nets out the 2024 macro regime. A donut window running from the August 2023 Grayscale appellate ruling through January 2024 is excluded, so that anticipation is not counted as either treatment or control. One feature of the setting governs everything about inference: there is exactly one treated unit. Cluster-robust standard errors on the coin dimension with one treated cluster have no valid asymptotic justification, so we take randomization inference over a grid of counterfactual coin-and-date assignments as the primary procedure and report the conventional column only because referees expect it.
+
+We find no detectable change in Bitcoin's equity co-movement attributable to the ETF listing. The differential shift in the Fisher-$z$ correlation is
+% src: estimation_results.json#main.coefficients.d_etf_listed.estimate
+$-0.0212$,
+% src: estimation_results.json#main.effect_in_correlation_units
+or $-0.0181$ in correlation units at Bitcoin's pre-period mean correlation — under two correlation points, and of the opposite sign to the broadened-access prediction.
+% src: estimation_results.json#main.p_value_ri
+The randomization $p$-value is $0.665$, and the actual estimate sits close to the middle of the distribution of estimates the design produces when nothing has happened. Five further estimators agree: a collapse of the panel to one pre-mean and one post-mean per coin, a daily rolling-window panel, a returns-level triple difference that uses no generated regressor at all, a DCC--GARCH conditional correlation model, and a Chow test at the imposed date. An endogenous break-dating procedure, run without being told the treatment date, places no break at the approval; the nearest break in the differential co-movement series falls in early May 2024, two weeks after the April halving, which it brackets far more plausibly than it does the January listing.
+
+Three results qualify that conclusion, and we state them in the introduction rather than letting them emerge in the robustness section. First, the co-movement margin and the volatility margin behave differently. Since beta is the product of correlation and the ratio of volatilities, and Bitcoin's volatility relative to the equity market fell over the sample, Bitcoin's monthly equity beta declined while its correlation did not move. That composite — an unchanged factor loading with a lower relative volatility — is the one result a clientele story can partially claim, and we report it as suggestive rather than established. Second, the null is robust but the sign is not. Allowing the macro volatility regime to load differentially on Bitcoin, which is the version of the macro-confounding story that month fixed effects cannot absorb, moves the coefficient from slightly negative to slightly positive. Both estimates are deep inside the randomization distribution, so neither is distinguishable from zero, but a paper that selected that specification as its headline could have reported a positive ETF effect from this same data. Third, and most important for how the result should be read, the design's minimum detectable effect is
+% src: estimation_results.json#power_analysis.mde_correlation_units_ri
+$0.148$ in correlation units at 80\% power. We committed in advance to licensing a null claim only if that number came in at or below
+% src: estimation_results.json#power_analysis.prespecified_mde_bar_correlation_units
+$0.10$ and to making no null claim at all if it exceeded twice that bar. The realized value falls between the bars. The honest statement is therefore that the design excludes an increase in equity correlation above about
+% src: estimation_results.json#power_analysis.ri_ci95_upper_correlation_units
+$0.086$, which rules out the upper half of the range the index-inclusion literature reports, and cannot rule out an increase of half that size.
+
+We are deliberate about the causal language. The design does not establish that the ETF had no effect on Bitcoin's relationship with US equities. It isolates the component of a co-movement environment that is specific to Bitcoin and dated to the listing, against a control group of assets exposed to the same crypto cycle and the same macro regime, and it finds that component small and imprecisely estimated. The 2024--2025 window contains a Fed easing cycle, a US election that repriced crypto policy, a tariff episode, and a Bitcoin halving. Our estimate is not a statement about what happened to Bitcoin's correlation with equities over that window; it is a statement about how much of whatever happened can be attributed to the arrival of the wrapper.
+
+The paper contributes on three margins. First, we supply a counterfactual for a question whose descriptive answer is already in print. That a regime change in crypto--equity integration occurred around the spot ETF has been documented \citep{khatib2026from}; what has not been supplied is a comparison group of assets that experienced the same macro environment without the access change, and we show that the comparison group does almost all of the work. Second, we demonstrate that the inference procedure is not a technicality in a one-treated-unit design but the difference between a null and three false positives. The conventional pre-trend $F$-test rejects parallel trends decisively; running the identical test with each control coin cast in turn as treated places Bitcoin's statistic below the median placebo. A gold placebo, which our pre-analysis committed to reading as falsifying the design's macro-neutrality, rejects under the clustered column and is an entirely ordinary draw under randomization inference. Third, we take the pre-committed interpretation of a null seriously. If shared ownership and a shared trading venue do not generate habitat co-movement in an asset with no cash flows, that localizes where habitat effects come from, and the natural place to localize them is the shared-cash-flow-news channel that ETFs are known to sharpen in equities \citep{glosten2020etf,israeli2017is} and that Bitcoin does not possess. We offer that as an interpretation the data are consistent with, not as a demonstration, because the power calculation above does not license more.
+
+The remainder of the paper is structured as follows. Section~\ref{sec:lit} positions the paper in the literatures on co-movement, ETFs and crypto asset pricing. Section~\ref{sec:background} describes the approval, the eleven products, the GBTC conversion and the scale of subsequent trading. Section~\ref{sec:framework} lays out the two competing hypotheses and their distinct empirical predictions. Section~\ref{sec:data} describes the data. Section~\ref{sec:strategy} states the identification strategy and the estimating equations, and confronts the parallel-trends and macro-confounding threats directly. Section~\ref{sec:results} reports the results and Section~\ref{sec:robustness} the robustness and placebo grid. Section~\ref{sec:conclusion} concludes.
+
+%==============================================================
+\section{Related literature}\label{sec:lit}
+%==============================================================
+
+\paragraph{Co-movement without fundamentals.} The strand this paper belongs to begins with the observation that return co-movement exceeds what cash-flow co-movement can explain \citep{pindyck1993the}. \citet{barberis2003style} supply the mechanism: investors allocate at the level of styles or categories rather than individual securities, so correlated category-level flows induce correlated returns among securities that share a label. \citet{barberis2004comovement} run the canonical test on S\&P 500 additions and deletions and find that an added stock begins co-moving more with the index and less with non-index stocks, framing the result as a contest between a fundamentals view and a category view. The subsequent literature works to close off the fundamentals channel from several directions. \citet{vijh1994sp} is the direct antecedent for our outcome variable, showing that index inclusion raises a stock's beta and attributing the change to trading rather than to fundamentals. \citet{boyer2011stylerelated} exploits mechanical reclassification across style indices, driven by rank thresholds rather than by news, and finds that co-movement follows the label. \citet{greenwood2007excess} uses the Nikkei 225 redefinition, in which index weights moved for reasons unrelated to firm fundamentals. \citet{froot1999how} supplies the cleanest fundamentals control available in equities — twin shares that are claims on identical cash flows and still co-move with their respective local markets. We do not claim that Bitcoin does something unprecedented. It does something the twin-share and reclassification designs achieve for a handful of securities, and it does it for an entire asset class around a single large and well-dated treatment. This strand also supplies the magnitude benchmark against which our power calculation is judged, and the benchmark is load-bearing enough that we state its provenance rather than asserting a range. The figure of roughly $0.05$ to $0.15$ in correlation units that Section~\ref{sec:results} uses to calibrate the power bar is our own conversion of the beta and co-movement changes reported by \citet{vijh1994sp}, \citet{barberis2004comovement}, \citet{boyer2011stylerelated} and \citet{greenwood2007excess}, struck at a volatility ratio near one. The conversion is an assumption and not a measurement, the studies differ in horizon and in units, and a benchmark range that is wider or differently centred would move our power verdict with it. The demand-curve results of \citet{shleifer1986do}, \citet{harris1986price} and \citet{chen2004the} establish the price-pressure foundation on which those designs rest, and the asymmetry \citet{chen2004the} documents between additions and deletions favours an investor-recognition reading of the mechanism, which is the channel our framework formalizes.
+
+\paragraph{Financialization of a non-equity asset class.} The closest structural analogue to our setting is not an equity index inclusion but the financialization of commodities in the mid-2000s, when a new family of index products made an asset class accessible to a clientele that had not previously held it and observed co-movement with equities rose. Tang and Xiong (2012) compare indexed against off-index commodities, which is the design ancestor of our listed-versus-never-listed comparison; Basak and Pavlova (2016) supply the formal counterpart of our equation~\eqref{eq:framework}, in which benchmarked institutional demand raises constituents' volatility and their correlation with the equity market with no change in fundamentals; and Henderson, Pearson and Wang (2015) isolate mechanically driven hedging flow to identify the financial-investor channel, which is the inverse of the basis-versus-allocation decomposition we specify in Section~\ref{sec:framework} and cannot estimate. The strand also contains the standing objection to our own hypothesis, and we would rather confront it than arrive at it independently. Cheng and Xiong (2014) argue that the index-flow explanation for rising commodity--equity co-movement is overstated, and that much of the observed increase reflects shocks common to the macro environment rather than the arrival of the new clientele. That is, in a different asset class, the conclusion our control group delivers. We therefore read our result as an out-of-sample test of their position in a setting where the fundamentals channel they could not shut off, since commodities have real supply and real demand, is unavailable by construction.
+
+\paragraph{ETFs as a wrapper that changes the underlying.} \citet{da2017exchange} show that ETF ownership is associated with higher return co-movement among the underlying securities and that the effect operates through arbitrage intensity. \citet{bendavid2014do} document that ETF ownership raises the volatility of underlying stocks through arbitrage trading that propagates non-fundamental shocks from the wrapper into the asset, and \citet{brown2020etf} show that ETF arbitrage transmits non-fundamental demand into the underlying with consequences for return predictability. \citet{baltussen2018indexing} find that indexing changes the serial dependence of index returns internationally, which is the general form of the claim: the wrapper alters the return process, not only the price. Two results that appear to conflict are in fact the sharpest available micro-foundation for the hypothesis we test. \citet{israeli2017is} find that ETF ownership degrades the information environment of the underlying, while \citet{glosten2020etf} find that ETF activity improves informational efficiency with respect to \emph{systematic} earnings information while doing nothing for firm-specific information. Together these say that ETFs shift the informational content of prices from idiosyncratic toward systematic, which is precisely a co-movement-increasing channel, and which is also the channel that cannot operate on an asset with no earnings. \citet{coles2022on} and \citet{bendavid2017exchangetraded} provide the counterweight and the survey.
+
+\paragraph{Crypto's factor structure and its erosion.} \citet{liu2020risks} establish the benchmark our conceptual framework rests on: cryptocurrency returns are not explained by equity-market, macro, currency or commodity factors, and are driven instead by crypto-specific factors, chiefly momentum and attention. \citet{liu2022common} reinforce the point with a three-factor model internal to crypto. That the crypto-native clientele's implied equity loading is approximately zero is therefore an empirical finding in this literature rather than an assumption we impose. \citet{biais2023equilibrium} supply the equilibrium pricing argument for treating Bitcoin as a pure resale-value object with no dividend process, which is the theoretical basis for our cash-flow claim rather than a rhetorical assertion. \citet{hu2019cryptocurrencies} document that cryptoassets co-move strongly with one another and load on a common Bitcoin-like factor; this is the evidence for the spillover concern our design concedes below. \citet{makarov2019trading} document cross-venue segmentation in crypto, which is the friction the ETF removed for US investors, and \citet{griffin2020is} establish the precedent that Bitcoin's price responds to non-fundamental flow. On the diversifier question, \citet{bouri2016on} and \citet{baur2017bitcoin} had already contested the hedging claim before 2020, \citet{corbet2018exploring} document crypto's relative isolation from traditional assets in the pre-2018 sample, and \citet{conlon2020safe} and \citet{corbet2020the} document the COVID break in which Bitcoin's correlation with equities rose exactly when diversification was needed. That crypto--equity correlation rose sharply from 2020 is settled; we do not claim it.
+
+\paragraph{The 2024 approval.} \citet{khatib2026from} is the nearest published work on this event, and we describe it with care because we have not been able to obtain the full text: the article is paywalled, our characterisation rests on its title and outlet, and its title's framing runs from contagion to \emph{stabilization}, which may not be a claim about rising co-movement at all. We therefore do not assert what it finds, and we do not rest our contribution on what it omits. What we can state unconditionally is a property of our own design: it supplies a control group of never-listed crypto assets that experienced the same macro regime without the access change, and the comparison group does almost all of the work. Establishing whether the prior study uses a cross-asset counterfactual, decomposes by session, or uses flow data is the first task of any revision, and if it uses the first of those, our positioning rests on the inference procedure and the power bound rather than on the counterfactual. \citet{guliyev2025from} test cointegration between aggregate spot-ETF net assets and the Bitcoin price and find a positive long-run association significant only at the ten percent level; a thin link over a window with very large headline assets is consistent with a substantial share of those assets representing market-neutral positions rather than directional allocation, which is a point we return to in Section~\ref{sec:framework}. The conjecture that the authorized-participant creation and redemption mechanism maps US-session liquidity directly into the crypto spot market, which is the mechanism our framework's third prediction concerns, follows from \citet{da2017exchange} and \citet{bendavid2014do} applied to a spot rather than an equity wrapper; it is in circulation in the applied commentary \citep{tang2026the} but has not been tested. Nor, as far as we can establish, has the October 2021 launch of US-listed Bitcoin futures products been examined for its effect on Bitcoin's factor structure, which is worth stating plainly because Section~\ref{sec:robustness} uses that launch as a placebo and recovers a larger apparent effect from it than from the event under study. \citet{pucher2026falsenews} study the January 9, 2024 compromised-account false approval post, an event that carried nearly identical news content to the real approval with no change in access; their event is the natural placebo for separating news from plumbing, and we explain in Section~\ref{sec:strategy} why our data cannot run it.
+
+%==============================================================
+\section{Institutional background}\label{sec:background}
+%==============================================================
+
+The path to January 2024 ran through a decade of denials. The Commission rejected spot Bitcoin exchange-traded product applications repeatedly on the grounds that the underlying market was not of sufficient size and that surveillance-sharing arrangements were inadequate to detect manipulation, while permitting futures-based products from October 2021 onward. The futures wrapper gave US brokerage clients an accessible instrument, but an inferior one: exposure was obtained through CME contracts that had to be rolled, and the roll imposed a carry cost that made the product unsuitable for a buy-and-hold allocation. The legal position changed in August 2023, when the DC Circuit vacated the Commission's denial of Grayscale's application to convert its trust into an exchange-traded product, holding that the agency had not adequately explained why it treated spot and futures products differently. From that ruling forward, approval was widely expected, and by December 2023 market-implied odds were high. This matters for our design, and we return to it in Section~\ref{sec:strategy}: treatment leaked backward, and a specification that dates treatment to the listing without excluding the anticipation window will attribute anticipation to the pre-period.
+
+The approval order issued on January 10, 2024 and covered eleven products, which began trading on January 11.
+% src: summary_statistics.json#etf.n_spot_funds_approved
+Ten of the eleven are retrievable in our price data; the eleventh, a conversion of an existing futures product that has since been renamed and reticketed, is not, and every aggregate we report covers ten of eleven funds rather than the full complex.
+% src: summary_statistics.json#etf.n_spot_funds_in_price_panel
+% src: summary_statistics.json#data_gaps.n_spot_funds_missing_from_price_panel
+Its assets are a rounding error in the aggregate, but we state the coverage rather than imply completeness. Nine of the ten were new vehicles with no pre-listing history, and one — GBTC — was the conversion of a closed-end trust that had traded over the counter since 2015.
+
+What the approval changed can be stated precisely, and it is worth separating the changes from the non-changes because the non-changes are what make the setting informative. It changed custody, replacing self-custody or an exchange account with a prime-brokered arrangement inside an ordinary securities account. It changed the tax and reporting wrapper. It made the exposure eligible for model portfolios, for advisory platforms subject to fiduciary review, and for margin. It restored, for the first time in the asset's history as a US-listed vehicle, a creation-and-redemption mechanism operating in spot Bitcoin rather than in futures. It did not change the supply schedule, the block interval, the protocol, the set of venues on which Bitcoin trades globally, or the fact that it trades continuously while US equities do not.
+
+The GBTC conversion is the single most legible piece of evidence that the approval restored an arbitrage mechanism that had been absent. As a closed-end trust with creations but no redemptions, GBTC's shares could and did detach from the value of the Bitcoin behind them. Figure~\ref{fig:gbtc_discount} plots a price-ratio-based proxy for the discount, constructed by normalizing GBTC's price path against Bitcoin's own and anchoring the level on the window after conversion in which the fund traded near net asset value. We are explicit that this is a proxy: the true discount requires the trust's daily Bitcoin-per-share holdings, which we cannot observe, and the pre-2024 path also absorbs cumulative sponsor-fee drag, so the level is anchored rather than measured. The shape is what carries information. The proxy reaches
+% src: summary_statistics.json#etf.gbtc_discount_proxy_pct.min
+$-47.13$ percent at its trough on
+% src: summary_statistics.json#etf.gbtc_discount_proxy_pct.min_date_iso
+December 13, 2022, averages
+% src: summary_statistics.json#etf.gbtc_discount_proxy_pct.mean_2023
+$-27.35$ percent through 2023, stands at
+% src: summary_statistics.json#etf.gbtc_discount_proxy_pct.on_2024_01_10
+$-1.51$ percent on the day of the approval order, and averages
+% src: summary_statistics.json#etf.gbtc_discount_proxy_pct.mean_post_conversion
+$-0.99$ percent after conversion. A discount of that size, persisting for two years and closing to parity at the moment redemptions became possible, is the plumbing change made visible.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.95\textwidth]{figures/fig_gbtc_discount.pdf}
+\caption{GBTC premium and discount proxy. The series is the GBTC share price divided by the Bitcoin price, normalized to zero over the 2024H2 window in which the converted fund traded near net asset value. Because daily Bitcoin-per-share holdings are not observable in our data, the level is anchored rather than measured and the pre-2024 path also absorbs cumulative sponsor-fee drag of roughly 1.5 percent per year. The shape — a deep discount through 2022 and 2023 closing to parity at conversion — is the object of interest.}
+\label{fig:gbtc_discount}
+\end{figure}
+
+On the scale of what followed, we report what our data actually measure and decline to report what they do not. Figure~\ref{fig:etf_turnover} plots cumulative secondary-market dollar turnover across the ten retrievable products from the January 11, 2024 listing. Cumulative turnover reaches
+% src: summary_statistics.json#etf.cum_turnover_usd_bn
+\$2{,}213.7 billion, or
+% src: summary_statistics.json#etf.cum_turnover_ex_gbtc_usd_bn
+\$1{,}874.0 billion excluding GBTC, whose redemption-driven volume dominates the aggregate in 2024. This is turnover — price times share volume — and it is emphatically not net creations. A day of heavy two-sided trading with no net creation produces a large value and a day of large one-sided creation on thin secondary volume produces a small one, so using turnover as a flow proxy would answer a different question while appearing to answer this one. No configured data source in this project serves fund-level creations, redemptions, shares outstanding or net asset value, which means the dose-response design that would relate co-movement to the intensity of allocation flow is not estimable here. We flag that gap in Section~\ref{sec:strategy} rather than substituting a proxy for it.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.95\textwidth]{figures/fig_etf_cumulative_turnover.pdf}
+\caption{Cumulative secondary-market dollar turnover of the ten US spot Bitcoin exchange-traded products retrievable in our price data, from the January 11, 2024 listing. This is turnover (price times share volume), not net creations; fund-level creation and redemption data are not available in this build. The ex-GBTC line removes the fund whose 2024 redemptions dominate the aggregate.}
+\label{fig:etf_turnover}
+\end{figure}
+
+One further feature of the setting deserves a place in the background rather than in a footnote, because it governs how flow evidence in this literature should be read. A substantial share of early institutional participation in these products was not allocation. Hedge funds ran the cash-and-carry basis trade, long the spot product and short CME futures, capturing the annualized basis. That position is market-neutral by construction and predicts no change whatever in Bitcoin's equity loading, however large the assets it generates. Any test that uses headline assets or headline flows as treatment intensity is therefore mis-specified in a specific and predictable direction, and the weak cointegration between aggregate spot-ETF assets and the Bitcoin price reported by \citet{guliyev2025from} is what that mis-specification looks like in published results.
+
+%==============================================================
+\section{Conceptual framework}\label{sec:framework}
+%==============================================================
+
+We set out a deliberately minimal two-clientele structure, in the spirit of the investor-recognition tradition, sufficient to generate the tests and no more.
+
+Consider a single risky asset in fixed supply with \emph{no cash flows}: terminal value is purely the resale price, there is no dividend process, and hence there is no cash-flow news. Two investor groups may hold it. Crypto-natives have a stochastic discount factor $M_c$ that is orthogonal to the US equity market return $R_m$, so that the loading they imply for the asset, $\beta^{c}$, is approximately zero; this is an empirical statement about the pre-period rather than an assumption, and it is the finding of \citet{liu2020risks}. US allocators have wealth tied to equity markets and a stochastic discount factor $M_a$ with $\mathrm{Cov}(M_a, R_m) \neq 0$, implying a loading $\beta^{a} > 0$. Allocators face a per-period participation cost $\kappa$ covering custody, operational risk, mandate restrictions, tax reporting and career risk. The ETF is a reduction in $\kappa$ from $\kappa_0$ to $\kappa_1 < \kappa_0$, which raises allocator participation $\lambda = \lambda(\kappa)$ with $\lambda'(\kappa) < 0$.
+
+In equilibrium the asset's loading on the equity market is a participation-weighted average of the two clienteles' implied loadings,
+\begin{equation}
+\beta \;=\; \omega(\lambda)\,\beta^{a} \;+\; \bigl(1-\omega(\lambda)\bigr)\,\beta^{c},
+\qquad \beta^{c} \approx 0, \quad \frac{\partial \omega}{\partial \lambda} > 0,
+\label{eq:framework}
+\end{equation}
+so that $\partial \beta / \partial \kappa < 0$: cutting the access cost raises the equity loading. Equation~\eqref{eq:framework} is a statement about \emph{who prices the asset at the margin}, and it is the formal content of the claim that ownership determines factor structure.
+
+Two hypotheses follow, and both are ex ante plausible.
+
+\paragraph{H1, broadened access.} The ETF lowers the participation cost for investors whose marginal utility is already tied to US equity wealth. As those investors become price-setters at the margin, Bitcoin's price loads on their discount factor, and common discount-rate shocks — policy, risk premia, funding conditions — transmit to Bitcoin where previously they did not. The habitat channel reinforces this: assets held by a common clientele co-move because that clientele's flows are correlated. The arbitrage channel reinforces it again: creation and redemption activity injects wrapper-level shocks, which are equity-market-hours and equity-market-liquidity shocks, into the underlying \citep{da2017exchange,brown2020etf}. H1 predicts that Bitcoin's correlation with US equities rises relative to assets that did not receive a listing, that the increase persists rather than decaying, that it is larger against US equities than against non-US equities if the operative habitat is a US brokerage habitat, and that it is concentrated in US exchange hours.
+
+\paragraph{H2, segmentation.} If the demand that arrives through the wrapper is crypto-native demand that has merely found a more convenient pipe — halving-cycle narratives, digital-gold beliefs, policy speculation — then the entrants' demand shocks remain orthogonal to the equity discount factor and $\omega(\lambda)$ moves without $\beta$ following. A second sub-channel predicts an outright decline. Before the ETF, retail investors reached both speculative equities and crypto through the same brokerage applications and the same sentiment cycle, which is a correlated-noise-trader channel generating co-movement without any fundamental link. A deep, institutionally arbitraged product can displace that marginal noise trader and \emph{reduce} the sentiment-driven component of co-movement. H2 therefore predicts a flat or negative differential change, no session concentration, and no dose-response in allocation flow.
+
+\paragraph{The basis-trade wedge.} Equation~\eqref{eq:framework} makes explicit something that headline flow figures obscure: flows and loading changes are not the same object. A market-neutral cash-and-carry position raises assets under management without raising $\omega(\lambda)$ at all, because the basis trader is not taking directional exposure and is not pricing the asset off an equity-linked discount factor. A finding that assets grew enormously while the estimated loading change was zero is therefore consistent with H1 operating weakly on a small allocation component, and it is not by itself evidence against the clientele mechanism. Distinguishing the two requires decomposing flow into a basis component, projected on the annualized futures basis and open interest, and an allocation residual. We state this prediction because it organizes the interpretation of our results; we cannot test it, because fund-level flow data are not available in this build, and Section~\ref{sec:conclusion} treats it as the first-order extension.
+
+\paragraph{What a null would mean.} We committed before estimation to a specific reading of a null, and we restate it here so that the reading is visible as a commitment rather than as a rationalization. If shared ownership and a shared trading venue do not raise co-movement in an asset with no cash flows, that is evidence against the pure category view and in favour of a view in which habitat co-movement operates through shared interpretation of shared cash-flow news. The micro-foundation is available and citable: ETFs shift price informativeness from idiosyncratic toward \emph{systematic earnings} information \citep{glosten2020etf}, and Bitcoin has no earnings for that channel to work on. A null localizes habitat effects rather than refuting them, which is a contribution to the category-versus-fundamentals debate in its own right.
+
+%==============================================================
+\section{Data}\label{sec:data}
+%==============================================================
+
+\subsection{Sources and coverage}
+
+All price data are daily bars retrieved from Yahoo Finance via the \texttt{yfinance} library, and factor returns are from the Kenneth R.\ French Data Library. The market factor we use as the alternative equity leg is the CRSP value-weighted excess return, which is what MKT-RF is, so that substitution is exact rather than a compromise. A referee will reasonably observe that Yahoo's crypto quotes are a cross-venue aggregate with no published methodology and that history is revised silently. Every extract used here is frozen on disk and the replication package runs offline against the exact bars used, but the systematic cross-venue validation we would have preferred was not possible and we do not claim it.
+
+The sample covers
+% src: summary_statistics.json#time_coverage.start_iso
+January 4, 2021 through
+% src: summary_statistics.json#time_coverage.end_iso
+August 31, 2026, comprising
+% src: summary_statistics.json#n_nyse_sessions
+1{,}421 NYSE trading sessions. Starting in 2021 keeps the March 2020 correlation spike from dominating the pre-period; the choice is reported rather than hidden, and Section~\ref{sec:robustness} shows what extending the end of the window does.
+
+\subsection{Sample construction}
+
+We retrieve
+% src: summary_statistics.json#sample_flow[0].n
+27{,}430 raw daily bars across thirteen crypto assets, restrict to the primary window, drop missing or non-positive closes, and lose one observation per series to differencing, leaving
+% src: summary_statistics.json#sample_flow[3].n
+26{,}884 coin-days. We then restrict the estimation panel to NYSE trading sessions, since a correlation between a continuously traded asset and one that does not trade on weekends is only defined on sessions where both legs exist; that leaves
+% src: summary_statistics.json#sample_flow[4].n
+18{,}473 coin-days. Crypto returns on days the NYSE is closed are not discarded but retained separately, and they support the off-day alignment check in Section~\ref{sec:robustness}. Aggregating to coin-months with a minimum of fifteen usable sessions per cell gives
+% src: summary_statistics.json#sample_flow[6].n
+1{,}072 coin-months, of which
+% src: summary_statistics.json#sample_flow[8].n
+670 belong to Bitcoin and the nine never-listed control coins. Dropping the donut window leaves
+% src: summary_statistics.json#sample_flow[10].n
+610 coin-months in the full delivered panel, and restricting to the declared estimation window ending in December 2025 gives the
+% src: estimation_results.json#main.n_observations
+540 coin-months on which the headline specification runs. Missing values are dropped rather than imputed and never coded as zero; forward-filling a continuously traded asset would manufacture zero returns and mechanically deflate both its variance and its correlation with anything.
+% src: summary_statistics.json#missingness.crypto_pct_missing
+No coin-day cell in the final panel is missing, and no coin-month was dropped for falling below the session threshold.
+
+\subsection{The asset set}
+
+Bitcoin is the treated unit. The never-treated control group is nine coins — LTC, BNB, ADA, DOGE, BCH, LINK, AVAX, DOT and XLM — chosen because none of them received a US spot exchange-traded product during the sample. Ether, Solana and XRP are excluded from the control group even though they are large and liquid, because each was eventually listed; including an eventually-treated unit as a comparison for an already-treated unit is the forbidden comparison that generates negative weights in staggered designs, and excluding them means that problem cannot arise here by construction. Two control coins carry caveats we state rather than bury. BNB is an exchange-affiliated token whose returns load on venue-specific regulatory news, some of which falls inside the pre-period. DOGE experienced a large idiosyncratic episode in 2021 that raises its idiosyncratic variance and therefore lowers its equity correlation, which biases the difference-in-differences against finding a Bitcoin effect; retaining it is the conservative choice. Gold and silver enter the panel as placebo assets rather than as controls, since both have had exchange-traded wrappers for two decades and experienced the same macro regime without an access change.
+
+\subsection{Variable construction}
+
+Returns are daily log changes in decimals. For coin $i$ in month $m$ we compute the Pearson correlation $\hat\rho_{im}$ between the coin's daily return and the equity return over the $n_{im}$ sessions in that month, and take the Fisher-$z$ transform
+\begin{equation}
+y_{im} \;=\; \operatorname{atanh}(\hat\rho_{im}) \;=\; \tfrac{1}{2}\ln\frac{1+\hat\rho_{im}}{1-\hat\rho_{im}},
+\qquad \operatorname{se}(y_{im}) \approx (n_{im}-3)^{-1/2}.
+\label{eq:fisherz}
+\end{equation}
+Three properties recommend equation~\eqref{eq:fisherz} over a rolling beta as the primary outcome. Its variance depends only on the number of sessions and not on the unknown correlation, so the panel's heteroskedasticity is not a function of the outcome itself. It is unbounded and approximately normal, which the randomization procedures rely on. And calendar months are disjoint, so the outcome has no mechanical moving-average structure. That last point is decisive: a rolling 30-day series shares 29 of 30 observations with its own lag, which makes its autocorrelation an artifact of the window and makes pre-trend and break tests computed on it close to uninterpretable. Section~\ref{sec:results} quantifies the cost of ignoring this.
+
+The secondary outcome is the within-month equity beta $\hat\beta_{im}$, and because $\beta_{im} = \rho_{im}\cdot(\sigma_{i,m}/\sigma_{mkt,m})$ we also construct $\ln(\sigma_{i,m}/\sigma_{mkt,m})$ so that any change in beta can be decomposed into a co-movement margin and a relative-volatility margin. This matters more here than in an equity application.
+% src: summary_statistics.json#daily_returns.BTC.sd
+Bitcoin's daily return standard deviation over the sample is $0.0334$ against
+% src: summary_statistics.json#daily_returns.SPY.sd
+$0.0105$ for SPY, so beta runs roughly three times correlation and a small correlation change produces a large-looking beta change.
+% computed: 0.033443 / 0.010521 = 3.18 -- see summary_statistics.json#daily_returns.BTC.sd and #daily_returns.SPY.sd
+We report both legs throughout and never quote a beta without its correlation. We also report $\rho^2$ beside every correlation, because the mean variance share across the panel is only
+% src: summary_statistics.json#outcome_rho2.mean
+$0.184$, so a paper that wrote "Bitcoin became a risk asset" off a correlation of $0.4$ would be overstating by a wide margin.
+
+One measurement decision is forced and we state which way it cuts. Bitcoin's daily bars are stamped at midnight UTC, so the crypto day ends three to four hours after the equity close and begins some twenty hours before it. The 16:00-ET-to-16:00-ET clock we would have preferred is constructible only from late 2024 and therefore not available for the pre-period. The mismatch is two-sided rather than a simple lead or lag. Its relevance to the hypothesis under test is specific: if the ETF relocated Bitcoin's price discovery into US cash hours, a correlation struck on an equity-close clock would rise mechanically with the 24-hour covariance unchanged. The UTC clock is not the clock that such a relocation would mechanically favour, so a positive finding on the UTC clock would be harder to attribute to resynchronization than the same finding on the ET clock, and a null finding is not explained by it either. Section~\ref{sec:robustness} reports an off-day alignment check that cumulates weekend and holiday crypto returns into the following equity session, so that each crypto return spans the same calendar interval as the equity return it is matched against.
+
+\subsection{Summary statistics and the raw contrast}
+
+Table~\ref{tab:sumstats} reports the panel's descriptive statistics. Table~\ref{tab:rawcontrast} reports the raw before-and-after contrast in mean correlation, computed by hand with no fixed effects and no standard errors, so that the difference-in-differences contrast is visible without trusting any model.
+
+\input{tables/sumstats.tex}
+
+\input{tables/rawcontrast.tex}
+
+The raw contrast already tells most of the story. Bitcoin's mean monthly correlation with SPY rose by
+% src: summary_statistics.json#raw_contrast.SPY.by_asset.BTC.d_mean_rho
+$0.0092$ between the clean pre-period and the post-period, and the never-treated control coins' mean correlation rose by
+% src: summary_statistics.json#raw_contrast.SPY.control_group_mean.d_mean_rho
+$0.0105$ over exactly the same months. The difference between those two numbers, which is the identifying contrast, is
+% src: summary_statistics.json#raw_contrast.SPY.did_raw.rho
+$-0.0014$. Whatever moved crypto--equity correlation around the listing moved all of crypto, and it did not move it by much.
+
+%==============================================================
+\section{Identification and econometric specification}\label{sec:strategy}
+%==============================================================
+
+\subsection{Treatment timing and the donut}
+
+Treatment is the listing of US spot Bitcoin exchange-traded products, dated to trading commencement on January 11, 2024. The baseline treatment month is 2024m2 rather than 2024m1, because we exclude a donut window running from 2023m8 through 2024m1. That window contains the August 2023 Grayscale appellate ruling, at which the market repriced approval odds; an erroneous October 2023 press report; the January 9, 2024 compromised-account post; listing week itself; and the start of the GBTC redemption transition. Including those months would attribute anticipation to the post-period and contaminate the pre-period with a partially treated regime. The donut costs six months and buys a clean contrast, and Section~\ref{sec:robustness} reports the no-donut variant so the reader can see exactly what the donut is doing.
+
+\subsection{Primary specification}
+
+The estimating equation is a two-way fixed-effects difference-in-differences on the coin-month panel:
+\begin{equation}
+y_{im} \;=\; \tau \cdot D_{im} \;+\; \alpha_i \;+\; \delta_m \;+\; \varepsilon_{im},
+\qquad D_{im} = \mathbb{1}\{i = \mathrm{BTC}\} \times \mathbb{1}\{m \ge 2024\mathrm{m}2\},
+\label{eq:did}
+\end{equation}
+where $y_{im}$ is the Fisher-$z$ correlation of equation~\eqref{eq:fisherz}, $\alpha_i$ are coin fixed effects and $\delta_m$ are calendar-month fixed effects. The coefficient $\tau$ is the average treatment effect on the treated.
+
+The two sets of fixed effects do distinct work. Coin fixed effects absorb every time-invariant difference in the level of equity integration: Bitcoin is more integrated with equities than XLM is, always has been, and that level difference is not the object of interest. Calendar-month fixed effects absorb every shock common to crypto assets in a given month — the Fed pivot, the collapse in rate volatility through 2024, the equity rally, the crypto cycle itself. This is what nets out the 2024 macro regime, and it is the reason our headline is not a before-and-after comparison on Bitcoin alone.
+
+Equation~\eqref{eq:did} carries no controls, and that is a deliberate choice rather than an omission. Volume, market capitalization and realized volatility are mediators of the treatment, not confounders; conditioning on them would absorb part of the effect being estimated. Macro variables such as VIX and MOVE are absorbed by $\delta_m$ by construction, and they appear in Section~\ref{sec:robustness} in interacted form, which is the version month fixed effects cannot absorb and the version the macro-confounding objection actually requires.
+
+\subsection{The identifying assumption, and the threat we cannot difference out}
+
+The identifying assumption is that absent the spot ETF listing, the Fisher-$z$ equity co-movement of Bitcoin and of the never-listed crypto assets would have followed parallel paths in expectation. Its testable implication is the absence of a differential pre-trend, which we test in Section~\ref{sec:results} in three ways: a joint test on binned event-study leads, a linear pre-trend test, and a grid of placebo treatment dates drawn from the pre-period.
+
+Two threats deserve to be stated here rather than deferred. The first is that coin and month fixed effects do not absorb \emph{Bitcoin-specific post-treatment shocks}, and the post-period contains two large ones. The April 19--20, 2024 halving fell fourteen weeks after listing, and the November 2024 US election repriced crypto policy in a way that was disproportionately a Bitcoin story. Neither is differenced out by a control group of other cryptocurrencies, and neither is absorbed by a month fixed effect, since both are shocks to the treated unit specifically. We respond in three ways, all pre-committed and all reported: we estimate $\tau$ separately on a post-window truncated before the halving, on a post-window truncated before the election, and on the full post-window, and we designate the pre-election estimate as the one to treat as ETF-attributable; we exclude the halving months directly; and we report an endogenous break-dating procedure that can tell us where the data think the break is. A reader should treat the full-post-period estimate as an upper bound on what is attributable to the ETF, not as the attributable quantity.
+
+The second threat is that Bitcoin's ETF plausibly raised other coins' equity co-movement through within-crypto integration, since all cryptoassets load on a strong common factor \citep{hu2019cryptocurrencies}. This is a violation of the stable-unit-treatment-value assumption, and its direction is known: contamination of the control group biases the difference-in-differences toward zero. Our estimate is therefore a lower bound on the integration effect, and a null result is weaker evidence against H1 than it would be under clean controls. We state this because it cuts against our own finding.
+
+A third consideration is exchangeability. Bitcoin is unique in size, narrative and institutional standing, and one may reasonably doubt that any basket of altcoins is a valid counterfactual for it. The change-in-outcome design addresses the level difference — coin fixed effects difference out fixed differences in integration — but it cannot address differential trends in integration. The placebo grid in Section~\ref{sec:robustness} is the direct evidence on this point: if Bitcoin were on a systematically different trajectory from the control coins, the placebo distribution of estimates would not contain the actual estimate near its center, and it does.
+
+\subsection{Inference}
+
+There is exactly one treated unit, and every inferential statement in this paper has to survive that fact. Cluster-robust variance estimation on the coin dimension with ten clusters of which one is treated has no valid asymptotic justification: the estimator is driven entirely by a single cluster's residuals, and the cluster-robust variance is severely downward-biased in exactly that configuration. The wild cluster bootstrap, the usual remedy for few clusters, also fails when only one cluster is treated. Reporting a clustered $p$-value as the headline would be the central inferential error available in this setting.
+
+Our primary procedure is randomization inference. We build a placebo distribution over counterfactual treatment assignments and locate the actual estimate within it. Placebo-in-space assigns the real treatment date to each never-treated coin in turn, which gives nine donors and a coarsest attainable two-sided $p$-value of $0.10$. Placebo-in-time assigns treatment to every candidate month in 2021m7--2023m1 for every coin including Bitcoin, on the pre-period sample so the actual treatment cannot contaminate the placebo. The headline $p$-value comes from the combined grid,
+\begin{equation}
+p^{\mathrm{RI}} \;=\; \frac{\#\{\,|\hat\tau^{\mathrm{placebo}}| \ge |\hat\tau|\,\}}{\#\text{placebos} + 1}.
+\label{eq:ri}
+\end{equation}
+We report Conley--Taber intervals and a randomization 95\% interval as second and third valid-under-one-treated-unit procedures, a Bertrand--Duflo--Mullainathan collapse of the panel to one pre-mean and one post-mean per coin as a serial-correlation check, and the cluster-robust and wild-bootstrap columns for convention. Wherever a clustered $p$-value and a randomization $p$-value both appear, the randomization one governs. We fixed this ordering before estimation, and Section~\ref{sec:results} shows that the choice determines the sign of two conclusions.
+
+\subsection{Complementary specifications}
+
+Five further specifications address distinct failure modes of equation~\eqref{eq:did}. A daily rolling-window panel replaces the monthly outcome with the Fisher-$z$ of a 30-day rolling correlation, with asset and date fixed effects; we report the number of independent 30-day blocks alongside the row count, because overlapping windows mean the standard error must not be read as coming from the row count. A per-asset returns-level model,
+\begin{equation}
+r_{i,t} \;=\; \alpha + \beta\, r_{\mathrm{eq},t} + \delta\,\bigl(r_{\mathrm{eq},t}\times \mathrm{Post}_t\bigr) + \gamma\,\mathrm{Post}_t + \epsilon_{i,t},
+\label{eq:interacted}
+\end{equation}
+estimates the change in the equity loading directly, with the distribution of $\hat\delta$ across control coins serving as its own randomization distribution. A pooled triple difference,
+\begin{equation}
+r_{it} \;=\; \beta\, r_{\mathrm{eq},t} + \pi\,(r_{\mathrm{eq},t}\times \mathrm{Post}_t) + \psi\,(r_{\mathrm{eq},t}\times \mathrm{BTC}_i) + \delta^{\mathrm{DDD}}\,(r_{\mathrm{eq},t}\times \mathrm{Post}_t \times \mathrm{BTC}_i) + \alpha_i + \delta_t + \epsilon_{it},
+\label{eq:ddd}
+\end{equation}
+recovers the returns-level counterpart of $\tau$ without any generated regressor, which is its point: the generated-outcome critique of the Fisher-$z$ panel does not apply to it. A DCC--GARCH(1,1) specification with a post-treatment dummy shifting the long-run correlation target,
+\begin{equation}
+q_{12,t} \;=\; (1-a-b)\bigl(\bar q_{12} + \phi\,\mathrm{Post}_t\bigr) + a\,u_{1,t-1}u_{2,t-1} + b\,q_{12,t-1},
+\qquad \rho_t = \frac{q_{12,t}}{\sqrt{q_{11,t}q_{22,t}}},
+\label{eq:dcc}
+\end{equation}
+estimates a conditional correlation path from the full likelihood rather than from a windowed moment, and is immune to the rolling-window overlap problem; we fit it to Bitcoin and to every control pair, so that the cross-sectional distribution of $\hat\phi$ is the randomization distribution. Finally, Bai--Perron multiple structural break tests and an Andrews sup-Wald test ask the data where the break is rather than imposing the date. That last test is included because it can fail, and we pre-committed to reporting every estimated break date whether or not it flatters the hypothesis.
+
+\subsection{What we specified and could not estimate}
+
+Three designs in our pre-analysis are not estimable on this data, and we state them rather than substituting proxies. The session triple difference, which measures co-movement separately in US cash-session and non-US-session returns with coin-month fixed effects, would absorb every Bitcoin-specific time shock including the halving and the election, and it is the only design that separates a US-vehicle channel from a global macro regime: a macro shift raises correlation in all sessions, while only a mechanism operating through a US-listed vehicle relocates covariance into US exchange hours. It requires intraday returns for both legs, and hourly crypto history before late 2024 is not available here; substituting SPY for the equity leg would make the test tautological, since SPY does not trade during the Asian session where the identifying contrast lives. The flow dose-response, splitting basis-trade from allocation flow, requires fund-level creations and redemptions, which no configured source serves. And the false-news placebo of \citet{pucher2026falsenews} is unavailable because both candidate dates fall inside our donut window and the price-response leg requires intraday data. These are the three tests that would most sharpen the attribution, and their absence is the principal reason we frame our estimate as a bound rather than as a mechanism test.
+
+%==============================================================
+\section{Results}\label{sec:results}
+%==============================================================
+
+\subsection{The time path}
+
+Figure~\ref{fig:rolling_btc_spy} plots Bitcoin's rolling 90-day correlation with SPY and its rolling 90-day beta over the full sample, with the excluded donut window shaded. Two features are worth noting before any estimate. The correlation series wanders substantially within the pre-period, reaching levels in 2022 that it does not exceed after the listing, and there is no visible level shift at the shaded band. The beta series declines over the post-period, which is a different statement from the correlation series and one we take up below. Rolling windows overlap by construction, so a genuine level shift would appear as a 90-day ramp rather than as a jump; these panels display the time path and are not the estimation object.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.95\textwidth]{figures/fig_rolling_btc_spy.pdf}
+\caption{Rolling 90-trading-day correlation (Panel A) and OLS beta (Panel B) of daily Bitcoin returns on SPY, on the midnight-UTC clock. The shaded band is the excluded donut window, which runs from the August 29, 2023 Grayscale ruling through January 31, 2024 and contains the January 10, 2024 approval. Rolling windows overlap by construction, so a true level shift appears as a 90-day ramp rather than a jump. These panels show the time path and are not the estimation object.}
+\label{fig:rolling_btc_spy}
+\end{figure}
+
+Figure~\ref{fig:rolling_overlay} overlays the same rolling correlation for Bitcoin, the equal-weighted mean of the nine never-treated control coins, a broad altcoin index, and gold. The control mean tracks Bitcoin closely throughout, including across the listing. If the post-2024 path of Bitcoin's correlation were an ETF effect, the control mean would not move with it; it does. Figure~\ref{fig:prepost_change} makes the same point in cross-section, plotting the change in mean monthly correlation from the clean pre-period to the post-period coin by coin. Bitcoin's bar is unremarkable. Four control coins moved more, two of them substantially more, and the dispersion across coins dwarfs the Bitcoin-versus-control-mean difference that the difference-in-differences is designed to detect.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.95\textwidth]{figures/fig_rolling_overlay_controls.pdf}
+\caption{Rolling 90-day correlation with SPY for Bitcoin, the equal-weighted mean of the nine never-treated control coins, the equal-weighted altcoin index, and gold as a placebo. If the post-2024 move in Bitcoin's correlation were a common risk-asset regime shift rather than an ETF effect, the control mean would move with it.}
+\label{fig:rolling_overlay}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.95\textwidth]{figures/fig_prepost_correlation_change.pdf}
+\caption{Change in mean monthly return correlation with SPY between the clean pre-period (2021m1--2023m7) and the post-period (2024m2--2026m8), by coin. Error bars are the standard error of the difference in period means treating months as independent; they are descriptive and are not the inference reported in the estimation tables. The difference between the Bitcoin bar and the average control bar is the raw difference-in-differences contrast.}
+\label{fig:prepost_change}
+\end{figure}
+
+\subsection{The difference-in-differences estimate}
+
+Table~\ref{tab:main} reports the headline specification and four companions. The estimated differential shift in Bitcoin's Fisher-$z$ equity correlation is
+% src: estimation_results.json#main.coefficients.d_etf_listed.estimate
+% src: estimation_results.json#main.coefficients.d_etf_listed.se
+$\hat\tau = -0.0212$ with a cluster-robust standard error of $0.0170$ and a randomization $p$-value of
+% src: estimation_results.json#main.p_value_ri
+$0.665$, estimated on
+% src: estimation_results.json#main.n_observations
+540 coin-months across
+% src: estimation_results.json#main.n_clusters
+10 coins, with
+% src: estimation_results.json#main.n_pre_treatment
+31 pre-treatment and
+% src: estimation_results.json#main.n_post_treatment
+23 post-treatment months for the treated unit.
+% src: estimation_results.json#main.diagnostics.n_fixed_effect_groups
+Sixty-three fixed-effect parameters are absorbed, and
+% src: estimation_results.json#main.diagnostics.within_r_squared
+the within-$R^2$ net of fixed effects is $0.00057$.
+
+\input{tables/main.tex}
+
+At Bitcoin's pre-period mean correlation of
+% src: estimation_results.json#main.rho_pre_treatment_mean
+$0.3822$, the Fisher-$z$ estimate translates into a change in correlation of
+% src: estimation_results.json#main.effect_in_correlation_units
+$-0.0181$. That is under two correlation points, and it is negative — the opposite sign to what the broadened-access hypothesis predicts. In variance terms it is smaller still: a shift of this size at this correlation level changes the equity-driven share of Bitcoin's monthly return variance by about one and a half percentage points.
+% computed: 0.3822^2 - (0.3822 - 0.0181)^2 = 0.1461 - 0.1326 = 0.0135, from estimation_results.json#main.rho_pre_treatment_mean and #main.effect_in_correlation_units
+
+Table~\ref{tab:inference} collects the competing inference procedures for this estimate side by side, and the spread across them is itself informative. The randomization $p$-value comes from a grid of
+% src: estimation_results.json#main.n_placebo_assignments
+199 placebo assignments combining nine placebo coins at the true date with
+% src: robustness_results.json#placebo_dates_pre.n_placebo_time
+190 placebo dates drawn from the pre-period, and the share of those assignments producing an absolute estimate at least as large as the actual one is
+% src: robustness_results.json#placebo_dates_pre.share_abs_ge_actual
+$0.663$. The placebo density is wide: its 2.5th and 97.5th percentiles are
+% src: robustness_results.json#placebo_dates_pre.diagnostics.placebo_q025
+% src: robustness_results.json#placebo_dates_pre.diagnostics.placebo_q975
+$-0.1384$ and $+0.1025$, against a point estimate of $-0.0212$. The actual estimate sits close to the middle of the distribution of estimates the design produces when nothing has happened. Placebo-in-space alone returns
+% src: estimation_results.json#main.p_value_ri_space_only
+$p = 0.800$; the wild cluster bootstrap returns
+% src: estimation_results.json#main.p_value_wild_bootstrap
+$0.467$ and the clustered $t$-test
+% src: estimation_results.json#main.coefficients.d_etf_listed.p_value
+$0.243$. All four agree in substance, and the two that are valid agree with each other most closely.
+
+The width of the valid intervals is itself a result. The Conley--Taber interval is
+% src: estimation_results.json#main.conley_taber_ci_lower
+% src: estimation_results.json#main.conley_taber_ci_upper
+$[-0.1065,\ 0.0386]$ and the randomization 95\% interval is
+% src: estimation_results.json#main.ri_ci95_lower
+% src: estimation_results.json#main.ri_ci95_upper
+$[-0.1426,\ 0.1002]$, against a cluster-robust interval of
+% src: estimation_results.json#main.coefficients.d_etf_listed.ci_lower
+% src: estimation_results.json#main.coefficients.d_etf_listed.ci_upper
+$[-0.0595,\ 0.0172]$. The clustered interval is roughly a third the width of the valid ones, which is a direct measurement of the downward bias that a single treated cluster induces.
+
+\input{tables/inference.tex}
+
+\subsection{What the control group is doing}
+
+It is worth seeing how much work the control group and the month fixed effects perform, because the answer is unusual. Regressing Bitcoin's monthly Fisher-$z$ correlation on a post-2024m2 indicator alone, with no control group and no fixed effects, gives
+% src: estimation_results.json#descriptive_raw_gap.coefficients.post_etf.estimate
+% src: estimation_results.json#descriptive_raw_gap.coefficients.post_etf.se
+$-0.0064$ with a Newey--West standard error of $0.0939$ and
+% src: estimation_results.json#descriptive_raw_gap.coefficients.post_etf.p_value
+$p = 0.946$. Bitcoin's monthly Fisher-$z$ equity correlation averaged
+% src: estimation_results.json#descriptive_raw_gap.diagnostics.mean_y_pre
+$0.4322$ before and
+% src: estimation_results.json#descriptive_raw_gap.diagnostics.mean_y_post
+$0.4258$ after. This specification is descriptive and we label it as such wherever it appears, because it cannot separate the ETF from the 2024 macro regime. Its interest here is that it agrees with the identified estimate. The month fixed effects find essentially nothing Bitcoin-specific to remove, because there was very little Bitcoin-specific movement to begin with. That is not the usual configuration, in which a raw gap is large and the control group absorbs most of it, and we note it because two specifications below produce exactly the usual configuration and the control group absorbs almost everything.
+
+\subsection{Parallel trends}
+
+Table~\ref{tab:event_study} reports the binned event study. We use six-month event-time bins rather than single months because a month-by-month specification is saturated for a single treated unit: Bitcoin's residual is identically zero in any month carrying its own dummy, so the standard errors would be computed off the control coins alone and would not be interpretable. The reference bin is $-2$, covering the six months ending at the donut, since the conventional $k=-1$ bin falls inside the donut.
+
+\input{tables/event_study.tex}
+
+The conventional joint test of the five pre-treatment bin coefficients returns
+% src: estimation_results.json#event_study.pre_trend_f_stat
+$F = 9.185$ with an asymptotic $p$-value of
+% src: estimation_results.json#event_study.pre_trend_p_value
+$0.00243$ — an apparent and decisive rejection of parallel trends. It is not one. Running the identical test with each of the nine control coins cast in turn as the treated unit produces a placebo distribution with median
+% src: estimation_results.json#event_study.pre_trend_placebo_F_median
+$F = 17.36$ and maximum
+% src: estimation_results.json#event_study.pre_trend_placebo_F_max
+$F = 84.30$. Bitcoin's statistic lies \emph{below the median placebo}, and the randomization $p$-value is
+% src: estimation_results.json#event_study.pre_trend_p_value_ri
+$0.800$. The asymptotic test rejects for every coin, treated or not, because with one treated unit the cluster-robust covariance of a set of unit-specific lead coefficients is driven by a single cluster. The test is not detecting a Bitcoin pre-trend; it is detecting its own invalidity. The linear pre-trend test agrees, at
+% src: estimation_results.json#event_study.linear_pre_trend_estimate
+% src: estimation_results.json#event_study.linear_pre_trend_se
+$-0.00144$ per month with a clustered standard error of $0.00132$ and a randomization $p$-value of
+% src: estimation_results.json#event_study.linear_pre_trend_p_value_ri
+$0.700$.
+
+Read against the reference bin, the estimated path shows no level shift at the listing. The first six months of treatment give
+% src: estimation_results.json#event_study.coefficients.ev_0.estimate
+% src: estimation_results.json#event_study.coefficients.ev_0.se
+$\theta_0 = 0.00285$ with a standard error of $0.0367$, which is indistinguishable from the reference window, and the post-period coefficients are not systematically larger than the pre-period ones. The series wanders, which is what the randomization pre-trend test says as well.
+
+\subsection{Complementary estimators}
+
+Tables~\ref{tab:returns_interacted}, \ref{tab:ddd} and \ref{tab:dcc} report the returns-level and conditional-correlation specifications, and Table~\ref{tab:main} carries the daily panel and the collapsed panel. Six methodologically distinct routes — a fixed-effects panel on a generated second moment, a daily rolling-window panel, a returns-level triple difference requiring no generated regressor, a parametric conditional-correlation model estimated by quasi-maximum likelihood, a classical structural break test, and a two-period collapse — and none of them finds a detectable increase in Bitcoin's equity co-movement.
+
+Three deserve comment, and two of them illustrate the paper's central point about control groups.
+
+The returns-level triple difference matters most as a specification check, because it bypasses the Fisher-$z$ transform entirely. At
+% src: estimation_results.json#returns_ddd.coefficients.reqXpostXbtc.estimate
+% src: estimation_results.json#returns_ddd.coefficients.reqXpostXbtc.se
+$\hat\delta^{\mathrm{DDD}} = -0.0798$ with a standard error of $0.1619$ and
+% src: estimation_results.json#returns_ddd.coefficients.reqXpostXbtc.p_value
+$p = 0.622$, it agrees with the panel estimate in sign and is of the same order once scaled. The null is not an artifact of the correlation transform. The Bertrand--Duflo--Mullainathan collapse returns
+% src: estimation_results.json#bdm_collapsed.coefficients.d_etf_listed.estimate
+$-0.0212$, numerically identical to the headline because the panel is balanced, with a wider standard error of
+% src: estimation_results.json#bdm_collapsed.coefficients.d_etf_listed.se
+$0.0246$; serial correlation is doing no work here.
+
+\input{tables/returns_interacted.tex}
+
+The per-asset returns model is the one specification that looks large, and it is not what it appears. Bitcoin's equity loading fell by
+% src: estimation_results.json#returns_interacted_BTC.coefficients.r_spy_x_post.estimate
+% src: estimation_results.json#returns_interacted_BTC.coefficients.r_spy_x_post.se
+$-0.4148$ with a HAC standard error of $0.2302$ and
+% src: estimation_results.json#returns_interacted_BTC.coefficients.r_spy_x_post.p_value
+$p = 0.072$, from a pre-period loading of
+% src: estimation_results.json#returns_interacted_BTC.coefficients.r_spy.estimate
+$1.4033$. Read alone, that is a substantial decline in Bitcoin's equity beta dated to the listing. But the never-treated control coins' loadings fell too, by
+% src: estimation_results.json#returns_interacted_BTC.control_coin_delta_mean
+$-0.3221$ on average with a cross-sectional standard deviation of
+% src: estimation_results.json#returns_interacted_BTC.control_coin_delta_sd
+$0.2394$. Bitcoin's decline lies about four-tenths of a standard deviation beyond the control mean,
+% computed: (-0.41484 - (-0.32210)) / 0.23939 = -0.387, from estimation_results.json#returns_interacted_BTC.coefficients.r_spy_x_post.estimate, #returns_interacted_BTC.control_coin_delta_mean and #returns_interacted_BTC.control_coin_delta_sd
+and the randomization $p$-value across control coins is
+% src: estimation_results.json#returns_interacted_BTC.p_value_ri_across_control_coins
+$0.30$. Every crypto asset's equity beta fell over this window. The triple difference in equation~\eqref{eq:ddd} removes that common decline, which is exactly why it returns $-0.0798$ rather than $-0.4148$.
+
+\input{tables/returns_ddd.tex}
+
+The DCC--GARCH specification is the one result with a positive point estimate, and it has the same problem in mirror image.
+% src: estimation_results.json#dcc_garch_btc_spy.coefficients.phi_post.estimate
+% src: estimation_results.json#dcc_garch_btc_spy.coefficients.phi_post.se
+$\hat\phi = +0.1203$ with a standard error of $0.0674$ and an asymptotic $p$-value of
+% src: estimation_results.json#dcc_garch_btc_spy.coefficients.phi_post.p_value
+$0.074$ says that Bitcoin's long-run conditional correlation target with SPY shifted up after the listing, from an unconditional level of
+% src: estimation_results.json#dcc_garch_btc_spy.unconditional_corr_btc_spy
+$0.3804$. Fitting the identical model to all nine control-coin pairs returns $\hat\phi$ positive for every one of them, ranging from
+% src: estimation_results.json#dcc_garch_btc_spy.control_pair_phi.DOT
+$+0.0157$ for DOT to
+% src: estimation_results.json#dcc_garch_btc_spy.control_pair_phi.DOGE
+$+0.1457$ for DOGE, which exceeds Bitcoin's. The randomization $p$-value across control pairs is
+% src: estimation_results.json#dcc_garch_btc_spy.p_value_ri_across_control_pairs
+$0.20$. A DCC fitted to Bitcoin alone would have reported a post-2024 rise in equity correlation at conventional significance, and it would have been reporting a crypto-wide phenomenon. We regard this as the paper's argument in miniature, and it is why we report the DCC with its control-pair distribution rather than on its own.
+
+\input{tables/dcc.tex}
+
+Two technical notes belong with these numbers. The daily panel is estimated on
+% src: estimation_results.json#daily_rolling_did.n_observations
+11{,}050 asset-day rows but only about
+% src: estimation_results.json#daily_rolling_did.n_effective_blocks
+368 independent 30-day blocks, and its standard error must not be read as coming from eleven thousand independent draws; two-way clustering on asset and date moves it from
+% src: estimation_results.json#daily_rolling_did.coefficients.d_etf_listed.se
+% src: estimation_results.json#daily_rolling_did.se_twoway_cluster
+$0.0182$ to $0.0184$. And the DCC's second-stage standard errors ignore first-stage GARCH estimation error, which is a further reason the control-pair placebo distribution rather than the quasi-likelihood standard error is the inference channel we rely on.
+
+\subsection{Endogenous break dating}
+
+The difference-in-differences imposes the break date. A more demanding question is where the data locate a break when they are not told. Bai--Perron multiple structural break tests on the differential series — Bitcoin's Fisher-$z$ rolling correlation minus the control-coin mean, so that a detected break is a \emph{differential} break — select four breaks under BIC, dated
+% src: estimation_results.json#bai_perron.differential_fisherz.break_dates_bic
+2022-04-11, 2023-01-30, 2024-05-02 and 2025-01-31. The LWZ criterion selects three, dropping the last. Applied to Bitcoin's 30-day rolling beta the BIC-selected breaks are
+% src: estimation_results.json#bai_perron.btc_rolling_beta.break_dates_bic
+2022-02-02, 2023-03-16, 2024-04-30 and 2025-02-03. With a single break imposed, the procedure picks
+% src: estimation_results.json#bai_perron.differential_fisherz.all_break_dates_by_m
+2023-01-30 on the differential series.
+
+Nothing is dated at the approval. The closest differential break, 2024-05-02, is nearly four months after the approval and two weeks after the April 19--20 halving, whose date it brackets far more plausibly than it does the ETF's; the rolling-beta series agrees at 2024-04-30. We pre-committed to reporting every estimated break date whether or not it flattered the hypothesis, and this one does not. It also supplies something useful. The one clear 2024 regime change in Bitcoin's differential co-movement lines up with the halving, which is precisely the confound our design cannot difference out. The break test locates that confound and dates it away from the ETF, which is more informative than either a null or a confirmation would have been.
+
+The Andrews sup-Wald test quantifies why break tests on rolling-window series must be read with care. The independent-and-identically-distributed version returns
+% src: estimation_results.json#bai_perron.andrews_sup_wald
+$140.41$, which would reject overwhelmingly against an approximate five percent critical value near $8.85$ for a one-parameter mean break with fifteen percent trimming. The Newey--West version at the same argmax date, with a lag length of
+% src: estimation_results.json#bai_perron.andrews_hac_lags
+60 — twice the rolling window — returns
+% src: estimation_results.json#bai_perron.andrews_sup_wald_hac
+$6.39$, below that critical value. A twenty-two-fold reduction in the test statistic follows from correcting for a mechanical 29-of-30-day overlap.
+% computed: 140.4082 / 6.38654 = 21.99, from estimation_results.json#bai_perron.andrews_sup_wald and #bai_perron.andrews_sup_wald_hac
+Any study that runs a break test on a rolling-window series without a HAC correction is reporting an artifact, and it is the reason our headline outcome is the non-overlapping monthly panel.
+
+The Chow test at the imposed date tells the same story more quietly. The classical $F$ is
+% src: estimation_results.json#chow_test.f_stat_classical
+% src: estimation_results.json#chow_test.p_value_classical
+$2.886$ with $p = 0.0562$; the heteroskedasticity-robust Wald is
+% src: estimation_results.json#chow_test.wald_hc3
+% src: estimation_results.json#chow_test.p_value_hc3
+$4.284$ with $p = 0.117$; and the HAC Wald, which is the one to quote, is
+% src: estimation_results.json#chow_test.wald_hac_newey_west
+% src: estimation_results.json#chow_test.p_value_hac
+$3.315$ with $p = 0.191$. The no-donut variant at the listing date gives a HAC Wald of
+% src: estimation_results.json#chow_test.wald_hac_no_donut_2024_01_11
+% src: estimation_results.json#chow_test.p_value_hac_no_donut
+$2.630$ with $p = 0.269$. The classical version is the only one that flirts with conventional significance and it is the only one that is wrong.
+
+\subsection{Correlation, beta, and relative volatility}
+
+Beta and correlation need not move together, since $\beta_{im} = \rho_{im}\cdot(\sigma_{i,m}/\sigma_{mkt,m})$, and a rise in beta with flat correlation is a volatility story rather than a co-movement story. Table~\ref{tab:decomposition} separates the two margins.
+
+\input{tables/decomposition.tex}
+
+The decomposition is internally consistent and economically interesting. Correlation is flat. The log volatility ratio falls by
+% src: robustness_results.json#outcome_ln_sigma_ratio.coefficients.d_etf_listed.estimate
+% src: robustness_results.json#outcome_ln_sigma_ratio.coefficients.d_etf_listed.se
+$-0.1128$ with a clustered standard error of $0.0297$ — the largest clustered $t$-statistic anywhere in this paper — though its randomization $p$-value is
+% src: robustness_results.json#outcome_ln_sigma_ratio.p_value_ri_space
+$0.20$, which is one step above the floor imposed by having nine donors. And monthly beta, being the product, falls by
+% src: robustness_results.json#outcome_beta.coefficients.d_etf_listed.estimate
+% src: robustness_results.json#outcome_beta.coefficients.d_etf_listed.se
+$-0.1890$ with a standard error of $0.1431$ and a randomization $p$-value of
+% src: robustness_results.json#outcome_beta.p_value_ri_space
+$0.80$, which is close to what a flat correlation combined with a decline of $0.1128$ log points in relative volatility implies at a pre-period beta near the panel mean.
+
+Substantively, Bitcoin's volatility relative to the equity market fell after the listing while its correlation with equities did not move. Lower relative volatility is the direction a broader, less levered and more institutional investor base would predict, and it is the one result in this paper that a clientele story can partially claim. We report it as suggestive and do not lean on it: with nine placebo donors the smallest attainable randomization $p$-value is $0.10$, and $0.20$ is the second-smallest. What the decomposition does establish firmly is that there is no version of these results in which co-movement rose and the correlation measure failed to see it.
+
+\subsection{Power, and what the design can rule out}
+
+A null is only informative if the design could have detected the effect the theory predicts, and we fixed the standard before estimating. Table~\ref{tab:power} reports minimum detectable effects at five percent size and eighty percent power, computed from three reference distributions.
+
+\input{tables/power.tex}
+
+The two valid reference distributions agree closely. The randomization minimum detectable effect is
+% src: estimation_results.json#power_analysis.mde_correlation_units_ri
+$0.148$ in correlation units and the Conley--Taber figure is
+% src: estimation_results.json#power_analysis.mde_correlation_units_conley_taber
+$0.128$. The cluster-robust figure of
+% src: estimation_results.json#power_analysis.mde_correlation_units_cluster
+$0.0406$ is three and a half times smaller and would have supported a far stronger claim than the data can carry, which is one more reason we do not use it.
+
+Our pre-analysis committed to a bar, and the bar binds. A minimum detectable effect at or below
+% src: estimation_results.json#power_analysis.prespecified_mde_bar_correlation_units
+$0.10$ in correlation units would license a null claim, since the index-inclusion co-movement literature reports correlation changes of roughly $0.05$ to $0.15$; a figure above twice that bar would forbid one. The realized value of $0.148$ falls between them. We therefore state the finding as follows, and this is the paper's headline claim. Bitcoin's equity co-movement did not detectably change after the January 2024 spot-ETF approval; the point estimate is $-0.0212$ in Fisher-$z$ units and $-0.0181$ in correlation units, with a randomization $p$-value of $0.665$ and a randomization 95\% interval of
+% src: estimation_results.json#power_analysis.ri_ci95_lower_correlation_units
+% src: estimation_results.json#power_analysis.ri_ci95_upper_correlation_units
+$[-0.122,\ +0.086]$ in correlation units. The design excludes an increase in equity correlation above about $0.086$, which rules out the upper half of the range the index-inclusion literature reports. It does not rule out an increase of $0.05$. With eighty percent power the design could only have detected an effect of about $0.148$ or larger. That is weaker than a rejection of the habitat hypothesis and stronger than an absence of evidence, and it is the statement our pre-analysis required us to make rather than one we upgraded after seeing the estimate.
+
+%==============================================================
+\section{Robustness and placebos}\label{sec:robustness}
+%==============================================================
+
+\subsection{Sample, window and outcome construction}
+
+Table~\ref{tab:robustness_sample} varies the construction of the sample and the outcome. Excluding the two halving months leaves the estimate essentially unchanged at
+% src: robustness_results.json#excl_halving.coefficients.d_etf_listed.estimate
+$-0.0217$. Winsorizing daily returns at the half-percent tails before building the monthly correlation gives
+% src: robustness_results.json#winsorized.coefficients.d_etf_listed.estimate
+$-0.0184$. Dropping days on which Bitcoin's absolute return exceeded its 99th percentile, together with the November 2022 exchange-collapse window, moves the estimate to
+% src: robustness_results.json#excl_extreme_news.coefficients.d_etf_listed.estimate
+$-0.0353$ with a randomization $p$-value of
+% src: robustness_results.json#excl_extreme_news.p_value_ri_space
+$0.60$; a handful of crypto-native shocks are not driving the result. Extending the estimation window to the end of the delivered panel in 2026m7 moves the estimate toward zero, to
+% src: robustness_results.json#sample_extended_2026.coefficients.d_etf_listed.estimate
+$-0.0088$ on
+% src: robustness_results.json#sample_extended_2026.n_observations
+610 observations.
+
+\input{tables/robustness_sample.tex}
+
+The alignment check deserves a paragraph of its own, because one of the two checks we specified turned out not to be a test. The delivered daily crypto series are already on the midnight-UTC clock, so rebuilding UTC returns from the raw price files reproduces the headline exactly, with identical estimate and identical standard error. The equity-close clock is not constructible from this data. The feasible alignment test is the off-day-span variant, which cumulates weekend and holiday crypto returns into the following equity session so that each crypto return spans the same calendar interval as the equity return it is correlated against. That adjustment is material at the level of the monthly correlation series, and it changes the difference-in-differences estimate by less than $2\times10^{-6}$, to
+% src: robustness_results.json#alignment_offday_span.coefficients.d_etf_listed.estimate
+$-0.0212$, while raising the standard error from $0.0170$ to
+% src: robustness_results.json#alignment_offday_span.coefficients.d_etf_listed.se
+$0.0187$. The reason is that the weekend effect is common across crypto assets and is absorbed by the month fixed effects, which is the correct behaviour and a small piece of evidence that the fixed effects are doing what they are supposed to.
+
+\subsection{Equity leg, macro controls and sub-windows}
+
+Table~\ref{tab:robustness_spec} varies the equity leg, adds the macro interactions and splits the post-period. Replacing SPY with the excess-return market factor gives
+% src: robustness_results.json#leg_mkt.coefficients.d_etf_listed.estimate
+$-0.0239$, so the result is not specific to the tradable large-cap vehicle. Dropping the donut, so that treatment switches on at the January 2024 listing with the anticipation months retained, gives
+% src: robustness_results.json#no_donut.coefficients.d_etf_listed.estimate
+$-0.0092$, which tells us the donut is doing very little — consistent with the absence of a treatment effect to anticipate.
+
+\input{tables/robustness_spec.tex}
+
+\paragraph{The macro-confounding specification is the substantively important row, and it does not behave as we anticipated.} Letting VIX and MOVE load differentially on Bitcoin — the version of the macro story that month fixed effects cannot absorb — flips the treatment coefficient from $-0.0212$ to
+% src: robustness_results.json#ctrl_vix_move.coefficients.d_etf_listed.estimate
+$+0.0195$. The reason is visible in the interaction itself: the VIX interaction is
+% src: robustness_results.json#ctrl_vix_move.coefficients.vix_x_btc.estimate
+% src: robustness_results.json#ctrl_vix_move.coefficients.vix_x_btc.se
+$+0.0100$ with a clustered standard error of $0.0018$, so Bitcoin's equity co-movement loads strongly and positively on the equity volatility regime, far more than the control coins' does, while the MOVE interaction at
+% src: robustness_results.json#ctrl_vix_move.coefficients.move_x_btc.estimate
+$-0.00034$ does nothing. Both treatment estimates remain far inside the randomization distribution, at
+% src: robustness_results.json#ctrl_vix_move.p_value_ri_space
+$p^{\mathrm{RI}} = 0.80$, so neither is distinguishable from zero and the sign flip is not a finding. It is, however, a statement about precision that we would rather make ourselves than leave to a referee: the headline estimate is not robust in sign to a defensible alternative specification, and a paper claiming a positive ETF effect of this magnitude could have been produced from this same data by selecting that specification as the headline. The null is robust; the sign is not. Table~\ref{tab:macro} reports the interaction coefficients themselves.
+
+\input{tables/macro_controls.tex}
+
+\paragraph{Sub-windows isolate the two shocks the design cannot difference out.} Truncating the post-window at 2024m3, entirely before the halving, produces the largest coefficient in the paper at
+% src: robustness_results.json#subwindow_pre_halving.coefficients.d_etf_listed.estimate
+% src: robustness_results.json#subwindow_pre_halving.coefficients.d_etf_listed.se
+$-0.2613$ with a clustered standard error of $0.0316$. It rests on
+% src: robustness_results.json#subwindow_pre_halving.n_post_treatment
+two post-treatment months, in which Bitcoin's equity correlation was unusually low and more extreme than any control coin's over the same months. Two observations do not establish a treatment effect; the randomization $p$-value of
+% src: robustness_results.json#subwindow_pre_halving.p_value_ri_space
+$0.10$ is at the floor imposed by nine donors rather than genuinely small; and the direction is opposite to the habitat prediction. We report it because we committed to reporting it, with the post-period count printed beside it. The pre-election sub-window, which our pre-analysis designated as the estimate to treat as ETF-attributable, gives
+% src: robustness_results.json#subwindow_pre_election.coefficients.d_etf_listed.estimate
+% src: robustness_results.json#subwindow_pre_election.coefficients.d_etf_listed.se
+$-0.0439$ with a standard error of $0.0193$ and a randomization $p$-value of
+% src: robustness_results.json#subwindow_pre_election.p_value_ri_space
+$0.60$ on nine post months. It is a null. Restricting the post-period to the months after the election gives
+% src: robustness_results.json#subwindow_post_election.coefficients.d_etf_listed.estimate
+$-0.0066$, which we interpret as the ETF plus the post-election policy regime rather than as an ETF effect.
+
+\paragraph{The non-US equity leg points the wrong way for the habitat story.} Against MSCI ACWI ex-US, Bitcoin's differential co-movement change is
+% src: robustness_results.json#leg_acwx_non_us.coefficients.d_etf_listed.estimate
+$-0.0496$, more negative than against SPY. We specified in advance that a US brokerage habitat should raise co-movement more against US than against non-US equities. The ordering is in the predicted direction, in that the US estimate is less negative, but both are negative and the randomization $p$-value is
+% src: robustness_results.json#leg_acwx_non_us.p_value_ri_space
+$0.30$. The most that can be said is that the data do not contradict the ordering; they do not support it either.
+
+\subsection{Placebo assets and placebo events}
+
+Table~\ref{tab:placebos} reports the placebo grid, and it is where the choice of inference procedure does the most visible work.
+
+\input{tables/placebos.tex}
+
+Gold assigned Bitcoin's treatment date against the never-treated crypto controls gives
+% src: robustness_results.json#placebo_gold.coefficients.d_etf_listed.estimate
+% src: robustness_results.json#placebo_gold.coefficients.d_etf_listed.p_value
+$-0.0400$ with a clustered $p$-value of $0.0425$. Under the conventional column, gold breaks at January 2024 — and our pre-analysis committed to reading a gold break as falsifying the design's macro-neutrality, since gold has had an exchange-traded wrapper for two decades and experienced the same macro regime with no 2024 access change. Under randomization inference the same estimate returns
+% src: robustness_results.json#placebo_gold.p_value_ri_space
+$p = 0.50$: an entirely ordinary draw from the placebo distribution. Silver behaves the same way, at
+% src: robustness_results.json#placebo_silver.coefficients.d_etf_listed.estimate
+$-0.0340$ with a clustered $p$ of
+% src: robustness_results.json#placebo_silver.coefficients.d_etf_listed.p_value
+$0.076$ and a randomization $p$ of
+% src: robustness_results.json#placebo_silver.p_value_ri_space
+$0.70$. The design's macro-neutrality survives, and it survives because the inference procedure was fixed before this row was run. Had we used clustered $p$-values, our own pre-registered falsification test would have killed the paper on a false positive.
+
+The futures-ETF placebo is the row that most constrains what this design can claim. Treating the October 2021 launch of a US-listed Bitcoin \emph{futures} product as the event, on a sample truncated before the spot approval can contaminate it, gives
+% src: robustness_results.json#placebo_bito_2021.coefficients.d_etf_listed.estimate
+$+0.0412$ with a clustered $p$-value of
+% src: robustness_results.json#placebo_bito_2021.coefficients.d_etf_listed.p_value
+$0.034$ and a randomization $p$-value of
+% src: robustness_results.json#placebo_bito_2021.p_value_ri_space
+$0.40$. We had pre-committed to reading a null here as favouring a spot-plumbing channel over a pure listing-and-visibility channel. That reading is not available, because the placebo estimate is not null — it is twice the magnitude of the actual spot-approval estimate and of the opposite sign. What the row establishes instead is a bound on this design's resolution: a non-event in the same panel generates a larger apparent effect than the event under study. We draw no channel inference from it and report it for what it is, which is a demonstration that estimates of this size are noise.
+
+Finally, the placebo-date grid that generates the headline randomization $p$-value is itself a falsification test. Across
+% src: robustness_results.json#placebo_dates_pre.n_placebo_assignments
+199 assignments the mean placebo estimate is
+% src: robustness_results.json#placebo_dates_pre.coefficients.placebo_mean.estimate
+$0.00011$ with a standard deviation of
+% src: robustness_results.json#placebo_dates_pre.diagnostics.placebo_sd
+$0.0619$, and the ninetieth percentile of the absolute placebo estimate is
+% src: robustness_results.json#placebo_dates_pre.coefficients.placebo_abs_p90.estimate
+$0.1084$. The design is unbiased under the null, and its noise level is five times the actual estimate.
+% computed: 0.06195 / 0.02118 = 2.93 in SD terms and 0.10837 / 0.02118 = 5.12 at the 90th percentile, from robustness_results.json#placebo_dates_pre.diagnostics.placebo_sd, #placebo_dates_pre.coefficients.placebo_abs_p90.estimate and estimation_results.json#main.coefficients.d_etf_listed.estimate
+
+\subsection{Alternative windows and clustering}
+
+Two further checks close the grid. Table~\ref{tab:robustness_windows} recomputes the daily rolling-window panel at 60 and 90 days rather than 30, giving
+% src: robustness_results.json#window_60d.coefficients.d_etf_listed.estimate
+% src: robustness_results.json#window_90d.coefficients.d_etf_listed.estimate
+$-0.0183$ and $-0.0169$ respectively, so the daily result is not a window-length artifact. The table also prints the number of non-overlapping windows behind each row, which is the figure against which those standard errors should be judged. Two-way clustering on coin and month raises the headline standard error from $0.0170$ to
+% src: robustness_results.json#twoway_cluster.coefficients.d_etf_listed.se
+$0.0229$ without moving the point estimate, and is subject to the same one-treated-unit objection as one-way clustering.
+
+\input{tables/robustness_windows.tex}
+
+Across the twenty robustness rows the point estimate is negative in nineteen and never exceeds $0.05$ in absolute value except in the two sub-window rows and the two alternative outcomes. We regard the grid as establishing that the null is not an artifact of any single construction choice, and as establishing equally that the negative sign carries no information.
+
+%==============================================================
+\section{Discussion and conclusion}\label{sec:conclusion}
+%==============================================================
+
+We asked whether changing who holds an asset changes its factor structure when the cash-flow channel is mechanically unavailable. On this data the answer is that no change is detectable, and the interesting part is how many independent ways that answer arrives. Six estimators that disagree about almost everything else agree on it. A conditional-correlation model finds a positive shift in Bitcoin's correlation target; a returns-level model finds a large negative shift in its equity beta; the panel difference-in-differences finds nothing. All three dissolve into the same conclusion the moment a control group is applied, because every crypto asset's equity beta fell and every crypto pair's conditional correlation target rose over this window. The common component is large and the Bitcoin-specific component is not distinguishable from zero. A study running any one of these specifications on Bitcoin alone would have reported a significant result, and it would have been reporting 2024.
+
+The inference procedure does comparable work. Three conventional tests in this paper reject at conventional levels — the pre-trend $F$-test, the gold placebo, and the independent-and-identically-distributed sup-Wald — and all three are artifacts: of one treated cluster, of one treated cluster again, and of a mechanical window overlap. The randomization and HAC versions of the same three tests return $0.800$, $0.50$ and a statistic below its critical value. We fixed the inference procedure before any of this was known, which is the only reason those three numbers are corrections rather than findings.
+
+For asset allocators the practical content is narrow and worth stating plainly. The case for a small crypto sleeve in a diversified portfolio rests on a correlation input, and our estimate says that input should not have been revised on account of the wrapper. At the sample mean correlation the equity-driven share of a coin's monthly return variance is
+% src: summary_statistics.json#outcome_rho2.mean
+$0.184$, and our interval on the change in the correlation itself runs from $-0.122$ to $+0.086$. An allocator who revised the correlation assumption upward by a tenth on the strength of the listing was acting on a magnitude this design would have detected and did not find. That is a more useful conclusion than it may appear, because the direction of the revision most practitioners made was upward.
+
+For the co-movement literature the contribution is a bound rather than a verdict, and we are explicit about which. The habitat and category view predicts that an asset entering a new ownership habitat begins to move with that habitat's other holdings. We do not observe that here, in a setting where the fundamentals alternative that has occupied the literature since the index-inclusion studies is unavailable. Two readings are consistent with the evidence. One is that habitat co-movement operates through a shared interpretation of shared cash-flow news — the channel through which ETFs are known to raise systematic price informativeness in equities \citep{glosten2020etf} — and that an asset with no earnings has nothing for that channel to work on. The other is that the effect is present at a magnitude our design cannot resolve. We committed before estimation to distinguishing these by a power criterion, and the criterion returned a verdict between its two bars, so both readings remain open and we decline to choose.
+
+Our analysis is subject to scope conditions that bear directly on how far it travels. The binding one is power. There is a single treated asset, and with one treated unit the randomization distribution is wide almost regardless of how many coin-months the panel contains; the design could only have detected a correlation increase of about $0.148$, and the index-inclusion literature's central estimates lie below that. The single change that would move this number is more treated units, and they exist: spot products for Ether listed in July 2024 and for other large assets during 2025, and a staggered multi-cohort design across four treated assets would cut the randomization-based minimum detectable effect materially. We could not run it here because the listing dates for two of those cohorts require verification from each fund's registration statement and the exchange listing notice, and a guessed cohort date does not fail loudly — it quietly mis-assigns treatment timing. A second condition is that the three designs that would isolate the mechanism rather than bound its magnitude are not estimable on this data. Intraday returns would permit the session decomposition that separates a US-vehicle channel from a global macro regime, which is the only test in our pre-analysis that absorbs the halving and the election outright, and fund-level creations and redemptions would permit the flow decomposition that separates market-neutral basis positions from directional allocation. Third, our post-period contains two large Bitcoin-specific shocks that a crypto control group cannot difference out, and the endogenous break test places the one clear 2024 regime change in the differential series two weeks after the halving rather than at the listing. Finally, the crypto price leg is single-source, and the cross-venue validation we would have preferred was not possible.
+
+Three questions follow, and each is answerable with data that exist. First, does the staggered multi-cohort design across Bitcoin, Ether and the 2025 cohorts detect what the single-cohort design cannot, and does the estimated effect scale with the size of each cohort's product complex? Second, is the increase in crypto--equity covariance over 2024 and 2025 located in US exchange hours, as the authorized-participant mechanism predicts and as no macro regime shift can generate? Third, does the co-movement change scale with the allocation component of flow once the cash-and-carry component is projected out, which would reconcile the very large headline assets of these products with the very small factor-loading change we document. The third is the question our results most directly raise: the products gathered enormous assets and Bitcoin's equity loading did not move, and the most economical explanation for that pair of facts is that a substantial share of those assets never represented directional exposure at all.
+
+\bibliography{literature}
+
+\end{document}

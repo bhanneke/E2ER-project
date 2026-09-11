@@ -1,0 +1,28 @@
+% Raw (model-free) pre/post contrast in mean correlation with SPY.
+% Source: summary_statistics.json#raw_contrast.SPY, written by the data
+% analyst. Not rendered from table_spec.json because the table renderer reads
+% only estimation_results.json and robustness_results.json; every cell carries
+% its "% src:" key path.
+\begin{table}[t]
+\centering
+\begin{threeparttable}
+\caption{Raw pre/post contrast in mean correlation with SPY}
+\label{tab:rawcontrast}
+\begin{tabular}{lrrr}
+\toprule
+& Pre-period & Post-period & Change \\
+\midrule
+Bitcoin & 0.382 & 0.391 & $+0.009$ \\ % src: summary_statistics.json#raw_contrast.SPY.by_asset.BTC
+Never-treated control mean (9 coins) & 0.341 & 0.352 & $+0.011$ \\ % src: summary_statistics.json#raw_contrast.SPY.control_group_mean
+\midrule
+Raw difference-in-differences, $\rho$ & \multicolumn{3}{r}{$-0.0014$} \\ % src: summary_statistics.json#raw_contrast.SPY.did_raw.rho
+Raw difference-in-differences, Fisher-$z$ & \multicolumn{3}{r}{$-0.0088$} \\ % src: summary_statistics.json#raw_contrast.SPY.did_raw.fisherz
+Raw difference-in-differences, $\beta$ & \multicolumn{3}{r}{$-0.0813$} \\ % src: summary_statistics.json#raw_contrast.SPY.did_raw.beta
+\bottomrule
+\end{tabular}
+\begin{tablenotes}[flushleft]
+\footnotesize
+\item Pre-period is 2021m1--2023m7 and post-period is 2024m2--2026m8; the donut window is excluded from both. Entries are simple differences of period means with no fixed effects, no reweighting and no standard errors, reported so that the identifying contrast is visible before any model is imposed. The regression estimand in Section~\ref{sec:results} reweights coin-months and will differ in magnitude; a disagreement in \emph{sign} would indicate a build error rather than a modelling subtlety, and there is none.
+\end{tablenotes}
+\end{threeparttable}
+\end{table}

@@ -29,6 +29,10 @@ def _workspace(tmp_path: Path) -> Path:
     (ws / "identification_spec.json").write_text(
         json.dumps({"primary": {"estimator": "did", "fixed_effects": ["unit", "time"], "controls": []}})
     )
+    tables = ws / "tables"
+    tables.mkdir()
+    (tables / "main.tex").write_text("\\begin{tabular}{lc}\\hline a & -0.0087 \\\\\\hline\\end{tabular}")
+    (tables / "robustness.tex").write_text("\\begin{tabular}{lc}\\hline b & 0.12 \\\\\\hline\\end{tabular}")
     repl = ws / "replication"
     repl.mkdir()
     (repl / "audit_log.csv").write_text("step,detail\n1,queried\n")
@@ -90,6 +94,30 @@ def test_export_includes_spec_and_replication(tmp_path: Path):
     assert (out / "replication" / "audit_log.csv").is_file()
     assert (out / "replication" / "data_queries.sql").is_file()
     assert (out / "replication" / "estimation.py").is_file()
+
+
+def test_export_ships_the_tables_the_paper_inputs(tmp_path: Path):
+    """The renderer writes one .tex per table and paper.tex includes each with
+    \\input{tables/<name>.tex}. They must land under paper/, because \\input
+    resolves relative to the including file.
+
+    Found on the first completed showcase run: 13 \\input directives, two .tex
+    files in the bundle, and `e2er verify` reporting PASS — it only scans the
+    main .tex for inline tabulars, so a bundle that cannot compile verified
+    clean."""
+    ws = _workspace(tmp_path)
+    out = export_paper(ws, tmp_path / "out", date_str="20260911")
+
+    assert (out / "paper" / "tables" / "main.tex").is_file()
+    assert (out / "paper" / "tables" / "robustness.tex").is_file()
+
+    # Every \input in the exported paper must resolve inside the bundle.
+    paper = (out / "paper" / "paper.tex").read_text(encoding="utf-8")
+    import re
+
+    for ref in re.findall(r"\\input\{([^}]+)\}", paper):
+        target = (out / "paper" / ref).with_suffix(".tex")
+        assert target.is_file(), f"bundle is missing {ref}, so it cannot compile"
 
 
 def test_export_writes_provenance_manifest(tmp_path: Path):

@@ -229,6 +229,16 @@ def export_paper(workspace: Path, dest_root: Path, *, date_str: str, slug: str |
     if fig_src.is_dir():
         shutil.copytree(fig_src, out / "results" / "figures", dirs_exist_ok=True)
 
+    # Tables: the deterministic renderer writes one .tex per table into
+    # tables/, and paper.tex includes each with \input{tables/<name>.tex}.
+    # They must land under paper/ because \input resolves relative to the
+    # including file. Without this the bundle carries two .tex files and fails
+    # to compile on the first pass — and `e2er verify` does not notice, because
+    # it only scans the main .tex for inline tabulars.
+    tbl_src = workspace / "tables"
+    if tbl_src.is_dir():
+        shutil.copytree(tbl_src, out / "paper" / "tables", dirs_exist_ok=True)
+
     # Replication: the audit log + query SQL + replication estimation script
     # (audit_log.csv, data_queries.sql, estimation.py). Previously dropped
     # entirely — it is the backbone of a reproducible bundle.

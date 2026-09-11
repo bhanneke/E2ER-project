@@ -679,6 +679,40 @@ def _find_source_jsons(workspace: Path) -> dict[str, Path]:
     return found
 
 
+_INPUT_RE = re.compile(r"\\input\{([^}]+)\}")
+
+
+def _expand_inputs(tex_content: str, base_dir: Path, _depth: int = 0) -> str:
+    """Inline ``\\input{...}`` targets so tables in their own files are scanned.
+
+    The renderer writes one .tex per table and the draft includes each with
+    ``\\input{tables/<name>.tex}``. Reading only the draft means the scanner
+    sees no tabular environment at all, and the gate then reports a pass having
+    traced zero cells — which is indistinguishable, in the report, from a pass
+    that checked every number.
+
+    Depth-bounded against include cycles. A missing or unreadable target is
+    left as the literal directive rather than failing the gate: a bundle that
+    cannot be fully resolved should still be checked as far as it goes, and
+    the unresolved table shows up as absent coverage.
+    """
+    if _depth >= 4:
+        return tex_content
+
+    def _inline(match: re.Match[str]) -> str:
+        ref = match.group(1).strip()
+        for candidate in (base_dir / ref, base_dir / f"{ref}.tex"):
+            if candidate.is_file():
+                try:
+                    nested = candidate.read_text(encoding="utf-8", errors="replace")
+                except OSError:
+                    return match.group(0)
+                return _expand_inputs(nested, candidate.parent, _depth + 1)
+        return match.group(0)
+
+    return _INPUT_RE.sub(_inline, tex_content)
+
+
 def verify(
     draft_path: Path,
     workspace: Path,
@@ -704,7 +738,7 @@ def verify(
         logger.warning("verify_numbers: %s", report.skipped_reason)
         return report
 
-    tex_content = draft_path.read_text(encoding="utf-8", errors="replace")
+    tex_content = _expand_inputs(draft_path.read_text(encoding="utf-8", errors="replace"), draft_path.parent)
 
     # PR-2: key-resolution feedback is independent of numeric content — surface
     # it before any of the source-JSON early returns below.
