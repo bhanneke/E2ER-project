@@ -126,6 +126,18 @@ class VerificationReport:
         """
         return (self.total_values_in_tables + self.prose_total) > 0
 
+    @property
+    def tables_conclusive(self) -> bool:
+        """Did the TABLE channel reach a verdict on anything?
+
+        Deliberately separate from `conclusive`, which ORs the two channels and
+        therefore returns True for a run with rich prose coverage and no table
+        coverage at all — the precise case it was written to catch. Table cells
+        are where the anti-fabrication claim lives; prose coverage is not a
+        substitute for them, and must not stand in for them in a report.
+        """
+        return self.total_values_in_tables > 0
+
 
 # JSON filenames that the analyst + econometrics specialist must produce.
 # Look at workspace root (v3 layout). Order: by stage of production.

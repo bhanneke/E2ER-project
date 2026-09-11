@@ -118,7 +118,37 @@ def _check_numbers(bundle: Path, ws: Path) -> Check:
     if crit:
         first = "; ".join(f"{m.draft_value} vs {m.source_value} ({m.source_key})" for m in crit[:3])
         return Check("numbers", FAIL, f"{len(crit)} critical mismatch(es) on recompute: {first}")
+    if not report.tables_conclusive and _bundle_has_rendered_tables(bundle):
+        # The paper ships rendered tables and the check traced no cell in any of
+        # them. That is not a pass: it is the gate failing to run on the one
+        # channel the anti-fabrication claim rests on, and it must not print the
+        # same tick as a run that checked every number.
+        return Check(
+            "numbers",
+            FAIL,
+            "0 table cell(s) traced although the paper ships rendered tables — the numbers check did not run on them",
+        )
     return Check("numbers", PASS, f"{report.matched} table cell(s) trace, 0 critical mismatches")
+
+
+def _bundle_has_rendered_tables(bundle: Path) -> bool:
+    """Did the renderer produce tables for this paper?
+
+    Read from the render report the pipeline already writes; fall back to
+    looking for the table files themselves, so an older bundle without the
+    report is still judged on what it actually contains.
+    """
+    report_path = bundle / "results" / "table_render_report.json"
+    if report_path.is_file():
+        try:
+            import json
+
+            rendered = json.loads(report_path.read_text(encoding="utf-8")).get("rendered")
+            if isinstance(rendered, list):
+                return bool(rendered)
+        except (OSError, ValueError):
+            pass
+    return any((bundle / "paper" / "tables").glob("*.tex"))
 
 
 # ── check 3: spec contract ───────────────────────────────────────────────────
