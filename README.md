@@ -33,6 +33,15 @@ guided wizard). New here? The **[For reviewers](#for-reviewers)** tour goes
 from a 2-minute browse to reproducing a result, and it opens with a no-key,
 $0 step.
 
+### Bring your own data and literature
+
+![Pointing E2ER at a folder of data and a folder of references, then running e2er doctor](docs/demo/byod.gif)
+
+Put your datasets in one folder and your references in another, name them in
+`.env`, and `e2er doctor` tells you whether a run will actually work before you
+start one. Every line in that recording is the program's own output — see
+[docs/demo](docs/demo/) for how it is made and re-made.
+
 ---
 
 ## Table of contents

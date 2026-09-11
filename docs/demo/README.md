@@ -32,7 +32,13 @@ Two consequences worth stating plainly:
    than recording something untrue. Cut the release, then re-run; it needs no
    other change.
 
-Do not link either GIF from the top-level README until the release is out.
+`byod.gif` is linked from the top-level README on this branch. That is the
+0.9.0 README — it already documents `init --defaults`, `verify`, `compare` and
+`rq` — and `dev` is the default branch, so neither the README nor the GIF
+reaches the repository front page until this branch merges. The link goes live
+at the same moment the commands in it become true of `pip install e2er`.
+
+`quickstart.gif` is not linked anywhere, because it does not exist yet.
 
 ## Regenerating
 
