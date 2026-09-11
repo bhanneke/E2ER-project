@@ -174,7 +174,11 @@ async def byod_literature_check(settings) -> Check:
                     parts.append(f"{n_pdf} PDFs")
                 if n_bib:
                     parts.append(f"{n_bib} .bib")
-                modes.append(f"{root}: {', '.join(parts) or 'no PDFs/.bib found'}")
+                # An empty directory is not a literature mode. resolved_literature_dirs()
+                # falls back to LOCAL_DATA_DIR, so a user who configured only a .bib would
+                # otherwise see their data folder reported as a miss on a passing check.
+                if parts:
+                    modes.append(f"{root}: {', '.join(parts)}")
 
     if not modes:
         return Check(

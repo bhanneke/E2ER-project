@@ -214,6 +214,23 @@ async def test_byod_literature_pdf_folder(tmp_path):
     assert c.status == PASS and "2 PDFs" in c.detail
 
 
+async def test_byod_literature_ignores_an_empty_fallback_dir(tmp_path):
+    """resolved_literature_dirs() falls back to LOCAL_DATA_DIR, so a user who
+    configured only a .bib would otherwise see their data folder reported as a
+    miss appended to a passing check."""
+    bib = tmp_path / "refs.bib"
+    bib.write_text("@article{a, title={A}}\n")
+    data = tmp_path / "data"
+    data.mkdir()
+    (data / "prices.csv").write_text("x\n")
+
+    c = await byod_literature_check(_byod_settings(literature_bibtex_file=str(bib), literature_dir=str(data)))
+
+    assert c.status == PASS
+    assert c.detail == "bibtex (1 entries)"
+    assert "no PDFs" not in c.detail
+
+
 async def test_byod_literature_zotero_detected(tmp_path):
     (tmp_path / "zotero.sqlite").write_bytes(b"\x00")
     c = await byod_literature_check(_byod_settings(literature_dir=str(tmp_path)))
