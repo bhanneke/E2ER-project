@@ -48,16 +48,38 @@ def test_every_input_resolves_inside_the_bundle():
 
     The exported paper carried thirteen \\input directives and two .tex files.
     """
+    from src.cli_verify import _strip_tex_comments
+
     paper = BUNDLE / "paper" / "paper.tex"
-    refs = _INPUT_RE.findall(paper.read_text(encoding="utf-8"))
+    body = _strip_tex_comments(paper.read_text(encoding="utf-8"))
+    refs = _INPUT_RE.findall(body)
     assert refs, "the showcase paper should include its tables by \\input"
 
     missing = []
     for ref in refs:
-        target = BUNDLE / "paper" / ref
-        if not target.is_file() and not target.with_suffix(".tex").is_file():
+        base = BUNDLE / "paper" / ref
+        if not base.is_file() and not Path(f"{base}.tex").is_file():
             missing.append(ref)
     assert not missing, f"bundle cannot compile — missing {missing}"
+
+
+def test_no_input_is_satisfied_by_a_stub(tmp_path: Path):
+    """This test used to pass by accident.
+
+    paper.tex documents its conventions in a comment holding a literal
+    \\input{tables/...}; the pipeline wrote a stub for it, and
+    Path("tables/...").with_suffix(".tex") names exactly that stub — so a bogus
+    reference resolved to a junk file and the check went green.
+    """
+    from src.cli_verify import _strip_tex_comments
+
+    body = _strip_tex_comments((BUNDLE / "paper" / "paper.tex").read_text(encoding="utf-8"))
+    assert "tables/..." not in body, "commented-out \\input leaked into the parsed body"
+
+    for ref in _INPUT_RE.findall(body):
+        target = BUNDLE / "paper" / ref
+        text = target.read_text(encoding="utf-8") if target.is_file() else ""
+        assert "% stub:" not in text, f"{ref} is a stub, not a table"
 
 
 def test_the_numbers_gate_actually_traced_cells():
@@ -88,6 +110,57 @@ def test_the_bundle_verifies_clean():
     assert not failed, f"showcase bundle fails: {failed}"
     assert checks["integrity"].status == "PASS"
     assert checks["citations"].status == "PASS"
+
+
+def test_tables_reproduce_byte_identically_from_the_sidecars():
+    """Every declared table re-renders from the spec and the result JSONs."""
+    import tempfile
+
+    from src.cli_verify import _check_tables, _reconstruct_workspace
+
+    with tempfile.TemporaryDirectory() as td:
+        ws = Path(td)
+        _reconstruct_workspace(BUNDLE, ws)
+        check = _check_tables(BUNDLE, ws)
+
+    assert check.status == "PASS", check.detail
+    assert "reproduce byte-identically" in check.detail
+
+
+def test_an_edited_table_cell_fails_the_tables_check(tmp_path: Path):
+    """The reason this check exists.
+
+    The numbers gate decides severity by distance to the closest value anywhere
+    in the source JSON, so a fabricated cell that lands near an unrelated number
+    is graded "major" and does not gate — only the hash catches it. Re-rendering
+    asks the actual question: is this what the sidecars produce?
+    """
+    import re
+    import shutil
+    import tempfile
+
+    from src.cli_verify import _check_numbers, _check_tables, _reconstruct_workspace
+
+    bundle = tmp_path / "b"
+    shutil.copytree(BUNDLE, bundle)
+
+    table = bundle / "paper" / "tables" / "main.tex"
+    text = table.read_text(encoding="utf-8")
+    match = re.search(r"-?\d+\.\d{3,}", text)
+    assert match, "expected a decimal estimate in main.tex"
+    table.write_text(text.replace(match.group(0), "-9.9999", 1), encoding="utf-8")
+
+    with tempfile.TemporaryDirectory() as td:
+        ws = Path(td)
+        _reconstruct_workspace(bundle, ws)
+        tables = _check_tables(bundle, ws)
+        numbers = _check_numbers(bundle, ws)
+
+    assert tables.status == "FAIL"
+    assert "main.tex" in tables.detail
+    # Documents the gap this check closes: the nearest-value heuristic still
+    # grades the edited cell non-critical and lets it through.
+    assert numbers.status == "PASS"
 
 
 def test_provenance_records_a_cell_edge_for_every_traced_number():

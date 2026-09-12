@@ -22,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import re
 import shutil
 import sys
 import tempfile
@@ -174,7 +175,90 @@ def _bundle_has_rendered_tables(bundle: Path) -> bool:
     return any((bundle / "paper" / "tables").glob("*.tex"))
 
 
-# ── check 3: spec contract ───────────────────────────────────────────────────
+# ── check 3: tables reproduce from the sidecars ──────────────────────────────
+
+_INPUT_RE = re.compile(r"\\input\{([^}]+)\}")
+
+
+def _strip_tex_comments(tex: str) -> str:
+    r"""Drop LaTeX comments before looking for \input.
+
+    paper.tex documents its own conventions in a comment containing a literal
+    \input{tables/...}, and the pipeline dutifully wrote a stub file for it.
+    """
+    out = []
+    for line in tex.splitlines():
+        idx = 0
+        while True:
+            idx = line.find("%", idx)
+            if idx == -1:
+                out.append(line)
+                break
+            if idx > 0 and line[idx - 1] == "\\":
+                idx += 1
+                continue
+            out.append(line[:idx])
+            break
+    return "\n".join(out)
+
+
+def _included_tables(bundle: Path) -> set[str]:
+    tex = bundle / "paper" / "paper.tex"
+    if not tex.is_file():
+        return set()
+    body = _strip_tex_comments(tex.read_text(encoding="utf-8", errors="replace"))
+    names = set()
+    for ref in _INPUT_RE.findall(body):
+        name = Path(ref).name
+        names.add(name if name.endswith(".tex") else f"{name}.tex")
+    return names
+
+
+def _check_tables(bundle: Path, ws: Path) -> Check:
+    """Re-render the declared tables and compare them byte for byte."""
+    if not (ws / "table_spec.json").is_file():
+        return Check("tables", SKIP, "no results/table_spec.json in bundle")
+
+    from .core.renderer.tables import render_tables
+
+    shipped_dir = bundle / "paper" / "tables"
+    if not shipped_dir.is_dir():
+        return Check("tables", SKIP, "bundle ships no paper/tables directory")
+
+    report = render_tables(ws)
+    if report.skipped_reason:
+        return Check("tables", SKIP, report.skipped_reason)
+
+    differing, missing = [], []
+    for name in report.rendered:
+        shipped = shipped_dir / name
+        fresh = ws / "tables" / name
+        if not shipped.is_file():
+            missing.append(name)
+        elif shipped.read_bytes() != fresh.read_bytes():
+            differing.append(name)
+
+    if differing or missing:
+        bits = []
+        if differing:
+            bits.append(f"{len(differing)} differ from the sidecars ({', '.join(sorted(differing)[:3])})")
+        if missing:
+            bits.append(f"{len(missing)} not shipped ({', '.join(sorted(missing)[:3])})")
+        return Check("tables", FAIL, "; ".join(bits))
+
+    # Coverage: what the paper includes that the renderer never produced.
+    uncovered = sorted(_included_tables(bundle) - set(report.rendered))
+    note = ""
+    if uncovered:
+        note = f"; {len(uncovered)} not renderer-produced ({', '.join(uncovered[:3])})"
+    return Check(
+        "tables",
+        PASS,
+        f"{len(report.rendered)} table(s) reproduce byte-identically from the sidecars{note}",
+    )
+
+
+# ── check 4: spec contract ───────────────────────────────────────────────────
 
 
 def _check_spec(ws: Path) -> Check:
@@ -251,6 +335,7 @@ def _run_checks(bundle: Path, online: bool) -> list[Check]:
         ws = Path(td)
         _reconstruct_workspace(bundle, ws)
         checks.append(_check_numbers(bundle, ws))
+        checks.append(_check_tables(bundle, ws))
         checks.append(_check_spec(ws))
         checks.append(_check_citations_offline(bundle))
     if online:
@@ -293,7 +378,10 @@ def _verdict(checks: list[Check]) -> tuple[str, int]:
             f"{len(skipped)} skipped ({', '.join(skipped)}).",
             0,
         )
-    return "✅ Bundle verified — hashes, numbers, spec, and citations are internally consistent.", 0
+    return (
+        "✅ Bundle verified — hashes, tables, numbers, spec, and citations are internally consistent.",
+        0,
+    )
 
 
 def _render(checks: list[Check]) -> str:
