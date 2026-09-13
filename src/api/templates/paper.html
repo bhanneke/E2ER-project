@@ -1,15 +1,25 @@
 {% extends "base.html" %}
-{% block title %}{{ paper.title }} — E2ER{% endblock %}
+{% block title %}{{ paper.title[:70] }} — E2ER{% endblock %}
 
 {% block content %}
-<header class="paper-header">
-  <h1>{{ paper.title }}</h1>
-  <p class="muted">{{ paper.research_question }}</p>
-  <p class="meta">
-    Mode: <code>{{ paper.mode }}</code>
-    {% if paper.github_repo %}· <a href="https://github.com/{{ paper.github_repo }}" target="_blank">{{ paper.github_repo }}</a>{% endif %}
-  </p>
-</header>
+<h1>{{ paper.title }}</h1>
+<p class="sub">{{ paper.research_question }}</p>
+<p class="muted">
+  Mode: {{ paper.mode }}
+  {% if paper.github_repo %} · <a href="{{ paper.github_repo }}" target="_blank" rel="noopener">{{ paper.github_repo }}</a>{% endif %}
+</p>
+
+{% if reading %}
+<section class="read-row">
+  {% for r in reading %}
+    <a class="read-card{% if r.primary %} primary{% endif %}"
+       href="/api/papers/{{ paper.id }}/artifacts/{{ r.path }}" target="_blank" rel="noopener">
+      <span class="rc-label">{{ r.label }}</span>
+      <span class="rc-path">{{ r.path }}</span>
+    </a>
+  {% endfor %}
+</section>
+{% endif %}
 
 <!-- Live-updating section: status, cost meter, recent events.
      Fetched on page load and polled every 3 seconds via HTMX. -->
@@ -20,16 +30,41 @@
   <p class="muted">Loading status…</p>
 </section>
 
-<section class="artifacts">
+<section>
   <h2>Artifacts</h2>
-  {% if not artifacts %}
+  {% if not groups %}
     <p class="muted">No artifacts yet.</p>
   {% else %}
-  <ul class="artifact-list">
-    {% for f in artifacts %}
-      <li><a href="/api/papers/{{ paper.id }}/artifacts/{{ f }}" target="_blank">{{ f }}</a></li>
-    {% endfor %}
-  </ul>
+  <p class="muted">
+    Grouped by the phase that produced them. A file a specialist declared and
+    never wrote is shown in red — the absence is the point.
+  </p>
+  {% for g in groups %}
+    <details class="ag ag-{{ g.status }}"{% if g.status == "fail" %} open{% endif %}>
+      <summary>
+        <span class="ag-name">{{ g.name }}</span>
+        <span class="ag-badge b-{{ g.status }}">
+          {%- if g.status == "pass" -%}passed
+          {%- elif g.status == "fail" -%}attention
+          {%- else -%}—{%- endif -%}
+        </span>
+        <span class="ag-note">{{ g.note }}</span>
+      </summary>
+      <ul class="ag-files">
+        {% for f in g.files %}
+          <li class="f-{{ f.status }}">
+            {% if f.status == "missing" %}
+              <span class="f-path">{{ f.p }}</span>
+            {% else %}
+              <a class="f-path" href="/api/papers/{{ paper.id }}/artifacts/{{ f.p }}" target="_blank" rel="noopener">{{ f.p }}</a>
+            {% endif %}
+            {% if f.note %}<span class="f-note">{{ f.note }}</span>{% endif %}
+            <span class="f-size">{% if f.status == "missing" %}—{% else %}{{ (f.b / 1000) | round | int }} KB{% endif %}</span>
+          </li>
+        {% endfor %}
+      </ul>
+    </details>
+  {% endfor %}
   {% endif %}
   <p>
     <a class="btn" href="/api/papers/{{ paper.id }}/audit-bundle">Download audit bundle (.tar.gz)</a>

@@ -1286,8 +1286,261 @@ async def paper_detail(request: Request, paper_id: str = Depends(_validate_uuid)
     return templates.TemplateResponse(
         request,
         "paper.html",
-        {"paper": paper, "artifacts": artifacts},
+        {
+            "paper": paper,
+            "artifacts": artifacts,
+            "reading": _reading_list(artifacts),
+            "groups": _artifact_groups(
+                workspace,
+                artifacts,
+                str(paper.get("mode") or ""),
+                str(paper.get("methodology") or ""),
+            )
+            if workspace.exists()
+            else [],
+        },
     )
+
+
+#: Pipeline phases in execution order, and the specialists that belong to each.
+#: Artifact attribution itself comes from the registry; this only says when.
+_PHASES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("Design", ("idea_developer", "literature_scanner", "identification_strategist", "theory_specialist")),
+    ("Data", ("data_architect", "data_analyst")),
+    ("Estimation", ("econometrics_specialist",)),
+    ("Drafting", ("paper_drafter", "section_writer", "abstract_writer", "latex_formatter")),
+    (
+        "Self-attack and polish",
+        (
+            "self_attacker",
+            "polish_formula",
+            "polish_numerics",
+            "polish_institutions",
+            "polish_equilibria",
+            "polish_bibliography",
+        ),
+    ),
+    (
+        "Review",
+        (
+            "mechanism_reviewer",
+            "technical_reviewer",
+            "literature_reviewer",
+            "data_reviewer",
+            "identification_reviewer",
+            "writing_reviewer",
+        ),
+    ),
+    ("Revision", ("revisor", "patch_revisor")),
+    ("Replication", ("replication_packager",)),
+)
+
+
+def _gate_verdicts(workspace: Path) -> list[dict[str, Any]]:
+    """Read the deterministic gate reports the run already wrote.
+
+    These are the run's own verdicts. Recomputing them here would let the page
+    disagree with the pipeline about what happened.
+    """
+    import json as _json
+
+    out: list[dict[str, Any]] = []
+
+    def _load(name: str) -> dict[str, Any] | None:
+        path = workspace / name
+        if not path.is_file():
+            return None
+        try:
+            data = _json.loads(path.read_text(encoding="utf-8"))
+            return data if isinstance(data, dict) else None
+        except (OSError, ValueError):
+            return None
+
+    if (d := _load("table_render_report.json")) is not None:
+        bad = bool(d.get("unresolved")) or bool(d.get("errors"))
+        n = len(d.get("rendered") or [])
+        out.append(
+            {
+                "name": "table_render_report.json",
+                "label": "Tables",
+                "ok": not bad,
+                "note": f"{n} rendered, {len(d.get('unresolved') or [])} unresolved",
+            }
+        )
+
+    if (d := _load("number_verification.json")) is not None:
+        crit = [m for m in (d.get("mismatches") or []) if m.get("severity") == "critical"]
+        traced = d.get("matched", 0)
+        out.append(
+            {
+                "name": "number_verification.json",
+                "label": "Numbers",
+                "ok": not crit,
+                "note": f"{traced} cells trace, {len(crit)} critical",
+            }
+        )
+
+    if (d := _load("citation_integrity.json")) is not None:
+        out.append(
+            {
+                "name": "citation_integrity.json",
+                "label": "Citations",
+                "ok": bool(d.get("passed")),
+                "note": f"{d.get('verified', 0)}/{d.get('total_cites', 0)} verified, "
+                f"{d.get('missing_in_bib', 0)} missing",
+            }
+        )
+
+    if (d := _load("review_aggregation.json")) is not None:
+        verdict = str(d.get("verdict", "")).upper()
+        avg = d.get("weighted_avg")
+        out.append(
+            {
+                "name": "review_aggregation.json",
+                "label": "Review panel",
+                "ok": verdict not in {"REJECT", "MECHANISM_FAIL"},
+                "note": f"{verdict}" + (f" · {avg:.2f}/10" if isinstance(avg, (int, float)) else ""),
+            }
+        )
+
+    return out
+
+
+#: The outputs a person actually wants to read, most-wanted first.
+_READABLE: tuple[tuple[str, str, bool], ...] = (
+    ("paper_draft.pdf", "Read the paper", True),
+    ("paper_draft.tex", "LaTeX source", False),
+    ("abstract.tex", "Abstract", False),
+    ("data_summary.md", "Data summary", False),
+    ("identification_strategy.md", "Identification strategy", False),
+    ("review_aggregation.json", "Review verdict", False),
+)
+
+
+def _reading_list(artifacts: list[str]) -> list[dict[str, Any]]:
+    """Surface the paper and the few documents worth opening directly."""
+    present = set(artifacts)
+    return [{"path": path, "label": label, "primary": primary} for path, label, primary in _READABLE if path in present]
+
+
+def _artifact_groups(
+    workspace: Path,
+    artifacts: list[str],
+    mode: str = "",
+    methodology: str = "",
+) -> list[dict[str, Any]]:
+    """Sort a paper's files under the phase that produced them, with a status.
+
+    A declared artifact that is absent is reported as a missing row rather than
+    left out, because "the drafter never wrote paper_draft.tex" is the single
+    most useful thing this page can tell you.
+    """
+    from ..core.specialists.registry import SPECIALIST_ARTIFACTS, SPECIALIST_SIDECAR_ARTIFACTS
+
+    present = set(artifacts)
+    sizes: dict[str, int] = {}
+    for rel in artifacts:
+        try:
+            sizes[rel] = (workspace / rel).stat().st_size
+        except OSError:
+            sizes[rel] = 0
+
+    claimed: set[str] = set()
+    groups: list[dict[str, Any]] = []
+
+    # single_pass skips the iterative loop entirely; an empirical paper never
+    # dispatches the theory specialist. Phases that were never meant to run are
+    # reported as such rather than as missing output.
+    iterative = (mode or "").lower() == "iterative"
+    empirical = (methodology or "empirical").lower() == "empirical"
+    skipped_phases = set() if iterative else {"Self-attack and polish"}
+    skipped_specialists = {"theory_specialist"} if empirical else set()
+
+    for phase_name, specialists in _PHASES:
+        declared: list[str] = []
+        for sp in specialists:
+            if sp in skipped_specialists:
+                continue
+            if art := SPECIALIST_ARTIFACTS.get(sp):
+                declared.append(art)
+            declared.extend(SPECIALIST_SIDECAR_ARTIFACTS.get(sp, []))
+
+        rows: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for rel in declared:
+            if rel in seen:
+                continue
+            seen.add(rel)
+            if rel in present:
+                claimed.add(rel)
+                empty = sizes.get(rel, 0) == 0
+                rows.append(
+                    {
+                        "p": rel,
+                        "b": sizes.get(rel, 0),
+                        "status": "fail" if empty else "pass",
+                        "note": "written but empty" if empty else "",
+                    }
+                )
+            else:
+                rows.append({"p": rel, "b": 0, "status": "missing", "note": "not written"})
+
+        if not rows:
+            continue
+        if phase_name in skipped_phases:
+            groups.append(
+                {
+                    "name": phase_name,
+                    "status": "none",
+                    "note": f"not run in {mode or 'this'} mode",
+                    "files": [dict(r, status="none", note="phase not run") for r in rows],
+                }
+            )
+            continue
+        failed = [r for r in rows if r["status"] != "pass"]
+        groups.append(
+            {
+                "name": phase_name,
+                "status": "fail" if failed else "pass",
+                "note": f"{len(rows) - len(failed)}/{len(rows)} produced",
+                "files": rows,
+            }
+        )
+
+    gates = _gate_verdicts(workspace)
+    if gates:
+        rows = []
+        for g in gates:
+            claimed.add(g["name"])
+            rows.append(
+                {
+                    "p": g["name"],
+                    "b": sizes.get(g["name"], 0),
+                    "status": "pass" if g["ok"] else "fail",
+                    "note": f"{g['label']}: {g['note']}",
+                }
+            )
+        groups.append(
+            {
+                "name": "Gates",
+                "status": "fail" if any(r["status"] != "pass" for r in rows) else "pass",
+                "note": f"{sum(1 for r in rows if r['status'] == 'pass')}/{len(rows)} passed",
+                "files": rows,
+            }
+        )
+
+    rest = sorted(present - claimed)
+    if rest:
+        groups.append(
+            {
+                "name": "Working files",
+                "status": "none",
+                "note": f"{len(rest)} files",
+                "files": [{"p": r, "b": sizes.get(r, 0), "status": "none", "note": ""} for r in rest],
+            }
+        )
+
+    return groups
 
 
 @app.get("/htmx/papers/{paper_id}/live", response_class=HTMLResponse)
@@ -1373,7 +1626,30 @@ async def stream_artifact(paper_id: str, path: str) -> FileResponse:
         raise HTTPException(status_code=404, detail="Artifact not found")
 
     mtype, _ = mimetypes.guess_type(str(target))
-    return FileResponse(str(target), media_type=mtype or "application/octet-stream", filename=target.name)
+    # Show what a browser can show. Without this every artifact downloads,
+    # including the compiled paper — which made the paper unreadable from the
+    # page that lists it.
+    #
+    # HTML and SVG are deliberately absent: both execute script in this origin,
+    # and artifacts are written by a model from untrusted inputs.
+    inline_types = {
+        "application/pdf",
+        "application/json",
+        "text/plain",
+        "text/markdown",
+        "text/csv",
+        "image/png",
+        "image/jpeg",
+        "image/gif",
+        "image/webp",
+    }
+    disposition = "inline" if mtype in inline_types else "attachment"
+    return FileResponse(
+        str(target),
+        media_type=mtype or "application/octet-stream",
+        filename=target.name,
+        content_disposition_type=disposition,
+    )
 
 
 # Accepted BYOD file extensions. Limits applied to keep workspace cheap to mount.
