@@ -73,3 +73,22 @@ matrix-*/
 # rule that drops part of it (*.log caught code/scratch/paper_draft.log) ships a
 # bundle that verifies only on the machine that produced it.
 !examples/showcase/**
+
+# ...but never secrets, keys or databases, even inside the bundle. The negation
+# above is last-match-wins and would otherwise switch off every rule in this
+# file for that path: a test repo with the earlier version staged
+# examples/showcase/.env, id_rsa and data.db on `git add -A`. A bundle is an
+# artifact, not an excuse to commit a credential.
+examples/showcase/**/.env
+examples/showcase/**/.env.*
+examples/showcase/**/*.pem
+examples/showcase/**/*.key
+examples/showcase/**/*_rsa
+examples/showcase/**/*_rsa.pub
+examples/showcase/**/id_*
+examples/showcase/**/*.db
+examples/showcase/**/*.sqlite
+examples/showcase/**/*.sqlite-*
+examples/showcase/**/credentials*
+examples/showcase/**/*secret*
+examples/showcase/**/*token*
