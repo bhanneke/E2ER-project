@@ -23,10 +23,12 @@ class GitHubClient:
         self._gh = Github(token)
         self._username = username
         # Github(token).get_user() with no argument always returns
-        # AuthenticatedUser at runtime, but PyGithub's stubs widen to
-        # NamedUser | AuthenticatedUser. cast() narrows for mypy without
-        # breaking tests that mock the user with MagicMock.
-        self._user = cast(AuthenticatedUser, self._gh.get_user())
+        # AuthenticatedUser at runtime, but PyGithub's stubs disagree across
+        # versions: <=2.9 widens to NamedUser | AuthenticatedUser (the cast is
+        # required), 2.10 narrows it (the cast is redundant, and
+        # warn_redundant_casts makes that an error). The ignore holds for both
+        # — warn_unused_ignores is off precisely for this kind of drift.
+        self._user = cast(AuthenticatedUser, self._gh.get_user())  # type: ignore[redundant-cast]
 
     def create_paper_repo(
         self,
