@@ -17,6 +17,11 @@ def main() -> None:
     serve.add_argument("--host", default="127.0.0.1", help="Bind host (default: 127.0.0.1)")
     serve.add_argument("--port", type=int, default=8280, help="Port (default: 8280)")
     serve.add_argument("--reload", action="store_true", help="Auto-reload on code changes (dev mode)")
+    serve.add_argument(
+        "--no-browser",
+        action="store_true",
+        help="Do not open a browser (for servers, containers and CI).",
+    )
 
     subparsers.add_parser("migrate", help="Run Postgres migrations (sql/001–010); SQLite auto-initializes")
 
@@ -443,12 +448,87 @@ def main() -> None:
         _migrate_main()
 
     else:
-        import uvicorn
+        sys.exit(
+            _serve(
+                host=getattr(args, "host", "127.0.0.1"),
+                port=getattr(args, "port", 8280),
+                reload=getattr(args, "reload", False),
+                no_browser=getattr(args, "no_browser", False),
+            )
+        )
 
-        host = getattr(args, "host", "127.0.0.1")
-        port = getattr(args, "port", 8280)
-        reload = getattr(args, "reload", False)
+
+def _already_serving(host: str, port: int) -> bool:
+    """Is an E2ER already answering there?
+
+    Checked against the API rather than the raw socket, so an unrelated service
+    on the port is not mistaken for ours and silently reused.
+    """
+    try:
+        import httpx
+
+        r = httpx.get(f"http://{host}:{port}/api/papers", timeout=1.5)
+        return r.status_code == 200
+    except Exception:  # noqa: BLE001 — any failure means "not ours"
+        return False
+
+
+def _open_browser(url: str) -> None:
+    """Open the dashboard, a moment after the server is up.
+
+    Best-effort: a headless machine, a container or a locked-down desktop has no
+    browser to open, and that is not a reason to fail a server start.
+    """
+    import threading
+    import webbrowser
+
+    def _later() -> None:
+        import time
+
+        time.sleep(1.2)
+        try:
+            webbrowser.open(url)
+        except Exception:  # noqa: BLE001
+            pass
+
+    threading.Thread(target=_later, daemon=True).start()
+
+
+def _serve(*, host: str, port: int, reload: bool, no_browser: bool) -> int:
+    """Run the dashboard. Returns the process exit code."""
+    import uvicorn
+
+    url = f"http://{host}:{port}"
+
+    if _already_serving(host, port):
+        print(f"E2ER is already running at {url} — opening it.")
+        if not no_browser:
+            import webbrowser
+
+            try:
+                webbrowser.open(url)
+            except Exception:  # noqa: BLE001
+                pass
+        return 0
+
+    if not no_browser and not reload:
+        _open_browser(url)
+
+    print(f"E2ER dashboard → {url}   (ctrl-c to stop)")
+    try:
         uvicorn.run("src.api.app:app", host=host, port=port, reload=reload)
+    except SystemExit as e:  # uvicorn raises this on a bind failure
+        code = e.code if isinstance(e.code, int) else 1
+        if code:
+            print(
+                f"Could not start on {url} — something else is using port {port}.\nTry:  e2er serve --port {port + 1}",
+                file=sys.stderr,
+            )
+        return code
+    except OSError as e:
+        print(f"Could not start on {url}: {e}", file=sys.stderr)
+        return 1
+    return 0
 
 
 if __name__ == "__main__":

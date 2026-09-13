@@ -248,6 +248,71 @@ async def _tuple_is_proven(model: str, methodology: str, mode: str) -> bool:
     return row is not None
 
 
+#: Statuses that mean "work is in flight". After a restart none of them can be
+#: true, because the process that was doing the work is gone.
+_ORPHANABLE = (
+    "idea",
+    "designing",
+    "data_collection",
+    "in_progress",
+    "ceiling_check",
+    "self_attack",
+    "polish",
+    "review",
+    "revision",
+)
+
+
+@app.on_event("startup")
+async def _reconcile_orphans() -> None:
+    """Mark papers stranded by a stopped server as paused rather than running.
+
+    Best-effort: a database that is not reachable at boot must not stop the
+    server from starting, and a paper wrongly left alone is a smaller problem
+    than a dashboard that will not load.
+    """
+    from ..db.client import execute, fetch_all
+    from ..db.events import log_event
+
+    try:
+        placeholders = ", ".join(f"%(s{i})s" for i in range(len(_ORPHANABLE)))
+        params = {f"s{i}": s for i, s in enumerate(_ORPHANABLE)}
+        rows = await fetch_all(f"SELECT id, status FROM papers WHERE status IN ({placeholders})", params)
+    except Exception as e:  # noqa: BLE001
+        logger.debug("orphan reconciliation skipped (%s)", e)
+        return
+
+    if not rows:
+        return
+
+    for row in rows:
+        paper_id = str(row.get("id") or "")
+        was = str(row.get("status") or "")
+        if not paper_id:
+            continue
+        try:
+            await execute(
+                "UPDATE papers SET status = %(new)s WHERE id = %(id)s",
+                {"new": "paused", "id": paper_id},
+            )
+            await log_event(
+                paper_id,
+                "paper_paused",
+                stage=was,
+                payload={
+                    "reason": "interrupted — the server stopped while this paper was running",
+                    "previous_status": was,
+                },
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.debug("could not reconcile paper %s: %s", paper_id, e)
+
+    logger.info(
+        "Reconciled %d interrupted paper(s) to paused — resume from the dashboard or `e2er resume <id>`",
+        len(rows),
+    )
+
+
 @app.on_event("startup")
 async def _log_config() -> None:
     s = get_settings()

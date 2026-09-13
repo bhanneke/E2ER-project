@@ -72,8 +72,11 @@ def _check_integrity(bundle: Path) -> Check:
             missing.append(rel)
         elif _sha256(p) != meta.get("sha256"):
             mismatched.append(rel)
+    # provenance.json cannot inventory itself; report.html is a rendering of the
+    # bundle written after it, and asserts nothing the hashed files do not.
+    _NOT_EVIDENCE = {"provenance.json", "report.html"}
     on_disk = {
-        p.relative_to(bundle).as_posix() for p in bundle.rglob("*") if p.is_file() and p.name != "provenance.json"
+        p.relative_to(bundle).as_posix() for p in bundle.rglob("*") if p.is_file() and p.name not in _NOT_EVIDENCE
     }
     extra = sorted(on_disk - set(files))
     if missing or mismatched or extra:

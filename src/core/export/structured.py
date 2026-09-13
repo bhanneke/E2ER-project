@@ -260,5 +260,13 @@ def export_paper(workspace: Path, dest_root: Path, *, date_str: str, slug: str |
 
     write_provenance(out, manifest, exported_at=date_str)
 
+    # The shareable view, written last because it summarises the provenance
+    # graph. Deliberately not inventoried: it asserts nothing of its own, every
+    # figure in it is read from a hashed file beside it, and `e2er verify`
+    # exempts it for that reason.
+    from .report import write_report
+
+    write_report(out, manifest)
+
     logger.info("Exported paper %s → %s", workspace.name, out)
     return out
