@@ -102,3 +102,44 @@ def test_run_matrix_accepts_rq_option(monkeypatch):
     assert exc.value.code == 0
     assert seen["rq"] == "does X cause Y"
     assert seen["backends"] == ["codex"]
+
+
+# ── the API port `run` talks to ──────────────────────────────────────────────
+
+
+def test_run_honours_the_configured_port(monkeypatch):
+    """cli_run hardcoded 8280 for both the reachability probe and the uvicorn
+    spawn, so PORT in .env did nothing.
+
+    The consequence is worse than an ignored setting: if anything already
+    listens on 8280 the probe succeeds and `e2er run` submits the paper to it —
+    another project's server, or an older E2ER whose process predates the last
+    upgrade. uvicorn runs without --reload, so that server serves stale code and
+    the run silently exercises a version the user no longer has installed.
+    """
+    from src import cli_run
+
+    monkeypatch.delenv("E2ER_API_URL", raising=False)
+    monkeypatch.setattr(cli_run, "_api_port", lambda: 8391)
+
+    assert cli_run._api_root() == "http://127.0.0.1:8391"
+
+
+def test_explicit_api_url_still_wins(monkeypatch):
+    """The escape hatch has to keep working — it is how a user points `run` at
+    a server they started themselves."""
+    from src import cli_run
+
+    monkeypatch.setenv("E2ER_API_URL", "http://127.0.0.1:8399/")
+    assert cli_run._api_root() == "http://127.0.0.1:8399"
+
+
+def test_api_port_falls_back_when_settings_are_unreadable(monkeypatch):
+    """A broken config must not stop `run` from working at the default."""
+    from src import cli_run
+
+    def _boom():
+        raise RuntimeError("unreadable .env")
+
+    monkeypatch.setattr("src.config.get_settings", _boom)
+    assert cli_run._api_port() == 8280
