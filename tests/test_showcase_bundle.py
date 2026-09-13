@@ -103,6 +103,33 @@ def test_the_numbers_gate_actually_traced_cells():
     assert not report.critical_mismatches
 
 
+def test_every_bundle_file_is_committed():
+    """A file in provenance.json that git does not track fails for everyone but
+    the person who built the bundle.
+
+    .gitignore's `*.log` swallowed code/scratch/paper_draft.log: integrity
+    passed locally against the working tree and failed in CI against a fresh
+    checkout. Any future run emitting a .db, .aux or .pdf would do the same, so
+    the check is on the whole inventory rather than that one extension.
+    """
+    import subprocess
+
+    repo = BUNDLE.parents[1]
+    listed = set(json.loads((BUNDLE / "provenance.json").read_text(encoding="utf-8"))["files"])
+
+    out = subprocess.run(
+        ["git", "ls-files", "-z", "examples/showcase"],
+        cwd=repo, capture_output=True, text=True, check=False,
+    )
+    if out.returncode != 0:
+        pytest.skip("not a git checkout")
+    prefix = "examples/showcase/"
+    tracked = {p[len(prefix) :] for p in out.stdout.split("\0") if p.startswith(prefix)}
+
+    untracked = sorted(listed - tracked)
+    assert not untracked, f"provenance lists files git does not track: {untracked}"
+
+
 def test_the_bundle_verifies_clean():
     """The whole point of shipping it: a stranger can check it offline."""
     checks = _checks()
