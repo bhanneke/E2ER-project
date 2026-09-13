@@ -7,6 +7,7 @@ import io
 import json
 import mimetypes
 import tarfile
+from datetime import UTC
 from pathlib import Path
 from typing import Any
 
@@ -1283,6 +1284,43 @@ def _workflow_inventory() -> dict[str, Any]:
     }
 
 
+async def _preflight() -> dict[str, Any]:
+    """Run the same checks `e2er doctor` runs."""
+    from ..doctor import FAIL, PASS, SKIP, run_doctor
+
+    try:
+        checks = await run_doctor(get_settings())
+    except Exception as e:  # noqa: BLE001 — a broken check must not break the page
+        logger.warning("preflight failed to run: %s", e)
+        return {"checks": [], "ready": False, "error": str(e)[:200], "n_fail": 0}
+
+    rows = [{"name": c.name, "status": c.status, "detail": c.detail} for c in checks]
+    blockers = [
+        c for c in checks if c.status == FAIL and c.name.startswith(("backend.", "db", "skills.", "workspace."))
+    ]
+    return {
+        "checks": rows,
+        "ready": not blockers,
+        "blockers": [c.name for c in blockers],
+        "n_pass": sum(1 for c in checks if c.status == PASS),
+        "n_skip": sum(1 for c in checks if c.status == SKIP),
+        "n_fail": sum(1 for c in checks if c.status == FAIL),
+        "error": "",
+    }
+
+
+@app.get("/preflight", response_class=HTMLResponse)
+async def dashboard_preflight(request: Request) -> Any:
+    """Is this machine able to run a paper?"""
+    return templates.TemplateResponse(request, "preflight.html", await _preflight())
+
+
+@app.get("/htmx/preflight-banner", response_class=HTMLResponse)
+async def preflight_banner(request: Request) -> Any:
+    """Small banner for the new-paper form, so the answer arrives before the ask."""
+    return templates.TemplateResponse(request, "_preflight_banner.html", await _preflight())
+
+
 @app.get("/workflow", response_class=HTMLResponse)
 async def dashboard_workflow(request: Request) -> Any:
     """Which specialists exist, what they are told, and what nothing loads."""
@@ -1608,6 +1646,93 @@ def _artifact_groups(
     return groups
 
 
+#: Phases in the order the runner executes them, for the progress strip.
+_PHASE_ORDER = (
+    "initial",
+    "iterative",
+    "estimation_gate",
+    "self_attack",
+    "polish",
+    "review",
+    "revision",
+    "replication",
+)
+
+
+def _progress(events: list[dict[str, Any]], paper: dict[str, Any]) -> dict[str, Any]:
+    """What is running now, for how long, and which phases are done.
+
+    `events` arrives newest-first. A specialist with a start and no matching
+    end is still working; the same holds for phases.
+    """
+    from datetime import datetime
+
+    def _ts(value: Any) -> datetime | None:
+        if isinstance(value, datetime):
+            return value if value.tzinfo else value.replace(tzinfo=UTC)
+        if isinstance(value, str):
+            try:
+                parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            except ValueError:
+                return None
+            return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+        return None
+
+    now = datetime.now(UTC)
+    ordered = list(reversed(events))  # oldest first
+
+    running: dict[str, datetime | None] = {}
+    finished_phases: list[str] = []
+    open_phases: list[str] = []
+    first_ts: datetime | None = None
+
+    for e in ordered:
+        ts = _ts(e.get("created_at"))
+        if first_ts is None and ts is not None:
+            first_ts = ts
+        etype = str(e.get("event_type") or "")
+        who = e.get("specialist")
+        stage = str(e.get("stage") or "")
+
+        if etype == "specialist_start" and who:
+            running[str(who)] = ts
+        elif etype in {"specialist_end", "specialist_failed"} and who:
+            running.pop(str(who), None)
+        elif etype == "phase_start" and stage:
+            if stage not in open_phases:
+                open_phases.append(stage)
+        elif etype == "phase_end" and stage:
+            if stage in open_phases:
+                open_phases.remove(stage)
+            if stage not in finished_phases:
+                finished_phases.append(stage)
+
+    def _mins(since: datetime | None) -> int | None:
+        if since is None:
+            return None
+        return max(0, int((now - since).total_seconds() // 60))
+
+    active = [{"name": name, "minutes": _mins(started)} for name, started in sorted(running.items())]
+
+    terminal = str(paper.get("status") or "") in {"completed", "failed", "cancelled", "rejected", "paused"}
+
+    phases = [
+        {
+            "name": p,
+            "state": "done" if p in finished_phases else ("running" if p in open_phases else "pending"),
+        }
+        for p in _PHASE_ORDER
+        if p in finished_phases or p in open_phases or not terminal
+    ]
+
+    return {
+        "active": active,
+        "elapsed_min": _mins(first_ts),
+        "phases": phases,
+        "terminal": terminal,
+    }
+
+
 @app.get("/htmx/papers/{paper_id}/live", response_class=HTMLResponse)
 async def paper_live_fragment(request: Request, paper_id: str = Depends(_validate_uuid)) -> Any:
     """HTML fragment for the live-updating section of paper.html.
@@ -1656,6 +1781,7 @@ async def paper_live_fragment(request: Request, paper_id: str = Depends(_validat
         "_live.html",
         {
             "paper": paper,
+            "progress": _progress(list(events or []), dict(paper)),
             "cost_spent": cost_spent,
             "cost_pct": cost_pct,
             "events": events or [],

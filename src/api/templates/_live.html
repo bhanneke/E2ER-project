@@ -23,6 +23,36 @@
   {% endif %}
 </div>
 
+{% if progress %}
+  <div class="prog">
+    {% if progress.active %}
+      <div class="prog-now">
+        {% for a in progress.active %}
+          <span class="spinner" aria-hidden="true"></span>
+          <span class="prog-who">{{ a.name }}</span>
+          {% if a.minutes is not none %}<span class="muted">running {{ a.minutes }} min</span>{% endif %}
+        {% endfor %}
+      </div>
+    {% elif not progress.terminal %}
+      <div class="prog-now"><span class="muted">between steps…</span></div>
+    {% endif %}
+
+    {% if progress.elapsed_min is not none %}
+      <div class="muted prog-elapsed">{{ progress.elapsed_min }} min since the run started</div>
+    {% endif %}
+
+    {% if progress.phases %}
+      <ol class="phases">
+        {% for p in progress.phases %}
+          <li class="ph ph-{{ p.state }}">
+            <span class="ph-dot" aria-hidden="true"></span>{{ p.name }}
+          </li>
+        {% endfor %}
+      </ol>
+    {% endif %}
+  </div>
+{% endif %}
+
 {% if paper.last_error %}
   <p class="error">{{ paper.last_error }}</p>
 {% endif %}

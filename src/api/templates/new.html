@@ -4,6 +4,10 @@
 {% block content %}
 <h1>New paper</h1>
 
+<div hx-get="/htmx/preflight-banner" hx-trigger="load" hx-swap="innerHTML">
+  <div class="pf-banner">Checking this machine…</div>
+</div>
+
 <form method="post" action="/papers" class="paper-form">
   <label>
     <span>Title</span>
@@ -21,8 +25,8 @@
     <label>
       <span>Mode</span>
       <select name="mode">
-        <option value="iterative" selected>iterative — full loop with self-attack & polish</option>
-        <option value="single_pass">single_pass — fast draft</option>
+        <option value="single_pass" selected>single_pass — one pass, about an hour</option>
+        <option value="iterative">iterative — adds self-attack &amp; polish, considerably longer</option>
       </select>
     </label>
 
