@@ -7,6 +7,78 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] — 2026-09-13
+
+### A bibliography exists before the drafter writes
+
+Literature acquisition runs as a pipeline stage, before any specialist, and
+writes `literature.bib` from the paper's own research question and title. It
+self-skips when a bibliography already exists, so a researcher's own library
+always wins.
+
+It is a stage rather than a tool deliberately. The drafter already had a
+`save_bibtex` tool and a skill file telling it to use one — and `tool_loop`
+ignores SDK tools on every CLI backend, so the drafter cited from memory
+against a `references.bib` that did not exist. Granting a capability and
+instructing a model to use it does not make it used.
+
+Also fixes the OpenAlex provider, which returned 400 for any query containing
+`?` or `*`. A research question normally ends in `?`, so the provider was
+failing outright and acquisition silently fell through to a weaker source.
+
+### Verification now checks what it claims to
+
+Four defects, found by producing the first completed run rather than by
+reading the code:
+
+* **The export dropped `tables/`.** The renderer writes one `.tex` per table
+  and the draft `\input`s each; `figures/` and `replication/` were copied and
+  `tables/` was not, so the bundle carried two `.tex` files against thirteen
+  `\input` directives and could not compile.
+* **The numbers gate never saw them.** It scanned only the draft, found no
+  `tabular`, and reported a pass having traced zero cells — a green tick
+  indistinguishable from one that checked every number. Expanding `\input`
+  before scanning takes it from 0 traced cells to 346.
+* **The provenance graph was empty.** Edges are derived from the run's gate
+  report, which recorded no matched cells, so the bundle asserted that every
+  number traces to a file while carrying no trace for any number. Now 385
+  edges: 346 `table_cell`, 33 citation, 5 figure, 1 estimation.
+* **Severity was decided by proximity.** A cell's fate depended on distance to
+  the closest value anywhere in the source JSON, so a tampered cell was graded
+  "major" rather than critical and did not gate.
+
+New `tables` check: `e2er verify` re-renders the declared tables with the
+renderer itself and compares bytes. A difference means the shipped table is
+not what the sidecars produce, which needs no heuristic to answer. Coverage is
+part of the verdict — tables the paper includes that the renderer does not
+produce are named, not implied.
+
+`integrity` now fails a bundle that ships rendered tables and records no
+`table_cell` edge, and reports how many cells the graph traces.
+
+### `examples/showcase/`
+
+A real bundle, from the first completed run under `--governance full`: a DiD
+on a coin-month panel around the January 2024 spot-ETF approval, with an event
+study, a daily rolling-window DiD, a returns-level triple difference, and Chow
+and Bai-Perron break tests. 69 files hash-verified, 346 traced cells, 33/33
+citations. The test suite now asserts against it rather than against fixtures
+the developer invented — which is how all four defects above survived 1341
+tests.
+
+### Fixed
+
+* SSRF guard rejected public hosts on NAT64/DNS64 networks, where a public
+  hostname resolves to `64:ff9b::<ipv4>` and Python reports the whole prefix
+  as reserved. NAT64 and IPv4-mapped addresses are now unwrapped to the
+  address the packet actually reaches — which also tightens the guard, since
+  `64:ff9b::192.168.0.1` is blocked on the merits of the embedded address.
+* `e2er doctor` reported an empty fallback directory as an active literature
+  mode, appending "no PDFs/.bib found" to an otherwise-clean pass.
+* Version strings drifted: `CITATION.cff` and the README BibTeX still said
+  0.8.0, two releases behind PyPI.
+
+
 ### The researcher workflow — bring your own data and papers, branch across models, verify everything
 
 This is the release's headline: E2ER stops being "a pipeline you configure"

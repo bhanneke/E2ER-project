@@ -37,3 +37,31 @@ def test_allows_public_literal_ip():
 def test_rejects_non_http_scheme():
     with pytest.raises(ValueError, match="scheme"):
         _check_url("file:///etc/passwd")
+
+
+def test_allows_public_host_behind_nat64():
+    """On a NAT64/DNS64 network a public host resolves to 64:ff9b::<ipv4>.
+
+    Python reports the whole prefix as reserved, so the guard refused a real
+    public address: `arxiv.org resolves to non-public address
+    64:ff9b::9765:c32a`, whose embedded IPv4 is 151.101.195.42. Caught by
+    running `e2er doctor` from an installed wheel on such a network.
+    """
+    # 64:ff9b::9765:c32a == 151.101.195.42
+    _check_url("https://[64:ff9b::9765:c32a]/paper.pdf")
+
+
+def test_still_blocks_a_private_address_behind_nat64():
+    """Unwrapping must tighten the guard, not open it.
+
+    64:ff9b::192.168.0.1 names a private host; it has to stay blocked, now on
+    the merits of the embedded address rather than by accident of the prefix
+    being reserved.
+    """
+    with pytest.raises(ValueError, match="SSRF"):
+        _check_url("https://[64:ff9b::c0a8:1]/admin")
+
+
+def test_still_blocks_an_ipv4_mapped_loopback():
+    with pytest.raises(ValueError, match="SSRF"):
+        _check_url("http://[::ffff:127.0.0.1]/admin")

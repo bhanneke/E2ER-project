@@ -565,7 +565,7 @@ The automated research space is developing quickly. Two projects most relevant t
   title        = {{E2ER: End-to-End Researcher, An Open-Source Pipeline
                    for Automated Empirical Research}},
   year         = {2026},
-  version      = {0.8.0},
+  version      = {0.9.0},
   url          = {https://github.com/bhanneke/E2ER-project},
   doi          = {10.5281/zenodo.20187238},
   license      = {MIT},

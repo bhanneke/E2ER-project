@@ -28,7 +28,33 @@ _PRIVATE_RANGES = [
 _ALLOWED_SCHEMES = {"http", "https"}
 
 
+#: Well-known prefix for NAT64 translation (RFC 6052). On a NAT64/DNS64
+#: network every public IPv4 host resolves to 64:ff9b::<ipv4>.
+_NAT64_PREFIX = ipaddress.ip_network("64:ff9b::/96")
+
+
+def _unwrap(
+    addr: ipaddress.IPv4Address | ipaddress.IPv6Address,
+) -> ipaddress.IPv4Address | ipaddress.IPv6Address:
+    """Resolve an address to the destination it actually names.
+
+    Python reports the whole NAT64 prefix as reserved, so on such a network a
+    legitimate public host is refused — the user sees working DNS, a working
+    browser, and a tool that will not fetch. Unwrapping also applies the real
+    rules to the embedded address, so 64:ff9b::192.168.0.1 is blocked as the
+    private address it is rather than as a reserved prefix.
+    """
+    if isinstance(addr, ipaddress.IPv6Address):
+        mapped = addr.ipv4_mapped
+        if mapped is not None:
+            return mapped
+        if addr in _NAT64_PREFIX:
+            return ipaddress.IPv4Address(int(addr) & 0xFFFFFFFF)
+    return addr
+
+
 def _is_blocked(addr: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    addr = _unwrap(addr)
     return (
         addr.is_private
         or addr.is_loopback
