@@ -119,7 +119,10 @@ def test_every_bundle_file_is_committed():
 
     out = subprocess.run(
         ["git", "ls-files", "-z", "examples/showcase"],
-        cwd=repo, capture_output=True, text=True, check=False,
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=False,
     )
     if out.returncode != 0:
         pytest.skip("not a git checkout")
