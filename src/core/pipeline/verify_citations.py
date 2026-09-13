@@ -89,9 +89,30 @@ class CitationIntegrityReport:
     checks: list[CitationCheck] = field(default_factory=list)
     skipped_reason: str | None = None
     strict: bool = False
+    #: Where the bibliography came from, or None when the draft had none at all.
+    #: Distinguishes "checked against a bibliography and found gaps" from
+    #: "there was no bibliography", which are very different claims about a
+    #: draft that reports missing_in_bib > 0.
+    bibliography_source: str | None = None
+
+    @property
+    def conclusive(self) -> bool:
+        """Did the gate reach a definite verdict on every cite it looked at?
+
+        `passed` is the gating decision and, in warn mode, stays True with any
+        number of unverifiable cites — deliberately, because working papers
+        and posters legitimately aren't indexed. That makes `passed` alone
+        unsafe to read as "the citations are sound": the 2026-08-05 validation
+        cell reported passed=True with 11 of 18 cites unverifiable. This
+        carries the missing half of that sentence. Derived, not stored, so it
+        cannot drift from the counts it summarises.
+        """
+        return self.total_cites > 0 and self.unverifiable == 0
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        # `conclusive` is a property, so asdict() misses it — and the saved
+        # JSON is what reviewers and the experiment harvester read.
+        return {**asdict(self), "conclusive": self.conclusive}
 
     @property
     def unverifiable_checks(self) -> list[CitationCheck]:
@@ -580,10 +601,42 @@ async def verify(
         for k in bibitem_keys:
             bib.setdefault(k, {"title": "", "year": "", "doi": ""})
 
-    if not bib:
-        report.skipped_reason = f"no bibliography source found (.bib at {bib_path} missing and no \\bibitem in draft)"
-        logger.warning("verify_citations: %s", report.skipped_reason)
-        return report
+    if bib:
+        report.bibliography_source = str(bib_path) if bib_path.is_file() else "\\bibitem entries in draft"
+    else:
+        # A draft that cites with NO bibliography at all is not "unmeasurable".
+        # Nothing can verify those keys, and LaTeX emits an undefined reference
+        # for every one of them, so the draft does not compile.
+        #
+        # Note what this is NOT evidence of. In the 2026-09-01 repeats cell
+        # (paper 7274dddc, 14 keys; ee229dca, 19) the cited works are largely
+        # REAL papers recalled from model memory — parkinson1980extreme and
+        # bendavid2018etfs both exist; cameron2008bootstrap is even present in
+        # examples/e2er_v1_bitcoin_institutionalization/references.bib. The
+        # defect is that no bibliography was ever materialised for the run, not
+        # that the model invented sources. `missing_in_bib` means "no entry
+        # backs this key", which is exactly what happened; do not read it as
+        # "fabricated".
+        #
+        # Skipping here reported passed=True over all of them and zeroed
+        # `missing_in_bib` in the experiment's fabrication count — the same
+        # skipped-is-not-verified error the `conclusive` property above was
+        # added to fix. A check that examined nothing is not a check that found
+        # nothing.
+        #
+        # So there is no early return: every cite key falls through to
+        # `_bounded`, which already classifies a key absent from `bib` as
+        # missing_in_bib, and the verdict below fails. `bibliography_source`
+        # stays None to record that the bibliography was absent rather than
+        # merely incomplete. Whether that failure blocks is the governance
+        # regime's call (`_governance_enforces("citations")`), unchanged here.
+        logger.warning(
+            "verify_citations: draft cites %d key(s) but no bibliography source exists "
+            "(.bib at %s missing and no \\bibitem in draft) — every cite reports as "
+            "missing_in_bib",
+            len(cite_keys),
+            bib_path,
+        )
 
     report.total_cites = len(cite_keys)
 
@@ -686,8 +739,16 @@ def render_human(report: CitationIntegrityReport) -> str:
             f"\n  · Bibliography has {len(report.bibbed_uncited)} entries that are never cited "
             "(housekeeping — not a failure)."
         )
-    if report.passed:
+    if report.passed and report.conclusive:
         lines.append("\n✅ Passed — every cited key resolves and exists in a verifier.")
+    elif report.passed:
+        # Warn mode with unverifiable cites. Not a clean bill of health: say
+        # what was actually established rather than printing a bare ✅.
+        lines.append(
+            f"\n⚠️  Passed the gate (warn mode) but INCONCLUSIVE — "
+            f"{report.unverifiable} of {report.total_cites} cites could not be verified. "
+            "Set E2ER_STRICT_CITATION_INTEGRITY=1 to fail on these."
+        )
     elif report.missing_in_bib:
         lines.append("\n❌ Failed — cited keys missing from references.bib (LaTeX would also fail).")
     else:

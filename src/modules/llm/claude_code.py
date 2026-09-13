@@ -71,6 +71,81 @@ _DEFAULT_ALLOWED_TOOLS = [
     "Bash(e2er-allium-query:*)",
 ]
 
+# Specialists that write an execution script (see EXECUTION_CONVENTIONS in
+# core/specialists/post_execution.py) additionally get `e2er-run`, so they can
+# run what they just wrote, read the traceback, and fix it — v1's write→run→fix
+# loop, which v3 dropped when it took code execution away from specialists.
+#
+# `e2er-run` is a gatekeeper like `e2er-data`: one workspace-relative .py file,
+# no arguments, no traversal, hard timeout. It is NOT `Bash(python3:*)` — that
+# would be arbitrary shell, and unlike v1 we have no container around it.
+#
+# The orchestrator still re-runs the final script through post_execution, so
+# provenance comes from that run, not from whatever the model did while
+# iterating.
+_SCRIPT_WRITING_SPECIALISTS = frozenset({"econometrics_specialist", "data_analyst"})
+_RUN_TOOL = "Bash(e2er-run:*)"
+
+# Specialists that author or repair table_spec.json. paper_drafter writes it as a
+# sidecar; section_writer repairs it when the render halt fires. Neither can
+# render, so both write blind — the same defect e2er-run fixed for scripts, one
+# artifact over. `e2er-check-tables` renders the spec and reports the unresolved
+# references plus the keys each column's object actually has.
+#
+# It takes no arguments and its subject is always cwd (the paper's workspace),
+# so there is nothing to smuggle. It is a report, not a gate: the runner
+# re-renders deterministically before the verify gate and compile, so provenance
+# still comes from that render.
+_SPEC_WRITING_SPECIALISTS = frozenset({"paper_drafter", "section_writer"})
+_CHECK_TABLES_TOOL = "Bash(e2er-check-tables:*)"
+
+# Specialists that discover literature or cite it. `tool_loop` below ignores the
+# `tools` argument entirely — the CLI only has its native set plus what is
+# allow-listed here — so LITERATURE_TOOLS (search_papers, save_bibtex, …) are
+# unreachable on every CLI backend. `e2er-lit` is their bridge, exactly as
+# `e2er-data` is the data module's.
+#
+# literature_scanner discovers and records; paper_drafter and section_writer
+# need `e2er-lit list` to know which keys are actually citable. In the
+# 2026-09-01 repeats cell none of them could reach any of it: no run wrote a
+# bibliography, and both reviewed drafts cited from memory.
+_LITERATURE_SPECIALISTS = frozenset({"literature_scanner", "paper_drafter", "section_writer"})
+_LIT_TOOL = "Bash(e2er-lit:*)"
+
+#: How much of a backend error to keep. 500 chars was too little: the
+#: 2026-08-03 pilot lost eight cells to an unexplained CLI failure because
+#: every copy of the message was clipped before the informative part. A
+#: traceback's payload is at the END, so keep both ends.
+_MAX_ERROR_CHARS = 4000
+
+
+def _clip(text: str, limit: int = _MAX_ERROR_CHARS) -> str:
+    """Trim to `limit`, keeping the head AND tail — errors bury the cause last."""
+    if len(text) <= limit:
+        return text
+    head = limit // 2
+    tail = limit - head
+    return f"{text[:head]}\n… [{len(text) - limit} chars omitted] …\n{text[-tail:]}"
+
+
+def allowed_tools_for(specialist: str | None) -> list[str]:
+    """CLI tool allowlist for a specialist.
+
+    Script writers get `e2er-run`; table_spec authors get `e2er-check-tables`;
+    literature discoverers and citers get `e2er-lit`. All three are the same
+    idea: reach the thing the SDK backends reach, and see what you wrote before
+    the orchestrator does.
+    """
+    tools = list(_DEFAULT_ALLOWED_TOOLS)
+    if specialist in _LITERATURE_SPECIALISTS:
+        tools.append(_LIT_TOOL)
+    if specialist in _SCRIPT_WRITING_SPECIALISTS:
+        tools.append(_RUN_TOOL)
+    if specialist in _SPEC_WRITING_SPECIALISTS:
+        tools.append(_CHECK_TABLES_TOOL)
+    return tools
+
+
 # `scripts/` (containing the wrappers) is inserted at the front of PATH
 # for the subprocess so the model can invoke them by bare name.
 _SCRIPTS_DIR = Path(__file__).resolve().parent.parent.parent.parent / "scripts"
@@ -134,8 +209,9 @@ class ClaudeCodeBackend(LLMBackend):
         prompt = "\n\n".join(prompt_parts)
 
         # Hint the CLI at allowed tools. Caller-supplied `tools` list is
-        # ignored (different naming scheme) — we just allow the standard set.
-        allowed_tools = _DEFAULT_ALLOWED_TOOLS
+        # ignored (different naming scheme) — we just allow the standard set,
+        # plus `e2er-run` for the specialists that write execution scripts.
+        allowed_tools = allowed_tools_for(specialist)
 
         # Per-specialist working directory: the CLI's `Write` tool resolves
         # relative paths against cwd. If we run the CLI from the project
@@ -341,13 +417,29 @@ async def _invoke_cli(
             timeout=timeout,
         )
     except TimeoutError:
+        # B-6. Since Python 3.11 `asyncio.TimeoutError` IS the builtin
+        # `TimeoutError`, which is also an `OSError` subclass — so a socket or
+        # pipe timeout raised from inside `communicate()` lands here too and
+        # used to be reported as the wall-clock deadline. That produced
+        # impossible messages during the 2026-08-03 pilot diagnosis ("timed
+        # out after 69s (limit 1800s)") and sent us looking for a hung CLI
+        # that was never hung. Distinguish by elapsed time: only the outer
+        # `wait_for` can fire at (or after) the limit.
         proc.kill()
         await proc.wait()
         elapsed = time.monotonic() - start
+        deadline_fired = elapsed >= timeout * 0.95
+        if deadline_fired:
+            error = f"Claude Code timed out after {elapsed:.0f}s (limit {timeout}s)"
+        else:
+            error = (
+                f"Claude Code I/O timeout after {elapsed:.0f}s, well inside the {timeout}s limit — "
+                "this is a pipe/socket timeout from the subprocess, not the wall-clock deadline"
+            )
         return ToolLoopResult(
             success=False,
             output="",
-            error=f"Claude Code timed out after {elapsed:.0f}s (limit {timeout}s)",
+            error=error,
             duration_seconds=elapsed,
         )
 
@@ -356,7 +448,7 @@ async def _invoke_cli(
     stderr = stderr_bytes.decode("utf-8", errors="replace")
 
     if proc.returncode != 0:
-        error_msg = stderr.strip() or f"Exit code {proc.returncode}: {stdout.strip()[:500]}"
+        error_msg = stderr.strip() or f"Exit code {proc.returncode}: {_clip(stdout.strip())}"
         return ToolLoopResult(
             success=False,
             output="",
@@ -372,10 +464,21 @@ async def _invoke_cli(
     # error_max_turns: process exits 0 but the agent didn't finish. The
     # CLI returns subtype="error_max_turns" or is_error=True.
     if raw.get("subtype") == "error_max_turns" or raw.get("is_error"):
+        # Include the CLI's OWN message. Without it this read "hit
+        # max_turns=80" for every is_error, including the eight pilot cells
+        # that failed after 0-4 output tokens with stop_reason="stop_sequence"
+        # — nothing like a turn-limit exhaustion, and we could not tell,
+        # because the one string that would have said so was dropped here and
+        # clipped to 500 chars everywhere else.
+        detail = _clip(str(raw.get("result") or raw.get("error") or "").strip())
+        subtype = raw.get("subtype", "is_error")
+        error = f"Claude Code returned {subtype} (max_turns={max_turns}, tool_calls={tool_calls_made})"
+        if detail:
+            error = f"{error}: {detail}"
         return ToolLoopResult(
             success=False,
             output=output_text,
-            error=f"Claude Code hit max_turns={max_turns} ({raw.get('subtype', 'is_error')})",
+            error=error,
             tool_calls_made=tool_calls_made,
             usage=usage,
             duration_seconds=duration,

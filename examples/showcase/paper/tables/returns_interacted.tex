@@ -1,0 +1,31 @@
+\begin{table}[t]
+\centering
+\begin{threeparttable}
+\caption{Bitcoin's equity loading before and after the listing, estimated from returns}
+\label{tab:returns_interacted}
+\begin{tabular}{lc}
+\toprule
+ & Daily Bitcoin returns \\
+\midrule
+$\hat\beta$: $r_{\mathrm{SPY}}$ (pre-period loading) & 1.4033*** \\
+ & (0.1327) \\
+$\hat\delta$: $r_{\mathrm{SPY}} \times$ Post & -0.4148* \\
+ & (0.2302) \\
+Post & 0.00139 \\
+ & (0.00183) \\
+Constant & -0.00101 \\
+ & (0.00140) \\
+Mean $\hat\delta$ across the nine control coins & -0.3221 \\
+$\quad$ cross-sectional SD & 0.2394 \\
+$\quad$ randomization $p$ for Bitcoin's $\hat\delta$ & 0.30 \\
+$R^2$ & 0.1611 \\
+Newey--West lags & 6 \\
+$N$ (days) & 1,128 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}[flushleft]
+\footnotesize
+\item The specification is $r_{\mathrm{BTC},t} = \alpha + \beta r_{\mathrm{SPY},t} + \delta (r_{\mathrm{SPY},t} \times \mathrm{Post}_t) + \gamma \mathrm{Post}_t + \epsilon_t$ on daily returns with donut dates dropped and Newey--West standard errors, so $\hat\delta$ is the post-listing change in Bitcoin's equity loading estimated directly from returns with no generated-regressor step. This specification has no control group, and it is reported precisely to show what a design without one would have concluded: read on its own, it says Bitcoin's equity beta fell substantially and dates the fall to the listing. The identical model fitted to each of the nine never-listed control coins returns the mean and cross-sectional standard deviation shown in the table, so every crypto asset's equity beta fell over this window and Bitcoin's decline is an unremarkable draw from that distribution. Table~\ref{tab:ddd} differences the common component out.
+\end{tablenotes}
+\end{threeparttable}
+\end{table}

@@ -44,13 +44,27 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
 from ...logging_config import get_logger
 
 logger = get_logger(__name__)
+
+#: A check that the pipeline EXECUTED correctly: the file was written, it
+#: parses, it is not `{}`. A failure here is a bug in the run, not a property
+#: of the paper, so no governance regime may switch it off. The 2026-08-05
+#: validation cell is the case in point: `run_estimation.py` crashed, wrote
+#: `{}`, and because the regime was `off` nothing flipped the specialist to
+#: failure, so the traceback was never fed back and the drafter invented the
+#: tables. That is not "an ungoverned paper", it is a broken run.
+KIND_RELIABILITY = "reliability"
+
+#: A check on whether the paper's CLAIMS hold: a real regression was run, and
+#: it implements the declared specification. These are the verification
+#: institutions the governance experiment varies, so a regime may shadow them.
+KIND_VERIFICATION = "verification"
 
 # Specialists whose results JSON must contain an actual estimated regression
 # (a non-empty ``coefficients`` block), not just descriptive summaries. The
@@ -61,6 +75,22 @@ logger = get_logger(__name__)
 # "one entry per estimated specification, each with coefficients and
 # diagnostics" — this enforces it deterministically at the boundary.
 _REGRESSION_REQUIRED: dict[str, str] = {"econometrics_specialist": "estimation_results.json"}
+
+# Specialists that write `paper_draft.tex`. Their draft may REFERENCE tables
+# but may not CONTAIN one: every table has to arrive via `\input{tables/...}`
+# from the deterministic renderer.
+#
+# Without this, "no LLM in the number path" is only true of the path the
+# renderer takes. In the 2026-08-05 validation cell the renderer produced
+# tables/regime_baseline.tex, tables/regime_break.tex and
+# tables/eth_comparison.tex; the draft `\input`-ed none of them and instead
+# carried four inline `tabular` blocks under the SAME labels, with numbers the
+# model wrote itself. 53 of 110 values traced to nothing. The gate that
+# checks numbers ran afterwards and could only report the damage.
+_NO_INLINE_TABLES: frozenset[str] = frozenset({"paper_drafter", "section_writer", "latex_formatter", "revisor"})
+
+_TABULAR_RE = re.compile(r"\\begin\{tabular\}")
+_TABLE_INPUT_RE = re.compile(r"\\input\{[^}]*\}")
 
 
 # Minimum non-whitespace character count for prose / code artifacts.
@@ -81,6 +111,9 @@ class ContractCheck:
     artifact: str  # workspace-relative path
     ok: bool
     reason: str = ""  # one-liner explanation when not ok
+    #: What KIND of failure this is, which decides whether governance may
+    #: switch it off. See `KIND_RELIABILITY` / `KIND_VERIFICATION`.
+    kind: str = KIND_RELIABILITY
 
 
 def check_artifact_nonempty(workspace: Path, relative: str) -> ContractCheck:
@@ -316,6 +349,18 @@ def write_contract_feedback(workspace: Path, specialist: str, summary: str) -> N
         logger.warning("could not persist contract feedback for %s: %s", specialist, e)
 
 
+def has_contract_feedback(workspace: Path, specialist: str) -> bool:
+    """Whether a violation note is waiting for this specialist's next attempt.
+
+    Non-consuming, unlike :func:`read_contract_feedback` — for callers that
+    only need to know whether the next attempt will be *coached* (retrying a
+    contract violation with the reason in the prompt) or *blind* (retrying a
+    crash or a timeout). Reading it to decide that would eat the note the
+    retry is about to consume.
+    """
+    return (workspace / _FEEDBACK_DIR / f"{specialist}.txt").is_file()
+
+
 def read_contract_feedback(workspace: Path, specialist: str) -> str | None:
     """Return a ready-to-inject prompt section for a prior contract violation,
     consuming the note (one violation feeds exactly one retry). ``None`` when
@@ -340,6 +385,37 @@ def read_contract_feedback(workspace: Path, specialist: str) -> str | None:
         f"{summary}\n\n"
         "Fix exactly this in the current attempt. Keep everything else about your "
         "approach unless the fix requires changing it."
+    )
+
+
+def check_no_inline_tables(workspace: Path, relative: str = "paper_draft.tex") -> ContractCheck:
+    """The draft may reference tables but must not contain them.
+
+    A `\\begin{tabular}` in `paper_draft.tex` is a table the model typed rather
+    than one the renderer filled from result files, so its numbers bypass the
+    provenance chain entirely. Tables belong in `tables/*.tex`, pulled in with
+    `\\input`.
+    """
+    target = workspace / relative
+    if not target.is_file():
+        # Absence is the non-empty check's business, not ours.
+        return ContractCheck(relative, True, "", kind=KIND_VERIFICATION)
+    try:
+        text = target.read_text(encoding="utf-8", errors="replace")
+    except OSError as e:
+        return ContractCheck(relative, False, f"read failed: {e}", kind=KIND_VERIFICATION)
+
+    inline = len(_TABULAR_RE.findall(text))
+    if not inline:
+        return ContractCheck(relative, True, "", kind=KIND_VERIFICATION)
+    inputs = len(_TABLE_INPUT_RE.findall(text))
+    return ContractCheck(
+        relative,
+        False,
+        f"{inline} inline tabular environment(s) in the draft "
+        f"({inputs} \\input reference(s)) — tables must come from tables/*.tex "
+        "via \\input so their numbers trace to result files, not from the draft itself",
+        kind=KIND_VERIFICATION,
     )
 
 
@@ -376,12 +452,22 @@ def check_specialist_artifacts(workspace: Path, specialist: str) -> list[Contrac
     if regression_file:
         base_failed = any(c.artifact == regression_file and not c.ok for c in checks)
         if not base_failed:
-            regression_check = check_has_regression(workspace, regression_file)
+            # These two are VERIFICATION, not reliability: the file exists and
+            # parses (reliability is satisfied), and we are now asking whether
+            # what it contains supports the paper's claims. Governance may
+            # shadow them; it may not shadow the checks above.
+            regression_check = replace(check_has_regression(workspace, regression_file), kind=KIND_VERIFICATION)
             checks.append(regression_check)
             # Identified-spec contract: only meaningful once a regression
             # exists at all ("estimate SOMETHING" precedes "estimate the
             # DECLARED thing"), and layering both failures would muddy the
             # retry feedback.
             if regression_check.ok:
-                checks.append(check_matches_declared_spec(workspace, regression_file))
+                checks.append(replace(check_matches_declared_spec(workspace, regression_file), kind=KIND_VERIFICATION))
+
+    # Draft-writing specialists may reference tables, never contain them.
+    if specialist in _NO_INLINE_TABLES:
+        draft = SPECIALIST_ARTIFACTS.get(specialist, "paper_draft.tex")
+        if draft.endswith(".tex") and not any(c.artifact == draft and not c.ok for c in checks):
+            checks.append(check_no_inline_tables(workspace, draft))
     return checks

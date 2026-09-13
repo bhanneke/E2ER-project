@@ -22,6 +22,7 @@ def client(tmp_path: Path):
         settings.allium_api_key = None
         settings.llm_backend = "anthropic"
         settings.default_model = "claude-3-5-sonnet-20241022"
+        settings.default_model_for.return_value = "claude-3-5-sonnet-20241022"
         yield TestClient(app)
 
 

@@ -62,3 +62,14 @@ live_check_report.json
 
 # Generated figure PDF byproduct (regenerate via scripts/gen_pipeline_figure.py)
 docs/figures/*.pdf
+
+# WS-F / WS-P3.2 run outputs (keep the experiments/*.yaml configs, ignore the
+# generated run dirs: results.csv, summary.md, exported bundles).
+experiments/*/
+matrix-*/
+
+# The showcase bundle is a verified artifact, not build output. provenance.json
+# inventories every file in it and `e2er verify` fails when one is missing, so a
+# rule that drops part of it (*.log caught code/scratch/paper_draft.log) ships a
+# bundle that verifies only on the machine that produced it.
+!examples/showcase/**

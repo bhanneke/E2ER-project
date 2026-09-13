@@ -1,0 +1,24 @@
+\begin{table}[t]
+\centering
+\begin{threeparttable}
+\caption{Robustness: sample construction, outcome construction and return alignment}
+\label{tab:robustness_sample}
+\begin{tabular}{lccccc}
+\toprule
+ & (1) Excl.\ halving & (2) Excl.\ extreme news & (3) Winsorized & (4) Off-day alignment & (5) Window to 2026m7 \\
+\midrule
+$\hat\tau$: BTC $\times$ Post & -0.0217 & -0.0353* & -0.0184 & -0.0212 & -0.0088 \\
+ & (0.0169) & (0.0165) & (0.0173) & (0.0187) & (0.0157) \\
+Randomization $p$ (placebo-in-space) & 0.80 & 0.60 & 1.00 & 0.80 & 0.90 \\
+SD of the randomization distribution & 0.0533 & 0.0520 & 0.0544 & 0.0589 & 0.0496 \\
+Within $R^2$ & 0.0006 & 0.0015 & 0.0004 & 0.0006 & 0.0001 \\
+Post-treatment months & 21 & 23 & 23 & 23 & 30 \\
+$N$ & 520 & 540 & 540 & 540 & 610 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}[flushleft]
+\footnotesize
+\item Every column re-estimates the baseline coin-month specification with coin and calendar-month fixed effects, varying only the stated construction choice. Column (1) drops 2024m4--2024m5, the April 19--20 2024 halving window. Column (2) drops days on which Bitcoin's absolute return exceeded its 99th percentile together with the November 2022 exchange-collapse window, rebuilding the monthly outcome on the surviving days. Column (3) winsorizes daily returns at the 0.5 and 99.5 within-asset percentiles before the correlation is computed. Column (4) cumulates weekend and holiday crypto returns into the following equity session, so that each crypto return spans the same calendar interval as the equity return it is matched against. Column (5) extends the estimation window to the end of the delivered panel. Cluster-robust standard errors in parentheses are reported for convention only; the randomization $p$-values are the inferential basis and have a floor of 0.10 on nine donor coins.
+\end{tablenotes}
+\end{threeparttable}
+\end{table}

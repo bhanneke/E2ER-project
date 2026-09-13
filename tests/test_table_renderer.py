@@ -294,3 +294,146 @@ def test_ambiguous_token_match_not_resolved(tmp_path: Path):
     report = render_tables(ws)
     assert any(u.kind == "spec_key" and u.ref == "dp_full" for u in report.unresolved)
     assert report.normalized == []
+
+
+# --- nested-path descent -------------------------------------------------
+# The 2026-08-20 canary: the numbers were all present, one level below the
+# three flat locations `_resolve_stat` inspects, and the render halted on 13
+# unresolved refs after the section_writer repair attempt failed to fix it.
+
+
+def _nested_est() -> dict:
+    """The shape the econometrics specialist actually produced."""
+    return {
+        "main": {
+            "specification": "Threshold regime classification",
+            "transition_probabilities_pre": {"p_LL": 0.76, "p_HH": 0.2978723404255319},
+            "transition_probabilities_post": {"p_LL": 0.59, "p_HH": 0.4526315789473684},
+            "treatment_effects": {
+                "delta_p_HH": {"estimate": 0.1547592385, "se": 0.0874, "p_value": 0.0768},
+                "delta_p_LL": {"estimate": -0.1733},
+            },
+        }
+    }
+
+
+def test_nested_stat_resolved_by_descent(tmp_path: Path):
+    """`p_HH_pre` lives at `transition_probabilities_pre.p_HH` — the tokens of
+    the request are a subset of the path's, uniquely at that depth."""
+    spec = _spec(
+        [{"spec_key": "main", "header": "(1)"}],
+        [{"type": "stat", "field": "p_HH_pre", "label": "$p_{HH}$ pre", "decimals": 4}],
+    )
+    ws = _ws_keys(tmp_path, _nested_est(), spec)
+    report = render_tables(ws)
+    assert report.unresolved == []
+    assert any(
+        n.kind == "stat" and n.requested == "p_HH_pre" and "transition_probabilities_pre.p_HH" in n.resolved
+        for n in report.normalized
+    ), "the substitution must be recorded so the rendered number stays auditable"
+    assert "0.2979" in (ws / "tables" / "main.tex").read_text()
+
+
+def test_nested_estimate_object_renders_point_estimate(tmp_path: Path):
+    """A matched estimate-shaped object contributes its `estimate`, not a dict."""
+    spec = _spec(
+        [{"spec_key": "main", "header": "(1)"}],
+        [{"type": "stat", "field": "delta_p_HH", "label": "$\\Delta p$", "decimals": 3}],
+    )
+    ws = _ws_keys(tmp_path, _nested_est(), spec)
+    report = render_tables(ws)
+    assert report.unresolved == []
+    assert "0.155" in (ws / "tables" / "main.tex").read_text()
+
+
+def test_nested_sibling_with_different_tokens_does_not_collide(tmp_path: Path):
+    """`delta_p_LL` must not satisfy a request for `delta_p_HH`."""
+    spec = _spec(
+        [{"spec_key": "main", "header": "(1)"}],
+        [{"type": "stat", "field": "delta_p_XX", "label": "bogus"}],
+    )
+    ws = _ws_keys(tmp_path, _nested_est(), spec)
+    report = render_tables(ws)
+    assert any(u.kind == "stat" and u.ref == "delta_p_XX" for u in report.unresolved)
+
+
+def test_nested_conflicting_values_refused(tmp_path: Path):
+    """Two equally-shallow matches holding DIFFERENT numbers is a real
+    ambiguity — the renderer must flag it, never pick one."""
+    est = {
+        "main": {
+            "transition_probabilities_pre": {"p_HH": 0.30},
+            "bootstrap_probabilities_pre": {"p_HH": 0.91},
+        }
+    }
+    spec = _spec([{"spec_key": "main", "header": "(1)"}], [{"type": "stat", "field": "p_HH_pre", "label": "p"}])
+    ws = _ws_keys(tmp_path, est, spec)
+    report = render_tables(ws)
+    assert any(u.kind == "stat" and u.ref == "p_HH_pre" for u in report.unresolved)
+    assert report.normalized == []
+
+
+def test_nested_agreeing_duplicates_resolve(tmp_path: Path):
+    """The canary's real shape: `p_HH_pre` matches both the transition block
+    and `logistic_regression.implied_p_HH_pre`, holding the same number. The
+    ambiguity is nominal, so it resolves — and records both paths."""
+    est = {
+        "main": {
+            "transition_probabilities_pre": {"p_HH": 0.2978723404255319},
+            "logistic_regression": {"implied_p_HH_pre": 0.2978723404255319},
+        }
+    }
+    spec = _spec(
+        [{"spec_key": "main", "header": "(1)"}],
+        [{"type": "stat", "field": "p_HH_pre", "label": "p", "decimals": 4}],
+    )
+    ws = _ws_keys(tmp_path, est, spec)
+    report = render_tables(ws)
+    assert report.unresolved == []
+    resolved = [n.resolved for n in report.normalized if n.requested == "p_HH_pre"]
+    assert resolved and "==" in resolved[0], "both corroborating paths must be recorded"
+    assert "0.2979" in (ws / "tables" / "main.tex").read_text()
+
+
+def test_nested_descent_skips_coefficients_block(tmp_path: Path):
+    """Coefficients have their own row type; a `stat` row must not reach in."""
+    est = {"main": {"coefficients": {"treat_post": {"estimate": -0.231, "se": 0.058}}}}
+    spec = _spec([{"spec_key": "main", "header": "(1)"}], [{"type": "stat", "field": "treat_post", "label": "T"}])
+    ws = _ws_keys(tmp_path, est, spec)
+    report = render_tables(ws)
+    assert any(u.kind == "stat" and u.ref == "treat_post" for u in report.unresolved)
+
+
+def test_shallower_match_wins_over_deeper(tmp_path: Path):
+    """Depth breaks ties before uniqueness is tested, so a nested duplicate
+    deeper in the tree cannot make a clean shallow match ambiguous."""
+    est = {
+        "main": {
+            "block_pre": {"gamma": 1.5},
+            "sensitivity": {"block_pre": {"gamma": 9.9}},
+        }
+    }
+    spec = _spec(
+        [{"spec_key": "main", "header": "(1)"}],
+        [{"type": "stat", "field": "gamma_pre", "label": "g", "decimals": 1}],
+    )
+    ws = _ws_keys(tmp_path, est, spec)
+    report = render_tables(ws)
+    assert report.unresolved == []
+    assert "1.5" in (ws / "tables" / "main.tex").read_text()
+
+
+def test_absent_scalar_still_halts(tmp_path: Path):
+    """Cause B of the canary: the robustness columns never carried `N`. That
+    is a missing number, not a naming problem, and must stay a hard failure —
+    descent must not paper over it by borrowing from another column."""
+    est = {"main": {"n_pre_treatment": 192}}
+    rob = {"rv5_measure": {"specification": "5-day RV", "delta_p_HH": 0.018}}
+    (tmp_path / "robustness_results.json").write_text(json.dumps(rob), encoding="utf-8")
+    spec = _spec(
+        [{"spec_key": "rv5_measure", "header": "(2)"}],
+        [{"type": "stat", "field": "n_pre_treatment", "label": "N pre", "decimals": 0}],
+    )
+    ws = _ws_keys(tmp_path, est, spec)
+    report = render_tables(ws)
+    assert any(u.kind == "stat" and u.ref == "n_pre_treatment" for u in report.unresolved)

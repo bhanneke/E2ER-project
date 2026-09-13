@@ -1,0 +1,43 @@
+# Phase 2.1 — the same cell, three times, on ONE frozen commit.
+#
+# `validation_cell.yaml` asks "can one paper finish". This asks the question a
+# referee asks next: how often, and does it fail the same way twice?
+#
+# At n=1 a design flaw and an unlucky draw are the same observation. Canaries
+# #4, #5 and #6 (2026-08-25/26) died three different ways — but they also ran
+# on three different commits (4ca47e4, cbd2304, 4126714), so their variance
+# mixes the pipeline's variance with the difference between versions of it.
+# That cell is uninterpretable as repeats, which is precisely what
+# `_provenance_lines` in src/core/experiment/__init__.py now says out loud.
+#
+# So the one rule for this run: DO NOT commit to the tree while it is running.
+# The server does not reload, the identity stamp is captured at boot, and a
+# mid-run commit turns three repeats of one pipeline back into one run each of
+# three pipelines.
+#
+# Everything else is held identical to the validation cell — same RQ, same
+# regime, same backend, MAX_CONCURRENT_SPECIALISTS=1 — so the two cells are
+# comparable and this one adds exactly the repeat dimension.
+#
+# `off` is again deliberate: under it the verification gates shadow rather than
+# block, so a contract violation cannot halt the run and fabrication is
+# measured instead of prevented. Reliability blocks in every regime, including
+# this one — that is the split rec #2 established, and canary #6 halting on
+# unresolved table references under `off` is that split working, not failing.
+#
+#   MAX_CONCURRENT_SPECIALISTS=1 python scripts/experiment_driver.py \
+#       experiments/repeats_cell.yaml --out experiments/repeats_cell_20260828 \
+#       --monitor-seconds 5400
+#
+# Public data only.
+name: repeats_cell
+research_questions:
+  - >-
+    Has the January 2024 spot-Bitcoin-ETF approval reduced the persistence of
+    Bitcoin's high-volatility regime relative to the pre-approval window?
+regimes: ["off"]
+repeats: 3
+backends: [claude_code]
+max_cost: 5.0
+methodology: empirical
+mode: single_pass

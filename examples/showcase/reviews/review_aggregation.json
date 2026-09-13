@@ -1,0 +1,57 @@
+{
+  "verdict": "MAJOR_REVISION",
+  "weighted_avg": 6.142857142857143,
+  "rule_triggered": "Rule 3: weighted average",
+  "rationale": "Weighted average score: 6.14/10. Verdict: MAJOR_REVISION. Breakdown: mechanism_reviewer=5.6, technical_reviewer=6.5, literature_reviewer=5.9, writing_reviewer=7.0, data_reviewer=6.0, identification_reviewer=6.0",
+  "panel": {
+    "expected": 6,
+    "reported": 6,
+    "complete": true,
+    "missing": [],
+    "scored_without_a_review_file": [],
+    "scores": [
+      {
+        "reviewer": "mechanism_reviewer",
+        "score": 5.6,
+        "recommendation": "major_revision",
+        "weight": 1.0,
+        "source": "file"
+      },
+      {
+        "reviewer": "technical_reviewer",
+        "score": 6.5,
+        "recommendation": "major_revision",
+        "weight": 1.5,
+        "source": "file"
+      },
+      {
+        "reviewer": "literature_reviewer",
+        "score": 5.9,
+        "recommendation": "major_revision",
+        "weight": 1.0,
+        "source": "file"
+      },
+      {
+        "reviewer": "writing_reviewer",
+        "score": 7.0,
+        "recommendation": "major_revision",
+        "weight": 0.75,
+        "source": "file"
+      },
+      {
+        "reviewer": "data_reviewer",
+        "score": 6.0,
+        "recommendation": "major_revision",
+        "weight": 1.25,
+        "source": "file"
+      },
+      {
+        "reviewer": "identification_reviewer",
+        "score": 6.0,
+        "recommendation": "major_revision",
+        "weight": 1.5,
+        "source": "file"
+      }
+    ]
+  }
+}

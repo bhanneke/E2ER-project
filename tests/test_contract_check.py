@@ -290,3 +290,56 @@ def test_econometrics_gate_passes_with_real_regression(tmp_path: Path):
         json.dumps({"main": {"coefficients": {"treat": {"estimate": -0.01}}, "diagnostics": {"n": 100}}})
     )
     assert all(c.ok for c in check_specialist_artifacts(tmp_path, "econometrics_specialist"))
+
+
+# ---------------------------------------------------------------------------
+# The draft may REFERENCE tables; it may not CONTAIN them.
+#
+# In the 2026-08-05 validation cell the renderer produced three table files
+# and the draft `\input`-ed none of them, carrying four inline `tabular`
+# blocks under the same labels with numbers the model wrote itself. 53 of 110
+# values traced to nothing. Nothing forbade it.
+# ---------------------------------------------------------------------------
+
+
+def _draft(tmp_path: Path, body: str) -> Path:
+    (tmp_path / "paper_draft.tex").write_text("\\begin{document}\n" + body + "\n\\end{document}\n" + "x " * 100)
+    return tmp_path
+
+
+def test_inline_tabular_in_draft_is_a_violation(tmp_path: Path):
+    from src.core.specialists.contract_check import check_no_inline_tables
+
+    ws = _draft(tmp_path, "\\begin{tabular}{lc}\nTreatment & 0.42 \\\\\n\\end{tabular}")
+    check = check_no_inline_tables(ws)
+    assert check.ok is False
+    assert "inline tabular" in check.reason
+
+
+def test_input_referenced_tables_are_fine(tmp_path: Path):
+    from src.core.specialists.contract_check import check_no_inline_tables
+
+    ws = _draft(tmp_path, "See Table~\\ref{tab:main}.\n\\input{tables/main.tex}")
+    assert check_no_inline_tables(ws).ok is True
+
+
+def test_inline_table_ban_is_verification_not_reliability(tmp_path: Path):
+    """It is about whether numbers trace, so a regime may shadow it — unlike a
+    missing or unparseable artifact."""
+    from src.core.specialists.contract_check import KIND_VERIFICATION, check_no_inline_tables
+
+    ws = _draft(tmp_path, "\\begin{tabular}{lc}\nx & 1 \\\\\n\\end{tabular}")
+    assert check_no_inline_tables(ws).kind == KIND_VERIFICATION
+
+
+def test_drafting_specialists_get_the_inline_table_check(tmp_path: Path):
+    ws = _draft(tmp_path, "\\begin{tabular}{lc}\nx & 1 \\\\\n\\end{tabular}")
+    failed = [c for c in check_specialist_artifacts(ws, "paper_drafter") if not c.ok]
+    assert any("inline tabular" in c.reason for c in failed)
+
+
+def test_missing_draft_is_not_an_inline_table_violation(tmp_path: Path):
+    """Absence is the non-empty check's business; don't double-report it."""
+    from src.core.specialists.contract_check import check_no_inline_tables
+
+    assert check_no_inline_tables(tmp_path).ok is True

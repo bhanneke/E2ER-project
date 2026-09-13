@@ -1,0 +1,24 @@
+\begin{table}[t]
+\centering
+\begin{threeparttable}
+\caption{Placebo assets and a placebo event}
+\label{tab:placebos}
+\begin{tabular}{lccc}
+\toprule
+ & (1) Gold & (2) Silver & (3) 2021 futures ETF \\
+\midrule
+$\hat\tau$: placebo treatment & -0.0400** & -0.0340* & 0.0412** \\
+ & (0.0170) & (0.0170) & (0.0165) \\
+Randomization $p$ (placebo-in-space) & 0.50 & 0.70 & 0.40 \\
+SD of the randomization distribution & 0.0534 & 0.0534 & 0.0517 \\
+Within $R^2$ & 0.0011 & 0.0009 & 0.0022 \\
+Post-treatment months & 23 & 23 & 21 \\
+$N$ & 540 & 540 & 310 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}[flushleft]
+\footnotesize
+\item Columns (1) and (2) assign Bitcoin's treatment date to gold and to silver against the same never-treated crypto control group. Both have had exchange-traded wrappers for two decades and experienced the same macro regime with no 2024 access change, so a genuine break in either at January 2024 would falsify the design's macro-neutrality. Under the cluster-robust $p$-values from which any significance markers are computed, gold breaks at the 5\% level; under randomization inference the same estimate is an ordinary draw from the placebo distribution, which is why the randomization row rather than the markers governs. Column (3) uses the October 2021 launch of a US-listed Bitcoin \emph{futures} product as the event, on a sample truncated at 2023m7 so that the 2024 spot approval cannot contaminate it; this is a US-listed, brokerage-accessible vehicle that did not change spot creation and redemption. Its estimate is larger in magnitude than the actual spot-approval estimate and of the opposite sign, which bounds what this design can resolve rather than identifying a channel.
+\end{tablenotes}
+\end{threeparttable}
+\end{table}

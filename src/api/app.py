@@ -197,6 +197,29 @@ async def _ingest_literature_corpus(paper_id: str, workspace: Path, settings) ->
         logger.warning("literature ingestion skipped for %s: %s (paper creation continues)", paper_id, e)
 
 
+async def _acquire_literature(paper_id: str, workspace: Path, settings, research_question: str, title: str) -> None:
+    """Put a real bibliography on disk BEFORE any specialist runs.
+
+    Unlike ``_ingest_literature_corpus`` (which needs a BYOD folder and only
+    runs on SQLite), this always runs — it is the standalone replacement for
+    v1's mandatory literature agent. See
+    :func:`src.modules.literature.discovery.acquire_literature` for why it is a
+    stage rather than a tool the drafter may choose to call.
+
+    Self-skipping when a bibliography already exists, so the BYOD/Zotero path
+    above wins when the researcher brought their own library.
+    """
+    from ..modules.literature.discovery import acquire_literature
+
+    await acquire_literature(
+        workspace,
+        paper_id,
+        [research_question, title],
+        settings,
+        limit=settings.literature_acquire_limit,
+    )
+
+
 async def _tuple_is_proven(model: str, methodology: str, mode: str) -> bool:
     """Has any paper with this (model, methodology, mode) tuple completed?
 
@@ -228,6 +251,12 @@ async def _tuple_is_proven(model: str, methodology: str, mode: str) -> bool:
 @app.on_event("startup")
 async def _log_config() -> None:
     s = get_settings()
+    # Capture identity NOW, at boot, so the cached SHA is the one this process
+    # actually loaded. Capturing lazily on first run would record whatever the
+    # tree had drifted to by then — the stale-server hazard, one level up.
+    from ..core.run_identity import identity_summary
+
+    logger.info("Run identity: %s", identity_summary())
     logger.info(
         "E2ER v3 starting | backend=%s model=%s data=%s lit_kb=%s github=%s default_cap=$%.2f",
         s.llm_backend,
@@ -325,6 +354,21 @@ class CreatePaperRequest(BaseModel):
     mode: str = Field(default="iterative", validation_alias=AliasChoices("mode", "pipeline_mode"))
     methodology: str = "empirical"  # empirical | theoretical | mixed
     bibtex_path: str | None = None
+    # Per-paper LLM backend + model override. Both default to None → the
+    # process-global settings.llm_backend / settings.default_model. Set them
+    # to run this paper on a specific backend (multi-model runs, the
+    # governance experiment) without restarting the server on a new env.
+    backend: str | None = None
+    model: str | None = None
+    # Governance regime: off | contracts | full. None → settings.governance
+    # (default "full"). The experiment's treatment variable — selects which
+    # gates block; non-blocking gates still compute + log (shadow mode).
+    governance: str | None = None
+    # Human-in-the-loop: pipeline stages after which the run pauses for the
+    # researcher to inspect/edit the workspace before continuing. Empty = no
+    # checkpoints (unattended, current behaviour). Validated against the real
+    # stage names (PIPELINE_STAGES).
+    review_stages: list[str] = []
     max_cost_usd: float | None = None  # falls back to settings.default_max_cost_usd
     # First-run guardrail: when no paper at the current (model, methodology, mode)
     # tuple has ever reached `completed`, the cap is forced to $1.00 unless the
@@ -398,12 +442,43 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
             detail=f"methodology must be one of empirical|theoretical|mixed, got {req.methodology!r}",
         )
 
+    # Per-paper backend override. None → the process-global default.
+    from ..modules.llm.registry import BACKENDS
+
+    if req.backend is not None and req.backend not in BACKENDS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"backend must be one of {'|'.join(BACKENDS)}, got {req.backend!r}",
+        )
+    effective_backend = req.backend or settings.llm_backend
+
+    # Per-paper governance regime override. None → the process-global default.
+    _GOVERNANCE_REGIMES = {"off", "contracts", "full"}
+    if req.governance is not None and req.governance not in _GOVERNANCE_REGIMES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"governance must be one of {'|'.join(sorted(_GOVERNANCE_REGIMES))}, got {req.governance!r}",
+        )
+    effective_governance = req.governance or settings.governance
+
+    # Human-in-the-loop review points. Validate against real stage names.
+    from ..core.strategist.state import PIPELINE_STAGES
+
+    bad_stages = [s for s in req.review_stages if s not in PIPELINE_STAGES]
+    if bad_stages:
+        raise HTTPException(
+            status_code=422,
+            detail=f"review_stages must be from {'|'.join(PIPELINE_STAGES)}; unknown: {', '.join(bad_stages)}",
+        )
+
     # First-run guardrail. Inspect the (model, methodology, mode) tuple. If
     # nothing has completed at this combination, force the cap to $1 unless
     # the requester explicitly acknowledges. This is the proactive defense
     # against the May 2026 "spend $8 chasing a Sonnet bug" failure: cheap
     # validation must succeed once before we trust an expensive cap.
-    current_model = settings.default_model
+    # Resolve against the EFFECTIVE backend, not the global one — a paper on
+    # `--backend openrouter` must not inherit the anthropic model id.
+    current_model = req.model or settings.default_model_for(effective_backend)
     requested_cap = req.max_cost_usd if req.max_cost_usd is not None else settings.default_max_cost_usd
     proven = await _tuple_is_proven(current_model, req.methodology, req.mode)
     if not proven and requested_cap > _UNPROVEN_TUPLE_CAP and not req.acknowledge_unproven_tuple:
@@ -457,6 +532,9 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
         "mode": req.mode,
         "methodology": req.methodology,
         "model": current_model,
+        "backend": effective_backend,
+        "governance": effective_governance,
+        "review_stages": req.review_stages,
         "current_stage": "idea",
     }
     (workspace / "manifest.json").write_text(json.dumps(manifest, indent=2))
@@ -464,9 +542,11 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
         await execute(
             """
             INSERT INTO papers (id, title, research_question, status, workspace,
-                                mode, methodology, model, max_cost_usd)
+                                mode, methodology, model, backend, governance,
+                                review_stages, max_cost_usd)
             VALUES (%(id)s, %(title)s, %(rq)s, 'idea', %(ws)s,
-                    %(mode)s, %(methodology)s, %(model)s, %(cap)s)
+                    %(mode)s, %(methodology)s, %(model)s, %(backend)s, %(governance)s,
+                    %(review_stages)s, %(cap)s)
             """,
             {
                 "id": paper_id,
@@ -476,6 +556,9 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
                 "mode": req.mode,
                 "methodology": req.methodology,
                 "model": current_model,
+                "backend": effective_backend,
+                "governance": effective_governance,
+                "review_stages": json.dumps(req.review_stages),
                 "cap": cap,
             },
         )
@@ -488,7 +571,22 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
     # Use asyncio.create_task (not BackgroundTasks) so we get a handle for cancel.
     # _prepare_and_run does the heavy BYOD import + literature ingest FIRST (off
     # the request path), then runs the pipeline — so the POST returns now.
-    task = asyncio.create_task(_prepare_and_run(paper_id, workspace, settings, req.mode, cap, req.methodology))
+    task = asyncio.create_task(
+        _prepare_and_run(
+            paper_id,
+            workspace,
+            settings,
+            req.mode,
+            cap,
+            req.methodology,
+            effective_backend,
+            current_model,
+            effective_governance,
+            req.review_stages,
+            req.research_question,
+            req.title,
+        )
+    )
     _RUNNING[paper_id] = task
     task.add_done_callback(lambda _t: _RUNNING.pop(paper_id, None))
 
@@ -597,7 +695,8 @@ async def resume_paper(paper_id: str, req: ResumeRequest | None = None) -> dict[
 
     try:
         row = await fetch_one(
-            "SELECT id, status, workspace, mode, max_cost_usd, methodology FROM papers WHERE id = %(id)s",
+            "SELECT id, status, workspace, mode, max_cost_usd, methodology, backend, model, governance, "
+            "review_stages FROM papers WHERE id = %(id)s",
             {"id": paper_id},
         )
     except Exception as e:
@@ -625,6 +724,25 @@ async def resume_paper(paper_id: str, req: ResumeRequest | None = None) -> dict[
     mode = row.get("mode") or "single_pass"
     cap = float(row.get("max_cost_usd") or 25.0)
     methodology = row.get("methodology") or "empirical"
+    backend_name = row.get("backend")  # None → server default at run time
+    model = row.get("model")
+    governance = row.get("governance")  # None → server default at run time
+    try:
+        review_stages = json.loads(row.get("review_stages") or "[]")
+    except (TypeError, ValueError):
+        review_stages = []
+
+    # If this pause was a human-review checkpoint, approve the pending stage so
+    # the resumed run continues past it instead of immediately re-pausing.
+    try:
+        from ..core.pipeline.state import PipelineState
+
+        pstate = PipelineState.load(workspace, paper_id, mode)
+        if pstate.pending_review_stage:
+            pstate.approve(pstate.pending_review_stage)
+            pstate.save(workspace)
+    except Exception as e:  # noqa: BLE001 — approval is best-effort; resume proceeds
+        logger.warning("Could not clear review checkpoint on resume %s: %s", paper_id, e)
 
     # Optional cap raise (v0.5): if the request body provides a new
     # max_cost_usd, persist it before re-firing the runner so the
@@ -652,7 +770,9 @@ async def resume_paper(paper_id: str, req: ResumeRequest | None = None) -> dict[
     except Exception as e:
         logger.warning("Could not update status on resume %s: %s", paper_id, e)
 
-    task = asyncio.create_task(_run_pipeline(paper_id, workspace, mode, cap, methodology))
+    task = asyncio.create_task(
+        _run_pipeline(paper_id, workspace, mode, cap, methodology, backend_name, model, governance, review_stages)
+    )
     _RUNNING[paper_id] = task
     task.add_done_callback(lambda _t: _RUNNING.pop(paper_id, None))
 
@@ -997,7 +1117,12 @@ async def get_usage_summary() -> dict[str, Any]:
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "service": "e2er-v3"}
+    """Health plus the identity of THIS process — the authoritative answer to
+    "which code is the server actually running?". The server does not reload on
+    edit, so a client must ask rather than assume."""
+    from ..core.run_identity import run_identity
+
+    return {"status": "ok", "service": "e2er-v3", "identity": run_identity()}
 
 
 # --- Dashboard (Jinja2 + HTMX) ---
@@ -1152,6 +1277,7 @@ async def paper_live_fragment(request: Request, paper_id: str = Depends(_validat
             "cost_pct": cost_pct,
             "events": events or [],
             "can_cancel": (paper.get("status") not in _TERMINAL_STATUSES) and (paper_id in _RUNNING),
+            "can_resume": (paper.get("status") == "paused") and (paper_id not in _RUNNING),
         },
     )
 
@@ -1241,15 +1367,21 @@ async def _prepare_and_run(
     mode: str,
     max_cost_usd: float,
     methodology: str = "empirical",
+    backend_name: str | None = None,
+    model: str | None = None,
+    governance: str | None = None,
+    review_stages: list[str] | None = None,
+    research_question: str = "",
+    title: str = "",
 ) -> None:
     """Background entry: do the heavy BYOD prep (data.db import + literature
-    ingest) off the request path, THEN run the pipeline.
+    ingest + literature acquisition) off the request path, THEN run the pipeline.
 
     Kept out of create_paper so the POST returns immediately — a multi-GB import
     + Zotero ingest otherwise blocks past the client's HTTP timeout. Each step is
     best-effort and never raises; the import runs before the pipeline's data
-    specialists need data.db, and the literature ingest runs after the papers row
-    exists (FK).
+    specialists need data.db, and the literature steps run after the papers row
+    exists (FK) but before any specialist can cite anything.
     """
     from ..modules.data.byod_import import import_corpus_into_data_db
 
@@ -1261,7 +1393,17 @@ async def _prepare_and_run(
         await _ingest_literature_corpus(paper_id, workspace, settings)
     except Exception as e:  # noqa: BLE001
         logger.warning("literature ingest failed for %s: %s (pipeline continues)", paper_id, e)
-    await _run_pipeline(paper_id, workspace, mode, max_cost_usd, methodology)
+    # Runs second so the BYOD library above wins; acquisition self-skips when a
+    # bibliography already exists. Must precede _run_pipeline: the drafter reads
+    # literature.bib from the prompt, and a cite with no bib entry is a hard fail
+    # at the citation gate and an undefined reference at compile time.
+    try:
+        await _acquire_literature(paper_id, workspace, settings, research_question, title)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("literature acquisition failed for %s: %s (pipeline continues)", paper_id, e)
+    await _run_pipeline(
+        paper_id, workspace, mode, max_cost_usd, methodology, backend_name, model, governance, review_stages
+    )
 
 
 async def _run_pipeline(
@@ -1270,6 +1412,10 @@ async def _run_pipeline(
     mode: str,
     max_cost_usd: float,
     methodology: str = "empirical",
+    backend_name: str | None = None,
+    model: str | None = None,
+    governance: str | None = None,
+    review_stages: list[str] | None = None,
 ) -> None:
     from ..config import get_settings
     from ..core.strategist.runner import PipelineRunner
@@ -1280,7 +1426,12 @@ async def _run_pipeline(
     from ..modules.llm.registry import get_backend
 
     settings = get_settings()
-    backend = get_backend(settings)
+    # Per-paper overrides (multi-model runs / experiment); fall back to the
+    # process-global config when unset.
+    effective_backend_name = backend_name or settings.llm_backend
+    effective_model = model or settings.default_model_for(effective_backend_name)
+    effective_governance = governance or settings.governance
+    backend = get_backend(settings, name=effective_backend_name)
 
     # Tools are unioned across all enabled providers; specialists' skill files
     # determine which they actually invoke.
@@ -1314,13 +1465,15 @@ async def _run_pipeline(
         paper_id=paper_id,
         workspace=workspace,
         backend=backend,
-        model=settings.default_model,
+        model=effective_model,
         mode=mode,
         extra_tools=extra_tools,
         extra_handlers=extra_handlers,
-        backend_name=settings.llm_backend,
+        backend_name=effective_backend_name,
         max_cost_usd=max_cost_usd,
         methodology=methodology,
+        governance=effective_governance,
+        review_stages=review_stages,
     )
     await runner.run()
 
