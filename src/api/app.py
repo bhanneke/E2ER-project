@@ -1733,6 +1733,77 @@ def _progress(events: list[dict[str, Any]], paper: dict[str, Any]) -> dict[str, 
     }
 
 
+def _failure_detail(workspace: Path, paper: dict[str, Any], events: list[dict[str, Any]]) -> dict[str, Any]:
+    """Assemble a readable account of why a run stopped.
+
+    Everything here is read from the run's own record — the error column, the
+    per-specialist contract feedback, and the event log. Nothing is inferred
+    about what the model was thinking, only about what it did not produce.
+    """
+    status = str(paper.get("status") or "")
+    if status not in {"failed", "rejected", "paused"}:
+        return {"failed": False}
+
+    raw = str(paper.get("last_error") or "").strip()
+    headline = raw.split(":", 1)[-1].strip() if raw.startswith("RuntimeError:") else raw
+    headline = headline.split(";")[0].strip() if ";" in headline else headline
+
+    attempts: dict[str, int] = {}
+    for e in events:
+        if str(e.get("event_type")) == "specialist_start" and e.get("specialist"):
+            name = str(e["specialist"])
+            attempts[name] = attempts.get(name, 0) + 1
+
+    specialists: list[dict[str, Any]] = []
+    feedback_dir = workspace / ".contract_feedback"
+    if feedback_dir.is_dir():
+        for f in sorted(feedback_dir.glob("*.txt")):
+            try:
+                violation = f.read_text(encoding="utf-8", errors="replace").strip()
+            except OSError:
+                continue
+            name = f.stem
+            specialists.append(
+                {
+                    "name": name,
+                    "violation": violation[:400],
+                    "attempts": attempts.get(name, 0),
+                }
+            )
+
+    # A recognisable pattern worth naming rather than leaving to be rediscovered.
+    hints: list[str] = []
+    unwritten = [s for s in specialists if "file not written" in s["violation"]]
+    if unwritten and len(unwritten) == len(specialists) and len(specialists) > 1:
+        hints.append(
+            "Every specialist failed the same way — none of them wrote anything. That is "
+            "usually the environment rather than the models: a workspace the CLI backend "
+            "refuses to write to, or a backend that is installed but not logged in. "
+            "Check Preflight."
+        )
+    if status == "rejected":
+        hints.append(
+            "Rejected means a gate blocked the paper rather than the pipeline breaking. "
+            "The gate reports in the workspace say which, and resuming without addressing "
+            "it will reach the same verdict."
+        )
+    if status == "paused":
+        hints.append(
+            "Paused means the run stopped with its workspace intact — a cost cap, a "
+            "checkpoint, or a server that was restarted. Resuming picks up at the first "
+            "incomplete phase."
+        )
+
+    return {
+        "failed": True,
+        "status": status,
+        "headline": headline or "The run stopped without recording a reason.",
+        "raw": raw,
+        "specialists": specialists,
+        "hints": hints,
+    }
+
+
 @app.get("/htmx/papers/{paper_id}/live", response_class=HTMLResponse)
 async def paper_live_fragment(request: Request, paper_id: str = Depends(_validate_uuid)) -> Any:
     """HTML fragment for the live-updating section of paper.html.
@@ -1782,6 +1853,7 @@ async def paper_live_fragment(request: Request, paper_id: str = Depends(_validat
         {
             "paper": paper,
             "progress": _progress(list(events or []), dict(paper)),
+            "failure": _failure_detail(Path(get_settings().workspace_root) / paper_id, dict(paper), list(events or [])),
             "cost_spent": cost_spent,
             "cost_pct": cost_pct,
             "events": events or [],
