@@ -325,12 +325,53 @@ async def run_provider_checks(settings) -> list[Check]:
     ]
 
 
+#: Config trees the CLI backends refuse to write into. The Claude Code CLI
+#: rejects its own directory outright; the others are listed for the same
+#: reason and cost nothing to check.
+_BACKEND_SENSITIVE_DIRS = {
+    "claude_code": (".claude",),
+    "codex": (".codex",),
+    "gemini": (".gemini",),
+}
+
+
+def workspace_writable_check(settings) -> Check:
+    """Can the selected backend write into the workspace root?
+
+    A CLI backend runs as a subprocess with its own permission system, and
+    Claude Code refuses any path under ~/.claude. The pipeline process can
+    write there, so nothing looks wrong until every specialist fails its
+    contract with "file not written" — the same message a model that simply
+    ignored its contract would produce.
+    """
+    backend = getattr(settings, "llm_backend", "")
+    sensitive = _BACKEND_SENSITIVE_DIRS.get(backend)
+    root = Path(getattr(settings, "workspace_root", "workspaces")).expanduser().resolve()
+
+    if not sensitive:
+        return Check("workspace.writable", PASS, f"{root} (SDK backend — no CLI permission rules)")
+
+    home = Path.home().resolve()
+    for name in sensitive:
+        blocked = home / name
+        if root == blocked or blocked in root.parents:
+            return Check(
+                "workspace.writable",
+                FAIL,
+                f"{root} is inside {blocked} — the {backend} CLI refuses writes to its own "
+                "config tree, so every specialist will fail with 'file not written'. "
+                "Run from a directory outside it.",
+            )
+    return Check("workspace.writable", PASS, f"{root} is outside the {backend} config tree")
+
+
 async def run_doctor(settings) -> list[Check]:
     """Full preflight: setup (backend, skills, DB) + BYOD corpus + provider probes."""
     return [
         await backend_check(settings),
         await skills_check(settings),
         await db_check(settings),
+        workspace_writable_check(settings),
         await byod_local_data_check(settings),
         await byod_literature_check(settings),
         *await run_provider_checks(settings),
@@ -340,7 +381,7 @@ async def run_doctor(settings) -> list[Check]:
 # ── Output ───────────────────────────────────────────────────────────────────
 
 
-_BLOCKERS_PREFIXES = ("backend.", "db", "skills.")
+_BLOCKERS_PREFIXES = ("backend.", "db", "skills.", "workspace.")
 
 
 def render_human(checks: list[Check]) -> str:
