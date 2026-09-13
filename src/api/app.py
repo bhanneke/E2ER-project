@@ -1159,6 +1159,71 @@ async def dashboard_index(request: Request) -> Any:
     )
 
 
+def _workflow_inventory() -> dict[str, Any]:
+    """The specialist roster and skill wiring of this install.
+
+    Read from the registry at request time rather than from a checked-in
+    document, so the page cannot describe a different version than the one
+    serving it.
+    """
+    from ..core.specialists.registry import (
+        SPECIALIST_ARTIFACTS,
+        SPECIALIST_SIDECAR_ARTIFACTS,
+        SPECIALIST_SKILLS,
+    )
+
+    # The loader searches two locations (installed package, development
+    # checkout). Reuse its list so this page cannot describe a directory the
+    # loader does not read.
+    from ..skills.loader import _SKILLS_DIRS
+
+    found: set[str] = set()
+    for root in _SKILLS_DIRS:
+        if root.is_dir():
+            found.update(p.relative_to(root).with_suffix("").as_posix() for p in root.rglob("*.md"))
+    on_disk = sorted(found)
+
+    used: set[str] = set()
+    users: dict[str, list[str]] = {}
+    names = sorted(set(SPECIALIST_ARTIFACTS) | set(SPECIALIST_SKILLS))
+    for name in names:
+        for skill in SPECIALIST_SKILLS.get(name, []):
+            used.add(skill)
+            users.setdefault(skill, []).append(name)
+
+    specialists = [
+        {
+            "name": name,
+            "artifact": SPECIALIST_ARTIFACTS.get(name, ""),
+            "sidecars": list(SPECIALIST_SIDECAR_ARTIFACTS.get(name, [])),
+            "skills": SPECIALIST_SKILLS.get(name, []),
+        }
+        for name in names
+    ]
+    unused = [s for s in on_disk if s not in used]
+    missing = sorted(s for s in used if s not in on_disk)
+
+    return {
+        "specialists": specialists,
+        "unused": unused,
+        "missing": missing,
+        "s_users": users,
+        "counts": {
+            "specialists": len(specialists),
+            "on_disk": len(on_disk),
+            "referenced": len(used),
+            "unused": len(unused),
+            "missing": len(missing),
+        },
+    }
+
+
+@app.get("/workflow", response_class=HTMLResponse)
+async def dashboard_workflow(request: Request) -> Any:
+    """Which specialists exist, what they are told, and what nothing loads."""
+    return templates.TemplateResponse(request, "workflow.html", _workflow_inventory())
+
+
 @app.get("/papers/new", response_class=HTMLResponse)
 async def new_paper_form(request: Request) -> Any:
     return templates.TemplateResponse(

@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Workflow — E2ER{% endblock %}
+
+{% block content %}
+<h1>Workflow</h1>
+<p class="sub">
+  The specialists this install can dispatch, the skill files each one is given,
+  and the artifact it must write. A specialist that does not produce its
+  declared artifact fails its contract and is retried with the violation fed
+  back into the prompt.
+</p>
+
+<section class="wf-summary">
+  <div class="wf-stat"><span class="n">{{ counts.specialists }}</span><span class="l">specialists</span></div>
+  <div class="wf-stat"><span class="n">{{ counts.on_disk }}</span><span class="l">skill files installed</span></div>
+  <div class="wf-stat"><span class="n">{{ counts.referenced }}</span><span class="l">actually loaded</span></div>
+  <div class="wf-stat {% if counts.unused %}warn{% endif %}">
+    <span class="n">{{ counts.unused }}</span><span class="l">shipped, never loaded</span>
+  </div>
+  {% if counts.missing %}
+  <div class="wf-stat bad"><span class="n">{{ counts.missing }}</span><span class="l">referenced but absent</span></div>
+  {% endif %}
+</section>
+
+{% if missing %}
+<section>
+  <h2 class="bad">Referenced but not installed</h2>
+  <p>
+    A specialist asks for these and they are not on disk. The loader finds
+    nothing and raises nothing, so the instruction never reaches the model.
+  </p>
+  <ul class="wf-list bad">
+    {% for s in missing %}<li><code>{{ s }}</code> — wanted by {{ s_users.get(s, []) | join(", ") }}</li>{% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+<section>
+  <h2>Specialists</h2>
+  {% for sp in specialists %}
+  <details class="wf-spec">
+    <summary>
+      <span class="wf-name">{{ sp.name }}</span>
+      <span class="wf-art">{{ sp.artifact or "no declared artifact" }}</span>
+      <span class="wf-count">{{ sp.skills | length }} skill{% if sp.skills | length != 1 %}s{% endif %}</span>
+    </summary>
+    <div class="wf-body">
+      {% if sp.sidecars %}
+      <p class="wf-side">Sidecars: {% for s in sp.sidecars %}<code>{{ s }}</code>{% if not loop.last %}, {% endif %}{% endfor %}</p>
+      {% endif %}
+      {% if sp.skills %}
+      <ul class="wf-skills">
+        {% for s in sp.skills %}<li><code>{{ s }}</code></li>{% endfor %}
+      </ul>
+      {% else %}
+      <p class="wf-side">No skill files — runs on the base prompt alone.</p>
+      {% endif %}
+    </div>
+  </details>
+  {% endfor %}
+</section>
+
+<section>
+  <h2>Installed but never loaded</h2>
+  <p>
+    These skill files ship with the package and no specialist references them.
+    Each is either a capability that was written and never wired up, or dead
+    weight. Editing one changes nothing about any run.
+  </p>
+  <ul class="wf-list">
+    {% for s in unused %}<li><code>{{ s }}</code></li>{% endfor %}
+  </ul>
+</section>
+{% endblock %}
