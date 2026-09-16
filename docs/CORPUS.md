@@ -145,10 +145,22 @@ Two things make the number trustworthy:
   imported from elsewhere carries no measurement, and reporting zero would
   assert that the model never fabricated.
 
-The by-field breakdown is the more interesting half. Findings are stated plainly
-and are easy to quote; limitations and theoretical framing are diffuse and
-invite reconstruction. If that pattern holds across models, it says where
-extraction can be trusted and where it cannot.
+**Read the by-field breakdown before the headline.** On the first real corpus —
+eighteen open-access papers, 539 first-pass claims — six were rejected, and
+re-downloading each paper showed **four of the six were true quotes** that failed
+on PDF artefacts: hyphenated line breaks that arrived as hyphen+space, and an
+`fi` ligature. Only two were genuine fabrications. The reported rate was 1.1%;
+the real one was about 0.4%.
+
+So a rejection rate is a statement about the verifier until the verifier has
+been checked against the same papers. If yours looks high, re-read a sample of
+the rejected quotes against their sources before concluding anything about the
+model. The normaliser was corrected as a result, and the four artefact cases are
+regression tests.
+
+The other prediction that did not survive contact with data: `limitations` was
+expected to be the most-invented field, being diffuse and easy to reconstruct.
+It produced 92 claims and zero rejections.
 
 ## Export
 

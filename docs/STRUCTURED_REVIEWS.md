@@ -189,10 +189,21 @@ the least favourable possible conditions for fabricating. The rate at which it
 happens — overall, per field, per model — is a number about language models that
 is not otherwise easy to obtain, and it falls out of running the format at all.
 
-The expectation worth testing is that fabrication is not uniform across fields:
-findings are stated plainly and are easy to quote, whereas limitations and
-theoretical framing are diffuse and invite reconstruction. If that pattern holds,
-it says something about where extraction can be trusted and where it cannot.
+The first measurement did not go the way this document originally predicted. It
+said findings would be quotable and limitations diffuse and therefore invented
+more often. Across eighteen open-access papers, `limitations` produced 92 claims
+and **zero** rejections, while the rejections that did occur fell in
+`key_findings`, `data_sources` and `methodology`.
+
+The more important result was about the checker rather than the model. Of six
+rejections, four were true verbatim quotes that failed on PDF artefacts —
+hyphenated line breaks that became hyphen+space, and an `fi` ligature. Only two
+were genuine, giving 2/539 ≈ 0.4% rather than the 1.1% first reported. The
+normaliser was corrected; see `_match_form` in `review.py`.
+
+The lesson generalises: a verification rate is a statement about the verifier
+until the verifier has been checked against the same evidence. Report the
+false-rejection rate alongside it, or report neither.
 
 So `verification.rejections` retains each failure after the claim itself is
 dropped, and a consumer may ignore it entirely — the record is complete without
