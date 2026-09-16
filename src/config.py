@@ -115,6 +115,14 @@ class Settings(BaseSettings):
     literature_bibtex_file: str | None = None
     semantic_scholar_api_key: str | None = None
 
+    # The structured-review corpus: one SQLite file holding what papers *claim*,
+    # accumulated across projects. Deliberately outside any workspace — a
+    # library that resets per paper is not a library. Defaults to
+    # ~/.e2er/corpus.db; point CORPUS_DB elsewhere to keep it on another drive
+    # or to run a throwaway one. Unrelated to LOCAL_DATA_DIR, which is folders
+    # of the researcher's own files.
+    corpus_db: str | None = None
+
     # BYOD literature folder: a directory of the researcher's own papers,
     # discovered + persisted into SQLite at paper creation. May be a plain
     # folder of PDFs OR a Zotero folder (auto-detected by a zotero.sqlite at

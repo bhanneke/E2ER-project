@@ -64,4 +64,5 @@ jobs:
                  tests/test_structured_review.py \
                  tests/test_review_schema.py \
                  tests/test_extract_review.py \
+                 tests/test_corpus.py \
                  -v --tb=short -m "not e2e"
