@@ -74,6 +74,14 @@ def build_tier2_context(workspace: Path, paper_id: str) -> str:
     tier1 = build_tier1_context(workspace, paper_id)
     sections = [tier1, ""]
 
+    # Corpus evidence first, and with the largest budget of anything here: it is
+    # the only input that says what prior work *found* rather than that it
+    # exists, and every quote in it has been checked against its source. Absent
+    # unless a corpus has been built, in which case this costs nothing.
+    evidence = _read_artifact(workspace, "literature/corpus_evidence.md")
+    if evidence:
+        sections.append("## Evidence From The Corpus\n" + _truncate(evidence, 6000))
+
     for fname in [
         "literature_review.md",
         "data_summary.md",

@@ -446,6 +446,19 @@ def _paper_row(row: sqlite3.Row) -> PaperRow:
     )
 
 
+def get_papers(conn: sqlite3.Connection, keys: list[str]) -> dict[str, PaperRow]:
+    """Look up several papers by key at once, for turning search hits into citations."""
+    if not keys:
+        return {}
+    placeholders = ",".join("?" for _ in keys)
+    rows = conn.execute(
+        "SELECT p.*, r.n_claims, r.extractor_model FROM corpus_papers p "
+        f"LEFT JOIN corpus_reviews r ON r.key = p.key WHERE p.key IN ({placeholders})",
+        keys,
+    ).fetchall()
+    return {r["key"]: _paper_row(r) for r in rows}
+
+
 def list_papers(conn: sqlite3.Connection, *, limit: int = 50, offset: int = 0) -> list[PaperRow]:
     rows = conn.execute(
         "SELECT p.*, r.n_claims, r.extractor_model FROM corpus_papers p "

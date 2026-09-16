@@ -236,21 +236,33 @@ async def acquire_literature(
     this as a backstop — a paper with no bibliography is a bad paper, but a
     crashed run is worse.
     """
+    from . import corpus_context
     from .registry import search_sources
     from .storage import store_paper
+
+    wanted = [q.strip() for q in queries if q and q.strip()]
+
+    # The corpus first: offline, free, and already checked. This runs even when
+    # a bibliography exists, because writing a new evidence file is not the same
+    # as merging web hits into a BYOD library — the thing the skip below
+    # protects against. Degrades to nothing when no corpus has been built.
+    evidence = corpus_context.gather(wanted)
+    corpus_context.write_evidence(workspace, evidence)
 
     existing = bib_entry_count(workspace)
     if existing:
         logger.info("literature.bib already holds %d entries for %s — acquisition skipped", existing, paper_id)
         return 0
 
-    wanted = [q.strip() for q in queries if q and q.strip()]
     if not wanted:
         logger.warning("literature acquisition for %s got no query to search with", paper_id)
         return 0
 
     sources = search_sources(settings)
-    found: dict[str, PaperMetadata] = {}
+    # Corpus papers seed the bibliography so the drafter can cite what the
+    # evidence file quotes. Seeded first, so a web hit for the same paper does
+    # not displace the entry whose claims are already on disk.
+    found: dict[str, PaperMetadata] = {p.bibtex_key: p for p in evidence.as_metadata() if p.title}
     for query in wanted:
         for source in sources:
             try:
