@@ -144,6 +144,48 @@ def test_claims_are_grouped_by_paper(tmp_path):
     assert "**Limitations the authors concede**" in text
 
 
+def test_a_quote_spanning_lines_stays_one_blockquote(tmp_path):
+    """Found rendering the real corpus.
+
+    Quotes are verbatim spans of PDF text and routinely contain newlines mid
+    sentence. Emitted as-is, the second line loses its `>` prefix and the
+    blockquote breaks apart — the quote stops looking like a quote.
+    """
+    source = "1) what are the common IT elements?\n2) How do they connect to alignment?"
+    review = StructuredReview(
+        title="Wrapped",
+        doi="10.1/w",
+        year=2024,
+        research_question=Claim(
+            text="Two questions.",
+            evidence=Evidence(quote="1) what are the common IT elements?\n2) How do they connect to alignment?"),
+        ),
+    )
+    stamp(review, source_text=source, model="m")
+    verify_review(review, source)
+
+    path = tmp_path / "corpus.db"
+    with corpus.connect(path) as conn:
+        corpus.add_review(conn, review)
+
+    text = corpus_context.render_markdown(corpus_context.gather(["IT elements"], db=path))
+
+    quote_lines = [ln for ln in text.splitlines() if "what are the common IT elements" in ln]
+    assert len(quote_lines) == 1, "the quote must not be split across lines"
+    assert quote_lines[0].lstrip().startswith(">")
+    assert "How do they connect" in quote_lines[0]
+
+
+def test_a_field_heading_is_separated_from_the_previous_claim(db_path, tmp_path):
+    """Without a blank line the heading runs into the bullet above it."""
+    text = corpus_context.render_markdown(corpus_context.gather(["equity loading spillovers"], db=db_path))
+    lines = text.splitlines()
+
+    for i, line in enumerate(lines):
+        if line.startswith("**") and i > 0:
+            assert lines[i - 1] == "", f"heading {line!r} has no blank line before it"
+
+
 def test_the_file_says_the_quotes_were_checked(db_path, tmp_path):
     evidence = corpus_context.gather(["equity loading"], db=db_path)
     text = corpus_context.render_markdown(evidence)

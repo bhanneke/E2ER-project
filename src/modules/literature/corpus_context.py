@@ -134,6 +134,18 @@ def _gather(conn: sqlite3.Connection, queries: list[str], per_query: int) -> Cor
     return CorpusEvidence(hits=hits, papers=papers, queries=queries)
 
 
+def _one_line(text: str) -> str:
+    """Flatten a quote onto one line for display.
+
+    Quotes are verbatim spans of PDF text and routinely contain newlines mid
+    sentence. Emitted as-is, the second line of a quote loses its `>` prefix and
+    the blockquote silently breaks apart — the quote stops looking like a quote,
+    which is the one thing this file is for. Verification normalises whitespace
+    on both sides anyway, so a flattened quote still matches its source.
+    """
+    return " ".join((text or "").split())
+
+
 def render_markdown(evidence: CorpusEvidence) -> str:
     """Group the claims by paper, then by field, with every quote attached.
 
@@ -189,12 +201,14 @@ def render_markdown(evidence: CorpusEvidence) -> str:
         current = ""
         for claim in ordered:
             if claim.field != current:
+                if current:
+                    lines.append("")  # a heading run-on to the previous bullet reads as one block
                 current = claim.field
                 lines.append(f"**{_FIELD_LABELS.get(current, current)}**")
                 lines.append("")
-            lines.append(f"- {claim.text}")
+            lines.append(f"- {_one_line(claim.text)}")
             locator = f" — {claim.locator}" if claim.locator else ""
-            lines.append(f'  > "{claim.quote}"{locator}')
+            lines.append(f'  > "{_one_line(claim.quote)}"{locator}')
         lines.append("")
 
     return "\n".join(lines).rstrip() + "\n"
