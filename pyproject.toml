@@ -47,6 +47,10 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.11",
     "respx>=0.21",
+    # Validates the published schemas in docs/schemas/ against what the code
+    # actually writes. A format offered to others as implementable is a promise,
+    # and an unchecked promise drifts.
+    "jsonschema>=4.0",
 ]
 
 [project.scripts]
