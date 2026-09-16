@@ -439,6 +439,22 @@ def mock_db():
 
 
 @pytest.fixture(autouse=True)
+def _isolate_the_corpus(monkeypatch, tmp_path_factory):
+    """Never let the suite read the machine's real corpus at ~/.e2er/corpus.db.
+
+    acquire_literature consults the corpus, so on a developer machine with one
+    built, bibliography tests silently gained extra entries and failed with
+    `assert 5 == 2` — a real failure caused entirely by ambient state, and one
+    that would pass in CI and fail locally, which is the worst way round.
+
+    Points at a directory that stays empty, so the default is "no corpus".
+    Tests that want one pass `db=` explicitly.
+    """
+    empty = tmp_path_factory.mktemp("no-corpus") / "corpus.db"
+    monkeypatch.setattr("src.modules.literature.corpus_context.corpus_path", lambda explicit=None: explicit or empty)
+
+
+@pytest.fixture(autouse=True)
 def _block_real_db_pool(monkeypatch):
     """Hard-fail on any unmocked DB helper.
 

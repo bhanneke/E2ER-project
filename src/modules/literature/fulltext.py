@@ -72,6 +72,9 @@ def read_pdf_file(path: str | Path, *, max_chars: int = MAX_TEXT_CHARS) -> FullT
     except OSError as e:
         return FullText(error=f"could not read {p.name}: {e}", path=str(p))
 
+    if not looks_like_pdf(data):
+        return FullText(error=f"not a PDF ({describe_payload(data)})", path=str(p))
+
     text = extract_pdf_text(data, max_chars=max_chars)
     if not text.strip():
         return FullText(error="no extractable text (scanned image?)", path=str(p), origin="local")
@@ -114,10 +117,37 @@ async def download_pdf_text(pdf_url: str, *, max_chars: int = MAX_TEXT_CHARS) ->
     except Exception as e:
         return FullText(error=f"could not download: {e}", url=pdf_url)
 
+    if not looks_like_pdf(data):
+        return FullText(error=f"not a PDF ({describe_payload(data)})", url=pdf_url)
+
     text = extract_pdf_text(data, max_chars=max_chars)
     if not text.strip():
         return FullText(error="downloaded but no extractable text (likely scanned)", url=pdf_url)
     return FullText(text=text, origin="pdf_url", url=pdf_url)
+
+
+def looks_like_pdf(data: bytes) -> bool:
+    """Is this actually a PDF?
+
+    OA resolvers hand back landing pages, paywall interstitials and login
+    redirects with content-type text/html and a URL ending in .pdf. Parsing one
+    as a PDF fails, and the failure used to be reported as "no extractable text
+    (likely scanned)" — an explanation that is confidently wrong and sends
+    whoever reads it looking for an OCR problem that does not exist.
+    """
+    return data[:1024].lstrip()[:5] == b"%PDF-"
+
+
+def describe_payload(data: bytes) -> str:
+    """Name what arrived instead, so the error says something true."""
+    head = data[:1024].lstrip().lower()
+    if not data:
+        return "empty response"
+    if head.startswith((b"<!doc", b"<html")):
+        return "got an HTML page — probably a landing page or paywall"
+    if head.startswith(b"{") or head.startswith(b"["):
+        return "got JSON — probably an API error"
+    return f"unrecognised content, {len(data)} bytes"
 
 
 def _download_target(pdf_url: str, settings: Any) -> tuple[str, dict[str, str]]:

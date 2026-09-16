@@ -26,6 +26,7 @@ from src.modules.literature.corpus import (
     fts_query,
     get_review,
     has_doi,
+    is_covered,
     list_papers,
     list_topics,
     normalize_doi,
@@ -220,6 +221,54 @@ def test_has_doi_answers_the_question_refresh_asks(db):
     add_review(db, _review())
     assert has_doi(db, "https://doi.org/10.1234/EXAMPLE.1")
     assert not has_doi(db, "")
+
+
+def test_a_paper_without_a_doi_is_still_recognised_as_covered(db):
+    """The bug that made `refresh` not incremental.
+
+    arXiv returns no DOI, so a DOI-only coverage check re-downloaded and
+    re-extracted every preprint on every refresh, forever. The canonical key for
+    such a paper is the hash of its full text, which is only knowable after the
+    download and the model call the check exists to avoid.
+    """
+    review = _review(doi="", title="A preprint with no DOI", year=2024)
+    add_review(db, review)
+
+    assert is_covered(db, doi="", title="A preprint with no DOI", year=2024)
+    assert is_covered(db, doi="", title="  a   PREPRINT with no DOI  ", year=2024), (
+        "whitespace and case must not matter"
+    )
+    assert not is_covered(db, doi="", title="A different preprint", year=2024)
+    assert not is_covered(db, doi="", title="A preprint with no DOI", year=2023), (
+        "a different year is a different paper"
+    )
+
+
+def test_coverage_still_prefers_the_doi(db):
+    add_review(db, _review(doi="10.1234/example.1", title="Original title"))
+
+    # Same paper, retitled upstream: the DOI still identifies it.
+    assert is_covered(db, doi="10.1234/example.1", title="Completely different title")
+
+
+def test_an_untitled_doi_less_paper_is_never_falsely_covered(db):
+    add_review(db, _review(doi="", title="Something"))
+    assert not is_covered(db, doi="", title="", year=None)
+
+
+def test_a_corpus_written_before_title_keys_existed_still_opens(tmp_path):
+    """A corpus is meant to outlive the code that wrote it."""
+    path = tmp_path / "old.db"
+    with connect(path) as conn:
+        add_review(conn, _review(doi="", title="Legacy preprint", year=2024))
+        # Simulate the older file shape (the index has to go first).
+        conn.execute("DROP INDEX IF EXISTS idx_papers_title_key")
+        conn.execute("ALTER TABLE corpus_papers DROP COLUMN title_key")
+        conn.commit()
+
+    with connect(path) as conn:
+        assert stats(conn).papers == 1
+        assert is_covered(conn, doi="", title="Legacy preprint", year=2024), "the backfill must run"
 
 
 def test_removing_a_paper_takes_its_claims_with_it(db):

@@ -94,10 +94,18 @@ CREATE TABLE IF NOT EXISTS corpus_papers (
     source        TEXT NOT NULL DEFAULT '',
     access_license TEXT NOT NULL DEFAULT '',
     added_at      TEXT NOT NULL,
-    updated_at    TEXT NOT NULL
+    updated_at    TEXT NOT NULL,
+    -- A second, weaker identity used only to answer "have I already done this
+    -- one?" before downloading. The canonical key for a DOI-less paper is the
+    -- hash of its full text, which is not knowable until the text has been
+    -- fetched and the model has run — by which point the saving is gone.
+    title_key     TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_papers_doi  ON corpus_papers(doi);
 CREATE INDEX IF NOT EXISTS idx_papers_year ON corpus_papers(year);
+-- idx_papers_title_key is created in _add_missing_columns, not here: on a file
+-- written by an older version the column does not exist yet, and this script
+-- runs before the migration that adds it.
 
 CREATE TABLE IF NOT EXISTS corpus_reviews (
     key             TEXT PRIMARY KEY REFERENCES corpus_papers(key) ON DELETE CASCADE,
@@ -145,6 +153,27 @@ def _now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
 
 
+def _add_missing_columns(conn: sqlite3.Connection) -> None:
+    """Bring an older corpus file up to the current shape.
+
+    A corpus is meant to outlive the code that wrote it, so a file created by an
+    earlier version has to keep opening. CREATE TABLE IF NOT EXISTS does nothing
+    for a table that already exists with fewer columns.
+    """
+    have = {row["name"] for row in conn.execute("PRAGMA table_info(corpus_papers)")}
+    if "title_key" not in have:
+        conn.execute("ALTER TABLE corpus_papers ADD COLUMN title_key TEXT NOT NULL DEFAULT ''")
+        # Backfill, so papers stored before this column existed are still
+        # recognised as covered rather than being re-extracted once each.
+        for row in conn.execute("SELECT key, title, year FROM corpus_papers").fetchall():
+            conn.execute(
+                "UPDATE corpus_papers SET title_key = ? WHERE key = ?",
+                (title_key(row["title"] or "", row["year"]), row["key"]),
+            )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_papers_title_key ON corpus_papers(title_key)")
+    conn.commit()
+
+
 def _has_fts5(conn: sqlite3.Connection) -> bool:
     """Is FTS5 compiled into this SQLite build?
 
@@ -163,6 +192,7 @@ def _has_fts5(conn: sqlite3.Connection) -> bool:
 def init_schema(conn: sqlite3.Connection) -> bool:
     """Create the tables if absent. Returns whether FTS5 search is available."""
     conn.executescript(_SCHEMA)
+    _add_missing_columns(conn)
     fts = _has_fts5(conn)
     if fts:
         conn.executescript(_FTS_SCHEMA)
@@ -199,6 +229,23 @@ def normalize_doi(doi: str) -> str:
         if d.startswith(prefix):
             d = d[len(prefix) :]
     return d.strip()
+
+
+def title_key(title: str, year: int | None) -> str:
+    """A weak identity computable from metadata alone, before anything is downloaded.
+
+    Only ever used to answer "have I already done this one?". It is not the
+    canonical key, because titles collide across preprint and published
+    versions — but that is the right trade for a coverage check, where the cost
+    of a false match is one paper not re-read and the cost of a false miss is a
+    download and a model call every single refresh.
+    """
+    import hashlib
+
+    seed = normalize(title or "").lower()
+    if not seed:
+        return ""
+    return hashlib.sha256(f"{seed}|{year or ''}".encode()).hexdigest()[:32]
 
 
 def paper_key(review: StructuredReview) -> str:
@@ -271,7 +318,7 @@ def add_review(
     if existing:
         conn.execute(
             "UPDATE corpus_papers SET doi=?, title=?, authors_json=?, year=?, source=?, "
-            "access_license=?, updated_at=? WHERE key=?",
+            "access_license=?, updated_at=?, title_key=? WHERE key=?",
             (
                 doi,
                 review.title,
@@ -280,13 +327,14 @@ def add_review(
                 review.source,
                 review.access_license,
                 now,
+                title_key(review.title, review.year),
                 key,
             ),
         )
     else:
         conn.execute(
             "INSERT INTO corpus_papers (key, doi, title, authors_json, year, source, access_license, "
-            "added_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)",
+            "added_at, updated_at, title_key) VALUES (?,?,?,?,?,?,?,?,?,?)",
             (
                 key,
                 doi,
@@ -297,6 +345,7 @@ def add_review(
                 review.access_license,
                 now,
                 now,
+                title_key(review.title, review.year),
             ),
         )
 
@@ -406,11 +455,32 @@ def has_paper(conn: sqlite3.Connection, key: str) -> bool:
 
 
 def has_doi(conn: sqlite3.Connection, doi: str) -> bool:
-    """Is this DOI already covered? The question `refresh` asks before extracting."""
+    """Is this DOI already covered?"""
     d = normalize_doi(doi)
     if not d:
         return False
     return conn.execute("SELECT 1 FROM corpus_papers WHERE doi = ?", (d,)).fetchone() is not None
+
+
+def is_covered(conn: sqlite3.Connection, *, doi: str = "", title: str = "", year: int | None = None) -> bool:
+    """The question `refresh` asks before spending anything: have I done this one?
+
+    DOI when there is one. Otherwise title and year — because a great many
+    papers worth having have no DOI at all. arXiv returns none, and checking
+    only the DOI meant every preprint in the corpus was re-downloaded and
+    re-extracted on every single refresh, forever. "Incremental" was true only
+    for papers that happened to be published.
+
+    The canonical key for a DOI-less paper is the hash of its full text, which
+    cannot be known until after the download and the model call that this check
+    exists to avoid.
+    """
+    if doi and has_doi(conn, doi):
+        return True
+    tkey = title_key(title, year)
+    if not tkey:
+        return False
+    return conn.execute("SELECT 1 FROM corpus_papers WHERE title_key = ?", (tkey,)).fetchone() is not None
 
 
 def get_review(conn: sqlite3.Connection, key: str) -> StructuredReview | None:

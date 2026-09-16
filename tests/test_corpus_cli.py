@@ -22,6 +22,7 @@ from src.modules.literature.fulltext import (
     FullText,
     download_pdf_text,
     fetch_full_text,
+    looks_like_pdf,
     read_pdf_file,
     resolve_oa_pdf,
 )
@@ -126,6 +127,52 @@ def test_a_file_that_is_not_a_pdf_does_not_crash(tmp_path):
     result = read_pdf_file(p)
     assert not result.ok
     assert result.error
+
+
+async def test_an_html_landing_page_is_not_called_a_scanned_pdf(monkeypatch):
+    """Found on the first real run against live OA resolvers.
+
+    Resolvers routinely hand back a landing page or paywall interstitial at a
+    URL ending in .pdf. Parsing it fails, and reporting that as "no extractable
+    text (likely scanned)" is confidently wrong — it sends whoever reads it
+    looking for an OCR problem that does not exist.
+    """
+
+    async def _html(url, headers=None, max_bytes=None):
+        return b"<!DOCTYPE html>\n<html><body>Sign in to view this article</body></html>"
+
+    monkeypatch.setattr("src.modules.fetch.http.fetch_bytes", _html)
+
+    result = await download_pdf_text("https://example.org/article.pdf")
+
+    assert not result.ok
+    assert "HTML page" in result.error
+    assert "scanned" not in result.error
+
+
+async def test_an_api_error_payload_is_named_as_such(monkeypatch):
+    async def _json(url, headers=None, max_bytes=None):
+        return b'{"error": "not authorised"}'
+
+    monkeypatch.setattr("src.modules.fetch.http.fetch_bytes", _json)
+
+    result = await download_pdf_text("https://example.org/article.pdf")
+    assert "JSON" in result.error
+
+
+async def test_an_empty_response_is_named_as_such(monkeypatch):
+    async def _empty(url, headers=None, max_bytes=None):
+        return b""
+
+    monkeypatch.setattr("src.modules.fetch.http.fetch_bytes", _empty)
+
+    result = await download_pdf_text("https://example.org/article.pdf")
+    assert "empty response" in result.error
+
+
+def test_a_real_pdf_is_recognised_as_one(pdf):
+    assert looks_like_pdf(pdf.read_bytes())
+    assert not looks_like_pdf(b"<!DOCTYPE html>")
 
 
 async def test_the_local_copy_is_preferred_over_the_network(pdf, monkeypatch):
@@ -270,6 +317,67 @@ async def test_search_deduplicates_across_providers(monkeypatch):
     assert [p.doi for p in papers] == ["10.1/x", "10.1/y"]
 
 
+async def test_every_provider_is_consulted_not_just_the_first(monkeypatch):
+    """Found on a real run: four OpenAlex hits filled the limit, all of them
+    landing pages, and arXiv — which serves actual PDFs — was never reached."""
+    from src.modules.literature.models import SearchResult
+
+    class Landing:
+        name = "openalex"
+
+        async def search(self, q, limit):
+            return SearchResult(
+                papers=[PaperMetadata(title=f"Paywalled {i}", doi=f"10.1/p{i}") for i in range(4)],
+                source="openalex",
+                query=q,
+            )
+
+    class Readable:
+        name = "arxiv"
+
+        async def search(self, q, limit):
+            return SearchResult(
+                papers=[PaperMetadata(title="Preprint", pdf_url="https://arxiv.org/pdf/2401.00001")],
+                source="arxiv",
+                query=q,
+            )
+
+    monkeypatch.setattr("src.modules.literature.registry.search_sources", lambda s: [Landing(), Readable()])
+
+    papers = await _metadata_for("query", limit=4, search=True)
+
+    titles = [p.title for p in papers]
+    assert "Preprint" in titles, "the readable source must be reached"
+    # Round-robin: each source's top hit before either source's second.
+    assert titles[:2] == ["Paywalled 0", "Preprint"]
+
+
+async def test_one_prolific_source_cannot_take_the_whole_budget(monkeypatch):
+    from src.modules.literature.models import SearchResult
+
+    def _source(name: str, n: int):
+        class S:
+            async def search(self, q, limit):
+                return SearchResult(
+                    papers=[PaperMetadata(title=f"{name}-{i}", doi=f"10.1/{name}{i}") for i in range(n)],
+                    source=name,
+                    query=q,
+                )
+
+        S.name = name
+        return S()
+
+    monkeypatch.setattr(
+        "src.modules.literature.registry.search_sources", lambda s: [_source("big", 20), _source("small", 2)]
+    )
+
+    papers = await _metadata_for("query", limit=6, search=True)
+    names = [p.title for p in papers]
+
+    assert "small-0" in names and "small-1" in names, "the smaller source must still be represented"
+    assert len(papers) == 6
+
+
 async def test_a_provider_that_raises_does_not_stop_the_search(monkeypatch):
     from src.modules.literature.models import SearchResult
 
@@ -313,6 +421,37 @@ def _patch_pipeline(monkeypatch, *, text: FullText | None = None, review=None, e
     monkeypatch.setattr("src.modules.literature.fulltext.fetch_full_text", _text)
     monkeypatch.setattr("src.modules.literature.extract.extract_review", _extract)
     monkeypatch.setattr("src.modules.llm.registry.get_backend", lambda s, name=None: object())
+
+
+async def test_the_extracting_model_is_recorded(db, monkeypatch):
+    """A corpus that records "unknown" cannot report a fabrication rate.
+
+    Found on a real run: the model field resolved to an attribute that does not
+    exist on Settings, so every paper was stored as extracted by "unknown" —
+    which quietly destroys the one measurement this is all for.
+    """
+    seen: dict[str, str] = {}
+
+    async def _extract(src, meta, backend, **kw):
+        seen["model"] = kw.get("model", "")
+        return await _fake_extraction(meta)
+
+    _patch_pipeline(monkeypatch)
+    monkeypatch.setattr("src.modules.literature.extract.extract_review", _extract)
+
+    await _ingest(db, [PaperMetadata(title="P", doi="10.1/a")], model="", skip_known=True, verbose=False)
+
+    assert seen["model"], "an empty model label means the corpus cannot attribute anything"
+    assert seen["model"] != "unknown"
+
+
+async def _fake_extraction(meta):
+    from src.modules.literature.extract import ExtractionAttempt, ExtractionResult
+
+    out = ExtractionResult(review=_stored_review(meta.doi or "10.1/a"))
+    out.attempts = [ExtractionAttempt(index=0, parsed=True, proposed=1, verified=1, rejected=0)]
+    out.verification = verify_review(out.review, BODY)
+    return out
 
 
 async def test_ingest_stores_a_verified_review(db, monkeypatch):

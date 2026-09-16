@@ -74,21 +74,40 @@ async def _metadata_for(target: str, *, limit: int, search: bool) -> list[PaperM
                 return [found]
         return []
 
-    papers: list[PaperMetadata] = []
-    seen: set[str] = set()
+    # Ask every source, then interleave round-robin so each one contributes to
+    # the limit.
+    #
+    # Taking the first provider's hits until the limit fills sounds reasonable
+    # and is not: on a real run, five OpenAlex records filled it, every one of
+    # their "open access" URLs was a publisher landing page, and arXiv — which
+    # serves actual PDFs — was never reached. Zero papers stored from a query
+    # with plenty of readable matches.
+    #
+    # Ranking by "has a pdf_url" does not fix it either, because the landing
+    # pages have one too. Interleaving is provider-agnostic: it preserves each
+    # source's own ordering and only refuses to let one of them monopolise the
+    # budget.
+    per_source: list[list[PaperMetadata]] = []
     for source in search_sources(settings):
         try:
             result = await source.search(target, limit)
         except Exception as e:
             logger.warning("literature search via %s failed: %s", getattr(source, "name", source), e)
             continue
-        for paper in result.papers:
+        per_source.append(list(result.papers))
+
+    papers: list[PaperMetadata] = []
+    seen: set[str] = set()
+    for rank in range(limit):
+        for bucket in per_source:
+            if rank >= len(bucket):
+                continue
+            paper = bucket[rank]
             ident = corpus.normalize_doi(paper.doi) or paper.title.lower()
-            if ident and ident not in seen:
-                seen.add(ident)
-                papers.append(paper)
-        if len(papers) >= limit:
-            break
+            if not ident or ident in seen:
+                continue
+            seen.add(ident)
+            papers.append(paper)
     return papers[:limit]
 
 
@@ -108,7 +127,11 @@ async def _ingest(
 
     settings = get_settings()
     backend = get_backend(settings)
-    resolved_model = model or getattr(settings, "model", "") or ""
+    # Which model produced the claims is not decoration: the fabrication rate is
+    # a property of a model, and a corpus that records "unknown" cannot report
+    # one. default_model_for resolves against the backend actually in use, which
+    # is the same reason the run matrix uses it.
+    resolved_model = model or settings.default_model_for(settings.llm_backend) or settings.llm_backend
 
     report: dict[str, Any] = {"considered": len(papers), "skipped": 0, "no_text": 0, "no_claims": 0, "stored": 0}
     stored_keys: list[str] = []
@@ -117,7 +140,7 @@ async def _ingest(
     for paper in papers:
         label = (paper.title or paper.doi or "untitled")[:70]
 
-        if skip_known and paper.doi and corpus.has_doi(conn, paper.doi):
+        if skip_known and corpus.is_covered(conn, doi=paper.doi, title=paper.title, year=paper.year):
             report["skipped"] += 1
             if verbose:
                 print(f"  skip   {label}  (already covered)")
