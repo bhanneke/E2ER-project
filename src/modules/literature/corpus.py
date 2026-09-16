@@ -282,6 +282,42 @@ class AddOutcome:
         return asdict(self)
 
 
+def _existing_key_for(conn: sqlite3.Connection, review: StructuredReview) -> str | None:
+    """Find the row this review already belongs to, under a different key.
+
+    Checked in strength order: the DOI first, since that is what two corpora can
+    agree on, then title and year. Returns None when this is genuinely new.
+
+    Merging on title+year does mean a preprint and its published version collide
+    where both carry the same title and year. That is the same rule `is_covered`
+    already applies before spending a model call, and being consistent about it
+    is worth more than the rare case it merges.
+    """
+    doi = normalize_doi(review.doi)
+    tkey = title_key(review.title, review.year)
+
+    if doi:
+        row = conn.execute("SELECT key FROM corpus_papers WHERE doi = ?", (doi,)).fetchone()
+        if row is not None:
+            return str(row["key"])
+        # A DOI that is not in the corpus means a paper that is not in the
+        # corpus — UNLESS the stored copy has no DOI at all, which is the case
+        # this exists for. Matching on title alone here would merge two papers
+        # that share a title and differ by DOI, which are two papers.
+        if tkey:
+            row = conn.execute(
+                "SELECT key FROM corpus_papers WHERE title_key = ? AND COALESCE(doi, '') = ''", (tkey,)
+            ).fetchone()
+            return str(row["key"]) if row is not None else None
+        return None
+
+    if tkey:
+        row = conn.execute("SELECT key FROM corpus_papers WHERE title_key = ?", (tkey,)).fetchone()
+        if row is not None:
+            return str(row["key"])
+    return None
+
+
 def _unverified(review: StructuredReview) -> list[str]:
     return [f"{fname}: {claim.text[:80]}" for fname, claim in review.claims() if not claim.verified]
 
@@ -309,6 +345,21 @@ def add_review(
 
     key = paper_key(review)
     existing = conn.execute("SELECT key FROM corpus_papers WHERE key = ?", (key,)).fetchone()
+
+    if existing is None:
+        # The same paper can compute a different key on a later encounter: stored
+        # once from a source that gave no DOI (keyed by the hash of its text),
+        # met again through one that does (keyed by the DOI). Keying purely on
+        # paper_key() turned that into two papers, and a library that
+        # duplicates its entries as metadata improves is not a library.
+        #
+        # Found by re-extracting five papers: three came back as new rows rather
+        # than replacing the originals.
+        adopted = _existing_key_for(conn, review)
+        if adopted is not None:
+            key = adopted
+            existing = conn.execute("SELECT key FROM corpus_papers WHERE key = ?", (key,)).fetchone()
+
     if existing and not replace:
         return AddOutcome(key=key, added=False, replaced=False)
 

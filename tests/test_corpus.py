@@ -244,6 +244,67 @@ def test_a_paper_without_a_doi_is_still_recognised_as_covered(db):
     )
 
 
+def test_a_paper_that_later_gains_a_doi_stays_one_paper(db):
+    """Found by re-extracting five real papers: three came back as NEW rows.
+
+    arXiv supplies no DOI, so the paper is keyed by the hash of its text. Met
+    again through a source that does supply one, it keys by the DOI — and keying
+    purely on paper_key() made that two papers. A library that duplicates its
+    entries as its metadata improves is not a library.
+    """
+    add_review(db, _review(doi="", title="A preprint", year=2024, findings=[FINDING]))
+    assert stats(db).papers == 1
+
+    outcome = add_review(db, _review(doi="10.48550/arxiv.1234", title="A preprint", year=2024, findings=[LIMIT]))
+
+    assert stats(db).papers == 1, "the same paper must not become two"
+    assert outcome.replaced and not outcome.added
+    assert has_doi(db, "10.48550/arxiv.1234"), "and the DOI it arrived with must be recorded"
+
+
+def test_a_paper_that_loses_its_doi_stays_one_paper(db):
+    """The mirror case: a DOI-bearing record met again without one."""
+    add_review(db, _review(doi="10.1/a", title="Same paper", year=2024))
+    add_review(db, _review(doi="", title="Same paper", year=2024, findings=[LIMIT]))
+
+    assert stats(db).papers == 1
+
+
+def test_two_genuinely_different_papers_are_not_merged(db):
+    """Different titles AND different text. The shared-fixture SOURCE would make
+    these one paper by the text hash, which is correct but not what is under
+    test here."""
+    other_source = "We examine gas fees on Ethereum. Median fees fell sharply after the merge in 2022."
+    first = StructuredReview(
+        title="First paper",
+        year=2024,
+        key_findings=[Claim(text="a", evidence=Evidence(quote=FINDING))],
+    )
+    stamp(first, source_text=SOURCE, model="m")
+    verify_review(first, SOURCE)
+
+    second = StructuredReview(
+        title="Second paper",
+        year=2024,
+        key_findings=[Claim(text="b", evidence=Evidence(quote="Median fees fell sharply after the merge in 2022"))],
+    )
+    stamp(second, source_text=other_source, model="m")
+    verify_review(second, other_source)
+
+    add_review(db, first)
+    add_review(db, second)
+
+    assert stats(db).papers == 2
+
+
+def test_two_papers_sharing_a_title_but_not_a_doi_stay_separate(db):
+    """A title is not an identity. Two DOIs are two papers."""
+    add_review(db, _review(doi="10.1/a"))
+    add_review(db, _review(doi="10.1/b"))
+
+    assert stats(db).papers == 2
+
+
 def test_coverage_still_prefers_the_doi(db):
     add_review(db, _review(doi="10.1234/example.1", title="Original title"))
 
