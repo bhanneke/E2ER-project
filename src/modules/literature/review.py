@@ -153,19 +153,74 @@ class ReviewVerification:
 
 _WS = re.compile(r"\s+")
 
+#: Typographic ligatures. pypdf emits these as single codepoints where the PDF
+#: font used them, and a model writing the same sentence out types the ASCII
+#: letters instead. Two extractors disagreeing about "fi" must not mean two
+#: different papers, so this is folded before hashing as well as before matching.
+_LIGATURES = {
+    "\ufb01": "fi",
+    "\ufb02": "fl",
+    "\ufb00": "ff",
+    "\ufb03": "ffi",
+    "\ufb04": "ffl",
+    "\ufb05": "ft",
+    "\ufb06": "st",
+}
+
 
 def normalize(text: str) -> str:
-    """Collapse whitespace and soft hyphenation so a quote survives PDF extraction.
+    """Collapse whitespace, soft hyphenation and ligatures so a quote survives PDF extraction.
 
     Text pulled out of a PDF carries line breaks mid-sentence, hyphens at line
-    ends, and non-breaking spaces. A verbatim quote that fails only because the
-    source had a newline where the model wrote a space is a false rejection, and
-    false rejections are how a checker gets switched off.
+    ends, non-breaking spaces and ligature codepoints. A verbatim quote that
+    fails only because the source had a newline where the model wrote a space is
+    a false rejection, and false rejections are how a checker gets switched off.
     """
-    text = text.replace("­", "").replace("‐", "-")
+    for lig, plain in _LIGATURES.items():
+        if lig in text:
+            text = text.replace(lig, plain)
+    text = text.replace("\u00ad", "").replace("\u2010", "-")
     text = re.sub(r"-\s*\n\s*", "", text)  # hyphenated line break
-    text = text.replace(" ", " ").replace("’", "'").replace("“", '"').replace("”", '"')
+    text = text.replace("\u00a0", " ").replace("\u2019", "'").replace("\u201c", '"').replace("\u201d", '"')
     return _WS.sub(" ", text).strip()
+
+
+#: Whitespace and every flavour of dash, dropped before comparing a quote.
+_DROPPED_IN_MATCH = re.compile(r"[\s\-\u2010-\u2015]")
+
+
+def _match_form(text: str) -> tuple[str, list[int]]:
+    """The form quotes are compared in, plus a map back to offsets in ``text``.
+
+    Measured on real papers rather than guessed. Across eighteen open-access
+    PDFs this module rejected six claims; re-checking each against the paper
+    showed FOUR of them were not fabrications at all, but artefacts of how the
+    text came out of the PDF:
+
+        "DeFi  pro-jects"         a hyphenated line break that became hyphen+space
+        "centralized ex- change"  the same
+        "Speci{fi}cally"          an fi ligature (folded in normalize)
+        "arith- metic"            the same hyphen+space break
+
+    Two were genuine: one reworded sentence, and one quote that is absent from
+    the paper however generously whitespace is treated. So two thirds of what
+    this check called fabrication was the check being wrong — and a checker whose
+    own errors outnumber the errors it catches is worse than no checker at all.
+
+    Comparison therefore drops whitespace and hyphens entirely, which is what
+    those artefacts are made of, while leaving wording and word order untouched.
+    Those are what separate a quote from a paraphrase and still have to match
+    exactly. With a floor of 24 characters, a spurious hit on a space-free,
+    hyphen-free string is not a realistic failure mode.
+    """
+    out: list[str] = []
+    index: list[int] = []
+    for i, ch in enumerate(text):
+        if _DROPPED_IN_MATCH.match(ch):
+            continue
+        out.append(ch.lower())
+        index.append(i)
+    return "".join(out), index
 
 
 def verify_review(review: StructuredReview, source_text: str) -> ReviewVerification:
@@ -177,6 +232,7 @@ def verify_review(review: StructuredReview, source_text: str) -> ReviewVerificat
     """
     haystack = normalize(source_text)
     haystack_lower = haystack.lower()
+    squashed_hay, hay_index = _match_form(haystack)
     report = ReviewVerification()
 
     for field_name, claim in review.claims():
@@ -192,6 +248,14 @@ def verify_review(review: StructuredReview, source_text: str) -> ReviewVerificat
             evidence.reason = f"quote too short to be evidence ({len(quote)} chars)"
         else:
             idx = haystack_lower.find(quote.lower())
+            if idx < 0:
+                # Fall back to the whitespace- and hyphen-free form. This is the
+                # difference between catching a fabrication and punishing a
+                # model for a PDF that broke a word across a line.
+                squashed_quote, _ = _match_form(quote)
+                hit = squashed_hay.find(squashed_quote) if squashed_quote else -1
+                idx = hay_index[hit] if hit >= 0 else -1
+
             if idx >= 0:
                 evidence.verified = True
                 evidence.char_start = idx

@@ -116,6 +116,119 @@ def test_line_breaks_and_hyphenation_do_not_cause_false_rejections():
     assert verify_review(review, source).passed
 
 
+class TestPdfArtifactsAreNotFabrications:
+    """The artefacts that made this module call four true quotes fabrications.
+
+    Across eighteen open-access PDFs it rejected six claims. Re-checking each
+    against its paper showed four were true quotes that failed only on whitespace,
+    hyphenation or a ligature; two were genuine. A checker whose own errors
+    outnumber the errors it catches is worse than no checker.
+
+    The first two and the ligature case are taken from those real rejections.
+    The intra-word-spacing case is a capability test rather than a reproduction:
+    PDF extraction does split words that way, but the one real quote that looked
+    like it turned out to be absent from the paper for other reasons.
+    """
+
+    def test_a_hyphenated_line_break_that_became_hyphen_space(self):
+        """'DeFi pro-jects' — the newline turned into a space, the hyphen stayed."""
+        source = "We aggregate, parse and clean data from the Ethereum blockchain for four DeFi  pro-jects: Balancer."
+        review = StructuredReview(
+            data_sources=[
+                _claim(
+                    "Ethereum data for four projects.",
+                    "We aggregate, parse and clean data from the Ethereum blockchain for four DeFi projects: Balancer.",
+                )
+            ]
+        )
+        assert verify_review(review, source).passed
+
+    def test_a_word_split_across_a_line_in_the_middle(self):
+        """'centralized ex- change OKX'."""
+        source = "he transferred large amounts of borrowed CRV to the centralized ex- change OKX over November"
+        review = StructuredReview(
+            key_findings=[
+                _claim(
+                    "Moved CRV to OKX.",
+                    "he transferred large amounts of borrowed CRV to the centralized exchange OKX",
+                )
+            ]
+        )
+        assert verify_review(review, source).passed
+
+    def test_an_fi_ligature(self):
+        """pypdf emits U+FB01 where the font used one; a model types 'fi'."""
+        source = "Speciﬁcally, the implementation only requires a constant number of arithmetic operations."
+        review = StructuredReview(
+            key_findings=[
+                _claim(
+                    "Constant arithmetic.",
+                    "Specifically, the implementation only requires a constant number of arithmetic operations.",
+                )
+            ]
+        )
+        assert verify_review(review, source).passed
+
+    def test_intra_word_spacing_corruption(self):
+        """'will b e the time' — extraction broke the word; the model repaired it."""
+        source = "The moment of releasing the additional nodes will b e the time  when an attacker catches half"
+        review = StructuredReview(
+            key_findings=[
+                _claim(
+                    "Release timing.",
+                    "The moment of releasing the additional nodes will be the time when an attacker catches half",
+                )
+            ]
+        )
+        assert verify_review(review, source).passed
+
+    def test_the_offset_still_points_into_the_real_text(self):
+        """A fallback match must not report a meaningless location."""
+        source = "Preamble text. Speciﬁcally, the implementation requires a constant number of operations."
+        review = StructuredReview(
+            key_findings=[
+                _claim(
+                    "x",
+                    "Specifically, the implementation requires a constant number of operations.",
+                )
+            ]
+        )
+        verify_review(review, source)
+        start = review.key_findings[0].evidence.char_start
+
+        assert start > 0
+        assert normalize(source)[start:].lower().startswith("specifically")
+
+
+class TestLeniencyHasLimits:
+    """The fallback must not turn the checker into a rubber stamp."""
+
+    def test_a_paraphrase_is_still_rejected_under_the_fallback(self):
+        review = StructuredReview(
+            key_findings=[_claim("No change.", "We found no detectable changes in bitcoin's equity loadings")]
+        )
+        assert not verify_review(review, PAPER).passed
+
+    def test_reordered_words_are_still_rejected(self):
+        review = StructuredReview(
+            key_findings=[_claim("x", "the equity loading of bitcoin no detectable change we find in")]
+        )
+        assert not verify_review(review, PAPER).passed
+
+    def test_a_fabrication_is_still_rejected(self):
+        review = StructuredReview(
+            key_findings=[
+                _claim("x", "We document a sharp and persistent increase in the equity correlation of bitcoin")
+            ]
+        )
+        assert not verify_review(review, PAPER).passed
+
+    def test_dropping_spaces_does_not_let_a_short_quote_through(self):
+        review = StructuredReview(key_findings=[_claim("x", "W e f i n d")])
+        report = verify_review(review, PAPER)
+        assert report.rejected == 1
+
+
 def test_verification_counts_every_field_not_just_findings():
     review = StructuredReview(
         research_question=_claim(
