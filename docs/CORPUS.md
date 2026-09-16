@@ -41,10 +41,15 @@ e2er corpus export ./corpus-export
 ## What `add` actually does
 
 1. **Resolve** the target to papers — a DOI lookup, a local file, or a search
-   across the configured providers.
-2. **Skip** anything whose DOI is already covered, *before* downloading or
-   calling a model. This is what makes `refresh` affordable to run on a
-   schedule.
+   across the configured providers. Providers are interleaved round-robin, so
+   no single one can fill the whole limit: left to take the first N hits,
+   OpenAlex returned five records whose "open access" URLs were all publisher
+   landing pages, and arXiv — which serves real PDFs — was never reached.
+2. **Skip** anything already covered, *before* downloading or calling a model.
+   This is what makes `refresh` affordable to run on a schedule. Coverage is
+   checked by DOI where there is one and by title and year where there is not,
+   because arXiv assigns no DOIs and a DOI-only check re-extracted every
+   preprint on every refresh, forever.
 3. **Acquire the full text**: your local copy first, then a known PDF URL, then
    the open-access resolver chain (Unpaywall → OpenAlex → Crossref → Semantic
    Scholar).
@@ -62,6 +67,19 @@ counted and reported at the end:
 ```
 stored 7, skipped 12 already covered, 4 without full text, 1 with nothing checkable.
 ```
+
+Expect a substantial share of "without full text". Much of the published
+literature is not open access, and OA resolvers frequently return a landing page
+or a paywall interstitial at a URL ending in `.pdf`. Those are identified and
+named rather than mis-reported as scanned documents:
+
+```
+  ✗      An Introduction to Decentralized Finance (DeFi)
+         no full text: not a PDF (got an HTML page — probably a landing page or paywall)
+```
+
+If you have the PDF yourself, `e2er corpus add path/to/paper.pdf` skips the
+whole problem — a local copy is tried before anything is downloaded.
 
 ## Where it lives
 
@@ -156,6 +174,12 @@ Identity is the DOI where there is one, then the SHA-256 of the normalised
 source text, then title and year as a last resort. Title collisions across
 preprint and published versions are a merge someone should make deliberately,
 not one the database makes silently.
+
+Papers also carry a weaker `title_key` used *only* for the coverage check, since
+the canonical key for a DOI-less paper is the hash of its full text and that is
+not knowable until after the download and the model call the check exists to
+avoid. A false match there costs one paper not re-read; a false miss costs a
+download and a model call on every refresh.
 
 Re-extracting a paper **replaces** its claims wholesale rather than merging.
 Merging would leave claims from a superseded reading of the paper sitting beside
