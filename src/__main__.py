@@ -7,6 +7,14 @@ import sys
 
 
 def main() -> None:
+    # `e2er corpus …` delegates wholesale to its own parser. Done before the
+    # main parser sees anything, so `corpus search --limit 5` and
+    # `corpus --help` reach cli_corpus intact instead of being claimed here.
+    if len(sys.argv) > 1 and sys.argv[1] == "corpus":
+        from .cli_corpus import main as _corpus
+
+        sys.exit(_corpus(sys.argv[2:]))
+
     parser = argparse.ArgumentParser(
         prog="e2er",
         description="E2ER v3 — End-to-End Researcher pipeline",
@@ -304,6 +312,16 @@ def main() -> None:
         "--to",
         default=None,
         help="Destination root for the exported folder (default: OUTPUT_DIR / <LOCAL_DATA_DIR>/e2er_papers).",
+    )
+
+    # Declared so it appears in `e2er --help`; never parsed here. `corpus` owns
+    # a subcommand tree of its own and is intercepted before parse_args below —
+    # nargs=REMAINDER cannot hold a leading `--help` or `--limit`, which argparse
+    # claims for the top-level parser first.
+    subparsers.add_parser(
+        "corpus",
+        help="A local library of paper claims, each checked against its source (`e2er corpus --help`)",
+        add_help=False,
     )
 
     args = parser.parse_args()
