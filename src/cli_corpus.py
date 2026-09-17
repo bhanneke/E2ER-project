@@ -1,13 +1,21 @@
 """``e2er corpus`` — build and query a library of checked claims.
 
+    e2er corpus add ~/papers/               every PDF in a folder
+    e2er corpus add workspace/p1/literature/  a project's own staged papers
     e2er corpus add "10.1234/example"       one paper by DOI
     e2er corpus add paper.pdf               one paper from a local file
     e2er corpus add --search "crypto ETF"   the top hits for a query
+
     e2er corpus topics add "crypto ETF"     a standing interest
     e2er corpus refresh                     re-run every topic, extract what is new
     e2er corpus search "null effects"       search the claims
     e2er corpus stats                       size, coverage, and the fabrication rate
     e2er corpus export ./corpus-export      portable JSON
+
+A folder is the path worth reaching for first. Papers you already have are
+always readable; roughly two in five web hits sit behind a paywall or resolve to
+a publisher landing page, so a corpus built only from the web is a corpus of
+whatever happened to be open access.
 
 ``refresh`` is the command the whole thing is for: it is incremental and
 idempotent, so running it weekly accumulates coverage instead of redoing work.
@@ -51,7 +59,33 @@ def _pct(value: float | None) -> str:
 # ── acquisition ──────────────────────────────────────────────────────────────
 
 
-async def _metadata_for(target: str, *, limit: int, search: bool) -> list[PaperMetadata]:
+def _paper_from_pdf(path: Path) -> PaperMetadata:
+    """Read a local PDF's own metadata rather than guessing from its filename.
+
+    `extract_pdf_metadata` pulls title, authors, DOI and year out of the
+    document — from DocInfo, falling back to the first page. Using `path.stem`
+    instead, as this did, meant a paper was titled "1-s2.0-S0378426619301..."
+    with no DOI and no authors: unciteable, and impossible to deduplicate
+    against the same paper arriving from the web.
+    """
+    from .modules.literature.local_pdf_meta import extract_pdf_metadata
+
+    meta = extract_pdf_metadata(path)
+    meta.pdf_path = str(path)
+    meta.source = meta.source or "byod_pdf"
+    return meta
+
+
+def _papers_from_folder(folder: Path, *, recursive: bool) -> list[PaperMetadata]:
+    """Every PDF in a folder, with its own metadata."""
+    from .modules.local_corpus import PDF_EXTENSIONS, iter_corpus_files
+
+    papers = [_paper_from_pdf(pdf) for _root, pdf in iter_corpus_files([folder], PDF_EXTENSIONS, recursive=recursive)]
+    logger.info("corpus: %d PDF(s) found under %s", len(papers), folder)
+    return papers
+
+
+async def _metadata_for(target: str, *, limit: int | None, search: bool) -> list[PaperMetadata]:
     """Turn a DOI, a file path, or a query into papers to extract from."""
     from .config import get_settings
     from .modules.literature.registry import doi_fetch_sources, search_sources
@@ -59,8 +93,20 @@ async def _metadata_for(target: str, *, limit: int, search: bool) -> list[PaperM
     settings = get_settings()
 
     path = Path(target).expanduser()
+
+    # A folder of PDFs — the researcher's own library, or a paper's staged
+    # `literature/` folder. This is the primary case, not a convenience: papers
+    # you already have are always readable, whereas roughly two in five web hits
+    # are behind a paywall or resolve to a landing page.
+    if path.is_dir():
+        # No default cap here. Truncating a folder to ten would silently ignore
+        # most of a researcher's library and look like the tool losing papers;
+        # an explicit --limit still applies, for trying a big folder out first.
+        in_folder = _papers_from_folder(path, recursive=True)
+        return in_folder[:limit] if limit else in_folder
+
     if path.is_file() and path.suffix.lower() == ".pdf":
-        return [PaperMetadata(title=path.stem, source="local_pdf", pdf_path=str(path))]
+        return [_paper_from_pdf(path)]
 
     if not search and ("/" in target and target.lower().startswith(("10.", "doi:", "http"))):
         doi = corpus.normalize_doi(target)
@@ -87,10 +133,12 @@ async def _metadata_for(target: str, *, limit: int, search: bool) -> list[PaperM
     # pages have one too. Interleaving is provider-agnostic: it preserves each
     # source's own ordering and only refuses to let one of them monopolise the
     # budget.
+    # A web search is unbounded, so it always needs a cap.
+    capped = limit or DEFAULT_LIMIT
     per_source: list[list[PaperMetadata]] = []
     for source in search_sources(settings):
         try:
-            result = await source.search(target, limit)
+            result = await source.search(target, capped)
         except Exception as e:
             logger.warning("literature search via %s failed: %s", getattr(source, "name", source), e)
             continue
@@ -98,7 +146,7 @@ async def _metadata_for(target: str, *, limit: int, search: bool) -> list[PaperM
 
     papers: list[PaperMetadata] = []
     seen: set[str] = set()
-    for rank in range(limit):
+    for rank in range(capped):
         for bucket in per_source:
             if rank >= len(bucket):
                 continue
@@ -108,7 +156,7 @@ async def _metadata_for(target: str, *, limit: int, search: bool) -> list[PaperM
                 continue
             seen.add(ident)
             papers.append(paper)
-    return papers[:limit]
+    return papers[:capped]
 
 
 async def _ingest(
@@ -375,7 +423,12 @@ def build_parser() -> argparse.ArgumentParser:
     add = sub.add_parser("add", help="Add papers by DOI, local PDF, or search query")
     add.add_argument("target", help="A DOI, a path to a PDF, or a search query with --search")
     add.add_argument("--search", action="store_true", help="Treat the target as a search query")
-    add.add_argument("--limit", type=int, default=DEFAULT_LIMIT)
+    add.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help=f"Cap papers considered (default: {DEFAULT_LIMIT} for a search, no cap for a folder)",
+    )
     add.add_argument("--model", default="", help="Record which model extracted (default: configured model)")
     add.add_argument("--force", action="store_true", help="Re-extract papers already in the corpus")
     add.set_defaults(func=_cmd_add)

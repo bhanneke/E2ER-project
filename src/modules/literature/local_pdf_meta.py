@@ -42,6 +42,48 @@ def _year_from_text(*texts: str) -> int | None:
     return None
 
 
+#: Lines on page 1 that are never part of a title.
+_NOT_TITLE = ("doi", "http", "www", "abstract", "arxiv", "keywords", "jel ", "working paper", "preprint")
+
+
+def _title_from_first_page(first_page: str) -> str:
+    """The title, including the part that wrapped onto the next line.
+
+    Taking only the first substantial line gives "HOW DECENTRALIZED IS THE
+    GOVERNANCE OF" and stops there — titles wrap, and a truncated title is worse
+    than a missing one: it deduplicates against nothing, so the same paper
+    arriving later from the web is stored a second time.
+
+    Continuation lines are joined while they still look like part of a heading:
+    no terminal full stop above, no author/affiliation markers, and not yet into
+    the abstract.
+    """
+    lines = [ln.strip() for ln in first_page.splitlines()]
+    parts: list[str] = []
+
+    for line in lines:
+        low = line.lower()
+        if not parts:
+            if len(line) >= 12 and not low.startswith(_NOT_TITLE):
+                parts.append(line)
+            continue
+
+        # Already started. Keep going only while this still reads as a heading.
+        if not line:
+            break
+        if low.startswith(_NOT_TITLE):
+            break
+        if parts[-1].rstrip().endswith((".", "?", "!")) and not parts[-1].rstrip().endswith(("et al.", "Inc.")):
+            break
+        if "@" in line or re.search(r"\b(university|department|school|institute)\b", low):
+            break
+        if len(" ".join(parts)) > 250:
+            break
+        parts.append(line)
+
+    return " ".join(parts).strip()
+
+
 def extract_pdf_metadata(path: Path) -> PaperMetadata:
     """Best-effort metadata for a single PDF. Never raises."""
     path = Path(path)
@@ -71,11 +113,7 @@ def extract_pdf_metadata(path: Path) -> PaperMetadata:
     # A DocInfo title is often junk ("Microsoft Word - …") — prefer the first
     # substantial line of page 1 when DocInfo is empty or obviously a filename.
     if not title or title.lower().endswith((".pdf", ".docx", ".doc")) or title.lower().startswith("microsoft word"):
-        for line in (first_page or "").splitlines():
-            cand = line.strip()
-            if len(cand) >= 12 and not cand.lower().startswith(("doi", "http", "www", "abstract")):
-                title = cand
-                break
+        title = _title_from_first_page(first_page or "")
     if not title:
         title = _title_from_filename(path)
 

@@ -268,8 +268,72 @@ async def test_a_pdf_path_becomes_one_local_paper(pdf):
     papers = await _metadata_for(str(pdf), limit=10, search=False)
 
     assert len(papers) == 1
-    assert papers[0].source == "local_pdf"
+    assert papers[0].source == "byod_pdf", "the project's own label for a researcher-supplied PDF"
     assert papers[0].pdf_path == str(pdf)
+
+
+async def test_a_folder_of_pdfs_is_read_whole(tmp_path):
+    """The case this was missing.
+
+    BYOD and Zotero PDFs are staged into `workspace/<id>/literature/`, and a
+    researcher's own library is a folder. Requiring one `add` per file made the
+    obvious path the tedious one, and pushed people onto the web — where two in
+    five papers cannot be downloaded at all.
+    """
+    folder = tmp_path / "library"
+    (folder / "sub").mkdir(parents=True)
+    for name in ["a.pdf", "b.pdf", "sub/c.pdf"]:
+        (folder / name).write_bytes(minimal_pdf(BODY))
+    (folder / "notes.txt").write_text("not a paper")
+
+    papers = await _metadata_for(str(folder), limit=None, search=False)
+
+    assert len(papers) == 3, "every PDF, including in subfolders, and nothing else"
+    assert all(p.pdf_path for p in papers)
+
+
+async def test_a_folder_is_not_silently_truncated_to_the_search_default(tmp_path):
+    """Capping a library at ten would look like the tool losing papers."""
+    folder = tmp_path / "library"
+    folder.mkdir()
+    for i in range(14):
+        (folder / f"p{i}.pdf").write_bytes(minimal_pdf(BODY))
+
+    assert len(await _metadata_for(str(folder), limit=None, search=False)) == 14
+    assert len(await _metadata_for(str(folder), limit=5, search=False)) == 5, "an explicit --limit still applies"
+
+
+async def test_a_search_is_always_capped_even_without_an_explicit_limit(monkeypatch):
+    """A folder is finite; a web search is not."""
+    from src.modules.literature.models import SearchResult
+
+    class Source:
+        name = "s"
+
+        async def search(self, q, limit):
+            return SearchResult(
+                papers=[PaperMetadata(title=f"P{i}", doi=f"10.1/{i}") for i in range(50)], source="s", query=q
+            )
+
+    monkeypatch.setattr("src.modules.literature.registry.search_sources", lambda s: [Source()])
+
+    papers = await _metadata_for("query", limit=None, search=True)
+    assert len(papers) == 10
+
+
+def test_a_local_pdf_is_titled_from_its_contents_not_its_filename(tmp_path):
+    """A paper titled "1-s2.0-S0378426619301..." is unciteable, and cannot be
+    deduplicated against the same paper arriving from the web."""
+    from src.cli_corpus import _paper_from_pdf
+
+    p = tmp_path / "1-s2.0-S0378426619301234-main.pdf"
+    p.write_bytes(minimal_pdf("Crypto Wash Trading and Exchange Rankings\nCong, Li, Tang\n" + BODY))
+
+    meta = _paper_from_pdf(p)
+
+    assert meta.pdf_path == str(p)
+    assert meta.title, "a title is required"
+    assert not meta.title.startswith("1-s2.0"), f"still the filename: {meta.title!r}"
 
 
 async def test_a_doi_is_fetched_rather_than_searched(monkeypatch):
