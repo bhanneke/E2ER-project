@@ -23,6 +23,7 @@ coverage builds instead of resetting.
 ## Getting started
 
 ```bash
+e2er corpus add ~/papers/                   # every PDF in a folder — start here
 e2er corpus add "10.1257/aer.20201397"      # one paper by DOI
 e2er corpus add ~/papers/smith2024.pdf      # one paper you already have
 e2er corpus add --search "stablecoin runs"  # the top hits for a query
@@ -80,6 +81,39 @@ named rather than mis-reported as scanned documents:
 
 If you have the PDF yourself, `e2er corpus add path/to/paper.pdf` skips the
 whole problem — a local copy is tried before anything is downloaded.
+
+## Your own papers are read automatically
+
+A paper run reads the PDFs in its own `literature/` folder — the ones staged
+from `LITERATURE_DIR` or Zotero — into the corpus before drafting starts. You do
+not have to run `corpus add` for them.
+
+This is on by default because those papers are ones you deliberately supplied,
+and they are the only ones guaranteed to be readable: no paywalls, no landing
+pages, no 403s. It costs one model call per **new** paper and nothing for the
+rest, since coverage is checked before anything is spent — so the second run on
+the same folder is free.
+
+`CORPUS_AUTOINGEST=false` turns it off.
+
+### Deduplication across the two paths
+
+The same paper often arrives twice: once as your PDF, once from a search. Three
+things keep it one entry.
+
+- **DOI**, when both sides have one.
+- **arXiv stamp.** A preprint PDF carries `arXiv:2302.04068v2` down its margin,
+  and arXiv mints `10.48550/arXiv.<id>` for every submission — which is exactly
+  the DOI OpenAlex reports. Reading the stamp turns "no DOI" into an exact match.
+- **Title prefix.** A PDF title page says *"How Decentralized is the Governance
+  of Blockchain-based Finance?"*; OpenAlex appends *": Empirical Evidence from
+  four Governance Token Distributions"*. One is the beginning of the other.
+
+The prefix rule is used **only** to decide whether to skip a paper, never to
+decide which record a review is written to. A wrong skip costs one paper not
+re-read and shows in the `skipped` count; a wrong merge would overwrite one
+paper's claims with another's. Generous where a mistake is cheap, strict where
+it destroys something.
 
 ## Where it lives
 

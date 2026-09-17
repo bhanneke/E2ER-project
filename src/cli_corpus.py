@@ -167,66 +167,29 @@ async def _ingest(
     skip_known: bool,
     verbose: bool,
 ) -> dict[str, Any]:
-    """Acquire, extract, verify and store. Never raises on one bad paper."""
-    from .config import get_settings
-    from .modules.literature.extract import extract_review
-    from .modules.literature.fulltext import fetch_full_text
-    from .modules.llm.registry import get_backend
+    """Run the shared ingest loop, printing progress as it goes.
 
-    settings = get_settings()
-    backend = get_backend(settings)
-    # Which model produced the claims is not decoration: the fabrication rate is
-    # a property of a model, and a corpus that records "unknown" cannot report
-    # one. default_model_for resolves against the backend actually in use, which
-    # is the same reason the run matrix uses it.
-    resolved_model = model or settings.default_model_for(settings.llm_backend) or settings.llm_backend
+    The loop itself lives in modules/literature/ingest.py, because a paper run
+    needs it too and a library importing from the CLI would be backwards. This
+    is the terminal's view of it.
+    """
+    from .modules.literature.ingest import ingest_papers
 
-    report: dict[str, Any] = {"considered": len(papers), "skipped": 0, "no_text": 0, "no_claims": 0, "stored": 0}
-    stored_keys: list[str] = []
-    failures: list[dict[str, str]] = []
+    def show(event: str, label: str, detail: str) -> None:
+        if not verbose:
+            return
+        if event == "skip":
+            print(f"  skip   {label}  ({detail})")
+        elif event == "stored":
+            print(f"  add    {label}")
+            print(f"         {detail}")
+        else:
+            prefix = "no full text: " if event == "no_text" else ""
+            print(f"  \u2717      {label}")
+            print(f"         {prefix}{detail}")
 
-    for paper in papers:
-        label = (paper.title or paper.doi or "untitled")[:70]
-
-        if skip_known and corpus.is_covered(conn, doi=paper.doi, title=paper.title, year=paper.year):
-            report["skipped"] += 1
-            if verbose:
-                print(f"  skip   {label}  (already covered)")
-            continue
-
-        text = await fetch_full_text(paper)
-        if not text.ok:
-            report["no_text"] += 1
-            failures.append({"paper": label, "stage": "fulltext", "error": text.error})
-            if verbose:
-                print(f"  ✗      {label}\n         no full text: {text.error}")
-            continue
-
-        result = await extract_review(text.text, paper, backend, model=resolved_model)
-        if not result.ok:
-            report["no_claims"] += 1
-            failures.append({"paper": label, "stage": "extract", "error": result.error or "no claims survived"})
-            if verbose:
-                reason = result.error or f"0 of {result.proposed} claims verified"
-                print(f"  ✗      {label}\n         {reason}")
-            continue
-
-        result.review.access_license = paper.raw.get("license", "") if isinstance(paper.raw, dict) else ""
-        outcome = corpus.add_review(conn, result.review, extraction=result.to_dict())
-        stored_keys.append(outcome.key)
-        report["stored"] += 1
-        if verbose:
-            rate = _pct(result.first_pass_rejection_rate)
-            verb = "update" if outcome.replaced else "add"
-            print(f"  {verb:<6} {label}")
-            print(
-                f"         {outcome.claims} claims kept, {result.dropped} dropped "
-                f"({rate} of first-pass rejected) [{text.origin}]"
-            )
-
-    report["keys"] = stored_keys
-    report["failures"] = failures
-    return report
+    report = await ingest_papers(conn, papers, model=model, skip_known=skip_known, on_event=show)
+    return report.to_dict()
 
 
 # ── commands ─────────────────────────────────────────────────────────────────

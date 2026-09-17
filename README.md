@@ -413,12 +413,16 @@ the numbers gate applied one level up: a table cell must trace to a sidecar key,
 a claim must trace to a sentence.
 
 ```bash
+e2er corpus add ~/papers/                   # every PDF in a folder
 e2er corpus add "10.1257/aer.20201397"      # one paper by DOI
-e2er corpus add ~/papers/smith2024.pdf      # one you already have
 e2er corpus topics add "stablecoin runs"    # a standing interest
 e2er corpus refresh                         # re-run topics, extract only what's new
 e2er corpus search "null effects of listing"
 ```
+
+A paper run also reads its own `literature/` folder — the PDFs staged from
+`LITERATURE_DIR` or Zotero — into the corpus before drafting, so your own papers
+need no separate command (`CORPUS_AUTOINGEST=false` to disable).
 
 It lives at `~/.e2er/corpus.db` (`CORPUS_DB` to move it), outside any workspace,
 and accumulates across projects — `refresh` skips what it already has before

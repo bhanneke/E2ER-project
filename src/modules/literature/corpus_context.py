@@ -146,6 +146,59 @@ def _one_line(text: str) -> str:
     return " ".join((text or "").split())
 
 
+async def ingest_staged_pdfs(workspace: Path, *, db: str | Path | None = None) -> int:
+    """Read the paper's own staged PDFs into the corpus. Returns papers stored.
+
+    `workspace/<id>/literature/` is where BYOD and Zotero PDFs land before any
+    specialist runs. Those are the papers the researcher chose, and the only
+    ones guaranteed to be readable — so extracting them is the most reliable way
+    the corpus ever gets filled, and leaving it to a separate manual command
+    meant the obvious path was the one nobody took.
+
+    Costs one model call per NEW paper and nothing for the rest, because
+    `is_covered` runs before anything is spent. Never raises: a paper run must
+    not die because a PDF was unreadable.
+    """
+    lit_dir = Path(workspace) / "literature"
+    if not lit_dir.is_dir():
+        return 0
+
+    from ...config import get_settings
+    from ..local_corpus import PDF_EXTENSIONS, iter_corpus_files
+    from .ingest import ingest_papers
+    from .local_pdf_meta import extract_pdf_metadata
+
+    if not get_settings().corpus_autoingest:
+        logger.debug("corpus autoingest disabled; %s left unread", lit_dir)
+        return 0
+
+    papers = []
+    for _root, pdf in iter_corpus_files([lit_dir], PDF_EXTENSIONS, recursive=True):
+        meta = extract_pdf_metadata(pdf)
+        meta.pdf_path = str(pdf)
+        papers.append(meta)
+
+    if not papers:
+        return 0
+
+    logger.info("corpus: reading %d staged PDF(s) from %s", len(papers), lit_dir)
+    try:
+        with connect(db) as conn:
+            report = await ingest_papers(conn, papers, skip_known=True)
+    except Exception as e:  # noqa: BLE001 — never cost the run
+        logger.warning("corpus autoingest failed for %s: %s (run continues)", lit_dir, e)
+        return 0
+
+    logger.info(
+        "corpus: %d stored, %d already covered, %d unreadable from %s",
+        report.stored,
+        report.skipped,
+        report.no_text + report.no_claims,
+        lit_dir.name,
+    )
+    return report.stored
+
+
 def render_markdown(evidence: CorpusEvidence) -> str:
     """Group the claims by paper, then by field, with every quote attached.
 

@@ -123,6 +123,16 @@ class Settings(BaseSettings):
     # of the researcher's own files.
     corpus_db: str | None = None
 
+    # Read the paper's own staged PDFs (workspace/<id>/literature/, filled from
+    # LITERATURE_DIR or Zotero) into the corpus before drafting starts. On by
+    # default because those are papers the researcher deliberately supplied, and
+    # they are the only ones guaranteed to be readable — no paywalls.
+    #
+    # It costs one model call per NEW paper. Nothing is re-read: the corpus is
+    # incremental, so the second run on the same folder spends nothing. Set
+    # CORPUS_AUTOINGEST=false to turn it off.
+    corpus_autoingest: bool = True
+
     # BYOD literature folder: a directory of the researcher's own papers,
     # discovered + persisted into SQLite at paper creation. May be a plain
     # folder of PDFs OR a Zotero folder (auto-detected by a zotero.sqlite at

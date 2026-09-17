@@ -529,9 +529,47 @@ def is_covered(conn: sqlite3.Connection, *, doi: str = "", title: str = "", year
     if doi and has_doi(conn, doi):
         return True
     tkey = title_key(title, year)
-    if not tkey:
+    if tkey and conn.execute("SELECT 1 FROM corpus_papers WHERE title_key = ?", (tkey,)).fetchone() is not None:
+        return True
+    return _covered_by_title_prefix(conn, title)
+
+
+#: A title short enough that another paper could plausibly begin the same way.
+MIN_PREFIX_TITLE_CHARS = 40
+
+
+def _title_stem(title: str) -> str:
+    """A title reduced to what two records of the same paper should agree on."""
+    return normalize(title or "").lower().rstrip(" .?!:;,-—").strip()
+
+
+def _covered_by_title_prefix(conn: sqlite3.Connection, title: str) -> bool:
+    """Is one of these titles the beginning of the other?
+
+    A preprint PDF says "How Decentralized is the Governance of Blockchain-based
+    Finance?"; OpenAlex says the same followed by ": Empirical Evidence from
+    four Governance Token Distributions". Same paper, no shared DOI, and exact
+    title matching calls them two.
+
+    Used ONLY here, never to decide which row a review is written to. The
+    asymmetry is deliberate and is the whole reason this is safe: a false match
+    in a coverage check costs one paper not re-read, which shows up in the
+    "skipped" count and is undone with --force. A false match in add_review()
+    would overwrite one paper's claims with another's, silently and
+    irrecoverably. Generous where a mistake is cheap; strict where it destroys
+    something.
+    """
+    stem = _title_stem(title)
+    if len(stem) < MIN_PREFIX_TITLE_CHARS:
         return False
-    return conn.execute("SELECT 1 FROM corpus_papers WHERE title_key = ?", (tkey,)).fetchone() is not None
+
+    for row in conn.execute("SELECT title FROM corpus_papers WHERE title != ''"):
+        other = _title_stem(row["title"])
+        if len(other) < MIN_PREFIX_TITLE_CHARS:
+            continue
+        if stem.startswith(other) or other.startswith(stem):
+            return True
+    return False
 
 
 def get_review(conn: sqlite3.Connection, key: str) -> StructuredReview | None:

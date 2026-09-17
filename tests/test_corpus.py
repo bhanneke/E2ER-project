@@ -305,6 +305,49 @@ def test_two_papers_sharing_a_title_but_not_a_doi_stay_separate(db):
     assert stats(db).papers == 2
 
 
+def test_the_same_paper_from_a_pdf_and_from_the_web_is_covered_once(db):
+    """The real case: a preprint PDF and its OpenAlex record.
+
+    The PDF's title page says "How Decentralized is the Governance of
+    Blockchain-based Finance?"; OpenAlex appends ": Empirical Evidence from four
+    Governance Token Distributions". Neither shares a DOI with the other, and
+    exact title matching calls them two papers.
+    """
+    from_pdf = _review(doi="", title="HOW DECENTRALIZED IS THE GOVERNANCE OF BLOCKCHAIN-BASED FINANCE?", year=2021)
+    add_review(db, from_pdf)
+
+    assert is_covered(
+        db,
+        doi="",
+        title="How Decentralized is the Governance of Blockchain-based Finance: "
+        "Empirical Evidence from four Governance Token Distributions",
+        year=2021,
+    )
+
+
+def test_a_short_title_does_not_match_by_prefix(db):
+    """ "Bitcoin" must not cover every paper beginning with the word."""
+    add_review(db, _review(doi="", title="Stablecoins", year=2024))
+    assert not is_covered(db, doi="", title="Stablecoins and Bank Runs in Decentralized Finance", year=2024)
+
+
+def test_prefix_matching_never_decides_where_a_review_is_stored(db):
+    """The asymmetry that makes generous matching safe.
+
+    A coverage false-positive skips a paper. A storage false-positive would
+    overwrite one paper's claims with another's.
+    """
+    long_a = "Designing Autonomous Markets for Stablecoin Monetary Policy"
+    long_b = "Designing Autonomous Markets for Stablecoin Monetary Policy and Redemption Curves"
+
+    add_review(db, _review(doi="10.1/a", title=long_a, findings=[FINDING]))
+    add_review(db, _review(doi="10.1/b", title=long_b, findings=[LIMIT]))
+
+    assert stats(db).papers == 2, "two DOIs are two papers, whatever their titles share"
+    assert get_review(db, "doi:10.1/a") is not None
+    assert get_review(db, "doi:10.1/b") is not None
+
+
 def test_coverage_still_prefers_the_doi(db):
     add_review(db, _review(doi="10.1234/example.1", title="Original title"))
 

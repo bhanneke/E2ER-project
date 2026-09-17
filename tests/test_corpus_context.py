@@ -230,6 +230,94 @@ def test_without_a_corpus_the_context_is_unchanged(tmp_path):
     assert "Evidence From The Corpus" not in context
 
 
+class TestStagedPdfsAreRead:
+    """`workspace/<id>/literature/` holds the papers the researcher supplied.
+
+    Going to the web for literature while ignoring the PDFs already on disk was
+    the wrong order: those are the only papers guaranteed to be readable.
+    """
+
+    async def test_staged_pdfs_are_ingested_before_evidence_is_gathered(self, tmp_path, monkeypatch):
+        ws = tmp_path / "ws"
+        (ws / "literature").mkdir(parents=True)
+        (ws / "literature" / "a.pdf").write_bytes(b"%PDF-1.4 fake")
+
+        seen: dict[str, int] = {}
+
+        async def _fake_ingest(conn, papers, **kw):
+            from src.modules.literature.ingest import IngestReport
+
+            seen["n"] = len(papers)
+            return IngestReport(considered=len(papers), stored=len(papers))
+
+        monkeypatch.setattr("src.modules.literature.ingest.ingest_papers", _fake_ingest)
+
+        stored = await corpus_context.ingest_staged_pdfs(ws, db=tmp_path / "c.db")
+
+        assert seen["n"] == 1, "the staged PDF must reach the ingest loop"
+        assert stored == 1
+
+    async def test_no_literature_folder_costs_nothing(self, tmp_path, monkeypatch):
+        async def _never(*a, **k):
+            raise AssertionError("must not run without a literature folder")
+
+        monkeypatch.setattr("src.modules.literature.ingest.ingest_papers", _never)
+        assert await corpus_context.ingest_staged_pdfs(tmp_path / "ws", db=tmp_path / "c.db") == 0
+
+    async def test_an_empty_literature_folder_costs_nothing(self, tmp_path, monkeypatch):
+        ws = tmp_path / "ws"
+        (ws / "literature").mkdir(parents=True)
+
+        async def _never(*a, **k):
+            raise AssertionError("must not run with no PDFs")
+
+        monkeypatch.setattr("src.modules.literature.ingest.ingest_papers", _never)
+        assert await corpus_context.ingest_staged_pdfs(ws, db=tmp_path / "c.db") == 0
+
+    async def test_it_can_be_switched_off(self, tmp_path, monkeypatch):
+        """One model call per paper is real money on a metered backend."""
+        ws = tmp_path / "ws"
+        (ws / "literature").mkdir(parents=True)
+        (ws / "literature" / "a.pdf").write_bytes(b"%PDF-1.4 fake")
+
+        async def _never(*a, **k):
+            raise AssertionError("must not spend when CORPUS_AUTOINGEST is off")
+
+        monkeypatch.setattr("src.modules.literature.ingest.ingest_papers", _never)
+        monkeypatch.setattr("src.config.get_settings", _settings_with(corpus_autoingest=False))
+
+        assert await corpus_context.ingest_staged_pdfs(ws, db=tmp_path / "c.db") == 0
+
+    async def test_a_failure_does_not_cost_the_run(self, tmp_path, monkeypatch):
+        ws = tmp_path / "ws"
+        (ws / "literature").mkdir(parents=True)
+        (ws / "literature" / "a.pdf").write_bytes(b"%PDF-1.4 fake")
+
+        async def _boom(*a, **k):
+            raise RuntimeError("backend unavailable")
+
+        monkeypatch.setattr("src.modules.literature.ingest.ingest_papers", _boom)
+
+        assert await corpus_context.ingest_staged_pdfs(ws, db=tmp_path / "c.db") == 0
+
+
+def _settings_with(**overrides):
+    """A settings object with fields overridden, without touching the cached one.
+
+    get_settings() is cached, so mutating what it returns would leak the
+    override into every test that ran afterwards — the kind of pollution that
+    surfaces as an unrelated failure three files later.
+    """
+    import copy
+
+    from src.config import get_settings
+
+    patched = copy.copy(get_settings())
+    for k, v in overrides.items():
+        object.__setattr__(patched, k, v)
+    return lambda: patched
+
+
 async def test_acquisition_seeds_the_bibliography_from_the_corpus(db_path, tmp_path, monkeypatch):
     """End to end through the real stage: corpus → literature.bib + evidence file."""
     from src.config import get_settings

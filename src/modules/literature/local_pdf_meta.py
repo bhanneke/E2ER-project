@@ -18,6 +18,11 @@ from .models import PaperMetadata
 logger = get_logger(__name__)
 
 _DOI_RE = re.compile(r"\b10\.\d{4,9}/[-._;()/:A-Za-z0-9]+\b")
+
+#: The stamp arXiv prints down the margin of every preprint it hosts, e.g.
+#: "arXiv:2302.04068v2 [q-fin.TR]". The version suffix is dropped: v1 and v2 of
+#: a preprint are the same paper.
+_ARXIV_RE = re.compile(r"arXiv[:\s]\s*(\d{4}\.\d{4,5})(?:v\d+)?", re.IGNORECASE)
 _YEAR_RE = re.compile(r"\b(19|20)\d{2}\b")
 
 
@@ -120,6 +125,15 @@ def extract_pdf_metadata(path: Path) -> PaperMetadata:
     m = _DOI_RE.search(first_page)
     if m:
         doi = m.group(0).rstrip(".")
+
+    # An arXiv stamp is a DOI in disguise. arXiv mints 10.48550/arXiv.<id> for
+    # every submission, and that is exactly the DOI OpenAlex reports — so
+    # reading the stamp off the page turns a preprint with "no DOI" into one
+    # that matches its own web record exactly, instead of relying on titles.
+    if not doi:
+        a = _ARXIV_RE.search(first_page)
+        if a:
+            doi = f"10.48550/arXiv.{a.group(1)}"
 
     year = _year_from_text(first_page[:2000], path.stem)
 

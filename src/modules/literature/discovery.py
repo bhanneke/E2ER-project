@@ -242,7 +242,13 @@ async def acquire_literature(
 
     wanted = [q.strip() for q in queries if q and q.strip()]
 
-    # The corpus first: offline, free, and already checked. This runs even when
+    # Read this paper's own staged PDFs into the corpus first, so the evidence
+    # gathered below can include them. These are the papers the researcher
+    # actually supplied; going to the web for what is already on disk was the
+    # wrong order.
+    await corpus_context.ingest_staged_pdfs(workspace)
+
+    # Then the corpus: offline, free, and already checked. This runs even when
     # a bibliography exists, because writing a new evidence file is not the same
     # as merging web hits into a BYOD library — the thing the skip below
     # protects against. Degrades to nothing when no corpus has been built.
