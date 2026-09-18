@@ -115,6 +115,24 @@ class Settings(BaseSettings):
     literature_bibtex_file: str | None = None
     semantic_scholar_api_key: str | None = None
 
+    # The structured-review corpus: one SQLite file holding what papers *claim*,
+    # accumulated across projects. Deliberately outside any workspace — a
+    # library that resets per paper is not a library. Defaults to
+    # ~/.e2er/corpus.db; point CORPUS_DB elsewhere to keep it on another drive
+    # or to run a throwaway one. Unrelated to LOCAL_DATA_DIR, which is folders
+    # of the researcher's own files.
+    corpus_db: str | None = None
+
+    # Read the paper's own staged PDFs (workspace/<id>/literature/, filled from
+    # LITERATURE_DIR or Zotero) into the corpus before drafting starts. On by
+    # default because those are papers the researcher deliberately supplied, and
+    # they are the only ones guaranteed to be readable — no paywalls.
+    #
+    # It costs one model call per NEW paper. Nothing is re-read: the corpus is
+    # incremental, so the second run on the same folder spends nothing. Set
+    # CORPUS_AUTOINGEST=false to turn it off.
+    corpus_autoingest: bool = True
+
     # BYOD literature folder: a directory of the researcher's own papers,
     # discovered + persisted into SQLite at paper creation. May be a plain
     # folder of PDFs OR a Zotero folder (auto-detected by a zotero.sqlite at

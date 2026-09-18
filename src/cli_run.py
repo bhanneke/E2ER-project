@@ -54,11 +54,21 @@ def resolve_rq_input(rq: str | None, rq_file: str | None) -> str | None:
     return rq
 
 
+def _api_port() -> int:
+    """The port `e2er serve` would bind, from settings (PORT in .env)."""
+    try:
+        from .config import get_settings
+
+        return int(get_settings().port)
+    except Exception:  # noqa: BLE001 — a bad config must not break `run`
+        return 8280
+
+
 def _api_root() -> str:
     """Resolve the API URL from settings; the user can override via E2ER_API_URL."""
     if url := os.environ.get("E2ER_API_URL"):
         return url.rstrip("/")
-    return "http://127.0.0.1:8280"
+    return f"http://127.0.0.1:{_api_port()}"
 
 
 def _api_reachable(timeout: float = 1.5) -> bool:
@@ -72,7 +82,7 @@ def _api_reachable(timeout: float = 1.5) -> bool:
 
 
 def _start_uvicorn_in_background() -> int:
-    """Spawn `uvicorn src.api.app:app --port 8280` as a detached subprocess.
+    """Spawn `uvicorn src.api.app:app` on the configured port, detached.
 
     Returns the PID. The caller waits up to ~10s for /api/papers to come up,
     then proceeds.
@@ -87,7 +97,7 @@ def _start_uvicorn_in_background() -> int:
         "--host",
         "127.0.0.1",
         "--port",
-        "8280",
+        str(_api_port()),
         "--log-level",
         "info",
     ]

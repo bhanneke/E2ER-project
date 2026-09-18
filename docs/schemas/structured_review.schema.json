@@ -1,0 +1,147 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/bhanneke/E2ER-project/docs/schemas/structured_review.schema.json",
+  "title": "E2ER structured review",
+  "description": "What one paper claims, in a form another program can read. Every claim carries the verbatim sentence it was taken from, so a reader can check it against the source rather than trusting the extractor. Written by `e2er corpus add`; verified offline by verify_review(). Published as a portable format any extractor could emit and any consumer could read.",
+  "type": "object",
+  "required": ["schema_version"],
+  "additionalProperties": false,
+
+  "properties": {
+    "schema_version": {
+      "const": "e2er-structured-review/1",
+      "description": "Which contract this record follows. The only required field: everything else degrades gracefully, but a consumer that cannot tell which version it is reading cannot degrade safely."
+    },
+
+    "paper_id": {
+      "type": "string",
+      "description": "Identifier within the producing system. Not portable; use doi to match across corpora."
+    },
+    "title": { "type": "string" },
+    "authors": { "type": "array", "items": { "type": "string" } },
+    "year": { "type": ["integer", "null"], "minimum": 1500, "maximum": 2200 },
+    "doi": {
+      "type": "string",
+      "description": "Bare DOI, no https://doi.org/ prefix, lowercased. The deduplication key."
+    },
+    "source": {
+      "type": "string",
+      "description": "Where the record came from: openalex, arxiv, semantic_scholar, crossref, zotero, local_pdf, ..."
+    },
+    "access_license": {
+      "type": "string",
+      "description": "License of the full text the claims were extracted from, when known. Empty means unknown, which is not the same as unrestricted."
+    },
+
+    "research_question": { "$ref": "#/$defs/nullableClaim" },
+    "theoretical_framework": { "$ref": "#/$defs/nullableClaim" },
+    "hypotheses": { "$ref": "#/$defs/claimList" },
+    "methodology": { "$ref": "#/$defs/nullableClaim" },
+    "data_sources": { "$ref": "#/$defs/claimList" },
+    "sample": { "$ref": "#/$defs/nullableClaim" },
+    "key_findings": { "$ref": "#/$defs/claimList" },
+    "limitations": { "$ref": "#/$defs/claimList" },
+    "implications": { "$ref": "#/$defs/nullableClaim" },
+
+    "extracted_at": { "type": "string", "description": "ISO-8601 UTC timestamp of the extraction." },
+    "extractor_model": {
+      "type": "string",
+      "description": "Model that produced the claims. Recorded because extraction quality is a property of the model, and a corpus mixing models should say so."
+    },
+    "source_sha256": {
+      "type": "string",
+      "pattern": "^([0-9a-f]{64})?$",
+      "description": "SHA-256 of the NORMALISED source text (whitespace collapsed, soft hyphenation removed, smart quotes folded — see normalize() in review.py). Normalised rather than raw so the same PDF read by two different extractors fingerprints identically."
+    },
+    "source_chars": { "type": "integer", "minimum": 0, "description": "Length of that normalised text." },
+
+    "verification": {
+      "$ref": "#/$defs/verification",
+      "description": "Optional. The verdict reached on this record. Always recomputable from (record, source text), so a consumer may ignore it; stored because the rejections are evidence about the extractor rather than about the paper."
+    }
+  },
+
+  "$defs": {
+    "evidence": {
+      "type": "object",
+      "title": "Evidence",
+      "description": "The sentence a claim was taken from, and where it was found.",
+      "required": ["quote"],
+      "additionalProperties": false,
+      "properties": {
+        "quote": {
+          "type": "string",
+          "description": "A VERBATIM span from the source text. Not a paraphrase, not a tidied quote. Verification locates it by exact substring match after normalisation; a quote shorter than 24 characters is rejected outright, because a short fragment matches text it never came from."
+        },
+        "locator": {
+          "type": "string",
+          "description": "Human hint for finding the quote: section heading, page, table number. Never used for matching."
+        },
+        "char_start": {
+          "type": "integer",
+          "minimum": -1,
+          "description": "Offset of the quote in the normalised source text. -1 means not located."
+        },
+        "verified": {
+          "type": "boolean",
+          "description": "Whether the quote was found. A record whose claims are all false here has been checked and failed, which is not the same as unchecked."
+        },
+        "reason": { "type": "string", "description": "Why verification failed, when it did. Empty when verified." }
+      }
+    },
+
+    "claim": {
+      "type": "object",
+      "title": "Claim",
+      "description": "One extracted statement plus the evidence for it. `text` is the extractor's paraphrase and is never treated as fact on its own; `evidence.quote` is what makes it checkable.",
+      "required": ["text", "evidence"],
+      "additionalProperties": false,
+      "properties": {
+        "text": { "type": "string", "minLength": 1 },
+        "evidence": { "$ref": "#/$defs/evidence" }
+      }
+    },
+
+    "nullableClaim": {
+      "oneOf": [{ "$ref": "#/$defs/claim" }, { "type": "null" }],
+      "description": "null means the field was not extracted, or was extracted and rejected. Absence of a claim is never evidence that the paper lacks one."
+    },
+
+    "claimList": { "type": "array", "items": { "$ref": "#/$defs/claim" } },
+
+    "verification": {
+      "type": "object",
+      "title": "ReviewVerification",
+      "required": ["total", "verified", "rejected"],
+      "additionalProperties": false,
+      "properties": {
+        "total": { "type": "integer", "minimum": 0, "description": "Claims judged." },
+        "verified": { "type": "integer", "minimum": 0 },
+        "rejected": { "type": "integer", "minimum": 0 },
+        "passed": {
+          "type": "boolean",
+          "description": "rejected == 0. True vacuously when total == 0, which is why `conclusive` exists."
+        },
+        "conclusive": {
+          "type": "boolean",
+          "description": "total > 0. An extraction that produced nothing passes without having checked anything, and must not read like one that checked twenty claims."
+        },
+        "rejections": {
+          "type": "array",
+          "description": "One entry per claim that failed, retained after the claim itself is dropped. This is the measurement: how often an extractor invents a quote when it has been told the quote will be checked.",
+          "items": {
+            "type": "object",
+            "required": ["field", "reason"],
+            "additionalProperties": false,
+            "properties": {
+              "field": { "type": "string", "description": "Which review field the rejected claim belonged to." },
+              "claim": { "type": "string" },
+              "quote": { "type": "string" },
+              "reason": { "type": "string" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

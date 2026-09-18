@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -249,3 +250,64 @@ def test_cli_doctor_subcommand_registered():
     r = subprocess.run([sys.executable, "-m", "src", "--help"], capture_output=True, text=True, timeout=15)
     assert r.returncode == 0
     assert "doctor" in r.stdout
+
+
+# ── workspace writability under a CLI backend ────────────────────────────────
+
+
+def _ws_settings(**kw):
+    base = {"llm_backend": "claude_code", "workspace_root": "/tmp/e2er-ws"}
+    base.update(kw)
+    return SimpleNamespace(**base)
+
+
+def test_workspace_inside_the_cli_config_tree_is_a_failure(tmp_path, monkeypatch):
+    """~/.claude is the Claude Code CLI's own tree and it refuses writes there.
+
+    The pipeline process can write to it perfectly well, so nothing looks wrong
+    until every specialist fails its contract with "file not written" — the same
+    message a model that ignored its contract produces. It cost a 53-minute run
+    to diagnose once.
+    """
+    from src.doctor import workspace_writable_check
+
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+    root = tmp_path / ".claude" / "jobs" / "abc" / "tmp" / "project" / "workspaces"
+    root.mkdir(parents=True)
+
+    check = workspace_writable_check(_ws_settings(workspace_root=str(root)))
+
+    assert check.status == FAIL
+    assert "refuses writes" in check.detail
+
+
+def test_workspace_outside_the_config_tree_passes(tmp_path, monkeypatch):
+    from src.doctor import workspace_writable_check
+
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+    root = tmp_path / "research" / "workspaces"
+    root.mkdir(parents=True)
+
+    check = workspace_writable_check(_ws_settings(workspace_root=str(root)))
+    assert check.status == PASS
+
+
+def test_sdk_backends_have_no_cli_permission_rules(tmp_path, monkeypatch):
+    """The restriction belongs to the CLI subprocess, not the filesystem, so an
+    in-process backend is unaffected even under ~/.claude."""
+    from src.doctor import workspace_writable_check
+
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+    root = tmp_path / ".claude" / "workspaces"
+    root.mkdir(parents=True)
+
+    check = workspace_writable_check(_ws_settings(llm_backend="anthropic", workspace_root=str(root)))
+    assert check.status == PASS
+
+
+def test_an_unwritable_workspace_blocks_the_run():
+    """A run cannot succeed without a writable workspace, so it is a blocker
+    rather than a warning."""
+    from src.doctor import _BLOCKERS_PREFIXES
+
+    assert any("workspace" in prefix for prefix in _BLOCKERS_PREFIXES)

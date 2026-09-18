@@ -1,4 +1,5 @@
 """Run SQL migrations in order."""
+
 import asyncio
 import sys
 from pathlib import Path
@@ -23,6 +24,7 @@ async def main():
             print(f"  ✗ {path.name}: {e}")
 
     from src.db.client import close_pool
+
     await close_pool()
 
 

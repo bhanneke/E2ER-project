@@ -7,6 +7,91 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.1] — 2026-09-18
+
+### A corpus of what papers claim, not just that they exist
+
+A literature search returns titles and abstracts. A drafter given thirty BibTeX
+entries can cite plausibly and nothing more — it has read the metadata and is
+guessing at the content, which is how a related-work section ends up describing
+papers nobody read.
+
+`e2er corpus` builds a local library of *claims* instead. Each entry is an
+extracted statement plus the verbatim sentence it came from, checked against the
+paper's full text; a claim whose quote cannot be located is discarded rather
+than flagged. That is the numbers gate one level up — a table cell must trace to
+a sidecar key, a claim must trace to a sentence, and neither check asks a model
+whether it is telling the truth.
+
+```
+e2er corpus add ~/papers/                  every PDF in a folder
+e2er corpus add "10.1257/aer.20201397"     one paper by DOI
+e2er corpus topics add "stablecoin runs"   a standing interest
+e2er corpus refresh                        re-run topics, extract only what is new
+e2er corpus search "null effects of listing"
+```
+
+The library lives at `~/.e2er/corpus.db` (`CORPUS_DB` to move it), outside any
+workspace, and accumulates across projects. `refresh` checks coverage before
+downloading or calling a model, so running it on a schedule is cheap.
+
+A paper run reads the PDFs staged in its own `literature/` folder into the
+corpus before drafting, then writes the matching claims to
+`literature/corpus_evidence.md` and seeds `literature.bib` from them — so what
+the drafter quotes is what it can cite. `CORPUS_AUTOINGEST=false` disables it.
+With no corpus, nothing changes.
+
+The record format is published as
+[`docs/schemas/structured_review.schema.json`](docs/schemas/structured_review.schema.json)
+and specified in [docs/STRUCTURED_REVIEWS.md](docs/STRUCTURED_REVIEWS.md), so
+another tool can produce records E2ER reads or read records E2ER produces. It is
+validated against what the code emits in CI, because a format published as
+implementable is a promise and an unchecked promise drifts.
+
+### Two thirds of the "fabrications" were the checker
+
+`e2er corpus stats` reports how often the extractor supplied a quote that was
+not in the paper — fabrication measured under the least favourable conditions
+for fabricating, since the prompt states the quotes are checked mechanically.
+
+On the first real corpus that read 1.1%. Re-downloading every paper and
+re-checking each rejected quote showed **four of six were true verbatim quotes**,
+failing on artefacts of PDF extraction: hyphenated line breaks arriving as
+hyphen+space, and an `fi` ligature. The real rate was closer to 0.4%.
+
+`normalize()` now folds ligatures, and quote matching falls back to a
+whitespace- and hyphen-free comparison when the strict match fails — dropping
+exactly what those artefacts are made of, while wording and word order still
+have to match exactly. A paraphrase, a reordering and an invented sentence are
+all still rejected, and there are tests for each.
+
+The prediction this replaced was also wrong: `limitations` was expected to be
+the most-invented field, being diffuse and easy to reconstruct. It produced 129
+claims and zero rejections.
+
+### Fixed
+
+* **`e2er corpus refresh` was not incremental for preprints.** Coverage was
+  checked by DOI, and arXiv assigns none — so every preprint was re-downloaded
+  and re-extracted on every refresh, forever. Papers now carry a title-and-year
+  key used only for the coverage check.
+* **One provider could take the whole search budget.** Five OpenAlex records
+  filled a limit of five, every one of their "open access" URLs was a publisher
+  landing page, and arXiv — which serves real PDFs — was never reached. Sources
+  are interleaved round-robin.
+* **A landing page was reported as a scanned PDF.** Resolvers routinely return
+  HTML at a URL ending in `.pdf`; the failure now names what actually arrived
+  instead of sending the reader after an OCR problem that does not exist.
+* **A local PDF was titled by its filename.** `extract_pdf_metadata()` existed
+  and was not called, so a paper was stored as `1-s2.0-S0378426619301234-main`
+  with no authors, year or DOI. Its title heuristic also stopped at the first
+  line, truncating any title that wrapped — and a truncated title deduplicates
+  against nothing.
+* **The same paper could be stored twice**, once from a PDF and once from the
+  web. An arXiv stamp is now read as the DOI arXiv mints from it, and a title
+  that is the beginning of another counts as covered — used only to decide
+  whether to skip a paper, never to decide which record a review is written to.
+
 ## [0.9.0] — 2026-09-13
 
 ### A bibliography exists before the drafter writes

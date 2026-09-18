@@ -1,6 +1,6 @@
 [project]
 name = "e2er"
-version = "0.9.0"
+version = "0.9.1"
 description = "End-to-End Researcher — automated research pipeline for economics, finance, and IS"
 requires-python = ">=3.11"
 readme = "README.md"
@@ -47,6 +47,10 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.11",
     "respx>=0.21",
+    # Validates the published schemas in docs/schemas/ against what the code
+    # actually writes. A format offered to others as implementable is a promise,
+    # and an unchecked promise drifts.
+    "jsonschema>=4.0",
 ]
 
 [project.scripts]

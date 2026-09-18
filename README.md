@@ -401,6 +401,40 @@ The pipeline **does** reach the internet for literature, through guarded tools:
 > in Zotero's cloud file storage (the Web API can't serve locally-stored / WebDAV /
 > over-quota files). When it isn't, use open-access resolution by DOI instead.
 
+### A corpus of what papers claim
+
+A search tells you a paper exists. It does not tell you what the paper found, so
+a drafter handed thirty BibTeX entries can only cite plausibly.
+
+`e2er corpus` builds a local library of *claims* instead — each one stored with
+the verbatim sentence it came from, checked against the paper's full text. A
+claim whose quote cannot be located is discarded rather than flagged, which is
+the numbers gate applied one level up: a table cell must trace to a sidecar key,
+a claim must trace to a sentence.
+
+```bash
+e2er corpus add ~/papers/                   # every PDF in a folder
+e2er corpus add "10.1257/aer.20201397"      # one paper by DOI
+e2er corpus topics add "stablecoin runs"    # a standing interest
+e2er corpus refresh                         # re-run topics, extract only what's new
+e2er corpus search "null effects of listing"
+```
+
+A paper run also reads its own `literature/` folder — the PDFs staged from
+`LITERATURE_DIR` or Zotero — into the corpus before drafting, so your own papers
+need no separate command (`CORPUS_AUTOINGEST=false` to disable).
+
+It lives at `~/.e2er/corpus.db` (`CORPUS_DB` to move it), outside any workspace,
+and accumulates across projects — `refresh` skips what it already has before
+downloading or calling a model, so running it on a schedule is cheap. When a
+paper run starts, matching claims are written to `literature/corpus_evidence.md`
+and reach the drafter, and the papers seed `literature.bib`. With no corpus,
+nothing changes.
+
+`e2er corpus stats` also reports how often the model supplied a quote that was
+not in the paper — see [docs/CORPUS.md](docs/CORPUS.md) and the format spec in
+[docs/STRUCTURED_REVIEWS.md](docs/STRUCTURED_REVIEWS.md).
+
 ---
 
 ## Going deeper
