@@ -19,6 +19,7 @@ from src.cli_init import (
     _EXAMPLE_RQS,
     _check_backend_prereqs,
     _env_block,
+    _scaffold_project_dirs,
     _write_env,
     init,
 )
@@ -37,15 +38,23 @@ class TestBackendChoices:
         assert _BACKEND_CHOICES[0][0] == "claude_code"
 
     def test_all_known_backends_covered(self):
-        """Wizard must cover every backend the runtime accepts."""
+        """Wizard must cover every backend the runtime accepts — and the
+        keys must equal the config `llm_backend` Literal exactly, because
+        they are written verbatim as LLM_BACKEND into the generated .env."""
+        from src.config import Settings
+
         backend_keys = {key for key, _ in _BACKEND_CHOICES}
         assert backend_keys == {
             "claude_code",
             "anthropic",
             "openrouter",
-            "codex_cli",
-            "gemini_cli",
+            "codex",
+            "gemini",
         }
+        # Guard against re-introducing the codex_cli/gemini_cli drift: every
+        # wizard key must be a valid llm_backend value.
+        for key in backend_keys:
+            Settings(llm_backend=key)  # raises if not in the Literal
 
     def test_descriptions_mention_cost(self):
         """Each backend description must clue the user in on cost so
@@ -98,18 +107,18 @@ class TestBackendPrereqs:
         # The fix-it instruction is included
         assert any("npm i -g @anthropic-ai/claude-code" in n for n in notes)
 
-    def test_codex_cli_checks_for_codex_binary(self):
+    def test_codex_checks_for_codex_binary(self):
         with patch("src.cli_init.shutil.which", return_value="/usr/local/bin/codex"):
-            ready, _ = _check_backend_prereqs("codex_cli")
+            ready, _ = _check_backend_prereqs("codex")
         assert ready is True
         with patch("src.cli_init.shutil.which", return_value=None):
-            ready, notes = _check_backend_prereqs("codex_cli")
+            ready, notes = _check_backend_prereqs("codex")
         assert ready is False
         assert any("npm i -g @openai/codex" in n for n in notes)
 
-    def test_gemini_cli_checks_for_gemini_binary(self):
+    def test_gemini_checks_for_gemini_binary(self):
         with patch("src.cli_init.shutil.which", return_value=None):
-            ready, notes = _check_backend_prereqs("gemini_cli")
+            ready, notes = _check_backend_prereqs("gemini")
         assert ready is False
         assert any("npm i -g @google/gemini-cli" in n for n in notes)
 
@@ -131,11 +140,17 @@ class TestEnvBlock:
         )
         assert "LLM_BACKEND=claude_code" in body
 
-    def test_data_module_flag(self):
+    def test_no_ignored_data_module_flag(self):
+        """There is no DATA_MODULE_ENABLED setting (config derives
+        data_module_enabled from ALLIUM_API_KEY). The wizard must not
+        write a key the runtime silently ignores."""
         on = _env_block("anthropic", True, "", "", "", "")
         off = _env_block("anthropic", False, "", "", "", "")
-        assert "DATA_MODULE_ENABLED=true" in on
-        assert "DATA_MODULE_ENABLED=false" in off
+        assert "DATA_MODULE_ENABLED" not in on
+        assert "DATA_MODULE_ENABLED" not in off
+        # Both branches point at the real lever, ALLIUM_API_KEY.
+        assert "ALLIUM_API_KEY" in on
+        assert "ALLIUM_API_KEY" in off
 
     def test_bibtex_path_only_when_set(self):
         with_bib = _env_block("anthropic", False, "/path/to/refs.bib", "", "", "")
@@ -164,7 +179,10 @@ class TestEnvBlock:
 
     def test_data_module_includes_allium_key_hint(self):
         body = _env_block("anthropic", True, "", "", "", "")
-        assert "# ALLIUM_API_KEY" in body
+        assert "ALLIUM_API_KEY" in body
+        # The key is only ever a shell-env hint, never a live .env line.
+        for line in body.splitlines():
+            assert not line.lstrip().startswith("ALLIUM_API_KEY=")
 
     def test_no_secrets_written_to_env(self):
         """Defensive: even when the user pasted a GitHub PAT during the
@@ -179,11 +197,15 @@ class TestEnvBlock:
             github_token_pat="ghp_TESTTESTTEST",
             github_owner="user",
         )
-        # The PAT appears commented out
-        assert "# GITHUB_TOKEN=ghp_TESTTESTTEST" in body
-        # No uncommented GITHUB_TOKEN= line
+        # GITHUB_USERNAME is a real config key and is written live.
+        assert "GITHUB_USERNAME=user" in body
+        # The PAT appears only inside a comment (as a shell-export hint).
+        assert "ghp_TESTTESTTEST" in body
         for line in body.splitlines():
             stripped = line.lstrip()
+            if "ghp_TESTTESTTEST" in stripped:
+                assert stripped.startswith("#"), f"PAT written outside a comment: {line!r}"
+            # No uncommented GITHUB_TOKEN= line, ever.
             if stripped.startswith("GITHUB_TOKEN="):
                 pytest.fail(f"GITHUB_TOKEN written as live env var, not a comment: {line!r}")
 
@@ -231,6 +253,50 @@ class TestWriteEnvOverwrite:
 # ---------------------------------------------------------------------------
 # Non-TTY exit path
 # ---------------------------------------------------------------------------
+
+
+class TestScaffolding:
+    def test_scaffold_creates_dirs_and_readmes(self, tmp_path: Path):
+        data_dir, lit_dir = _scaffold_project_dirs(tmp_path)
+        assert data_dir.is_dir() and lit_dir.is_dir()
+        assert data_dir.name == "data" and lit_dir.name == "literature"
+        assert (data_dir / "README.md").is_file()
+        assert (lit_dir / "README.md").is_file()
+        # The literature README states the PDF privacy guarantee.
+        assert "never leave this machine" in (lit_dir / "README.md").read_text()
+
+    def test_scaffold_is_idempotent_and_preserves_user_files(self, tmp_path: Path):
+        data_dir, _ = _scaffold_project_dirs(tmp_path)
+        user_file = data_dir / "my.csv"
+        user_file.write_text("keep me\n")
+        # Overwrite the README with custom text; scaffolding must not clobber it.
+        (data_dir / "README.md").write_text("custom\n")
+        _scaffold_project_dirs(tmp_path)  # second run
+        assert user_file.read_text() == "keep me\n"
+        assert (data_dir / "README.md").read_text() == "custom\n"
+
+    def test_env_block_includes_byod_dirs(self):
+        body = _env_block("claude_code", False, "", "", "", "", local_data_dir="./data", literature_dir="./literature")
+        assert "LOCAL_DATA_DIR=./data" in body
+        assert "LITERATURE_DIR=./literature" in body
+
+
+class TestDefaultsPath:
+    def test_defaults_is_non_interactive_and_scaffolds(self, tmp_path: Path, monkeypatch, capsys):
+        monkeypatch.chdir(tmp_path)
+        # No TTY, and input() must never be called on the --defaults path.
+        with (
+            patch("src.cli_init._is_tty", return_value=False),
+            patch("builtins.input", side_effect=AssertionError("input() called on --defaults path")),
+            patch("src.cli_install_skills.install_skills", return_value=0),
+        ):
+            code = init(force=False, defaults=True)
+        assert code == 0
+        assert (tmp_path / "data").is_dir()
+        assert (tmp_path / "literature").is_dir()
+        env = (tmp_path / ".env").read_text()
+        assert "LLM_BACKEND=claude_code" in env
+        assert "LOCAL_DATA_DIR=./data" in env
 
 
 class TestNonTTYPath:

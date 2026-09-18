@@ -164,6 +164,32 @@ class LocalBibLibrary(ReferenceLibrary):
         return papers
 
 
+class LocalZoteroLibrary(ReferenceLibrary):
+    """The researcher's Zotero library read from a LOCAL folder (``zotero.sqlite``
+    + ``storage/`` PDFs) — no Web API key needed. Distinct from ``ZoteroLibrary``
+    (Web API). Reads are cheap (one sqlite pass) so this is safe at prompt time.
+    Never raises — degrades to ``[]``.
+    """
+
+    name = "zotero_local"
+
+    def __init__(self, literature_dir: str | None) -> None:
+        self._literature_dir = literature_dir
+
+    def entries(self) -> list[PaperMetadata]:
+        from ..local_corpus import parse_corpus_roots
+        from .local_zotero import detect_zotero, read_zotero_sqlite
+
+        papers: list[PaperMetadata] = []
+        for root in parse_corpus_roots(self._literature_dir):
+            if detect_zotero(root) is not None:
+                try:
+                    papers.extend(read_zotero_sqlite(root))
+                except Exception as e:  # noqa: BLE001
+                    logger.warning("LocalZoteroLibrary failed for %s: %s", root, e)
+        return papers
+
+
 class ZoteroLibrary(ReferenceLibrary):
     """The researcher's Zotero library, via the Zotero Web API.
 

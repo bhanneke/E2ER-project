@@ -28,6 +28,61 @@ Two consumers depend on this file:
   real data, write `estimation_results.json` as `{}` rather than
   fabricating values. The empty file is the honest signal.
 
+## How estimation actually runs — write a script, the runner executes it
+
+You do **not** have a general code-execution tool: you can read data and
+write files, but you cannot run Python yourself. That is by design. So
+the way to "run estimation" is:
+
+1. Write your estimation code as a script named **exactly
+   `run_estimation.py`** in the workspace root. It must read the
+   workspace data files and write its numeric output to **exactly
+   `estimation_results.json`**.
+2. Finish your turn. After you return, the **runner executes
+   `run_estimation.py` for you** and validates that
+   `estimation_results.json` came out populated. The run is logged to
+   `run_estimation.log` (exit code + stdout/stderr) for the next reviewer.
+
+Naming matters: the runner looks for `run_estimation.py` →
+`estimation_results.json` first. If you must use other names it will try
+to discover the script by content, but the canonical names are the
+reliable path — use them.
+
+This means: when the workspace has data, the correct action is almost
+always **write `run_estimation.py`**, not give up. "I could not run
+estimation" is only true when there is genuinely no data to estimate on.
+
+## Your primary specification must be IDENTIFIED, not a raw gap
+
+The FIRST / headline specification you report must implement the design in
+`identification_strategy.md` — its fixed effects, controls, and clustering.
+A raw, unconditional difference in means (a two-coefficient `const + treatment`
+regression with no fixed effects or controls) is at most a *descriptive
+baseline*; reporting it as the main result is the single most common reason
+these papers score low on identification. Put the identified specification
+under the top-level key **`main`** (mandatory name — the export and the
+contract gate assume it), and make its `diagnostics` reflect what was actually
+estimated (fixed-effects absorbed, number of clusters, within-R²) — not nulls.
+
+**This is deterministically enforced when `identification_spec.json` exists
+in the workspace** (the identification strategist writes it — read it before
+you estimate). The gate checks that your `main` entry ECHOES the declared
+design:
+
+- `main.fixed_effects` — a list naming every fixed effect actually absorbed;
+  must include all FE declared in the spec's `primary.fixed_effects`.
+- `main.controls` — a list naming the included controls (declared controls
+  may alternatively appear directly among `coefficients` keys).
+- `main.cluster_level` + `main.n_clusters` — required and matching when the
+  spec declares clustering.
+
+Echo what you ACTUALLY estimated. If the declared design turns out to be
+inestimable (e.g. the FE absorb all treatment variation), do not silently
+substitute a weaker spec under `main` — the gate will reject it. Follow the
+spec's `fallback` if one is declared, or state the problem explicitly in
+`econometric_spec.md` and put the honest spec under a non-`main` key so the
+mismatch is visible rather than laundered.
+
 ## Required shape
 
 A JSON object with one entry per estimated specification. Each entry
@@ -41,6 +96,9 @@ contains coefficients and diagnostics.
     "specification": "OLS with two-way fixed effects",
     "n_observations": 24890,
     "n_clusters": 6225,
+    "cluster_level": "unit",
+    "fixed_effects": ["unit", "time"],
+    "controls": ["x1"],
     "coefficients": {
       "treatment": {
         "estimate": -0.231,
@@ -113,6 +171,46 @@ consumed identically by verify_numbers and the drafter.
 Do NOT duplicate the main spec into both files. Each value should
 appear exactly once across the two files.
 
+### Every spec object needs the same scalars — tables render in ROWS
+
+A results table has one column per specification and one row per
+statistic, and the renderer fills a row across *every* column. So a
+scalar that exists for `main` but not for your robustness entries
+leaves that row half-empty — and an unresolvable reference halts the
+render rather than shipping a table with blank cells.
+
+Concretely: if you report `n_observations`, sample counts
+(`n_pre_treatment` / `n_post_treatment`), a threshold, or any other
+sample-defining scalar for `main`, report **the same fields under the
+same names for every other spec object**, in both files. Recompute them
+for that specification — do not copy `main`'s value across, because an
+alternative measure or sample generally has a different N.
+
+```json
+{
+  "rv5_measure": {
+    "specification": "5-day realized volatility threshold",
+    "n_observations": 415,
+    "n_pre_treatment": 192,
+    "n_post_treatment": 223,
+    "threshold_percentile": 75,
+    "delta_p_HH": 0.018
+  }
+}
+```
+
+The headline estimate alone is not enough. A robustness column carrying
+only its point estimate cannot be tabulated next to `main`.
+
+### Report every robustness check you specified
+
+If `econometric_spec.md` declares seven robustness checks, the sidecar
+should carry seven entries. Declaring checks in prose and emitting two
+of them is the same failure as writing `{}` while data is available:
+the paper claims work the artifacts do not contain. If a check turned
+out to be infeasible, say so explicitly in `econometric_spec.md` rather
+than silently dropping it.
+
 ## Rules
 
 1. **Plain numbers, not strings.** `-0.231`, not `"-0.231"` and not
@@ -131,9 +229,15 @@ appear exactly once across the two files.
    that traces back from the citation. Convention:
    `> Source: estimation_results.json#main.coefficients.treatment`.
 
-## Failure modes — write `{}`, not no file
+## Failure modes — write `{}` only when estimation is genuinely impossible
 
-If you specified the model but did not run estimation:
+`{}` is the honest signal **only** when there is no data to estimate on
+(no usable files in the workspace). When data IS present, do not write
+`{}` and stop — write `run_estimation.py` (see above) and let the runner
+execute it. Writing `{}` while data is available, instead of writing the
+script, is the M4 failure mode and will fail the output-contract check.
+
+If estimation is genuinely impossible (no data):
 
 - Write `estimation_results.json` as `{}`.
 - The drafter sees an empty JSON and produces a "design without

@@ -1,0 +1,263 @@
+[
+  {
+    "id": "lit01",
+    "target": "section:literature",
+    "edit_type": "replace_text",
+    "find": "\\paragraph{ETFs as a wrapper that changes the underlying.}",
+    "replace": "\\paragraph{Financialization of a non-equity asset class.} The closest structural analogue to our setting is not an equity index inclusion but the financialization of commodities in the mid-2000s, when a new family of index products made an asset class accessible to a clientele that had not previously held it and observed co-movement with equities rose. Tang and Xiong (2012) compare indexed against off-index commodities, which is the design ancestor of our listed-versus-never-listed comparison; Basak and Pavlova (2016) supply the formal counterpart of our equation~\\eqref{eq:framework}, in which benchmarked institutional demand raises constituents' volatility and their correlation with the equity market with no change in fundamentals; and Henderson, Pearson and Wang (2015) isolate mechanically driven hedging flow to identify the financial-investor channel, which is the inverse of the basis-versus-allocation decomposition we specify in Section~\\ref{sec:framework} and cannot estimate. The strand also contains the standing objection to our own hypothesis, and we would rather confront it than arrive at it independently. Cheng and Xiong (2014) argue that the index-flow explanation for rising commodity--equity co-movement is overstated, and that much of the observed increase reflects shocks common to the macro environment rather than the arrival of the new clientele. That is, in a different asset class, the conclusion our control group delivers. We therefore read our result as an out-of-sample test of their position in a setting where the fundamentals channel they could not shut off, since commodities have real supply and real demand, is unavailable by construction.\n\n\\paragraph{ETFs as a wrapper that changes the underlying.}",
+    "find_must_be_unique": true,
+    "source_finding": "review#1 (literature_reviewer, major concern 1: commodity-financialization strand absent; Cheng-Xiong is the named prior for the null)"
+  },
+  {
+    "id": "lit02",
+    "target": "section:literature",
+    "edit_type": "replace_text",
+    "find": "We do not claim that Bitcoin does something unprecedented. It does something the twin-share and reclassification designs achieve for a handful of securities, and it does it for an entire asset class around a single large and well-dated treatment.",
+    "replace": "We do not claim that Bitcoin does something unprecedented. It does something the twin-share and reclassification designs achieve for a handful of securities, and it does it for an entire asset class around a single large and well-dated treatment. This strand also supplies the magnitude benchmark against which our power calculation is judged, and the benchmark is load-bearing enough that we state its provenance rather than asserting a range. The figure of roughly $0.05$ to $0.15$ in correlation units that Section~\\ref{sec:results} uses to calibrate the power bar is our own conversion of the beta and co-movement changes reported by \\citet{vijh1994sp}, \\citet{barberis2004comovement}, \\citet{boyer2011stylerelated} and \\citet{greenwood2007excess}, struck at a volatility ratio near one. The conversion is an assumption and not a measurement, the studies differ in horizon and in units, and a benchmark range that is wider or differently centred would move our power verdict with it.",
+    "find_must_be_unique": true,
+    "source_finding": "review#1 (literature_reviewer, major concern 4: headline claim rests on an uncited numerical benchmark)"
+  },
+  {
+    "id": "lit03",
+    "target": "section:literature",
+    "edit_type": "replace_text",
+    "find": "\\citet{khatib2026from} document a regime shift in crypto--equity integration around the spot ETF, so the descriptive claim is published in a field journal and we do not restate it as a contribution. What their design does not supply, and what this paper does, is a comparison group of never-listed assets against which the shift can be differenced.",
+    "replace": "\\citet{khatib2026from} is the nearest published work on this event, and we describe it with care because we have not been able to obtain the full text: the article is paywalled, our characterisation rests on its title and outlet, and its title's framing runs from contagion to \\emph{stabilization}, which may not be a claim about rising co-movement at all. We therefore do not assert what it finds, and we do not rest our contribution on what it omits. What we can state unconditionally is a property of our own design: it supplies a control group of never-listed crypto assets that experienced the same macro regime without the access change, and the comparison group does almost all of the work. Establishing whether the prior study uses a cross-asset counterfactual, decomposes by session, or uses flow data is the first task of any revision, and if it uses the first of those, our positioning rests on the inference procedure and the power bound rather than on the counterfactual.",
+    "find_must_be_unique": true,
+    "source_finding": "review#1 (literature_reviewer, major concern 5: the nearest competitor was not read and the paper asserts what it found)"
+  },
+  {
+    "id": "lit04",
+    "target": "section:literature",
+    "edit_type": "replace_text",
+    "find": "\\citet{tang2026the} conjectures, without testing, that the authorized-participant creation and redemption mechanism maps US-session liquidity directly into the crypto spot market — the mechanism our framework's third prediction concerns — and concedes that it has not been sufficiently studied.",
+    "replace": "The conjecture that the authorized-participant creation and redemption mechanism maps US-session liquidity directly into the crypto spot market, which is the mechanism our framework's third prediction concerns, follows from \\citet{da2017exchange} and \\citet{bendavid2014do} applied to a spot rather than an equity wrapper; it is in circulation in the applied commentary \\citep{tang2026the} but has not been tested. Nor, as far as we can establish, has the October 2021 launch of US-listed Bitcoin futures products been examined for its effect on Bitcoin's factor structure, which is worth stating plainly because Section~\\ref{sec:robustness} uses that launch as a placebo and recovers a larger apparent effect from it than from the event under study.",
+    "find_must_be_unique": true,
+    "source_finding": "review#1 (literature_reviewer, minor 1: tang2026the over-weighted; minor 4: BITO placebo reported without literature context)"
+  },
+  {
+    "id": "mech01",
+    "target": "paper:full",
+    "edit_type": "replace_text",
+    "find": "The result survives six methodologically distinct estimators, an endogenous break-dating procedure that locates no break at the approval, and a grid of placebo assets and placebo dates.",
+    "replace": "The result survives three methodologically distinct estimators and three further re-expressions of them, an endogenous break-dating procedure that locates no break at the approval, and a grid of placebo assets and placebo dates.",
+    "find_must_be_unique": true,
+    "source_finding": "review#1 (literature_reviewer, minor 7: \"six methodologically distinct estimators\" overstates the independence of the evidence)"
+  },
+  {
+    "id": "mech02",
+    "target": "paper:full",
+    "edit_type": "replace_text",
+    "find": "That a regime change in crypto--equity integration occurred around the spot ETF has been documented \\citep{khatib2026from}; what has not been supplied is a comparison group of assets that experienced the same macro environment without the access change, and we show that the comparison group does almost all of the work.",
+    "replace": "Descriptive work on the event is in print \\citep{khatib2026from}, though we have not obtained its full text and therefore do not assert what it finds; what this design supplies unconditionally is a comparison group of assets that experienced the same macro environment without the access change, and we show that the comparison group does almost all of the work.",
+    "find_must_be_unique": true,
+    "source_finding": "review#1 (literature_reviewer, major concern 5: contribution 1 is conditional on an unverified characterisation)"
+  },
+  {
+    "id": "mech03",
+    "target": "paper:full",
+    "edit_type": "replace_text",
+    "find": "From that ruling forward, approval was widely expected, and by December 2023 market-implied odds were high.",
+    "replace": "From that ruling forward, approval was widely expected. We have no prediction-market series and no options-implied odds measure in this build, so we treat the strength of that expectation as a qualitative fact drawn from contemporaneous commentary rather than as a measured quantity, and we use it nowhere as treatment intensity.",
+    "find_must_be_unique": true,
+    "source_finding": "review#1 (literature_reviewer, major concern 6: \"market-implied odds were high\" carries no source)"
+  },
+  {
+    "id": "mech04",
+    "target": "paper:full",
+    "edit_type": "replace_text",
+    "find": "A substantial share of early institutional participation in these products was not allocation. Hedge funds ran the cash-and-carry basis trade, long the spot product and short CME futures, capturing the annualized basis.",
+    "replace": "A substantial share of early institutional participation in these products is widely believed not to have been allocation: hedge funds ran the cash-and-carry basis trade, long the spot product and short CME futures, capturing the annualized basis. We label this a conjecture rather than a finding, and we do so here rather than in a footnote because our closing interpretation leans on it. Establishing the claim requires the 13F composition of early holders, which no source configured for this project serves, so the basis-trade share is unmeasured as far as this paper is concerned.",
+    "find_must_be_unique": true,
+    "source_finding": "review#1 (literature_reviewer, major concern 6: the 13F composition claim is uncited and load-bearing)"
+  },
+  {
+    "id": "mech05",
+    "target": "paper:full",
+    "edit_type": "replace_text",
+    "find": "We set out a deliberately minimal two-clientele structure, in the spirit of the investor-recognition tradition, sufficient to generate the tests and no more.",
+    "replace": "We set out a deliberately minimal two-clientele structure, sufficient to generate the tests and no more. It is an application of Merton's (1987) investor-recognition model, in which a security known to only part of the investing population is priced as though its effective investor base were small, and in which widening that base changes its equilibrium pricing; we substitute a per-period participation cost for Merton's recognition constraint and a factor loading for his required-return premium, but the structure and its comparative static are his. The modern demand-system statement of the same idea, that who holds an asset determines its covariance structure, is Koijen and Yogo's (2019), and the two-clientele setup below is a special case of the segmentation-and-integration framing in the international asset-pricing literature.",
+    "find_must_be_unique": true,
+    "source_finding": "review#1 (literature_reviewer, major concern 2: Section 4 builds a Merton 1987 model and never cites Merton)"
+  },
+  {
+    "id": "mech06",
+    "target": "paper:full",
+    "edit_type": "replace_text",
+    "find": "Its variance depends only on the number of sessions and not on the unknown correlation, so the panel's heteroskedasticity is not a function of the outcome itself.",
+    "replace": "Its variance depends only on the number of sessions and not on the unknown correlation, so the outcome's sampling variance is not a function of the outcome itself and, within a calendar month, is the same for every coin. It is not the same across months, since the number of trading sessions varies, and month fixed effects do not absorb heteroskedasticity; we state this because the companion specification puts the point too strongly. The residual variation is mild and, unlike the alternative, it is unrelated to treatment status.",
+    "find_must_be_unique": true,
+    "source_finding": "review#0 (mechanism_reviewer, minor 2: the Fisher-z homoskedasticity claim overstates)"
+  },
+  {
+    "id": "mech07",
+    "target": "paper:full",
+    "edit_type": "replace_text",
+    "find": "$-0.0014$. Whatever moved crypto--equity correlation around the listing moved all of crypto, and it did not move it by much.",
+    "replace": "$-0.0014$. Whatever moved crypto--equity correlation around the listing moved all of crypto, and it did not move it by much. The same months moved assets with no crypto exposure whatever considerably more. Gold's mean correlation with SPY rose by\n% src: summary_statistics.json#raw_contrast.SPY.by_asset.GLD.d_mean_rho\n$0.0581$ and silver's by\n% src: summary_statistics.json#raw_contrast.SPY.by_asset.SLV.d_mean_rho\n$0.0458$ over exactly this window, five to six times Bitcoin's own increase, and neither received an access change of any kind. That contrast is the most legible single piece of evidence for the reading this paper ends with: 2024 and 2025 raised alternative-asset equity correlation generally, and the component of it specific to Bitcoin is small.",
+    "find_must_be_unique": true,
+    "source_finding": "review#1 (literature_reviewer, minor 6: the gold and silver raw contrast appears only inside a figure)"
+  },
+  {
+    "id": "mech08",
+    "target": "paper:full",
+    "edit_type": "replace_text",
+    "find": "Including those months would attribute anticipation to the post-period and contaminate the pre-period with a partially treated regime. The donut costs six months and buys a clean contrast, and Section~\\ref{sec:robustness} reports the no-donut variant so the reader can see exactly what the donut is doing.",
+    "replace": "Our justification for excluding them is a plumbing argument rather than an anticipation argument, and the distinction matters. If second moments cannot be pre-traded the way a level can, which is the claim this paper makes in its opening pages and continues to make, then there is little in the outcome for anticipation to contaminate and an anticipation-based donut would be discarding clean pre-period months for a reason our own framework denies. What those months do contain is a change in the treated unit's market structure that belongs to neither regime: the Grayscale trust's conversion was under way, its two-year discount was closing toward parity, and Bitcoin's measured co-movement over that window is entangled with a closed-end vehicle repricing toward net asset value. The donut costs six months and buys a contrast between two clean regimes. It is not a free choice. Section~\\ref{sec:robustness} reports the no-donut variant beside it, and the estimate moves from\n% src: robustness_results.json#no_donut.coefficients.d_etf_listed.estimate\n$-0.0092$ to\n% src: estimation_results.json#main.coefficients.d_etf_listed.estimate\n$-0.0212$, a factor of more than two, within a placebo distribution whose standard deviation is\n% src: robustness_results.json#placebo_dates_pre.diagnostics.placebo_sd\n$0.0619$. Neither value is distinguishable from zero and the difference between them is not either, but the donut is not doing nothing and we do not describe it that way.",
+    "find_must_be_unique": true,
+    "source_finding": "review#0 (mechanism_reviewer, major concern 4: the donut's justification contradicts the paper's own treatment concept and it is not doing \"very little\")"
+  },
+  {
+    "id": "mech09",
+    "target": "paper:full",
+    "edit_type": "replace_text",
+    "find": "This is a violation of the stable-unit-treatment-value assumption, and its direction is known: contamination of the control group biases the difference-in-differences toward zero. Our estimate is therefore a lower bound on the integration effect, and a null result is weaker evidence against H1 than it would be under clean controls. We state this because it cuts against our own finding.",
+    "replace": "This is a violation of the stable-unit-treatment-value assumption, and its direction is not known. If Bitcoin's listing pulled the control coins' equity co-movement up with it, the difference-in-differences is attenuated toward zero and our estimate is a lower bound on the integration effect. If instead US spot access \\emph{diverted} allocator demand away from altcoins, control-coin co-movement would fall and the same estimate would be biased upward. We cannot sign the net of the two, and we decline to claim only the convenient direction. One piece of evidence bears on it and we report it rather than asserting the bound: the control group's own mean correlation rose by\n% src: summary_statistics.json#raw_contrast.SPY.control_group_mean.d_mean_rho\n$0.0105$ in absolute terms across the post-period, which is what contamination looks like rather than diversion. A clean-control subsample restricted to the three coins least exposed to US-brokerage-adjacent ownership would sharpen this and is not reported in this draft. Until it is, the lower-bound reading is a conjecture rather than a result.",
+    "find_must_be_unique": true,
+    "source_finding": "review#0 (mechanism_reviewer, major concern 5: SUTVA is claimed one-directionally and the prescribed test was dropped)"
+  },
+  {
+    "id": "mech10",
+    "target": "paper:full",
+    "edit_type": "replace_text",
+    "find": "The wild cluster bootstrap, the usual remedy for few clusters, also fails when only one cluster is treated.",
+    "replace": "Neither the diagnosis nor the remedy is ours, and the paper's second contribution is the demonstration of what they cost here rather than the results themselves. Bertrand, Duflo and Mullainathan (2004) established that serially correlated outcomes in difference-in-differences leave conventional standard errors badly understated; Cameron, Gelbach and Miller (2008) introduced the wild cluster bootstrap as the remedy for few clusters; MacKinnon and Webb showed that the bootstrap in turn fails when only one cluster is treated; and Conley and Taber (2011) supply the procedure we use in its place, which conducts inference from the empirical distribution of the untreated units' changes rather than from a cluster-robust variance.",
+    "find_must_be_unique": true,
+    "source_finding": "review#1 (literature_reviewer, major concern 3: roughly a dozen econometric procedures are named and none attributed)"
+  },
+  {
+    "id": "mech11",
+    "target": "paper:full",
+    "edit_type": "replace_text",
+    "find": "A DCC--GARCH(1,1) specification with a post-treatment dummy shifting the long-run correlation target,",
+    "replace": "A dynamic conditional correlation specification in the form of Engle (2002), a DCC--GARCH(1,1) with a post-treatment dummy shifting the long-run correlation target,",
+    "find_must_be_unique": true,
+    "source_finding": "review#1 (literature_reviewer, major concern 3: method citations absent)"
+  },
+  {
+    "id": "mech12",
+    "target": "paper:full",
+    "edit_type": "replace_text",
+    "find": "Finally, Bai--Perron multiple structural break tests and an Andrews sup-Wald test ask the data where the break is rather than imposing the date.",
+    "replace": "Finally, the multiple structural break procedure of Bai and Perron (1998, 2003) and the sup-Wald test of Andrews (1993) ask the data where the break is rather than imposing the date.",
+    "find_must_be_unique": true,
+    "source_finding": "review#1 (literature_reviewer, major concern 3: method citations absent)"
+  },
+  {
+    "id": "mech13",
+    "target": "paper:full",
+    "edit_type": "replace_text",
+    "find": "These are the three tests that would most sharpen the attribution, and their absence is the principal reason we frame our estimate as a bound rather than as a mechanism test.",
+    "replace": "These are the three tests that would most sharpen the attribution, and their absence is the principal reason we frame our estimate as a bound rather than as a mechanism test. It has a further consequence for the credit we claim from pre-commitment, and we state it rather than leaving it to be found. Our pre-analysis licensed support for H1 only if the difference-in-differences returned a positive estimate with a randomization $p$-value below five percent \\emph{and} the session triple difference located the induced co-movement in US exchange hours. Because the session design is not estimable on this data, that conjunction could not have been satisfied whatever the data showed. The rule was therefore one-sided in practice: it could return a null verdict but not a positive one, and the null we report should be read in that light.",
+    "find_must_be_unique": true,
+    "source_finding": "review#1 (literature_reviewer, minor 5: the pre-registered decision rule is now unsatisfiable and the paper does not say so)"
+  },
+  {
+    "id": "mech14",
+    "target": "paper:full",
+    "edit_type": "replace_text",
+    "find": "changes the equity-driven share of Bitcoin's monthly return variance by about one and a half percentage points.",
+    "replace": "changes the equity-driven share of Bitcoin's monthly return variance by $1.35$ percentage points.",
+    "find_must_be_unique": true,
+    "source_finding": "review#1 (literature_reviewer, minor 10: 0.0135 is 1.35 points, not \"about one and a half\")"
+  },
+  {
+    "id": "mech15",
+    "target": "paper:full",
+    "edit_type": "replace_text",
+    "find": "Substantively, Bitcoin's volatility relative to the equity market fell after the listing while its correlation with equities did not move. Lower relative volatility is the direction a broader, less levered and more institutional investor base would predict, and it is the one result in this paper that a clientele story can partially claim. We report it as suggestive and do not lean on it: with nine placebo donors the smallest attainable randomization $p$-value is $0.10$, and $0.20$ is the second-smallest.",
+    "replace": "Substantively, Bitcoin's volatility relative to the equity market fell after the listing while its correlation with equities did not move, and this has to be reconciled with equation~\\eqref{eq:framework}, which is written about $\\beta$ rather than about $\\rho$. On $\\beta$ the estimate is not flat: it is\n% src: robustness_results.json#outcome_beta.coefficients.d_etf_listed.estimate\n$-0.1890$. Our reason for making $\\rho$ the headline outcome is an estimation argument and not an economic one. The Fisher-$z$ of a correlation has a sampling variance that depends only on the number of sessions, whereas the sampling variance of a monthly $\\hat\\beta$ scales with $\\sigma_i/\\sigma_{mkt}$, which would make the residual variance of the difference-in-differences a function of treatment status. That justifies the choice of estimator; it does not entitle us to describe a decline in the framework's own object as no change. The honest reading is that the loading fell while the co-movement margin did not, and our framework has something to say about that composite. H2's noise-reduction sub-channel, set out in Section~\\ref{sec:framework} and then left aside, predicts exactly it: a deep, institutionally arbitraged product displaces the marginal retail investor who reached speculative equities and crypto through the same brokerage application and the same sentiment cycle, which lowers both the sentiment-driven component of co-movement and idiosyncratic volatility. A flat $\\rho$, a negative change in $\\ln(\\sigma_i/\\sigma_{mkt})$ and a negative change in $\\beta$ is the pattern that sub-channel predicts and that no other hypothesis in our framework predicts. We are not claiming it. With nine placebo donors the smallest attainable randomization $p$-value is $0.10$, $0.20$ is the second-smallest, and $0.20$ will not support a claim. We record it because a reader is entitled to see that the framework speaks to its own results rather than being abandoned at the point where it becomes testable.",
+    "find_must_be_unique": true,
+    "source_finding": "review#0 (mechanism_reviewer, major concern 2: the paper's model is about beta, beta fell, and the paper reports \"no change\"; H2b is never engaged)"
+  },
+  {
+    "id": "mech16",
+    "target": "paper:full",
+    "edit_type": "replace_text",
+    "find": "What the decomposition does establish firmly is that there is no version of these results in which co-movement rose and the correlation measure failed to see it.",
+    "replace": "Two things would have to be shown before the volatility result could be read as a clientele effect, and we have shown neither. Realized volatility falls with size across almost every asset class, and Bitcoin's capitalization grew relative to the nine control coins over this sample, so a differential volatility decline for the largest coin in a panel of ten is the prediction of a size--volatility relation before it is evidence of a broader investor base. The test is short — plot the pre-to-post change in $\\ln(\\sigma_i/\\sigma_{mkt})$ against the change in relative size across the ten coins and ask whether Bitcoin sits on the fitted line — and it is not in this draft. Separately, a randomization $p$-value of $0.20$ on nine donors means that exactly one control coin produced a larger estimate in absolute value, and the identity of that coin is informative in a way its rank is not: if it is DOGE, whose 2021 idiosyncratic episode we flag in Section~\\ref{sec:data} as inflating its pre-period idiosyncratic variance, then Bitcoin's rank is being set by a comparison we have already told the reader is contaminated. The nine donor estimates belong in Table~\\ref{tab:decomposition} and are not yet there. What the decomposition does establish firmly is that there is no version of these results in which co-movement rose and the correlation measure failed to see it.",
+    "find_must_be_unique": true,
+    "source_finding": "review#0 (mechanism_reviewer, major concern 3: the volatility-ratio result has an unruled-out mechanical explanation and its RI rank is uninformative without donor identities)"
+  },
+  {
+    "id": "mech17",
+    "target": "paper:full",
+    "edit_type": "replace_text",
+    "find": "The two valid reference distributions agree closely. The randomization minimum detectable effect is",
+    "replace": "The two valid reference distributions agree in substance and differ appreciably in width. The randomization minimum detectable effect is",
+    "find_must_be_unique": true,
+    "source_finding": "review#0 (mechanism_reviewer, minor 3: Conley-Taber and RI intervals are treated as agreeing when they differ by 40 percent in width)"
+  },
+  {
+    "id": "mech18",
+    "target": "paper:full",
+    "edit_type": "replace_text",
+    "find": "$0.0406$ is three and a half times smaller and would have supported a far stronger claim than the data can carry, which is one more reason we do not use it.",
+    "replace": "$0.0406$ is three and a half times smaller and would have supported a far stronger claim than the data can carry, which is one more reason we do not use it. The randomization figure exceeds the Conley--Taber figure by about a sixth, and the randomization interval is correspondingly wider than the Conley--Taber interval. We quote the randomization pair in the abstract and in the headline claim below because it is the conservative one, not because the two procedures coincide.",
+    "find_must_be_unique": true,
+    "source_finding": "review#0 (mechanism_reviewer, minor 3: say that the quoted figure is the conservative choice)"
+  },
+  {
+    "id": "mech19",
+    "target": "paper:full",
+    "edit_type": "replace_text",
+    "find": "The design excludes an increase in equity correlation above about $0.086$, which rules out the upper half of the range the index-inclusion literature reports. It does not rule out an increase of $0.05$. With eighty percent power the design could only have detected an effect of about $0.148$ or larger.",
+    "replace": "Two distinct statements follow and they should not be merged. The first is an interval statement: the randomization interval excludes an increase in equity correlation above about $0.086$, which rules out the upper half of the range the index-inclusion literature reports, and does not rule out an increase of $0.05$. The second is a power statement, and it answers a different question — what size of true effect this design would reliably have found. At eighty percent power that size is about $0.148$. An effect of $0.10$, to take the value of our pre-committed bar, lies outside this realization's interval while being smaller than the effect the design could reliably detect. The interval statement describes this draw; the power statement describes the design; both hold at once.",
+    "find_must_be_unique": true,
+    "source_finding": "review#0 (mechanism_reviewer, minor 4: two different criteria are conflated in the power paragraph)"
+  },
+  {
+    "id": "mech20",
+    "target": "paper:full",
+    "edit_type": "replace_text",
+    "find": "$-0.0092$, which tells us the donut is doing very little — consistent with the absence of a treatment effect to anticipate.",
+    "replace": "$-0.0092$. That is less than half the headline estimate, so the donut is not a cosmetic choice: it more than doubles the coefficient. Both values sit deep inside a placebo distribution whose standard deviation is $0.0619$, so neither is a finding and the gap between them is not one either. But \"the donut is doing very little\" would be the wrong description of a specification choice that moves the headline coefficient by that proportion, and Section~\\ref{sec:strategy} argues the donut from the Grayscale conversion rather than from anticipation for exactly this reason.",
+    "find_must_be_unique": true,
+    "source_finding": "review#0 (mechanism_reviewer, major concern 4: the donut moves the headline coefficient by 130 percent)"
+  },
+  {
+    "id": "mech21",
+    "target": "paper:full",
+    "edit_type": "replace_text",
+    "find": "We draw no channel inference from it and report it for what it is, which is a demonstration that estimates of this size are noise.",
+    "replace": "Two readings are available and we have the evidence to settle neither. The first is that the row bounds this design's resolution and carries no further content: a non-event in the same panel generates a larger apparent effect than the event under study, so estimates of this size are noise. The second is substantive. The futures wrapper supplied US brokerage access without spot creation and redemption, so a positive futures-launch estimate beside a zero spot-launch estimate is, on its face, a listing-and-visibility channel operating in the absence of a spot-plumbing channel — which is the one channel inference this design is positioned to make. We do not make it, for a reason specific to the row. BITO launched at the October--November 2021 cycle peak, and our placebo-in-time grid is drawn from 2021m7--2023m1 and therefore contains that same regime inside its own reference distribution, so the randomization $p$-value of $0.40$ is not a clean assessment of this estimate. Re-running the row with the cycle-peak months excluded, and reporting its randomization interval beside the treatment's so that a reader can see whether the two overlap, is what would decide between the readings.",
+    "find_must_be_unique": true,
+    "source_finding": "review#0 (mechanism_reviewer, major concern 6: the BITO placebo is the most damaging result for the mechanism and is processed too quickly)"
+  },
+  {
+    "id": "mech22",
+    "target": "paper:full",
+    "edit_type": "replace_text",
+    "find": "Across the twenty robustness rows the point estimate is negative in nineteen and never exceeds $0.05$ in absolute value except in the two sub-window rows and the two alternative outcomes.",
+    "replace": "Across the twenty robustness rows the point estimate is negative in nineteen and never exceeds $0.05$ in absolute value except in the two sub-window rows and the two alternative outcomes. The sign count carries almost no independent information and we do not offer it as corroboration: the rows share an outcome, a panel and largely overlapping samples, so they are close to perfectly dependent and nineteen agreeing draws are not nineteen pieces of evidence.",
+    "find_must_be_unique": true,
+    "source_finding": "review#0 (mechanism_reviewer, major concern 7: the sign-count sentence overstates)"
+  },
+  {
+    "id": "mech23",
+    "target": "paper:full",
+    "edit_type": "replace_text",
+    "find": "Six estimators that disagree about almost everything else agree on it.",
+    "replace": "Three genuinely distinct routes to the answer agree on it — the Fisher-$z$ panel, the returns-level triple difference that uses no generated regressor, and the conditional correlation model with its own control-pair distribution — and three further specifications that are re-expressions of the first rather than independent evidence agree as well.",
+    "find_must_be_unique": true,
+    "source_finding": "review#1 (literature_reviewer, minor 7: the independence of the six estimators is overstated)"
+  },
+  {
+    "id": "mech24",
+    "target": "paper:full",
+    "edit_type": "replace_text",
+    "find": "Two readings are consistent with the evidence. One is that habitat co-movement operates through a shared interpretation of shared cash-flow news — the channel through which ETFs are known to raise systematic price informativeness in equities \\citep{glosten2020etf} — and that an asset with no earnings has nothing for that channel to work on. The other is that the effect is present at a magnitude our design cannot resolve. We committed before estimation to distinguishing these by a power criterion, and the criterion returned a verdict between its two bars, so both readings remain open and we decline to choose.",
+    "replace": "What we are not entitled to say is which channel produced the null, and we state that plainly because the temptation runs the other way. A bounded null on the change in correlation is consistent with at least four structures that our own framework enumerates: that the clientele did not change; that it changed but its discount factor is not equity-linked at the margin; that it changed, transmission occurred, and it was offset by the displacement of a correlated retail noise trader, which is the sub-channel the volatility-ratio result fits; and that the assets which arrived were overwhelmingly market-neutral cash-and-carry positions, so the participation weight barely moved despite the headline figures. Nothing we estimate discriminates among these four. The reading we find most attractive — that habitat co-movement operates through a shared interpretation of shared cash-flow news, the channel through which ETFs are known to raise systematic price informativeness in equities \\citep{glosten2020etf}, so that an asset with no earnings has nothing for that channel to work on — is not one of the four, and no number in this paper bears on it. We offer it as a conjecture the result is compatible with, not as an inference from it, and the alternative that the effect is present at a magnitude this design cannot resolve remains open on the power criterion we fixed in advance. Three mechanism margins would begin to separate these structures, all of them estimable on data already assembled for this paper and none of them reported here. A weekend and holiday difference-in-differences asks whether Bitcoin's share of variance and of volume on sessions when US exchanges are closed fell relative to control coins that also trade continuously and also received no listing; it is the one piece of the session logic that survives without intraday history. A liquidity margin is available at no data cost, since Amihud illiquidity and Corwin--Schultz effective spreads require only daily prices and volumes, and a decline in either beside an unchanged correlation would establish that the wrapper changed the asset's microstructure without changing its factor structure, which is the dissociation this section would like to claim and currently cannot. And the summed-lead-and-lag Dimson loading, which we specified and did not report, is the only daily-frequency shadow of the session hypothesis available here. Until those are in the paper, what we have is a bound on the magnitude of the ETF-attributable change and silence on its channel.",
+    "find_must_be_unique": true,
+    "source_finding": "review#0 (mechanism_reviewer, major concern 1: no mechanism test survives and the conclusion's mechanism claim is unsupported by anything in the paper)"
+  },
+  {
+    "id": "mech25",
+    "target": "paper:full",
+    "edit_type": "replace_text",
+    "find": "the most economical explanation for that pair of facts is that a substantial share of those assets never represented directional exposure at all.",
+    "replace": "the most economical explanation for that pair of facts is that a substantial share of those assets never represented directional exposure at all — a conjecture that the 13F composition of early holders could confirm or refute directly, and that this paper does not test.",
+    "find_must_be_unique": true,
+    "source_finding": "review#1 (literature_reviewer, major concern 6: the conclusion's most quotable sentence rests on an uncited assertion)"
+  }
+]

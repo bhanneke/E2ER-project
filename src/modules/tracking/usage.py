@@ -41,7 +41,7 @@ async def save_usage(
     """Save a usage record to the database."""
     from ...db.client import execute
 
-    cost = compute_cost(model, usage)
+    cost = compute_cost(model, usage, backend=backend)
     await execute(
         """
         INSERT INTO llm_usage

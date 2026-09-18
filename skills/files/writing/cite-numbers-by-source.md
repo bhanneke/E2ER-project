@@ -1,5 +1,13 @@
 # Citing Numbers by JSON Source Key
 
+> **Note on results tables.** Numbers in regression / results tables are no
+> longer hand-written — they are rendered deterministically from the JSON
+> sidecars via `table_spec.json` (see the `data/table-spec` skill), so a
+> rendered table cell cannot drift from its source and needs no `% src:`
+> comment. The rule below still governs every number you write in **prose**
+> (abstract, body text, figure captions) and in any hand-written non-numeric
+> table.
+
 ## The rule
 
 Every numeric value you put in a paper — in the abstract, in body

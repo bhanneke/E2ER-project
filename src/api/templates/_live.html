@@ -15,9 +15,75 @@
             hx-confirm="Cancel this run?"
             hx-swap="none">Cancel</button>
   {% endif %}
+  {% if can_resume %}
+    <button class="btn-primary"
+            hx-post="/api/papers/{{ paper.id }}/resume"
+            hx-confirm="Resume this run?"
+            hx-swap="none">Resume</button>
+  {% endif %}
 </div>
 
-{% if paper.last_error %}
+{% if progress %}
+  <div class="prog">
+    {% if progress.active %}
+      <div class="prog-now">
+        {% for a in progress.active %}
+          <span class="spinner" aria-hidden="true"></span>
+          <span class="prog-who">{{ a.name }}</span>
+          {% if a.minutes is not none %}<span class="muted">running {{ a.minutes }} min</span>{% endif %}
+        {% endfor %}
+      </div>
+    {% elif not progress.terminal %}
+      <div class="prog-now"><span class="muted">between steps…</span></div>
+    {% endif %}
+
+    {% if progress.elapsed_min is not none %}
+      <div class="muted prog-elapsed">{{ progress.elapsed_min }} min since the run started</div>
+    {% endif %}
+
+    {% if progress.phases %}
+      <ol class="phases">
+        {% for p in progress.phases %}
+          <li class="ph ph-{{ p.state }}">
+            <span class="ph-dot" aria-hidden="true"></span>{{ p.name }}
+          </li>
+        {% endfor %}
+      </ol>
+    {% endif %}
+  </div>
+{% endif %}
+
+{% if failure and failure.failed %}
+  <section class="fail fail-{{ failure.status }}">
+    <h3>{{ failure.status | capitalize }}</h3>
+    <p class="fail-head">{{ failure.headline }}</p>
+
+    {% if failure.specialists %}
+      <ul class="fail-list">
+        {% for s in failure.specialists %}
+          <li>
+            <span class="fail-who">{{ s.name }}</span>
+            <span class="fail-what">{{ s.violation }}</span>
+            {% if s.attempts %}
+              <span class="muted">{{ s.attempts }} attempt{{ "s" if s.attempts != 1 }}</span>
+            {% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+
+    {% for h in failure.hints %}
+      <p class="fail-hint">{{ h }}</p>
+    {% endfor %}
+
+    {% if failure.raw and failure.raw != failure.headline %}
+      <details class="fail-raw">
+        <summary>Full error</summary>
+        <pre>{{ failure.raw }}</pre>
+      </details>
+    {% endif %}
+  </section>
+{% elif paper.last_error %}
   <p class="error">{{ paper.last_error }}</p>
 {% endif %}
 

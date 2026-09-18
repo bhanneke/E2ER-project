@@ -7,6 +7,7 @@ import io
 import json
 import mimetypes
 import tarfile
+from datetime import UTC
 from pathlib import Path
 from typing import Any
 
@@ -167,6 +168,59 @@ def _link_local_data_dir_into_workspace(
     _stage_corpus_files(workspace, local_data_dir, recursive, PDF_EXTENSIONS, "literature", "PDF")
 
 
+async def _ingest_literature_corpus(paper_id: str, workspace: Path, settings) -> None:
+    """Discover + persist the BYOD literature folder into SQLite. Best-effort —
+    a discovery/enrichment failure must never block paper creation.
+
+    Only runs on the SQLite backend (the local-library path); on Postgres the
+    pgvector KB is the literature store and this is a no-op.
+    """
+    from ..db.client import current_backend
+
+    lit_dirs = settings.resolved_literature_dirs()
+    if not lit_dirs or current_backend() != "sqlite":
+        return
+    from ..modules.literature.discovery import ingest_literature
+    from ..modules.local_corpus import parse_corpus_roots
+
+    roots = parse_corpus_roots(lit_dirs)
+    if not roots:
+        return
+    try:
+        await ingest_literature(
+            workspace,
+            paper_id,
+            roots,
+            max_items=settings.literature_max_ingest,
+            enrich=True,
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning("literature ingestion skipped for %s: %s (paper creation continues)", paper_id, e)
+
+
+async def _acquire_literature(paper_id: str, workspace: Path, settings, research_question: str, title: str) -> None:
+    """Put a real bibliography on disk BEFORE any specialist runs.
+
+    Unlike ``_ingest_literature_corpus`` (which needs a BYOD folder and only
+    runs on SQLite), this always runs — it is the standalone replacement for
+    v1's mandatory literature agent. See
+    :func:`src.modules.literature.discovery.acquire_literature` for why it is a
+    stage rather than a tool the drafter may choose to call.
+
+    Self-skipping when a bibliography already exists, so the BYOD/Zotero path
+    above wins when the researcher brought their own library.
+    """
+    from ..modules.literature.discovery import acquire_literature
+
+    await acquire_literature(
+        workspace,
+        paper_id,
+        [research_question, title],
+        settings,
+        limit=settings.literature_acquire_limit,
+    )
+
+
 async def _tuple_is_proven(model: str, methodology: str, mode: str) -> bool:
     """Has any paper with this (model, methodology, mode) tuple completed?
 
@@ -195,9 +249,80 @@ async def _tuple_is_proven(model: str, methodology: str, mode: str) -> bool:
     return row is not None
 
 
+#: Statuses that mean "work is in flight". After a restart none of them can be
+#: true, because the process that was doing the work is gone.
+_ORPHANABLE = (
+    "idea",
+    "designing",
+    "data_collection",
+    "in_progress",
+    "ceiling_check",
+    "self_attack",
+    "polish",
+    "review",
+    "revision",
+)
+
+
+@app.on_event("startup")
+async def _reconcile_orphans() -> None:
+    """Mark papers stranded by a stopped server as paused rather than running.
+
+    Best-effort: a database that is not reachable at boot must not stop the
+    server from starting, and a paper wrongly left alone is a smaller problem
+    than a dashboard that will not load.
+    """
+    from ..db.client import execute, fetch_all
+    from ..db.events import log_event
+
+    try:
+        placeholders = ", ".join(f"%(s{i})s" for i in range(len(_ORPHANABLE)))
+        params = {f"s{i}": s for i, s in enumerate(_ORPHANABLE)}
+        rows = await fetch_all(f"SELECT id, status FROM papers WHERE status IN ({placeholders})", params)
+    except Exception as e:  # noqa: BLE001
+        logger.debug("orphan reconciliation skipped (%s)", e)
+        return
+
+    if not rows:
+        return
+
+    for row in rows:
+        paper_id = str(row.get("id") or "")
+        was = str(row.get("status") or "")
+        if not paper_id:
+            continue
+        try:
+            await execute(
+                "UPDATE papers SET status = %(new)s WHERE id = %(id)s",
+                {"new": "paused", "id": paper_id},
+            )
+            await log_event(
+                paper_id,
+                "paper_paused",
+                stage=was,
+                payload={
+                    "reason": "interrupted — the server stopped while this paper was running",
+                    "previous_status": was,
+                },
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.debug("could not reconcile paper %s: %s", paper_id, e)
+
+    logger.info(
+        "Reconciled %d interrupted paper(s) to paused — resume from the dashboard or `e2er resume <id>`",
+        len(rows),
+    )
+
+
 @app.on_event("startup")
 async def _log_config() -> None:
     s = get_settings()
+    # Capture identity NOW, at boot, so the cached SHA is the one this process
+    # actually loaded. Capturing lazily on first run would record whatever the
+    # tree had drifted to by then — the stale-server hazard, one level up.
+    from ..core.run_identity import identity_summary
+
+    logger.info("Run identity: %s", identity_summary())
     logger.info(
         "E2ER v3 starting | backend=%s model=%s data=%s lit_kb=%s github=%s default_cap=$%.2f",
         s.llm_backend,
@@ -295,6 +420,21 @@ class CreatePaperRequest(BaseModel):
     mode: str = Field(default="iterative", validation_alias=AliasChoices("mode", "pipeline_mode"))
     methodology: str = "empirical"  # empirical | theoretical | mixed
     bibtex_path: str | None = None
+    # Per-paper LLM backend + model override. Both default to None → the
+    # process-global settings.llm_backend / settings.default_model. Set them
+    # to run this paper on a specific backend (multi-model runs, the
+    # governance experiment) without restarting the server on a new env.
+    backend: str | None = None
+    model: str | None = None
+    # Governance regime: off | contracts | full. None → settings.governance
+    # (default "full"). The experiment's treatment variable — selects which
+    # gates block; non-blocking gates still compute + log (shadow mode).
+    governance: str | None = None
+    # Human-in-the-loop: pipeline stages after which the run pauses for the
+    # researcher to inspect/edit the workspace before continuing. Empty = no
+    # checkpoints (unattended, current behaviour). Validated against the real
+    # stage names (PIPELINE_STAGES).
+    review_stages: list[str] = []
     max_cost_usd: float | None = None  # falls back to settings.default_max_cost_usd
     # First-run guardrail: when no paper at the current (model, methodology, mode)
     # tuple has ever reached `completed`, the cap is forced to $1.00 unless the
@@ -355,10 +495,46 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
     # by `_load_reference_summary`; we don't symlink those.
     _link_local_data_dir_into_workspace(workspace, settings.local_data_dir, settings.local_data_dir_recursive)
 
+    # NB: the heavy BYOD work — importing staged files into data.db and
+    # discovering/ingesting the literature corpus — runs in the background
+    # task (`_prepare_and_run`), NOT here. A multi-GB import + Zotero ingest
+    # took longer than the CLI's HTTP timeout and made `e2er run`'s POST time
+    # out (the paper still ran, but the client errored). Keeping create_paper
+    # fast lets the POST return immediately with the paper_id.
+
     if req.methodology not in {"empirical", "theoretical", "mixed"}:
         raise HTTPException(
             status_code=400,
             detail=f"methodology must be one of empirical|theoretical|mixed, got {req.methodology!r}",
+        )
+
+    # Per-paper backend override. None → the process-global default.
+    from ..modules.llm.registry import BACKENDS
+
+    if req.backend is not None and req.backend not in BACKENDS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"backend must be one of {'|'.join(BACKENDS)}, got {req.backend!r}",
+        )
+    effective_backend = req.backend or settings.llm_backend
+
+    # Per-paper governance regime override. None → the process-global default.
+    _GOVERNANCE_REGIMES = {"off", "contracts", "full"}
+    if req.governance is not None and req.governance not in _GOVERNANCE_REGIMES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"governance must be one of {'|'.join(sorted(_GOVERNANCE_REGIMES))}, got {req.governance!r}",
+        )
+    effective_governance = req.governance or settings.governance
+
+    # Human-in-the-loop review points. Validate against real stage names.
+    from ..core.strategist.state import PIPELINE_STAGES
+
+    bad_stages = [s for s in req.review_stages if s not in PIPELINE_STAGES]
+    if bad_stages:
+        raise HTTPException(
+            status_code=422,
+            detail=f"review_stages must be from {'|'.join(PIPELINE_STAGES)}; unknown: {', '.join(bad_stages)}",
         )
 
     # First-run guardrail. Inspect the (model, methodology, mode) tuple. If
@@ -366,7 +542,9 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
     # the requester explicitly acknowledges. This is the proactive defense
     # against the May 2026 "spend $8 chasing a Sonnet bug" failure: cheap
     # validation must succeed once before we trust an expensive cap.
-    current_model = settings.default_model
+    # Resolve against the EFFECTIVE backend, not the global one — a paper on
+    # `--backend openrouter` must not inherit the anthropic model id.
+    current_model = req.model or settings.default_model_for(effective_backend)
     requested_cap = req.max_cost_usd if req.max_cost_usd is not None else settings.default_max_cost_usd
     proven = await _tuple_is_proven(current_model, req.methodology, req.mode)
     if not proven and requested_cap > _UNPROVEN_TUPLE_CAP and not req.acknowledge_unproven_tuple:
@@ -420,6 +598,9 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
         "mode": req.mode,
         "methodology": req.methodology,
         "model": current_model,
+        "backend": effective_backend,
+        "governance": effective_governance,
+        "review_stages": req.review_stages,
         "current_stage": "idea",
     }
     (workspace / "manifest.json").write_text(json.dumps(manifest, indent=2))
@@ -427,9 +608,11 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
         await execute(
             """
             INSERT INTO papers (id, title, research_question, status, workspace,
-                                mode, methodology, model, max_cost_usd)
+                                mode, methodology, model, backend, governance,
+                                review_stages, max_cost_usd)
             VALUES (%(id)s, %(title)s, %(rq)s, 'idea', %(ws)s,
-                    %(mode)s, %(methodology)s, %(model)s, %(cap)s)
+                    %(mode)s, %(methodology)s, %(model)s, %(backend)s, %(governance)s,
+                    %(review_stages)s, %(cap)s)
             """,
             {
                 "id": paper_id,
@@ -439,6 +622,9 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
                 "mode": req.mode,
                 "methodology": req.methodology,
                 "model": current_model,
+                "backend": effective_backend,
+                "governance": effective_governance,
+                "review_stages": json.dumps(req.review_stages),
                 "cap": cap,
             },
         )
@@ -449,7 +635,24 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
         background_tasks.add_task(_create_github_repo, paper_id, req.title)
 
     # Use asyncio.create_task (not BackgroundTasks) so we get a handle for cancel.
-    task = asyncio.create_task(_run_pipeline(paper_id, workspace, req.mode, cap, req.methodology))
+    # _prepare_and_run does the heavy BYOD import + literature ingest FIRST (off
+    # the request path), then runs the pipeline — so the POST returns now.
+    task = asyncio.create_task(
+        _prepare_and_run(
+            paper_id,
+            workspace,
+            settings,
+            req.mode,
+            cap,
+            req.methodology,
+            effective_backend,
+            current_model,
+            effective_governance,
+            req.review_stages,
+            req.research_question,
+            req.title,
+        )
+    )
     _RUNNING[paper_id] = task
     task.add_done_callback(lambda _t: _RUNNING.pop(paper_id, None))
 
@@ -558,7 +761,8 @@ async def resume_paper(paper_id: str, req: ResumeRequest | None = None) -> dict[
 
     try:
         row = await fetch_one(
-            "SELECT id, status, workspace, mode, max_cost_usd, methodology FROM papers WHERE id = %(id)s",
+            "SELECT id, status, workspace, mode, max_cost_usd, methodology, backend, model, governance, "
+            "review_stages FROM papers WHERE id = %(id)s",
             {"id": paper_id},
         )
     except Exception as e:
@@ -586,6 +790,25 @@ async def resume_paper(paper_id: str, req: ResumeRequest | None = None) -> dict[
     mode = row.get("mode") or "single_pass"
     cap = float(row.get("max_cost_usd") or 25.0)
     methodology = row.get("methodology") or "empirical"
+    backend_name = row.get("backend")  # None → server default at run time
+    model = row.get("model")
+    governance = row.get("governance")  # None → server default at run time
+    try:
+        review_stages = json.loads(row.get("review_stages") or "[]")
+    except (TypeError, ValueError):
+        review_stages = []
+
+    # If this pause was a human-review checkpoint, approve the pending stage so
+    # the resumed run continues past it instead of immediately re-pausing.
+    try:
+        from ..core.pipeline.state import PipelineState
+
+        pstate = PipelineState.load(workspace, paper_id, mode)
+        if pstate.pending_review_stage:
+            pstate.approve(pstate.pending_review_stage)
+            pstate.save(workspace)
+    except Exception as e:  # noqa: BLE001 — approval is best-effort; resume proceeds
+        logger.warning("Could not clear review checkpoint on resume %s: %s", paper_id, e)
 
     # Optional cap raise (v0.5): if the request body provides a new
     # max_cost_usd, persist it before re-firing the runner so the
@@ -613,7 +836,9 @@ async def resume_paper(paper_id: str, req: ResumeRequest | None = None) -> dict[
     except Exception as e:
         logger.warning("Could not update status on resume %s: %s", paper_id, e)
 
-    task = asyncio.create_task(_run_pipeline(paper_id, workspace, mode, cap, methodology))
+    task = asyncio.create_task(
+        _run_pipeline(paper_id, workspace, mode, cap, methodology, backend_name, model, governance, review_stages)
+    )
     _RUNNING[paper_id] = task
     task.add_done_callback(lambda _t: _RUNNING.pop(paper_id, None))
 
@@ -958,7 +1183,12 @@ async def get_usage_summary() -> dict[str, Any]:
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "service": "e2er-v3"}
+    """Health plus the identity of THIS process — the authoritative answer to
+    "which code is the server actually running?". The server does not reload on
+    edit, so a client must ask rather than assume."""
+    from ..core.run_identity import run_identity
+
+    return {"status": "ok", "service": "e2er-v3", "identity": run_identity()}
 
 
 # --- Dashboard (Jinja2 + HTMX) ---
@@ -993,6 +1223,108 @@ async def dashboard_index(request: Request) -> Any:
         "index.html",
         {"papers": rows or []},
     )
+
+
+def _workflow_inventory() -> dict[str, Any]:
+    """The specialist roster and skill wiring of this install.
+
+    Read from the registry at request time rather than from a checked-in
+    document, so the page cannot describe a different version than the one
+    serving it.
+    """
+    from ..core.specialists.registry import (
+        SPECIALIST_ARTIFACTS,
+        SPECIALIST_SIDECAR_ARTIFACTS,
+        SPECIALIST_SKILLS,
+    )
+
+    # The loader searches two locations (installed package, development
+    # checkout). Reuse its list so this page cannot describe a directory the
+    # loader does not read.
+    from ..skills.loader import _SKILLS_DIRS
+
+    found: set[str] = set()
+    for root in _SKILLS_DIRS:
+        if root.is_dir():
+            found.update(p.relative_to(root).with_suffix("").as_posix() for p in root.rglob("*.md"))
+    on_disk = sorted(found)
+
+    used: set[str] = set()
+    users: dict[str, list[str]] = {}
+    names = sorted(set(SPECIALIST_ARTIFACTS) | set(SPECIALIST_SKILLS))
+    for name in names:
+        for skill in SPECIALIST_SKILLS.get(name, []):
+            used.add(skill)
+            users.setdefault(skill, []).append(name)
+
+    specialists = [
+        {
+            "name": name,
+            "artifact": SPECIALIST_ARTIFACTS.get(name, ""),
+            "sidecars": list(SPECIALIST_SIDECAR_ARTIFACTS.get(name, [])),
+            "skills": SPECIALIST_SKILLS.get(name, []),
+        }
+        for name in names
+    ]
+    unused = [s for s in on_disk if s not in used]
+    missing = sorted(s for s in used if s not in on_disk)
+
+    return {
+        "specialists": specialists,
+        "unused": unused,
+        "missing": missing,
+        "s_users": users,
+        "counts": {
+            "specialists": len(specialists),
+            "on_disk": len(on_disk),
+            "referenced": len(used),
+            "unused": len(unused),
+            "missing": len(missing),
+        },
+    }
+
+
+async def _preflight() -> dict[str, Any]:
+    """Run the same checks `e2er doctor` runs."""
+    from ..doctor import FAIL, PASS, SKIP, run_doctor
+
+    try:
+        checks = await run_doctor(get_settings())
+    except Exception as e:  # noqa: BLE001 — a broken check must not break the page
+        logger.warning("preflight failed to run: %s", e)
+        return {"checks": [], "ready": False, "error": str(e)[:200], "n_fail": 0}
+
+    rows = [{"name": c.name, "status": c.status, "detail": c.detail} for c in checks]
+    blockers = [
+        c for c in checks if c.status == FAIL and c.name.startswith(("backend.", "db", "skills.", "workspace."))
+    ]
+    return {
+        "checks": rows,
+        "ready": not blockers,
+        "blockers": [c.name for c in blockers],
+        "n_pass": sum(1 for c in checks if c.status == PASS),
+        "n_skip": sum(1 for c in checks if c.status == SKIP),
+        "n_fail": sum(1 for c in checks if c.status == FAIL),
+        "error": "",
+    }
+
+
+@app.get("/preflight", response_class=HTMLResponse)
+async def dashboard_preflight(request: Request) -> Any:
+    """Is this machine able to run a paper?"""
+    return templates.TemplateResponse(request, "preflight.html", await _preflight())
+
+
+@app.get("/htmx/preflight-banner", response_class=HTMLResponse)
+async def preflight_banner(request: Request) -> Any:
+    """Small banner for the new-paper form, so the answer arrives before the ask."""
+    return templates.TemplateResponse(request, "_preflight_banner.html", await _preflight())
+
+
+@app.get("/workflow", response_class=HTMLResponse)
+async def dashboard_workflow(request: Request) -> Any:
+    """Which specialists exist, what they are told, and what nothing loads."""
+    return templates.TemplateResponse(request, "workflow.html", _workflow_inventory())
 
 
 @app.get("/papers/new", response_class=HTMLResponse)
@@ -1057,8 +1389,419 @@ async def paper_detail(request: Request, paper_id: str = Depends(_validate_uuid)
     return templates.TemplateResponse(
         request,
         "paper.html",
-        {"paper": paper, "artifacts": artifacts},
+        {
+            "paper": paper,
+            "artifacts": artifacts,
+            "reading": _reading_list(artifacts),
+            "groups": _artifact_groups(
+                workspace,
+                artifacts,
+                str(paper.get("mode") or ""),
+                str(paper.get("methodology") or ""),
+            )
+            if workspace.exists()
+            else [],
+        },
     )
+
+
+#: Pipeline phases in execution order, and the specialists that belong to each.
+#: Artifact attribution itself comes from the registry; this only says when.
+_PHASES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("Design", ("idea_developer", "literature_scanner", "identification_strategist", "theory_specialist")),
+    ("Data", ("data_architect", "data_analyst")),
+    ("Estimation", ("econometrics_specialist",)),
+    ("Drafting", ("paper_drafter", "section_writer", "abstract_writer", "latex_formatter")),
+    (
+        "Self-attack and polish",
+        (
+            "self_attacker",
+            "polish_formula",
+            "polish_numerics",
+            "polish_institutions",
+            "polish_equilibria",
+            "polish_bibliography",
+        ),
+    ),
+    (
+        "Review",
+        (
+            "mechanism_reviewer",
+            "technical_reviewer",
+            "literature_reviewer",
+            "data_reviewer",
+            "identification_reviewer",
+            "writing_reviewer",
+        ),
+    ),
+    ("Revision", ("revisor", "patch_revisor")),
+    ("Replication", ("replication_packager",)),
+)
+
+
+def _gate_verdicts(workspace: Path) -> list[dict[str, Any]]:
+    """Read the deterministic gate reports the run already wrote.
+
+    These are the run's own verdicts. Recomputing them here would let the page
+    disagree with the pipeline about what happened.
+    """
+    import json as _json
+
+    out: list[dict[str, Any]] = []
+
+    def _load(name: str) -> dict[str, Any] | None:
+        path = workspace / name
+        if not path.is_file():
+            return None
+        try:
+            data = _json.loads(path.read_text(encoding="utf-8"))
+            return data if isinstance(data, dict) else None
+        except (OSError, ValueError):
+            return None
+
+    if (d := _load("table_render_report.json")) is not None:
+        bad = bool(d.get("unresolved")) or bool(d.get("errors"))
+        n = len(d.get("rendered") or [])
+        out.append(
+            {
+                "name": "table_render_report.json",
+                "label": "Tables",
+                "ok": not bad,
+                "note": f"{n} rendered, {len(d.get('unresolved') or [])} unresolved",
+            }
+        )
+
+    if (d := _load("number_verification.json")) is not None:
+        crit = [m for m in (d.get("mismatches") or []) if m.get("severity") == "critical"]
+        traced = d.get("matched", 0)
+        out.append(
+            {
+                "name": "number_verification.json",
+                "label": "Numbers",
+                "ok": not crit,
+                "note": f"{traced} cells trace, {len(crit)} critical",
+            }
+        )
+
+    if (d := _load("citation_integrity.json")) is not None:
+        out.append(
+            {
+                "name": "citation_integrity.json",
+                "label": "Citations",
+                "ok": bool(d.get("passed")),
+                "note": f"{d.get('verified', 0)}/{d.get('total_cites', 0)} verified, "
+                f"{d.get('missing_in_bib', 0)} missing",
+            }
+        )
+
+    if (d := _load("review_aggregation.json")) is not None:
+        verdict = str(d.get("verdict", "")).upper()
+        avg = d.get("weighted_avg")
+        out.append(
+            {
+                "name": "review_aggregation.json",
+                "label": "Review panel",
+                "ok": verdict not in {"REJECT", "MECHANISM_FAIL"},
+                "note": f"{verdict}" + (f" · {avg:.2f}/10" if isinstance(avg, (int, float)) else ""),
+            }
+        )
+
+    return out
+
+
+#: The outputs a person actually wants to read, most-wanted first.
+_READABLE: tuple[tuple[str, str, bool], ...] = (
+    ("paper_draft.pdf", "Read the paper", True),
+    ("paper_draft.tex", "LaTeX source", False),
+    ("abstract.tex", "Abstract", False),
+    ("data_summary.md", "Data summary", False),
+    ("identification_strategy.md", "Identification strategy", False),
+    ("review_aggregation.json", "Review verdict", False),
+)
+
+
+def _reading_list(artifacts: list[str]) -> list[dict[str, Any]]:
+    """Surface the paper and the few documents worth opening directly."""
+    present = set(artifacts)
+    return [{"path": path, "label": label, "primary": primary} for path, label, primary in _READABLE if path in present]
+
+
+def _artifact_groups(
+    workspace: Path,
+    artifacts: list[str],
+    mode: str = "",
+    methodology: str = "",
+) -> list[dict[str, Any]]:
+    """Sort a paper's files under the phase that produced them, with a status.
+
+    A declared artifact that is absent is reported as a missing row rather than
+    left out, because "the drafter never wrote paper_draft.tex" is the single
+    most useful thing this page can tell you.
+    """
+    from ..core.specialists.registry import SPECIALIST_ARTIFACTS, SPECIALIST_SIDECAR_ARTIFACTS
+
+    present = set(artifacts)
+    sizes: dict[str, int] = {}
+    for rel in artifacts:
+        try:
+            sizes[rel] = (workspace / rel).stat().st_size
+        except OSError:
+            sizes[rel] = 0
+
+    claimed: set[str] = set()
+    groups: list[dict[str, Any]] = []
+
+    # single_pass skips the iterative loop entirely; an empirical paper never
+    # dispatches the theory specialist. Phases that were never meant to run are
+    # reported as such rather than as missing output.
+    iterative = (mode or "").lower() == "iterative"
+    empirical = (methodology or "empirical").lower() == "empirical"
+    skipped_phases = set() if iterative else {"Self-attack and polish"}
+    skipped_specialists = {"theory_specialist"} if empirical else set()
+
+    for phase_name, specialists in _PHASES:
+        declared: list[str] = []
+        for sp in specialists:
+            if sp in skipped_specialists:
+                continue
+            if art := SPECIALIST_ARTIFACTS.get(sp):
+                declared.append(art)
+            declared.extend(SPECIALIST_SIDECAR_ARTIFACTS.get(sp, []))
+
+        rows: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for rel in declared:
+            if rel in seen:
+                continue
+            seen.add(rel)
+            if rel in present:
+                claimed.add(rel)
+                empty = sizes.get(rel, 0) == 0
+                rows.append(
+                    {
+                        "p": rel,
+                        "b": sizes.get(rel, 0),
+                        "status": "fail" if empty else "pass",
+                        "note": "written but empty" if empty else "",
+                    }
+                )
+            else:
+                rows.append({"p": rel, "b": 0, "status": "missing", "note": "not written"})
+
+        if not rows:
+            continue
+        if phase_name in skipped_phases:
+            groups.append(
+                {
+                    "name": phase_name,
+                    "status": "none",
+                    "note": f"not run in {mode or 'this'} mode",
+                    "files": [dict(r, status="none", note="phase not run") for r in rows],
+                }
+            )
+            continue
+        failed = [r for r in rows if r["status"] != "pass"]
+        groups.append(
+            {
+                "name": phase_name,
+                "status": "fail" if failed else "pass",
+                "note": f"{len(rows) - len(failed)}/{len(rows)} produced",
+                "files": rows,
+            }
+        )
+
+    gates = _gate_verdicts(workspace)
+    if gates:
+        rows = []
+        for g in gates:
+            claimed.add(g["name"])
+            rows.append(
+                {
+                    "p": g["name"],
+                    "b": sizes.get(g["name"], 0),
+                    "status": "pass" if g["ok"] else "fail",
+                    "note": f"{g['label']}: {g['note']}",
+                }
+            )
+        groups.append(
+            {
+                "name": "Gates",
+                "status": "fail" if any(r["status"] != "pass" for r in rows) else "pass",
+                "note": f"{sum(1 for r in rows if r['status'] == 'pass')}/{len(rows)} passed",
+                "files": rows,
+            }
+        )
+
+    rest = sorted(present - claimed)
+    if rest:
+        groups.append(
+            {
+                "name": "Working files",
+                "status": "none",
+                "note": f"{len(rest)} files",
+                "files": [{"p": r, "b": sizes.get(r, 0), "status": "none", "note": ""} for r in rest],
+            }
+        )
+
+    return groups
+
+
+#: Phases in the order the runner executes them, for the progress strip.
+_PHASE_ORDER = (
+    "initial",
+    "iterative",
+    "estimation_gate",
+    "self_attack",
+    "polish",
+    "review",
+    "revision",
+    "replication",
+)
+
+
+def _progress(events: list[dict[str, Any]], paper: dict[str, Any]) -> dict[str, Any]:
+    """What is running now, for how long, and which phases are done.
+
+    `events` arrives newest-first. A specialist with a start and no matching
+    end is still working; the same holds for phases.
+    """
+    from datetime import datetime
+
+    def _ts(value: Any) -> datetime | None:
+        if isinstance(value, datetime):
+            return value if value.tzinfo else value.replace(tzinfo=UTC)
+        if isinstance(value, str):
+            try:
+                parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            except ValueError:
+                return None
+            return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+        return None
+
+    now = datetime.now(UTC)
+    ordered = list(reversed(events))  # oldest first
+
+    running: dict[str, datetime | None] = {}
+    finished_phases: list[str] = []
+    open_phases: list[str] = []
+    first_ts: datetime | None = None
+
+    for e in ordered:
+        ts = _ts(e.get("created_at"))
+        if first_ts is None and ts is not None:
+            first_ts = ts
+        etype = str(e.get("event_type") or "")
+        who = e.get("specialist")
+        stage = str(e.get("stage") or "")
+
+        if etype == "specialist_start" and who:
+            running[str(who)] = ts
+        elif etype in {"specialist_end", "specialist_failed"} and who:
+            running.pop(str(who), None)
+        elif etype == "phase_start" and stage:
+            if stage not in open_phases:
+                open_phases.append(stage)
+        elif etype == "phase_end" and stage:
+            if stage in open_phases:
+                open_phases.remove(stage)
+            if stage not in finished_phases:
+                finished_phases.append(stage)
+
+    def _mins(since: datetime | None) -> int | None:
+        if since is None:
+            return None
+        return max(0, int((now - since).total_seconds() // 60))
+
+    active = [{"name": name, "minutes": _mins(started)} for name, started in sorted(running.items())]
+
+    terminal = str(paper.get("status") or "") in {"completed", "failed", "cancelled", "rejected", "paused"}
+
+    phases = [
+        {
+            "name": p,
+            "state": "done" if p in finished_phases else ("running" if p in open_phases else "pending"),
+        }
+        for p in _PHASE_ORDER
+        if p in finished_phases or p in open_phases or not terminal
+    ]
+
+    return {
+        "active": active,
+        "elapsed_min": _mins(first_ts),
+        "phases": phases,
+        "terminal": terminal,
+    }
+
+
+def _failure_detail(workspace: Path, paper: dict[str, Any], events: list[dict[str, Any]]) -> dict[str, Any]:
+    """Assemble a readable account of why a run stopped.
+
+    Everything here is read from the run's own record — the error column, the
+    per-specialist contract feedback, and the event log. Nothing is inferred
+    about what the model was thinking, only about what it did not produce.
+    """
+    status = str(paper.get("status") or "")
+    if status not in {"failed", "rejected", "paused"}:
+        return {"failed": False}
+
+    raw = str(paper.get("last_error") or "").strip()
+    headline = raw.split(":", 1)[-1].strip() if raw.startswith("RuntimeError:") else raw
+    headline = headline.split(";")[0].strip() if ";" in headline else headline
+
+    attempts: dict[str, int] = {}
+    for e in events:
+        if str(e.get("event_type")) == "specialist_start" and e.get("specialist"):
+            name = str(e["specialist"])
+            attempts[name] = attempts.get(name, 0) + 1
+
+    specialists: list[dict[str, Any]] = []
+    feedback_dir = workspace / ".contract_feedback"
+    if feedback_dir.is_dir():
+        for f in sorted(feedback_dir.glob("*.txt")):
+            try:
+                violation = f.read_text(encoding="utf-8", errors="replace").strip()
+            except OSError:
+                continue
+            name = f.stem
+            specialists.append(
+                {
+                    "name": name,
+                    "violation": violation[:400],
+                    "attempts": attempts.get(name, 0),
+                }
+            )
+
+    # A recognisable pattern worth naming rather than leaving to be rediscovered.
+    hints: list[str] = []
+    unwritten = [s for s in specialists if "file not written" in s["violation"]]
+    if unwritten and len(unwritten) == len(specialists) and len(specialists) > 1:
+        hints.append(
+            "Every specialist failed the same way — none of them wrote anything. That is "
+            "usually the environment rather than the models: a workspace the CLI backend "
+            "refuses to write to, or a backend that is installed but not logged in. "
+            "Check Preflight."
+        )
+    if status == "rejected":
+        hints.append(
+            "Rejected means a gate blocked the paper rather than the pipeline breaking. "
+            "The gate reports in the workspace say which, and resuming without addressing "
+            "it will reach the same verdict."
+        )
+    if status == "paused":
+        hints.append(
+            "Paused means the run stopped with its workspace intact — a cost cap, a "
+            "checkpoint, or a server that was restarted. Resuming picks up at the first "
+            "incomplete phase."
+        )
+
+    return {
+        "failed": True,
+        "status": status,
+        "headline": headline or "The run stopped without recording a reason.",
+        "raw": raw,
+        "specialists": specialists,
+        "hints": hints,
+    }
 
 
 @app.get("/htmx/papers/{paper_id}/live", response_class=HTMLResponse)
@@ -1109,10 +1852,13 @@ async def paper_live_fragment(request: Request, paper_id: str = Depends(_validat
         "_live.html",
         {
             "paper": paper,
+            "progress": _progress(list(events or []), dict(paper)),
+            "failure": _failure_detail(Path(get_settings().workspace_root) / paper_id, dict(paper), list(events or [])),
             "cost_spent": cost_spent,
             "cost_pct": cost_pct,
             "events": events or [],
             "can_cancel": (paper.get("status") not in _TERMINAL_STATUSES) and (paper_id in _RUNNING),
+            "can_resume": (paper.get("status") == "paused") and (paper_id not in _RUNNING),
         },
     )
 
@@ -1143,7 +1889,30 @@ async def stream_artifact(paper_id: str, path: str) -> FileResponse:
         raise HTTPException(status_code=404, detail="Artifact not found")
 
     mtype, _ = mimetypes.guess_type(str(target))
-    return FileResponse(str(target), media_type=mtype or "application/octet-stream", filename=target.name)
+    # Show what a browser can show. Without this every artifact downloads,
+    # including the compiled paper — which made the paper unreadable from the
+    # page that lists it.
+    #
+    # HTML and SVG are deliberately absent: both execute script in this origin,
+    # and artifacts are written by a model from untrusted inputs.
+    inline_types = {
+        "application/pdf",
+        "application/json",
+        "text/plain",
+        "text/markdown",
+        "text/csv",
+        "image/png",
+        "image/jpeg",
+        "image/gif",
+        "image/webp",
+    }
+    disposition = "inline" if mtype in inline_types else "attachment"
+    return FileResponse(
+        str(target),
+        media_type=mtype or "application/octet-stream",
+        filename=target.name,
+        content_disposition_type=disposition,
+    )
 
 
 # Accepted BYOD file extensions. Limits applied to keep workspace cheap to mount.
@@ -1195,22 +1964,78 @@ async def upload_data_file(paper_id: str, file: UploadFile = File(...)) -> dict[
 # --- Background tasks ---
 
 
+async def _prepare_and_run(
+    paper_id: str,
+    workspace: Path,
+    settings,
+    mode: str,
+    max_cost_usd: float,
+    methodology: str = "empirical",
+    backend_name: str | None = None,
+    model: str | None = None,
+    governance: str | None = None,
+    review_stages: list[str] | None = None,
+    research_question: str = "",
+    title: str = "",
+) -> None:
+    """Background entry: do the heavy BYOD prep (data.db import + literature
+    ingest + literature acquisition) off the request path, THEN run the pipeline.
+
+    Kept out of create_paper so the POST returns immediately — a multi-GB import
+    + Zotero ingest otherwise blocks past the client's HTTP timeout. Each step is
+    best-effort and never raises; the import runs before the pipeline's data
+    specialists need data.db, and the literature steps run after the papers row
+    exists (FK) but before any specialist can cite anything.
+    """
+    from ..modules.data.byod_import import import_corpus_into_data_db
+
+    try:
+        await import_corpus_into_data_db(workspace, settings.max_rows_per_paper)
+    except Exception as e:  # noqa: BLE001 — best-effort; pipeline still runs
+        logger.warning("BYOD import failed for %s: %s (pipeline continues)", paper_id, e)
+    try:
+        await _ingest_literature_corpus(paper_id, workspace, settings)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("literature ingest failed for %s: %s (pipeline continues)", paper_id, e)
+    # Runs second so the BYOD library above wins; acquisition self-skips when a
+    # bibliography already exists. Must precede _run_pipeline: the drafter reads
+    # literature.bib from the prompt, and a cite with no bib entry is a hard fail
+    # at the citation gate and an undefined reference at compile time.
+    try:
+        await _acquire_literature(paper_id, workspace, settings, research_question, title)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("literature acquisition failed for %s: %s (pipeline continues)", paper_id, e)
+    await _run_pipeline(
+        paper_id, workspace, mode, max_cost_usd, methodology, backend_name, model, governance, review_stages
+    )
+
+
 async def _run_pipeline(
     paper_id: str,
     workspace: Path,
     mode: str,
     max_cost_usd: float,
     methodology: str = "empirical",
+    backend_name: str | None = None,
+    model: str | None = None,
+    governance: str | None = None,
+    review_stages: list[str] | None = None,
 ) -> None:
     from ..config import get_settings
     from ..core.strategist.runner import PipelineRunner
     from ..modules.data.discovery_tools import DATA_DISCOVERY_TOOLS, SeriesDataToolHandler
+    from ..modules.data.query_tools import QUERY_DATA_TOOLS, QueryDataToolHandler
     from ..modules.data.registry import warehouses
     from ..modules.literature.tools import LITERATURE_TOOLS, LiteratureToolHandler
     from ..modules.llm.registry import get_backend
 
     settings = get_settings()
-    backend = get_backend(settings)
+    # Per-paper overrides (multi-model runs / experiment); fall back to the
+    # process-global config when unset.
+    effective_backend_name = backend_name or settings.llm_backend
+    effective_model = model or settings.default_model_for(effective_backend_name)
+    effective_governance = governance or settings.governance
+    backend = get_backend(settings, name=effective_backend_name)
 
     # Tools are unioned across all enabled providers; specialists' skill files
     # determine which they actually invoke.
@@ -1226,8 +2051,15 @@ async def _run_pipeline(
 
     # Series data (FRED/yfinance) + discovery — always on (yfinance needs no
     # key). Agents call list_data_sources, in light of the RQ, then fetch_data.
+    # The handler takes the workspace so fetch_data can optionally materialize
+    # a pulled series into the paper's data.db (queryable via query_data).
     extra_tools.extend(DATA_DISCOVERY_TOOLS)
-    extra_handlers.append(SeriesDataToolHandler())
+    extra_handlers.append(SeriesDataToolHandler(workspace))
+
+    # query_data — read-only SQL over the paper's data.db (BYOD imports +
+    # materialized external series). Always on; specialists use it via skills.
+    extra_tools.extend(QUERY_DATA_TOOLS)
+    extra_handlers.append(QueryDataToolHandler(paper_id, workspace))
 
     # Literature tools are always on — OpenAlex needs no API key.
     extra_tools.extend(LITERATURE_TOOLS)
@@ -1237,13 +2069,15 @@ async def _run_pipeline(
         paper_id=paper_id,
         workspace=workspace,
         backend=backend,
-        model=settings.default_model,
+        model=effective_model,
         mode=mode,
         extra_tools=extra_tools,
         extra_handlers=extra_handlers,
-        backend_name=settings.llm_backend,
+        backend_name=effective_backend_name,
         max_cost_usd=max_cost_usd,
         methodology=methodology,
+        governance=effective_governance,
+        review_stages=review_stages,
     )
     await runner.run()
 

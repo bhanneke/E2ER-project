@@ -10,8 +10,16 @@ class, packages, and bibliography style consistent across all papers.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
+# Static preamble. `xcolor` is loaded BEFORE hyperref so the `blue!50!black`
+# link colours resolve (hyperref's bundled `color` doesn't understand xcolor's
+# mixing syntax). `graphicspath` searches both the workspace root (where the
+# figure renderer writes `fig_*.pdf`) and a `figures/` subdir (the mirror the
+# compiler makes), so `\includegraphics{fig_x.pdf}` AND
+# `\includegraphics{figures/fig_x.pdf}` both resolve. fancyhdr gives every page
+# a running header (running title + "Produced by E2ER").
 PREAMBLE = r"""\documentclass[11pt]{article}
 
 \usepackage[margin=1in]{geometry}
@@ -20,10 +28,13 @@ PREAMBLE = r"""\documentclass[11pt]{article}
 \usepackage{lmodern}
 \usepackage{amsmath, amssymb, amsthm}
 \usepackage{booktabs}
+\usepackage{xcolor}
 \usepackage{graphicx}
+\graphicspath{{./}{figures/}}
 \usepackage{hyperref}
 \usepackage{natbib}
 \usepackage{setspace}
+\usepackage{fancyhdr}
 
 \onehalfspacing
 
@@ -33,15 +44,6 @@ PREAMBLE = r"""\documentclass[11pt]{article}
   citecolor=blue!50!black,
   urlcolor=blue!50!black,
 }
-
-% Allow specialists to define their own \title{}, \author{}, and \date{}
-% in the body. If absent, the assembly fallback below provides defaults.
-"""
-
-DEFAULT_TITLE = r"""
-\title{Untitled Paper}
-\author{E2ER pipeline}
-\date{\today}
 """
 
 POSTAMBLE = r"""
@@ -51,34 +53,95 @@ POSTAMBLE = r"""
 \end{document}
 """
 
+_DEFAULT_AUTHOR = "Produced by the E2ER pipeline"
+
 
 def looks_like_full_document(body: str) -> bool:
     """Return True when the drafter wrote a complete document already."""
     return r"\documentclass" in body or r"\begin{document}" in body
 
 
+def _extract_braced(body: str, cmd: str) -> tuple[str | None, str]:
+    """Pull a ``\\cmd{...}`` (balanced braces, possibly multi-line) out of the
+    body. Returns (content, body_without_it); (None, body) if absent."""
+    m = re.search(r"\\" + cmd + r"\s*\{", body)
+    if not m:
+        return None, body
+    open_brace = m.end() - 1
+    depth = 0
+    for i in range(open_brace, len(body)):
+        if body[i] == "{":
+            depth += 1
+        elif body[i] == "}":
+            depth -= 1
+            if depth == 0:
+                content = body[open_brace + 1 : i]
+                return content, body[: m.start()] + body[i + 1 :]
+    return None, body  # unbalanced — leave it alone
+
+
+def _running_title(title: str) -> str:
+    """A short, single-line running title for the page header."""
+    flat = " ".join(title.split())
+    # Drop LaTeX line breaks / thanks footnotes that don't belong in a header.
+    flat = flat.replace("\\\\", " ").replace("\\thanks", " ")
+    flat = re.sub(r"\s+", " ", flat).strip()
+    return flat if len(flat) <= 70 else flat[:67].rstrip() + "..."
+
+
+def _fancy_header(running_title: str) -> str:
+    """fancyhdr config: running title (left) + 'Produced by E2ER' (right) on
+    every page, including the title page. Page number in the footer."""
+    return (
+        "\\pagestyle{fancy}\n"
+        "\\fancyhf{}\n"
+        f"\\fancyhead[L]{{\\footnotesize\\itshape {running_title}}}\n"
+        "\\fancyhead[R]{\\footnotesize Produced by E2ER}\n"
+        "\\fancyfoot[C]{\\thepage}\n"
+        "\\renewcommand{\\headrulewidth}{0.4pt}\n"
+        # \maketitle forces \thispagestyle{plain} on page 1 — redefine plain so
+        # the running header shows there too.
+        "\\fancypagestyle{plain}{%\n"
+        "  \\fancyhf{}%\n"
+        f"  \\fancyhead[L]{{\\footnotesize\\itshape {running_title}}}%\n"
+        "  \\fancyhead[R]{\\footnotesize Produced by E2ER}%\n"
+        "  \\fancyfoot[C]{\\thepage}%\n"
+        "  \\renewcommand{\\headrulewidth}{0.4pt}%\n"
+        "}\n"
+    )
+
+
 def assemble_document(body: str) -> str:
-    """Wrap a body fragment with the standard preamble + bibliography postamble.
+    """Wrap a body fragment with the standard preamble + title block + running
+    header + bibliography postamble.
 
     If the body is already a full document (has \\documentclass), return it
-    unchanged so we don't double-wrap during the transition period while
-    drafter skills are updated.
+    unchanged so we don't double-wrap.
+
+    Title handling: the drafter often writes ``\\title{}``/``\\author{}``/
+    ``\\date{}`` INSIDE the body, after where ``\\maketitle`` would run — which
+    made \\maketitle emit an empty title over just the date. We hoist those into
+    the preamble (before \\begin{document}) and emit \\maketitle ourselves, so
+    the title renders correctly.
     """
     if looks_like_full_document(body):
         return body
 
-    head = PREAMBLE
-    if r"\title{" not in body:
-        head += DEFAULT_TITLE
+    title, body = _extract_braced(body, "title")
+    author, body = _extract_braced(body, "author")
+    date, body = _extract_braced(body, "date")
+    body = re.sub(r"\\maketitle\b", "", body)  # we emit \maketitle ourselves
 
-    # Whatever the drafter wrote becomes the body. Wrap with begin/end document.
-    return (
-        head
-        + "\n\\begin{document}\n"
-        + ("\\maketitle\n\n" if r"\maketitle" not in body else "")
-        + body.strip()
-        + POSTAMBLE
+    title = title.strip() if title else "Untitled Paper"
+    author = author.strip() if author else _DEFAULT_AUTHOR
+    date_tex = date.strip() if date is not None else r"\today"
+
+    head = (
+        PREAMBLE
+        + f"\n\\title{{{title}}}\n\\author{{{author}}}\n\\date{{{date_tex}}}\n"
+        + _fancy_header(_running_title(title))
     )
+    return head + "\n\\begin{document}\n\\maketitle\n\n" + body.strip() + POSTAMBLE
 
 
 def assemble_refs_bib(workspace: Path) -> Path | None:

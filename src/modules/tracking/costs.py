@@ -6,6 +6,16 @@ from decimal import Decimal
 
 from ..llm.base import TokenUsage
 
+# Backends that bill flat-rate at the subscription level, NOT per-token.
+# Costing a token-counted invoice against these gives an estimate of
+# what the SDK route would have charged — but that number is meaningless
+# for users on these backends and was actively harmful in v0.8: the
+# default ``--max-cost 5`` cap tripped after a single heavy specialist
+# on Claude Code (M4 finding #1). For these backends ``compute_cost``
+# returns ``Decimal("0")`` and the budget gate never fires.
+_FLAT_RATE_BACKENDS = frozenset({"claude_code", "codex", "gemini"})
+
+
 # Cost per million tokens (input, output) in USD
 _PRICING: dict[str, tuple[Decimal, Decimal]] = {
     # Anthropic
@@ -30,8 +40,26 @@ _DEFAULT_INPUT = Decimal("3")
 _DEFAULT_OUTPUT = Decimal("15")
 
 
-def compute_cost(model: str, usage: TokenUsage) -> Decimal:
-    """Estimate USD cost for a token usage record."""
+def compute_cost(model: str, usage: TokenUsage, backend: str | None = None) -> Decimal:
+    """Estimate USD cost for a token usage record.
+
+    ``backend`` is the LLM backend literal from
+    :attr:`Settings.llm_backend` (``"anthropic"`` / ``"openrouter"`` /
+    ``"claude_code"`` / ``"codex"`` / ``"gemini"``). For flat-rate
+    backends (Claude Code / Codex / Gemini CLI — billed at the
+    subscription level, not per-token) this returns ``Decimal("0")``.
+    The CLI help and v0.9 plan both promise ``"$0 if on the Claude
+    Code / Codex / Gemini CLI backends"``; this is the implementation
+    that makes that promise true. M4 finding #1.
+
+    ``backend=None`` preserves the legacy behaviour (always compute
+    SDK rates) for the few call sites that don't yet have backend in
+    scope — costs.py's pricing table is the authoritative SDK
+    reference and remains valid.
+    """
+    if backend in _FLAT_RATE_BACKENDS:
+        return Decimal("0")
+
     model_key = model.lower()
     input_rate, output_rate = _PRICING.get(model_key, (_DEFAULT_INPUT, _DEFAULT_OUTPUT))
 

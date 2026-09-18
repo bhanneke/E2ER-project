@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Preflight — E2ER{% endblock %}
+
+{% block content %}
+<h1>Preflight</h1>
+<p class="sub">
+  The same checks <code>e2er doctor</code> runs, from the same code. A backend
+  that is installed but not logged in is the most common reason a first paper
+  fails several minutes in, for a reason nothing on screen explains.
+</p>
+
+{% if error %}
+  <p class="error">The preflight could not run: {{ error }}</p>
+{% else %}
+
+<div class="pf-verdict {% if ready %}ok{% else %}bad{% endif %}">
+  {% if ready %}
+    <strong>Ready.</strong> Nothing blocks a run on this machine.
+  {% else %}
+    <strong>Not ready.</strong> Fix the failures below before starting a paper —
+    {{ blockers | join(", ") }}.
+  {% endif %}
+  <span class="muted">{{ n_pass }} passed · {{ n_skip }} skipped · {{ n_fail }} failed</span>
+</div>
+
+<div class="pf-list">
+  {% for c in checks %}
+    <div class="pf pf-{{ c.status | lower }}">
+      <span class="pf-mark">{% if c.status == "PASS" %}✓{% elif c.status == "FAIL" %}✗{% else %}·{% endif %}</span>
+      <span class="pf-name">{{ c.name }}</span>
+      <span class="pf-detail">{{ c.detail }}</span>
+    </div>
+  {% endfor %}
+</div>
+
+<p class="muted" style="margin-top:18px">
+  Skipped checks are optional capabilities you have not configured — a missing
+  FRED key means no macro series, not a broken install.
+</p>
+{% endif %}
+{% endblock %}

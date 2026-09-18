@@ -25,11 +25,50 @@ import time
 from pathlib import Path
 
 
+class RQInputError(Exception):
+    """The RQ source was given but could not be read — reported as a one-line
+    CLI message, never a traceback."""
+
+
+def resolve_rq_input(rq: str | None, rq_file: str | None) -> str | None:
+    """Resolve the research question from a positional/``--rq`` arg or a file.
+
+    A file may be an rq.json (from `e2er rq`, with a "research_question" key)
+    or plain text. Returns None when neither yields a non-empty RQ."""
+    if rq_file:
+        import json
+        from pathlib import Path
+
+        path = Path(rq_file).expanduser()
+        try:
+            raw = path.read_text(encoding="utf-8").strip()
+        except OSError as e:
+            raise RQInputError(f"could not read --rq-file {path}: {e.strerror or e}") from e
+        try:
+            obj = json.loads(raw)
+            if isinstance(obj, dict) and obj.get("research_question"):
+                return str(obj["research_question"]).strip()
+        except (ValueError, TypeError):
+            pass
+        return raw or None
+    return rq
+
+
+def _api_port() -> int:
+    """The port `e2er serve` would bind, from settings (PORT in .env)."""
+    try:
+        from .config import get_settings
+
+        return int(get_settings().port)
+    except Exception:  # noqa: BLE001 — a bad config must not break `run`
+        return 8280
+
+
 def _api_root() -> str:
     """Resolve the API URL from settings; the user can override via E2ER_API_URL."""
     if url := os.environ.get("E2ER_API_URL"):
         return url.rstrip("/")
-    return "http://127.0.0.1:8280"
+    return f"http://127.0.0.1:{_api_port()}"
 
 
 def _api_reachable(timeout: float = 1.5) -> bool:
@@ -43,7 +82,7 @@ def _api_reachable(timeout: float = 1.5) -> bool:
 
 
 def _start_uvicorn_in_background() -> int:
-    """Spawn `uvicorn src.api.app:app --port 8280` as a detached subprocess.
+    """Spawn `uvicorn src.api.app:app` on the configured port, detached.
 
     Returns the PID. The caller waits up to ~10s for /api/papers to come up,
     then proceeds.
@@ -58,7 +97,7 @@ def _start_uvicorn_in_background() -> int:
         "--host",
         "127.0.0.1",
         "--port",
-        "8280",
+        str(_api_port()),
         "--log-level",
         "info",
     ]
@@ -90,22 +129,38 @@ def _ensure_api_up(deadline_seconds: float = 12.0) -> tuple[bool, str | None]:
     return False, (f"Failed to bring up uvicorn within {deadline_seconds:.0f}s. Check ~/.e2er/uvicorn.log for errors.")
 
 
-def _submit_paper(rq: str, methodology: str, mode: str, max_cost: float, acknowledge: bool = False) -> dict | None:
+def _submit_paper(
+    rq: str,
+    methodology: str,
+    mode: str,
+    max_cost: float,
+    acknowledge: bool = False,
+    backend: str | None = None,
+    model: str | None = None,
+    governance: str | None = None,
+    review_stages: list[str] | None = None,
+    title_suffix: str = "",
+) -> dict | None:
     """POST /api/papers and return the response body."""
     import httpx
 
     from .config import get_settings
 
-    # Derive a title: first sentence of the RQ, truncated.
+    # Derive a title: first sentence of the RQ, truncated. run-matrix passes a
+    # title_suffix like " [claude_code/rep-1]" so sibling runs are labeled.
     title = rq.split("?")[0].split(".")[0].strip()
     if len(title) > 80:
         title = title[:77] + "..."
+    if title_suffix:
+        title = f"{title}{title_suffix}"
 
     # The $1 first-run floor protects against a runaway loop on an unvalidated
     # (model, methodology, mode) tuple — but it only matters for metered API
     # backends. The flat-rate CLI backends cost $0/token, so auto-acknowledge
     # there; otherwise enforce the floor unless the user passed --acknowledge.
-    flat_rate = get_settings().llm_backend in {"claude_code", "codex", "gemini"}
+    # Key the decision on the EFFECTIVE backend (the --backend override wins).
+    effective_backend = backend or get_settings().llm_backend
+    flat_rate = effective_backend in {"claude_code", "codex", "gemini"}
     acknowledge_unproven = acknowledge or flat_rate
 
     body = {
@@ -122,6 +177,14 @@ def _submit_paper(rq: str, methodology: str, mode: str, max_cost: float, acknowl
         "acknowledge_unproven_tuple": acknowledge_unproven,
         "max_cost_usd": max_cost,
     }
+    if backend:
+        body["backend"] = backend
+    if model:
+        body["model"] = model
+    if governance:
+        body["governance"] = governance
+    if review_stages:
+        body["review_stages"] = review_stages
     headers = {}
     if token := os.environ.get("E2ER_API_TOKEN"):
         headers["Authorization"] = f"Bearer {token}"
@@ -177,6 +240,10 @@ def run(
     max_cost: float = 5.0,
     monitor_seconds: float = 1800.0,
     acknowledge: bool = False,
+    backend: str | None = None,
+    model: str | None = None,
+    governance: str | None = None,
+    review_stages: list[str] | None = None,
 ) -> int:
     """Submit a paper and tail it. Entry point for `e2er run "<RQ>"`."""
     ok, err = _ensure_api_up()
@@ -185,8 +252,26 @@ def run(
         return 4
 
     print(f"Submitting paper:\n  {rq[:120]}", file=sys.stderr)
-    print(f"  methodology={methodology}, mode={mode}, max_cost=${max_cost}", file=sys.stderr)
-    resp = _submit_paper(rq, methodology, mode, max_cost, acknowledge=acknowledge)
+    backend_note = f", backend={backend}" if backend else ""
+    model_note = f", model={model}" if model else ""
+    gov_note = f", governance={governance}" if governance else ""
+    review_note = f", review-at={','.join(review_stages)}" if review_stages else ""
+    print(
+        f"  methodology={methodology}, mode={mode}, max_cost=${max_cost}"
+        f"{backend_note}{model_note}{gov_note}{review_note}",
+        file=sys.stderr,
+    )
+    resp = _submit_paper(
+        rq,
+        methodology,
+        mode,
+        max_cost,
+        acknowledge=acknowledge,
+        backend=backend,
+        model=model,
+        governance=governance,
+        review_stages=review_stages,
+    )
     if not resp:
         return 5
 

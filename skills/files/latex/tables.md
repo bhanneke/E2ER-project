@@ -1,5 +1,14 @@
 # LaTeX Tables for Economics Publications
 
+> **Results tables are rendered for you — do not hand-write their numbers.**
+> Regression / summary tables whose cells are numbers from the JSON sidecars
+> (`estimation_results.json`, `robustness_results.json`, `summary_statistics.json`)
+> are produced deterministically by the pipeline from a `table_spec.json` you
+> author (see the `data/table-spec` skill). You write the *spec*; code fills the
+> numbers and writes `tables/<name>.tex`, which you `\input`. This guidance below
+> still governs the **style** of those rendered tables and any hand-written
+> **non-numeric** tables (conceptual 2×2s, variable-definition tables).
+
 Guidelines for producing publication-ready regression tables, summary statistics,
 and other tabular output in economics papers. These conventions follow the style
 of top economics journals (AER, QJE, Econometrica, REStud, JPE).

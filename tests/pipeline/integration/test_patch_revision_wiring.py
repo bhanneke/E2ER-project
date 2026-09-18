@@ -12,8 +12,10 @@ This module pins:
    the verify_numbers report; serialised into the work order's
    `focus` so the patch_revisor can read them.
 3. Merger applies the patch → COMPLETED.
-4. Merger fails (missing patch file, failed edits, out-of-scope
-   edits) → REJECTED with a structured error.
+4. Patch achieves nothing (missing patch file, or zero edits applied)
+   → REJECTED with a structured error.
+4b. Partial application (some in-scope edits apply; others dropped as
+   out-of-scope or unmatchable) → COMPLETED — progress is not failure.
 5. MAJOR_REVISION with no actionable findings → COMPLETED with a
    warning (skipped patch_revisor entirely).
 """
@@ -329,6 +331,73 @@ async def test_failed_edits_yield_rejected_with_structured_error(tmp_path, mock_
 
 
 # ---------------------------------------------------------------------------
+# Partial application (in-scope edit applies, out-of-scope edit dropped) →
+# COMPLETED. Regression for the M5 run that REJECTED a paper because
+# patch_revisor over-reached with one `paper:full` edit alongside good ones.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_partial_application_with_out_of_scope_edit_completes(tmp_path, mock_llm):
+    """patch_revisor emits an in-scope edit that applies PLUS an over-reaching
+    out-of-scope `paper:full` edit. The merger drops the out-of-scope one
+    (scope enforcement), but the in-scope edit revised the draft — so the
+    paper COMPLETES, not REJECTED. Rejecting over one dropped edit threw away
+    a near-complete paper (M5 run 0495a50d)."""
+    runner = _runner(tmp_path, mock_llm)
+    ws = runner._workspace
+    _review_file(ws, "identification_reviewer", 3.0, "Major Revision")
+
+    seen: list[tuple[str, str | None]] = []
+
+    async def _capture_status(sql: str, params: dict | None = None):
+        if params and "s" in params and "papers" in sql.lower():
+            seen.append((params["s"], params.get("e")))
+
+    async def _mixed_patch(work_order, *args, **kwargs):
+        if work_order.specialist == "patch_revisor":
+            (ws / "paper_draft.tex.edits.json").write_text(
+                json.dumps(
+                    [
+                        {
+                            "target": "section:identification",  # in scope, applies
+                            "edit_type": "replace_text",
+                            "find": "parallel-trends assumption holds",
+                            "replace": "parallel-trends assumption is tested",
+                        },
+                        {
+                            "target": "paper:full",  # out-of-scope over-reach → dropped
+                            "edit_type": "replace_text",
+                            "find": "0.80",
+                            "replace": "0.50",
+                        },
+                    ]
+                )
+            )
+        return Contribution(paper_id=runner._paper_id, specialist=work_order.specialist, output="ok", success=True)
+
+    class _Result:
+        verdict = "MAJOR_REVISION"
+        weighted_avg = 3.0
+        rule_triggered = "weighted_avg < 5"
+        rationale = "test"
+
+    with (
+        patch("src.core.strategist.runner.aggregate_reviews", return_value=_Result()),
+        patch("src.core.specialists.dispatcher.execute_work_order", side_effect=_mixed_patch),
+        patch("src.db.client.execute", side_effect=_capture_status),
+    ):
+        result = await runner._run_revision_phase(PaperStatus.REVIEW)
+
+    assert result == PaperStatus.COMPLETED
+    # The in-scope edit landed; the out-of-scope one was dropped (draft unchanged there).
+    draft = (ws / "paper_draft.tex").read_text()
+    assert "parallel-trends assumption is tested" in draft
+    assert "0.80" in draft  # the paper:full edit was NOT applied
+    assert not [s for s, _e in seen if s == "rejected"]
+
+
+# ---------------------------------------------------------------------------
 # No-actionable-findings shortcut → COMPLETED without dispatching
 # ---------------------------------------------------------------------------
 
@@ -445,3 +514,96 @@ async def test_verify_numbers_findings_included_in_patch_revisor_focus(tmp_path,
     # Specific verify_numbers content
     assert "table:tab:main" in focus
     assert "estimation_results.main.coef" in focus
+
+
+# ---------------------------------------------------------------------------
+# Deep revision: MECHANISM_FAIL re-does the RESEARCH (not just prose), bounded.
+# ---------------------------------------------------------------------------
+
+
+class _Verdict:
+    def __init__(self, verdict: str, avg: float) -> None:
+        self.verdict = verdict
+        self.weighted_avg = avg
+        self.rule_triggered = "test"
+        self.rationale = "test"
+
+
+@pytest.mark.asyncio
+async def test_mechanism_fail_triggers_deep_revision_then_completes(tmp_path, mock_llm):
+    """MECHANISM_FAIL re-dispatches the research specialists (data_analyst,
+    econometrics_specialist) + the writer with the referee reports, re-reviews,
+    and — if the re-review now passes — COMPLETES. This is the loop that used to
+    be a terminal reject."""
+    runner = _runner(tmp_path, mock_llm)
+    ws = runner._workspace
+    _review_file(ws, "mechanism_reviewer", 3.5, "Reject")  # mechanism < 5 → MECHANISM_FAIL
+    _review_file(ws, "identification_reviewer", 6.0, "Minor")
+
+    dispatched: list[tuple[str, str]] = []
+
+    async def _capture(work_order, *args, **kwargs):
+        dispatched.append((work_order.specialist, work_order.focus))
+        return Contribution(paper_id=runner._paper_id, specialist=work_order.specialist, output="ok", success=True)
+
+    # First aggregation: MECHANISM_FAIL. After the deep round + re-review: ACCEPT.
+    verdicts = iter([_Verdict("MECHANISM_FAIL", 3.5), _Verdict("ACCEPT", 7.0)])
+
+    async def _fake_review_phase():
+        return PaperStatus.REVIEW  # reviewers re-ran; revision phase re-decides
+
+    async def _noop(*a, **k):
+        return None
+
+    with (
+        patch("src.core.strategist.runner.aggregate_reviews", side_effect=lambda _s: next(verdicts)),
+        patch("src.core.specialists.dispatcher.execute_work_order", side_effect=_capture),
+        patch.object(runner, "_run_review_phase", new=_fake_review_phase),
+        patch("src.db.client.execute", new=_noop),
+    ):
+        result = await runner._run_revision_phase(PaperStatus.REVIEW)
+
+    assert result == PaperStatus.COMPLETED
+    specs = [s for s, _f in dispatched]
+    assert "data_analyst" in specs and "econometrics_specialist" in specs and "section_writer" in specs
+    # The referee reports were handed to the research specialist (not just prose).
+    econ_focus = next(f for s, f in dispatched if s == "econometrics_specialist")
+    assert "mechanism_reviewer" in econ_focus  # review content reached the focus
+    assert "RE-DOING" in econ_focus or "recompute" in econ_focus
+    assert runner._deep_revision_count == 1
+
+
+@pytest.mark.asyncio
+async def test_mechanism_fail_deep_revision_is_bounded_then_rejected(tmp_path, mock_llm):
+    """If the deep round doesn't lift the verdict (still MECHANISM_FAIL on
+    re-review), the loop does NOT recurse forever — exactly one deep round, then
+    REJECTED. Termination guarantee."""
+    runner = _runner(tmp_path, mock_llm)
+    ws = runner._workspace
+    _review_file(ws, "mechanism_reviewer", 3.0, "Reject")
+
+    deep_dispatches = 0
+
+    async def _capture(work_order, *args, **kwargs):
+        nonlocal deep_dispatches
+        if work_order.specialist in {"data_analyst", "econometrics_specialist", "section_writer"}:
+            deep_dispatches += 1
+        return Contribution(paper_id=runner._paper_id, specialist=work_order.specialist, output="ok", success=True)
+
+    async def _fake_review_phase():
+        return PaperStatus.REVIEW
+
+    async def _noop(*a, **k):
+        return None
+
+    with (
+        patch("src.core.strategist.runner.aggregate_reviews", side_effect=lambda _s: _Verdict("MECHANISM_FAIL", 3.0)),
+        patch("src.core.specialists.dispatcher.execute_work_order", side_effect=_capture),
+        patch.object(runner, "_run_review_phase", new=_fake_review_phase),
+        patch("src.db.client.execute", new=_noop),
+    ):
+        result = await runner._run_revision_phase(PaperStatus.REVIEW)
+
+    assert result == PaperStatus.REJECTED
+    assert runner._deep_revision_count == 1  # exactly one deep round — bounded
+    assert deep_dispatches == 3  # data_analyst + econometrics + section_writer, once

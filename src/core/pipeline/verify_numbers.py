@@ -56,6 +56,16 @@ class Mismatch:
 
 
 @dataclass
+class MatchedCell:
+    """A table cell whose value DID trace to a source JSON key. Recorded so the
+    provenance manifest can emit a per-cell derivation edge (draft → source)."""
+
+    draft_value: str
+    source_key: str
+    table_context: str
+
+
+@dataclass
 class VerificationReport:
     """Result of programmatic number verification."""
 
@@ -66,16 +76,67 @@ class VerificationReport:
     unverifiable: int = 0
     coverage: float = 1.0
     mismatches: list[Mismatch] = field(default_factory=list)
+    # Cells that traced (draft value ↔ source key) — provenance, not gating.
+    matched_cells: list[MatchedCell] = field(default_factory=list)
     source_files_found: list[str] = field(default_factory=list)
     source_files_missing: list[str] = field(default_factory=list)
     skipped_reason: str | None = None
+    # PR-2: prose-number checking ("text = table number"). Deliberately
+    # NON-GATING — prose mismatches live in their own list and never become
+    # `critical`, so they never reject a paper (prose has many incidental
+    # numbers — years, section refs, %s — and we won't reintroduce false
+    # positives). They're an informational signal for reviewers / a human.
+    #
+    # `prose_total` counts only CHECKABLE numbers — see `_is_checkable_prose`.
+    # It is the honest denominator: matched + mismatched + unverifiable.
+    prose_total: int = 0
+    prose_matched: int = 0
+    prose_mismatched: int = 0
+    # Checkable, but traceable to no source value. Could be a legitimately
+    # derived quantity or a fabrication — the check cannot tell, so this is
+    # reported separately and never counted as a mismatch.
+    prose_unverifiable: int = 0
+    # Numbers dropped before checking because they are not empirical claims
+    # (LaTeX markup, years/dates, single-significant-digit magnitudes).
+    prose_excluded: int = 0
+    prose_mismatches: list[Mismatch] = field(default_factory=list)
+    # PR-2: key-resolution feedback. Unresolved table_spec references (after
+    # the renderer's order-insensitive normalization), with the available keys
+    # so the drafter can correct them. Surfaced from table_render_report.json.
+    table_spec_unresolved: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        # `conclusive` is a property, so asdict() misses it — and the saved
+        # JSON is what reviewers and the experiment harvester read.
+        return {**asdict(self), "conclusive": self.conclusive}
 
     @property
     def critical_mismatches(self) -> list[Mismatch]:
+        # Only TABLE mismatches gate the pipeline; prose is informational.
         return [m for m in self.mismatches if m.severity == "critical"]
+
+    @property
+    def conclusive(self) -> bool:
+        """Did the check reach a verdict on anything at all?
+
+        `passed` is a gating decision and stays True when there was nothing to
+        gate on. Whether the run has evidential value is a separate question,
+        and a caller must be able to tell the two apart — otherwise a draft
+        with no inline tables reads exactly like a clean one.
+        """
+        return (self.total_values_in_tables + self.prose_total) > 0
+
+    @property
+    def tables_conclusive(self) -> bool:
+        """Did the TABLE channel reach a verdict on anything?
+
+        Deliberately separate from `conclusive`, which ORs the two channels and
+        therefore returns True for a run with rich prose coverage and no table
+        coverage at all — the precise case it was written to catch. Table cells
+        are where the anti-fabrication claim lives; prose coverage is not a
+        substitute for them, and must not stand in for them in a report.
+        """
+        return self.total_values_in_tables > 0
 
 
 # JSON filenames that the analyst + econometrics specialist must produce.
@@ -208,7 +269,15 @@ def _extract_table_numbers(tex_content: str) -> list[tuple[str, str]]:
     """
     results: list[tuple[str, str]] = []
 
-    rule_re = re.compile(r"\\(?:hline|midrule|toprule|bottomrule|cline\{[^}]*\}|addlinespace(?:\[[^\]]*\])?)\s*")
+    # Strip non-data rule commands before splitting into rows. `cmidrule`
+    # carries a numeric range arg (\cmidrule(lr){2-3}) that must not be read
+    # as data; include it alongside the other booktabs/array rules.
+    rule_re = re.compile(
+        r"\\(?:hline|midrule|toprule|bottomrule"
+        r"|cline\{[^}]*\}"
+        r"|cmidrule(?:\([^)]*\))?(?:\{[^}]*\})?"
+        r"|addlinespace(?:\[[^\]]*\])?)\s*"
+    )
 
     for i, match in enumerate(_TABULAR_RE.finditer(tex_content)):
         table_body = match.group(1)
@@ -229,6 +298,16 @@ def _extract_table_numbers(tex_content: str) -> list[tuple[str, str]]:
             row = row.strip()
             if not row:
                 continue
+            # Skip structural rows that span columns with \multicolumn:
+            # column-group headers and panel labels (e.g.
+            # "\multicolumn{6}{l}{Panel B: Post-2008}"). Extracting from them
+            # reads the span count ("6"), a label year ("2008"), or a window
+            # length ("120") as if it were a data value — the false-positive
+            # class that rejected correct papers (M5 re-run 92626bf8). Data
+            # rows are plain `label & value & value`; they never use
+            # \multicolumn.
+            if "\\multicolumn" in row:
+                continue
             cells = row.split("&")
             for cell_idx, cell in enumerate(cells):
                 cell = _normalize_cell(cell.strip())
@@ -240,6 +319,362 @@ def _extract_table_numbers(tex_content: str) -> list[tuple[str, str]]:
                         results.append((num_str, context))
 
     return results
+
+
+# Environments / commands stripped before extracting PROSE numbers, so we
+# don't double-count table cells or read \input paths, labels, refs, or cite
+# keys as numeric claims.
+_STRIP_FOR_PROSE: tuple[re.Pattern[str], ...] = (
+    re.compile(r"\\begin\{tabular\}.*?\\end\{tabular\}", re.DOTALL),
+    re.compile(r"\\input\{[^}]*\}"),
+    re.compile(r"\\(?:label|ref|eqref|cref|cite[a-z]*)\{[^}]*\}"),
+    # The bibliography is other people's titles, not this paper's claims.
+    # "\newblock Bitcoin ETFs attract \$4.6 billion in first month" was read
+    # as a claim about a mean high-volatility duration of 4.2 days.
+    re.compile(r"\\begin\{thebibliography\}.*?\\end\{thebibliography\}", re.DOTALL),
+)
+
+# LaTeX commands whose numeric arguments are typesetting parameters, not
+# empirical claims. Every one of these produced a "fabrication" in the
+# 2026-08-05 validation cell: `\documentclass[12pt]` was reported as the
+# number 12 mismatching a VIX mean of 16.82.
+_MARKUP_COMMANDS = (
+    "documentclass",
+    "usepackage",
+    "geometry",
+    "setlength",
+    "addtolength",
+    "setcounter",
+    "renewcommand",
+    "newcommand",
+    "definecolor",
+    "includegraphics",
+    "hspace",
+    "vspace",
+    "fontsize",
+    "resizebox",
+    "scalebox",
+    "adjustbox",
+    "raisebox",
+    "rule",
+    "captionsetup",
+    "titlespacing",
+    "arraystretch",
+)
+_MARKUP_RE = re.compile(
+    r"\\(?:" + "|".join(_MARKUP_COMMANDS) + r")\b(?:\s*\[[^\]]*\])*(?:\s*\{[^{}]*\})*",
+)
+# Row-spacing arguments on a line break: `\\[6pt]`.
+_ROW_SPACING_RE = re.compile(r"\\\\\s*\[[^\]]*\]")
+# `\begin{document}` splits typesetting setup from authored text. Only used
+# when present — the unit tests (and fragments) have no preamble at all.
+_BEGIN_DOC_RE = re.compile(r"\\begin\{document\}")
+
+# A bare four-digit year is a date reference, not a measurement. Dates in
+# ISO/slash form are stripped wholesale by `_DATE_PATTERNS` first.
+_YEAR_RE = re.compile(r"(?:19|20)\d{2}")
+
+# Source-key path components too generic to establish that a prose number
+# refers to a particular quantity. Without this, `summary_statistics.json.*`
+# would associate every key with any sentence containing "summary".
+_GENERIC_KEY_TOKENS = frozenset(
+    {
+        "json",
+        "summary",
+        "statistics",
+        "stats",
+        "results",
+        "result",
+        "estimation",
+        "robustness",
+        "figure",
+        "spec",
+        "data",
+        "main",
+        "value",
+        "values",
+        "all",
+        "overall",
+        "table",
+        "row",
+        "col",
+        "and",
+        "the",
+        "for",
+    }
+)
+_KEY_TOKEN_SPLIT = re.compile(r"[^A-Za-z]+")
+
+# Source keys carry no units, so a percentage in the prose cannot be compared
+# to a bare source number: "annualized volatility 59\%" is not a claim about
+# `n_high_vol_episodes = 52`, and "a 95\% confidence interval" is not a claim
+# about anything. Percent-marked numbers are only checkable against keys that
+# name a rate.
+_RATE_KEY_TOKENS = frozenset(
+    {"pct", "percent", "percentage", "rate", "share", "ratio", "prob", "probability", "pval", "pvalue"}
+)
+
+# How much text either side of a prose number counts as its neighbourhood
+# when looking for a source-key token. Roughly one clause — wide enough for
+# "the VIX averages 19.2", narrow enough that the paper's general vocabulary
+# ("ETF", "volatility") doesn't associate every number with every key.
+_ASSOC_WINDOW = 40
+_WORD_RE = re.compile(r"[a-z]+")
+
+# A number carrying a unit refers to a quantity measured in that unit. The
+# source JSON carries no units, so such a claim is only checkable against a
+# key that names the same one — "extends 2.6 years" is not a statement about
+# `mean_high_vol_duration = 4.2` (days), and "\$4.6 billion" is not a
+# statement about anything in these files.
+_UNIT_WORDS = frozenset(
+    {
+        "year",
+        "month",
+        "week",
+        "day",
+        "hour",
+        "minute",
+        "second",
+        "billion",
+        "million",
+        "trillion",
+        "thousand",
+        "basis",
+        "bp",
+        "bps",
+        "lag",
+        "obs",
+        "observation",
+    }
+)
+_UNIT_AFTER_RE = re.compile(r"^[\s~,]*(?:\\[,;:! ])?\s*([A-Za-z]+)")
+_CURRENCY_BEFORE_RE = re.compile(r"(?:\\\$|[$€£])\s*$")
+# `$\delta_{21} = 0.14$`, `$p_{11} = 0.94$` — the number's referent is the
+# symbol on the left, not any English word nearby. Unless a source key names
+# that symbol, the claim cannot be checked.
+_SYMBOL_ASSIGN_RES: tuple[re.Pattern[str], ...] = (
+    re.compile(r"\\([A-Za-z]+)(?:_\{?\w+\}?)?\s*=\s*[$\\(]*$"),
+    re.compile(r"(?:^|[\s$({])([A-Za-z]+)_\{?\w+\}?\s*=\s*[$\\(]*$"),
+)
+
+
+def _significant_digits(num_str: str) -> int:
+    """Count significant digits in a number as the draft displays it.
+
+    ``4`` → 1, ``4.2`` → 2, ``0.0136`` → 3. A single significant digit
+    carries too little information to verify against anything: "over \\$4
+    billion" sits within 50% of any source value in [2, 6].
+    """
+    s = num_str.replace(",", "").strip().lstrip("+-").lstrip("0")
+    s = s.replace(".", "").lstrip("0")
+    return len(s)
+
+
+def _key_tokens(source_key: str) -> frozenset[str]:
+    """Distinctive words in a flattened source key, for association."""
+    toks = {t.lower() for t in _KEY_TOKEN_SPLIT.split(source_key) if len(t) >= 3}
+    return frozenset(toks - _GENERIC_KEY_TOKENS)
+
+
+def _window_words(window: str) -> frozenset[str]:
+    """Whole words in a number's neighbourhood, plus de-pluralised forms.
+
+    Whole words, not substrings: matching "pre" inside "rep*re*sents" once
+    associated a GARCH parameter with an Ethereum volatility mean.
+    """
+    words = set(_WORD_RE.findall(window))
+    return frozenset(words | {w[:-1] for w in words if w.endswith("s") and len(w) > 3})
+
+
+def _strip_latex_machinery(tex_content: str) -> str:
+    """Remove typesetting parameters so they never read as numeric claims."""
+    doc = _BEGIN_DOC_RE.search(tex_content)
+    prose = tex_content[doc.end() :] if doc else tex_content
+    for pat in _STRIP_FOR_PROSE:
+        prose = pat.sub(" ", prose)
+    prose = _MARKUP_RE.sub(" ", prose)
+    prose = _ROW_SPACING_RE.sub(" ", prose)
+    for pat in _DATE_PATTERNS:
+        prose = pat.sub(" ", prose)
+    return prose
+
+
+@dataclass
+class _ProseNumber:
+    """A number found in authored text, with what we need to judge it."""
+
+    num_str: str
+    context: str  # short, for the report
+    words: frozenset[str]  # neighbouring words, for association
+    is_percent: bool
+    unit: str | None = None  # "years", "billion", currency…
+    symbol: str | None = None  # LaTeX symbol it is assigned to
+
+
+def _unit_after(prose: str, end: int) -> str | None:
+    m = _UNIT_AFTER_RE.match(prose[end : end + 24])
+    if not m:
+        return None
+    word = m.group(1).lower().rstrip("s")
+    return word if word in _UNIT_WORDS else None
+
+
+def _symbol_before(before: str) -> str | None:
+    for pat in _SYMBOL_ASSIGN_RES:
+        m = pat.search(before)
+        if m:
+            return m.group(1).lower()
+    return None
+
+
+def _extract_prose_numbers(tex_content: str) -> list[_ProseNumber]:
+    """Extract numbers from PROSE — everything outside tabular environments."""
+    prose = _strip_latex_machinery(tex_content)
+    results: list[_ProseNumber] = []
+    for m in _NUMBER_RE.finditer(prose):
+        num_str = m.group(1)
+        parsed = _parse_number(num_str)
+        if parsed is None or parsed == 0:
+            continue
+        s = max(0, m.start() - 30)
+        e = min(len(prose), m.end() + 20)
+        ctx = " ".join(prose[s:e].split())
+        ws = max(0, m.start() - _ASSOC_WINDOW)
+        we = min(len(prose), m.end() + _ASSOC_WINDOW)
+        before = prose[ws : m.start()]
+        unit = _unit_after(prose, m.end())
+        if unit is None and _CURRENCY_BEFORE_RE.search(before):
+            unit = "currency"
+        results.append(
+            _ProseNumber(
+                num_str=num_str,
+                context=f"prose: …{ctx}…",
+                words=_window_words(" ".join(prose[ws:we].split()).lower()),
+                is_percent=m.group(0).rstrip().endswith("%"),
+                unit=unit,
+                symbol=_symbol_before(before),
+            )
+        )
+    return results
+
+
+def _is_checkable_prose(num_str: str) -> bool:
+    """Is this prose number an empirical claim we could verify at all?
+
+    Excludes years (date references, not measurements) and single-significant
+    -digit magnitudes, which are within 50% of far too many source values to
+    say anything about.
+    """
+    if _YEAR_RE.fullmatch(num_str.strip()):
+        return False
+    return _significant_digits(num_str) >= 2
+
+
+def _check_prose(
+    report: VerificationReport,
+    tex_content: str,
+    all_source_values: dict[str, float],
+    tolerance: float,
+) -> None:
+    """Non-gating prose check ("text = table number").
+
+    A prose number is a *mismatch* only when the surrounding sentence names
+    the source quantity it is close to. Numeric proximity alone establishes
+    nothing: with a few dozen source values spread across orders of
+    magnitude, almost every number in a paper sits within 50% of one of
+    them. Flagging on proximity alone made 79% of the flags in the
+    2026-08-05 validation cell artifacts — a title's "2024" paired against a
+    sample count of 1677, "\\$4 billion" against a duration mean of 4.2 —
+    with 119 of 284 flags resolving to a single source key.
+
+    Numbers we cannot tie to a source key are counted as
+    ``prose_unverifiable``, never as mismatches: they may be legitimately
+    derived quantities, and the check has no way to tell.
+    """
+    tokens_by_key = {key: _key_tokens(key) for key in all_source_values}
+    for pn in _extract_prose_numbers(tex_content):
+        draft_val = _parse_number(pn.num_str)
+        if draft_val is None:
+            continue
+        if not _is_checkable_prose(pn.num_str):
+            report.prose_excluded += 1
+            continue
+        report.prose_total += 1
+
+        if any(_values_match(draft_val, sv, tolerance) for sv in all_source_values.values()):
+            report.prose_matched += 1
+            continue
+
+        # Only source values whose key is named nearby are candidates.
+        closest_key, closest_dist = "", float("inf")
+        for key, sv in all_source_values.items():
+            tokens = tokens_by_key[key]
+            if not (tokens & pn.words):
+                continue
+            if pn.is_percent and not (tokens & _RATE_KEY_TOKENS):
+                continue
+            if pn.unit and pn.unit not in tokens:
+                continue
+            if pn.symbol and pn.symbol not in tokens:
+                continue
+            dist = abs(draft_val - sv)
+            if dist < closest_dist:
+                closest_dist, closest_key = dist, key
+
+        if closest_key and closest_dist < abs(draft_val) * 0.5:
+            sv = all_source_values[closest_key]
+            report.prose_mismatched += 1
+            report.prose_mismatches.append(
+                Mismatch(
+                    draft_value=pn.num_str,
+                    source_key=closest_key,
+                    source_value=str(sv),
+                    table_context=pn.context,
+                    severity="major",  # never critical — prose is non-gating
+                )
+            )
+        else:
+            report.prose_unverifiable += 1
+
+
+def _read_table_spec_feedback(workspace: Path) -> list[dict[str, Any]]:
+    """Surface unresolved ``table_spec`` references (after the renderer's
+    order-insensitive normalization) from ``table_render_report.json``,
+    annotated with the available spec keys so the drafter can correct them.
+    """
+    path = workspace / "table_render_report.json"
+    if not path.is_file():
+        return []
+    try:
+        rep = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return []
+    unresolved = rep.get("unresolved") or []
+    if not unresolved:
+        return []
+    available_specs: list[str] = []
+    for fn in ("estimation_results.json", "robustness_results.json"):
+        fp = workspace / fn
+        if not fp.is_file():
+            continue
+        try:
+            d = json.loads(fp.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        if isinstance(d, dict):
+            available_specs.extend(k for k in d if not k.startswith("_"))
+    seen: set[tuple[Any, Any]] = set()
+    out: list[dict[str, Any]] = []
+    for u in unresolved:
+        key = (u.get("kind"), u.get("ref"))
+        if key in seen:
+            continue
+        seen.add(key)
+        entry: dict[str, Any] = {"kind": u.get("kind"), "ref": u.get("ref")}
+        if u.get("kind") == "spec_key":
+            entry["available_spec_keys"] = sorted(set(available_specs))
+        out.append(entry)
+    return out
 
 
 def _find_source_jsons(workspace: Path) -> dict[str, Path]:
@@ -254,6 +689,40 @@ def _find_source_jsons(workspace: Path) -> dict[str, Path]:
         if fp.is_file():
             found[fn] = fp
     return found
+
+
+_INPUT_RE = re.compile(r"\\input\{([^}]+)\}")
+
+
+def _expand_inputs(tex_content: str, base_dir: Path, _depth: int = 0) -> str:
+    """Inline ``\\input{...}`` targets so tables in their own files are scanned.
+
+    The renderer writes one .tex per table and the draft includes each with
+    ``\\input{tables/<name>.tex}``. Reading only the draft means the scanner
+    sees no tabular environment at all, and the gate then reports a pass having
+    traced zero cells — which is indistinguishable, in the report, from a pass
+    that checked every number.
+
+    Depth-bounded against include cycles. A missing or unreadable target is
+    left as the literal directive rather than failing the gate: a bundle that
+    cannot be fully resolved should still be checked as far as it goes, and
+    the unresolved table shows up as absent coverage.
+    """
+    if _depth >= 4:
+        return tex_content
+
+    def _inline(match: re.Match[str]) -> str:
+        ref = match.group(1).strip()
+        for candidate in (base_dir / ref, base_dir / f"{ref}.tex"):
+            if candidate.is_file():
+                try:
+                    nested = candidate.read_text(encoding="utf-8", errors="replace")
+                except OSError:
+                    return match.group(0)
+                return _expand_inputs(nested, candidate.parent, _depth + 1)
+        return match.group(0)
+
+    return _INPUT_RE.sub(_inline, tex_content)
 
 
 def verify(
@@ -281,7 +750,11 @@ def verify(
         logger.warning("verify_numbers: %s", report.skipped_reason)
         return report
 
-    tex_content = draft_path.read_text(encoding="utf-8", errors="replace")
+    tex_content = _expand_inputs(draft_path.read_text(encoding="utf-8", errors="replace"), draft_path.parent)
+
+    # PR-2: key-resolution feedback is independent of numeric content — surface
+    # it before any of the source-JSON early returns below.
+    report.table_spec_unresolved = _read_table_spec_feedback(workspace)
 
     source_jsons = _find_source_jsons(workspace)
     report.source_files_found = sorted(str(p) for p in source_jsons.values())
@@ -316,8 +789,7 @@ def verify(
     report.total_values_in_tables = len(table_numbers)
 
     if not table_numbers:
-        logger.info("verify_numbers: no numbers in tables; nothing to check")
-        return report
+        logger.info("verify_numbers: no numbers in inline tables; checking prose only")
 
     for num_str, context in table_numbers:
         draft_val = _parse_number(num_str)
@@ -333,6 +805,7 @@ def verify(
 
         if best_match is not None:
             report.matched += 1
+            report.matched_cells.append(MatchedCell(draft_value=num_str, source_key=best_match, table_context=context))
             continue
 
         # No exact match — find closest source value to decide severity.
@@ -366,8 +839,20 @@ def verify(
 
     checked = report.matched + report.mismatched
     total = report.total_values_in_tables
+    # Coverage over zero table values is 0.0, not 1.0. Reporting a vacuous
+    # 1.0 made "the draft has no inline tables" indistinguishable from
+    # "every cell traced to a source" — the reading that let run ab95fcba
+    # record perfect coverage over nothing.
     report.coverage = checked / total if total > 0 else 0.0
     report.passed = report.mismatched == 0 or all(m.severity == "minor" for m in report.mismatches)
+
+    # PR-2: prose-number check (non-gating; never critical). The key-resolution
+    # feedback was already surfaced near the top (independent of numeric content).
+    _check_prose(report, tex_content, all_source_values, tolerance)
+
+    if not report.conclusive:
+        report.skipped_reason = "draft contains no table values and no checkable prose numbers; nothing was verified"
+        logger.warning("verify_numbers: %s", report.skipped_reason)
 
     return report
 

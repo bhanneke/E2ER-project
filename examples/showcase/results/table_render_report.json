@@ -1,0 +1,21 @@
+{
+  "rendered": [
+    "main.tex",
+    "inference.tex",
+    "event_study.tex",
+    "returns_interacted.tex",
+    "returns_ddd.tex",
+    "dcc.tex",
+    "decomposition.tex",
+    "power.tex",
+    "robustness_sample.tex",
+    "robustness_spec.tex",
+    "macro_controls.tex",
+    "robustness_windows.tex",
+    "placebos.tex"
+  ],
+  "unresolved": [],
+  "normalized": [],
+  "errors": [],
+  "skipped_reason": null
+}

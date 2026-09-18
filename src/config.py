@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from pydantic_settings import BaseSettings
@@ -16,6 +17,18 @@ class Settings(BaseSettings):
     openrouter_api_key: str | None = None
     openrouter_model: str = "anthropic/claude-sonnet-4-5"
     enable_prompt_caching: bool = True
+
+    # ── Governance regime (the experiment's treatment variable) ───────────────
+    # Which verification institutions BLOCK a run:
+    #   full      — every mechanism enforces (default; current behaviour)
+    #   contracts — specialist output contracts enforce; the deterministic
+    #               gates (estimation / numbers / citations) run in shadow
+    #   off       — nothing blocks; all gates run in shadow
+    # In shadow mode a gate still computes its verdict and writes its report,
+    # and the runner logs a `gate_shadow` event — so fabrication that WOULD
+    # have been caught is measured, not merely absent. Per-paper override via
+    # the API / `e2er run --governance`.
+    governance: Literal["off", "contracts", "full"] = "full"
 
     # ── Database ──────────────────────────────────────────────────────────────
     # Default: SQLite at ~/.e2er/papers.db (zero-setup, single-user).
@@ -102,6 +115,49 @@ class Settings(BaseSettings):
     literature_bibtex_file: str | None = None
     semantic_scholar_api_key: str | None = None
 
+    # The structured-review corpus: one SQLite file holding what papers *claim*,
+    # accumulated across projects. Deliberately outside any workspace — a
+    # library that resets per paper is not a library. Defaults to
+    # ~/.e2er/corpus.db; point CORPUS_DB elsewhere to keep it on another drive
+    # or to run a throwaway one. Unrelated to LOCAL_DATA_DIR, which is folders
+    # of the researcher's own files.
+    corpus_db: str | None = None
+
+    # Read the paper's own staged PDFs (workspace/<id>/literature/, filled from
+    # LITERATURE_DIR or Zotero) into the corpus before drafting starts. On by
+    # default because those are papers the researcher deliberately supplied, and
+    # they are the only ones guaranteed to be readable — no paywalls.
+    #
+    # It costs one model call per NEW paper. Nothing is re-read: the corpus is
+    # incremental, so the second run on the same folder spends nothing. Set
+    # CORPUS_AUTOINGEST=false to turn it off.
+    corpus_autoingest: bool = True
+
+    # BYOD literature folder: a directory of the researcher's own papers,
+    # discovered + persisted into SQLite at paper creation. May be a plain
+    # folder of PDFs OR a Zotero folder (auto-detected by a zotero.sqlite at
+    # the root). Comma-separated paths allowed. Falls back to local_data_dir.
+    literature_dir: str | None = None
+    # Route search_papers to the local SQLite library first (SQLite backend).
+    literature_local_search_enabled: bool = True
+    # Optional: local sentence-transformers embeddings for semantic local
+    # search (off by default; needs the pgvector extra). FTS/LIKE otherwise.
+    literature_embeddings_enabled: bool = False
+    # Cap on papers discovered+persisted from LITERATURE_DIR at paper creation
+    # (protects startup latency + CrossRef rate limits on huge libraries).
+    literature_max_ingest: int = 500
+    # How many hits per query the always-on acquisition stage records when no
+    # bibliography exists yet. Two queries (research question + title) run, so
+    # the ceiling is roughly twice this before de-duplication. Sized for a
+    # normal reference list, not a survey.
+    literature_acquire_limit: int = 30
+
+    # Email used to identify this client to the OpenAlex / Crossref / Unpaywall
+    # polite pools (all keyless, all ask for a contact in every request). Each
+    # of those services prioritises requests from registered emails; the
+    # default keeps us in the polite pool with a stable address.
+    unpaywall_email: str = "research@e2er.app"
+
     # Zotero Web API (reference library). Set the key plus exactly one of
     # user_id / group_id. The library's bibliographic items are merged into
     # the reference summary alongside local .bib (see reference_libraries()).
@@ -120,6 +176,37 @@ class Settings(BaseSettings):
         # old check only looked at the legacy postgres_url/db_password fields
         # and left the KB silently off (keyword-only) for DATABASE_URL users.
         return self.resolved_database_url.startswith("postgres")
+
+    def resolved_literature_dirs(self) -> str | None:
+        """The BYOD literature folder(s): ``literature_dir`` if set, else the
+        shared ``local_data_dir`` (so existing PDF-in-LOCAL_DATA_DIR setups
+        keep working with zero new config)."""
+        return self.literature_dir or self.local_data_dir
+
+    @property
+    def literature_local_enabled(self) -> bool:
+        """Local SQLite literature library is the active search backend: on the
+        SQLite backend with local search enabled (mirror of literature_kb_enabled
+        for the no-Postgres path)."""
+        return self.literature_local_search_enabled and not self.resolved_database_url.startswith("postgres")
+
+    # ── Structured export ─────────────────────────────────────────────────────
+    # At the end of a run (and on demand via `e2er export`), assemble a clean,
+    # portable project folder from the flat workspace. See
+    # docs/STRUCTURED_EXPORT_SPEC.md.
+    export_enabled: bool = True
+    output_dir: str | None = None  # where exported project folders land
+
+    def resolved_output_root(self) -> Path:
+        """Root dir for exported papers: OUTPUT_DIR, else
+        <first LOCAL_DATA_DIR>/e2er_papers, else ~/e2er-papers."""
+        if self.output_dir:
+            return Path(self.output_dir).expanduser()
+        if self.local_data_dir:
+            first = self.local_data_dir.split(",")[0].strip()
+            if first:
+                return Path(first).expanduser() / "e2er_papers"
+        return Path.home() / "e2er-papers"
 
     # ── GitHub ────────────────────────────────────────────────────────────────
     github_token: str | None = None
@@ -168,6 +255,13 @@ class Settings(BaseSettings):
     claude_code_timeout: int = 1800  # 30 min hard cap per specialist invocation
     claude_code_max_turns: int = 60  # Default agentic-turn cap inside the CLI
     claude_code_cwd: str = ""  # Empty → use os.getcwd() at invocation time
+    # Model for the `claude` subprocesses (passed as `--model`). Empty → the
+    # CLI's own configured default, which is whatever the user last set via
+    # /model — a run can silently burn the priciest tier's usage credits that
+    # way (a July 2026 validation run died mid-pipeline on a Fable 5 credit
+    # ceiling because the interactive default leaked in). Pin it explicitly:
+    # e.g. CLAUDE_CODE_MODEL=claude-sonnet-4-6 (aliases like "sonnet" work).
+    claude_code_model: str = ""
 
     # ── Codex CLI backend (free under ChatGPT Plus/Pro plan) ──────────────────
     # Set LLM_BACKEND=codex to delegate to the `codex exec` subprocess.
@@ -197,11 +291,35 @@ class Settings(BaseSettings):
     # Set to '*' explicitly to allow any origin (only do this for non-secret deploys).
     cors_origins: str = "http://localhost:8280,http://127.0.0.1:8280"
 
+    def default_model_for(self, backend: str) -> str:
+        """The configured model for an EXPLICIT backend.
+
+        Per-paper backend overrides (`e2er run --backend`, `run-matrix`, the
+        governance experiment) must resolve their model against the backend
+        the paper actually runs on — not the process-global one. Falling back
+        to `default_model` there sends e.g. a bare `claude-sonnet-4-5` to
+        OpenRouter (which needs the `anthropic/` prefix), and every call in
+        the run fails.
+
+        For the CLI backends the returned string is bookkeeping only (the
+        subprocess reads its own `*_model` setting, and cost is flat-rate $0)
+        — but it labels the run in `papers.model`, `compare`, and the
+        experiment results, so it must name the right family.
+        """
+        if backend == "openrouter":
+            return self.openrouter_model
+        if backend == "claude_code":
+            return self.claude_code_model or self.anthropic_model
+        if backend == "codex":
+            return self.codex_model or "codex-cli-default"
+        if backend == "gemini":
+            return self.gemini_model or "gemini-cli-default"
+        return self.anthropic_model
+
     @property
     def default_model(self) -> str:
-        if self.llm_backend == "openrouter":
-            return self.openrouter_model
-        return self.anthropic_model
+        """Model for the process-global backend (`LLM_BACKEND`)."""
+        return self.default_model_for(self.llm_backend)
 
     model_config = {
         "env_file": ".env",

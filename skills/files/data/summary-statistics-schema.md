@@ -48,6 +48,27 @@ the structure to dotted keys
 }
 ```
 
+**Mandatory: `sample_flow` (the sample-construction record).**
+Referees consistently dock the data score when there is no record of how the
+estimation sample was built from the raw data — a "sample-flow table" is the
+data-review standard. Document each inclusion/exclusion filter, in order, with
+the row count remaining after it and the number dropped. Build it from
+`e2er-data query` (or `query_data`) `COUNT(*)` before/after each filter — the
+SAME filters your estimation script applies:
+
+```json
+"sample_flow": [
+  {"step": "raw rows", "n": 2109829, "dropped": 0},
+  {"step": "drop null/zero price", "n": 2087340, "dropped": 22489},
+  {"step": "restrict to outright sales (event_type='sale')", "n": 1950122, "dropped": 137218},
+  {"step": "final estimation sample", "n": 1950122, "dropped": 0}
+]
+```
+
+The last step's `n` should equal `n_observations`. Also report how missing
+values were handled (dropped vs. coded zero) — referees flag silent
+`col IS NOT NULL` drops.
+
 **Conditionally required:**
 
 - If the paper uses a treatment/control comparison:

@@ -51,6 +51,7 @@ SPECIALIST_SKILLS: dict[str, list[str]] = {
     ],
     "literature_scanner": ["base/researcher", "synthesis/context-builder"],
     "data_architect": [
+        "data/query-data",
         "data/blockchain",
         "data/crypto-defi",
         "base/economist",
@@ -63,8 +64,14 @@ SPECIALIST_SKILLS: dict[str, list[str]] = {
         "causal-inference/judge-designs",
         "causal-inference/natural-experiments",
         "reasoning/identification",
+        # Machine-readable sidecar contract: identification_spec.json
+        # declares the primary FE/controls/clustering that the
+        # econometrics specialist's `main` entry must echo (the
+        # identified-spec contract in contract_check.py).
+        "causal-inference/identification-spec-schema",
     ],
     "econometrics_specialist": [
+        "data/query-data",
         "econometrics/iv-estimation",
         "econometrics/did",
         "econometrics/panel-data",
@@ -76,6 +83,7 @@ SPECIALIST_SKILLS: dict[str, list[str]] = {
         "econometrics/estimation-results-schema",
     ],
     "data_analyst": [
+        "data/query-data",
         "data/cleaning",
         "data/figure-spec",
         "econometrics/panel-data",
@@ -103,12 +111,16 @@ SPECIALIST_SKILLS: dict[str, list[str]] = {
         # key. Complements the post-hoc verify_numbers gate by reducing
         # the rate of hallucinated table values in the first place.
         "writing/cite-numbers-by-source",
+        # Results tables: author table_spec.json (structure only); the
+        # renderer fills the numbers from the JSON sidecars deterministically.
+        "data/table-spec",
     ],
     "section_writer": [
         "writing/paper-structure",
         "writing/personal-style",
         "reasoning/anti-slop",
         "writing/cite-numbers-by-source",
+        "data/table-spec",
     ],
     "abstract_writer": [
         "writing/abstract",
@@ -173,6 +185,13 @@ SPECIALIST_SIDECAR_ARTIFACTS: dict[str, list[str]] = {
         "summary_statistics.json",
         "figure_spec.json",
     ],
+    "identification_strategist": [
+        # Machine-readable core of identification_strategy.md: the declared
+        # primary FE/controls/clustering. Consumed by the identified-spec
+        # contract (contract_check.check_matches_declared_spec) which gates
+        # the econometrics specialist's `main` entry against it.
+        "identification_spec.json",
+    ],
     "econometrics_specialist": [
         "estimation_results.json",
         # robustness_results.json is conditionally emitted by the
@@ -180,6 +199,36 @@ SPECIALIST_SIDECAR_ARTIFACTS: dict[str, list[str]] = {
         # required by the registry; the skill file explains when to
         # include it.
     ],
+    "paper_drafter": [
+        # Declarative results-table spec. Prompted via the multi-file
+        # output block; the renderer (core/renderer/tables.py) fills the
+        # numbers from estimation_results.json / robustness_results.json.
+        # Best-effort (see SPECIALIST_OPTIONAL_SIDECARS) — theory papers
+        # and design-without-estimates drafts legitimately have no results
+        # table.
+        "table_spec.json",
+    ],
+}
+
+# Best-effort sidecars: prompted (they stay in SPECIALIST_SIDECAR_ARTIFACTS,
+# so the multi-file output block still asks for them) and validated by
+# verify_numbers when present — but NOT hard-gated by the M4.3 contract
+# check at the specialist boundary.
+#
+# Why figure_spec.json is here: specialists have no general code-execution
+# tool (see modules/llm/claude_code.py), and a figure spec's values are
+# *derived* from the analysis the runner executes post-hoc — so the model
+# legitimately can't author populated figure values at the data-design
+# boundary. Hard-gating it there killed the M5 re-run in the design phase
+# (docs/M4_RERUN_FINDINGS.md). Figures are a paper-assembly concern: they
+# get authored in the iterative phase and checked by verify_numbers if
+# present, which is the right place to enforce them.
+SPECIALIST_OPTIONAL_SIDECARS: dict[str, frozenset[str]] = {
+    "data_analyst": frozenset({"figure_spec.json"}),
+    # table_spec.json is prompted but not hard-gated: a theory paper or a
+    # design-without-estimates draft has no results table, and that must not
+    # fail the drafter at the contract boundary.
+    "paper_drafter": frozenset({"table_spec.json"}),
 }
 
 

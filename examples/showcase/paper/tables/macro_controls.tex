@@ -1,0 +1,27 @@
+\begin{table}[t]
+\centering
+\begin{threeparttable}
+\caption{Letting the macro volatility regime load differentially on Bitcoin}
+\label{tab:macro}
+\begin{tabular}{lc}
+\toprule
+ & Fisher-$z$ correlation with SPY \\
+\midrule
+$\hat\tau$: BTC $\times$ Post & 0.0195 \\
+ & (0.0201) \\
+VIX $\times$ BTC & 0.0100*** \\
+ & (0.0018) \\
+MOVE $\times$ BTC & -0.00034 \\
+ & (0.00029) \\
+Randomization $p$ on $\hat\tau$ (placebo-in-space) & 0.80 \\
+SD of the randomization distribution & 0.0536 \\
+Within $R^2$ & 0.0083 \\
+$N$ & 540 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}[flushleft]
+\footnotesize
+\item The specification adds the monthly VIX and MOVE levels interacted with the Bitcoin indicator to the baseline coin-month regression. The main effects are collinear with the calendar-month fixed effects and are absorbed, so what these interactions identify is whether the macro volatility regime loads differentially on Bitcoin relative to the never-listed control coins. It does: Bitcoin's equity co-movement is a strong positive function of the VIX level, while the rate-volatility interaction does nothing. Including these interactions moves the treatment coefficient from $-0.0212$ in the baseline to the value shown here, a shift of roughly two-thirds of a randomization standard deviation, and reverses its sign. Both estimates lie deep inside the randomization distribution, so neither is distinguishable from zero and the sign reversal is not a finding; it is a statement about precision, and it is the reason the paper describes the estimate as robustly null rather than robustly negative.
+\end{tablenotes}
+\end{threeparttable}
+\end{table}

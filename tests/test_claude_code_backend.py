@@ -195,7 +195,8 @@ async def test_tool_loop_handles_cli_not_found(monkeypatch, tmp_path):
 # ---------------------------------------------------------------------------
 
 
-async def test_tool_loop_timeout_kills_subprocess(monkeypatch, tmp_path):
+async def _timeout_result(monkeypatch, tmp_path, *, timeout: float):
+    """Drive tool_loop into its TimeoutError branch with a given deadline."""
     _settings_for_cli(monkeypatch, tmp_path)
     from src.modules.llm.claude_code import ClaudeCodeBackend
 
@@ -206,6 +207,7 @@ async def test_tool_loop_timeout_kills_subprocess(monkeypatch, tmp_path):
 
     with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=proc)):
         backend = ClaudeCodeBackend()
+        backend._timeout = timeout
         result = await backend.tool_loop(
             system="x",
             messages=[{"role": "user", "content": "x"}],
@@ -213,9 +215,30 @@ async def test_tool_loop_timeout_kills_subprocess(monkeypatch, tmp_path):
             tool_handler=None,
             max_turns=5,
         )
+    return result, proc
+
+
+async def test_tool_loop_timeout_kills_subprocess(monkeypatch, tmp_path):
+    """A deadline that really did elapse reports as the wall-clock timeout."""
+    result, proc = await _timeout_result(monkeypatch, tmp_path, timeout=0)
 
     assert not result.success
     assert "timed out" in (result.error or "").lower()
+    proc.kill.assert_called_once()
+
+
+async def test_inner_timeout_is_not_reported_as_the_deadline(monkeypatch, tmp_path):
+    """B-6: since 3.11 `TimeoutError` is also an `OSError`, so a pipe/socket
+    timeout inside `communicate()` reaches the same handler. Reporting it as
+    the wall-clock deadline produced impossible messages during the 2026-08-03
+    pilot ("timed out after 69s (limit 1800s)") and sent the diagnosis after a
+    hang that never happened."""
+    result, proc = await _timeout_result(monkeypatch, tmp_path, timeout=1800)
+
+    assert not result.success
+    error = (result.error or "").lower()
+    assert "i/o timeout" in error
+    assert "not the wall-clock deadline" in error
     proc.kill.assert_called_once()
 
 
@@ -252,3 +275,66 @@ async def test_tool_loop_flattens_messages_into_prompt(monkeypatch, tmp_path):
     sent = captured_input["data"].decode()
     assert "You are a research specialist." in sent
     assert "Write paper_plan.md for an NFT paper." in sent
+
+
+# ── CLAUDE_CODE_MODEL pins the subprocess model ──────────────────────────────
+# Without --model the CLI uses the user's interactive /model default; a July
+# 2026 validation run died mid-pipeline on a Fable 5 usage-credit ceiling
+# because the interactive default leaked into every specialist subprocess.
+
+
+async def _invoke_and_capture_argv(monkeypatch, tmp_path) -> list[str]:
+    from src.modules.llm.claude_code import ClaudeCodeBackend
+
+    backend = ClaudeCodeBackend()
+    summary = {
+        "type": "result",
+        "subtype": "success",
+        "result": "ok",
+        "is_error": False,
+        "num_turns": 1,
+        "usage": {"input_tokens": 1, "output_tokens": 1, "cache_read_input_tokens": 0},
+    }
+    proc = _mock_proc(stdout=(json.dumps(summary) + "\n").encode())
+    with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=proc)) as spawn:
+        await backend.tool_loop(
+            system="System prompt",
+            messages=[{"role": "user", "content": "Do the thing."}],
+            tools=[],
+            tool_handler=None,
+        )
+    return list(spawn.await_args.args)
+
+
+async def test_model_flag_passed_when_configured(monkeypatch, tmp_path):
+    _settings_for_cli(monkeypatch, tmp_path)
+    monkeypatch.setenv("CLAUDE_CODE_MODEL", "claude-sonnet-4-6")
+    from src.config import get_settings
+
+    get_settings.cache_clear()
+    argv = await _invoke_and_capture_argv(monkeypatch, tmp_path)
+    assert "--model" in argv
+    assert argv[argv.index("--model") + 1] == "claude-sonnet-4-6"
+
+
+async def test_no_model_flag_by_default(monkeypatch, tmp_path):
+    _settings_for_cli(monkeypatch, tmp_path)
+    # setenv("") not delenv: a developer's .env may set CLAUDE_CODE_MODEL,
+    # and pydantic-settings falls back to .env when the process env lacks
+    # the key — an explicit empty value pins the "unset" behaviour.
+    monkeypatch.setenv("CLAUDE_CODE_MODEL", "")
+    from src.config import get_settings
+
+    get_settings.cache_clear()
+    argv = await _invoke_and_capture_argv(monkeypatch, tmp_path)
+    assert "--model" not in argv
+
+
+def test_default_model_reflects_claude_code_model(monkeypatch, tmp_path):
+    _settings_for_cli(monkeypatch, tmp_path)
+    monkeypatch.setenv("CLAUDE_CODE_MODEL", "claude-sonnet-4-6")
+    from src.config import get_settings
+
+    get_settings.cache_clear()
+    assert get_settings().default_model == "claude-sonnet-4-6"
+    get_settings.cache_clear()

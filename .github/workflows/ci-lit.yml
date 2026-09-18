@@ -54,8 +54,17 @@ jobs:
           fi
 
       - name: Run Lane B tests
-        # No literature-specific tests yet; this passes trivially. When Phase 2
-        # adds tests/lit/, replace this with `pytest tests/lit/ -v`.
+        # These used to be filtered with -k "literature" and swallowed with
+        # `|| echo "passing trivially"`, so the lane was green whether or not
+        # anything ran — and the filter matched none of the literature test
+        # files, which are named for what they test rather than for the lane.
+        # Named explicitly, and allowed to fail.
         run: |
-          pytest tests/ -v --tb=short -m "not e2e" -k "literature" || \
-            echo "No literature tests yet — passing trivially"
+          pytest tests/lit/ \
+                 tests/test_structured_review.py \
+                 tests/test_review_schema.py \
+                 tests/test_extract_review.py \
+                 tests/test_corpus.py \
+                 tests/test_corpus_cli.py \
+                 tests/test_corpus_context.py \
+                 -v --tb=short -m "not e2e"

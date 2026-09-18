@@ -36,3 +36,41 @@ def test_token_usage_addition():
 def test_total_tokens():
     usage = TokenUsage(input_tokens=100, output_tokens=200, cache_read_tokens=50)
     assert usage.total_tokens == 350
+
+
+# ── Flat-rate backends return zero (M4 finding #1) ──────────────────────────
+
+
+def test_claude_code_backend_zeros_cost():
+    # The same usage that costs $18.00 on the anthropic SDK backend
+    # must cost $0 on the claude_code CLI backend (Max-plan flat-rate).
+    usage = TokenUsage(input_tokens=1_000_000, output_tokens=1_000_000)
+    sdk_cost = compute_cost("claude-sonnet-4-5", usage, backend="anthropic")
+    cli_cost = compute_cost("claude-sonnet-4-5", usage, backend="claude_code")
+    assert sdk_cost == Decimal("18.00")
+    assert cli_cost == Decimal("0")
+
+
+def test_codex_backend_zeros_cost():
+    usage = TokenUsage(input_tokens=5_000_000, output_tokens=1_000_000)
+    assert compute_cost("anything", usage, backend="codex") == Decimal("0")
+
+
+def test_gemini_backend_zeros_cost():
+    usage = TokenUsage(input_tokens=10_000_000, output_tokens=10_000_000, cache_read_tokens=5_000_000)
+    assert compute_cost("google/gemini-pro-1.5", usage, backend="gemini") == Decimal("0")
+
+
+def test_unknown_backend_falls_back_to_sdk_pricing():
+    # Defensive: an unrecognised backend literal should not silently
+    # zero costs. We compute SDK rates so a configuration typo
+    # surfaces as "too expensive" not "free".
+    usage = TokenUsage(input_tokens=1_000_000)
+    assert compute_cost("claude-sonnet-4-5", usage, backend="some-other") == Decimal("3.00")
+
+
+def test_backend_none_preserves_legacy_behaviour():
+    # All existing tests call without the backend kwarg; default must
+    # match the pre-M4.1 numbers exactly.
+    usage = TokenUsage(input_tokens=1_000_000, output_tokens=1_000_000)
+    assert compute_cost("claude-sonnet-4-5", usage) == Decimal("18.00")

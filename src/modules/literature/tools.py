@@ -155,6 +155,11 @@ class LiteratureToolHandler(ToolHandler):
         self._fetch_calls = 0
         self._save_calls = 0
         self._read_calls = 0
+        # Per-paper-run OA-PDF cache (v0.9 M3). DOI → ``str`` PDF URL or
+        # ``None`` for "asked the chain, nobody had one". Avoids paying
+        # Unpaywall + Crossref + OpenAlex twice for the same DOI when a
+        # specialist reads the same reference more than once.
+        self._oa_pdf_cache: dict[str, str | None] = {}
 
     def can_handle(self, tool_name: str) -> bool:
         return tool_name in {"search_papers", "fetch_paper", "save_bibtex", "read_reference"}
@@ -216,6 +221,27 @@ class LiteratureToolHandler(ToolHandler):
         query = inp["query"]
         limit = max(1, min(int(inp.get("limit", 10)), 50))
 
+        settings = get_settings()
+        # On SQLite, consult the researcher's persisted local library first.
+        # The workspace dir name is the paper id (workspace_root/<uuid>).
+        if settings.literature_local_enabled:
+            try:
+                from .storage import search_literature
+
+                local = await search_literature(query, paper_project_id=self._workspace.name, limit=limit)
+            except Exception as e:  # noqa: BLE001
+                logger.debug("local literature search failed: %s", e)
+                local = []
+            if local:
+                return json.dumps(
+                    {
+                        "source": "local_library",
+                        "query": query,
+                        "count": len(local),
+                        "papers": [_local_row_to_dict(r) for r in local],
+                    }
+                )
+
         # Iterate the registry's search chain (OpenAlex → arXiv). Return the
         # first source that yields papers; if none does, return the last
         # source's (empty) result; if every source raised, return an error.
@@ -261,6 +287,29 @@ class LiteratureToolHandler(ToolHandler):
             if paper:
                 return source.name, paper
         return None
+
+    async def _resolve_oa_pdf(self, doi: str) -> str | None:
+        """Resolve a DOI to an OA PDF URL via the OA-resolver chain
+        (Unpaywall → OpenAlex → Crossref → Semantic Scholar).
+
+        Per-instance cache: same DOI asked twice in a paper run pays
+        the chain once. ``None`` is cached too — a known-miss shouldn't
+        keep paying network calls on every retry.
+        """
+        from ...config import get_settings
+        from .registry import oa_pdf_resolvers
+
+        if doi in self._oa_pdf_cache:
+            return self._oa_pdf_cache[doi]
+        result: str | None = None
+        for resolver in oa_pdf_resolvers(get_settings()):
+            url = await resolver.resolve(doi)
+            if url:
+                logger.debug("OA PDF for %s found via %s", doi, resolver.name)
+                result = url
+                break
+        self._oa_pdf_cache[doi] = result
+        return result
 
     async def _fetch(self, inp: dict[str, Any]) -> str:
         doi = inp["doi"].strip()
@@ -322,6 +371,12 @@ class LiteratureToolHandler(ToolHandler):
             resolved = await self._resolve_doi(doi)
             if resolved is not None:
                 pdf_url = (resolved[1].pdf_url or "").strip()
+            # If the metadata path didn't surface a PDF URL, fall through
+            # to the dedicated OA-PDF resolver chain (v0.9 M3) — Unpaywall
+            # + Crossref ``link[]`` together cover many DOIs OpenAlex
+            # leaves with a null ``oa_url``.
+            if not pdf_url:
+                pdf_url = (await self._resolve_oa_pdf(doi)) or ""
         if not pdf_url:
             return json.dumps(
                 {
@@ -387,6 +442,28 @@ def _to_dict(p: PaperMetadata) -> dict[str, Any]:
         "citations": p.citations,
         "bibtex_key": p.bibtex_key,
         "pdf_url": p.pdf_url,  # lets the model pass it to read_reference
+    }
+
+
+def _local_row_to_dict(row: dict[str, Any]) -> dict[str, Any]:
+    """Shape a persisted literature_items row like a search result. ``authors``
+    is stored as a JSON string; decode it for the model."""
+    authors = row.get("authors")
+    if isinstance(authors, str):
+        try:
+            authors = json.loads(authors)
+        except (ValueError, TypeError):
+            authors = [authors] if authors else []
+    return {
+        "title": row.get("title"),
+        "authors": authors or [],
+        "year": row.get("year"),
+        "doi": row.get("doi") or "",
+        "abstract": (row.get("abstract") or "")[:1500],
+        "journal": row.get("journal") or "",
+        "citations": row.get("citations") or 0,
+        "pdf_url": row.get("pdf_url") or "",
+        "pdf_path": row.get("pdf_path") or "",
     }
 
 

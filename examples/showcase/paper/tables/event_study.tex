@@ -1,0 +1,44 @@
+\begin{table}[t]
+\centering
+\begin{threeparttable}
+\caption{Event study in six-month bins, and tests of parallel pre-trends}
+\label{tab:event_study}
+\begin{tabular}{lc}
+\toprule
+ & Fisher-$z$ correlation with SPY \\
+\midrule
+Bin $-7$ & 0.2026*** \\
+ & (0.0517) \\
+Bin $-6$ & 0.0774** \\
+ & (0.0273) \\
+Bin $-5$ & 0.0586 \\
+ & (0.0425) \\
+Bin $-4$ & 0.0914*** \\
+ & (0.0258) \\
+Bin $-3$ & 0.1689*** \\
+ & (0.0364) \\
+Bin $0$ (first six treated months) & 0.0029 \\
+ & (0.0367) \\
+Bin $1$ & 0.1406** \\
+ & (0.0443) \\
+Bin $2$ & 0.0206 \\
+ & (0.0258) \\
+Bin $3$ & 0.0886** \\
+ & (0.0358) \\
+Joint $F$, all pre-treatment bins & 9.185 \\
+$\quad$ asymptotic $p$ (invalid here) & 0.0024 \\
+$\quad$ randomization $p$ & 0.80 \\
+$\quad$ median placebo $F$ & 17.36 \\
+$\quad$ maximum placebo $F$ & 84.30 \\
+Linear pre-trend, per month & -0.00144 \\
+$\quad$ cluster-robust SE & 0.00132 \\
+$\quad$ randomization $p$ & 0.70 \\
+$N$ & 540 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}[flushleft]
+\footnotesize
+\item Coefficients are Bitcoin-specific interactions with six-month event-time bins relative to 2024m2, from a specification with coin and calendar-month fixed effects. The reference bin is $-2$, covering the six months ending at the donut, because the conventional $k=-1$ bin falls inside the excluded window. Bins rather than single months are used because a month-by-month specification is saturated for a single treated unit: Bitcoin's residual is identically zero in any month carrying its own dummy, so the standard errors would be computed off the control coins alone. Standard errors in parentheses are cluster-robust on coin. The joint pre-trend $F$-test is reported in both its asymptotic and its randomization form. The asymptotic version inherits the one-treated-unit problem and rejects for every coin in the panel, treated or not; the randomization version, obtained by casting each of the nine control coins in turn as the treated unit, is the valid test, and Bitcoin's statistic lies below the median placebo.
+\end{tablenotes}
+\end{threeparttable}
+\end{table}

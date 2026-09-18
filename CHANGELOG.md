@@ -7,7 +7,780 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_Nothing yet._
+## [0.9.1] — 2026-09-18
+
+### A corpus of what papers claim, not just that they exist
+
+A literature search returns titles and abstracts. A drafter given thirty BibTeX
+entries can cite plausibly and nothing more — it has read the metadata and is
+guessing at the content, which is how a related-work section ends up describing
+papers nobody read.
+
+`e2er corpus` builds a local library of *claims* instead. Each entry is an
+extracted statement plus the verbatim sentence it came from, checked against the
+paper's full text; a claim whose quote cannot be located is discarded rather
+than flagged. That is the numbers gate one level up — a table cell must trace to
+a sidecar key, a claim must trace to a sentence, and neither check asks a model
+whether it is telling the truth.
+
+```
+e2er corpus add ~/papers/                  every PDF in a folder
+e2er corpus add "10.1257/aer.20201397"     one paper by DOI
+e2er corpus topics add "stablecoin runs"   a standing interest
+e2er corpus refresh                        re-run topics, extract only what is new
+e2er corpus search "null effects of listing"
+```
+
+The library lives at `~/.e2er/corpus.db` (`CORPUS_DB` to move it), outside any
+workspace, and accumulates across projects. `refresh` checks coverage before
+downloading or calling a model, so running it on a schedule is cheap.
+
+A paper run reads the PDFs staged in its own `literature/` folder into the
+corpus before drafting, then writes the matching claims to
+`literature/corpus_evidence.md` and seeds `literature.bib` from them — so what
+the drafter quotes is what it can cite. `CORPUS_AUTOINGEST=false` disables it.
+With no corpus, nothing changes.
+
+The record format is published as
+[`docs/schemas/structured_review.schema.json`](docs/schemas/structured_review.schema.json)
+and specified in [docs/STRUCTURED_REVIEWS.md](docs/STRUCTURED_REVIEWS.md), so
+another tool can produce records E2ER reads or read records E2ER produces. It is
+validated against what the code emits in CI, because a format published as
+implementable is a promise and an unchecked promise drifts.
+
+### Two thirds of the "fabrications" were the checker
+
+`e2er corpus stats` reports how often the extractor supplied a quote that was
+not in the paper — fabrication measured under the least favourable conditions
+for fabricating, since the prompt states the quotes are checked mechanically.
+
+On the first real corpus that read 1.1%. Re-downloading every paper and
+re-checking each rejected quote showed **four of six were true verbatim quotes**,
+failing on artefacts of PDF extraction: hyphenated line breaks arriving as
+hyphen+space, and an `fi` ligature. The real rate was closer to 0.4%.
+
+`normalize()` now folds ligatures, and quote matching falls back to a
+whitespace- and hyphen-free comparison when the strict match fails — dropping
+exactly what those artefacts are made of, while wording and word order still
+have to match exactly. A paraphrase, a reordering and an invented sentence are
+all still rejected, and there are tests for each.
+
+The prediction this replaced was also wrong: `limitations` was expected to be
+the most-invented field, being diffuse and easy to reconstruct. It produced 129
+claims and zero rejections.
+
+### Fixed
+
+* **`e2er corpus refresh` was not incremental for preprints.** Coverage was
+  checked by DOI, and arXiv assigns none — so every preprint was re-downloaded
+  and re-extracted on every refresh, forever. Papers now carry a title-and-year
+  key used only for the coverage check.
+* **One provider could take the whole search budget.** Five OpenAlex records
+  filled a limit of five, every one of their "open access" URLs was a publisher
+  landing page, and arXiv — which serves real PDFs — was never reached. Sources
+  are interleaved round-robin.
+* **A landing page was reported as a scanned PDF.** Resolvers routinely return
+  HTML at a URL ending in `.pdf`; the failure now names what actually arrived
+  instead of sending the reader after an OCR problem that does not exist.
+* **A local PDF was titled by its filename.** `extract_pdf_metadata()` existed
+  and was not called, so a paper was stored as `1-s2.0-S0378426619301234-main`
+  with no authors, year or DOI. Its title heuristic also stopped at the first
+  line, truncating any title that wrapped — and a truncated title deduplicates
+  against nothing.
+* **The same paper could be stored twice**, once from a PDF and once from the
+  web. An arXiv stamp is now read as the DOI arXiv mints from it, and a title
+  that is the beginning of another counts as covered — used only to decide
+  whether to skip a paper, never to decide which record a review is written to.
+
+## [0.9.0] — 2026-09-13
+
+### A bibliography exists before the drafter writes
+
+Literature acquisition runs as a pipeline stage, before any specialist, and
+writes `literature.bib` from the paper's own research question and title. It
+self-skips when a bibliography already exists, so a researcher's own library
+always wins.
+
+It is a stage rather than a tool deliberately. The drafter already had a
+`save_bibtex` tool and a skill file telling it to use one — and `tool_loop`
+ignores SDK tools on every CLI backend, so the drafter cited from memory
+against a `references.bib` that did not exist. Granting a capability and
+instructing a model to use it does not make it used.
+
+Also fixes the OpenAlex provider, which returned 400 for any query containing
+`?` or `*`. A research question normally ends in `?`, so the provider was
+failing outright and acquisition silently fell through to a weaker source.
+
+### Verification now checks what it claims to
+
+Four defects, found by producing the first completed run rather than by
+reading the code:
+
+* **The export dropped `tables/`.** The renderer writes one `.tex` per table
+  and the draft `\input`s each; `figures/` and `replication/` were copied and
+  `tables/` was not, so the bundle carried two `.tex` files against thirteen
+  `\input` directives and could not compile.
+* **The numbers gate never saw them.** It scanned only the draft, found no
+  `tabular`, and reported a pass having traced zero cells — a green tick
+  indistinguishable from one that checked every number. Expanding `\input`
+  before scanning takes it from 0 traced cells to 346.
+* **The provenance graph was empty.** Edges are derived from the run's gate
+  report, which recorded no matched cells, so the bundle asserted that every
+  number traces to a file while carrying no trace for any number. Now 385
+  edges: 346 `table_cell`, 33 citation, 5 figure, 1 estimation.
+* **Severity was decided by proximity.** A cell's fate depended on distance to
+  the closest value anywhere in the source JSON, so a tampered cell was graded
+  "major" rather than critical and did not gate.
+
+New `tables` check: `e2er verify` re-renders the declared tables with the
+renderer itself and compares bytes. A difference means the shipped table is
+not what the sidecars produce, which needs no heuristic to answer. Coverage is
+part of the verdict — tables the paper includes that the renderer does not
+produce are named, not implied.
+
+`integrity` now fails a bundle that ships rendered tables and records no
+`table_cell` edge, and reports how many cells the graph traces.
+
+### `examples/showcase/`
+
+A real bundle, from the first completed run under `--governance full`: a DiD
+on a coin-month panel around the January 2024 spot-ETF approval, with an event
+study, a daily rolling-window DiD, a returns-level triple difference, and Chow
+and Bai-Perron break tests. 69 files hash-verified, 346 traced cells, 33/33
+citations. The test suite now asserts against it rather than against fixtures
+the developer invented — which is how all four defects above survived 1341
+tests.
+
+### Fixed
+
+* SSRF guard rejected public hosts on NAT64/DNS64 networks, where a public
+  hostname resolves to `64:ff9b::<ipv4>` and Python reports the whole prefix
+  as reserved. NAT64 and IPv4-mapped addresses are now unwrapped to the
+  address the packet actually reaches — which also tightens the guard, since
+  `64:ff9b::192.168.0.1` is blocked on the merits of the embedded address.
+* `e2er doctor` reported an empty fallback directory as an active literature
+  mode, appending "no PDFs/.bib found" to an otherwise-clean pass.
+* Version strings drifted: `CITATION.cff` and the README BibTeX still said
+  0.8.0, two releases behind PyPI.
+
+
+### The researcher workflow — bring your own data and papers, branch across models, verify everything
+
+This is the release's headline: E2ER stops being "a pipeline you configure"
+and becomes a workflow a researcher directs. Four pillars, each with a
+first-class command.
+
+**(a) Bring your own data and your own papers.** `e2er init` now scaffolds
+`data/` and `literature/` with READMEs explaining what each accepts, writes
+`LOCAL_DATA_DIR` / `LITERATURE_DIR` into `.env`, and gained `--defaults` for
+non-interactive/CI setup. `e2er doctor` gained two pure-local checks
+(`byod_local_data`, `byod_literature`) that report what E2ER can actually see
+— file counts by type, recursion, the three literature modes — so "why isn't
+my data being used?" is answerable without a run. Fixed `e2er init`
+environment drift: it wrote backend keys the config rejects (`codex_cli`,
+`gemini_cli` instead of `codex`, `gemini`) and a `DATA_MODULE_ENABLED` toggle
+that hasn't existed since data-module enablement became a computed property.
+A test now instantiates `Settings(llm_backend=key)` for every key `init` can
+write, so that class of drift can't come back.
+
+**(b) Create a research question.** New `e2er rq --draft "<rough question>"`:
+gathers the project's available data sources and local literature, makes one
+backend call, and returns a structured `rq.json` — research question,
+rationale, candidate variables, identification options, feasibility notes.
+It is **advisory only and never creates a paper** (test-pinned): the
+researcher reads it, edits it, and decides. `e2er run --rq-file rq.json`
+consumes the result.
+
+**(c) Different models, different versions, one comparison.** New
+`e2er run-matrix "<RQ>" --backends a,b,c --repeats N` runs the same question
+across k backends × n repeats into labeled sibling papers plus a
+`matrix.json`. New `e2er compare <matrix.json|bundles>` then diffs what the
+models actually *decided*: a design-choice matrix over `identification_spec.json`,
+per-field agreement (modal share for scalars, mean pairwise Jaccard for sets),
+within- vs between-backend variance, and divergent-field flags. The report
+leads with the point: this is **measurement, not selection** — no run is
+promoted, nothing is auto-picked, and the preamble says so, because the value
+is seeing the solution space, not shopping for a result.
+
+Human-in-the-loop: `e2er run --review-at STAGE` (repeatable) pauses the run
+after any pipeline stage. Inspect or edit the workspace, then
+`e2er resume <paper_id>` approves that checkpoint and continues — built on the
+existing pause/resume + `.pipeline_state.json` machinery, with a Resume button
+in the web UI.
+
+**(d) Everything verifiable.** Every export bundle now carries
+`provenance.json`: a SHA-256 inventory of every file plus a derivation graph
+reconstructed from the gate reports already in the bundle — table cells → the
+source JSON key they trace to, citations → registry + DOI, figures → the
+figure spec, estimation → the executed script and its log, data → the recorded
+queries. Schema at `docs/schemas/provenance.schema.json`.
+
+New `e2er verify <bundle>` is the reviewer's cheap-verification moment:
+offline, keyless, sub-second. It re-hashes every file against the manifest,
+**recomputes** the numbers and spec checks from the bundled artifacts (the
+recomputation is authoritative — an edited report is caught, not trusted), and
+resolves every `\cite` against `refs.bib`, treating the bundled registry
+result as a snapshot. `--online` re-queries the live registries. A tampered
+number, a tampered report, a deleted file, and a broken citation are each
+caught. Export also now includes `identification_spec.json` (under `design/`)
+and the `replication/` directory, without which the spec check had nothing to
+check.
+
+### Governance regimes — the institutions became a switch, so their effect is measurable
+
+- **`--governance off | contracts | full`** (also `GOVERNANCE` in `.env`,
+  persisted per paper). `full` is the existing behaviour; `contracts` keeps
+  only the specialist output contracts; `off` blocks on nothing.
+- **Shadow mode.** A mechanism that isn't enforced still **runs**: it computes
+  its verdict and logs `gate_shadow` instead of `gate_enforced`. So an
+  ungoverned run doesn't merely fail differently — what the institutions
+  *would* have caught is recorded, which is what makes fabrication measurable
+  rather than absent. The regime is disclosed in the export bundle's README
+  and in `provenance.json`, so a bundle can't quietly hide how it was produced.
+- **New `src/core/governance.py`** holds the single enforcement matrix, read by
+  both the strategist runner (the three deterministic gates) and the specialist
+  layer (output contracts + cascade guard). Unknown regime strings fail closed
+  to `full`.
+- **Experiment driver** (`scripts/experiment_driver.py` + a YAML config, e.g.
+  `experiments/governance_pilot.yaml`): runs the same RQs across regimes × N
+  repeats and harvests per-run fabrication counts (critical number mismatches +
+  citations missing from the bib + unverifiable citations), completion, and
+  shadow/enforced gate failures into `results.csv` + `summary.md`.
+
+### Cross-pipeline citation audit
+
+- New `scripts/verify_external_paper.py` / `src/core/external_verify.py` runs
+  E2ER's citation-verification chain (OpenAlex → Semantic Scholar → Crossref)
+  over papers E2ER did not write, from their `.bib` reference lists, producing
+  per-paper and aggregate "X% of citations verify" reports. Lets the same
+  mechanical check be pointed at other pipelines' output.
+
+### Per-paper backend and model override
+
+- `e2er run --backend <name> [--model <id>]` overrides the LLM backend for a
+  single paper without restarting the server (the backend used to be
+  process-global via cached settings). This is the enabler for `run-matrix`
+  and the governance experiment. `papers.backend` column added, with an
+  idempotent SQLite backfill for existing databases.
+
+### Fixed — the governance experiment's own measuring instrument
+
+Found by running the pilot (3 regimes × 3 repeats) for the first time. The
+metric would have reported **zero fabrication on a run carrying 166 fabricated
+numbers**, so a successful-looking experiment would have produced a confidently
+wrong null.
+
+- **Prose numbers were invisible to `fabrication_count`.** The harvester counted
+  only table cells (`mismatches[].severity == "critical"`). Pilot run `ab95fcba`
+  reported `total_values_in_tables: 0` with an empty `mismatches` list — and
+  `prose_total: 278`, `prose_mismatched: 166`. Measured fabrication: 0.
+  `prose_mismatched` is now counted and reported as its own column.
+- **Skipped checks were counted as clean ones.** A citation check that finds no
+  bibliography writes `passed: true, total_cites: 0, skipped_reason: …`; the
+  harvester read the zeros as "no fabrication". Same skipped-is-not-verified
+  error as B-4 in `e2er verify`. Rows now carry `checks_skipped` and `measured`,
+  and per-regime means are taken over measured runs only.
+- **Non-completed runs contributed structural zeros.** Bundles are exported only
+  when a run completes, so `rejected`/`failed` runs — exactly the ones most
+  likely to carry fabrication — harvested nothing and averaged in as 0. This
+  biased the experiment *toward the null it exists to test*. Harvesting now
+  falls back to the paper's workspace, which holds the same reports.
+
+### Fixed — five bugs found by a full review of the above
+
+- **The `contracts` regime was dead code, and `off` still blocked.** The regime
+  reached the three deterministic gates but not the specialist-contract layer,
+  which is where output contracts are actually enforced. Under `--governance
+  off` a missing canonical artifact still raised (run FAILED) and a hollow one
+  still flipped the specialist to failure, tripping the circuit breaker after
+  three attempts (run PAUSED). `off` and `contracts` were therefore
+  indistinguishable, and the experiment's control cell was not a control. The
+  regime is now threaded runner → dispatcher → `run_specialist`; under `off`
+  the contract check still runs and logs `gate_shadow`, but does not flip
+  success, write coaching feedback, or raise. Operational limits (budget cap,
+  backend errors, the circuit breaker itself) remain regime-independent — they
+  are not verification institutions.
+- **Per-paper backend override picked the wrong model.** The model default was
+  resolved against the process-global backend, so `--backend openrouter`
+  without an explicit `--model` sent a bare `claude-sonnet-4-5` to OpenRouter
+  (which needs the `anthropic/` prefix) and every specialist call failed — on
+  exactly the multi-backend path `run-matrix` and the experiment use. Adds
+  `Settings.default_model_for(backend)`; `default_model` is now defined as
+  `default_model_for(llm_backend)`, so the two cannot drift.
+- **`provenance.json` recorded `source: null` for every table cell.**
+  `verify_numbers` records source keys prefixed with the source *filename*;
+  the provenance builder re-flattened the JSON without that prefix, so the
+  lookup never matched and per-cell attribution — the headline of the
+  provenance work — was null 100% of the time. Now matches the filename
+  prefix. (The original test used an unprefixed key and so passed against the
+  bug; it now runs the real producer.)
+- **`e2er verify` claimed success when it had checked almost nothing.** The
+  verdict counted only failures, so a partial bundle — export is best-effort
+  and can omit `paper.tex` — printed "Bundle verified — hashes, numbers, spec,
+  and citations are internally consistent" and exited 0 having verified only
+  hashes. A skip is not a pass: the verdict now names what ran and what was
+  skipped, and exits non-zero when no content check ran at all.
+- **`e2er run --rq "<RQ>"` crashed with a traceback.** argparse prefix-expanded
+  `--rq` to `--rq-file` and tried to open the research question as a filename.
+  `run` and `run-matrix` now take an explicit `--rq`, and an unreadable
+  `--rq-file` reports one line instead of a stack trace.
+
+### README reframed around the workflow
+
+- The README now leads with the four-pillar workflow and the verification
+  thesis rather than a feature list, adds a command table and a "For reviewers"
+  section (a keyless, $0 path from install to a verified bundle), and surfaces
+  the BYOD scaffolding and the three literature modes.
+
+### Deep revision loop — referees can send the research back, not just the prose
+
+- **`MECHANISM_FAIL` re-does the research instead of terminating.** When the
+  mechanism reviewer rejected a paper's *research* (mechanism not computed /
+  not convincing — score < 5), the verdict was a **terminal REJECTED**. The
+  only review-driven loop that existed, `patch_revisor`, edits prose — it
+  cannot recompute an out-of-sample test or re-source a dataset — so the
+  referee's substantive findings (sequential validation surfaced exactly this:
+  real papers rejected on "the decisive OOS test was never computed") had
+  nowhere to go. `_run_revision_phase` now treats `MECHANISM_FAIL` as a trigger:
+  it re-dispatches the **research specialists** (`data_analyst` →
+  `econometrics_specialist`) and the writer with the **referee reports as
+  guidance**, re-renders the deterministic tables, re-drafts, then **re-runs the
+  full review** (gates + reviewers) and re-decides — the way a researcher
+  responds to a referee.
+- **Bounded and terminating.** One deep round (`_MAX_DEEP_REVISIONS = 1`); the
+  re-review re-enters the revision phase with the budget spent, so a verdict the
+  round can't lift falls through to REJECTED. No infinite loop (regression-
+  tested). `MAJOR_REVISION` keeps its existing light prose-patch path unchanged;
+  `HARD_REJECT` stays terminal (unsalvageable).
+- Tests: +2 (`test_patch_revision_wiring.py`) — MECHANISM_FAIL → research
+  re-dispatch with referee feedback → re-review → COMPLETED; and the bounding
+  guarantee (exactly one deep round → REJECTED). All existing revision tests
+  unchanged.
+
+### Post-execution error feedback — specialists fix their own script crashes
+
+- **Recovers E2ER v1's self-debugging loop inside v3's sandbox.** v1's
+  analysis workers had `Bash(python3:*)` and iterated write→run→see-error→fix
+  within their turn, so codegen bugs (a bad pandas/numpy idiom) were fixed
+  silently. v3 sandboxes execution (no general code tool — the runner runs the
+  script post-hoc), so a bug like `'numpy.ndarray' has no attribute 'values'`
+  crashed the script, left `estimation_results.json` empty, and failed the
+  paper — the model never saw the traceback (it wrote the script blind). This
+  is what failed the capstone run (`c141a277`).
+- **Fix:** `post_execution.read_execution_error()` reads the crash captured in
+  the convention's audit log (`run_estimation.log`) — non-zero exit + empty
+  sidecar — and `run_specialist` injects that traceback into the specialist's
+  **next** attempt's prompt ("your script crashed: …, fix this bug, don't write
+  `{}`"). The model still never runs code; the runner does and just reports
+  back, so the security model is unchanged. Turns "write blind → crash → fail"
+  into "write → see the traceback → fix → succeed".
+- Self-limiting: returns `None` once the sidecar is populated (success) or the
+  last run exited cleanly. Covers `econometrics_specialist` + `data_analyst`
+  (the specialists with execution conventions).
+- Tests: +5 (`test_post_execution.py`) — feedback on crash, none on clean exit /
+  populated sidecar / missing log / no convention, plus an end-to-end check
+  that the traceback reaches the retry prompt and the fixed script succeeds.
+
+### patch_revisor: partial revision is progress, not rejection
+
+- **A MAJOR_REVISION no longer rejects the paper when only some edits land.**
+  The M5 validation run (`0495a50d`) cleared every gate — populated tables,
+  `verify_numbers` passed — then was REJECTED in revision because
+  `patch_revisor` emitted one over-reaching `paper:full` edit alongside two
+  good in-scope ones. The merger correctly dropped the out-of-scope edit (its
+  scope-enforcement job — whole-document edits are exactly what the pipeline
+  guards against), but `_run_patch_revision` treated *any* non-applied edit as
+  fatal (`fully_applied` → else REJECTED), throwing away a near-complete paper.
+- **Fix:** complete on progress. If at least one edit applied,
+  `_run_patch_revision` transitions to COMPLETED and logs the dropped edits
+  (out-of-scope or unmatchable) as non-fatal — mirroring the self-attack
+  path's tolerance. REJECTED only when the patch achieved nothing (zero edits
+  applied) or no patch file was produced (both unchanged). The merger and the
+  scope-enforcement invariant are untouched.
+- Tests: +1 (`test_patch_revision_wiring.py`) — in-scope edit applies +
+  out-of-scope `paper:full` dropped → COMPLETED with the in-scope edit landed.
+  Existing zero-applied → REJECTED cases still hold.
+
+### Closed-loop table_spec key fix
+
+- **Results tables no longer ship with blank cells.** When a `table_spec`
+  reference can't be resolved even after the renderer's order-insensitive
+  normalization (a genuinely wrong/abbreviated name — e.g. the drafter wrote
+  `cw_stat` where the JSON has `clark_west_stat`), `PipelineRunner` now
+  dispatches ONE `section_writer` fix with the unresolved references and the
+  EXACT keys/fields available in `estimation_results.json` /
+  `robustness_results.json`, then re-renders. Runs in `_run_review_phase`
+  right before the verify gate; one attempt, then any still-unresolved refs
+  stay `---` (and visible in `table_render_report.json`). Closes the loop the
+  PR-2 feedback opened — normalization handles the common case, this handles
+  the long tail.
+- Tests: +4 (`test_table_spec_closed_loop.py`) — feedback lists available keys,
+  no-op when nothing's unresolved, dispatch + fix lands the value.
+
+### Table key-resolution + non-gating prose check (PR-2)
+
+- **Cross-specialist key drift is auto-resolved.** The PR-1 validation run
+  completed but its results tables came out **blank**: the econometrics
+  specialist named specs `full_dp` while the drafter's `table_spec.json`
+  referenced `dp_full`, so every column rendered `---`. The renderer now does
+  **order-insensitive token matching** (`dp_full` ≡ `full_dp`) for `spec_key`,
+  coefficient `var`, and stat `field`, resolving the drift deterministically.
+  It matches only when exactly one candidate's token set is equal — never
+  guesses on ambiguity or genuinely-different names (`cw_stat` ≠
+  `clark_west_stat`). Resolutions are recorded in `table_render_report.json`
+  (`normalized`).
+- **Key-resolution feedback.** References still unresolved after normalization
+  (a truly wrong/abbreviated/missing name) are surfaced by `verify_numbers`
+  into `number_verification.json` (`table_spec_unresolved`), annotated with the
+  available spec keys, so the drafter can correct `table_spec.json`. The
+  `data/table-spec` skill now tells the drafter to read `estimation_results.json`
+  and copy its exact keys, and to reconcile against the render report.
+- **Prose-number check ("text = table number").** `verify_numbers` now also
+  checks numbers in prose (outside tables) against the JSON sources.
+  **Deliberately non-gating:** prose mismatches live in their own
+  `prose_mismatches` list, are capped at `major` (never `critical`), and only
+  flag *near-misses* — a prose number close to but off from a source value.
+  Incidental numbers (years, section refs, %s) with no close source are
+  ignored, so it reintroduces no false positives; it cannot reject a paper.
+- Tests: +4 renderer (token normalization, ambiguity refusal, genuinely-
+  different-name stays unresolved), +5 `verify_numbers` (prose match / major-
+  not-critical near-miss / unrelated-ignored / non-gating / feedback surfaced).
+- **Follow-up:** a closed-loop re-dispatch (auto-fix `table_spec.json` from the
+  feedback) is left for later; deterministic normalization already covers the
+  validated case, and the feedback makes the rest visible.
+
+### Deterministic results tables — render numbers from JSON, not by hand (PR-1)
+
+- **Results-table numbers are now generated, not transcribed.** New
+  `src/core/renderer/tables.py::render_tables()` reads a declarative
+  `table_spec.json` (which specs are columns, which coefficients/statistics are
+  rows) and fills the cells straight from `estimation_results.json` /
+  `robustness_results.json` into `tables/<name>.tex`, which the draft
+  `\input`s. A results-table number can no longer be fabricated or
+  mis-transcribed — the failure mode the `verify_numbers` gate exists to catch,
+  removed at the source. First-party deterministic code called by the runner;
+  no LLM in the number path.
+- **The model authors only the spec.** New `data/table-spec` skill (mirrors
+  `data/figure-spec`); wired into `paper_drafter` / `section_writer`.
+  `table_spec.json` is a best-effort sidecar (`SPECIALIST_OPTIONAL_SIDECARS`) —
+  theory / design-without-estimates papers legitimately have none.
+  `latex/tables` and `writing/cite-numbers-by-source` updated to route numeric
+  tables through the spec (prose numbers still governed by cite-by-source).
+- **`verify_numbers` false positives fixed.** The gate no longer reads LaTeX
+  *structure* as data: `\multicolumn` rows (column-group headers, panel labels)
+  are skipped and `\cmidrule` range args are stripped. This is exactly what
+  rejected the M5 re-run (`92626bf8`) — `\multicolumn{6}`→"6",
+  "Post-2008"→"2008", "Rolling 120"→"120" flagged as mismatches. Genuine
+  fabrications in plain data rows are still caught (regression-tested).
+- **Renderer is defensive + auditable.** Never raises; dynamic coefficient
+  names, optional `forecast_evaluation`/`first_stage`, `null` fields, and
+  empty-`coefficients` combination specs all render `---`. A `table_spec`
+  reference to a missing key renders `---` AND is recorded in
+  `table_render_report.json` (a *detectable* missing reference, not a silent
+  wrong number). A pre-compile `ensure_input_stubs` guard backfills any
+  dangling `\input{tables/...}` so a missing table can't abort compilation.
+  Runner re-renders before both the verify gate and compile (idempotent).
+- Tests: +19 `test_table_renderer.py`, +3 `verify_numbers` regression
+  (multicolumn/cmidrule not extracted; fabrication still critical).
+- **Follow-up (PR-2, not in this change):** retarget `verify_numbers` to check
+  *prose* numbers ("text = table number") with conservative matching.
+
+### Post-specialist execution — script discovery + output normalization (M5 re-run fix)
+
+- **Hardens the runner-side execution from the previous entry** after the
+  M5 re-run failed in the design phase
+  ([`docs/M4_RERUN_FINDINGS.md`](docs/M4_RERUN_FINDINGS.md)). The first
+  version keyed on a single hardcoded `run_estimation.py` /
+  `estimation_results.json`; the re-run's specialist named its script
+  `analyze.py` writing `analysis_output.json`, so the runner found
+  nothing and no-op'd. The brittleness had moved from *"did the model run
+  the script?"* to *"did the model name it canonically?"* — still a
+  model-judgment dependency.
+- **Script discovery** (`_discover_script`): an ordered list of canonical
+  candidate names is tried first, then a `*.py` glob keeping the script
+  whose source references the target sidecar or a declared alternate
+  output. `ExecutionConvention` now carries `script_candidates` +
+  `output_candidates` instead of a single `script`.
+- **Output normalization** (`_normalize_output`): if the discovered
+  script writes a populated alternate output (`analysis_output.json`)
+  rather than the canonical sidecar, the runner copies it onto the
+  canonical name so M4.3 sees it. Recorded in the audit log and on
+  `ExecutionAttempt.normalized_from` / `.discovered`.
+- **`data_analyst` execution convention** added (script →
+  `summary_statistics.json`), same discovery/normalization machinery.
+- **`figure_spec.json` is now a best-effort sidecar**
+  (`registry.SPECIALIST_OPTIONAL_SIDECARS`): still prompted and checked
+  by verify_numbers when present, but no longer hard-gated by M4.3 at the
+  data-design boundary — it has no deterministic producer there (its
+  values derive from analysis the model can't run). This is what
+  unblocks the parallel design-phase batch.
+- **Skill nudge** (`econometrics/estimation-results-schema.md`): explains
+  the specialist has no code-execution tool, so the way to run estimation
+  is to write `run_estimation.py` → `estimation_results.json` and let the
+  runner execute it. Best-effort fast-path; discovery is the backstop.
+- Tests: +6 in `test_post_execution.py` (glob discovery, output
+  normalization, `data_analyst` convention) and +1 in
+  `test_contract_check.py` (best-effort `figure_spec.json` not gated).
+  Full suite green (841).
+
+### Runner-side post-specialist execution (M5 prerequisite)
+
+- **New `src/core/specialists/post_execution.py`** runs a specialist's
+  declared script via `subprocess.run` before M4.3's contract check
+  fires, when the script is on disk but the sidecar is empty. Closes
+  the load-bearing M5 prerequisite identified in
+  [`docs/M4_DIAGNOSIS.md`](docs/M4_DIAGNOSIS.md): in the M4 paper run,
+  the econometrics specialist wrote a correct `run_estimation.py` and
+  then chose to write `estimation_results.json` as `{}` (per the
+  skill file's *"don't fabricate, write empty"* rule), so the paper
+  shipped without findings and the mechanism reviewer correctly
+  rejected it.
+- **Mechanical, not prompt-based**: the runner executes via
+  `subprocess.run`, not via the model's tool call. Backend-agnostic
+  (works on every backend, even ones without code-execution tools
+  exposed to the model). Idempotent (no-op when the sidecar is
+  already populated). Auditable via `run_estimation.log` (subprocess
+  exit code + full stdout/stderr).
+- **Composes with M4.3 (not a replacement)**: post-exec is the
+  positive path *"make the right thing happen"*; M4.3 stays the
+  negative path *"refuse the wrong thing"*. If post-exec also fails
+  (script error, timeout, data-shape mismatch), the sidecar stays
+  empty and M4.3 flips the specialist to `success=False` exactly as
+  today.
+- **Registry-driven**: `EXECUTION_CONVENTIONS` maps specialist →
+  script + sidecar + audit log + timeout. Starts narrow with
+  `econometrics_specialist` + `run_estimation.py` +
+  `estimation_results.json` (the M4 case). Extending to
+  `data_analyst` (`build_panel.py` → `summary_statistics.json`) and
+  `replication_packager` is a single-line addition after the first
+  re-run validates the convention.
+- Tests: 16 new in `tests/test_post_execution.py` — the M4 case
+  (script writes populated JSON, sidecar gets populated, M4.3
+  passes), script-errors path (audit log captures traceback, M4.3
+  still rejects), exit-zero-without-writing path (M4.3 catches the
+  silent failure), idempotency (populated sidecar = no-op),
+  specialist without convention = no-op, plus six unit tests on
+  the `_is_sidecar_populated` JSON-rules helper.
+
+## v0.8.2 — 2026-06-10
+
+Cumulative bugfix + capability release on the v0.8 line. Contains the
+seven milestones (M1-M3 + M4.1-M4.3) that were developed against the
+v0.9 plan in [`docs/V0.9_PLAN.md`](docs/V0.9_PLAN.md). They ship in
+v0.8.2 because **the v0.9.0 tag is now gated on M5 producing a paper
+that survives review under real conditions** — the v0.9 plan's own
+*"install → trust loop closed"* bar. M1-M4.x are necessary but not
+sufficient for that gate: the orchestration layer caught its own
+failures correctly in the M4 live run, but the pipeline has never
+produced a successful end-to-end paper. See
+[`docs/VERSIONING_RESET.md`](docs/VERSIONING_RESET.md) for the
+argument and [`docs/M4_FINDINGS.md`](docs/M4_FINDINGS.md) for the
+live-run findings the M4.x fixes close.
+
+The `Mi (v0.9 plan)` subsection headings below preserve the
+cross-reference to the v0.9 plan document; the work itself ships on
+the v0.8 line.
+
+### M4.3 (v0.9 plan) — Specialist output-contract enforcement
+
+- **New `src/core/specialists/contract_check.py`** validates that a
+  specialist's declared artifact (primary + any sidecars in
+  `SPECIALIST_SIDECAR_ARTIFACTS`) has non-trivial content before
+  `run_specialist` returns success. Rules per file extension:
+  - `.json` — must parse, and parsed value must not be `{}` / `[]` /
+    `null`. Empty containers are the M4 failure mode.
+  - `.md` / `.tex` / `.py` / `.txt` — at least 100 non-whitespace
+    characters. A real specialist output is always a paragraph or more.
+  - Other extensions — exists with size > 0.
+- **Wired into `run_specialist`**: when the tool_loop returns
+  `success=True` but contract check fails, the result is flipped to
+  `success=False` with the error prefixed `contract violation: …`.
+  The circuit breaker then trips after `_MAX_SPECIALIST_ATTEMPTS=3`
+  consecutive failures, halting the run with `PAUSED` instead of
+  paying the rest of the pipeline.
+- **Closes M4 finding #4 — the biggest of the three follow-ups**: in
+  the M4 paper run `econometrics_specialist` returned `success=True`
+  but `estimation_results.json` was literally `{}`. The pipeline then
+  burned 13.7M tokens / 29 specialist calls writing a paper around a
+  hollow result before the mechanism reviewer caught it. Post-M4.3
+  that single empty JSON file flips the econometrics specialist to
+  failure and the run pauses at the contract boundary instead.
+- **Tests**: 21 in `tests/test_contract_check.py` covering the M4
+  regression (`estimation_results.json == "{}"`), empty list/null/
+  whitespace JSON, invalid JSON, short prose/code, whitespace-only
+  files, missing files, nested relative paths, unknown extensions,
+  primary + sidecar combinations per specialist, and an
+  integration test that runs `run_specialist` with a fake backend
+  that writes a hollow sidecar and confirms the result is flipped
+  to `success=False` with the right error.
+- **Conftest mocks bulked**: pre-M4.3 the mock specialist outputs
+  were short stubs (e.g. `"Formula check passed."` = 22 chars). The
+  contract check would have false-tripped on them. Updated all
+  mocks in `_SPECIALIST_OUTPUTS` to be paragraph-length so they
+  match what a real (skill-driven) specialist emits at minimum
+  substance; mock sidecars added (`summary_statistics.json`,
+  `figure_spec.json`, `estimation_results.json`) so reflexive
+  mocks of `econometrics_specialist` / `data_analyst` still pass.
+
+### M4.2 (v0.9 plan) — `verify_citations` parses `\bibitem` bodies
+
+- **New `parse_bibitem_entries(tex)`** in `src/core/pipeline/verify_citations.py`:
+  parses the text between consecutive `\bibitem` commands (and between
+  the last `\bibitem` and `\end{thebibliography}`) into a bib-shaped
+  dict `{cite_key: {title, year, doi}}`. Extracts:
+  - **DOI** anywhere in the body (`10.xxxx/yyyy`, with optional `doi:`
+    / `https://doi.org/` prefix; trailing punctuation stripped).
+  - **Year** from the first `(YYYY)` in the body, falling back to the
+    `\bibitem[label]` year when the body uses an unparenthesised form.
+  - **Title** between the closing `(YYYY).` of the author block and
+    the start of the `\textit{...}` / `\emph{...}` block that wraps
+    the journal name. Falls back to "first sentence after the year"
+    when no italic journal marker is present.
+- **Replaces the degenerate fallback** in `verify()` that constructed
+  `{key: {"title": ""}}` for `\bibitem`-only papers. Pre-M4.2 every
+  cite came back `unverifiable` with explanation *"bib entry has
+  neither title nor DOI — nothing to verify"* — the M2 gate was
+  silent on exactly the class of paper most likely to ship
+  hallucinated cites.
+- **Live-validated on the actual M4 paper draft**:
+  - Before: `verified=0 unverifiable=9 missing_in_bib=0 total=9` →
+    false-pass under warn-only default.
+  - After: `verified=9 unverifiable=0 missing_in_bib=0 total=9` →
+    real pass; every Welch-Goyal-replication cite (welch2008,
+    clarkwest2007, campbell2008, rapach2010, goyal2024, paye2006,
+    timmermann2008, stambaugh1999, cochrane2008) resolves via
+    OpenAlex title-search.
+- Closes M4 finding #2. 8 new tests including the M4 regression
+  (exact Welch-Goyal `\bibitem` format), DOI extraction (raw + URL
+  form), label-only year fallback, multi-entry, no-journal-marker
+  fallback, end-to-end verify, and empty-body unverifiable
+  preservation.
+
+### M4.1 (v0.9 plan) — Cost tracker zeros for flat-rate CLI backends
+
+- **`compute_cost(model, usage, backend=...)`** now returns
+  `Decimal("0")` when `backend` is `claude_code`, `codex`, or `gemini`.
+  The CLI help and v0.9 plan promise *"$0 if on the Claude Code /
+  Codex / Gemini CLI backends"*; this is the implementation that
+  makes that promise true. Closes M4 finding #1.
+- Updated three call sites to pass `backend`:
+  `core/specialists/base.py`, `modules/tracking/usage.py`,
+  `core/strategist/runner.py` (`_in_memory_spent` for the budget
+  cap's in-memory fallback). Test suite (`test_costs.py`) extended
+  to pin the new contract: identical 2M-token usage costs $18.00 on
+  `anthropic` and $0 on `claude_code`; unknown backend literals fall
+  back to SDK pricing (defensive — a config typo surfaces as
+  "expensive", not "free"); `backend=None` preserves legacy behaviour
+  exactly.
+- Background: in the M4 run, the default `--max-cost 5` cap tripped
+  after the first heavy specialist on the `claude_code` backend
+  (~$5.25 in fake compute_cost) — forcing an interactive
+  `resume --max-cost 100` to keep the paper moving. With M4.1, the
+  budget cap stays inactive on the $0 backends.
+
+### M3 (v0.9 plan) — Open-access full-text reach
+
+- **New OA-PDF resolver chain** (`src/modules/literature/oa_resolvers.py`)
+  separate from the metadata-fetch chain. One job: produce an OA PDF
+  URL for a DOI. Default order: **Unpaywall → OpenAlex → Crossref →
+  Semantic Scholar**. Each adapter returns `str | None`; first hit
+  wins. Closes M3 of the v0.9 plan.
+- **`src/modules/literature/unpaywall.py`** — keyless polite-pool
+  resolver. `find_oa(doi, email)` returns full `PaperMetadata`;
+  `find_oa_pdf(doi, email)` is the chain entry point. Walks
+  `best_oa_location.url_for_pdf` → `best_oa_location.url` → the
+  full `oa_locations[]` list, so a paper with a green-OA copy in a
+  non-default repository still surfaces.
+- **`src/modules/literature/crossref.py`** — extended with
+  `find_oa_pdf(doi)` that scans the `message.link[]` array for
+  publisher-deposited `content-type: application/pdf` links. Catches
+  cases where the publisher's own DOI record points at a PDF that
+  Unpaywall hasn't indexed.
+- **New `unpaywall_email` setting** (default `research@e2er.app`)
+  identifies this client to the OpenAlex / Crossref / Unpaywall
+  polite pools — all keyless, all require a contact in every request.
+- **`LiteratureToolHandler._read_reference` falls through.** When the
+  metadata chain (`doi_fetch_sources`) returns a paper with no
+  `pdf_url`, the OA-PDF resolver chain runs. Per-handler-instance
+  cache (`_oa_pdf_cache: dict[str, str | None]`): same DOI asked
+  twice in a paper run pays the chain **once**; known-misses cache
+  too, so retries don't keep hammering Unpaywall + Crossref + OpenAlex.
+- **Live-validated** end-to-end: LeCun *Deep learning* (Nature 2015)
+  surfaces via Unpaywall (`hal.science`) and Crossref
+  (`nature.com/.../nature14539.pdf`); paywalled Science 2007 correctly
+  returns no OA URL across all four resolvers.
+- Tests: 24 in `tests/test_oa_resolvers.py` covering Unpaywall's
+  4-step URL preference, Crossref's PDF-link picker (case-insensitive,
+  missing-field, no-PDF), all four OA-resolver adapters (success +
+  miss + exception), default chain order, the per-handler-instance
+  cache (hit + miss + short-circuit-after-first-hit), and the
+  `_read_reference` fall-through path.
+
+### M2 (v0.9 plan) — Citation-integrity gate
+
+- **New `e2er verify-citations` command + pre-review gate.** Mechanical,
+  deterministic anti-hallucination for references: parses every
+  `\cite`/`\citep`/`\citet`/`\citeauthor`/`\citeyear`/`\autocite`/
+  `\textcite`/`\parencite` (plus starred variants and `\bibitem` for
+  hand-rolled bibliographies) from the draft, then for each cited key
+  verifies the bib entry exists via OpenAlex → Semantic Scholar →
+  Crossref by DOI, then by fuzzy title+year match across the same
+  three sources. Emits `citation_integrity.json` with per-key status,
+  verifier source, matched DOI/title, plus a coverage report
+  (cited-but-not-bibbed, bibbed-but-not-cited).
+- **Verdict policy** (open question from the v0.9 plan, M2): default
+  is **hard-block on `missing_in_bib`** (cite key not in
+  `references.bib` — LaTeX would also fail, unambiguous bug) and
+  **warn-only on `unverifiable`** (working papers, conference posters,
+  industry whitepapers legitimately aren't in OpenAlex/S2/Crossref).
+  Flip to hard-block on unverifiable with
+  `E2ER_STRICT_CITATION_INTEGRITY=true`.
+- **Title-match heuristic, year-gate graduated by match strength:**
+  fuzzy matches (0.85 ≤ sim < 0.99) require year within ±1 to reject
+  unrelated papers from different decades; exact-title matches
+  (sim ≥ 0.99) accept any year. Live-test surfaced the failure mode
+  this fixes: OpenAlex's top hit for "Attention Is All You Need" was
+  a 2025 reprint; with a strict ±1 gate the canonical 2017 paper
+  would never verify.
+- **New `src/modules/literature/crossref.py`** — keyless Crossref
+  provider (`fetch_by_doi`, `search_papers`) mirroring the existing
+  OpenAlex / S2 modules. Joins the verifier chain for citation
+  integrity now; M3 will extend it for OA full-text resolution.
+- **Wired into the pre-review gate** in `strategist/runner.py` right
+  after `verify_numbers`: a paper with hallucinated cites (or, under
+  strict mode, unverifiable ones) is rejected before reviewer
+  specialists spend tokens — same gating pattern, same `REJECTED`
+  terminal status.
+- Tests: 29 new in `tests/test_verify_citations.py` covering parse
+  (8 cite-command variants + comments + escaped `\\%`), normalization
+  (DOI URL prefixes, accented titles, LaTeX braces), title-match
+  graduated year-gate, end-to-end happy path, missing-in-bib fail,
+  unverifiable warn-vs-strict, DOI-chain fallthrough to title search,
+  persistence to `citation_integrity.json`, and CLI registration.
+
+### M1 (v0.9 plan) — `e2er doctor` user-facing preflight
+
+- **New `e2er doctor` command.** Answers "am I ready to spend a paper run?"
+  before the user does — checks the LLM backend (CLI on PATH for `$0`
+  backends, API key set for SDK backends), bundled skill files, DB (SQLite
+  default or Postgres reachable), and probes every configured data +
+  literature provider with a one-line "what this paper would have access
+  to." Verdict: ✅ Ready / ⚠️ Partial (paper runs work, some providers
+  unavailable) / ❌ Blocked (backend, DB, or skills missing — exact fix
+  surfaced). `--json` for scripting. Closes M1 of the v0.9 plan.
+- **Fast, quiet DB probe.** The Postgres reachability check uses a direct
+  `psycopg.AsyncConnection.connect(connect_timeout=5)` instead of going
+  through the runtime connection pool — preflight now fails in ~5s instead
+  of hanging 30s with retry spam when `DATABASE_URL` points at a Postgres
+  that isn't running. Error message includes the actionable hint: unset
+  `DATABASE_URL` / `POSTGRES_URL` to fall back to the zero-config SQLite
+  default.
+- **`scripts/live_check.py` refactored to a thin shim** over the new
+  `src.doctor.run_provider_checks` engine. Dev harness and user-facing
+  command now share the same probe code (DRY); live-check stays for nightly
+  CI and for catching provider drift before users do.
+
+## v0.8.1 — 2026-05-30
 
 ## v0.8.1 — 2026-05-30
 

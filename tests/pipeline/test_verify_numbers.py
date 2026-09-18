@@ -438,3 +438,267 @@ def test_critical_mismatches_property_filters_severity():
     crits = report.critical_mismatches
     assert len(crits) == 1
     assert crits[0].severity == "critical"
+
+
+# ---------------------------------------------------------------------------
+# PR-1 tokenizer fix: structural / panel-label tokens must NOT be extracted
+# (the false-positive class that rejected correct papers — M5 re-run 92626bf8),
+# while real data-cell numbers and genuine fabrications are still handled.
+# ---------------------------------------------------------------------------
+
+
+def test_multicolumn_panel_rows_not_extracted():
+    """\\multicolumn span counts and label years inside panel-header rows
+    must not be read as data values."""
+    tex = r"""
+\begin{table}
+\caption{Main}
+\label{tab:main}
+\begin{tabular}{lccccc}
+\toprule
+ & $\hat\beta$ & HAC SE & IS $R^2$ & OOS $R^2$ & CW \\
+\midrule
+\multicolumn{6}{l}{\emph{Panel A: Full sample} ($N\le 435$)} \\
+\midrule
+Dividend-price & 0.013578 & 0.008308 & 0.0077 & 0.0063 & 1.114 \\
+\midrule
+\multicolumn{6}{l}{\emph{Panel B: Post-2008} ($N=196$)} \\
+\midrule
+Dividend-price & 0.015081 & 0.030729 & 0.0032 & 0.0005 & 0.314 \\
+\bottomrule
+\end{tabular}
+\end{table}
+"""
+    nums = {n for n, _ in _extract_table_numbers(tex)}
+    # Structural / label tokens absent:
+    assert "6" not in nums  # \multicolumn{6}
+    assert "2008" not in nums  # "Post-2008"
+    assert "435" not in nums and "196" not in nums  # panel-label N's
+    # Real data-cell values present:
+    assert "0.013578" in nums and "1.114" in nums and "0.015081" in nums
+
+
+def test_cmidrule_and_multicolumn_header_ranges_not_extracted():
+    tex = r"""
+\begin{tabular}{lcccc}
+\toprule
+ & \multicolumn{2}{c}{CT-restricted} & \multicolumn{2}{c}{Rolling 120-month} \\
+\cmidrule(lr){2-3} \cmidrule(lr){4-5}
+Predictor & 0.0074 & 1.243 & -0.0258 & 0.455 \\
+\bottomrule
+\end{tabular}
+"""
+    nums = {n for n, _ in _extract_table_numbers(tex)}
+    for tok in ("2", "3", "4", "5", "120"):  # cmidrule ranges, span counts, label "120"
+        assert tok not in nums
+    assert "0.0074" in nums and "1.243" in nums
+
+
+def test_fabricated_data_cell_still_caught(tmp_path: Path):
+    """The fix must not gut the gate: a wrong number in a plain data row is
+    still a critical mismatch."""
+    (tmp_path / "estimation_results.json").write_text(
+        json.dumps({"main": {"coefficients": {"x": {"estimate": 0.50}}}}), encoding="utf-8"
+    )
+    draft = tmp_path / "paper_draft.tex"
+    draft.write_text(
+        "\\begin{tabular}{lc}\n\\toprule\nTreatment & 0.80 \\\\\n\\bottomrule\n\\end{tabular}\n",
+        encoding="utf-8",
+    )
+    report = verify(draft, tmp_path)
+    assert report.critical_mismatches, "0.80 vs source 0.50 should be a critical mismatch"
+
+
+# ---------------------------------------------------------------------------
+# PR-2: non-gating prose check + key-resolution feedback.
+# ---------------------------------------------------------------------------
+
+
+def _ws_with_est(tmp_path: Path, est: dict, draft: str) -> Path:
+    (tmp_path / "estimation_results.json").write_text(json.dumps(est), encoding="utf-8")
+    (tmp_path / "paper_draft.tex").write_text(draft, encoding="utf-8")
+    return tmp_path
+
+
+def test_prose_number_matched(tmp_path: Path):
+    est = {"main": {"coefficients": {"x": {"estimate": -0.231}}}}
+    ws = _ws_with_est(tmp_path, est, "The treatment effect is $-0.231$ overall.\n")
+    report = verify(tmp_path / "paper_draft.tex", ws)
+    assert report.prose_total >= 1
+    assert report.prose_matched >= 1
+
+
+def test_prose_near_miss_flagged_major_never_critical(tmp_path: Path):
+    est = {"main": {"coefficients": {"x": {"estimate": 0.50}}}}
+    ws = _ws_with_est(tmp_path, est, "We estimate an effect of $0.80$ in the text.\n")
+    report = verify(tmp_path / "paper_draft.tex", ws)
+    assert report.prose_mismatched >= 1
+    assert all(m.severity == "major" for m in report.prose_mismatches)
+    # Prose never gates: not in critical_mismatches, doesn't reject.
+    assert report.critical_mismatches == []
+
+
+def test_prose_unrelated_number_ignored(tmp_path: Path):
+    """A year with no close source value must NOT be flagged."""
+    est = {"main": {"coefficients": {"x": {"estimate": 0.0136}}}}
+    ws = _ws_with_est(tmp_path, est, "Our sample runs through the year 2024 across regimes.\n")
+    report = verify(tmp_path / "paper_draft.tex", ws)
+    assert report.prose_mismatched == 0
+
+
+def test_prose_does_not_gate_the_pipeline(tmp_path: Path):
+    """Even with a prose near-miss, with no table criticals the gate passes."""
+    est = {"main": {"coefficients": {"x": {"estimate": 0.50}}}}
+    ws = _ws_with_est(tmp_path, est, "The text claims $0.80$ but there are no tables.\n")
+    report = verify(tmp_path / "paper_draft.tex", ws)
+    assert report.critical_mismatches == []  # the runner gates on this only
+
+
+def test_table_spec_feedback_surfaced(tmp_path: Path):
+    """Unresolved table_spec refs from table_render_report.json are surfaced
+    with available spec keys so the drafter can fix them."""
+    (tmp_path / "estimation_results.json").write_text(
+        json.dumps({"full_dp": {"coefficients": {}}, "_meta": {}}), encoding="utf-8"
+    )
+    (tmp_path / "table_render_report.json").write_text(
+        json.dumps({"unresolved": [{"kind": "spec_key", "ref": "weird_key"}, {"kind": "stat", "ref": "cw_stat"}]}),
+        encoding="utf-8",
+    )
+    (tmp_path / "paper_draft.tex").write_text("No tables here.\n", encoding="utf-8")
+    report = verify(tmp_path / "paper_draft.tex", tmp_path)
+    refs = {e["ref"] for e in report.table_spec_unresolved}
+    assert {"weird_key", "cw_stat"} <= refs
+    spec_entry = next(e for e in report.table_spec_unresolved if e["ref"] == "weird_key")
+    assert "full_dp" in spec_entry["available_spec_keys"]
+    assert "_meta" not in spec_entry["available_spec_keys"]  # meta excluded
+
+
+# ---------------------------------------------------------------------------
+# The prose matcher, after the 2026-08-05 validation cell.
+#
+# That run reported 284 prose "mismatches" out of 423 prose numbers. Sampling
+# all 284 found 42% years, 31% single-digit magnitudes, 6% LaTeX preamble, and
+# 119 of them resolving to a single source key — the signature of pairing every
+# number in the document against every source value and calling non-equality a
+# mismatch. Each test below pins one artifact class that produced, plus the
+# genuine discrepancy that must survive all of them.
+# ---------------------------------------------------------------------------
+
+
+def test_prose_ignores_latex_preamble(tmp_path: Path):
+    """``\\documentclass[12pt]`` is a font size, not a claim about the VIX."""
+    est = {"controls": {"vix": {"mean": 16.82}}}
+    ws = _ws_with_est(
+        tmp_path,
+        est,
+        "\\documentclass[12pt]{article}\n\\begin{document}\nThe vix mean is 16.82.\n\\end{document}\n",
+    )
+    report = verify(tmp_path / "paper_draft.tex", ws)
+    assert "12" not in [m.draft_value for m in report.prose_mismatches]
+
+
+def test_prose_ignores_a_year(tmp_path: Path):
+    """A title's "2024" is a date reference, not a sample count of 1677."""
+    est = {"bitcoin": {"high_vol_n": 1677}}
+    ws = _ws_with_est(tmp_path, est, "Our sample runs through 2024 with high vol coverage.\n")
+    report = verify(tmp_path / "paper_draft.tex", ws)
+    assert report.prose_mismatched == 0
+    assert report.prose_excluded >= 1
+
+
+def test_prose_ignores_single_significant_digit(tmp_path: Path):
+    """ "over \\$4 billion" sits within 50% of any source value in [2, 6]."""
+    est = {"by_period": {"mean_high_vol_duration": 4.2}}
+    ws = _ws_with_est(tmp_path, est, "The high vol duration is 4 in the sample.\n")
+    assert verify(tmp_path / "paper_draft.tex", ws).prose_mismatched == 0
+    # Two significant digits is checkable, and this one disagrees.
+    ws2 = _ws_with_est(tmp_path, est, "The high vol duration is 4.4 in the sample.\n")
+    assert verify(tmp_path / "paper_draft.tex", ws2).prose_mismatched == 1
+
+
+def test_prose_needs_the_source_quantity_named_nearby(tmp_path: Path):
+    """Numeric proximity alone establishes no reference."""
+    est = {"controls": {"vix": {"mean": 16.82}}}
+    ws = _ws_with_est(tmp_path, est, "The index level reached 12.4 before the announcement.\n")
+    report = verify(tmp_path / "paper_draft.tex", ws)
+    assert report.prose_mismatched == 0
+    assert report.prose_unverifiable >= 1  # untraceable, not fabricated
+
+
+def test_prose_genuine_near_miss_still_caught(tmp_path: Path):
+    """The real signal must survive all of the above: the draft names the
+    quantity and states a value the source contradicts."""
+    est = {"controls": {"vix": {"mean": 16.82}}}
+    ws = _ws_with_est(tmp_path, est, "The VIX averages 19.2 across the sample.\n")
+    report = verify(tmp_path / "paper_draft.tex", ws)
+    assert report.prose_mismatched == 1
+    assert report.prose_mismatches[0].draft_value == "19.2"
+
+
+def test_prose_percentage_is_not_a_count(tmp_path: Path):
+    """Source keys carry no units, so "59\\%" says nothing about 52 episodes."""
+    est = {"by_period": {"n_high_vol_episodes": 52}}
+    ws = _ws_with_est(tmp_path, est, "The high vol share reached 59\\% in the sample.\n")
+    assert verify(tmp_path / "paper_draft.tex", ws).prose_mismatched == 0
+    # The same number without the percent marker is checkable.
+    ws2 = _ws_with_est(tmp_path, est, "The high vol episodes reached 59 in the sample.\n")
+    assert verify(tmp_path / "paper_draft.tex", ws2).prose_mismatched == 1
+
+
+def test_prose_unit_must_match_the_key(tmp_path: Path):
+    """ "extends 2.6 years" is not a claim about a duration of 2.8 days."""
+    est = {"by_period": {"mean_high_vol_duration": 2.8}}
+    ws = _ws_with_est(tmp_path, est, "The study extends 2.6 years past approval for high vol coverage.\n")
+    assert verify(tmp_path / "paper_draft.tex", ws).prose_mismatched == 0
+
+
+def test_prose_math_symbol_needs_the_symbol_named(tmp_path: Path):
+    """A GARCH parameter's referent is its symbol, not a nearby English word."""
+    est = {"bitcoin": {"high_vol_regime": {"threshold": 0.7456}}}
+    ws = _ws_with_est(tmp_path, est, "The persistence parameter $\\beta_2 = 0.83$ in the high vol regime.\n")
+    assert verify(tmp_path / "paper_draft.tex", ws).prose_mismatched == 0
+
+
+def test_prose_skips_the_bibliography(tmp_path: Path):
+    """Reference titles are other people's claims."""
+    est = {"by_period": {"mean_high_vol_duration": 4.2}}
+    draft = (
+        "\\begin{document}\nNothing here.\n"
+        "\\begin{thebibliography}{9}\n"
+        "\\bibitem{a} A. Author. \\newblock Bitcoin high vol duration hits 4.6 in first month.\n"
+        "\\end{thebibliography}\n\\end{document}\n"
+    )
+    ws = _ws_with_est(tmp_path, est, draft)
+    assert verify(tmp_path / "paper_draft.tex", ws).prose_mismatched == 0
+
+
+# ---------------------------------------------------------------------------
+# Vacuous passes: a check that examined nothing is not a clean paper.
+# ---------------------------------------------------------------------------
+
+
+def test_coverage_over_zero_table_values_is_not_one(tmp_path: Path):
+    """Pilot run ab95fcba reported ``coverage: 1.0`` over 0 table values —
+    indistinguishable from every cell tracing to a source."""
+    est = {"controls": {"vix": {"mean": 16.82}}}
+    ws = _ws_with_est(tmp_path, est, "The VIX averages 19.2 across the sample.\n")
+    report = verify(tmp_path / "paper_draft.tex", ws)
+    assert report.total_values_in_tables == 0
+    assert report.coverage == 0.0
+
+
+def test_a_draft_with_nothing_checkable_is_not_conclusive(tmp_path: Path):
+    est = {"controls": {"vix": {"mean": 16.82}}}
+    ws = _ws_with_est(tmp_path, est, "We describe the design in words alone.\n")
+    report = verify(tmp_path / "paper_draft.tex", ws)
+    assert report.conclusive is False
+    assert report.skipped_reason  # so `e2er verify` reports SKIP, not PASS
+    assert report.to_dict()["conclusive"] is False  # property must reach the JSON
+
+
+def test_a_draft_with_checkable_numbers_is_conclusive(tmp_path: Path):
+    est = {"controls": {"vix": {"mean": 16.82}}}
+    ws = _ws_with_est(tmp_path, est, "The VIX averages 16.82 across the sample.\n")
+    report = verify(tmp_path / "paper_draft.tex", ws)
+    assert report.conclusive is True
+    assert report.skipped_reason is None

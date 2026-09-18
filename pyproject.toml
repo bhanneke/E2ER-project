@@ -1,6 +1,6 @@
 [project]
 name = "e2er"
-version = "0.8.1"
+version = "0.9.1"
 description = "End-to-End Researcher — automated research pipeline for economics, finance, and IS"
 requires-python = ">=3.11"
 readme = "README.md"
@@ -21,7 +21,11 @@ dependencies = [
     "arxiv>=2.1.0",
     "bibtexparser>=2.0.0b7",
     "pypdf>=4.0",
-    "pandas>=2.0",
+    # Cap below 3.0: pandas 3.0 removed legacy offset aliases ('M', 'Y', …).
+    # LLM-generated estimation scripts use `resample("M")` (the pre-3.0
+    # idiom), which raises on 3.x. Pin to the 2.x line the generated code
+    # targets. See docs/M4_RERUN_FINDINGS.md.
+    "pandas>=2.0,<3.0",
     "numpy>=1.26",
     "matplotlib>=3.8",
     "yfinance>=0.2.40",
@@ -43,6 +47,10 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.11",
     "respx>=0.21",
+    # Validates the published schemas in docs/schemas/ against what the code
+    # actually writes. A format offered to others as implementable is a promise,
+    # and an unchecked promise drifts.
+    "jsonschema>=4.0",
 ]
 
 [project.scripts]
@@ -115,6 +123,20 @@ strict_equality = true
 #   disallow_untyped_defs / disallow_any_generics / no_any_return /
 #   warn_return_any — these can be ratcheted on later, file-by-file, via
 #   per-module overrides if you want to tighten gradually.
+
+[[tool.mypy.overrides]]
+# Don't parse numpy's bundled stubs. Recent numpy ships PEP 695 `type`
+# statements in numpy/__init__.pyi, which mypy rejects under our 3.11 target
+# ("Type statement is only supported in Python 3.12 and greater") and aborts
+# before checking our code — a CI break driven by numpy's release cadence, not
+# our types. `follow_imports = skip` only applies to .pyi stubs when
+# `follow_imports_for_stubs = true`, and the module list must include the
+# top-level `numpy` (where __init__.pyi lives), not just `numpy.*`. We already
+# don't type-check through numpy (ignore_missing_imports), so this only drops a
+# stub we never relied on. Version-robust.
+module = ["numpy", "numpy.*"]
+follow_imports = "skip"
+follow_imports_for_stubs = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

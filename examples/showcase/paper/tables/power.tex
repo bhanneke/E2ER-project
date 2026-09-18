@@ -1,0 +1,31 @@
+\begin{table}[t]
+\centering
+\begin{threeparttable}
+\caption{Minimum detectable effects and pre-specified power bars}
+\label{tab:power}
+\begin{tabular}{lc}
+\toprule
+ & Value \\
+\midrule
+Point estimate $\hat\tau$ (Fisher-$z$) & -0.0212 \\
+MDE multiplier, $z_{0.975}+z_{0.80}$ & 2.8016 \\
+Cluster-robust SE (not valid here) & 0.0170 \\
+SD of randomization distribution & 0.0619 \\
+SD of Conley--Taber distribution & 0.0534 \\
+MDE in correlation units, cluster-robust (invalid) & 0.041 \\
+MDE in correlation units, Conley--Taber & 0.128 \\
+MDE in correlation units, randomization & 0.148 \\
+Randomization 95\% CI, lower (correlation units) & -0.122 \\
+Randomization 95\% CI, upper (correlation units) & 0.086 \\
+Conley--Taber 95\% CI, lower (correlation units) & -0.091 \\
+Conley--Taber 95\% CI, upper (correlation units) & 0.033 \\
+Pre-specified bar for licensing a null claim & 0.10 \\
+$N$ & 540 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}[flushleft]
+\footnotesize
+\item The minimum detectable effect is $(z_{0.975}+z_{0.80})\,\mathrm{se}(\hat\tau)$ at a two-sided size of 5\% and 80\% power, computed from three reference distributions and then translated into correlation units at Bitcoin's pre-period mean correlation via $\Delta\rho \approx (1-\bar\rho_{\mathrm{pre}}^2)\,\mathrm{MDE}$. The cluster-robust row is reported for comparability only; with one treated cluster that standard error is severely downward-biased, and the minimum detectable effect it implies would support a far stronger claim than the data can carry. The two valid reference distributions are the randomization placebo grid and the Conley--Taber control-group distribution, and they agree closely. Our pre-analysis committed in advance to licensing a null claim only if the minimum detectable effect in correlation units fell at or below the bar reported in the penultimate row, and to making no null claim at all if it exceeded twice that bar. The realized value falls between the two, and the text states the finding accordingly.
+\end{tablenotes}
+\end{threeparttable}
+\end{table}
