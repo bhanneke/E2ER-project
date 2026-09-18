@@ -79,6 +79,17 @@ def corpus_path(explicit: str | Path | None = None) -> Path:
 
 # ── schema ───────────────────────────────────────────────────────────────────
 
+# NOTE: no comments inside a CREATE TABLE body. SQLite stores the statement
+# verbatim and re-parses it on ALTER TABLE; on older versions a dropped column
+# leaves the surrounding comments dangling and the table becomes unopenable
+# with "incomplete input". Found when CI's SQLite rejected a migration the
+# newer local one accepted. Column notes belong here instead.
+#
+# corpus_papers.title_key is a second, weaker identity used ONLY to answer
+# "have I already done this one?" before downloading. The canonical key for a
+# DOI-less paper is the hash of its full text, which is not knowable until the
+# text has been fetched and the model has run — by which point the saving that
+# the check exists for is already gone.
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS corpus_meta (
     k TEXT PRIMARY KEY,
@@ -95,10 +106,6 @@ CREATE TABLE IF NOT EXISTS corpus_papers (
     access_license TEXT NOT NULL DEFAULT '',
     added_at      TEXT NOT NULL,
     updated_at    TEXT NOT NULL,
-    -- A second, weaker identity used only to answer "have I already done this
-    -- one?" before downloading. The canonical key for a DOI-less paper is the
-    -- hash of its full text, which is not knowable until the text has been
-    -- fetched and the model has run — by which point the saving is gone.
     title_key     TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_papers_doi  ON corpus_papers(doi);

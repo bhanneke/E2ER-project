@@ -361,18 +361,40 @@ def test_an_untitled_doi_less_paper_is_never_falsely_covered(db):
 
 
 def test_a_corpus_written_before_title_keys_existed_still_opens(tmp_path):
-    """A corpus is meant to outlive the code that wrote it."""
-    path = tmp_path / "old.db"
-    with connect(path) as conn:
-        add_review(conn, _review(doi="", title="Legacy preprint", year=2024))
-        # Simulate the older file shape (the index has to go first).
-        conn.execute("DROP INDEX IF EXISTS idx_papers_title_key")
-        conn.execute("ALTER TABLE corpus_papers DROP COLUMN title_key")
-        conn.commit()
+    """A corpus is meant to outlive the code that wrote it.
 
-    with connect(path) as conn:
-        assert stats(conn).papers == 1
-        assert is_covered(conn, doi="", title="Legacy preprint", year=2024), "the backfill must run"
+    The old shape is built directly rather than by dropping the column from the
+    current one. `ALTER TABLE ... DROP COLUMN` makes SQLite re-parse the stored
+    table definition, which older builds refuse to do — so a test written that
+    way passes on a new SQLite and fails on CI's, testing the local library
+    version rather than the migration.
+    """
+    path = tmp_path / "old.db"
+
+    conn = sqlite3.connect(str(path))
+    conn.executescript(
+        """
+        CREATE TABLE corpus_papers (
+            key           TEXT PRIMARY KEY,
+            doi           TEXT,
+            title         TEXT NOT NULL DEFAULT '',
+            authors_json  TEXT NOT NULL DEFAULT '[]',
+            year          INTEGER,
+            source        TEXT NOT NULL DEFAULT '',
+            access_license TEXT NOT NULL DEFAULT '',
+            added_at      TEXT NOT NULL,
+            updated_at    TEXT NOT NULL
+        );
+        INSERT INTO corpus_papers (key, doi, title, year, added_at, updated_at)
+        VALUES ('text:abc', '', 'Legacy preprint', 2024, '2026-01-01', '2026-01-01');
+        """
+    )
+    conn.commit()
+    conn.close()
+
+    with connect(path) as opened:
+        assert stats(opened).papers == 1, "an older file must still open"
+        assert is_covered(opened, doi="", title="Legacy preprint", year=2024), "the backfill must run"
 
 
 def test_removing_a_paper_takes_its_claims_with_it(db):
