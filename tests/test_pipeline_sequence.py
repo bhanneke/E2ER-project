@@ -120,6 +120,12 @@ def _recording_runner(monkeypatch, tmp_path: Path, *, mode: str, complete: set[s
     monkeypatch.setattr(runner, "_update_status", AsyncMock(return_value=None))
     monkeypatch.setattr(runner, "_should_pause_for_review", lambda *a, **k: False)
 
+    # Finalize is stubbed by default because it is not a no-op: the structured
+    # export writes a real directory under ~/e2er-papers. The two tests that
+    # care about finalize replace these with their own recorders.
+    for _name in FINALIZE_METHODS | {"_export_audit_log_only"}:
+        monkeypatch.setattr(runner, _name, AsyncMock(return_value=None))
+
     from src.core.strategist.state import PaperStatus
 
     for method, _stage in PHASE_METHODS.items():

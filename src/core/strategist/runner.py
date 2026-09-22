@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +12,7 @@ from ...logging_config import get_logger
 from ...modules.llm.base import LLMBackend, ToolHandler
 from ..governance import DEFAULT_REGIME, KIND_RELIABILITY
 from ..governance import enforces as governance_enforces
+from ..pipeline.spec import find_spec
 from ..specialists.contracts import Contribution, WorkOrder
 from ..specialists.dispatcher import (
     MAX_SPECIALIST_ATTEMPTS,
@@ -89,6 +91,35 @@ _MAX_DEEP_REVISIONS = 1
 _MAX_TABLE_SPEC_REPAIRS = 3
 
 
+@dataclass(frozen=True)
+class _StepEffects:
+    """What a phase persists, beyond running.
+
+    Implementation detail of each phase, deliberately not in the pipeline file:
+    a researcher writing a process should not have to know that the iterative
+    phase is the one that owns the pivot counter.
+    """
+
+    handler: str = ""
+    captures_status: bool = False
+    updates_contributions: bool = False
+    updates_iteration: bool = False
+    forces_in_progress: bool = False
+
+
+_STEP_EFFECTS: dict[str, _StepEffects] = {
+    # status becomes IN_PROGRESS after initial whether or not it ran, which is
+    # why this is a flag rather than a line after the loop.
+    "initial": _StepEffects(updates_contributions=True, forces_in_progress=True),
+    "iterative": _StepEffects(captures_status=True, updates_contributions=True, updates_iteration=True),
+    "estimation_gate": _StepEffects(handler="_enforce_estimation_gate"),
+    "self_attack": _StepEffects(captures_status=True),
+    "polish": _StepEffects(captures_status=True),
+    "review": _StepEffects(captures_status=True),
+    "replication": _StepEffects(updates_contributions=True),
+}
+
+
 class PipelineRunner:
     """Top-level orchestrator for a single paper."""
 
@@ -106,12 +137,16 @@ class PipelineRunner:
         methodology: str = "empirical",
         governance: str = DEFAULT_REGIME,
         review_stages: list[str] | None = None,
+        pipeline: str = "empirical",
     ) -> None:
         self._paper_id = paper_id
         self._workspace = workspace
         self._backend = backend
         self._model = model
         self._mode = mode
+        # The process this run follows. Resolved at construction so a bad
+        # pipeline name fails before any model is called, not forty minutes in.
+        self._spec = find_spec(pipeline)
         # Governance regime (experiment treatment): off | contracts | full.
         # Selects which gates BLOCK; non-blocking gates still compute + log.
         self._governance = governance
@@ -166,6 +201,62 @@ class PipelineRunner:
         strat_cost = float(compute_cost(self._model, self._strategist.total_usage, backend=self._backend_name))
         return spec_cost + strat_cost
 
+    async def _run_spec_step(
+        self,
+        step: Any,
+        _phase: Any,
+        state: Any,
+        prior_contributions: int,
+        status: PaperStatus,
+    ) -> PaperStatus:
+        """Execute one step of the spec, with the bookkeeping that phase needs.
+
+        The sequence is data; this is not. Each phase persists different things
+        — iteration counts, contribution counts, a completion marker — and
+        revision needs the running status passed in and logs its own events
+        because it cannot go through `_phase`. Flattening that into the spec
+        would put implementation detail in a file researchers are meant to
+        write, so it stays here, keyed by step name.
+        """
+        name = step.name
+        effects = _STEP_EFFECTS.get(name, _StepEffects())
+
+        if name == "revision":
+            # Bypasses _phase: it takes the current status as an argument.
+            from ...db.events import log_event
+            from ...modules.tracking.usage import check_budget
+
+            await check_budget(self._paper_id, self._max_cost_usd, self._in_memory_spent())
+            await log_event(self._paper_id, "phase_start", stage="revision")
+            status = await self._run_revision_phase(status)
+            await log_event(self._paper_id, "phase_end", stage="revision")
+            state.last_status = status.value
+            state.contributions_count = prior_contributions + len(self._contributions)
+            state.mark_complete("revision")
+            state.save(self._workspace)
+            if self._should_pause_for_review("revision", state):
+                state.pending_review_stage = "revision"
+                state.save(self._workspace)
+                raise HumanReviewRequestedError("revision")
+            return status
+
+        handler = getattr(self, effects.handler or f"_run_{name}_phase")
+        result = await _phase(name, handler)
+
+        if effects.captures_status and isinstance(result, PaperStatus):
+            status = result
+        if effects.updates_iteration:
+            state.iteration = self._iteration
+            state.pivot_count = self._pivot_count
+        if effects.updates_contributions:
+            state.contributions_count = prior_contributions + len(self._contributions)
+        if step.resumable:
+            state.mark_complete(name)
+            state.save(self._workspace)
+        if effects.forces_in_progress:
+            status = PaperStatus.IN_PROGRESS
+        return status
+
     async def run(self) -> dict[str, Any]:
         """Run the full pipeline from idea to completion, with checkpoint/resume support."""
         from ...db.events import log_event
@@ -216,71 +307,23 @@ class PipelineRunner:
             return result
 
         try:
-            if not state.is_complete("initial"):
-                await _phase("initial", self._run_initial_phase)
-                state.contributions_count = prior_contributions + len(self._contributions)
-                state.mark_complete("initial")
-                state.save(self._workspace)
-            status = PaperStatus.IN_PROGRESS
-
-            if self._mode == "iterative" and not state.is_complete("iterative"):
-                status = await _phase("iterative", self._run_iterative_phase)
-                state.iteration = self._iteration
-                state.pivot_count = self._pivot_count
-                state.contributions_count = prior_contributions + len(self._contributions)
-                state.mark_complete("iterative")
-                state.save(self._workspace)
-
-            # Deterministic estimation gate — NOT re-skipped on resume (no
-            # mark_complete): an empirical paper with a populated data
-            # warehouse must have a contract-clean estimation before ANY
-            # drafting-dependent phase runs. Run D (2026-07-07) showed the
-            # specialist-level contract alone is not enough: econometrics
-            # failed its contract once and the strategist simply moved on,
-            # so the pipeline spent self-attack/polish/review tokens on a
-            # paper drafted around `{}` — the M4 failure shape one level up.
-            await _phase("estimation_gate", self._enforce_estimation_gate)
-
-            if self._mode == "iterative" and not state.is_complete("self_attack"):
-                status = await _phase("self_attack", self._run_self_attack_phase)
-                state.mark_complete("self_attack")
-                state.save(self._workspace)
-
-            if self._mode == "iterative" and not state.is_complete("polish"):
-                status = await _phase("polish", self._run_polish_phase)
-                state.mark_complete("polish")
-                state.save(self._workspace)
-
-            if not state.is_complete("review"):
-                status = await _phase("review", self._run_review_phase)
-                state.mark_complete("review")
-                state.save(self._workspace)
-
-            if not state.is_complete("revision"):
-                # _run_revision_phase needs the current status as an argument
-                await check_budget(self._paper_id, self._max_cost_usd, self._in_memory_spent())
-                await log_event(self._paper_id, "phase_start", stage="revision")
-                status = await self._run_revision_phase(status)
-                await log_event(self._paper_id, "phase_end", stage="revision")
-                state.last_status = status.value
-                state.contributions_count = prior_contributions + len(self._contributions)
-                state.mark_complete("revision")
-                state.save(self._workspace)
-                # Revision bypasses _phase (it needs the status arg), so honor a
-                # checkpoint here explicitly.
-                if self._should_pause_for_review("revision", state):
-                    state.pending_review_stage = "revision"
-                    state.save(self._workspace)
-                    raise HumanReviewRequestedError("revision")
-            else:
-                # Resuming past revision — restore saved verdict
-                status = _coerce_paper_status(state.last_status, status)
-
-            if not state.is_complete("replication"):
-                await _phase("replication", self._run_replication_phase)
-                state.contributions_count = prior_contributions + len(self._contributions)
-                state.mark_complete("replication")
-                state.save(self._workspace)
+            # The sequence, the mode conditions and the resume rules come from
+            # the pipeline spec (pipelines/empirical.toml by default). The phase
+            # bodies do not: each still has its own bookkeeping, described in
+            # _STEP_EFFECTS. Sequence as data, work as code.
+            #
+            # tests/test_pipeline_sequence.py pins what this must produce, and
+            # tests/test_pipeline_spec.py pins that the spec predicts the same
+            # thing. If either goes red, this changed behaviour rather than
+            # relocating it.
+            for step in self._spec.steps:
+                if not step.applies_to(self._mode):
+                    continue
+                # resumable=false is how the estimation gate stays unskippable:
+                # it runs even when something claims the stage is done.
+                if step.resumable and state.is_complete(step.name):
+                    continue
+                status = await self._run_spec_step(step, _phase, state, prior_contributions, status)
 
             # Closes #6: when run() is called on a paper whose state.json
             # already has every stage marked complete (a resume on an
