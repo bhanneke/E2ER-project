@@ -15,6 +15,11 @@ def main() -> None:
 
         sys.exit(_corpus(sys.argv[2:]))
 
+    if len(sys.argv) > 1 and sys.argv[1] == "skills":
+        from .cli_skills import main as _skills
+
+        sys.exit(_skills(sys.argv[2:]))
+
     parser = argparse.ArgumentParser(
         prog="e2er",
         description="E2ER v3 — End-to-End Researcher pipeline",
@@ -318,6 +323,11 @@ def main() -> None:
     # a subcommand tree of its own and is intercepted before parse_args below —
     # nargs=REMAINDER cannot hold a leading `--help` or `--limit`, which argparse
     # claims for the top-level parser first.
+    subparsers.add_parser(
+        "skills",
+        help="Install skill packs from the RISE catalogue (`e2er skills --help`)",
+        add_help=False,
+    )
     subparsers.add_parser(
         "corpus",
         help="A local library of paper claims, each checked against its source (`e2er corpus --help`)",

@@ -33,6 +33,10 @@ dependencies = [
     "python-dotenv>=1.0",
     "python-multipart>=0.0.12",
     "jinja2>=3.1.0",
+    # Reads the RISE catalogue's pack manifests (`e2er skills`). Present
+    # transitively in most environments, which is exactly why it has to be
+    # declared: a fresh `pip install e2er` would otherwise crash on first use.
+    "PyYAML>=6.0",
 ]
 
 [project.optional-dependencies]
