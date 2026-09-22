@@ -1,4 +1,4 @@
-# E2ER — scaffolding for research processes
+# E2ER — reusable research infrastructure
 
 [![Status](https://img.shields.io/badge/status-active%20development-blue)]()
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
@@ -7,8 +7,9 @@
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20187238.svg)](https://doi.org/10.5281/zenodo.20187238)
 [![PyPI](https://img.shields.io/pypi/v/e2er.svg)](https://pypi.org/project/e2er/)
 
-E2ER organises **skills** and **specialists** into **pipelines** that produce
-research outputs. Four layers, each one composable:
+A workbench for building research processes: E2ER organises **skills** and
+**specialists** into **pipelines** that produce research outputs. Four layers,
+each one composable:
 
 ```
 skills        markdown — what a discipline knows       (58 files)
