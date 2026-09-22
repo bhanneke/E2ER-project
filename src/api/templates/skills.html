@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Skills — E2ER{% endblock %}
+
+{% block content %}
+<h1>Skills</h1>
+<p class="sub">
+  Skill packs published by other research projects, indexed by
+  <a href="https://github.com/bhanneke/RISE">RISE</a>. E2ER installs them from
+  their own repositories rather than shipping copies — most of this catalogue is
+  not E2ER's to redistribute, and the authors keep their attribution.
+</p>
+
+{% if message %}
+  <section class="warn-box"><strong>{{ message }}</strong></section>
+{% endif %}
+
+{% if error %}
+  <section class="empty">
+    <h2>No catalogue found</h2>
+    <p class="muted">{{ error }}</p>
+    <pre><code>git clone https://github.com/bhanneke/RISE
+export RISE_PATH=/path/to/RISE</code></pre>
+  </section>
+
+{% else %}
+
+  <section class="wf-summary">
+    <div class="wf-stat"><span class="n">{{ totals.packs }}</span><span class="l">packs</span></div>
+    <div class="wf-stat"><span class="n">{{ totals.skills }}</span><span class="l">skills available</span></div>
+    <div class="wf-stat"><span class="n">{{ installed | length }}</span><span class="l">installed here</span></div>
+  </section>
+
+  <table class="wf-table">
+    <thead>
+      <tr><th>Pack</th><th>Skills</th><th>Licence</th><th>Bundleable</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for p in packs %}
+        <tr>
+          <td>
+            <strong>{{ p.name }}</strong><br>
+            <span class="muted">{{ p.maintainers | join(', ') }}</span>
+            {% if p.notes %}<br><span class="muted">{{ p.notes[:160] }}</span>{% endif %}
+          </td>
+          <td class="num">{{ p.count }}</td>
+          <td>{{ p.license or '—' }}</td>
+          <td>
+            {# The question that made this an installer rather than a copy. It
+               never blocks installing: fetching a public file onto your own
+               machine is not redistribution. #}
+            {% if p.redistributable %}yes{% else %}<span class="muted">no</span>{% endif %}
+          </td>
+          <td>
+            {% if p.slug in installed %}
+              <span class="muted">{{ installed[p.slug].files }} files installed</span>
+            {% else %}
+              <form method="post" action="/skills/install" class="inline">
+                <input type="hidden" name="pack" value="{{ p.slug }}">
+                <button type="submit">Install</button>
+              </form>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <p class="muted">
+    Installed packs live in <code>{{ install_root }}</code> and are searched
+    after E2ER's own skills, so an installed pack extends the library rather
+    than replacing part of it. Each carries a <code>pack.json</code> recording
+    its source, licence and maintainers.
+  </p>
+  <p class="muted">
+    Catalogue read from <code>{{ catalogue_path }}</code>. Equivalent on the
+    command line: <code>e2er skills list</code>.
+  </p>
+{% endif %}
+{% endblock %}

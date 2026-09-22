@@ -10,6 +10,7 @@ import tarfile
 from datetime import UTC
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote_plus
 
 from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -1370,6 +1371,76 @@ def _library_view(query: str = "", limit: int = 25) -> dict[str, Any]:
 async def dashboard_library(request: Request, q: str = "") -> Any:
     """Search what the papers you have read actually claim."""
     return templates.TemplateResponse(request, "library.html", _library_view(q))
+
+
+def _skills_view(message: str = "") -> dict[str, Any]:
+    """The RISE catalogue, and what is installed from it.
+
+    358 skills published by a dozen research projects, previously reachable only
+    by knowing that `e2er skills` exists. A catalogue nobody can browse is a
+    catalogue nobody uses.
+    """
+    from ..modules import skills_catalogue as sc
+
+    view: dict[str, Any] = {
+        "packs": [],
+        "installed": {p["slug"]: p for p in sc.installed_packs()},
+        "catalogue_path": str(sc.catalogue_path()),
+        "install_root": str(sc.install_root()),
+        "error": "",
+        "message": message,
+        "totals": {"packs": 0, "skills": 0},
+    }
+    try:
+        packs = sc.read_catalogue()
+    except sc.CatalogueError as e:
+        view["error"] = str(e)
+        return view
+
+    view["packs"] = [
+        {
+            "slug": p.slug,
+            "name": p.name,
+            "license": p.license,
+            "source_url": p.source_url,
+            "maintainers": list(p.maintainers),
+            "notes": p.notes,
+            "count": len(p.skills),
+            "redistributable": p.redistributable,
+        }
+        for p in packs
+    ]
+    view["totals"] = {"packs": len(packs), "skills": sum(len(p.skills) for p in packs)}
+    return view
+
+
+@app.get("/skills", response_class=HTMLResponse)
+async def dashboard_skills(request: Request, message: str = "") -> Any:
+    """Browse the RISE catalogue and install a pack."""
+    return templates.TemplateResponse(request, "skills.html", _skills_view(message))
+
+
+@app.post("/skills/install")
+async def install_skill_pack(pack: str = Form(...)) -> Any:
+    """Fetch one pack from its own source.
+
+    A POST that redirects, rather than an API the page polls: installing is a
+    handful of small file fetches, and a spinner would be more machinery than
+    the operation deserves.
+    """
+    from ..modules import skills_catalogue as sc
+
+    try:
+        found = sc.find_pack(pack)
+        report = await sc.install_pack(found)
+        note = f"{found.name}: {report['installed']} installed, {report['failed']} failed."
+    except sc.CatalogueError as e:
+        note = f"Could not install {pack}: {e}"
+    except Exception as e:  # noqa: BLE001 — a bad pack must not 500 the dashboard
+        logger.warning("skill pack install failed for %s: %s", pack, e)
+        note = f"Could not install {pack}: {e}"
+
+    return RedirectResponse(url=f"/skills?message={quote_plus(note)}", status_code=303)
 
 
 @app.get("/papers/new", response_class=HTMLResponse)
