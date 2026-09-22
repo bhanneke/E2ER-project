@@ -1,10 +1,11 @@
 # The pipeline E2ER has always run, written down.
 #
-# This file is not yet what drives the runner — PipelineRunner.run() still
-# sequences these phases in Python. It exists so the sequence is legible and
-# testable as data before the runner is changed to read it, and
-# tests/test_pipeline_spec.py asserts that this file predicts exactly what the
-# runner does today.
+# This file drives the runner: PipelineRunner.run() loops over these steps
+# rather than sequencing phases in Python. Copy it, change the steps, and pass
+# the new name — that is the supported way to run a different process.
+#
+# tests/test_pipeline_sequence.py holds the two derivations together: what this
+# file says will run, and what the runner actually runs, must agree.
 #
 # Step kinds:
 #   strategist  hand control to the strategist engine for this phase

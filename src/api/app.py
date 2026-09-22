@@ -420,6 +420,11 @@ class CreatePaperRequest(BaseModel):
     # and the first-run log line reported `mode=iterative`.
     mode: str = Field(default="iterative", validation_alias=AliasChoices("mode", "pipeline_mode"))
     methodology: str = "empirical"  # empirical | theoretical | mixed
+    # Which pipeline file to run: a name resolved against ./pipelines,
+    # ~/.e2er/pipelines, then the builtins. Not an enum, because pipelines are
+    # files users add — the set of legal values is whatever is on disk, and it
+    # is validated against that rather than against a list in the code.
+    pipeline: str = "empirical"
     bibtex_path: str | None = None
     # Per-paper LLM backend + model override. Both default to None → the
     # process-global settings.llm_backend / settings.default_model. Set them
@@ -538,6 +543,23 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
             detail=f"review_stages must be from {'|'.join(PIPELINE_STAGES)}; unknown: {', '.join(bad_stages)}",
         )
 
+    # The pipeline must resolve to a real file NOW, not when the background task
+    # gets there. find_spec raises inside the runner, and a task that dies on its
+    # first line leaves a paper row sitting at 'idea' with nothing to explain it.
+    # Validated against the files on disk rather than a list in the code, because
+    # users add pipelines.
+    from ..core.pipeline.spec import PipelineError, find_spec
+
+    try:
+        find_spec(req.pipeline)
+    except PipelineError as e:
+        from ..core.pipeline.spec import available
+
+        raise HTTPException(
+            status_code=422,
+            detail=f"unknown pipeline {req.pipeline!r}. Available: {', '.join(sorted(available())) or 'none'}",
+        ) from e
+
     # First-run guardrail. Inspect the (model, methodology, mode) tuple. If
     # nothing has completed at this combination, force the cap to $1 unless
     # the requester explicitly acknowledges. This is the proactive defense
@@ -610,10 +632,10 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
             """
             INSERT INTO papers (id, title, research_question, status, workspace,
                                 mode, methodology, model, backend, governance,
-                                review_stages, max_cost_usd)
+                                review_stages, max_cost_usd, pipeline)
             VALUES (%(id)s, %(title)s, %(rq)s, 'idea', %(ws)s,
                     %(mode)s, %(methodology)s, %(model)s, %(backend)s, %(governance)s,
-                    %(review_stages)s, %(cap)s)
+                    %(review_stages)s, %(cap)s, %(pipeline)s)
             """,
             {
                 "id": paper_id,
@@ -627,6 +649,7 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
                 "governance": effective_governance,
                 "review_stages": json.dumps(req.review_stages),
                 "cap": cap,
+                "pipeline": req.pipeline,
             },
         )
     except Exception as e:
@@ -652,6 +675,7 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
             req.review_stages,
             req.research_question,
             req.title,
+            pipeline=req.pipeline,
         )
     )
     _RUNNING[paper_id] = task
@@ -791,6 +815,10 @@ async def resume_paper(paper_id: str, req: ResumeRequest | None = None) -> dict[
     mode = row.get("mode") or "single_pass"
     cap = float(row.get("max_cost_usd") or 25.0)
     methodology = row.get("methodology") or "empirical"
+    # Read from the row, never re-chosen: half a run's state on disk was
+    # produced by one DAG, and resuming under a different one would skip or
+    # repeat stages depending on which steps the two pipelines happen to share.
+    pipeline = row.get("pipeline") or "empirical"
     backend_name = row.get("backend")  # None → server default at run time
     model = row.get("model")
     governance = row.get("governance")  # None → server default at run time
@@ -838,7 +866,18 @@ async def resume_paper(paper_id: str, req: ResumeRequest | None = None) -> dict[
         logger.warning("Could not update status on resume %s: %s", paper_id, e)
 
     task = asyncio.create_task(
-        _run_pipeline(paper_id, workspace, mode, cap, methodology, backend_name, model, governance, review_stages)
+        _run_pipeline(
+            paper_id,
+            workspace,
+            mode,
+            cap,
+            methodology,
+            backend_name,
+            model,
+            governance,
+            review_stages,
+            pipeline=pipeline,
+        )
     )
     _RUNNING[paper_id] = task
     task.add_done_callback(lambda _t: _RUNNING.pop(paper_id, None))
@@ -1448,8 +1487,32 @@ async def new_paper_form(request: Request) -> Any:
     return templates.TemplateResponse(
         request,
         "new.html",
-        {"default_cap": get_settings().default_max_cost_usd},
+        {"default_cap": get_settings().default_max_cost_usd, "pipelines": _pipeline_choices()},
     )
+
+
+def _pipeline_choices() -> list[dict[str, str]]:
+    """Every pipeline the runner could resolve, with its own description.
+
+    The names come from the files on disk, so a pipeline someone drops into
+    ./pipelines or ~/.e2er/pipelines appears in the form without E2ER being
+    changed — which is the whole reason pipelines are files.
+
+    A spec that will not parse is listed by name rather than dropped. Hiding it
+    would mean a typo in a TOML file presents as "my pipeline vanished", with
+    nowhere to look; listing it means the error surfaces at submit time, where
+    it names the file and the problem.
+    """
+    from ..core.pipeline.spec import PipelineError, available, load_spec
+
+    out: list[dict[str, str]] = []
+    for name, path in sorted(available().items()):
+        try:
+            out.append({"name": name, "description": load_spec(path).description})
+        except (PipelineError, OSError) as e:
+            logger.warning("pipeline %s at %s did not parse: %s", name, path, e)
+            out.append({"name": name, "description": "(this file did not parse)"})
+    return out
 
 
 @app.post("/papers")
@@ -1458,6 +1521,7 @@ async def submit_new_paper(
     research_question: str = Form(...),
     mode: str = Form("iterative"),
     methodology: str = Form("empirical"),
+    pipeline: str = Form("empirical"),
     max_cost_usd: float = Form(None),
 ) -> RedirectResponse:
     """Form-encoded handler that mirrors POST /api/papers. Redirects to detail page.
@@ -1473,6 +1537,7 @@ async def submit_new_paper(
         research_question=research_question,
         mode=mode,
         methodology=methodology,
+        pipeline=pipeline,
         max_cost_usd=max_cost_usd,
     )
     bg = BackgroundTasks()
@@ -2093,6 +2158,7 @@ async def _prepare_and_run(
     review_stages: list[str] | None = None,
     research_question: str = "",
     title: str = "",
+    pipeline: str = "empirical",
 ) -> None:
     """Background entry: do the heavy BYOD prep (data.db import + literature
     ingest + literature acquisition) off the request path, THEN run the pipeline.
@@ -2122,7 +2188,16 @@ async def _prepare_and_run(
     except Exception as e:  # noqa: BLE001
         logger.warning("literature acquisition failed for %s: %s (pipeline continues)", paper_id, e)
     await _run_pipeline(
-        paper_id, workspace, mode, max_cost_usd, methodology, backend_name, model, governance, review_stages
+        paper_id,
+        workspace,
+        mode,
+        max_cost_usd,
+        methodology,
+        backend_name,
+        model,
+        governance,
+        review_stages,
+        pipeline=pipeline,
     )
 
 
@@ -2136,6 +2211,7 @@ async def _run_pipeline(
     model: str | None = None,
     governance: str | None = None,
     review_stages: list[str] | None = None,
+    pipeline: str = "empirical",
 ) -> None:
     from ..config import get_settings
     from ..core.strategist.runner import PipelineRunner
@@ -2194,6 +2270,7 @@ async def _run_pipeline(
         methodology=methodology,
         governance=effective_governance,
         review_stages=review_stages,
+        pipeline=pipeline,
     )
     await runner.run()
 

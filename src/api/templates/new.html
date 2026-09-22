@@ -31,6 +31,23 @@
     </label>
 
     <label>
+      <span>Pipeline</span>
+      {# Read off the files on disk, not a list in the code: a pipeline dropped
+         into ./pipelines or ~/.e2er/pipelines shows up here by itself. #}
+      <select name="pipeline">
+        {% for p in pipelines %}
+          <option value="{{ p.name }}" {% if p.name == 'empirical' %}selected{% endif %}>
+            {{ p.name }}{% if p.description %} — {{ p.description }}{% endif %}
+          </option>
+        {% endfor %}
+      </select>
+      <small class="muted">
+        The sequence of specialists, gates and reviews this paper runs through.
+        Each is a file you can copy and change — see <code>pipelines/</code>.
+      </small>
+    </label>
+
+    <label>
       <span>Methodology</span>
       <select name="methodology">
         <option value="empirical" selected>empirical — data-driven, identification + econometrics</option>
