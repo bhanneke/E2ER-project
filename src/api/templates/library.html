@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}Library — E2ER{% endblock %}
+
+{% block content %}
+<h1>Library</h1>
+<p class="sub">
+  What the papers you have read actually claim. Every entry is a statement plus
+  the verbatim sentence it came from, checked against the paper — a claim whose
+  quote could not be found was discarded rather than stored.
+</p>
+
+{% if not exists %}
+  <section class="empty">
+    <h2>No library yet</h2>
+    <p>
+      Point E2ER at a folder of PDFs and it will read them into a library you can
+      search by claim. Your own papers work best: they are always readable,
+      whereas roughly two in five papers found on the web are behind a paywall.
+    </p>
+    <pre><code>e2er corpus add ~/path/to/your/papers/</code></pre>
+    <p class="muted">
+      It will live at <code>{{ path }}</code> and accumulate across every project.
+      A paper run reads it automatically.
+    </p>
+  </section>
+
+{% else %}
+
+  {% if error %}
+    <section class="warn-box">
+      <strong>The library could not be read.</strong>
+      <p class="muted">{{ error }}</p>
+    </section>
+  {% endif %}
+
+  {% if stats %}
+  <section class="wf-summary">
+    <div class="wf-stat"><span class="n">{{ stats.papers }}</span><span class="l">papers</span></div>
+    <div class="wf-stat"><span class="n">{{ stats.claims }}</span><span class="l">checked claims</span></div>
+    <div class="wf-stat"><span class="n">{{ stats.topics }}</span><span class="l">standing topics</span></div>
+    {% if stats.first_pass_rejection_rate is not none %}
+      <div class="wf-stat">
+        <span class="n">{{ '%.1f' | format(stats.first_pass_rejection_rate * 100) }}%</span>
+        <span class="l">quotes not found in the paper</span>
+      </div>
+    {% endif %}
+  </section>
+  {% endif %}
+
+  <form method="get" action="/library" class="lib-search">
+    <input type="search" name="q" value="{{ query }}" placeholder="who found null effects for …" autofocus>
+    <button type="submit" class="btn-primary">Search claims</button>
+  </form>
+
+  {% if query %}
+    {% if hits %}
+      <p class="sub">{{ hits | length }} claim(s) matching “{{ query }}”.</p>
+      {% for h in hits %}
+        <article class="claim">
+          <div class="claim-head">
+            <strong>{{ h.title or h.key }}</strong>
+            {% if h.year %}<span class="muted">({{ h.year }})</span>{% endif %}
+            <span class="field-tag">{{ h.field }}</span>
+          </div>
+          <p class="claim-text">{{ h.text }}</p>
+          <blockquote>“{{ h.quote }}”{% if h.locator %} <span class="muted">— {{ h.locator }}</span>{% endif %}</blockquote>
+          {% if h.doi %}<p class="muted mono">{{ h.doi }}</p>{% endif %}
+        </article>
+      {% endfor %}
+    {% else %}
+      <section class="empty">
+        <h2>Nothing matches “{{ query }}”</h2>
+        <p class="muted">
+          The library holds {{ stats.claims if stats else 0 }} claims from
+          {{ stats.papers if stats else 0 }} papers. Searching matches the claim
+          text and the quoted sentence, not the title — so try wording that
+          might appear <em>inside</em> a paper.
+        </p>
+      </section>
+    {% endif %}
+
+  {% else %}
+    <h2>Papers</h2>
+    <table class="wf-table">
+      <thead><tr><th>Claims</th><th>Year</th><th>Title</th><th>DOI</th></tr></thead>
+      <tbody>
+        {% for p in papers %}
+          <tr>
+            <td class="num">{{ p.n_claims }}</td>
+            <td class="num">{{ p.year or '—' }}</td>
+            <td>{{ p.title }}</td>
+            <td class="mono muted">{{ p.doi or '' }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% if stats and stats.papers > papers | length %}
+      <p class="muted">Showing {{ papers | length }} of {{ stats.papers }}.</p>
+    {% endif %}
+  {% endif %}
+
+  <p class="muted">
+    Add more with <code>e2er corpus add &lt;folder|DOI|file.pdf&gt;</code>.
+    A paper run also reads its own <code>literature/</code> folder automatically.
+  </p>
+{% endif %}
+{% endblock %}

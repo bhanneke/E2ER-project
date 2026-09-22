@@ -1327,6 +1327,51 @@ async def dashboard_workflow(request: Request) -> Any:
     return templates.TemplateResponse(request, "workflow.html", _workflow_inventory())
 
 
+def _library_view(query: str = "", limit: int = 25) -> dict[str, Any]:
+    """The corpus, for the browser.
+
+    Everything the corpus does was terminal-only, which meant that for anyone
+    who reaches E2ER by typing `e2er` and getting a dashboard — the normal
+    case — it did not exist. Searching your own library by claim is the thing
+    E2ER does that nothing else does, and it was invisible.
+
+    Degrades to an empty page rather than an error when no corpus has been
+    built: that is a first-run state, not a fault.
+    """
+    from ..modules.literature import corpus as corpus_mod
+
+    view: dict[str, Any] = {
+        "query": query,
+        "hits": [],
+        "papers": [],
+        "stats": None,
+        "path": str(corpus_mod.corpus_path()),
+        "exists": corpus_mod.corpus_path().is_file(),
+        "error": "",
+    }
+    if not view["exists"]:
+        return view
+
+    try:
+        with corpus_mod.connect() as conn:
+            stats = corpus_mod.stats(conn)
+            view["stats"] = stats.to_dict()
+            if query.strip():
+                view["hits"] = [h.to_dict() for h in corpus_mod.search_claims(conn, query, limit=limit)]
+            else:
+                view["papers"] = [p.to_dict() for p in corpus_mod.list_papers(conn, limit=limit)]
+    except Exception as e:  # noqa: BLE001 — a broken corpus must not break the dashboard
+        logger.warning("library page: corpus unreadable: %s", e)
+        view["error"] = str(e)[:300]
+    return view
+
+
+@app.get("/library", response_class=HTMLResponse)
+async def dashboard_library(request: Request, q: str = "") -> Any:
+    """Search what the papers you have read actually claim."""
+    return templates.TemplateResponse(request, "library.html", _library_view(q))
+
+
 @app.get("/papers/new", response_class=HTMLResponse)
 async def new_paper_form(request: Request) -> Any:
     return templates.TemplateResponse(
