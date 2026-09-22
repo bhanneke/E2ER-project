@@ -10,10 +10,13 @@ def main() -> None:
     # `e2er corpus …` delegates wholesale to its own parser. Done before the
     # main parser sees anything, so `corpus search --limit 5` and
     # `corpus --help` reach cli_corpus intact instead of being claimed here.
-    if len(sys.argv) > 1 and sys.argv[1] == "corpus":
+    # `library` is the name used everywhere a person sees it — the dashboard
+    # page, the nav, the docs. `corpus` is what it was called first and what
+    # existing scripts type, so both work and neither is going away.
+    if len(sys.argv) > 1 and sys.argv[1] in ("library", "corpus"):
         from .cli_corpus import main as _corpus
 
-        sys.exit(_corpus(sys.argv[2:]))
+        sys.exit(_corpus(sys.argv[2:], prog=f"e2er {sys.argv[1]}"))
 
     if len(sys.argv) > 1 and sys.argv[1] == "skills":
         from .cli_skills import main as _skills
@@ -217,9 +220,17 @@ def main() -> None:
         help="With --tail, max time to poll before detaching. Default 30 min.",
     )
 
+    # Superseded by `e2er skills sync`. Kept working because it is in the
+    # README, in shell history, and in whatever people have scripted — renaming
+    # a command is not a reason to break it.
     install_skills = subparsers.add_parser(
         "install-skills",
-        help="Copy bundled skill files to ~/.{backend}/skills/ for headless CLI backends.",
+        help="Deprecated alias for `e2er skills sync`.",
+        # In the description too, not only in the runtime note: `--help` exits
+        # during parsing, so anyone reading the help would never see the note.
+        description="Deprecated: this is now `e2er skills sync`. The old name still works. "
+        "Copies E2ER's own skill files to ~/.{backend}/skills/ so a headless "
+        "claude/codex/gemini process can see them.",
     )
     install_skills.add_argument(
         "--backend",
@@ -281,8 +292,10 @@ def main() -> None:
         help="Emit a machine-readable JSON report instead of the human-readable summary.",
     )
 
+    # `question` says what it does; `rq` is the abbreviation researchers type.
     rq_p = subparsers.add_parser(
-        "rq",
+        "question",
+        aliases=["rq"],
         help="Sharpen a draft research question against your data + literature (advisory; never starts a run).",
     )
     rq_p.add_argument("--draft", required=True, help="Your draft research question, in quotes.")
@@ -325,12 +338,13 @@ def main() -> None:
     # claims for the top-level parser first.
     subparsers.add_parser(
         "skills",
-        help="Install skill packs from the RISE catalogue (`e2er skills --help`)",
+        help="Install skill packs, or sync E2ER's own out to a CLI backend (`e2er skills --help`)",
         add_help=False,
     )
     subparsers.add_parser(
-        "corpus",
-        help="A local library of paper claims, each checked against its source (`e2er corpus --help`)",
+        "library",
+        aliases=["corpus"],
+        help="A local library of paper claims, each checked against its source (`e2er library --help`)",
         add_help=False,
     )
 
@@ -351,7 +365,7 @@ def main() -> None:
 
         sys.exit(_compare(paths=args.paths, out=args.out, json_output=args.json))
 
-    if args.command == "rq":
+    if args.command in ("question", "rq"):
         from .cli_rq import rq as _rq
 
         sys.exit(
@@ -410,6 +424,11 @@ def main() -> None:
     if args.command == "install-skills":
         from .cli_install_skills import install_skills as _install
 
+        print(
+            "note: `e2er install-skills` is now `e2er skills sync`. "
+            "The old name still works.",
+            file=sys.stderr,
+        )
         sys.exit(_install(backend=args.backend, force=args.force))
     elif args.command == "run":
         from .cli_run import RQInputError, resolve_rq_input

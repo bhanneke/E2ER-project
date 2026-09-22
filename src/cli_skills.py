@@ -112,11 +112,24 @@ def _cmd_remove(args: argparse.Namespace) -> int:
     return 0 if removed else 1
 
 
+def _cmd_sync(args) -> int:
+    """Push E2ER's own skills out to a headless CLI backend.
+
+    The opposite direction from `install`, which pulls other people's packs in.
+    They used to be `e2er skills install` and `e2er install-skills`, which is a
+    distinction nobody can hold in their head.
+    """
+    from .cli_install_skills import install_skills
+
+    return install_skills(backend=args.backend, force=args.force)
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="e2er skills",
-        description="Install skill packs from the RISE catalogue. "
-        "(For E2ER's own bundled skills, see `e2er install-skills`.)",
+        description="Skills, in both directions: `install` pulls other projects' "
+        "packs in from the RISE catalogue; `sync` pushes E2ER's own skills out to "
+        "a headless CLI backend so the `claude`/`codex`/`gemini` process can see them.",
     )
     p.add_argument("--catalogue", default=None, help="Path to a RISE checkout (default: RISE_PATH)")
     p.add_argument("--json", action="store_true")
@@ -136,6 +149,23 @@ def build_parser() -> argparse.ArgumentParser:
     rm = sub.add_parser("remove", help="Delete an installed pack")
     rm.add_argument("pack")
     rm.set_defaults(func=_cmd_remove)
+
+    sync = sub.add_parser(
+        "sync",
+        help="Copy E2ER's own skills to a headless CLI backend's skills dir",
+    )
+    sync.add_argument(
+        "--backend",
+        choices=["claude", "codex", "gemini", "all"],
+        default="all",
+        help="Which backend's skills directory to populate. Default: all installed CLIs.",
+    )
+    sync.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite existing skill files. Default: skip files that already exist.",
+    )
+    sync.set_defaults(func=_cmd_sync)
 
     return p
 

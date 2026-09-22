@@ -185,13 +185,13 @@ pip install e2er
 e2er init                # guided setup: backend pick, prereq check, .env, skills
 ```
 
-`e2er init` is the recommended path — it asks you a handful of questions, checks that your chosen LLM backend is installed, writes a working `.env` to the current directory, runs `install-skills`, and prints example research questions you can copy. Re-run it any time to reconfigure (`--force` overwrites without prompting).
+`e2er init` is the recommended path — it asks you a handful of questions, checks that your chosen LLM backend is installed, writes a working `.env` to the current directory, runs `skills sync`, and prints example research questions you can copy. Re-run it any time to reconfigure (`--force` overwrites without prompting).
 
 If you'd rather do it by hand:
 
 ```bash
 pip install e2er
-e2er install-skills      # bundles the skill files used by the specialists
+e2er skills sync         # makes the specialists' skill files visible to your CLI backend
 export LLM_BACKEND=claude_code   # or anthropic / openrouter / codex / gemini
 ```
 

@@ -312,7 +312,7 @@ class TestNonTTYPath:
         assert "not a terminal" in captured.out
         # Should mention the manual fallback path
         assert "LLM_BACKEND" in captured.out
-        assert "install-skills" in captured.out
+        assert "skills sync" in captured.out
 
 
 # ---------------------------------------------------------------------------

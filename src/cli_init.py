@@ -8,12 +8,12 @@ new-user path is:
      DATABASE_URL, LITERATURE_BIBTEX_FILE, the first-run-cap
      acknowledgment, the backend-specific install (claude CLI,
      codex CLI, etc.)
-  3. Manually create a `.env`, run `e2er install-skills`, then
+  3. Manually create a `.env`, run `e2er skills sync`, then
      compose an `e2er run` command.
 
 `e2er init` walks the user through the same decisions interactively
 with sensible defaults, checks backend prerequisites, writes the
-`.env`, runs `install-skills`, and prints concrete example
+`.env`, runs `skills sync`, and prints concrete example
 research questions to copy.
 
 Hand-rolled stdin wizard — no new dependencies. TTY-detected so
@@ -340,7 +340,7 @@ def _init_defaults() -> int:
 
         _install(backend="all", force=False)
     except Exception as e:  # noqa: BLE001 — best-effort; setup still succeeded
-        print(f"  ! install-skills failed: {e} (run `e2er install-skills` later)")
+        print(f"  ! skills sync failed: {e} (run `e2er skills sync` later)")
     print('  ✓ ready — verify with `e2er doctor`, then `e2er run "<your RQ>"`')
     return 0
 
@@ -353,7 +353,7 @@ def init(force: bool = False, defaults: bool = False) -> int:
         print(
             "e2er init: stdin is not a terminal. Re-run with `e2er init --defaults` "
             "for non-interactive setup, or set LLM_BACKEND in your shell + "
-            '`e2er install-skills` + `e2er run "<your RQ>" --methodology empirical`.'
+            '`e2er skills sync` + `e2er run "<your RQ>" --methodology empirical`.'
         )
         return 2
 
@@ -473,8 +473,8 @@ def init(force: bool = False, defaults: bool = False) -> int:
 
         _install(backend="all", force=False)
     except Exception as e:
-        print(f"  ! install-skills failed: {e}")
-        print("    Run `e2er install-skills` manually after install.")
+        print(f"  ! skills sync failed: {e}")
+        print("    Run `e2er skills sync` manually after install.")
 
     # Postgres migrate hint (don't auto-run; the user may need to start the DB first)
     if database_url:

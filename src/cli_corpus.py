@@ -374,9 +374,9 @@ def _cmd_remove(args: argparse.Namespace) -> int:
 # ── parser ───────────────────────────────────────────────────────────────────
 
 
-def build_parser() -> argparse.ArgumentParser:
+def build_parser(prog: str = "e2er library") -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        prog="e2er corpus",
+        prog=prog,
         description="A local library of paper claims, each checked against the paper it came from.",
     )
     p.add_argument("--db", default=None, help="Corpus file (default: CORPUS_DB, else ~/.e2er/corpus.db)")
@@ -438,8 +438,13 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
-def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+def main(argv: list[str] | None = None, prog: str = "e2er library") -> int:
+    """`prog` is the name the user actually typed.
+
+    `library` and `corpus` are the same command. Echoing back the one they used
+    keeps the help text from answering a question they did not ask.
+    """
+    args = build_parser(prog).parse_args(argv)
     try:
         result: int = args.func(args)
         return result
