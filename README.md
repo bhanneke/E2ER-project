@@ -1,4 +1,4 @@
-# E2ER — turn a research question into a paper
+# E2ER — scaffolding for research processes
 
 [![Status](https://img.shields.io/badge/status-active%20development-blue)]()
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
@@ -7,14 +7,33 @@
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20187238.svg)](https://doi.org/10.5281/zenodo.20187238)
 [![PyPI](https://img.shields.io/pypi/v/e2er.svg)](https://pypi.org/project/e2er/)
 
-E2ER is an open-source, end-to-end pipeline for empirical research. You bring
-your own data and your own papers, pose a research question, and steer a
-human-in-the-loop workflow that returns a LaTeX paper with citations, an
-internal peer-review pass, and a runnable replication package — typically in
-~25 minutes.
+E2ER organises **skills** and **specialists** into **pipelines** that produce
+research outputs. Four layers, each one composable:
+
+```
+skills        markdown — what a discipline knows       (58 files)
+  ↓
+specialists   a role: skills + an output it must write (26 roles)
+  ↓
+pipelines     an ordered process: steps that dispatch
+              specialists or run checks                (a .toml file)
+  ↓
+gates         deterministic checks. The pipeline is
+              yours; these are not.
+```
+
+Writing a new research process means writing a pipeline file — steps, which
+specialists each runs, which checks fire and whether they halt or merely record.
+Not forking the code.
+
+The pipeline that ships takes a research question and your data and returns a
+LaTeX paper with citations, an internal peer-review pass, and a runnable
+replication package, typically in ~25 minutes. That is **one** pipeline, not the
+point of the thing.
 
 What makes it a research instrument rather than a draft generator is that
-**every number, citation, and design choice is mechanically verifiable.**
+**every number, citation, and design choice is mechanically verifiable** — and
+that a pipeline may add checks and enforce them harder, but never remove them.
 Results-table cells are filled by a deterministic renderer from JSON sidecars
 (never hand-typed); two gates check the draft before any reviewer runs; every
 exported bundle carries a content-addressed provenance manifest; and
