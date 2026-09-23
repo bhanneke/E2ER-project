@@ -321,6 +321,40 @@ def main() -> None:
         help="Emit comparison.json on stdout instead of the human-readable report.",
     )
 
+    publish_p = subparsers.add_parser(
+        "publish",
+        help="Verify an exported bundle; write its research-object manifest (e2er.json) and registry entry.",
+    )
+    publish_p.add_argument("bundle", help="Path to an exported bundle directory (from `e2er export`).")
+    publish_p.add_argument("--owner", required=True, help="Registry namespace: your GitHub login, lower case.")
+    publish_p.add_argument("--project", required=True, help="Project name within your namespace, e.g. etf-comovement.")
+    publish_p.add_argument("--github", default=None, help="Your GitHub login (contributor identity).")
+    publish_p.add_argument("--orcid", default=None, help="Your ORCID iD, e.g. 0000-0002-1825-0097.")
+    publish_p.add_argument("--name", default=None, help="Your name as it should appear in citations.")
+    publish_p.add_argument("--role", action="append", default=None, dest="roles", help="CRediT role (repeatable).")
+    publish_p.add_argument("--repo", default=None, help="URL of the repository that holds the bundle.")
+    publish_p.add_argument(
+        "--commit", default=None, help="Commit that pins the bundle (needed for registry verification)."
+    )
+    publish_p.add_argument("--path", default=None, help="Path of the bundle inside the repository.")
+    publish_p.add_argument(
+        "--db", default=None, help="Run database, to record which agents actually ran and their model usage."
+    )
+    publish_p.add_argument("--template", default="empirical", help="Template the run followed (default: empirical).")
+    publish_p.add_argument(
+        "--license", default=None, dest="license_id", help="Licence of the research object, e.g. CC-BY-4.0."
+    )
+    publish_p.add_argument(
+        "--derived-from",
+        action="append",
+        default=None,
+        dest="derived_from",
+        help="owner/project of a research object this one builds on (repeatable).",
+    )
+    publish_p.add_argument(
+        "--out", default=None, help="Where to write the registry entry (default: ./e2er-registry-entry)."
+    )
+
     export_p = subparsers.add_parser(
         "export",
         help="Assemble a clean, structured project folder (paper/code/data/results/design/reviews) from a run.",
@@ -349,6 +383,29 @@ def main() -> None:
     )
 
     args = parser.parse_args()
+
+    if args.command == "publish":
+        from .cli_publish import publish as _publish
+
+        sys.exit(
+            _publish(
+                args.bundle,
+                owner=args.owner,
+                project=args.project,
+                github=args.github,
+                orcid=args.orcid,
+                name=args.name,
+                roles=args.roles,
+                repo=args.repo,
+                commit=args.commit,
+                path=args.path,
+                db=args.db,
+                template=args.template,
+                license_id=args.license_id,
+                derived_from=args.derived_from,
+                out=args.out,
+            )
+        )
 
     if args.command == "export":
         from .cli_export import export as _export
@@ -425,8 +482,7 @@ def main() -> None:
         from .cli_install_skills import install_skills as _install
 
         print(
-            "note: `e2er install-skills` is now `e2er skills sync`. "
-            "The old name still works.",
+            "note: `e2er install-skills` is now `e2er skills sync`. The old name still works.",
             file=sys.stderr,
         )
         sys.exit(_install(backend=args.backend, force=args.force))

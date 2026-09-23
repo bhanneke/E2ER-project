@@ -74,7 +74,9 @@ def _check_integrity(bundle: Path) -> Check:
             mismatched.append(rel)
     # provenance.json cannot inventory itself; report.html is a rendering of the
     # bundle written after it, and asserts nothing the hashed files do not.
-    _NOT_EVIDENCE = {"provenance.json", "report.html"}
+    # e2er.json (written by `e2er publish`) describes the bundle and records the
+    # digest of provenance.json itself, so it is not part of the evidence either.
+    _NOT_EVIDENCE = {"provenance.json", "report.html", "e2er.json"}
     on_disk = {
         p.relative_to(bundle).as_posix() for p in bundle.rglob("*") if p.is_file() and p.name not in _NOT_EVIDENCE
     }

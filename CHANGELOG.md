@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Publish a bundle as a research object
+
+`e2er publish <bundle>` verifies an exported bundle offline, writes `e2er.json`
+into it and writes the entry to submit to the E2ER registry as a pull request.
+The manifest (schema `e2er-research-object/0.1`,
+`docs/schemas/research-object.schema.json`) names the contributors by GitHub
+login and ORCID, the model and backend, the template and mode, the literature
+(the citation edges with their DOIs), the data files and outputs with their
+hashes, and the verification result. Its content id is the SHA-256 of
+`provenance.json`, which already fixes the hash of every other file.
+
+With `--db`, the agents are the ones the run recorded in `llm_usage`, with their
+calls and tokens; without it they are the agents the template declares for the
+mode, and the manifest says which. Nothing is uploaded: the artifacts stay in
+the researcher's repository.
+
+`e2er verify` treats `e2er.json` like `report.html`: it describes the bundle and
+is not part of the evidence.
+
 ## [0.9.1] — 2026-09-18
 
 ### A corpus of what papers claim, not just that they exist
