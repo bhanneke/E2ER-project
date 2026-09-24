@@ -317,6 +317,29 @@
     },
     "published": {
       "type": "string"
+    },
+    "dossier": {
+      "description": "The study's dossier: run settings, the workflow with the intermediate files each step wrote, and every template, specialist, skill and connector used, pinned to its version. The id is sha256 of the document's canonical JSON (keys sorted, no whitespace, UTF-8); the paper's first-page footnote links to url.",
+      "type": "object",
+      "required": [
+        "id",
+        "url",
+        "doc"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "url": {
+          "type": "string",
+          "format": "uri"
+        },
+        "doc": {
+          "type": "object"
+        }
+      }
     }
   }
 }

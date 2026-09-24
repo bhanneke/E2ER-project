@@ -352,6 +352,11 @@ def main() -> None:
         help="owner/project of a research object this one builds on (repeatable).",
     )
     publish_p.add_argument(
+        "--no-stamp",
+        action="store_true",
+        help="Do not write the E2ER author line and dossier footnote into paper/paper.tex.",
+    )
+    publish_p.add_argument(
         "--out", default=None, help="Where to write the registry entry (default: ./e2er-registry-entry)."
     )
 
@@ -404,6 +409,7 @@ def main() -> None:
                 license_id=args.license_id,
                 derived_from=args.derived_from,
                 out=args.out,
+                stamp=not args.no_stamp,
             )
         )
 

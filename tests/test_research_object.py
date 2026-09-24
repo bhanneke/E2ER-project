@@ -12,6 +12,7 @@ import pytest
 
 from src.cli_publish import publish
 from src.cli_verify import _run_checks
+from src.core.dossier import build_dossier, canonical, dossier_id, recorded_workflow, stamp_paper
 from src.core.research_object import PublishError, build_manifest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -97,3 +98,107 @@ def test_invalid_owner_and_missing_provenance_are_rejected(bundle: Path, tmp_pat
         build_manifest(bundle, owner="Not A Login", project="demo", contributors=[{"github": "x"}])
     with pytest.raises(PublishError):
         build_manifest(tmp_path, owner="bhanneke", project="demo", contributors=[{"github": "x"}])
+
+
+@pytest.fixture
+def workflow_db(run_db: Path) -> Path:
+    con = sqlite3.connect(run_db)
+    con.executescript(
+        "CREATE TABLE pipeline_events (id TEXT, paper_id TEXT, event_type TEXT, stage TEXT, specialist TEXT,"
+        " payload TEXT, created_at TEXT);"
+        "CREATE TABLE contributions (id TEXT, paper_id TEXT, specialist TEXT, stage TEXT, output_file TEXT,"
+        " success INT, error_msg TEXT, usage_tokens INT, cost_usd REAL, duration_sec REAL, created_at TEXT);"
+    )
+    ws = f"workspaces/{PAPER_ID}/"
+    events = [
+        ("run_identity", None, None, {"git_sha": "f" * 40, "git_dirty": False}),
+        ("phase_start", "initial", None, {}),
+        ("specialist_start", None, "idea_developer", {}),
+        ("specialist_end", None, "idea_developer", {"success": True}),
+        ("specialist_start", None, "paper_drafter", {}),
+        (
+            "gate_enforced",
+            "contracts",
+            None,
+            {"gate": "contracts", "passed": False, "enforced": True, "detail": "inline tabular"},
+        ),
+        ("specialist_end", None, "paper_drafter", {"success": False}),
+        ("specialist_start", None, "paper_drafter", {}),
+        ("specialist_end", None, "paper_drafter", {"success": True}),
+    ]
+    for i, (etype, stage, sp, payload) in enumerate(events):
+        con.execute(
+            "INSERT INTO pipeline_events VALUES (?,?,?,?,?,?,?)",
+            (str(i), PAPER_ID, etype, stage, sp, json.dumps(payload), f"2026-09-11 10:{i:02d}:00"),
+        )
+    for i, (sp, out, ok, err) in enumerate(
+        [
+            ("idea_developer", "paper_plan.md", 1, None),
+            ("paper_drafter", "paper_draft.tex", 0, "contract violation"),
+            ("paper_drafter", "paper_draft.tex", 1, None),
+        ]
+    ):
+        con.execute(
+            "INSERT INTO contributions VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (str(i), PAPER_ID, sp, None, ws + out, ok, err, 0, 0.0, 1.0, f"2026-09-11 10:{i:02d}:30"),
+        )
+    con.commit()
+    con.close()
+    return run_db
+
+
+def test_workflow_lists_steps_checks_and_intermediate_files(bundle: Path, workflow_db: Path):
+    steps = recorded_workflow(workflow_db, PAPER_ID, bundle)
+    kinds = [(s["type"], s.get("specialist") or s.get("check")) for s in steps]
+    assert kinds == [
+        ("specialist", "idea_developer"),
+        ("check", "contracts"),
+        ("specialist", "paper_drafter"),
+        ("specialist", "paper_drafter"),
+    ]
+    plan = steps[0]["output"]
+    prov = json.loads((bundle / "provenance.json").read_text())["files"]
+    assert plan == {"file": "design/paper_plan.md", "sha256": prov["design/paper_plan.md"]["sha256"]}
+    assert steps[1]["passed"] is False and steps[1]["detail"] == "inline tabular"
+    assert steps[2]["accepted"] is False and steps[2]["stopped_by"] == "contract violation"
+    assert steps[3]["output"] == {"file": "paper_draft.tex", "exported": False}
+
+
+def test_dossier_id_is_the_hash_of_its_canonical_json_and_ignores_the_paper(bundle: Path, workflow_db: Path):
+    m = _manifest(bundle, db=workflow_db)
+    doc = build_dossier(m, db=workflow_db, bundle=bundle)
+    assert doc["e2er"]["commit"] == "f" * 40
+    assert dossier_id(doc) == "sha256:" + hashlib.sha256(canonical(doc).encode()).hexdigest()
+    (bundle / "paper" / "paper.tex").write_text("changed", encoding="utf-8")
+    assert dossier_id(build_dossier(m, db=workflow_db, bundle=bundle)) == dossier_id(doc)
+
+
+def test_stamp_writes_author_and_footnote_once():
+    tex = "\\title{T}\n\\author{}\n\\begin{document}\n"
+    did = "sha256:" + "ab" * 32
+    once = stamp_paper(tex, "Ada Lovelace", did)
+    assert "\\author{Ada Lovelace with E2ER\\thanks{" in once
+    assert "\\url{https://e2er.org/d/abababababababab}" in once
+    assert stamp_paper(once, "Ada Lovelace", did) == once
+
+
+def test_publish_stamps_the_paper_and_the_bundle_still_verifies(
+    bundle: Path, workflow_db: Path, tmp_path: Path, monkeypatch
+):
+    monkeypatch.setattr("src.cli_publish.shutil.which", lambda _: None)  # no recompile in tests
+    code = publish(
+        str(bundle),
+        owner="bhanneke",
+        project="demo",
+        github="bhanneke",
+        name="Ada Lovelace",
+        db=str(workflow_db),
+        commit="abc1234",
+        out=str(tmp_path / "entry"),
+    )
+    assert code == 0
+    m = json.loads((bundle / "e2er.json").read_text())
+    assert m["dossier"]["id"] == dossier_id(m["dossier"]["doc"])
+    assert m["dossier"]["url"] in (bundle / "paper" / "paper.tex").read_text()
+    assert m["dossier"]["doc"]["workflow"]
+    assert all(c.status == "PASS" for c in _run_checks(bundle, online=False))
