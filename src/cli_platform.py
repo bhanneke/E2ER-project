@@ -41,11 +41,12 @@ def login(url: str | None = None, *, open_browser: bool = True) -> int:
     base = pc.base_url(url)
 
     def announce(verify: str, code: str) -> None:
-        print(f"To sign in, open {verify}")
-        print(f"and confirm the code {code}")
+        # Flushed: the code must appear at once even when the output is piped.
+        print(f"To sign in, open {verify}", flush=True)
+        print(f"and confirm the code {code}", flush=True)
         if open_browser and sys.stdout.isatty():
             webbrowser.open(verify)
-        print("Waiting for your approval…")
+        print("Waiting for your approval…", flush=True)
 
     try:
         t = pc.login(base, announce=announce)
@@ -76,7 +77,13 @@ def logout(url: str | None = None) -> int:
     base = pc.base_url(url)
     token = pc.load_token(base)
     if token:
-        pc.request(base, "DELETE", "/api/v1/tokens/current", token=token)
+        try:
+            code, body = pc.request(base, "DELETE", "/api/v1/tokens/current", token=token)
+        except Exception as e:  # noqa: BLE001 - offline: forget locally, say so
+            code, body = 0, {"error": str(e)}
+        if code not in (200, 401, 404):
+            print(f"warning: the platform did not confirm the token was ended ({body.get('error', code)});")
+            print(f"  remove it on {base}/account")
     pc.forget_token(base)
     print(f"✓ Signed out of {base}.")
     return 0

@@ -156,6 +156,9 @@ def request(
     url: str, method: str, path: str, *, token: str | None = None, body: Any = None
 ) -> tuple[int, dict[str, Any]]:
     headers = {"authorization": f"Bearer {token}"} if token else {}
+    # Astro refuses a non-GET request without a JSON content type as a cross-site form post.
+    if body is None and method != "GET":
+        body = {}
     with client_factory(url) as c:
         r = c.request(method, path, json=body, headers=headers)
     return r.status_code, _json(r)
