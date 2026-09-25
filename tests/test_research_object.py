@@ -177,7 +177,7 @@ def test_stamp_writes_author_and_footnote_once():
     tex = "\\title{T}\n\\author{}\n\\begin{document}\n"
     did = "sha256:" + "ab" * 32
     once = stamp_paper(tex, "Ada Lovelace", did)
-    assert "\\author{Ada Lovelace with E2ER\\thanks{" in once
+    assert "\\author{Ada Lovelace with e2er\\thanks{" in once
     assert "\\url{https://e2er.org/d/abababababababab}" in once
     assert stamp_paper(once, "Ada Lovelace", did) == once
 
@@ -202,3 +202,57 @@ def test_publish_stamps_the_paper_and_the_bundle_still_verifies(
     assert m["dossier"]["url"] in (bundle / "paper" / "paper.tex").read_text()
     assert m["dossier"]["doc"]["workflow"]
     assert all(c.status == "PASS" for c in _run_checks(bundle, online=False))
+
+
+# ── bibliography: the paper must compile from the bundle ────────────────────
+from src.core.bibliography import bibliography_names, point_bibliography, unresolved_citations  # noqa: E402
+
+
+def test_bibliography_is_repointed_to_the_shipped_file(tmp_path: Path):
+    (tmp_path / "refs.bib").write_text("@article{a2020x, title={T}}\n")
+    tex = "\\bibliographystyle{chicago}\n\\bibliography{literature}\n"
+    assert bibliography_names(tex) == ["literature"]
+    assert "\\bibliography{refs}" in point_bibliography(tex, tmp_path)
+    (tmp_path / "literature.bib").write_text("@article{a2020x, title={T}}\n")
+    assert point_bibliography(tex, tmp_path) == tex  # named file present: unchanged
+
+
+def test_unresolved_citations_compares_aux_with_bbl(tmp_path: Path):
+    (tmp_path / "paper.aux").write_text("\\citation{a2020x,b2021y}\n\\citation{c2022z}\n")
+    (tmp_path / "paper.bbl").write_text("\\bibitem[A(2020)]{a2020x} x\n\\bibitem{c2022z} z\n")
+    assert unresolved_citations(tmp_path) == ["b2021y"]
+
+
+def test_verify_fails_when_the_paper_names_a_bibliography_the_bundle_lacks(bundle: Path):
+    tex = bundle / "paper" / "paper.tex"
+    tex.write_text(tex.read_text().replace("\\bibliography{refs}", "\\bibliography{literature}"))
+    check = next(c for c in _run_checks(bundle, online=False) if c.name == "citations")
+    assert check.status == "FAIL" and "literature.bib" in check.detail
+
+
+@pytest.mark.skipif(shutil.which("tectonic") is None, reason="tectonic not installed")
+def test_publish_refuses_a_recompile_that_loses_citations(bundle: Path, workflow_db: Path, tmp_path: Path):
+    refs = bundle / "paper" / "refs.bib"
+    text = refs.read_text()
+    first = text.index("@", 1)  # drop the first entry so one cited key has no bib entry
+    refs.write_text(text[first:])
+    before_tex, before_pdf = (
+        (bundle / "paper" / "paper.tex").read_bytes(),
+        (bundle / "paper" / "paper.pdf").read_bytes(),
+    )
+    code = publish(
+        str(bundle),
+        owner="bhanneke",
+        project="demo",
+        github="bhanneke",
+        name="Ada Lovelace",
+        db=str(workflow_db),
+        commit="abc1234",
+        out=str(tmp_path / "entry"),
+    )
+    assert code == 1
+    assert (bundle / "paper" / "paper.pdf").read_bytes() == before_pdf
+    assert (bundle / "paper" / "paper.tex").read_bytes() in (
+        before_tex,
+        before_tex.replace(b"\\bibliography{literature}", b"\\bibliography{refs}"),
+    )

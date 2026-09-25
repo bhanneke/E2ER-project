@@ -223,6 +223,16 @@ def export_paper(workspace: Path, dest_root: Path, *, date_str: str, slug: str |
         dest_dir = out / subdir
         for pattern, rename in patterns:
             _copy_matches(workspace, dest_dir, pattern, rename, copied_names)
+    # literature.bib is shipped as refs.bib; point the paper at it so the
+    # bundle compiles on its own (otherwise every citation becomes "?").
+    paper_tex = out / "paper" / "paper.tex"
+    if paper_tex.is_file():
+        from ..bibliography import point_bibliography
+
+        text = paper_tex.read_text(encoding="utf-8")
+        fixed = point_bibliography(text, paper_tex.parent)
+        if fixed != text:
+            paper_tex.write_text(fixed, encoding="utf-8")
 
     # Figures: copy a figures/ dir if the renderer produced one.
     fig_src = workspace / "figures"

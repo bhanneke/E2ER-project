@@ -279,17 +279,17 @@ _AUTHOR = re.compile(r"\\author\{((?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*)\}")
 
 
 def stamp_paper(tex: str, author: str, did: str) -> str:
-    """Write the standard E2ER author line and first-page footnote into a paper.
+    """Write the standard e2er author line and first-page footnote into a paper.
 
-    ``\\author{<author> with E2ER\\thanks{...dossier link...}}``. An existing
+    ``\\author{<author> with e2er\\thanks{...dossier link...}}``. An existing
     stamp is replaced, so stamping twice gives the same text.
     """
     note = (
-        "This paper was produced with E2ER. Its dossier lists every step of the run, the files each step "
+        "This paper was produced with e2er. Its dossier lists every step of the run, the files each step "
         "produced, and the template, specialists, skills, connectors and AI models used, pinned to their "
         f"exact versions: \\url{{{dossier_url(did)}}}."
     )
-    block = f"\\author{{{author} with E2ER\\thanks{{{note}}}}}"
+    block = f"\\author{{{author} with e2er\\thanks{{{note}}}}}"
     if _AUTHOR.search(tex):
         return _AUTHOR.sub(lambda _: block, tex, count=1)
     return tex.replace("\\begin{document}", block + "\n\\begin{document}", 1)

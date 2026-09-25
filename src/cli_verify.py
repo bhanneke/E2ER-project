@@ -291,7 +291,18 @@ def _check_citations_offline(bundle: Path) -> Check:
         return Check("citations", SKIP, "no paper/paper.tex")
     from .core.pipeline.verify_citations import load_bib, parse_cite_keys
 
-    keys = parse_cite_keys(tex.read_text(encoding="utf-8", errors="replace"))
+    text = tex.read_text(encoding="utf-8", errors="replace")
+    keys = parse_cite_keys(text)
+    from .core.bibliography import bibliography_names
+
+    absent = [n for n in bibliography_names(text) if not (bundle / "paper" / f"{n}.bib").is_file()]
+    if keys and absent:
+        return Check(
+            "citations",
+            FAIL,
+            f"paper.tex uses {', '.join(n + '.bib' for n in absent)}, which is not in the bundle; "
+            "compiled from the bundle, every citation would be unresolved",
+        )
     refs = bundle / "paper" / "refs.bib"
     bib = load_bib(refs) if refs.is_file() else {}
     missing = [k for k in keys if k not in bib]

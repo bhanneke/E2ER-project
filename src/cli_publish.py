@@ -34,6 +34,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from .core.bibliography import escape_bib, point_bibliography, unresolved_citations
 from .core.dossier import build_dossier, dossier_id, dossier_url, stamp_paper
 from .core.research_object import MANIFEST_NAME, PublishError, build_manifest, write_manifest
 from .core.secret_scan import find_local_paths, find_secrets, sanitize
@@ -68,6 +69,25 @@ def _describe(
     if not (b / "provenance.json").is_file():
         print(f"error: {b} is not an exported bundle (no provenance.json); run `e2er export` first")
         return 1, None
+
+    # A bundle whose paper names a bibliography it does not ship (literature.bib
+    # exported as refs.bib) cannot be compiled from the bundle; repoint it first.
+    tex = b / "paper" / "paper.tex"
+    if tex.is_file():
+        text = tex.read_text(encoding="utf-8")
+        fixed = point_bibliography(text, tex.parent)
+        if fixed != text:
+            tex.write_text(fixed, encoding="utf-8")
+            _rehash(b, ["paper/paper.tex"])
+            print("✓ Pointed paper.tex at the bibliography the bundle ships (refs.bib)")
+    refs = b / "paper" / "refs.bib"
+    if refs.is_file():
+        raw = refs.read_text(encoding="utf-8")
+        escaped = escape_bib(raw)
+        if escaped != raw:
+            refs.write_text(escaped, encoding="utf-8")
+            _rehash(b, ["paper/refs.bib"])
+            print("✓ Escaped & % # in refs.bib so the paper compiles")
 
     checks = _run_checks(b, online=False)
     verdict, code = _verdict(checks)
@@ -106,7 +126,11 @@ def _describe(
     doc = build_dossier(manifest, db=Path(db).expanduser() if db else None, bundle=b)
     did = dossier_id(doc)
     if stamp and name and (b / "paper" / "paper.tex").is_file():
-        changed = _stamp_and_compile(b, name, did)
+        try:
+            changed = _stamp_and_compile(b, name, did)
+        except PublishError as e:
+            print(f"error: {e}")
+            return 1, None
         if changed:
             checks = _run_checks(b, online=False)
             verdict, code = _verdict(checks)
@@ -128,7 +152,7 @@ def _describe(
                 derived_from=derived_from,
                 verification=verification,
             )
-            print(f"✓ Stamped paper/paper.tex ({name} with E2ER, dossier footnote) and updated provenance.json")
+            print(f"✓ Stamped paper/paper.tex ({name} with e2er, dossier footnote) and updated provenance.json")
     manifest["dossier"] = {"id": did, "url": dossier_url(did), "doc": doc}
 
     written = write_manifest(b, manifest)
@@ -294,10 +318,16 @@ def _rehash(bundle: Path, rels: list[str]) -> None:
 
 
 def _stamp_and_compile(bundle: Path, author: str, did: str) -> bool:
-    """Stamp paper.tex; recompile paper.pdf with tectonic when it is installed."""
+    """Stamp paper.tex and recompile paper.pdf with tectonic when it is installed.
+
+    The paper is pointed at the bibliography the bundle ships (refs.bib). A
+    recompile that leaves any citation unresolved is refused: paper.tex is
+    restored and paper.pdf keeps its previous version, so publish never ships
+    a PDF whose references turned into "?".
+    """
     tex = bundle / "paper" / "paper.tex"
     old = tex.read_text(encoding="utf-8")
-    new = stamp_paper(old, author, did)
+    new = stamp_paper(point_bibliography(old, tex.parent), author, did)
     if new == old:
         return False
     tex.write_text(new, encoding="utf-8")
@@ -311,13 +341,18 @@ def _stamp_and_compile(bundle: Path, author: str, did: str) -> bool:
             figs = bundle / "results" / "figures"
             if not (work / "figures").exists() and figs.is_dir():
                 shutil.copytree(figs, work / "figures")
-            res = subprocess.run(["tectonic", "paper.tex"], cwd=work, capture_output=True, text=True)
-            if res.returncode == 0:
-                shutil.copyfile(work / "paper.pdf", tex.parent / "paper.pdf")
-        if res.returncode == 0:
-            rels.append("paper/paper.pdf")
-        else:
-            print("warning: tectonic could not compile paper.tex; paper.pdf keeps the old version")
+            res = subprocess.run(
+                ["tectonic", "--keep-intermediates", "paper.tex"], cwd=work, capture_output=True, text=True
+            )
+            missing = unresolved_citations(work) if res.returncode == 0 else []
+            if res.returncode != 0 or missing:
+                tex.write_text(old, encoding="utf-8")
+                why = (
+                    f"{len(missing)} citation(s) unresolved: {', '.join(missing[:5])}" if missing else "tectonic failed"
+                )
+                raise PublishError(f"recompiling paper.tex would break the PDF ({why}); nothing was changed")
+            shutil.copyfile(work / "paper.pdf", tex.parent / "paper.pdf")
+        rels.append("paper/paper.pdf")
     else:
         print("note: tectonic is not installed; paper.pdf was not recompiled (the footnote is in paper.tex)")
     _rehash(bundle, rels)

@@ -36,16 +36,18 @@ class PaperMetadata:
         return key or "ref"
 
     def to_bibtex(self) -> str:
+        from ...core.bibliography import tex_escape  # & in "S&P 500" or "Banking & Finance" stops LaTeX
+
         authors_str = " and ".join(self.authors) if self.authors else "Unknown"
         lines = [
             f"@article{{{self.bibtex_key},",
-            f"  title = {{{self.title}}},",
-            f"  author = {{{authors_str}}},",
+            f"  title = {{{tex_escape(self.title)}}},",
+            f"  author = {{{tex_escape(authors_str)}}},",
         ]
         if self.year:
             lines.append(f"  year = {{{self.year}}},")
         if self.journal:
-            lines.append(f"  journal = {{{self.journal}}},")
+            lines.append(f"  journal = {{{tex_escape(self.journal)}}},")
         if self.doi:
             lines.append(f"  doi = {{{self.doi}}},")
         if self.url:

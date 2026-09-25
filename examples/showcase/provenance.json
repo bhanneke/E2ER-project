@@ -114,16 +114,16 @@
       "bytes": 2855
     },
     "paper/paper.pdf": {
-      "sha256": "617fd8cf24fee03d25ccc01efb41f5c1ef0400b86a07aae88b6080564bc5cab4",
-      "bytes": 450435
+      "sha256": "498c6966f312c2ce117f55110055ab557702c1c89778ee661541cd3f9d9f6a8d",
+      "bytes": 466458
     },
     "paper/paper.tex": {
-      "sha256": "ab1fe8fd227b4dbcdb1c768083f9df9b8921a6a35a5c0313267e466a8486a745",
-      "bytes": 104847
+      "sha256": "a953c0bf3c94477039f6a8cb5a41be35f5bc954cef6ebcbc0bb0f3f9ea7b4b97",
+      "bytes": 104841
     },
     "paper/refs.bib": {
-      "sha256": "d89feb69a8afde2bc5b50414060982891b38e8edf57231652f732536f2c9043a",
-      "bytes": 17548
+      "sha256": "ac1a3e8e7085ab21a9c3c81d5b1c82a2980b4fc321691d9d5299d3cf179ba5b2",
+      "bytes": 17553
     },
     "paper/tables/....tex": {
       "sha256": "c9c6965c53d20f099e4fded9445f0b7bf6d291a7d8f4f37962d875c67b511448",
