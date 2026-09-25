@@ -12,7 +12,7 @@ from ...logging_config import get_logger
 from ...modules.llm.base import LLMBackend, ToolHandler
 from ..governance import DEFAULT_REGIME, KIND_RELIABILITY
 from ..governance import enforces as governance_enforces
-from ..pipeline.spec import find_spec
+from ..pipeline.spec import RESEARCHER_KINDS, find_spec
 from ..specialists.contracts import Contribution, WorkOrder
 from ..specialists.dispatcher import (
     MAX_SPECIALIST_ATTEMPTS,
@@ -153,6 +153,11 @@ class PipelineRunner:
         # Human-in-the-loop: stages after which the run pauses for the
         # researcher to inspect/edit the workspace before continuing.
         self._review_stages = set(review_stages or [])
+        # Researcher steps with `after = [...]` stop inside the strategist's
+        # dispatch, right after those specialists; the rest are ordinary steps.
+        self._triggers = [s for s in self._spec.steps if s.kind in RESEARCHER_KINDS and s.after]
+        self._state: Any = None
+        self._in_initial = False
         # Methodology drives phase routing (data_reviewer + replication_packager
         # are skipped for theoretical papers — pre-v0.5 they ran wastefully).
         self._methodology = methodology
@@ -219,6 +224,14 @@ class PipelineRunner:
         write, so it stays here, keyed by step name.
         """
         name = step.name
+        if step.kind in RESEARCHER_KINDS:
+            if state.is_approved(name):
+                if step.kind == "preregister":
+                    await self._freeze_preregistration(name)
+                state.mark_complete(name)
+                state.save(self._workspace)
+                return status
+            await self._stop_for_researcher(step, state)
         effects = _STEP_EFFECTS.get(name, _StepEffects())
 
         if name == "revision":
@@ -281,6 +294,7 @@ class PipelineRunner:
             self._iteration = state.iteration
             self._pivot_count = state.pivot_count
             prior_contributions = state.contributions_count
+            self._state = state
 
             status = PaperStatus.DESIGNING
             await self._update_status(status)
@@ -302,6 +316,8 @@ class PipelineRunner:
             if self._should_pause_for_review(name, state):
                 state.mark_complete(name)
                 state.pending_review_stage = name
+                if isinstance(getattr(state, "metadata", None), dict):
+                    state.metadata["review"] = {"kind": "review_at", "files": []}
                 state.save(self._workspace)
                 raise HumanReviewRequestedError(name)
             return result
@@ -316,9 +332,12 @@ class PipelineRunner:
             # tests/test_pipeline_spec.py pins that the spec predicts the same
             # thing. If either goes red, this changed behaviour rather than
             # relocating it.
+            await self._settle_researcher_decisions(state)
             for step in self._spec.steps:
                 if not step.applies_to(self._mode):
                     continue
+                if step.kind in RESEARCHER_KINDS and step.after:
+                    continue  # stops inside the dispatch (see _between_groups)
                 # resumable=false is how the estimation gate stays unskippable:
                 # it runs even when something claims the stage is done.
                 if step.resumable and state.is_complete(step.name):
@@ -498,6 +517,13 @@ class PipelineRunner:
             await write_data_queries_sql(self._paper_id, queries_sql)
 
     async def _run_initial_phase(self) -> None:
+        self._in_initial = True
+        try:
+            await self._initial_phase_body()
+        finally:
+            self._in_initial = False
+
+    async def _initial_phase_body(self) -> None:
         """Run the initial design + data collection specialists.
 
         The pipeline is useless if the strategist failed to plan the initial
@@ -505,6 +531,19 @@ class PipelineRunner:
         marked FAILED rather than silently advancing to a review phase with
         no draft to review.
         """
+        # Resuming after a researcher step inside this phase: continue with the
+        # work orders that had not run yet, instead of planning afresh.
+        state = getattr(self, "_state", None)
+        if state is not None and "pending_orders" in (getattr(state, "metadata", None) or {}):
+            pending = [WorkOrder(**d) for d in state.metadata.pop("pending_orders")]
+            state.save(self._workspace)
+            # A second researcher step after the same specialists (e.g. the
+            # pre-registration after the design review) stops before anything runs.
+            await self._between_groups(set(), pending)
+            if pending:
+                self._contributions.extend(await self._execute_orders(pending))
+            return
+
         decision = await self._strategist.decide("designing", iteration=0)
         if decision.action == "fail":
             raise RuntimeError(f"Strategist could not plan the initial phase: {decision.rationale}")
@@ -589,6 +628,90 @@ class PipelineRunner:
         the researcher requested a checkpoint here and hasn't approved it yet."""
         return stage in self._review_stages and not state.is_approved(stage)
 
+    # ── the researcher step ────────────────────────────────────────────────
+
+    async def _stop_for_researcher(self, step: Any, state: Any) -> None:
+        """Stop the run at a researcher or preregister step (raises)."""
+        from ..pipeline.preregistration import PREREG_FILE, assemble
+
+        files = list(step.files)
+        if step.kind == "preregister":
+            assemble(self._workspace, step.files)
+            files = [PREREG_FILE]
+        state.pending_review_stage = step.name
+        state.metadata["review"] = {"kind": step.kind, "files": files}
+        state.save(self._workspace)
+        raise HumanReviewRequestedError(step.name)
+
+    async def _freeze_preregistration(self, name: str) -> None:
+        from ...db.events import log_event
+        from ..pipeline.preregistration import LOCK_FILE, freeze
+
+        already = (self._workspace / LOCK_FILE).is_file()
+        lock = freeze(self._workspace)
+        if not already:
+            await log_event(self._paper_id, "preregistration", stage=name, payload=lock)
+
+    async def _between_groups(self, done: set[str], remaining: list[WorkOrder]) -> None:
+        """After each group of a dispatch: stop if a researcher step's specialists are done."""
+        state = getattr(self, "_state", None)
+        # Only the initial phase resumes from saved work orders, so that is the
+        # only dispatch a researcher step may stop.
+        if state is None or not getattr(self, "_triggers", None) or not getattr(self, "_in_initial", False):
+            return
+        finished = set(state.metadata.get("done_specialists", [])) | done
+        state.metadata["done_specialists"] = sorted(finished)
+        for trig in self._triggers:
+            if not trig.applies_to(self._mode) or state.is_approved(trig.name) or state.is_complete(trig.name):
+                continue
+            if set(trig.after) <= finished:
+                state.metadata["pending_orders"] = [wo.model_dump() for wo in remaining]
+                await self._stop_for_researcher(trig, state)
+
+    async def _settle_researcher_decisions(self, state: Any) -> None:
+        """On (re)start: freeze approved pre-registrations, run what was sent back,
+        and stop again at the researcher step the send-back came from."""
+        from ...db.events import log_event
+
+        if not isinstance(getattr(state, "metadata", None), dict):
+            return  # a state without researcher bookkeeping (older files, test doubles)
+        for s in self._spec.steps:
+            if s.kind == "preregister" and state.is_approved(s.name):
+                await self._freeze_preregistration(s.name)
+                if s.after:
+                    state.mark_complete(s.name)
+        for trig in getattr(self, "_triggers", []):
+            if trig.kind == "researcher" and state.is_approved(trig.name):
+                state.mark_complete(trig.name)
+
+        reruns = state.metadata.pop("rerun", [])
+        if not reruns:
+            return
+        state.metadata.pop("sent_back", None)
+        step_names = [s.name for s in self._spec.steps]
+        rerun_steps = False
+        for r in reruns:
+            target, remark = r["target"], r["remark"]
+            await log_event(self._paper_id, "researcher_rerun", stage=target, payload={"remark": remark})
+            if target in step_names:
+                # Re-run the step and everything after it; the loop stops again
+                # at the researcher step, which is still pending.
+                later = step_names[step_names.index(target) :]
+                state.completed_stages = [c for c in state.completed_stages if c not in later]
+                rerun_steps = True
+            else:
+                order = WorkOrder(
+                    paper_id=self._paper_id,
+                    specialist=target,
+                    focus=f"Revise your output. The researcher sent it back with this remark: {remark}",
+                )
+                contributions = await self._execute_orders([order])
+                self._contributions.extend(contributions)
+        state.save(self._workspace)
+        pending = state.pending_review_stage
+        if pending and not state.is_approved(pending) and not rerun_steps:
+            raise HumanReviewRequestedError(pending)
+
     async def _record_gate(self, gate: str, *, passed: bool, detail: str = "") -> bool:
         """Log a gate verdict and return whether it should BLOCK this run.
 
@@ -630,7 +753,25 @@ class PipelineRunner:
 
         Honest-failure escape: papers without a data warehouse (theory,
         literature-only, design-without-estimates) are untouched.
+
+        With a frozen pre-registration, the plan files are compared with their
+        fingerprints first; a change is recorded as a deviation (not a halt: a
+        deviation is disclosed, and `e2er verify` reports it).
         """
+        from ..pipeline.preregistration import deviations, load_lock
+
+        workspace: Path | None = getattr(self, "_workspace", None)
+        lock = load_lock(workspace) if workspace is not None else None
+        if workspace is not None and lock is not None:
+            from ...db.events import log_event
+
+            found = deviations(workspace, lock)
+            await log_event(
+                self._paper_id,
+                "preregistration_check",
+                stage="estimation_gate",
+                payload={"passed": not found, "deviations": found, "frozen_at": lock.get("frozen_at")},
+            )
         if self._methodology != "empirical":
             return
         from ...db.paper_data_db import has_data_db
@@ -1701,6 +1842,40 @@ class PipelineRunner:
         # Convert strategist.actions.WorkOrder → specialists.contracts.WorkOrder
         # (strategist work orders carry parallel_group/context_tier but not paper_id)
         contract_orders = self._to_contract_orders(decision.work_orders)
+        return await self._execute_orders(contract_orders)
+
+    def _order_for_researcher_steps(self, orders: list[WorkOrder]) -> list[WorkOrder]:
+        """Move work orders behind the specialists an open researcher step waits for.
+
+        The strategist chooses the groups; a pre-registration only means
+        something if nothing else — estimation above all — runs before the
+        researcher has seen the design. So while such a step is open, every
+        order not named in its `after` list is placed after the last group
+        that contains one that is (all of them shift alike).
+        """
+        state = getattr(self, "_state", None)
+        if not getattr(self, "_in_initial", False) or state is None:
+            return orders
+        open_steps = [
+            t for t in getattr(self, "_triggers", []) if t.applies_to(self._mode) and not state.is_approved(t.name)
+        ]
+        if not open_steps:
+            return orders
+        waited = set().union(*(set(t.after) for t in open_steps))
+        groups = [o.parallel_group for o in orders if o.specialist in waited]
+        if not groups:
+            return orders
+        last = max(groups)
+        # Every other order moves by the same amount, so their order among
+        # themselves (estimation before drafting) is kept.
+        return [
+            o if o.specialist in waited else o.model_copy(update={"parallel_group": o.parallel_group + last + 1})
+            for o in orders
+        ]
+
+    async def _execute_orders(self, contract_orders: list[WorkOrder]) -> list[Contribution]:
+        """Run work orders (one alone, or grouped), stopping at researcher steps between groups."""
+        contract_orders = self._order_for_researcher_steps(contract_orders)
         if len(contract_orders) == 1:
             from ..specialists.dispatcher import execute_work_order, guard_artifacts
 
@@ -1720,17 +1895,20 @@ class PipelineRunner:
             # halt here, not starve downstream specialists (unless the regime
             # shadows it, in which case the verdict is logged and the run goes on).
             await guard_artifacts(contributions, self._workspace, self._governance)
-        else:
-            contributions = await execute_with_dependencies(
-                contract_orders,
-                self._backend,
-                self._workspace,
-                self._model,
-                self._extra_tools,
-                self._extra_handlers,
-                self._backend_name,
-                self._governance,
-            )
+            self._update_failure_counts(contributions)
+            await self._between_groups({x.specialist for x in contributions if x.success}, [])
+            return contributions
+        contributions = await execute_with_dependencies(
+            contract_orders,
+            self._backend,
+            self._workspace,
+            self._model,
+            self._extra_tools,
+            self._extra_handlers,
+            self._backend_name,
+            self._governance,
+            between_groups=self._between_groups if getattr(self, "_triggers", None) else None,
+        )
         self._update_failure_counts(contributions)
         return contributions
 

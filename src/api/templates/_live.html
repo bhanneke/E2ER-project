@@ -15,6 +15,9 @@
             hx-confirm="Cancel this run?"
             hx-swap="none">Cancel</button>
   {% endif %}
+  {% if awaiting_review %}
+    <a class="btn-primary" href="/papers/{{ paper.id }}/review">Review step “{{ awaiting_review }}”</a>
+  {% endif %}
   {% if can_resume %}
     <button class="btn-primary"
             hx-post="/api/papers/{{ paper.id }}/resume"

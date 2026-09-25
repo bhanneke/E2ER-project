@@ -39,8 +39,8 @@
       "additionalProperties": false,
       "properties": {
         "kind": {
-          "enum": ["strategist", "specialists", "gate", "aggregate"],
-          "description": "strategist: hand control to the strategist engine. specialists: dispatch a fixed set. gate: run a deterministic check. aggregate: dispatch reviewers and combine their verdicts."
+          "enum": ["strategist", "specialists", "gate", "aggregate", "researcher", "preregister"],
+          "description": "strategist: hand control to the strategist engine. specialists: dispatch a fixed set. gate: run a deterministic check. aggregate: dispatch reviewers and combine their verdicts. researcher: the run stops for the researcher, who can approve, edit the named files, give an instruction for the following steps, or send a step back. preregister: assembles the pre-registration from the design files, stops for the researcher, and freezes it on approval."
         },
         "name": {
           "type": "string",
@@ -75,6 +75,16 @@
           "type": "boolean",
           "default": true,
           "description": "Whether a completion marker lets the step be skipped on resume. false means it runs every time regardless, which is how the estimation gate stays unskippable."
+        },
+        "files": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^[^/.][^/]*$" },
+          "description": "researcher and preregister steps: workspace files the researcher sees and may edit (top-level names only)."
+        },
+        "after": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "researcher and preregister steps: stop inside the strategist's dispatch, right after these specialists have written their output, instead of at this position in the list."
         }
       }
     }

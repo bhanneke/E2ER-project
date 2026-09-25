@@ -45,7 +45,15 @@ MANDATORY_CHECKS: frozenset[str] = frozenset({"contracts"})
 #: theory process can declare it, and listed apart so the difference is visible.
 KNOWN_CHECKS: frozenset[str] = frozenset(GATES) | {"claims"}
 
-STEP_KINDS: frozenset[str] = frozenset({"strategist", "specialists", "gate", "aggregate"})
+STEP_KINDS: frozenset[str] = frozenset({"strategist", "specialists", "gate", "aggregate", "researcher", "preregister"})
+
+#: Steps where the run stops for the researcher. `researcher` lets them approve,
+#: edit the named files, give an instruction for the following steps or send a
+#: step back; `preregister` does the same for the assembled pre-registration and
+#: freezes it on approval. With `after = [...]` either one sits inside the
+#: strategist's dispatch, right after those specialists have written their
+#: output (e.g. between the design specialists and estimation).
+RESEARCHER_KINDS: frozenset[str] = frozenset({"researcher", "preregister"})
 FINALIZE_ACTIONS: frozenset[str] = frozenset({"compile", "audit_export", "github_push", "structured_export"})
 RUN_MODES: frozenset[str] = frozenset({"single_pass", "iterative"})
 
@@ -69,6 +77,8 @@ class StepSpec:
     parallel: bool = False
     modes: tuple[str, ...] = ()  # empty = every mode
     resumable: bool = True
+    files: tuple[str, ...] = ()  # researcher/preregister: files the researcher sees and may edit
+    after: tuple[str, ...] = ()  # researcher/preregister: stop right after these specialists
 
     def applies_to(self, mode: str) -> bool:
         return not self.modes or mode in self.modes
@@ -77,6 +87,8 @@ class StepSpec:
         """Would this step execute, given the mode and what is already done?"""
         if not self.applies_to(mode):
             return False
+        if self.after:
+            return False  # happens inside another step (the strategist's dispatch), not in sequence
         if self.resumable and self.name in complete:
             return False
         return True
@@ -125,7 +137,7 @@ def _step_from(raw: Any, source: Path | str, index: int) -> StepSpec:
     if not isinstance(raw, dict):
         _fail(source, f"{where} is not a table")
 
-    unknown = set(raw) - {"kind", "name", "run", "check", "on_fail", "parallel", "modes", "resumable"}
+    unknown = set(raw) - {"kind", "name", "run", "check", "on_fail", "parallel", "modes", "resumable", "files", "after"}
     if unknown:
         # A typo is a mistake, not an extension point. Silently ignoring
         # `specialists = [...]` where `run = [...]` was meant would produce a
@@ -165,6 +177,17 @@ def _step_from(raw: Any, source: Path | str, index: int) -> StepSpec:
         if check not in KNOWN_CHECKS:
             _fail(source, f"{where} ({name}) names unknown check {check!r} (known: {', '.join(sorted(KNOWN_CHECKS))})")
 
+    files = tuple(raw.get("files", ()) or ())
+    after = tuple(raw.get("after", ()) or ())
+    if kind in RESEARCHER_KINDS:
+        if run or check:
+            _fail(source, f"{where} ({name}) is a {kind} step; it runs no specialists and no check")
+        bad = [f for f in files if "/" in f or f.startswith(".")]
+        if bad:
+            _fail(source, f"{where} ({name}) names files outside the workspace: {', '.join(bad)}")
+    elif files or after:
+        _fail(source, f"{where} ({name}): `files` and `after` belong to researcher and preregister steps")
+
     on_fail = raw.get("on_fail", "halt")
     if on_fail not in ("halt", "retry", "shadow"):
         _fail(source, f"{where} ({name}) has unknown on_fail {on_fail!r}")
@@ -182,6 +205,8 @@ def _step_from(raw: Any, source: Path | str, index: int) -> StepSpec:
         parallel=bool(raw.get("parallel", False)),
         modes=modes,
         resumable=bool(raw.get("resumable", True)),
+        files=files,
+        after=after,
     )
 
 

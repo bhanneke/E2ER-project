@@ -30,6 +30,9 @@ from pathlib import Path
 from typing import Any
 
 SCHEMA = "e2er-dossier/0.3"
+#: Used only when a dossier records researcher steps or a pre-registration, so a
+#: study without them keeps exactly the 0.3 document (and its address).
+SCHEMA_RESEARCHER = "e2er-dossier/0.4"
 SITE = "https://e2er.org"
 ROOT = Path(__file__).resolve().parents[2]  # the E2ER checkout or installed package root
 BACKEND_CONNECTOR = {
@@ -218,7 +221,46 @@ def recorded_workflow(db: Path, paper_id: str, bundle: Path | None = None) -> li
                     **({"detail": str(data["detail"])[:240]} if data.get("detail") and not data.get("passed") else {}),
                 }
             )
+        elif etype == "researcher_action":
+            steps.append(researcher_step(data, at, phase))
+        elif etype == "researcher_rerun":
+            steps.append(
+                {
+                    "type": "researcher",
+                    "action": "rerun",
+                    "phase": phase,
+                    "step": stage,
+                    "at": at,
+                    "remark": data.get("remark"),
+                }
+            )
+        elif etype == "preregistration":
+            steps.append(
+                {
+                    "type": "researcher",
+                    "action": "preregistration_frozen",
+                    "phase": phase,
+                    "step": stage,
+                    "at": at,
+                    "sha256": data.get("sha256"),
+                }
+            )
     return steps
+
+
+def researcher_step(data: dict[str, Any], at: str, phase: str | None = None) -> dict[str, Any]:
+    """A dossier workflow step for one researcher action (see core/pipeline/researcher.py)."""
+    step: dict[str, Any] = {
+        "type": "researcher",
+        "action": data.get("action"),
+        "phase": phase,
+        "step": data.get("step"),
+        "at": data.get("at") or at,
+    }
+    for key in ("file", "sha256_before", "sha256_after", "text", "target", "remark"):
+        if data.get(key) is not None:
+            step[key] = data[key]
+    return step
 
 
 def build_dossier(
@@ -243,8 +285,11 @@ def build_dossier(
     if backend_conn:
         uses.append(f"connector:{backend_conn}")
     models = sorted({(u["backend"], u["model"]) for u in ai.get("usage", [])})
-    return {
-        "schema": SCHEMA,
+    workflow = recorded_workflow(db, paper_id, bundle) if db and paper_id else []
+    prereg = _preregistration(bundle)
+    has_researcher = prereg is not None or any(w.get("type") == "researcher" for w in workflow)
+    doc: dict[str, Any] = {
+        "schema": SCHEMA_RESEARCHER if has_researcher else SCHEMA,
         "study": {"title": manifest["title"]},
         "e2er": {
             "version": proc.get("e2er_version"),
@@ -271,8 +316,30 @@ def build_dossier(
             for c in sorted(set(uses))
         ],
         "data": [{"path": d["path"], "sha256": d["sha256"]} for d in manifest.get("data", [])],
-        "workflow": recorded_workflow(db, paper_id, bundle) if db and paper_id else [],
+        "workflow": workflow,
     }
+    if prereg is not None:
+        doc["preregistration"] = prereg
+    return doc
+
+
+def _preregistration(bundle: Path | None) -> dict[str, Any] | None:
+    """The frozen pre-registration of an exported study: file, fingerprint, time, deposit."""
+    if bundle is None:
+        return None
+    from .pipeline.preregistration import load_lock
+
+    lock = load_lock(bundle / "design")
+    if lock is None:
+        return None
+    out = {
+        "file": f"design/{lock.get('file', 'preregistration.md')}",
+        "sha256": lock.get("sha256"),
+        "frozen_at": lock.get("frozen_at"),
+    }
+    if lock.get("deposit"):
+        out["deposit"] = lock["deposit"]
+    return out
 
 
 _AUTHOR = re.compile(r"\\author\{((?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*)\}")

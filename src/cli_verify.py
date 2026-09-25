@@ -348,6 +348,27 @@ async def _check_citations_online(bundle: Path) -> Check:
 # ── orchestration + output ───────────────────────────────────────────────────
 
 
+def _check_preregistration(bundle: Path) -> Check | None:
+    """A frozen pre-registration: the plan files still match their fingerprints.
+
+    Returns None for a bundle without one, so ordinary bundles report the same
+    checks as before.
+    """
+    from .core.pipeline.preregistration import deviations, load_lock
+
+    design = bundle / "design"
+    lock = load_lock(design)
+    if lock is None:
+        return None
+    when = str(lock.get("frozen_at", ""))[:10]
+    found = deviations(design, lock)
+    if found:
+        return Check(
+            "preregistration", FAIL, f"deviates from the pre-registered plan (frozen {when}): " + "; ".join(found)
+        )
+    return Check("preregistration", PASS, f"estimation follows the pre-registered plan (frozen {when})")
+
+
 def _run_checks(bundle: Path, online: bool) -> list[Check]:
     checks = [_check_integrity(bundle)]
     with tempfile.TemporaryDirectory() as td:
@@ -357,6 +378,9 @@ def _run_checks(bundle: Path, online: bool) -> list[Check]:
         checks.append(_check_tables(bundle, ws))
         checks.append(_check_spec(ws))
         checks.append(_check_citations_offline(bundle))
+    prereg = _check_preregistration(bundle)
+    if prereg is not None:
+        checks.append(prereg)
     if online:
         checks.append(asyncio.run(_check_citations_online(bundle)))
     return checks

@@ -121,7 +121,7 @@ def main() -> None:
             "replication",
         ],
         help="Pause for human review after this pipeline stage (repeatable). The run pauses; "
-        "inspect/edit the workspace, then `e2er resume <paper_id>` to continue.",
+        "then `e2er review <paper_id>` to edit, instruct, send back or approve (or `e2er resume` to continue).",
     )
     run_p.add_argument(
         "--max-cost",
@@ -223,6 +223,25 @@ def main() -> None:
         default=1800.0,
         help="With --tail, max time to poll before detaching. Default 30 min.",
     )
+
+    review_p = subparsers.add_parser(
+        "review",
+        help="Act at a researcher step: approve, edit a file, give an instruction, or send a step back.",
+    )
+    review_p.add_argument("paper_id", help="The paper UUID returned by `e2er run`.")
+    review_p.add_argument("--approve", action="store_true", help="Approve the step and continue the run.")
+    review_p.add_argument("--instruction", default=None, help="An instruction every following step receives.")
+    review_p.add_argument("--edit", default=None, metavar="FILE", help="Edit one of the step's files in $EDITOR.")
+    review_p.add_argument("--send-back", default=None, metavar="STEP", help="Send a template step or specialist back.")
+    review_p.add_argument("--remark", default=None, help="What should change (with --send-back).")
+
+    prereg_p = subparsers.add_parser("preregister", help="Pre-registration commands (`e2er preregister deposit`).")
+    prereg_sub = prereg_p.add_subparsers(dest="prereg_command")
+    dep_p = prereg_sub.add_parser("deposit", help="Deposit the frozen pre-registration with your own account (DOI).")
+    dep_p.add_argument("target", help="Paper UUID, or an exported study folder.")
+    dep_p.add_argument("--zenodo", action="store_true", help="Deposit on Zenodo (token in ZENODO_TOKEN).")
+    dep_p.add_argument("--osf", action="store_true", help="OSF Registries (not built yet; says what to do instead).")
+    dep_p.add_argument("--sandbox", action="store_true", help="Use Zenodo's sandbox (token in ZENODO_SANDBOX_TOKEN).")
 
     # Superseded by `e2er skills sync`. Kept working because it is in the
     # README, in shell history, and in whatever people have scripted — renaming
@@ -604,6 +623,26 @@ def main() -> None:
                 monitor_seconds=args.monitor_seconds,
             )
         )
+    elif args.command == "review":
+        from .cli_review import review as _review
+
+        sys.exit(
+            _review(
+                args.paper_id,
+                approve=args.approve,
+                instruction=args.instruction,
+                edit=args.edit,
+                send_back=args.send_back,
+                remark=args.remark,
+            )
+        )
+    elif args.command == "preregister":
+        from .cli_review import deposit as _deposit
+
+        if args.prereg_command != "deposit":
+            prereg_p.print_help()
+            sys.exit(1)
+        sys.exit(_deposit(args.target, zenodo=args.zenodo, osf=args.osf, sandbox=args.sandbox))
     elif args.command == "migrate":
         # Importable module (works in both pip-installed wheel AND dev
         # checkout). The previous implementation pointed at

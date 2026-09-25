@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 from ...logging_config import get_logger
@@ -358,9 +359,14 @@ async def execute_with_dependencies(
     extra_handlers: list[ToolHandler] | None = None,
     backend_name: str = "anthropic",
     governance: str = DEFAULT_REGIME,
+    between_groups: Callable[[set[str], list[WorkOrder]], Awaitable[None]] | None = None,
 ) -> list[Contribution]:
     """Execute work orders grouped by parallel_group — groups run sequentially,
     within each group specialists run in parallel.
+
+    ``between_groups(done, remaining)`` is awaited after each group with the
+    specialists that have succeeded so far and the work orders still to run; a
+    researcher step uses it to stop the run between two groups.
     """
     from itertools import groupby
 
@@ -381,5 +387,9 @@ async def execute_with_dependencies(
             governance,
         )
         all_contributions.extend(contributions)
+        if between_groups is not None:
+            done = {c.specialist for c in all_contributions if c.success}
+            remaining = [w for w in sorted_orders if w.parallel_group > group_id]
+            await between_groups(done, remaining)
 
     return all_contributions

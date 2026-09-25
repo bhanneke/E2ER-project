@@ -754,6 +754,108 @@ async def cancel_paper(paper_id: str) -> dict[str, Any]:
     return {"status": "cancelling", "paper_id": paper_id}
 
 
+class ReviewAction(BaseModel):
+    """Body for POST /api/papers/{id}/review: one researcher action at a researcher step."""
+
+    action: str  # approve | edit | instruction | send_back
+    file: str | None = None
+    content: str | None = None
+    text: str | None = None
+    step: str | None = None
+    remark: str | None = None
+    resume: bool = True  # approve / send_back continue the run right away
+
+
+async def _review_context(paper_id: str) -> tuple[dict[str, Any], Path, Any, Any]:
+    from ..core.pipeline.researcher import pending_review
+    from ..core.pipeline.spec import find_spec
+    from ..core.pipeline.state import PipelineState
+    from ..db.client import fetch_one
+
+    row = await fetch_one("SELECT * FROM papers WHERE id = %(id)s", {"id": paper_id})
+    if row is None:
+        raise HTTPException(status_code=404, detail="paper not found")
+    workspace = Path(row["workspace"])
+    state = PipelineState.load(workspace, paper_id, row.get("mode") or "single_pass")
+    pending = pending_review(workspace, state)
+    try:
+        spec = find_spec(row.get("pipeline") or "empirical")
+    except Exception:  # noqa: BLE001 — the review still works without the template
+        spec = None
+    return row, workspace, state, (pending, spec)
+
+
+def _sendable(workspace: Path, state: Any, pending: Any, spec: Any) -> list[str]:
+    """What a researcher can send back from here: earlier template steps and specialists with output."""
+    from ..core.specialists.registry import SPECIALIST_ARTIFACTS
+
+    steps: list[str] = []
+    if spec is not None:
+        for s in spec.steps:
+            if s.name == pending.stage:
+                break
+            if s.kind not in ("researcher", "preregister") and s.name in state.completed_stages:
+                steps.append(s.name)
+    specialists = sorted(sp for sp, out in SPECIALIST_ARTIFACTS.items() if (workspace / out).is_file())
+    return steps + specialists
+
+
+@app.get("/api/papers/{paper_id}/review")
+async def get_review(paper_id: str = Depends(_validate_uuid)) -> dict[str, Any]:
+    """The researcher step a paused run is waiting at: its files, what can be sent back, past actions."""
+    from ..db.events import fetch_events
+
+    _row, workspace, state, (pending, spec) = await _review_context(paper_id)
+    past = [e for e in await fetch_events(paper_id) if e.get("event_type") == "researcher_action"]
+    if pending is None:
+        return {"pending": None, "actions": past}
+    files = []
+    for name in pending.files:
+        p = workspace / name
+        files.append(
+            {
+                "name": name,
+                "exists": p.is_file(),
+                "content": p.read_text(encoding="utf-8", errors="replace") if p.is_file() else "",
+            }
+        )
+    return {
+        "pending": {"stage": pending.stage, "kind": pending.kind},
+        "files": files,
+        "sendable": _sendable(workspace, state, pending, spec),
+        "actions": past,
+    }
+
+
+@app.post("/api/papers/{paper_id}/review", dependencies=[Depends(require_auth)])
+async def post_review(req: ReviewAction, paper_id: str = Depends(_validate_uuid)) -> dict[str, Any]:
+    """Apply one researcher action; approve and send back continue the run unless resume=false."""
+    from ..core.pipeline.researcher import ResearcherActionError, apply_action
+    from ..db.events import log_event
+
+    existing = _RUNNING.get(paper_id)
+    if existing and not existing.done():
+        raise HTTPException(status_code=409, detail="the run is working; wait until it stops at a researcher step")
+    _row, workspace, state, (pending, spec) = await _review_context(paper_id)
+    if pending is None:
+        raise HTTPException(status_code=409, detail="the run is not stopped at a researcher step")
+    try:
+        payload = apply_action(
+            workspace,
+            state,
+            req.model_dump(exclude={"resume"}),
+            sendable=_sendable(workspace, state, pending, spec) if req.action == "send_back" else None,
+        )
+    except ResearcherActionError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    state.save(workspace)
+    await log_event(paper_id, "researcher_action", stage=pending.stage, payload=payload)
+    out: dict[str, Any] = {"recorded": payload}
+    if req.action in ("approve", "send_back") and req.resume:
+        out["resumed"] = await resume_paper(paper_id)
+    return out
+
+
 @app.post("/api/papers/{paper_id}/resume", dependencies=[Depends(require_auth)])
 async def resume_paper(paper_id: str, req: ResumeRequest | None = None) -> dict[str, Any]:
     """Resume a paper whose runner is not actively running.
@@ -787,7 +889,7 @@ async def resume_paper(paper_id: str, req: ResumeRequest | None = None) -> dict[
     try:
         row = await fetch_one(
             "SELECT id, status, workspace, mode, max_cost_usd, methodology, backend, model, governance, "
-            "review_stages FROM papers WHERE id = %(id)s",
+            "review_stages, pipeline FROM papers WHERE id = %(id)s",
             {"id": paper_id},
         )
     except Exception as e:
@@ -833,7 +935,9 @@ async def resume_paper(paper_id: str, req: ResumeRequest | None = None) -> dict[
         from ..core.pipeline.state import PipelineState
 
         pstate = PipelineState.load(workspace, paper_id, mode)
-        if pstate.pending_review_stage:
+        # After a send-back the researcher wants to see the redone step, so the
+        # pending researcher step stays unapproved and the run stops there again.
+        if pstate.pending_review_stage and not pstate.metadata.get("sent_back"):
             pstate.approve(pstate.pending_review_stage)
             pstate.save(workspace)
     except Exception as e:  # noqa: BLE001 — approval is best-effort; resume proceeds
@@ -2040,8 +2144,29 @@ async def paper_live_fragment(request: Request, paper_id: str = Depends(_validat
             "events": events or [],
             "can_cancel": (paper.get("status") not in _TERMINAL_STATUSES) and (paper_id in _RUNNING),
             "can_resume": (paper.get("status") == "paused") and (paper_id not in _RUNNING),
+            "awaiting_review": _awaiting_review(paper),
         },
     )
+
+
+def _awaiting_review(paper: Any) -> str | None:
+    """The researcher step a paused run waits at, for the dashboard's review link."""
+    if paper.get("status") != "paused" or not paper.get("workspace"):
+        return None
+    try:
+        from ..core.pipeline.state import PipelineState
+
+        st = PipelineState.load(Path(paper["workspace"]), str(paper["id"]), paper.get("mode") or "single_pass")
+        return st.pending_review_stage
+    except Exception:  # noqa: BLE001 — the live panel must render regardless
+        return None
+
+
+@app.get("/papers/{paper_id}/review", response_class=HTMLResponse)
+async def review_page(request: Request, paper_id: str = Depends(_validate_uuid)) -> Any:
+    """The researcher step in the dashboard: files in an editor, an instruction, send back, approve."""
+    data = await get_review(paper_id)
+    return templates.TemplateResponse(request, "review.html", {"paper_id": paper_id, **data})
 
 
 @app.get("/api/papers/{paper_id}/events")

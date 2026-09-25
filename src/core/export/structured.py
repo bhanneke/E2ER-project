@@ -66,6 +66,11 @@ EXPORT_MAP: dict[str, list[tuple[str, str | None]]] = {
         ("identification_spec.json", None),
         ("econometric_spec.md", None),
         ("model_spec.md", None),
+        # The frozen pre-registration and its fingerprints (researcher step),
+        # and the instructions the researcher gave during the run.
+        ("preregistration.md", None),
+        ("preregistration.lock.json", None),
+        ("researcher_instructions.md", None),
     ],
     # Loose exploration scripts + logs the model writes (analysis.py, explore.py,
     # q.py, run_estimation.log, …). The broad globs run last so canonical files
