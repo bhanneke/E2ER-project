@@ -51,18 +51,30 @@ def _keyring():
     return keyring
 
 
-def save_token(url: str, token: str) -> str:
-    kr = _keyring()
-    if kr is not None:
-        kr.set_password(KEYRING_SERVICE, url, token)
-        return "the system keychain"
+def _write_credentials(url: str, token: str) -> Path:
     p = credentials_path()
     p.parent.mkdir(parents=True, exist_ok=True)
     data = json.loads(p.read_text(encoding="utf-8")) if p.is_file() else {}
     data[url] = token
-    p.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    # Created owner-only from the start, so the token is never readable by others.
+    fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(json.dumps(data, indent=2) + "\n")
     p.chmod(0o600)
-    return str(p)
+    return p
+
+
+def save_token(url: str, token: str) -> str:
+    """Store the token in the system keychain; fall back to the credentials file
+    when there is no keyring or the keychain refuses (e.g. no GUI session)."""
+    kr = _keyring()
+    if kr is not None:
+        try:
+            kr.set_password(KEYRING_SERVICE, url, token)
+            return "the system keychain"
+        except Exception:  # noqa: BLE001 - locked or unavailable keychain
+            pass
+    return str(_write_credentials(url, token))
 
 
 def load_token(url: str) -> str | None:
@@ -70,7 +82,10 @@ def load_token(url: str) -> str | None:
         return os.environ["E2ER_TOKEN"]
     kr = _keyring()
     if kr is not None:
-        t = kr.get_password(KEYRING_SERVICE, url)
+        try:
+            t = kr.get_password(KEYRING_SERVICE, url)
+        except Exception:  # noqa: BLE001 - locked or unavailable keychain
+            t = None
         if t:
             return t
     p = credentials_path()

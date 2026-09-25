@@ -199,3 +199,22 @@ def test_dossier_push_registers_the_dossier_alone(bundle: Path, platform: FakePl
     method, path, body = platform.requests[-1]
     assert (method, path) == ("POST", "/api/v1/dossiers") and body["id"] == dossier_id(body["doc"])
     assert "Dossier registered" in capsys.readouterr().out
+
+
+def test_a_refusing_keychain_falls_back_to_the_credentials_file(tmp_path, monkeypatch):
+    from src.core import platform_client as pc
+
+    class Refusing:
+        def set_password(self, *a):
+            raise RuntimeError("keychain locked")
+
+        def get_password(self, *a):
+            raise RuntimeError("keychain locked")
+
+    monkeypatch.setattr(pc, "_keyring", lambda: Refusing())
+    monkeypatch.setenv("E2ER_CREDENTIALS", str(tmp_path / "credentials.json"))
+    monkeypatch.delenv("E2ER_TOKEN", raising=False)
+    where = pc.save_token("https://preview.e2er.org", "e2er_abc")
+    assert where.endswith("credentials.json")
+    assert (tmp_path / "credentials.json").stat().st_mode & 0o777 == 0o600
+    assert pc.load_token("https://preview.e2er.org") == "e2er_abc"
