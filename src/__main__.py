@@ -376,6 +376,12 @@ def main() -> None:
         action="store_true",
         help="Print the exact request --to would send; change nothing and send nothing.",
     )
+    publish_p.add_argument(
+        "--offline",
+        action="store_true",
+        help="Prepare the folder for publishing in the browser (e2er.org/publish): write the dossier and "
+        "e2er.json, send nothing.",
+    )
 
     url_help = "Platform address (default: E2ER_URL, else https://e2er.org)."
     login_p = subparsers.add_parser(
@@ -445,6 +451,7 @@ def main() -> None:
                 stamp=not args.no_stamp,
                 dry_run=args.dry_run,
                 to_url=args.to_url,
+                offline=args.offline,
             )
         )
 

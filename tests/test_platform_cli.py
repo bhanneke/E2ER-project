@@ -218,3 +218,35 @@ def test_a_refusing_keychain_falls_back_to_the_credentials_file(tmp_path, monkey
     assert where.endswith("credentials.json")
     assert (tmp_path / "credentials.json").stat().st_mode & 0o777 == 0o600
     assert pc.load_token("https://preview.e2er.org") == "e2er_abc"
+
+
+def test_verify_json_names_the_content_id_and_version(bundle, capsys):
+    import hashlib
+
+    from src import __version__
+    from src.cli_verify import verify
+
+    verify(str(bundle), json_output=True)
+    out = json.loads(capsys.readouterr().out)
+    want = "sha256:" + hashlib.sha256((bundle / "provenance.json").read_bytes()).hexdigest()
+    assert out["content_id"] == want and out["e2er_version"] == __version__
+    assert {c["name"] for c in out["checks"]} >= {"integrity", "numbers"}
+
+
+def test_publish_offline_writes_e2er_json_and_sends_nothing(bundle, tmp_path, monkeypatch, capsys):
+    def no_network(url):
+        raise AssertionError("--offline made a network request")
+
+    monkeypatch.setattr(pc, "client_factory", no_network)
+    monkeypatch.chdir(tmp_path)
+    assert publish(str(bundle), offline=True, **ARGS) == 0
+    m = json.loads((bundle / "e2er.json").read_text())
+    assert m["dossier"]["id"] == dossier_id(m["dossier"]["doc"])
+    assert not (tmp_path / "e2er-registry-entry").exists()
+    out = capsys.readouterr().out
+    assert "Nothing was sent" in out and "/publish" in out
+    assert all(c.status == "PASS" for c in _run_checks(bundle, online=False))
+
+
+def test_publish_offline_refuses_to_send(bundle):
+    assert publish(str(bundle), offline=True, to_url=URL, **ARGS) == 2

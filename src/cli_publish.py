@@ -25,6 +25,7 @@ import copy
 import hashlib
 import io
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -175,9 +176,32 @@ def problems(body: dict[str, Any]) -> list[str]:
     return out
 
 
-def publish(bundle: str, *, dry_run: bool = False, to_url: str | None = None, **kw: Any) -> int:
-    """`e2er publish`: describe, stamp and verify; optionally rehearse (`dry_run`) or send (`to_url`)."""
+def publish(bundle: str, *, dry_run: bool = False, to_url: str | None = None, offline: bool = False, **kw: Any) -> int:
+    """`e2er publish`: describe, stamp and verify; optionally rehearse (`dry_run`) or send (`to_url`).
+
+    `offline` prepares the folder for publishing in the browser: it writes the
+    dossier and e2er.json, makes no network request and names the next step.
+    """
     b = Path(bundle).expanduser().resolve()
+    if offline:
+        if dry_run or to_url:
+            print("error: --offline sends nothing; leave out --to and --dry-run")
+            return 2
+        code, manifest = _describe(str(b), **kw, remote=True)
+        if code or manifest is None:
+            return code or 1
+        found = problems(request_body(manifest, b))
+        if found:
+            print("warning: e2er.json contains something that must not be published; the browser will refuse it:")
+            for p in found:
+                print(f"  {p}")
+            return 1
+        site = os.environ.get("E2ER_URL", "https://e2er.org").rstrip("/")
+        print("\nNothing was sent. To publish from the browser:")
+        print(f"  1. open {site}/publish and sign in")
+        print(f"  2. choose this folder: {b}")
+        print("  The page compares every file with its fingerprint in the browser and sends only the description.")
+        return 0
     if dry_run or to_url:
         # Rehearse in a scratch copy: the exact request, and nothing written here.
         with tempfile.TemporaryDirectory() as tmp:

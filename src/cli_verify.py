@@ -412,9 +412,20 @@ def verify(bundle: str, *, online: bool = False, json_output: bool = False) -> i
     if json_output:
         from dataclasses import asdict
 
+        from . import __version__
+
+        prov = bundle_path / "provenance.json"
+        # The content id (SHA-256 of provenance.json) and the version let a platform
+        # match this result to the published study version (e.g. from GitHub Actions).
         print(
             json.dumps(
-                {"checks": [asdict(c) for c in checks], "verdict": banner, "verified": code == 0},
+                {
+                    "checks": [asdict(c) for c in checks],
+                    "verdict": banner,
+                    "verified": code == 0,
+                    "e2er_version": __version__,
+                    "content_id": f"sha256:{_sha256(prov)}" if prov.is_file() else None,
+                },
                 indent=2,
             )
         )
