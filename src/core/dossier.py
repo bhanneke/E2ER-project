@@ -103,10 +103,10 @@ def _pin(component: str, repository: str | None, commit: str | None) -> dict[str
             pin.update(repository=repository, commit=commit)
         return pin
     if rel and (ROOT / rel).is_file():
-        pin: dict[str, Any] = {"path": rel, "git_blob": git_blob_sha(ROOT / rel)}
+        local: dict[str, Any] = {"path": rel, "git_blob": git_blob_sha(ROOT / rel)}
         if repository and commit:
-            pin.update(repository=repository, commit=commit)
-        return pin
+            local.update(repository=repository, commit=commit)
+        return local
     return {"note": "built into E2ER; no separate file"}
 
 

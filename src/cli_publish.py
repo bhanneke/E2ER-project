@@ -9,26 +9,39 @@ object, what it depends on and what verified.
         --github bhanneke --orcid 0009-0000-7466-9581 \\
         --repo https://github.com/bhanneke/E2ER-project --commit 3b91f0e --path examples/showcase \\
         --db ~/.e2er/e2er.db
+
+``--dry-run`` rehearses everything in a scratch copy of the bundle and prints
+the exact request ``--to`` would send; nothing in the bundle changes and
+nothing is sent. ``--to https://e2er.org`` (after ``e2er login``) publishes the
+description, the dossier and the file fingerprints; the files stay here. A
+request that contains anything resembling a key or token is refused before it
+leaves the machine.
 """
 
 from __future__ import annotations
 
+import contextlib
+import copy
 import hashlib
+import io
 import json
 import shutil
 import subprocess
+import sys
 import tempfile
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from .core.dossier import build_dossier, dossier_id, dossier_url, stamp_paper
 from .core.research_object import MANIFEST_NAME, PublishError, build_manifest, write_manifest
+from .core.secret_scan import find_local_paths, find_secrets, sanitize
 
 REGISTRY = "https://github.com/bhanneke/e2er-site"
 REGISTRY_DIR = "registry/objects"
 
 
-def publish(
+def _describe(
     bundle: str,
     *,
     owner: str,
@@ -46,13 +59,14 @@ def publish(
     derived_from: list[str] | None = None,
     out: str | None = None,
     stamp: bool = True,
-) -> int:
+    remote: bool = False,
+) -> tuple[int, dict[str, Any] | None]:
     from .cli_verify import _run_checks, _verdict
 
     b = Path(bundle).expanduser().resolve()
     if not (b / "provenance.json").is_file():
         print(f"error: {b} is not an exported bundle (no provenance.json); run `e2er export` first")
-        return 1
+        return 1, None
 
     checks = _run_checks(b, online=False)
     verdict, code = _verdict(checks)
@@ -60,7 +74,7 @@ def publish(
     if code != 0:
         print(verdict)
         print("error: the bundle does not verify; fix it before publishing")
-        return 1
+        return 1, None
 
     contributor: dict[str, Any] = {k: v for k, v in {"name": name, "github": github, "orcid": orcid}.items() if v}
     if contributor:
@@ -83,7 +97,7 @@ def publish(
         )
     except PublishError as e:
         print(f"error: {e}")
-        return 1
+        return 1, None
 
     # The dossier: settings, pinned parts and data, addressed by its hash. The paper
     # then carries the standard author line and a first-page footnote with the
@@ -98,7 +112,7 @@ def publish(
             if code != 0:
                 print(verdict)
                 print("error: the bundle no longer verifies after stamping the paper")
-                return 1
+                return 1, None
             verification = [{"check": c.name, "status": c.status, "detail": c.detail} for c in checks]
             manifest = build_manifest(
                 b,
@@ -117,10 +131,13 @@ def publish(
     manifest["dossier"] = {"id": did, "url": dossier_url(did), "doc": doc}
 
     written = write_manifest(b, manifest)
-    entry_root = Path(out).expanduser() if out else Path.cwd() / "e2er-registry-entry"
-    entry = entry_root / REGISTRY_DIR / owner / f"{project}.json"
-    entry.parent.mkdir(parents=True, exist_ok=True)
-    entry.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    # The registry-entry file is for a pull request; publishing to a platform needs none unless asked for.
+    entry: Path | None = None
+    if out or not remote:
+        entry_root = Path(out).expanduser() if out else Path.cwd() / "e2er-registry-entry"
+        entry = entry_root / REGISTRY_DIR / owner / f"{project}.json"
+        entry.parent.mkdir(parents=True, exist_ok=True)
+        entry.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
     agents = manifest["ai"]["agents"]
     print(f"✓ Bundle verified ({len(checks)} checks)")
@@ -131,10 +148,113 @@ def publish(
         f"{manifest['provenance']['files']} hashed files"
     )
     print(f"✓ Dossier {did[:23]}…  {dossier_url(did)}")
-    print(f"✓ Registry entry: {entry}")
+    if entry:
+        print(f"✓ Registry entry: {entry}")
     if not repository.get("commit"):
         print("  note: no --commit given; the registry can only verify an object pinned to a commit")
-    print(f"\nTo publish, open a pull request against {REGISTRY} that adds\n  {REGISTRY_DIR}/{owner}/{project}.json")
+    if not remote:
+        print(
+            f"\nTo publish, open a pull request against {REGISTRY} that adds\n  {REGISTRY_DIR}/{owner}/{project}.json"
+        )
+    return 0, manifest
+
+
+def request_body(manifest: dict[str, Any], bundle: Path) -> dict[str, Any]:
+    """What `--to` sends: the manifest (dossier id and url only), the dossier, the repository pin."""
+    m = copy.deepcopy(manifest)
+    d = m.pop("dossier")
+    m["dossier"] = {"id": d["id"], "url": d["url"]}
+    m = sanitize(m, bundle)
+    return {"manifest": m, "dossier": {"id": d["id"], "doc": d["doc"]}, "repository": m.get("repository") or None}
+
+
+def problems(body: dict[str, Any]) -> list[str]:
+    """Why a request must not leave this machine."""
+    out = [f"{path}: looks like a {kind}" for path, kind in find_secrets(body)]
+    out += [f"{path}: names a local home directory" for path in find_local_paths(body)]
+    return out
+
+
+def publish(bundle: str, *, dry_run: bool = False, to_url: str | None = None, **kw: Any) -> int:
+    """`e2er publish`: describe, stamp and verify; optionally rehearse (`dry_run`) or send (`to_url`)."""
+    b = Path(bundle).expanduser().resolve()
+    if dry_run or to_url:
+        # Rehearse in a scratch copy: the exact request, and nothing written here.
+        with tempfile.TemporaryDirectory() as tmp:
+            scratch = Path(tmp) / b.name
+            if (b / "provenance.json").is_file():
+                shutil.copytree(b, scratch)
+            log = io.StringIO()
+            with contextlib.redirect_stdout(log):
+                code, manifest = _describe(str(scratch), **{**kw, "out": str(Path(tmp) / "entry")}, remote=True)
+            if code or manifest is None:
+                print(log.getvalue().rstrip())
+                return code or 1
+            body = request_body(manifest, scratch)
+        found = problems(body)
+        if dry_run:
+            print(json.dumps(body, indent=2, ensure_ascii=False))
+            for p in found:
+                print(f"refused: {p}", file=sys.stderr)
+            print("dry run: nothing was written or sent", file=sys.stderr)
+            return 1 if found else 0
+        if found:
+            print(
+                "error: the request contains something that must not leave this machine; nothing was written or sent:"
+            )
+            for p in found:
+                print(f"  {p}")
+            return 1
+    code, manifest = _describe(str(b), **kw, remote=bool(to_url))
+    if code or manifest is None or not to_url:
+        return code
+    return _send(b, manifest, to_url)
+
+
+def _send(b: Path, manifest: dict[str, Any], to_url: str) -> int:
+    from .cli_platform import write_link
+    from .core import platform_client as pc
+
+    base = pc.base_url(to_url)
+    body = request_body(manifest, b)
+    found = problems(body)
+    if found:
+        print("error: the request contains something that must not leave this machine; nothing was sent:")
+        for p in found:
+            print(f"  {p}")
+        return 1
+    token = pc.load_token(base)
+    if not token:
+        print(f"error: not signed in to {base}; run `e2er login --url {base}`")
+        return 1
+    try:
+        code, resp = pc.request(base, "POST", "/api/v1/studies", token=token, body=body)
+    except Exception as e:  # noqa: BLE001 - network errors are the user's to see
+        print(f"error: could not reach {base}: {e}")
+        return 1
+    if code not in (200, 201):
+        print(f"error: {resp.get('error', code)}")
+        for p in resp.get("problems") or []:
+            print(f"  {p}")
+        if resp.get("claim"):
+            print(f"  {base}{resp['claim']}")
+        return 1
+    link = write_link(
+        b,
+        {
+            "platform_url": base,
+            "id": resp["id"],
+            "owner_project": resp["owner_project"],
+            "version": resp["version"],
+            "dossier_id": body["dossier"]["id"],
+            "content_id": manifest.get("content_id"),
+            "published_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        },
+    )
+    word = "already published as" if resp.get("existing") else "published as"
+    print(f"✓ {word} {resp['owner_project']}, version {resp['version']}: {resp['study_url']}")
+    print(f"  dossier {resp['dossier_url']}")
+    print(f"  link written to {link.relative_to(b)}")
     return 0
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
 
 
 def main() -> None:
@@ -167,9 +168,12 @@ def main() -> None:
 
     status_p = subparsers.add_parser(
         "status",
-        help="Show the current status of a paper (and optionally tail it).",
+        help="Show the status of a run (paper id), or of a study folder published with `e2er publish --to`.",
     )
-    status_p.add_argument("paper_id", help="The paper UUID returned by `e2er run`.")
+    status_p.add_argument("paper_id", help="The paper UUID returned by `e2er run`, or a published study folder.")
+    status_p.add_argument(
+        "--url", default=None, help="For a study folder: platform address (default: its .e2er/link.json)."
+    )
     status_p.add_argument(
         "--tail",
         action="store_true",
@@ -359,6 +363,35 @@ def main() -> None:
     publish_p.add_argument(
         "--out", default=None, help="Where to write the registry entry (default: ./e2er-registry-entry)."
     )
+    publish_p.add_argument(
+        "--to",
+        default=None,
+        dest="to_url",
+        metavar="URL",
+        help="Publish on this platform, e.g. https://e2er.org (after `e2er login`). Sends the description, "
+        "the dossier and file fingerprints; the files stay here.",
+    )
+    publish_p.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print the exact request --to would send; change nothing and send nothing.",
+    )
+
+    url_help = "Platform address (default: E2ER_URL, else https://e2er.org)."
+    login_p = subparsers.add_parser(
+        "login", help="Sign in to e2er.org from the command line (approve a code in the browser)."
+    )
+    login_p.add_argument("--url", default=None, help=url_help)
+    login_p.add_argument("--no-browser", action="store_true", help="Do not open the browser; print the address only.")
+    logout_p = subparsers.add_parser("logout", help="End the command-line sign-in and forget the token.")
+    logout_p.add_argument("--url", default=None, help=url_help)
+    whoami_p = subparsers.add_parser("whoami", help="Show the account the command line is signed in as.")
+    whoami_p.add_argument("--url", default=None, help=url_help)
+    dossier_p = subparsers.add_parser("dossier", help="Dossier commands (`e2er dossier push`).")
+    dossier_sub = dossier_p.add_subparsers(dest="dossier_command", required=True)
+    push_p = dossier_sub.add_parser("push", help="Register the dossier alone, so a private study's footnote resolves.")
+    push_p.add_argument("bundle", nargs="?", default=".", help="The study folder with e2er.json (default: here).")
+    push_p.add_argument("--url", default=None, help=url_help)
 
     export_p = subparsers.add_parser(
         "export",
@@ -410,8 +443,21 @@ def main() -> None:
                 derived_from=args.derived_from,
                 out=args.out,
                 stamp=not args.no_stamp,
+                dry_run=args.dry_run,
+                to_url=args.to_url,
             )
         )
+
+    if args.command in ("login", "logout", "whoami", "dossier"):
+        from . import cli_platform
+
+        if args.command == "login":
+            sys.exit(cli_platform.login(args.url, open_browser=not args.no_browser))
+        if args.command == "logout":
+            sys.exit(cli_platform.logout(args.url))
+        if args.command == "whoami":
+            sys.exit(cli_platform.whoami(args.url))
+        sys.exit(cli_platform.dossier_push(args.bundle, args.url))
 
     if args.command == "export":
         from .cli_export import export as _export
@@ -522,6 +568,10 @@ def main() -> None:
         from .cli_init import init as _init
 
         sys.exit(_init(force=args.force, defaults=args.defaults))
+    elif args.command == "status" and Path(args.paper_id).expanduser().is_dir():
+        from . import cli_platform
+
+        sys.exit(cli_platform.status(args.paper_id, args.url))
     elif args.command == "status":
         from .cli_status import status as _status
 
