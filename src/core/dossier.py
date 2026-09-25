@@ -29,10 +29,15 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from .availability import any_public
+
 SCHEMA = "e2er-dossier/0.3"
 #: Used only when a dossier records researcher steps or a pre-registration, so a
 #: study without them keeps exactly the 0.3 document (and its address).
 SCHEMA_RESEARCHER = "e2er-dossier/0.4"
+#: A dossier that states public data or code (``availability``). Studies whose data
+#: and code are private keep the 0.3/0.4 document, and their addresses.
+SCHEMA_AVAILABILITY = "e2er-dossier/0.5"
 SITE = "https://e2er.org"
 ROOT = Path(__file__).resolve().parents[2]  # the E2ER checkout or installed package root
 BACKEND_CONNECTOR = {
@@ -268,6 +273,7 @@ def build_dossier(
     repository: str | None = "https://github.com/bhanneke/E2ER-project",
     db: Path | None = None,
     bundle: Path | None = None,
+    availability: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """The dossier document for a research-object manifest (see research_object.py).
 
@@ -320,6 +326,9 @@ def build_dossier(
     }
     if prereg is not None:
         doc["preregistration"] = prereg
+    if any_public(availability):
+        doc["schema"] = SCHEMA_AVAILABILITY
+        doc["availability"] = availability
     return doc
 
 

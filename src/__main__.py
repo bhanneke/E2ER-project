@@ -396,6 +396,30 @@ def main() -> None:
         help="Print the exact request --to would send; change nothing and send nothing.",
     )
     publish_p.add_argument(
+        "--data",
+        choices=["public", "private"],
+        default=None,
+        help="Whether the study's data are public (default: private; asked when run in a terminal).",
+    )
+    publish_p.add_argument(
+        "--code",
+        choices=["public", "private"],
+        default=None,
+        help="Whether the study's code is public (default: private; asked when run in a terminal).",
+    )
+    publish_p.add_argument("--data-url", default=None, help="Where the public data live (repository or DOI).")
+    publish_p.add_argument(
+        "--code-url", default=None, help="Where the public code lives (default: the repository at --commit)."
+    )
+    publish_p.add_argument(
+        "--zenodo",
+        action="store_true",
+        help="Deposit the public data and code on Zenodo with your own token (ZENODO_TOKEN) and record the DOIs.",
+    )
+    publish_p.add_argument(
+        "--zenodo-sandbox", action="store_true", help="Use sandbox.zenodo.org (token in ZENODO_SANDBOX_TOKEN)."
+    )
+    publish_p.add_argument(
         "--offline",
         action="store_true",
         help="Prepare the folder for publishing in the browser (e2er.org/publish): write the dossier and "
@@ -471,6 +495,13 @@ def main() -> None:
                 dry_run=args.dry_run,
                 to_url=args.to_url,
                 offline=args.offline,
+                data=args.data,
+                code=args.code,
+                data_url=args.data_url,
+                code_url=args.code_url,
+                zenodo=args.zenodo or args.zenodo_sandbox,
+                zenodo_sandbox=args.zenodo_sandbox,
+                site=args.to_url,
             )
         )
 

@@ -113,6 +113,14 @@ def status(bundle: str = ".", url: str | None = None) -> int:
         print("  ✓ this folder is the published version")
     else:
         print("  ! this folder differs from the published version; `e2er publish --to` adds a new version")
+    from .core.availability import describe
+
+    local_manifest = b / "e2er.json"
+    if local_manifest.is_file():
+        av = json.loads(local_manifest.read_text(encoding="utf-8")).get("availability")
+        print(f"  availability here: {describe(av)}")
+    if body.get("availability"):
+        print(f"  availability on the platform: {describe(body['availability'])}")
     for c in body.get("checks", []):
         print(f"  {c['status']:4}  {c['check_id']} ({c['run_by']})")
     for p in body.get("pending_confirmations", []):

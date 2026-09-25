@@ -460,10 +460,22 @@ def verify(bundle: str, *, online: bool = False, json_output: bool = False) -> i
                     "verified": code == 0,
                     "e2er_version": __version__,
                     "content_id": f"sha256:{_sha256(prov)}" if prov.is_file() else None,
+                    "availability": _availability(bundle_path),
                 },
                 indent=2,
             )
         )
     else:
         print(_render(checks))
+        av = _availability(bundle_path)
+        if av is not None:
+            from .core.availability import describe
+
+            print(f"   availability: {describe(av)}")
     return code
+
+
+def _availability(bundle: Path) -> dict[str, Any] | None:
+    """Data and code availability as stated when publishing (from e2er.json), if published."""
+    manifest = _load_json(bundle / "e2er.json")
+    return manifest.get("availability") if isinstance(manifest, dict) else None

@@ -18,6 +18,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from ..zenodo import ZENODO_SANDBOX_URL as ZENODO_SANDBOX_URL  # re-exported for `e2er preregister deposit`
+from ..zenodo import ZENODO_URL, deposit_files
+
 PREREG_FILE = "preregistration.md"
 LOCK_FILE = "preregistration.lock.json"
 
@@ -107,10 +110,6 @@ def record_deposit(workspace: Path, deposit: dict[str, Any]) -> dict[str, Any]:
     return lock
 
 
-ZENODO_URL = "https://zenodo.org"
-ZENODO_SANDBOX_URL = "https://sandbox.zenodo.org"
-
-
 def deposit_zenodo(
     workspace: Path,
     token: str,
@@ -125,40 +124,18 @@ def deposit_zenodo(
     Creates a deposition, uploads the file, sets its metadata and publishes it;
     returns {service, doi, url}. Nothing passes through e2er.org.
     """
-    import httpx
-
     lock = load_lock(workspace)
     if lock is None:
         raise RuntimeError("the pre-registration is not frozen yet; approve it at its researcher step first")
     prereg = workspace / lock.get("file", PREREG_FILE)
-    http = client or httpx.Client(base_url=base_url, timeout=60.0)
-    auth = {"Authorization": f"Bearer {token}"}
-    r = http.post("/api/deposit/depositions", json={}, headers=auth)
-    r.raise_for_status()
-    dep = r.json()
-    bucket = dep["links"]["bucket"]
-    with prereg.open("rb") as fh:
-        up = http.put(f"{bucket}/{prereg.name}", content=fh.read(), headers=auth)
-    up.raise_for_status()
-    meta = {
-        "metadata": {
-            "title": title or "Pre-registration",
-            "upload_type": "publication",
-            "publication_type": "other",
-            "description": f"Pre-registration frozen by e2er on {lock['frozen_at']} (SHA-256 {lock['sha256']}).",
-            "creators": creators or [{"name": "Unknown"}],
-            "keywords": ["pre-registration", "e2er"],
-        }
+    metadata = {
+        "title": title or "Pre-registration",
+        "upload_type": "publication",
+        "publication_type": "other",
+        "description": f"Pre-registration frozen by e2er on {lock['frozen_at']} (SHA-256 {lock['sha256']}).",
+        "creators": creators or [{"name": "Unknown"}],
+        "keywords": ["pre-registration", "e2er"],
     }
-    m = http.put(f"/api/deposit/depositions/{dep['id']}", json=meta, headers=auth)
-    m.raise_for_status()
-    p = http.post(f"/api/deposit/depositions/{dep['id']}/actions/publish", headers=auth)
-    p.raise_for_status()
-    done = p.json()
-    deposit = {
-        "service": "zenodo" if base_url == ZENODO_URL else base_url,
-        "doi": done.get("doi"),
-        "url": (done.get("links") or {}).get("record_html") or (done.get("links") or {}).get("html"),
-    }
+    deposit = deposit_files([(prereg.name, prereg.read_bytes())], metadata, token, base=base_url, client=client)
     record_deposit(workspace, deposit)
     return deposit

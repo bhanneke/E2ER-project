@@ -30,10 +30,14 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from .core import zenodo as zen
+from .core.availability import describe as describe_availability
+from .core.availability import resolve
 from .core.bibliography import escape_bib, point_bibliography, unresolved_citations
 from .core.dossier import build_dossier, dossier_id, dossier_url, stamp_paper
 from .core.research_object import MANIFEST_NAME, PublishError, build_manifest, write_manifest
@@ -62,6 +66,14 @@ def _describe(
     out: str | None = None,
     stamp: bool = True,
     remote: bool = False,
+    data: str | None = None,
+    code: str | None = None,
+    data_url: str | None = None,
+    code_url: str | None = None,
+    zenodo: bool = False,
+    zenodo_sandbox: bool = False,
+    zenodo_plan_only: bool = False,
+    site: str | None = None,
 ) -> tuple[int, dict[str, Any] | None]:
     from .cli_verify import _run_checks, _verdict
 
@@ -69,6 +81,33 @@ def _describe(
     if not (b / "provenance.json").is_file():
         print(f"error: {b} is not an exported bundle (no provenance.json); run `e2er export` first")
         return 1, None
+
+    # Data and code: public or private (private unless stated). Private material
+    # stays here; only its fingerprints are published, as for every file.
+    repository = {k: v for k, v in {"url": repo, "commit": commit, "path": path}.items() if v}
+    try:
+        availability, notes = resolve(
+            data=data, code=code, data_url=data_url, code_url_=code_url, repository=repository
+        )
+    except ValueError as e:
+        print(f"error: {e}")
+        return 1, None
+    for n in notes:
+        print(f"note: {n}")
+    deposits = _deposit_plan(b, availability, project) if (zenodo or zenodo_plan_only) else {}
+    if zenodo or zenodo_plan_only:
+        refused = [i for i in ("data", "code") if availability[i]["access"] == "private"]
+        for item in refused:
+            print(f"note: --zenodo leaves the {item} alone: it is private (use --{item} public to deposit it)")
+        if not deposits:
+            print("error: --zenodo has nothing to deposit: neither data nor code is public, or their folders are empty")
+            return 1, None
+    token = None
+    if zenodo and not zenodo_plan_only:
+        token = zen.load_token(zenodo_sandbox)
+        if not token:
+            print(f"error: --zenodo needs your own Zenodo token: {zen.token_hint(zenodo_sandbox)}")
+            return 1, None
 
     # A bundle whose paper names a bibliography it does not ship (literature.bib
     # exported as refs.bib) cannot be compiled from the bundle; repoint it first.
@@ -90,9 +129,9 @@ def _describe(
             print("✓ Escaped & % # in refs.bib so the paper compiles")
 
     checks = _run_checks(b, online=False)
-    verdict, code = _verdict(checks)
+    verdict, rc = _verdict(checks)
     verification = [{"check": c.name, "status": c.status, "detail": c.detail} for c in checks]
-    if code != 0:
+    if rc != 0:
         print(verdict)
         print("error: the bundle does not verify; fix it before publishing")
         return 1, None
@@ -100,7 +139,6 @@ def _describe(
     contributor: dict[str, Any] = {k: v for k, v in {"name": name, "github": github, "orcid": orcid}.items() if v}
     if contributor:
         contributor["roles"] = roles or ["conceptualization", "investigation"]
-    repository = {k: v for k, v in {"url": repo, "commit": commit, "path": path}.items() if v}
     template_file = Path(__file__).resolve().parents[1] / "pipelines" / f"{template}.toml"
     try:
         manifest = build_manifest(
@@ -123,8 +161,42 @@ def _describe(
     # The dossier: settings, pinned parts and data, addressed by its hash. The paper
     # then carries the standard author line and a first-page footnote with the
     # dossier link; its files are re-hashed and every check runs again.
-    doc = build_dossier(manifest, db=Path(db).expanduser() if db else None, bundle=b)
+    site_url = (site or os.environ.get("E2ER_URL") or "https://e2er.org").rstrip("/")
+    zdeps: dict[str, Any] = {}
+    if deposits and zenodo_plan_only:
+        _print_deposit_plan(deposits, manifest, availability, zenodo_sandbox)
+    elif deposits and token:
+        # Reserve the DOIs first, so they go into the dossier; then describe each
+        # deposit with the dossier's address and publish it.
+        z = zen.Zenodo(token, base=zen.base_url(zenodo_sandbox))
+        try:
+            for item in deposits:
+                zdeps[item] = z.create(reserve_doi=True)
+                if zdeps[item].doi:
+                    availability[item]["doi"] = zdeps[item].doi
+                    availability[item].setdefault("url", f"https://doi.org/{zdeps[item].doi}")
+        except zen.ZenodoError as e:
+            print(f"error: {e}")
+            return 1, None
+    doc = build_dossier(manifest, db=Path(db).expanduser() if db else None, bundle=b, availability=availability)
     did = dossier_id(doc)
+    if zdeps:
+        try:
+            for item, dep in zdeps.items():
+                for name, data_bytes in deposits[item]["files"]:
+                    z.upload(dep, name, data_bytes)
+                z.describe(
+                    dep,
+                    _deposit_metadata(item, manifest, availability, dossier_url(did), f"{site_url}/{owner}/{project}"),
+                )
+                done = z.publish(dep)
+                availability[item]["doi"] = done["doi"]
+                availability[item]["zenodo"] = done["url"]
+                print(f"✓ Deposited the {item} on Zenodo: doi {done['doi']}  {done['url']}")
+        except zen.ZenodoError as e:
+            print(f"error: {e}")
+            print("  nothing else was written; unfinished deposits stay as drafts in your Zenodo account")
+            return 1, None
     if stamp and name and (b / "paper" / "paper.tex").is_file():
         try:
             changed = _stamp_and_compile(b, name, did)
@@ -133,8 +205,8 @@ def _describe(
             return 1, None
         if changed:
             checks = _run_checks(b, online=False)
-            verdict, code = _verdict(checks)
-            if code != 0:
+            verdict, rc = _verdict(checks)
+            if rc != 0:
                 print(verdict)
                 print("error: the bundle no longer verifies after stamping the paper")
                 return 1, None
@@ -153,6 +225,7 @@ def _describe(
                 verification=verification,
             )
             print(f"✓ Stamped paper/paper.tex ({name} with e2er, dossier footnote) and updated provenance.json")
+    manifest["availability"] = availability
     manifest["dossier"] = {"id": did, "url": dossier_url(did), "doc": doc}
 
     written = write_manifest(b, manifest)
@@ -173,6 +246,7 @@ def _describe(
         f"{manifest['provenance']['files']} hashed files"
     )
     print(f"✓ Dossier {did[:23]}…  {dossier_url(did)}")
+    print(f"  availability: {describe_availability(availability)}")
     if entry:
         print(f"✓ Registry entry: {entry}")
     if not repository.get("commit"):
@@ -189,6 +263,9 @@ def request_body(manifest: dict[str, Any], bundle: Path) -> dict[str, Any]:
     m = copy.deepcopy(manifest)
     d = m.pop("dossier")
     m["dossier"] = {"id": d["id"], "url": d["url"]}
+    for item, v in (m.get("availability") or {}).items():
+        if v.get("access") != "public":
+            m["availability"][item] = {"access": "private"}  # a private item carries no address
     m = sanitize(m, bundle)
     return {"manifest": m, "dossier": {"id": d["id"], "doc": d["doc"]}, "repository": m.get("repository") or None}
 
@@ -207,6 +284,12 @@ def publish(bundle: str, *, dry_run: bool = False, to_url: str | None = None, of
     dossier and e2er.json, makes no network request and names the next step.
     """
     b = Path(bundle).expanduser().resolve()
+    if kw.get("data") is None and kw.get("code") is None and sys.stdin.isatty():
+        kw["data"] = _ask("Are the study's data public or private?")
+        kw["code"] = _ask("Is the study's code public or private?")
+    if kw.get("zenodo") and offline:
+        print("error: --offline makes no network request; leave out --zenodo")
+        return 2
     if offline:
         if dry_run or to_url:
             print("error: --offline sends nothing; leave out --to and --dry-run")
@@ -233,8 +316,17 @@ def publish(bundle: str, *, dry_run: bool = False, to_url: str | None = None, of
             if (b / "provenance.json").is_file():
                 shutil.copytree(b, scratch)
             log = io.StringIO()
+            # The rehearsal never deposits: a dry run prints the plan, and --to
+            # deposits once, from the bundle itself, after the rehearsal passed.
+            rehearsal = {
+                **kw,
+                "out": str(Path(tmp) / "entry"),
+                "zenodo": False,
+                "zenodo_plan_only": bool(kw.get("zenodo")),
+            }
             with contextlib.redirect_stdout(log):
-                code, manifest = _describe(str(scratch), **{**kw, "out": str(Path(tmp) / "entry")}, remote=True)
+                code, manifest = _describe(str(scratch), **rehearsal, remote=True)
+            plan = [ln for ln in log.getvalue().splitlines() if ln.startswith(("zenodo", "note: --zenodo"))]
             if code or manifest is None:
                 print(log.getvalue().rstrip())
                 return code or 1
@@ -242,6 +334,8 @@ def publish(bundle: str, *, dry_run: bool = False, to_url: str | None = None, of
         found = problems(body)
         if dry_run:
             print(json.dumps(body, indent=2, ensure_ascii=False))
+            if kw.get("zenodo"):
+                print("\n".join(plan), file=sys.stderr)
             for p in found:
                 print(f"refused: {p}", file=sys.stderr)
             print("dry run: nothing was written or sent", file=sys.stderr)
@@ -357,6 +451,87 @@ def _stamp_and_compile(bundle: Path, author: str, did: str) -> bool:
         print("note: tectonic is not installed; paper.pdf was not recompiled (the footnote is in paper.tex)")
     _rehash(bundle, rels)
     return True
+
+
+def _ask(question: str) -> str:
+    """public or private, private unless the researcher types public."""
+    try:
+        answer = input(f"{question} [private/public, default private]: ").strip().lower()
+    except EOFError:
+        return "private"
+    return "public" if answer in ("public", "p", "pub") else "private"
+
+
+def _code_zip(bundle: Path, folders: tuple[str, ...] = ("code", "replication")) -> bytes:
+    """The public code as one zip with fixed timestamps, so the same code gives the same file."""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for folder in folders:
+            root = bundle / folder
+            if not root.is_dir():
+                continue
+            for f in sorted(p for p in root.rglob("*") if p.is_file() and "__pycache__" not in p.parts):
+                info = zipfile.ZipInfo(f.relative_to(bundle).as_posix(), date_time=(1980, 1, 1, 0, 0, 0))
+                info.compress_type = zipfile.ZIP_DEFLATED
+                zf.writestr(info, f.read_bytes())
+    return buf.getvalue()
+
+
+def _deposit_plan(bundle: Path, availability: dict[str, Any], project: str) -> dict[str, Any]:
+    """What --zenodo would deposit: the public data files one by one, the public code as one zip."""
+    plan: dict[str, Any] = {}
+    if availability["data"]["access"] == "public" and (bundle / "data").is_dir():
+        files = [
+            (f.relative_to(bundle / "data").as_posix().replace("/", "_"), f.read_bytes())
+            for f in sorted((bundle / "data").rglob("*"))
+            if f.is_file()
+        ]
+        if files:
+            plan["data"] = {"files": files, "upload_type": "dataset"}
+    if availability["code"]["access"] == "public":
+        z = _code_zip(bundle)
+        if len(z) > 22:  # an empty zip is 22 bytes
+            plan["code"] = {"files": [(f"{project}-code.zip", z)], "upload_type": "software"}
+    return plan
+
+
+def _deposit_metadata(
+    item: str, manifest: dict[str, Any], availability: dict[str, Any], dossier: str, study: str
+) -> dict[str, Any]:
+    title = manifest["title"]
+    licence = zen.LICENCES.get(manifest.get("license") or "", "cc-by-4.0" if item == "data" else "mit")
+    meta: dict[str, Any] = {
+        "title": f"{title} ({item})",
+        "upload_type": "dataset" if item == "data" else "software",
+        "description": (
+            f"The {item} of the study “{title}”, published with e2er. "
+            f"The study and how it was produced: {study}. Its dossier: {dossier}."
+        ),
+        "creators": zen.creators(manifest.get("contributors") or []),
+        "access_right": "open",
+        "license": licence,
+        "keywords": ["e2er"],
+        "related_identifiers": [
+            {"identifier": dossier, "relation": "isSupplementTo", "resource_type": "other"},
+            {"identifier": study, "relation": "isSupplementTo", "resource_type": "publication"},
+        ],
+    }
+    return meta
+
+
+def _print_deposit_plan(
+    deposits: dict[str, Any], manifest: dict[str, Any], availability: dict[str, Any], sandbox: bool
+) -> None:
+    where = "sandbox.zenodo.org" if sandbox else "zenodo.org"
+    for item, d in deposits.items():
+        size = sum(len(b) for _, b in d["files"])
+        licence = zen.LICENCES.get(manifest.get("license") or "", "cc-by-4.0" if item == "data" else "mit")
+        print(
+            f"zenodo {item}: would deposit {len(d['files'])} file(s), {size:,} bytes, on {where} ({d['upload_type']})"
+        )
+        for name, b in d["files"]:
+            print(f"zenodo   {name}  {len(b):,} bytes")
+        print(f"zenodo   title: {manifest['title']} ({item}); licence: {licence}; creators and ORCID from the manifest")
 
 
 __all__ = ["MANIFEST_NAME", "publish"]

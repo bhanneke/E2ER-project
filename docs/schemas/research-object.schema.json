@@ -340,6 +340,69 @@
           "type": "object"
         }
       }
+    },
+    "availability": {
+      "description": "Whether the study's data and code are public, and where. Stated at publishing (e2er publish --data/--code); private unless stated. Optional: manifests written before it existed omit it, which means private.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "type": "object",
+          "required": [
+            "access"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "access": {
+              "enum": [
+                "public",
+                "private"
+              ],
+              "description": "public: others can obtain it at url/doi. private: only file fingerprints are published."
+            },
+            "url": {
+              "type": "string",
+              "description": "Where the public material lives: a repository at a commit, or https://doi.org/<doi>. Absent when private."
+            },
+            "doi": {
+              "type": "string",
+              "description": "DOI of the public material, e.g. from `e2er publish --zenodo`."
+            },
+            "zenodo": {
+              "type": "string",
+              "description": "The Zenodo record page, when deposited with --zenodo."
+            }
+          }
+        },
+        "code": {
+          "type": "object",
+          "required": [
+            "access"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "access": {
+              "enum": [
+                "public",
+                "private"
+              ],
+              "description": "public: others can obtain it at url/doi. private: only file fingerprints are published."
+            },
+            "url": {
+              "type": "string",
+              "description": "Where the public material lives: a repository at a commit, or https://doi.org/<doi>. Absent when private."
+            },
+            "doi": {
+              "type": "string",
+              "description": "DOI of the public material, e.g. from `e2er publish --zenodo`."
+            },
+            "zenodo": {
+              "type": "string",
+              "description": "The Zenodo record page, when deposited with --zenodo."
+            }
+          }
+        }
+      }
     }
   }
 }
