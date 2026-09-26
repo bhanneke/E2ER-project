@@ -1,4 +1,4 @@
-# E2ER — reusable research infrastructure
+# e2er — reusable research infrastructure
 
 [![Status](https://img.shields.io/badge/status-active%20development-blue)]()
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
@@ -7,7 +7,7 @@
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20187238.svg)](https://doi.org/10.5281/zenodo.20187238)
 [![PyPI](https://img.shields.io/pypi/v/e2er.svg)](https://pypi.org/project/e2er/)
 
-A workbench for building research processes: E2ER organises **skills** and
+A workbench for building research processes: e2er organises **skills** and
 **specialists** into **pipelines** that produce research outputs. Four layers,
 each one composable:
 
@@ -40,7 +40,7 @@ Results-table cells are filled by a deterministic renderer from JSON sidecars
 exported bundle carries a content-addressed provenance manifest; and
 `e2er verify` re-establishes — offline, no API keys, in under a minute — that
 a finished bundle is internally consistent and untampered. Generation is
-nearly free; E2ER's aim is to make *verification* cheap too.
+nearly free; e2er's aim is to make *verification* cheap too.
 
 ```bash
 pip install e2er
@@ -55,7 +55,7 @@ $0 step.
 
 ### Bring your own data and literature
 
-![Pointing E2ER at a folder of data and a folder of references, then running e2er doctor](docs/demo/byod.gif)
+![Pointing e2er at a folder of data and a folder of references, then running e2er doctor](docs/demo/byod.gif)
 
 Put your datasets in one folder and your references in another, name them in
 `.env`, and `e2er doctor` tells you whether a run will actually work before you
@@ -87,7 +87,7 @@ start one. Every line in that recording is the program's own output — see
 
 ## The workflow
 
-E2ER is organized around four things a researcher actually does.
+e2er is organized around four things a researcher actually does.
 
 **1 · Bring your own data and your own papers.** Drop datasets in `data/`
 (`.csv`, `.parquet`, `.xlsx`, …) and reference PDFs — or a Zotero library — in
@@ -172,7 +172,7 @@ the per-regime fabrication means — turning the governance switch into a measur
 comparison of fabrication and variance across regimes.
 
 The submission also ships a companion artifact — a catalogue of
-automated-research systems (RISE) — that situates E2ER against the landscape.
+automated-research systems (RISE) — that situates e2er against the landscape.
 
 ---
 
@@ -246,7 +246,7 @@ Files for a paper land in two places:
 
 ## Pick a backend
 
-E2ER is "bring your own LLM" — choose whichever you already have access to. The CLI backends use your existing subscription, so the marginal cost per paper is **$0**.
+e2er is "bring your own LLM" — choose whichever you already have access to. The CLI backends use your existing subscription, so the marginal cost per paper is **$0**.
 
 | Backend | Setting | Cost per paper | Install |
 |---|---|---|---|
@@ -461,7 +461,7 @@ not in the paper — see [docs/CORPUS.md](docs/CORPUS.md) and the format spec in
 
 ### How it works
 
-![How E2ER works — phases, specialists, and JSON artifact contracts](docs/figures/pipeline.svg)
+![How e2er works — phases, specialists, and JSON artifact contracts](docs/figures/pipeline.svg)
 
 The figure shows the seven pipeline phases left-to-right
 (`initial → iterative → self_attack → polish → review → revision → replication`),
@@ -552,7 +552,7 @@ The repo ships with worked examples — real artifacts from real runs:
 
 **`e2er: command not found`** — `pip install e2er` succeeded but the script directory isn't on your PATH. Try `python -m e2er run "..."` instead, or add your `~/.local/bin` (or venv `bin/`) to PATH.
 
-**`pip install e2er` errors with `ImportError: cannot import name 'UTC' from 'datetime'`** — your local Python is < 3.11. E2ER requires 3.11+. Use `pyenv install 3.11` or `brew install python@3.12`.
+**`pip install e2er` errors with `ImportError: cannot import name 'UTC' from 'datetime'`** — your local Python is < 3.11. e2er requires 3.11+. Use `pyenv install 3.11` or `brew install python@3.12`.
 
 **Paper stuck in `in_progress` forever** — check `workspaces/<paper_id>/.pipeline_state.json` for the last completed phase and `~/.e2er/uvicorn.log` for errors. Restart uvicorn and hit `/resume` — the runner reads state.json and skips completed phases.
 
@@ -598,10 +598,10 @@ See [`AGENTS.md`](AGENTS.md) for the branch model, lane structure, and contribut
 
 ### Related projects
 
-The automated research space is developing quickly. Two projects most relevant to E2ER:
+The automated research space is developing quickly. Two projects most relevant to e2er:
 
-- **[Project APE](https://ape.socialcatalystlab.org/)** (Social Catalyst Lab, University of Zurich) — AI agents identifying policy questions with credible causal identification strategies, running econometric analysis, and producing complete papers. ~1,000 papers generated; now in systematic evaluation against peer-reviewed journals. Closest in spirit to E2ER.
-- **[ZeroPaper](https://github.com/alejandroll10/zeropaper)** (Institute for Automated Research) — ~30 specialised agents across 10 stages, focused on theory-first finance and macroeconomics. E2ER adopts four quality-control ideas from ZeroPaper (ceiling detection, self-attack, parallel polish, mechanical aggregation).
+- **[Project APE](https://ape.socialcatalystlab.org/)** (Social Catalyst Lab, University of Zurich) — AI agents identifying policy questions with credible causal identification strategies, running econometric analysis, and producing complete papers. ~1,000 papers generated; now in systematic evaluation against peer-reviewed journals. Closest in spirit to e2er.
+- **[ZeroPaper](https://github.com/alejandroll10/zeropaper)** (Institute for Automated Research) — ~30 specialised agents across 10 stages, focused on theory-first finance and macroeconomics. e2er adopts four quality-control ideas from ZeroPaper (ceiling detection, self-attack, parallel polish, mechanical aggregation).
 
 ### Roadmap highlights
 

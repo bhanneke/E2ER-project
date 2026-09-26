@@ -203,7 +203,7 @@ def _render_readme(workspace: Path, manifest: dict, slug: str) -> str:
         "cd code && python run_estimation.py   # reads ../data/ (or the original data files)",
         "```",
         "",
-        f"_Exported as `{slug}` from E2ER._",
+        f"_Exported as `{slug}` from e2er._",
     ]
     return "\n".join(lines) + "\n"
 

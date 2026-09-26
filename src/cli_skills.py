@@ -128,7 +128,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="e2er skills",
         description="Skills, in both directions: `install` pulls other projects' "
-        "packs in from the RISE catalogue; `sync` pushes E2ER's own skills out to "
+        "packs in from the RISE catalogue; `sync` pushes e2er's own skills out to "
         "a headless CLI backend so the `claude`/`codex`/`gemini` process can see them.",
     )
     p.add_argument("--catalogue", default=None, help="Path to a RISE checkout (default: RISE_PATH)")
@@ -152,7 +152,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     sync = sub.add_parser(
         "sync",
-        help="Copy E2ER's own skills to a headless CLI backend's skills dir",
+        help="Copy e2er's own skills to a headless CLI backend's skills dir",
     )
     sync.add_argument(
         "--backend",

@@ -8,7 +8,7 @@ against the paper.
 - Reference implementation: `src/modules/literature/review.py`
 
 This document specifies the format. It is written so that a tool with no
-connection to E2ER can produce records E2ER will read, or read records E2ER
+connection to e2er can produce records e2er will read, or read records e2er
 produces.
 
 ## The problem
@@ -31,7 +31,7 @@ with no way to tell which are real, and it gets worse as it grows.
 Verification asks one question of every claim: does that sentence occur in the
 source text? A claim whose quote cannot be located is *rejected*, not flagged.
 
-This is deliberately the same discipline E2ER applies to numbers. A table cell
+This is deliberately the same discipline e2er applies to numbers. A table cell
 must trace to a key in a JSON sidecar or the numbers gate blocks the paper; a
 claim must trace to a sentence or it does not enter the corpus. Neither check
 asks a model whether it is telling the truth, which is why neither can be
@@ -156,7 +156,7 @@ report.conclusive   # total > 0
 
 An extraction that produced nothing passes vacuously. Reported as a single
 boolean it would read exactly like an extraction that checked twenty claims and
-cleared them all. E2ER's numbers gate reported precisely that for months, so
+cleared them all. e2er's numbers gate reported precisely that for months, so
 the two are separate here from the start.
 
 **A record is trustworthy only when `passed and conclusive`.**
@@ -175,7 +175,7 @@ Any tool may produce these. The obligations are:
 4. **Keep the rejections.** They are evidence about the extractor, not the
    paper — see below.
 
-E2ER writes records that validate against the schema. It *reads* records that
+e2er writes records that validate against the schema. It *reads* records that
 do not: `review_from_dict()` tolerates missing fields and older versions, so a
 corpus outlives its schema. Strict on write, tolerant on read.
 

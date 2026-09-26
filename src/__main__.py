@@ -26,7 +26,7 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(
         prog="e2er",
-        description="E2ER v3 — End-to-End Researcher pipeline",
+        description="e2er v3 — End-to-End Researcher pipeline",
     )
     subparsers = parser.add_subparsers(dest="command")
 
@@ -252,7 +252,7 @@ def main() -> None:
         # In the description too, not only in the runtime note: `--help` exits
         # during parsing, so anyone reading the help would never see the note.
         description="Deprecated: this is now `e2er skills sync`. The old name still works. "
-        "Copies E2ER's own skill files to ~/.{backend}/skills/ so a headless "
+        "Copies e2er's own skill files to ~/.{backend}/skills/ so a headless "
         "claude/codex/gemini process can see them.",
     )
     install_skills.add_argument(
@@ -377,7 +377,7 @@ def main() -> None:
     publish_p.add_argument(
         "--no-stamp",
         action="store_true",
-        help="Do not write the E2ER author line and dossier footnote into paper/paper.tex.",
+        help="Do not write the e2er author line and dossier footnote into paper/paper.tex.",
     )
     publish_p.add_argument(
         "--out", default=None, help="Where to write the registry entry (default: ./e2er-registry-entry)."
@@ -498,7 +498,7 @@ def main() -> None:
     # claims for the top-level parser first.
     subparsers.add_parser(
         "skills",
-        help="Install skill packs, or sync E2ER's own out to a CLI backend (`e2er skills --help`)",
+        help="Install skill packs, or sync e2er's own out to a CLI backend (`e2er skills --help`)",
         add_help=False,
     )
     subparsers.add_parser(
@@ -803,7 +803,7 @@ def _serve(*, host: str, port: int, reload: bool, no_browser: bool) -> int:
     url = f"http://{host}:{port}"
 
     if _already_serving(host, port):
-        print(f"E2ER is already running at {url} — opening it.")
+        print(f"e2er is already running at {url} — opening it.")
         if not no_browser:
             import webbrowser
 
@@ -816,7 +816,7 @@ def _serve(*, host: str, port: int, reload: bool, no_browser: bool) -> int:
     if not no_browser and not reload:
         _open_browser(url)
 
-    print(f"E2ER dashboard → {url}   (ctrl-c to stop)")
+    print(f"e2er dashboard → {url}   (ctrl-c to stop)")
     try:
         uvicorn.run("src.api.app:app", host=host, port=port, reload=reload)
     except SystemExit as e:  # uvicorn raises this on a bind failure

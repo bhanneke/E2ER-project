@@ -154,7 +154,7 @@ verification step that re-checks every citation against an independent
 authority (OpenAlex, Semantic Scholar) and **blocks finalization** on
 failure.
 
-E2ER already has the verification primitives (`src/modules/literature/openalex.py`,
+e2er already has the verification primitives (`src/modules/literature/openalex.py`,
 `semantic_scholar.py`). What's missing is a hard gate that runs them
 against the assembled bibliography.
 
@@ -360,7 +360,7 @@ Week 2:
 
 ## What this plan deliberately omits
 
-- **Bilingual abstracts (zh-TW/EN)** — Imbad0202 has this; E2ER's audience is empirical IS/econ/finance, mostly EN. Skip until requested.
-- **PRISMA / RoB 2 / ROBINS-I bias assessment** — relevant for systematic reviews, not for the empirical-paper workflow E2ER targets. Out of scope.
+- **Bilingual abstracts (zh-TW/EN)** — Imbad0202 has this; e2er's audience is empirical IS/econ/finance, mostly EN. Skip until requested.
+- **PRISMA / RoB 2 / ROBINS-I bias assessment** — relevant for systematic reviews, not for the empirical-paper workflow e2er targets. Out of scope.
 - **Retraction monitoring** — running cron jobs against retraction databases is a separate piece of infrastructure. Not blocking item 3; can fold in later as an extension to the integrity checker.
 - **Cross-model verification** (run GPT/Gemini against Anthropic on integrity stages) — interesting, but doubles API spend on a check that already passes 99% of the time when OpenAlex is the source of truth. Worth it only if false-negative rate on item 3 turns out to be high.

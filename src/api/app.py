@@ -62,7 +62,7 @@ _STATIC_DIR = _API_DIR / "static"
 _TEMPLATES_DIR = _API_DIR / "templates"
 
 logger = get_logger(__name__)
-app = FastAPI(title="E2ER v3", version="3.0.0", description="End-to-End Researcher pipeline API")
+app = FastAPI(title="e2er v3", version="3.0.0", description="End-to-End Researcher pipeline API")
 
 _cors_origins = [o.strip() for o in get_settings().cors_origins.split(",") if o.strip()]
 app.add_middleware(
@@ -325,7 +325,7 @@ async def _log_config() -> None:
 
     logger.info("Run identity: %s", identity_summary())
     logger.info(
-        "E2ER v3 starting | backend=%s model=%s data=%s lit_kb=%s github=%s default_cap=$%.2f",
+        "e2er v3 starting | backend=%s model=%s data=%s lit_kb=%s github=%s default_cap=$%.2f",
         s.llm_backend,
         s.default_model,
         "on" if s.data_module_enabled else "off",

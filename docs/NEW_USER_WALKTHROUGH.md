@@ -1,6 +1,6 @@
 # New-user walkthrough — bring your own data + papers
 
-This is the canonical "as a real researcher" path: point E2ER at a folder of
+This is the canonical "as a real researcher" path: point e2er at a folder of
 **your data** and a folder of **your papers**, and it discovers them, imports
 them into the paper's own SQLite warehouse, and does real research against them
 — no Postgres, no Docker, no API keys required.
@@ -8,7 +8,7 @@ them into the paper's own SQLite warehouse, and does real research against them
 It replaces the old synthetic test cases (which disabled data and produced
 fabricated numbers). Everything here runs on the **zero-config SQLite default**.
 
-## 1. Point E2ER at your folders
+## 1. Point e2er at your folders
 
 Two env vars (in `.env` or the shell):
 

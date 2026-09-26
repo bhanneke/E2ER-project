@@ -3,7 +3,7 @@
 **Status:** design, not implemented. Written 2026-09-22.
 
 The goal: a researcher can define their own research process as a file — their
-phases, their specialists, their checks — and run it on E2ER without writing
+phases, their specialists, their checks — and run it on e2er without writing
 Python. A theory-construction pipeline, a reproduction pipeline and an empirical
 pipeline are then three files, not three forks.
 
@@ -133,7 +133,7 @@ Searched in order; first match wins:
 
 1. `./pipelines/<name>.toml` — project-local, ships with the paper
 2. `~/.e2er/pipelines/<name>.toml` — the researcher's own
-3. built-in, packaged with E2ER
+3. built-in, packaged with e2er
 
 Project-local winning means a paper can carry the exact pipeline that produced
 it, which is what makes a pipeline file a citable artifact rather than a local

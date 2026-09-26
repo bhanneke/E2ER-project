@@ -222,7 +222,7 @@ def _env_block(
 ) -> str:
     """Assemble the `.env` body with comments so the user can edit later."""
     lines = [
-        "# E2ER v3 configuration — written by `e2er init`",
+        "# e2er v3 configuration — written by `e2er init`",
         "# Re-run `e2er init` to overwrite, or edit by hand.",
         "",
         "# ── LLM backend ──────────────────────────────────────────────────",
@@ -386,7 +386,7 @@ def init(force: bool = False, defaults: bool = False) -> int:
     # 2. Data module
     print("Step 2/4 — Data sources.")
     print(
-        "  E2ER can run literature-only (no external data), or use Allium\n"
+        "  e2er can run literature-only (no external data), or use Allium\n"
         "  for blockchain data. yfinance + FRED are always available and\n"
         "  don't need keys."
     )
@@ -401,7 +401,7 @@ def init(force: bool = False, defaults: bool = False) -> int:
     # 3. Literature
     print("Step 3/4 — Literature (optional).")
     print(
-        "  E2ER does not auto-fetch papers. Supply your own BibTeX file\n"
+        "  e2er does not auto-fetch papers. Supply your own BibTeX file\n"
         "  (e.g. exported from Zotero / Mendeley) for grounded citations."
     )
     bibtex = ""
