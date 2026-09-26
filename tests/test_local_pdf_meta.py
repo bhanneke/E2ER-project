@@ -71,3 +71,44 @@ def test_a_page_with_no_usable_title_returns_empty():
 def test_a_runaway_title_is_bounded():
     page = "\n".join(["Word " * 20] * 10)
     assert len(_title_from_first_page(page)) < 400
+
+
+# ---------------------------------------------------------------------------
+# DocInfo titles that are not titles
+# ---------------------------------------------------------------------------
+
+
+def test_a_docinfo_title_that_is_really_a_filename_is_rejected():
+    """Surfaced by putting the library on screen.
+
+    PDF producers write whatever the authoring tool was pointed at. Two showed
+    up in the first 69 papers: "C:\\Working Papers\\10449.wpd" and "base.dvi".
+    Both are valid DocInfo and useless — a wrong title deduplicates against
+    nothing and tells a reader nothing, so the first page is a better source.
+    """
+    from src.modules.literature.local_pdf_meta import _is_junk_title
+
+    for junk in [
+        "C:\\Working Papers\\10449.wpd",
+        "base.dvi",
+        "paper.tex",
+        "submission.docx",
+        "Microsoft Word - draft3.doc",
+        "/Users/someone/out.ps",
+        "untitled",
+        "",
+        "   ",
+    ]:
+        assert _is_junk_title(junk), f"{junk!r} should not be used as a title"
+
+
+def test_a_real_title_is_kept():
+    from src.modules.literature.local_pdf_meta import _is_junk_title
+
+    for good in [
+        "Crypto Wash Trading",
+        "Short Squeeze in DeFi Lending Market: Decentralization in Jeopardy?",
+        "Bargaining and Markets",
+        "A Theory of the Firm",
+    ]:
+        assert not _is_junk_title(good), f"{good!r} is a perfectly good title"

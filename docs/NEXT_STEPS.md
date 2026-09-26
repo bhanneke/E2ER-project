@@ -1,4 +1,4 @@
-# Next steps for E2ER v3
+# Next steps for e2er v3
 
 > **⚠️ SUPERSEDED (2026-05-28).** This document is May-12 vintage (221
 > tests, Allium-blocker framing) and no longer reflects the roadmap.

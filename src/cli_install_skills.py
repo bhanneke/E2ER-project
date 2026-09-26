@@ -75,7 +75,7 @@ def install_skills(backend: str = "all", force: bool = False) -> int:
     src = _bundled_skills_dir()
     if src is None or not src.is_dir():
         print(
-            "No bundled skill files found. E2ER seems to be installed in a "
+            "No bundled skill files found. e2er seems to be installed in a "
             "broken state. Try reinstalling with `pip install -e '.[dev]'` "
             "or `pip install --force-reinstall e2er`."
         )

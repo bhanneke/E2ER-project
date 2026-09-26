@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Researcher step — e2er{% endblock %}
+
+{% block content %}
+<p><a href="/papers/{{ paper_id }}">← back to the paper</a></p>
+{% if not pending %}
+  <h1>No researcher step</h1>
+  <p class="sub">The run is not stopped at a researcher step.</p>
+{% else %}
+  <h1>Researcher step: {{ pending.stage }}</h1>
+  <p class="sub">
+    {% if pending.kind == "preregister" %}
+      The pre-registration below was assembled from the study's design files. Edit it if needed;
+      approving it freezes it with its fingerprint before any analysis runs.
+    {% else %}
+      The run stopped here for you. Edit a file, give an instruction for the following steps,
+      send a step back, or approve to continue. Everything you do here appears in the study's dossier.
+    {% endif %}
+  </p>
+
+  {% for f in files %}
+    <section class="rv-file">
+      <h2 class="mono">{{ f.name }}</h2>
+      {% if f.exists %}
+        <textarea id="f-{{ loop.index }}" data-file="{{ f.name }}" rows="18" style="width:100%;font-family:var(--mono, monospace)">{{ f.content }}</textarea>
+        <button class="btn-ghost" data-save="f-{{ loop.index }}">Save edit</button>
+      {% else %}
+        <p class="muted">Not written yet.</p>
+      {% endif %}
+    </section>
+  {% endfor %}
+
+  <section>
+    <h2>Instruction for the following steps</h2>
+    <textarea id="instr" rows="3" style="width:100%" placeholder="For instance: use monthly rather than daily data."></textarea>
+    <button class="btn-ghost" id="send-instr">Add instruction</button>
+  </section>
+
+  {% if sendable %}
+  <section>
+    <h2>Send a step back</h2>
+    <select id="sb-step">{% for s in sendable %}<option>{{ s }}</option>{% endfor %}</select>
+    <input id="sb-remark" style="width:60%" placeholder="What should change">
+    <button class="btn-ghost" id="send-back">Send back and continue</button>
+  </section>
+  {% endif %}
+
+  <p><button class="btn-primary" id="approve">Approve and continue</button></p>
+  <p class="form-note" id="rv-msg" hidden></p>
+{% endif %}
+
+{% if actions %}
+  <h2>What you did at researcher steps</h2>
+  <ul>{% for a in actions %}<li class="small">{{ a.created_at }} · {{ a.payload.action }} {{ a.payload.file or a.payload.target or "" }} {{ a.payload.text or a.payload.remark or "" }}</li>{% endfor %}</ul>
+{% endif %}
+
+<script>
+  (function () {
+    const msg = document.getElementById('rv-msg');
+    const say = (t) => { if (msg) { msg.textContent = t; msg.hidden = false; } };
+    async function send(body) {
+      const r = await fetch('/api/papers/{{ paper_id }}/review', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) { say(d.detail || ('Failed (' + r.status + ')')); return false; }
+      return d;
+    }
+    document.querySelectorAll('[data-save]').forEach((b) => b.addEventListener('click', async () => {
+      const t = document.getElementById(b.dataset.save);
+      if (await send({ action: 'edit', file: t.dataset.file, content: t.value })) say('Saved ' + t.dataset.file + '.');
+    }));
+    const i = document.getElementById('send-instr');
+    if (i) i.addEventListener('click', async () => { if (await send({ action: 'instruction', text: document.getElementById('instr').value })) { say('Instruction added.'); document.getElementById('instr').value = ''; } });
+    const sb = document.getElementById('send-back');
+    if (sb) sb.addEventListener('click', async () => { if (await send({ action: 'send_back', step: document.getElementById('sb-step').value, remark: document.getElementById('sb-remark').value })) location.href = '/papers/{{ paper_id }}'; });
+    const a = document.getElementById('approve');
+    if (a) a.addEventListener('click', async () => { if (await send({ action: 'approve' })) location.href = '/papers/{{ paper_id }}'; });
+  })();
+</script>
+{% endblock %}

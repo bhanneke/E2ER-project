@@ -133,6 +133,12 @@ class Settings(BaseSettings):
     # CORPUS_AUTOINGEST=false to turn it off.
     corpus_autoingest: bool = True
 
+    # A local checkout of the RISE catalogue (github.com/bhanneke/RISE), which
+    # indexes skill packs published by other research projects. `e2er skills`
+    # reads it to install packs from their own sources rather than vendoring
+    # them — most of the catalogue is not E2ER's to redistribute.
+    rise_path: str | None = None
+
     # BYOD literature folder: a directory of the researcher's own papers,
     # discovered + persisted into SQLite at paper creation. May be a plain
     # folder of PDFs OR a Zotero folder (auto-detected by a zotero.sqlite at

@@ -29,7 +29,7 @@ def test_multiline_title_extracted():
 
 def test_running_header_and_produced_by():
     out = assemble_document(r"\title{T}" + "\nx\n")
-    assert "Produced by E2ER" in out
+    assert "Produced by e2er" in out
     assert r"\pagestyle{fancy}" in out
     assert r"\fancypagestyle{plain}" in out  # header on the title page too
 
@@ -43,7 +43,7 @@ def test_xcolor_before_hyperref_and_graphicspath():
 
 def test_default_author_is_e2er():
     out = assemble_document(r"\title{T}" + "\nx\n")
-    assert r"\author{Produced by the E2ER pipeline}" in out
+    assert r"\author{Produced by the e2er pipeline}" in out
 
 
 def test_running_title_truncates():

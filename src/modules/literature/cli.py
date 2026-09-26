@@ -216,7 +216,7 @@ async def _cmd_read(args, workspace: Path, specialist: str) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="e2er-lit", description="Literature search and bibliography for E2ER specialists.")
+    p = argparse.ArgumentParser(prog="e2er-lit", description="Literature search and bibliography for e2er specialists.")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     s = sub.add_parser("search", help="search the literature and record hits in literature.bib")

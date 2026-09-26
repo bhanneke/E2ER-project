@@ -118,7 +118,7 @@ def _ensure_api_up(deadline_seconds: float = 12.0) -> tuple[bool, str | None]:
     """
     if _api_reachable():
         return True, None
-    print("Starting local E2ER API server (uvicorn on :8280)...", file=sys.stderr)
+    print("Starting local e2er API server (uvicorn on :8280)...", file=sys.stderr)
     pid = _start_uvicorn_in_background()
     deadline = time.monotonic() + deadline_seconds
     while time.monotonic() < deadline:

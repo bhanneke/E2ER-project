@@ -1,0 +1,46 @@
+# Check a study folder with `e2er verify` on every push and report the result
+# to e2er.org, without a stored secret: GitHub gives the job an OIDC token that
+# names this repository, workflow and commit, and e2er.org accepts it for a
+# study whose owner trusts this repository and workflow (account page →
+# GitHub Actions). Copy this file to .github/workflows/e2er-verify.yml.
+name: e2er verify
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write   # lets the job ask GitHub for the OIDC token
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    env:
+      E2ER_URL: https://e2er.org          # the platform, and the token's audience
+      BUNDLE: examples/showcase           # the study folder in this repository
+      # Until `e2er verify --json` with content_id ships on PyPI, install from the branch:
+      E2ER_PIP: "e2er @ git+https://github.com/bhanneke/E2ER-project@registry-publish"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install "$E2ER_PIP"
+      - name: Verify the study folder
+        id: verify
+        run: |
+          set +e
+          e2er verify "$BUNDLE" --json > verify.json
+          echo "code=$?" >> "$GITHUB_OUTPUT"
+          cat verify.json
+      - name: Report to e2er.org
+        run: |
+          TOKEN=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$E2ER_URL" | jq -r '.value')
+          jq -n --slurpfile v verify.json --arg path "$BUNDLE" '{path: $path, verify: $v[0]}' > body.json
+          curl -sS --fail-with-body -X POST "$E2ER_URL/api/v1/actions/results" \
+            -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" --data @body.json
+      - name: Fail when the folder does not verify
+        if: steps.verify.outputs.code != '0'
+        run: exit 1

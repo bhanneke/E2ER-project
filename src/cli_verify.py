@@ -74,9 +74,14 @@ def _check_integrity(bundle: Path) -> Check:
             mismatched.append(rel)
     # provenance.json cannot inventory itself; report.html is a rendering of the
     # bundle written after it, and asserts nothing the hashed files do not.
-    _NOT_EVIDENCE = {"provenance.json", "report.html"}
+    # e2er.json (written by `e2er publish`) describes the bundle and records the
+    # digest of provenance.json itself, so it is not part of the evidence either;
+    # nor is .e2er/, where `e2er publish --to` notes which platform holds the study.
+    _NOT_EVIDENCE = {"provenance.json", "report.html", "e2er.json"}
     on_disk = {
-        p.relative_to(bundle).as_posix() for p in bundle.rglob("*") if p.is_file() and p.name not in _NOT_EVIDENCE
+        p.relative_to(bundle).as_posix()
+        for p in bundle.rglob("*")
+        if p.is_file() and p.name not in _NOT_EVIDENCE and p.relative_to(bundle).parts[0] != ".e2er"
     }
     extra = sorted(on_disk - set(files))
     if missing or mismatched or extra:
@@ -286,7 +291,18 @@ def _check_citations_offline(bundle: Path) -> Check:
         return Check("citations", SKIP, "no paper/paper.tex")
     from .core.pipeline.verify_citations import load_bib, parse_cite_keys
 
-    keys = parse_cite_keys(tex.read_text(encoding="utf-8", errors="replace"))
+    text = tex.read_text(encoding="utf-8", errors="replace")
+    keys = parse_cite_keys(text)
+    from .core.bibliography import bibliography_names
+
+    absent = [n for n in bibliography_names(text) if not (bundle / "paper" / f"{n}.bib").is_file()]
+    if keys and absent:
+        return Check(
+            "citations",
+            FAIL,
+            f"paper.tex uses {', '.join(n + '.bib' for n in absent)}, which is not in the bundle; "
+            "compiled from the bundle, every citation would be unresolved",
+        )
     refs = bundle / "paper" / "refs.bib"
     bib = load_bib(refs) if refs.is_file() else {}
     missing = [k for k in keys if k not in bib]
@@ -332,6 +348,27 @@ async def _check_citations_online(bundle: Path) -> Check:
 # ── orchestration + output ───────────────────────────────────────────────────
 
 
+def _check_preregistration(bundle: Path) -> Check | None:
+    """A frozen pre-registration: the plan files still match their fingerprints.
+
+    Returns None for a bundle without one, so ordinary bundles report the same
+    checks as before.
+    """
+    from .core.pipeline.preregistration import deviations, load_lock
+
+    design = bundle / "design"
+    lock = load_lock(design)
+    if lock is None:
+        return None
+    when = str(lock.get("frozen_at", ""))[:10]
+    found = deviations(design, lock)
+    if found:
+        return Check(
+            "preregistration", FAIL, f"deviates from the pre-registered plan (frozen {when}): " + "; ".join(found)
+        )
+    return Check("preregistration", PASS, f"estimation follows the pre-registered plan (frozen {when})")
+
+
 def _run_checks(bundle: Path, online: bool) -> list[Check]:
     checks = [_check_integrity(bundle)]
     with tempfile.TemporaryDirectory() as td:
@@ -341,6 +378,9 @@ def _run_checks(bundle: Path, online: bool) -> list[Check]:
         checks.append(_check_tables(bundle, ws))
         checks.append(_check_spec(ws))
         checks.append(_check_citations_offline(bundle))
+    prereg = _check_preregistration(bundle)
+    if prereg is not None:
+        checks.append(prereg)
     if online:
         checks.append(asyncio.run(_check_citations_online(bundle)))
     return checks
@@ -407,12 +447,35 @@ def verify(bundle: str, *, online: bool = False, json_output: bool = False) -> i
     if json_output:
         from dataclasses import asdict
 
+        from . import __version__
+
+        prov = bundle_path / "provenance.json"
+        # The content id (SHA-256 of provenance.json) and the version let a platform
+        # match this result to the published study version (e.g. from GitHub Actions).
         print(
             json.dumps(
-                {"checks": [asdict(c) for c in checks], "verdict": banner, "verified": code == 0},
+                {
+                    "checks": [asdict(c) for c in checks],
+                    "verdict": banner,
+                    "verified": code == 0,
+                    "e2er_version": __version__,
+                    "content_id": f"sha256:{_sha256(prov)}" if prov.is_file() else None,
+                    "availability": _availability(bundle_path),
+                },
                 indent=2,
             )
         )
     else:
         print(_render(checks))
+        av = _availability(bundle_path)
+        if av is not None:
+            from .core.availability import describe
+
+            print(f"   availability: {describe(av)}")
     return code
+
+
+def _availability(bundle: Path) -> dict[str, Any] | None:
+    """Data and code availability as stated when publishing (from e2er.json), if published."""
+    manifest = _load_json(bundle / "e2er.json")
+    return manifest.get("availability") if isinstance(manifest, dict) else None

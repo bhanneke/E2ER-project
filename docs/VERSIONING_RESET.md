@@ -12,7 +12,7 @@ We've been calling this trajectory "v0.9 → v1.0" but that's the calendar
 talking, not the system. **The pipeline has never produced a successful
 end-to-end paper.** It has caught its own failures correctly four times
 in a row, which is real progress, but conventional v0.9 implies
-"release-candidate, things work for the stated purpose." E2ER's stated
+"release-candidate, things work for the stated purpose." e2er's stated
 purpose is *to produce empirical research papers end-to-end*, and we
 haven't done that yet.
 

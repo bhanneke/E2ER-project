@@ -1,11 +1,80 @@
 # Changelog
 
-All notable changes to E2ER v3 are documented in this file.
+All notable changes to e2er are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+### Publishing on e2er.org, with a dossier on every paper
+
+`e2er publish <bundle>` verifies an exported bundle offline and writes its
+description (`e2er.json`, schema `e2er-research-object/0.1`,
+`docs/schemas/research-object.schema.json`): contributors with GitHub login and
+ORCID, backend and models, template and mode, the cited literature with DOIs,
+data and outputs with their hashes, and the verification result. Its content id
+is the SHA-256 of `provenance.json`.
+
+Publishing also builds the study's **dossier**: every step of the run in order,
+the specialist and model that carried it out, the file it produced and the
+checks it passed or failed, and every template, specialist, skill and connector
+pinned by content hash. The dossier's address is the SHA-256 of its canonical
+JSON; the paper gets the author line "<name> with e2er" and a first-page
+footnote linking the dossier, and is recompiled. Existing dossier addresses are
+unchanged by this release (new fields only appear in dossiers that use them).
+
+- `e2er login`, `logout`, `whoami`: device-code sign-in to e2er.org; the token is
+  kept in the system keychain, or in `~/.e2er/credentials.json` (mode 0600)
+  when the keychain refuses.
+- `e2er publish --to URL` sends the description (never files or AI keys; a scan
+  refuses anything that looks like a key or a home-directory path);
+  `--dry-run` prints the exact request and changes nothing; `--offline` writes
+  the description for publishing from a folder in the browser.
+- `e2er status <folder>` and `e2er dossier push` (register a dossier for a
+  private study so the paper's footnote resolves).
+- `e2er submit` sends a skill, template, specialist or connector for review.
+- `e2er verify --json`, for GitHub Actions reporting to e2er.org with OIDC
+  (`examples/github-actions/e2er-verify.yml`).
+
+### The researcher decides where the process stops
+
+A template step of kind `researcher` stops the run; the researcher approves,
+edits a file, gives an instruction that every later specialist receives, or
+sends an earlier step back with a remark (`e2er review`, or the dashboard).
+Each action is recorded and appears in the dossier as the researcher's step,
+with the file's fingerprints before and after an edit.
+
+### Pre-registration as a template option
+
+A `preregister` step assembles the question, hypotheses, design and analysis
+plan and, once the researcher approves it, freezes it with its SHA-256 and the
+time. The estimation is compared with the frozen plan; a deviation is reported,
+and `e2er verify` shows it. `e2er preregister deposit --zenodo` deposits it
+with a DOI from the researcher's own Zenodo account.
+`pipelines/empirical-preregistered.toml` uses both steps; `empirical` is
+unchanged.
+
+### Data and code, public or private
+
+`e2er publish --data public|private --code public|private` (default private)
+records availability in the description and the dossier; for private material
+e2er.org receives only fingerprints. `--zenodo` deposits the public data and
+code in the researcher's own Zenodo account and records the DOIs.
+
+### Fixed
+
+- Papers compile from their own bundle: the export ships `literature.bib` as
+  `refs.bib` and now points `\bibliography` at it (before, a recompile turned
+  every citation into "?"); `&`, `%` and `#` in BibTeX text fields are escaped;
+  publish refuses a recompile that leaves a citation unresolved, and `verify`
+  fails when the paper names a bibliography the bundle lacks.
+
+### Changed
+
+- The name is written lowercase, "e2er", in all visible text (CLI help and
+  output, dashboard, documentation). Identifiers, `E2ER_*` settings and the
+  citation title are unchanged.
 
 ## [0.9.1] — 2026-09-18
 

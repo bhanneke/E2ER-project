@@ -1,0 +1,104 @@
+# The empirical template with three researcher steps (docs/researcher-step.md).
+#
+#   review_design   right after the design specialists, before anything else
+#                   runs: the researcher reads the plan, edits it, gives
+#                   instructions or sends a specialist back.
+#   preregister     question, hypotheses, identification and analysis plan,
+#                   assembled into preregistration.md and frozen with its
+#                   fingerprint on approval, still before any estimation.
+#   review_draft    after the draft and the estimation gate, before the
+#                   reviewers read it.
+#
+# `after = [...]` places a researcher step inside the strategist's initial
+# phase: the run stops as soon as those specialists have written their output,
+# and nothing else runs before the researcher has approved. Every researcher
+# action appears in the study's dossier. Otherwise this is empirical.toml.
+
+name = "empirical-preregistered"
+description = "The empirical template with the researcher in it: a design review, a pre-registration frozen before any estimation, and a review of the draft."
+methodologies = ["empirical"]
+
+# Teardown, not a step (see empirical.toml). Declared above the first step
+# table, because TOML binds a bare key after a table array to that table.
+finalize = ["compile", "audit_export", "github_push", "structured_export"]
+
+[[steps]]
+kind  = "researcher"
+name  = "review_design"
+after = ["idea_developer", "literature_scanner", "identification_strategist", "data_architect"]
+files = ["paper_plan.md", "literature_review.md", "identification_strategy.md", "data_dictionary.json"]
+
+[[steps]]
+kind  = "preregister"
+name  = "preregister"
+after = ["idea_developer", "literature_scanner", "identification_strategist", "data_architect"]
+
+[[steps]]
+kind = "strategist"
+name = "initial"
+
+[[steps]]
+kind  = "strategist"
+name  = "iterative"
+modes = ["iterative"]
+
+# Deliberately not resumable. An empirical paper with a populated warehouse must
+# have a contract-clean estimation before any drafting-dependent phase runs, and
+# run D (2026-07-07) showed the specialist-level contract alone is not enough:
+# econometrics failed its contract once, the strategist moved on, and the
+# pipeline spent self-attack, polish and review tokens drafting around `{}`.
+[[steps]]
+kind      = "gate"
+name      = "estimation_gate"
+check     = "estimation"
+on_fail   = "halt"
+resumable = false
+
+[[steps]]
+kind  = "researcher"
+name  = "review_draft"
+files = ["paper_draft.tex", "abstract.tex"]
+
+[[steps]]
+kind  = "specialists"
+name  = "self_attack"
+modes = ["iterative"]
+run   = ["self_attacker"]
+
+# Which polish specialists run is chosen at dispatch from the self-attack
+# report, so this lists the full set rather than a fixed sequence.
+[[steps]]
+kind     = "specialists"
+name     = "polish"
+modes    = ["iterative"]
+parallel = true
+run = [
+    "polish_formula",
+    "polish_numerics",
+    "polish_institutions",
+    "polish_equilibria",
+    "polish_bibliography",
+]
+
+[[steps]]
+kind     = "aggregate"
+name     = "review"
+parallel = true
+run = [
+    "mechanism_reviewer",
+    "technical_reviewer",
+    "literature_reviewer",
+    "data_reviewer",
+    "identification_reviewer",
+    "writing_reviewer",
+]
+
+[[steps]]
+kind = "specialists"
+name = "revision"
+run  = ["revisor", "patch_revisor"]
+
+[[steps]]
+kind = "specialists"
+name = "replication"
+run  = ["replication_packager"]

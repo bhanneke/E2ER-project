@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/bhanneke/E2ER-project/docs/schemas/pipeline.schema.json",
+  "title": "E2ER pipeline",
+  "description": "A research process as data: an ordered list of steps, plus teardown that runs however the run ended. Authored in TOML and validated as the parsed object, so the file stays readable and the contract stays checked. See docs/PIPELINES.md.",
+  "type": "object",
+  "required": ["name", "steps"],
+  "additionalProperties": false,
+
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]*$",
+      "description": "Filename stem and the identifier passed to `e2er run --pipeline`."
+    },
+    "description": { "type": "string" },
+    "methodologies": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Methodologies this pipeline is appropriate for. Advisory; does not gate execution."
+    },
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Executed in order. An empty pipeline is a mistake, not a no-op.",
+      "items": { "$ref": "#/$defs/step" }
+    },
+    "finalize": {
+      "type": "array",
+      "items": { "enum": ["compile", "audit_export", "github_push", "structured_export"] },
+      "description": "Teardown actions, run regardless of how the run ended — completed, rejected, cancelled, circuit-broken, out of budget. Not steps: each swallows its own errors and none can halt the run, because their whole purpose is to leave the partial artifacts usable when something has already gone wrong."
+    }
+  },
+
+  "$defs": {
+    "step": {
+      "type": "object",
+      "required": ["kind", "name"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": ["strategist", "specialists", "gate", "aggregate", "researcher", "preregister"],
+          "description": "strategist: hand control to the strategist engine. specialists: dispatch a fixed set. gate: run a deterministic check. aggregate: dispatch reviewers and combine their verdicts. researcher: the run stops for the researcher, who can approve, edit the named files, give an instruction for the following steps, or send a step back. preregister: assembles the pre-registration from the design files, stops for the researcher, and freezes it on approval."
+        },
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_]*$",
+          "description": "The stage name. Logged as phase_start/phase_end, shown in progress, and used as the resume key — so renaming one invalidates in-flight resumes."
+        },
+        "run": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Specialists to dispatch. Required for `specialists` and `aggregate`; meaningless for `gate` and `strategist`."
+        },
+        "check": {
+          "enum": ["contracts", "estimation", "numbers", "citations", "claims"],
+          "description": "Which deterministic check to run. Required for `gate`."
+        },
+        "on_fail": {
+          "enum": ["halt", "retry", "shadow"],
+          "default": "halt",
+          "description": "halt stops the run; retry re-runs the preceding step once; shadow records the verdict without blocking. A pipeline may escalate a check beyond the floor but never below it."
+        },
+        "parallel": {
+          "type": "boolean",
+          "default": false,
+          "description": "Dispatch this step's specialists concurrently."
+        },
+        "modes": {
+          "type": "array",
+          "items": { "enum": ["single_pass", "iterative"] },
+          "description": "Run modes this step applies to. Absent means every mode — which is why omitting it on an iterative-only step silently changes single-pass behaviour."
+        },
+        "resumable": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether a completion marker lets the step be skipped on resume. false means it runs every time regardless, which is how the estimation gate stays unskippable."
+        },
+        "files": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^[^/.][^/]*$" },
+          "description": "researcher and preregister steps: workspace files the researcher sees and may edit (top-level names only)."
+        },
+        "after": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "researcher and preregister steps: stop inside the strategist's dispatch, right after these specialists have written their output, instead of at this position in the list."
+        }
+      }
+    }
+  }
+}

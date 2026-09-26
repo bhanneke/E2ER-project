@@ -19,6 +19,10 @@ from pathlib import Path
 _SKILLS_DIRS = [
     Path(__file__).parent / "files",
     Path(__file__).parent.parent.parent / "skills" / "files",
+    # Packs installed from the RISE catalogue by `e2er skills install`.
+    # Last, so a bundled skill of the same name still wins: an installed pack
+    # should extend the library, not silently replace part of it.
+    Path.home() / ".e2er" / "skills",
 ]
 
 

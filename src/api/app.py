@@ -10,6 +10,7 @@ import tarfile
 from datetime import UTC
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote_plus
 
 from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -61,7 +62,7 @@ _STATIC_DIR = _API_DIR / "static"
 _TEMPLATES_DIR = _API_DIR / "templates"
 
 logger = get_logger(__name__)
-app = FastAPI(title="E2ER v3", version="3.0.0", description="End-to-End Researcher pipeline API")
+app = FastAPI(title="e2er v3", version="3.0.0", description="End-to-End Researcher pipeline API")
 
 _cors_origins = [o.strip() for o in get_settings().cors_origins.split(",") if o.strip()]
 app.add_middleware(
@@ -324,7 +325,7 @@ async def _log_config() -> None:
 
     logger.info("Run identity: %s", identity_summary())
     logger.info(
-        "E2ER v3 starting | backend=%s model=%s data=%s lit_kb=%s github=%s default_cap=$%.2f",
+        "e2er v3 starting | backend=%s model=%s data=%s lit_kb=%s github=%s default_cap=$%.2f",
         s.llm_backend,
         s.default_model,
         "on" if s.data_module_enabled else "off",
@@ -419,6 +420,11 @@ class CreatePaperRequest(BaseModel):
     # and the first-run log line reported `mode=iterative`.
     mode: str = Field(default="iterative", validation_alias=AliasChoices("mode", "pipeline_mode"))
     methodology: str = "empirical"  # empirical | theoretical | mixed
+    # Which pipeline file to run: a name resolved against ./pipelines,
+    # ~/.e2er/pipelines, then the builtins. Not an enum, because pipelines are
+    # files users add — the set of legal values is whatever is on disk, and it
+    # is validated against that rather than against a list in the code.
+    pipeline: str = "empirical"
     bibtex_path: str | None = None
     # Per-paper LLM backend + model override. Both default to None → the
     # process-global settings.llm_backend / settings.default_model. Set them
@@ -537,6 +543,23 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
             detail=f"review_stages must be from {'|'.join(PIPELINE_STAGES)}; unknown: {', '.join(bad_stages)}",
         )
 
+    # The pipeline must resolve to a real file NOW, not when the background task
+    # gets there. find_spec raises inside the runner, and a task that dies on its
+    # first line leaves a paper row sitting at 'idea' with nothing to explain it.
+    # Validated against the files on disk rather than a list in the code, because
+    # users add pipelines.
+    from ..core.pipeline.spec import PipelineError, find_spec
+
+    try:
+        find_spec(req.pipeline)
+    except PipelineError as e:
+        from ..core.pipeline.spec import available
+
+        raise HTTPException(
+            status_code=422,
+            detail=f"unknown pipeline {req.pipeline!r}. Available: {', '.join(sorted(available())) or 'none'}",
+        ) from e
+
     # First-run guardrail. Inspect the (model, methodology, mode) tuple. If
     # nothing has completed at this combination, force the cap to $1 unless
     # the requester explicitly acknowledges. This is the proactive defense
@@ -609,10 +632,10 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
             """
             INSERT INTO papers (id, title, research_question, status, workspace,
                                 mode, methodology, model, backend, governance,
-                                review_stages, max_cost_usd)
+                                review_stages, max_cost_usd, pipeline)
             VALUES (%(id)s, %(title)s, %(rq)s, 'idea', %(ws)s,
                     %(mode)s, %(methodology)s, %(model)s, %(backend)s, %(governance)s,
-                    %(review_stages)s, %(cap)s)
+                    %(review_stages)s, %(cap)s, %(pipeline)s)
             """,
             {
                 "id": paper_id,
@@ -626,6 +649,7 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
                 "governance": effective_governance,
                 "review_stages": json.dumps(req.review_stages),
                 "cap": cap,
+                "pipeline": req.pipeline,
             },
         )
     except Exception as e:
@@ -651,6 +675,7 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
             req.review_stages,
             req.research_question,
             req.title,
+            pipeline=req.pipeline,
         )
     )
     _RUNNING[paper_id] = task
@@ -729,6 +754,108 @@ async def cancel_paper(paper_id: str) -> dict[str, Any]:
     return {"status": "cancelling", "paper_id": paper_id}
 
 
+class ReviewAction(BaseModel):
+    """Body for POST /api/papers/{id}/review: one researcher action at a researcher step."""
+
+    action: str  # approve | edit | instruction | send_back
+    file: str | None = None
+    content: str | None = None
+    text: str | None = None
+    step: str | None = None
+    remark: str | None = None
+    resume: bool = True  # approve / send_back continue the run right away
+
+
+async def _review_context(paper_id: str) -> tuple[dict[str, Any], Path, Any, Any]:
+    from ..core.pipeline.researcher import pending_review
+    from ..core.pipeline.spec import find_spec
+    from ..core.pipeline.state import PipelineState
+    from ..db.client import fetch_one
+
+    row = await fetch_one("SELECT * FROM papers WHERE id = %(id)s", {"id": paper_id})
+    if row is None:
+        raise HTTPException(status_code=404, detail="paper not found")
+    workspace = Path(row["workspace"])
+    state = PipelineState.load(workspace, paper_id, row.get("mode") or "single_pass")
+    pending = pending_review(workspace, state)
+    try:
+        spec = find_spec(row.get("pipeline") or "empirical")
+    except Exception:  # noqa: BLE001 — the review still works without the template
+        spec = None
+    return row, workspace, state, (pending, spec)
+
+
+def _sendable(workspace: Path, state: Any, pending: Any, spec: Any) -> list[str]:
+    """What a researcher can send back from here: earlier template steps and specialists with output."""
+    from ..core.specialists.registry import SPECIALIST_ARTIFACTS
+
+    steps: list[str] = []
+    if spec is not None:
+        for s in spec.steps:
+            if s.name == pending.stage:
+                break
+            if s.kind not in ("researcher", "preregister") and s.name in state.completed_stages:
+                steps.append(s.name)
+    specialists = sorted(sp for sp, out in SPECIALIST_ARTIFACTS.items() if (workspace / out).is_file())
+    return steps + specialists
+
+
+@app.get("/api/papers/{paper_id}/review")
+async def get_review(paper_id: str = Depends(_validate_uuid)) -> dict[str, Any]:
+    """The researcher step a paused run is waiting at: its files, what can be sent back, past actions."""
+    from ..db.events import fetch_events
+
+    _row, workspace, state, (pending, spec) = await _review_context(paper_id)
+    past = [e for e in await fetch_events(paper_id) if e.get("event_type") == "researcher_action"]
+    if pending is None:
+        return {"pending": None, "actions": past}
+    files = []
+    for name in pending.files:
+        p = workspace / name
+        files.append(
+            {
+                "name": name,
+                "exists": p.is_file(),
+                "content": p.read_text(encoding="utf-8", errors="replace") if p.is_file() else "",
+            }
+        )
+    return {
+        "pending": {"stage": pending.stage, "kind": pending.kind},
+        "files": files,
+        "sendable": _sendable(workspace, state, pending, spec),
+        "actions": past,
+    }
+
+
+@app.post("/api/papers/{paper_id}/review", dependencies=[Depends(require_auth)])
+async def post_review(req: ReviewAction, paper_id: str = Depends(_validate_uuid)) -> dict[str, Any]:
+    """Apply one researcher action; approve and send back continue the run unless resume=false."""
+    from ..core.pipeline.researcher import ResearcherActionError, apply_action
+    from ..db.events import log_event
+
+    existing = _RUNNING.get(paper_id)
+    if existing and not existing.done():
+        raise HTTPException(status_code=409, detail="the run is working; wait until it stops at a researcher step")
+    _row, workspace, state, (pending, spec) = await _review_context(paper_id)
+    if pending is None:
+        raise HTTPException(status_code=409, detail="the run is not stopped at a researcher step")
+    try:
+        payload = apply_action(
+            workspace,
+            state,
+            req.model_dump(exclude={"resume"}),
+            sendable=_sendable(workspace, state, pending, spec) if req.action == "send_back" else None,
+        )
+    except ResearcherActionError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    state.save(workspace)
+    await log_event(paper_id, "researcher_action", stage=pending.stage, payload=payload)
+    out: dict[str, Any] = {"recorded": payload}
+    if req.action in ("approve", "send_back") and req.resume:
+        out["resumed"] = await resume_paper(paper_id)
+    return out
+
+
 @app.post("/api/papers/{paper_id}/resume", dependencies=[Depends(require_auth)])
 async def resume_paper(paper_id: str, req: ResumeRequest | None = None) -> dict[str, Any]:
     """Resume a paper whose runner is not actively running.
@@ -762,7 +889,7 @@ async def resume_paper(paper_id: str, req: ResumeRequest | None = None) -> dict[
     try:
         row = await fetch_one(
             "SELECT id, status, workspace, mode, max_cost_usd, methodology, backend, model, governance, "
-            "review_stages FROM papers WHERE id = %(id)s",
+            "review_stages, pipeline FROM papers WHERE id = %(id)s",
             {"id": paper_id},
         )
     except Exception as e:
@@ -790,6 +917,10 @@ async def resume_paper(paper_id: str, req: ResumeRequest | None = None) -> dict[
     mode = row.get("mode") or "single_pass"
     cap = float(row.get("max_cost_usd") or 25.0)
     methodology = row.get("methodology") or "empirical"
+    # Read from the row, never re-chosen: half a run's state on disk was
+    # produced by one DAG, and resuming under a different one would skip or
+    # repeat stages depending on which steps the two pipelines happen to share.
+    pipeline = row.get("pipeline") or "empirical"
     backend_name = row.get("backend")  # None → server default at run time
     model = row.get("model")
     governance = row.get("governance")  # None → server default at run time
@@ -804,7 +935,9 @@ async def resume_paper(paper_id: str, req: ResumeRequest | None = None) -> dict[
         from ..core.pipeline.state import PipelineState
 
         pstate = PipelineState.load(workspace, paper_id, mode)
-        if pstate.pending_review_stage:
+        # After a send-back the researcher wants to see the redone step, so the
+        # pending researcher step stays unapproved and the run stops there again.
+        if pstate.pending_review_stage and not pstate.metadata.get("sent_back"):
             pstate.approve(pstate.pending_review_stage)
             pstate.save(workspace)
     except Exception as e:  # noqa: BLE001 — approval is best-effort; resume proceeds
@@ -837,7 +970,18 @@ async def resume_paper(paper_id: str, req: ResumeRequest | None = None) -> dict[
         logger.warning("Could not update status on resume %s: %s", paper_id, e)
 
     task = asyncio.create_task(
-        _run_pipeline(paper_id, workspace, mode, cap, methodology, backend_name, model, governance, review_stages)
+        _run_pipeline(
+            paper_id,
+            workspace,
+            mode,
+            cap,
+            methodology,
+            backend_name,
+            model,
+            governance,
+            review_stages,
+            pipeline=pipeline,
+        )
     )
     _RUNNING[paper_id] = task
     task.add_done_callback(lambda _t: _RUNNING.pop(paper_id, None))
@@ -1327,13 +1471,152 @@ async def dashboard_workflow(request: Request) -> Any:
     return templates.TemplateResponse(request, "workflow.html", _workflow_inventory())
 
 
+def _library_view(query: str = "", limit: int = 25) -> dict[str, Any]:
+    """The corpus, for the browser.
+
+    Everything the corpus does was terminal-only, which meant that for anyone
+    who reaches E2ER by typing `e2er` and getting a dashboard — the normal
+    case — it did not exist. Searching your own library by claim is the thing
+    E2ER does that nothing else does, and it was invisible.
+
+    Degrades to an empty page rather than an error when no corpus has been
+    built: that is a first-run state, not a fault.
+    """
+    from ..modules.literature import corpus as corpus_mod
+
+    view: dict[str, Any] = {
+        "query": query,
+        "hits": [],
+        "papers": [],
+        "stats": None,
+        "path": str(corpus_mod.corpus_path()),
+        "exists": corpus_mod.corpus_path().is_file(),
+        "error": "",
+    }
+    if not view["exists"]:
+        return view
+
+    try:
+        with corpus_mod.connect() as conn:
+            stats = corpus_mod.stats(conn)
+            view["stats"] = stats.to_dict()
+            if query.strip():
+                view["hits"] = [h.to_dict() for h in corpus_mod.search_claims(conn, query, limit=limit)]
+            else:
+                view["papers"] = [p.to_dict() for p in corpus_mod.list_papers(conn, limit=limit)]
+    except Exception as e:  # noqa: BLE001 — a broken corpus must not break the dashboard
+        logger.warning("library page: corpus unreadable: %s", e)
+        view["error"] = str(e)[:300]
+    return view
+
+
+@app.get("/library", response_class=HTMLResponse)
+async def dashboard_library(request: Request, q: str = "") -> Any:
+    """Search what the papers you have read actually claim."""
+    return templates.TemplateResponse(request, "library.html", _library_view(q))
+
+
+def _skills_view(message: str = "") -> dict[str, Any]:
+    """The RISE catalogue, and what is installed from it.
+
+    358 skills published by a dozen research projects, previously reachable only
+    by knowing that `e2er skills` exists. A catalogue nobody can browse is a
+    catalogue nobody uses.
+    """
+    from ..modules import skills_catalogue as sc
+
+    view: dict[str, Any] = {
+        "packs": [],
+        "installed": {p["slug"]: p for p in sc.installed_packs()},
+        "catalogue_path": str(sc.catalogue_path()),
+        "install_root": str(sc.install_root()),
+        "error": "",
+        "message": message,
+        "totals": {"packs": 0, "skills": 0},
+    }
+    try:
+        packs = sc.read_catalogue()
+    except sc.CatalogueError as e:
+        view["error"] = str(e)
+        return view
+
+    view["packs"] = [
+        {
+            "slug": p.slug,
+            "name": p.name,
+            "license": p.license,
+            "source_url": p.source_url,
+            "maintainers": list(p.maintainers),
+            "notes": p.notes,
+            "count": len(p.skills),
+            "redistributable": p.redistributable,
+        }
+        for p in packs
+    ]
+    view["totals"] = {"packs": len(packs), "skills": sum(len(p.skills) for p in packs)}
+    return view
+
+
+@app.get("/skills", response_class=HTMLResponse)
+async def dashboard_skills(request: Request, message: str = "") -> Any:
+    """Browse the RISE catalogue and install a pack."""
+    return templates.TemplateResponse(request, "skills.html", _skills_view(message))
+
+
+@app.post("/skills/install")
+async def install_skill_pack(pack: str = Form(...)) -> Any:
+    """Fetch one pack from its own source.
+
+    A POST that redirects, rather than an API the page polls: installing is a
+    handful of small file fetches, and a spinner would be more machinery than
+    the operation deserves.
+    """
+    from ..modules import skills_catalogue as sc
+
+    try:
+        found = sc.find_pack(pack)
+        report = await sc.install_pack(found)
+        note = f"{found.name}: {report['installed']} installed, {report['failed']} failed."
+    except sc.CatalogueError as e:
+        note = f"Could not install {pack}: {e}"
+    except Exception as e:  # noqa: BLE001 — a bad pack must not 500 the dashboard
+        logger.warning("skill pack install failed for %s: %s", pack, e)
+        note = f"Could not install {pack}: {e}"
+
+    return RedirectResponse(url=f"/skills?message={quote_plus(note)}", status_code=303)
+
+
 @app.get("/papers/new", response_class=HTMLResponse)
 async def new_paper_form(request: Request) -> Any:
     return templates.TemplateResponse(
         request,
         "new.html",
-        {"default_cap": get_settings().default_max_cost_usd},
+        {"default_cap": get_settings().default_max_cost_usd, "pipelines": _pipeline_choices()},
     )
+
+
+def _pipeline_choices() -> list[dict[str, str]]:
+    """Every pipeline the runner could resolve, with its own description.
+
+    The names come from the files on disk, so a pipeline someone drops into
+    ./pipelines or ~/.e2er/pipelines appears in the form without E2ER being
+    changed — which is the whole reason pipelines are files.
+
+    A spec that will not parse is listed by name rather than dropped. Hiding it
+    would mean a typo in a TOML file presents as "my pipeline vanished", with
+    nowhere to look; listing it means the error surfaces at submit time, where
+    it names the file and the problem.
+    """
+    from ..core.pipeline.spec import PipelineError, available, load_spec
+
+    out: list[dict[str, str]] = []
+    for name, path in sorted(available().items()):
+        try:
+            out.append({"name": name, "description": load_spec(path).description})
+        except (PipelineError, OSError) as e:
+            logger.warning("pipeline %s at %s did not parse: %s", name, path, e)
+            out.append({"name": name, "description": "(this file did not parse)"})
+    return out
 
 
 @app.post("/papers")
@@ -1342,6 +1625,7 @@ async def submit_new_paper(
     research_question: str = Form(...),
     mode: str = Form("iterative"),
     methodology: str = Form("empirical"),
+    pipeline: str = Form("empirical"),
     max_cost_usd: float = Form(None),
 ) -> RedirectResponse:
     """Form-encoded handler that mirrors POST /api/papers. Redirects to detail page.
@@ -1357,6 +1641,7 @@ async def submit_new_paper(
         research_question=research_question,
         mode=mode,
         methodology=methodology,
+        pipeline=pipeline,
         max_cost_usd=max_cost_usd,
     )
     bg = BackgroundTasks()
@@ -1859,8 +2144,29 @@ async def paper_live_fragment(request: Request, paper_id: str = Depends(_validat
             "events": events or [],
             "can_cancel": (paper.get("status") not in _TERMINAL_STATUSES) and (paper_id in _RUNNING),
             "can_resume": (paper.get("status") == "paused") and (paper_id not in _RUNNING),
+            "awaiting_review": _awaiting_review(paper),
         },
     )
+
+
+def _awaiting_review(paper: Any) -> str | None:
+    """The researcher step a paused run waits at, for the dashboard's review link."""
+    if paper.get("status") != "paused" or not paper.get("workspace"):
+        return None
+    try:
+        from ..core.pipeline.state import PipelineState
+
+        st = PipelineState.load(Path(paper["workspace"]), str(paper["id"]), paper.get("mode") or "single_pass")
+        return st.pending_review_stage
+    except Exception:  # noqa: BLE001 — the live panel must render regardless
+        return None
+
+
+@app.get("/papers/{paper_id}/review", response_class=HTMLResponse)
+async def review_page(request: Request, paper_id: str = Depends(_validate_uuid)) -> Any:
+    """The researcher step in the dashboard: files in an editor, an instruction, send back, approve."""
+    data = await get_review(paper_id)
+    return templates.TemplateResponse(request, "review.html", {"paper_id": paper_id, **data})
 
 
 @app.get("/api/papers/{paper_id}/events")
@@ -1977,6 +2283,7 @@ async def _prepare_and_run(
     review_stages: list[str] | None = None,
     research_question: str = "",
     title: str = "",
+    pipeline: str = "empirical",
 ) -> None:
     """Background entry: do the heavy BYOD prep (data.db import + literature
     ingest + literature acquisition) off the request path, THEN run the pipeline.
@@ -2006,7 +2313,16 @@ async def _prepare_and_run(
     except Exception as e:  # noqa: BLE001
         logger.warning("literature acquisition failed for %s: %s (pipeline continues)", paper_id, e)
     await _run_pipeline(
-        paper_id, workspace, mode, max_cost_usd, methodology, backend_name, model, governance, review_stages
+        paper_id,
+        workspace,
+        mode,
+        max_cost_usd,
+        methodology,
+        backend_name,
+        model,
+        governance,
+        review_stages,
+        pipeline=pipeline,
     )
 
 
@@ -2020,6 +2336,7 @@ async def _run_pipeline(
     model: str | None = None,
     governance: str | None = None,
     review_stages: list[str] | None = None,
+    pipeline: str = "empirical",
 ) -> None:
     from ..config import get_settings
     from ..core.strategist.runner import PipelineRunner
@@ -2078,6 +2395,7 @@ async def _run_pipeline(
         methodology=methodology,
         governance=effective_governance,
         review_stages=review_stages,
+        pipeline=pipeline,
     )
     await runner.run()
 

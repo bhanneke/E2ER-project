@@ -66,6 +66,11 @@ EXPORT_MAP: dict[str, list[tuple[str, str | None]]] = {
         ("identification_spec.json", None),
         ("econometric_spec.md", None),
         ("model_spec.md", None),
+        # The frozen pre-registration and its fingerprints (researcher step),
+        # and the instructions the researcher gave during the run.
+        ("preregistration.md", None),
+        ("preregistration.lock.json", None),
+        ("researcher_instructions.md", None),
     ],
     # Loose exploration scripts + logs the model writes (analysis.py, explore.py,
     # q.py, run_estimation.log, …). The broad globs run last so canonical files
@@ -198,7 +203,7 @@ def _render_readme(workspace: Path, manifest: dict, slug: str) -> str:
         "cd code && python run_estimation.py   # reads ../data/ (or the original data files)",
         "```",
         "",
-        f"_Exported as `{slug}` from E2ER._",
+        f"_Exported as `{slug}` from e2er._",
     ]
     return "\n".join(lines) + "\n"
 
@@ -223,6 +228,16 @@ def export_paper(workspace: Path, dest_root: Path, *, date_str: str, slug: str |
         dest_dir = out / subdir
         for pattern, rename in patterns:
             _copy_matches(workspace, dest_dir, pattern, rename, copied_names)
+    # literature.bib is shipped as refs.bib; point the paper at it so the
+    # bundle compiles on its own (otherwise every citation becomes "?").
+    paper_tex = out / "paper" / "paper.tex"
+    if paper_tex.is_file():
+        from ..bibliography import point_bibliography
+
+        text = paper_tex.read_text(encoding="utf-8")
+        fixed = point_bibliography(text, paper_tex.parent)
+        if fixed != text:
+            paper_tex.write_text(fixed, encoding="utf-8")
 
     # Figures: copy a figures/ dir if the renderer produced one.
     fig_src = workspace / "figures"

@@ -9,7 +9,7 @@
 The v1→v3 capability regression is real but it is **already half-fixed**, and
 the half that is missing is the half that killed canary #6.
 
-E2ER v1 (`E2ER/src/claude_code.py:364`) gave stages real execution:
+e2er v1 (`E2ER/src/claude_code.py:364`) gave stages real execution:
 
 ```python
 _CODE_EXEC_TOOLS = ["Read", "Write", "Edit", "Bash(python3:*)", "Bash(python:*)"]

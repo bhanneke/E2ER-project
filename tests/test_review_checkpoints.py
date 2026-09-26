@@ -103,6 +103,7 @@ def test_request_review_stages_defaults_empty():
 
 
 async def test_pause_then_resume_cycle(tmp_path: Path, monkeypatch):
+    from src.core.pipeline.spec import find_spec
     from src.core.strategist.runner import PipelineRunner
     from src.core.strategist.state import PaperStatus
 
@@ -113,6 +114,8 @@ async def test_pause_then_resume_cycle(tmp_path: Path, monkeypatch):
     r._paper_id = "p"
     r._workspace = tmp_path
     r._mode = "single_pass"
+    # The runner sequences from a pipeline spec; __init__ is bypassed here.
+    r._spec = find_spec("empirical")
     r._review_stages = {"initial"}
     r._contributions = []
     r._iteration = 0
@@ -150,6 +153,7 @@ async def test_pause_then_resume_cycle(tmp_path: Path, monkeypatch):
 
 
 async def test_no_review_stages_never_pauses(tmp_path: Path, monkeypatch):
+    from src.core.pipeline.spec import find_spec
     from src.core.strategist.runner import PipelineRunner
     from src.core.strategist.state import PaperStatus
 
@@ -168,6 +172,9 @@ async def test_no_review_stages_never_pauses(tmp_path: Path, monkeypatch):
         "_max_cost_usd": 100.0,
         "_governance": "full",
         "_methodology": "empirical",
+        # The runner sequences from a pipeline spec. These tests bypass
+        # __init__, so they supply it like every other attribute.
+        "_spec": find_spec("empirical"),
     }.items():
         setattr(r, k, v)
     r._run_initial_phase = AsyncMock()
