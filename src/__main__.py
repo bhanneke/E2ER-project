@@ -442,6 +442,45 @@ def main() -> None:
     push_p.add_argument("bundle", nargs="?", default=".", help="The study folder with e2er.json (default: here).")
     push_p.add_argument("--url", default=None, help=url_help)
 
+    submit_p = subparsers.add_parser(
+        "submit",
+        help="Send a skill, template, specialist or connector to e2er.org for review (after `e2er login`).",
+    )
+    submit_p.add_argument(
+        "path", nargs="?", default=None, help="A skill folder (with SKILL.md), a template .toml or a specialist file."
+    )
+    submit_p.add_argument("--kind", choices=["skill", "template", "agent", "connector"], default=None)
+    submit_p.add_argument("--name", default=None, help="Display name (a skill's comes from SKILL.md).")
+    submit_p.add_argument(
+        "--slug", default=None, help="Identifier, e.g. codebook-development (default: from the file)."
+    )
+    submit_p.add_argument("--version", required=True, help="Version of this part, e.g. 0.1.0.")
+    submit_p.add_argument("--summary", default=None, help="What it does and for whom (a skill's comes from SKILL.md).")
+    submit_p.add_argument("--licence", required=True, help="SPDX identifier, e.g. MIT, CC-BY-4.0, CC-BY-NC-4.0.")
+    submit_p.add_argument(
+        "--source",
+        default=None,
+        help="https address where the part is published (required under a non-commercial licence).",
+    )
+    submit_p.add_argument(
+        "--improves", default=None, help="A listed part this is a new version of, e.g. skill:ines/codebook-development."
+    )
+    submit_p.add_argument("--handle", default=None, help="Your profile handle, for a first contribution.")
+    submit_p.add_argument("--discipline", default=None, help="Field, e.g. organization-science.")
+    submit_p.add_argument("--role", default=None, help="Specialist: its role, in a sentence.")
+    submit_p.add_argument("--output", default=None, help="Specialist: the file it writes, e.g. codebook.md.")
+    submit_p.add_argument("--direction", choices=["in", "out", "both"], default=None, help="Connector: data direction.")
+    submit_p.add_argument(
+        "--egress",
+        choices=["none", "query", "reference-list", "prompts", "files", "paper-text"],
+        default=None,
+        help="Connector: what leaves the machine.",
+    )
+    submit_p.add_argument("--egress-note", default=None, help="Connector: a sentence on what it sends out.")
+    submit_p.add_argument("--resubmit", default=None, metavar="SUB_ID", help="Send a returned submission again, fixed.")
+    submit_p.add_argument("--url", default=None, help=url_help)
+    submit_p.add_argument("--dry-run", action="store_true", help="Print the request; send nothing.")
+
     export_p = subparsers.add_parser(
         "export",
         help="Assemble a clean, structured project folder (paper/code/data/results/design/reviews) from a run.",
@@ -515,6 +554,33 @@ def main() -> None:
         if args.command == "whoami":
             sys.exit(cli_platform.whoami(args.url))
         sys.exit(cli_platform.dossier_push(args.bundle, args.url))
+
+    if args.command == "submit":
+        from .cli_submit import submit as _submit
+
+        sys.exit(
+            _submit(
+                args.path,
+                url=args.url,
+                resubmit=args.resubmit,
+                dry_run=args.dry_run,
+                kind=args.kind,
+                name=args.name,
+                slug=args.slug,
+                version=args.version,
+                summary=args.summary,
+                licence=args.licence,
+                source=args.source,
+                improves=args.improves,
+                handle=args.handle,
+                discipline=args.discipline,
+                role=args.role,
+                output=args.output,
+                direction=args.direction,
+                egress=args.egress,
+                egress_note=args.egress_note,
+            )
+        )
 
     if args.command == "export":
         from .cli_export import export as _export
