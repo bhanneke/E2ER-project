@@ -1,6 +1,6 @@
 [project]
 name = "e2er"
-version = "0.9.1"
+version = "0.10.0"
 description = "End-to-End Researcher — scaffolding that organises skills and specialists into verifiable research pipelines"
 requires-python = ">=3.11"
 readme = "README.md"

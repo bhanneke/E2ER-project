@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] — 2026-09-26
+
 ### Publishing on e2er.org, with a dossier on every paper
 
 `e2er publish <bundle>` verifies an exported bundle offline and writes its

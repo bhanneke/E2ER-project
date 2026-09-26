@@ -616,10 +616,10 @@ The automated research space is developing quickly. Two projects most relevant t
 ```bibtex
 @software{hanneke2026e2er,
   author       = {Hanneke, Bj{\"o}rn},
-  title        = {{E2ER: End-to-End Researcher, An Open-Source Pipeline
+  title        = {{e2er: End-to-End Researcher, An Open-Source Pipeline
                    for Automated Empirical Research}},
   year         = {2026},
-  version      = {0.9.0},
+  version      = {0.10.0},
   url          = {https://github.com/bhanneke/E2ER-project},
   doi          = {10.5281/zenodo.20187238},
   license      = {MIT},
