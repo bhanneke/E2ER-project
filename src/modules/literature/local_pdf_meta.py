@@ -51,6 +51,34 @@ def _year_from_text(*texts: str) -> int | None:
 _NOT_TITLE = ("doi", "http", "www", "abstract", "arxiv", "keywords", "jel ", "working paper", "preprint")
 
 
+#: Extensions that betray a DocInfo title as the typesetting source's filename
+#: rather than the paper's name.
+_FILENAME_SUFFIXES = (".pdf", ".docx", ".doc", ".wpd", ".dvi", ".tex", ".ps", ".rtf", ".indd", ".qxd")
+
+
+def _is_junk_title(title: str) -> bool:
+    """Is this DocInfo title the document's name rather than the paper's?
+
+    PDF producers write whatever the authoring tool was pointed at. Putting the
+    library on screen surfaced two on the first look: a paper titled
+    "C:\\Working Papers\\10449.wpd" and another titled "base.dvi". Both are
+    perfectly valid DocInfo and completely useless, and both are worse than
+    falling back to the first page — a wrong title deduplicates against nothing
+    and tells a reader nothing.
+    """
+    t = (title or "").strip().lower()
+    if not t:
+        return True
+    if t.endswith(_FILENAME_SUFFIXES):
+        return True
+    if t.startswith(("microsoft word", "microsoft powerpoint", "untitled")):
+        return True
+    # A path, in either flavour. "C:\Working Papers\10449.wpd", "/tmp/out".
+    if "\\" in t or re.match(r"^[a-z]:[\\/]", t) or t.startswith("/"):
+        return True
+    return False
+
+
 def _title_from_first_page(first_page: str) -> str:
     """The title, including the part that wrapped onto the next line.
 
@@ -117,7 +145,7 @@ def extract_pdf_metadata(path: Path) -> PaperMetadata:
     title = (str(title) or "").strip()
     # A DocInfo title is often junk ("Microsoft Word - …") — prefer the first
     # substantial line of page 1 when DocInfo is empty or obviously a filename.
-    if not title or title.lower().endswith((".pdf", ".docx", ".doc")) or title.lower().startswith("microsoft word"):
+    if _is_junk_title(title):
         title = _title_from_first_page(first_page or "")
     if not title:
         title = _title_from_filename(path)

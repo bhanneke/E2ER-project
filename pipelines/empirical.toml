@@ -1,0 +1,96 @@
+# The pipeline E2ER has always run, written down.
+#
+# This file drives the runner: PipelineRunner.run() loops over these steps
+# rather than sequencing phases in Python. Copy it, change the steps, and pass
+# the new name — that is the supported way to run a different process.
+#
+# tests/test_pipeline_sequence.py holds the two derivations together: what this
+# file says will run, and what the runner actually runs, must agree.
+#
+# Step kinds:
+#   strategist  hand control to the strategist engine for this phase
+#   gate        run a deterministic check
+#   specialists dispatch a fixed set of specialists
+#   aggregate   dispatch reviewers and combine their verdicts
+#
+# `modes` limits a step to certain run modes; absent means every mode.
+# `resumable = false` means the step runs even when state says it is complete.
+
+name = "empirical"
+description = "Question and data in, empirical paper out. E2ER's default."
+methodologies = ["empirical", "theoretical"]
+
+# Teardown, not a step. Runs regardless of how the run ended — completed,
+# rejected, cancelled, circuit-broken, out of budget — so the partial artifacts
+# on disk are still compiled, audited and pushed. Every action swallows its own
+# errors.
+#
+# Declared here, above the first [[steps]] table, because TOML binds a bare
+# key-value that follows a table array to that table: at the foot of the file
+# this became a key of the last step.
+finalize = ["compile", "audit_export", "github_push", "structured_export"]
+
+[[steps]]
+kind = "strategist"
+name = "initial"
+
+[[steps]]
+kind  = "strategist"
+name  = "iterative"
+modes = ["iterative"]
+
+# Deliberately not resumable. An empirical paper with a populated warehouse must
+# have a contract-clean estimation before any drafting-dependent phase runs, and
+# run D (2026-07-07) showed the specialist-level contract alone is not enough:
+# econometrics failed its contract once, the strategist moved on, and the
+# pipeline spent self-attack, polish and review tokens drafting around `{}`.
+[[steps]]
+kind      = "gate"
+name      = "estimation_gate"
+check     = "estimation"
+on_fail   = "halt"
+resumable = false
+
+[[steps]]
+kind  = "specialists"
+name  = "self_attack"
+modes = ["iterative"]
+run   = ["self_attacker"]
+
+# Which polish specialists run is chosen at dispatch from the self-attack
+# report, so this lists the full set rather than a fixed sequence.
+[[steps]]
+kind     = "specialists"
+name     = "polish"
+modes    = ["iterative"]
+parallel = true
+run = [
+    "polish_formula",
+    "polish_numerics",
+    "polish_institutions",
+    "polish_equilibria",
+    "polish_bibliography",
+]
+
+[[steps]]
+kind     = "aggregate"
+name     = "review"
+parallel = true
+run = [
+    "mechanism_reviewer",
+    "technical_reviewer",
+    "literature_reviewer",
+    "data_reviewer",
+    "identification_reviewer",
+    "writing_reviewer",
+]
+
+[[steps]]
+kind = "specialists"
+name = "revision"
+run  = ["revisor", "patch_revisor"]
+
+[[steps]]
+kind = "specialists"
+name = "replication"
+run  = ["replication_packager"]

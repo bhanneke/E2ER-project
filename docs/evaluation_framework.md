@@ -1,4 +1,4 @@
-# E2ER Quality Evaluation Framework
+# e2er Quality Evaluation Framework
 
 This document defines how pipeline output quality is measured across runs. It serves two purposes:
 (1) internal quality tracking as the pipeline develops, and (2) the empirical evaluation basis for the companion system paper.

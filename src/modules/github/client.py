@@ -46,7 +46,7 @@ class GitHubClient:
         try:
             repo = self._user.create_repo(
                 name=repo_name,
-                description=f"E2ER v3 generated paper: {paper_title}",
+                description=f"e2er v3 generated paper: {paper_title}",
                 private=private,
                 auto_init=False,
             )

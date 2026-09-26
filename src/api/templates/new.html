@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}New paper — E2ER{% endblock %}
+{% block title %}New paper — e2er{% endblock %}
 
 {% block content %}
 <h1>New paper</h1>
@@ -28,6 +28,23 @@
         <option value="single_pass" selected>single_pass — one pass, about an hour</option>
         <option value="iterative">iterative — adds self-attack &amp; polish, considerably longer</option>
       </select>
+    </label>
+
+    <label>
+      <span>Pipeline</span>
+      {# Read off the files on disk, not a list in the code: a pipeline dropped
+         into ./pipelines or ~/.e2er/pipelines shows up here by itself. #}
+      <select name="pipeline">
+        {% for p in pipelines %}
+          <option value="{{ p.name }}" {% if p.name == 'empirical' %}selected{% endif %}>
+            {{ p.name }}{% if p.description %} — {{ p.description }}{% endif %}
+          </option>
+        {% endfor %}
+      </select>
+      <small class="muted">
+        The sequence of specialists, gates and reviews this paper runs through.
+        Each is a file you can copy and change — see <code>pipelines/</code>.
+      </small>
     </label>
 
     <label>

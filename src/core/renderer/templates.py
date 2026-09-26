@@ -19,7 +19,7 @@ from pathlib import Path
 # figure renderer writes `fig_*.pdf`) and a `figures/` subdir (the mirror the
 # compiler makes), so `\includegraphics{fig_x.pdf}` AND
 # `\includegraphics{figures/fig_x.pdf}` both resolve. fancyhdr gives every page
-# a running header (running title + "Produced by E2ER").
+# a running header (running title + "Produced by e2er").
 PREAMBLE = r"""\documentclass[11pt]{article}
 
 \usepackage[margin=1in]{geometry}
@@ -53,7 +53,7 @@ POSTAMBLE = r"""
 \end{document}
 """
 
-_DEFAULT_AUTHOR = "Produced by the E2ER pipeline"
+_DEFAULT_AUTHOR = "Produced by the e2er pipeline"
 
 
 def looks_like_full_document(body: str) -> bool:
@@ -90,13 +90,13 @@ def _running_title(title: str) -> str:
 
 
 def _fancy_header(running_title: str) -> str:
-    """fancyhdr config: running title (left) + 'Produced by E2ER' (right) on
+    """fancyhdr config: running title (left) + 'Produced by e2er' (right) on
     every page, including the title page. Page number in the footer."""
     return (
         "\\pagestyle{fancy}\n"
         "\\fancyhf{}\n"
         f"\\fancyhead[L]{{\\footnotesize\\itshape {running_title}}}\n"
-        "\\fancyhead[R]{\\footnotesize Produced by E2ER}\n"
+        "\\fancyhead[R]{\\footnotesize Produced by e2er}\n"
         "\\fancyfoot[C]{\\thepage}\n"
         "\\renewcommand{\\headrulewidth}{0.4pt}\n"
         # \maketitle forces \thispagestyle{plain} on page 1 — redefine plain so
@@ -104,7 +104,7 @@ def _fancy_header(running_title: str) -> str:
         "\\fancypagestyle{plain}{%\n"
         "  \\fancyhf{}%\n"
         f"  \\fancyhead[L]{{\\footnotesize\\itshape {running_title}}}%\n"
-        "  \\fancyhead[R]{\\footnotesize Produced by E2ER}%\n"
+        "  \\fancyhead[R]{\\footnotesize Produced by e2er}%\n"
         "  \\fancyfoot[C]{\\thepage}%\n"
         "  \\renewcommand{\\headrulewidth}{0.4pt}%\n"
         "}\n"

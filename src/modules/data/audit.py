@@ -180,7 +180,7 @@ async def write_data_queries_sql(paper_id: str, output_path: Path) -> int:
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     lines = [
-        "-- E2ER v3 data queries for replication",
+        "-- e2er v3 data queries for replication",
         f"-- paper_id: {paper_id}",
         f"-- generated: {datetime.now(UTC).isoformat()}",
         "",

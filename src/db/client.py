@@ -210,6 +210,7 @@ async def _ensure_sqlite_schema() -> None:
                 "backend": "TEXT",
                 "governance": "TEXT NOT NULL DEFAULT 'full'",
                 "review_stages": "TEXT",
+                "pipeline": "TEXT NOT NULL DEFAULT 'empirical'",
             },
         )
         await conn.commit()

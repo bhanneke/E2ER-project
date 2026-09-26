@@ -201,13 +201,17 @@ class StrategistEngine:
 
     async def decide(self, current_status: str, iteration: int = 0) -> StrategistDecision:
         """Ask the Strategist what to do next, given current paper state."""
+        from ..pipeline.researcher import instructions_block
+
         context = build_tier2_context(self._workspace, self._paper_id)
+        researcher = instructions_block(self._workspace)
         prompt = (
             f"Paper status: {current_status}\n"
             f"Iteration: {iteration}\n"
             f"Mode: {self._mode}\n\n"
             f"{context}\n\n"
-            "Decide what to do next. Output a JSON StrategistDecision."
+            + (f"{researcher}\n\n" if researcher else "")
+            + "Decide what to do next. Output a JSON StrategistDecision."
         )
 
         msgs = [{"role": "user", "content": prompt}]

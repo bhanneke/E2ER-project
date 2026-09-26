@@ -1,8 +1,8 @@
-# Robustness review: why E2ER v3 produces papers it should refuse to produce
+# Robustness review: why e2er v3 produces papers it should refuse to produce
 
 **Date:** 2026-08-11 · **Scope:** whole-system, not a diff · **Method:** one fully
 measured run (`70c33410`) traced end to end, plus a structural comparison against
-E2ER v1 as it ran inside 100xOS.
+e2er v1 as it ran inside 100xOS.
 
 ---
 
@@ -12,7 +12,7 @@ The system does not fail. That is the bug.
 
 Every layer between a crashed analysis script and a submitted paper **detected**
 the problem and **continued anyway**. Nothing is missing a check. The checks are
-there, they fired, they were written to disk, and the run went on. E2ER is
+there, they fired, they were written to disk, and the run went on. e2er is
 engineered — deliberately and consistently — to emit a paper rather than to
 stop, and a research pipeline that always emits a paper will emit a fabricated
 one whenever the analysis fails.

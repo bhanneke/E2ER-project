@@ -1,0 +1,408 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/bhanneke/E2ER-project/docs/schemas/research-object.schema.json",
+  "title": "E2ER research object",
+  "description": "The manifest `e2er publish` writes into an exported bundle (e2er.json) and submits to the registry. Every field is derived from the bundle, the run database or the publish arguments. content_id is the SHA-256 of provenance.json, which fixes the hash of every other file.",
+  "type": "object",
+  "required": [
+    "schema",
+    "id",
+    "content_id",
+    "question",
+    "contributors",
+    "ai",
+    "process",
+    "dependencies",
+    "verification"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": "e2er-research-object/0.1"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,38}/[a-z0-9][a-z0-9._-]{0,99}$",
+      "description": "owner/project; the owner is a GitHub login"
+    },
+    "content_id": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "title": {
+      "type": "string"
+    },
+    "question": {
+      "type": "string"
+    },
+    "contributors": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "github": {
+            "type": "string"
+          },
+          "orcid": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{4}-\\d{4}-\\d{3}[\\dX]$"
+          },
+          "roles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "anyOf": [
+          {
+            "required": [
+              "github"
+            ]
+          },
+          {
+            "required": [
+              "orcid"
+            ]
+          }
+        ]
+      }
+    },
+    "ai": {
+      "type": "object",
+      "required": [
+        "backend",
+        "model",
+        "agents",
+        "agents_source"
+      ],
+      "properties": {
+        "backend": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "agents": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "agents_source": {
+          "enum": [
+            "recorded",
+            "declared",
+            "unknown"
+          ]
+        },
+        "usage": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    "process": {
+      "type": "object",
+      "properties": {
+        "template": {
+          "type": "string"
+        },
+        "mode": {
+          "type": "string"
+        },
+        "methodology": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "governance": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "e2er_version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "exported": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "components": {
+      "type": "object",
+      "properties": {
+        "skills": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "literature": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "cite_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "doi": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "verified_by": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "data": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "path",
+          "sha256"
+        ],
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "bytes": {
+            "type": "integer"
+          }
+        }
+      }
+    },
+    "outputs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "path",
+          "sha256"
+        ],
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "properties": {
+        "files": {
+          "type": "integer"
+        },
+        "edges": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer"
+          }
+        }
+      }
+    },
+    "verification": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "check",
+          "status"
+        ],
+        "properties": {
+          "check": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "PASS",
+              "FAIL",
+              "SKIP"
+            ]
+          },
+          "detail": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "dependencies": {
+      "type": "object",
+      "required": [
+        "uses",
+        "derived_from"
+      ],
+      "properties": {
+        "uses": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "derived_from": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "repository": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string"
+        },
+        "commit": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      }
+    },
+    "license": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "published": {
+      "type": "string"
+    },
+    "dossier": {
+      "description": "The study's dossier: run settings, the workflow with the intermediate files each step wrote, and every template, specialist, skill and connector used, pinned to its version. The id is sha256 of the document's canonical JSON (keys sorted, no whitespace, UTF-8); the paper's first-page footnote links to url.",
+      "type": "object",
+      "required": [
+        "id",
+        "url",
+        "doc"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "url": {
+          "type": "string",
+          "format": "uri"
+        },
+        "doc": {
+          "type": "object"
+        }
+      }
+    },
+    "availability": {
+      "description": "Whether the study's data and code are public, and where. Stated at publishing (e2er publish --data/--code); private unless stated. Optional: manifests written before it existed omit it, which means private.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "type": "object",
+          "required": [
+            "access"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "access": {
+              "enum": [
+                "public",
+                "private"
+              ],
+              "description": "public: others can obtain it at url/doi. private: only file fingerprints are published."
+            },
+            "url": {
+              "type": "string",
+              "description": "Where the public material lives: a repository at a commit, or https://doi.org/<doi>. Absent when private."
+            },
+            "doi": {
+              "type": "string",
+              "description": "DOI of the public material, e.g. from `e2er publish --zenodo`."
+            },
+            "zenodo": {
+              "type": "string",
+              "description": "The Zenodo record page, when deposited with --zenodo."
+            }
+          }
+        },
+        "code": {
+          "type": "object",
+          "required": [
+            "access"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "access": {
+              "enum": [
+                "public",
+                "private"
+              ],
+              "description": "public: others can obtain it at url/doi. private: only file fingerprints are published."
+            },
+            "url": {
+              "type": "string",
+              "description": "Where the public material lives: a repository at a commit, or https://doi.org/<doi>. Absent when private."
+            },
+            "doi": {
+              "type": "string",
+              "description": "DOI of the public material, e.g. from `e2er publish --zenodo`."
+            },
+            "zenodo": {
+              "type": "string",
+              "description": "The Zenodo record page, when deposited with --zenodo."
+            }
+          }
+        }
+      }
+    }
+  }
+}

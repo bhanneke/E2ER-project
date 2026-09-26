@@ -32,7 +32,7 @@ class OpenRouterBackend(LLMBackend):
             base_url=_OPENROUTER_BASE,
             default_headers={
                 "HTTP-Referer": "https://github.com/bhanneke/E2ER-project",
-                "X-Title": "E2ER Research Pipeline",
+                "X-Title": "e2er Research Pipeline",
             },
             max_retries=5,
         )

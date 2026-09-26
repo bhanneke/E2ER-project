@@ -91,6 +91,14 @@ async def run_specialist(
         user_prompt = f"{user_prompt}\n\n{contract_feedback}"
         logger.info("%s: prior attempt violated its output contract — injecting the violation", specialist)
 
+    # The researcher's own instructions from researcher steps: persistent (not
+    # consume-once), so every specialist after the step works under them.
+    from ..pipeline.researcher import instructions_block
+
+    researcher_block = instructions_block(workspace)
+    if researcher_block:
+        user_prompt = f"{user_prompt}\n\n{researcher_block}"
+
     # CLI backend uses Claude Code's native tool names (Write/Read/Edit/Glob)
     # rather than the SDK's (write_file/read_file/...). Translate references
     # in both prompts so the model finds the tools it's told to call.

@@ -4,20 +4,29 @@ from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
 
 
 def main() -> None:
     # `e2er corpus …` delegates wholesale to its own parser. Done before the
     # main parser sees anything, so `corpus search --limit 5` and
     # `corpus --help` reach cli_corpus intact instead of being claimed here.
-    if len(sys.argv) > 1 and sys.argv[1] == "corpus":
+    # `library` is the name used everywhere a person sees it — the dashboard
+    # page, the nav, the docs. `corpus` is what it was called first and what
+    # existing scripts type, so both work and neither is going away.
+    if len(sys.argv) > 1 and sys.argv[1] in ("library", "corpus"):
         from .cli_corpus import main as _corpus
 
-        sys.exit(_corpus(sys.argv[2:]))
+        sys.exit(_corpus(sys.argv[2:], prog=f"e2er {sys.argv[1]}"))
+
+    if len(sys.argv) > 1 and sys.argv[1] == "skills":
+        from .cli_skills import main as _skills
+
+        sys.exit(_skills(sys.argv[2:]))
 
     parser = argparse.ArgumentParser(
         prog="e2er",
-        description="E2ER v3 — End-to-End Researcher pipeline",
+        description="e2er v3 — End-to-End Researcher pipeline",
     )
     subparsers = parser.add_subparsers(dest="command")
 
@@ -112,7 +121,7 @@ def main() -> None:
             "replication",
         ],
         help="Pause for human review after this pipeline stage (repeatable). The run pauses; "
-        "inspect/edit the workspace, then `e2er resume <paper_id>` to continue.",
+        "then `e2er review <paper_id>` to edit, instruct, send back or approve (or `e2er resume` to continue).",
     )
     run_p.add_argument(
         "--max-cost",
@@ -159,9 +168,12 @@ def main() -> None:
 
     status_p = subparsers.add_parser(
         "status",
-        help="Show the current status of a paper (and optionally tail it).",
+        help="Show the status of a run (paper id), or of a study folder published with `e2er publish --to`.",
     )
-    status_p.add_argument("paper_id", help="The paper UUID returned by `e2er run`.")
+    status_p.add_argument("paper_id", help="The paper UUID returned by `e2er run`, or a published study folder.")
+    status_p.add_argument(
+        "--url", default=None, help="For a study folder: platform address (default: its .e2er/link.json)."
+    )
     status_p.add_argument(
         "--tail",
         action="store_true",
@@ -212,9 +224,36 @@ def main() -> None:
         help="With --tail, max time to poll before detaching. Default 30 min.",
     )
 
+    review_p = subparsers.add_parser(
+        "review",
+        help="Act at a researcher step: approve, edit a file, give an instruction, or send a step back.",
+    )
+    review_p.add_argument("paper_id", help="The paper UUID returned by `e2er run`.")
+    review_p.add_argument("--approve", action="store_true", help="Approve the step and continue the run.")
+    review_p.add_argument("--instruction", default=None, help="An instruction every following step receives.")
+    review_p.add_argument("--edit", default=None, metavar="FILE", help="Edit one of the step's files in $EDITOR.")
+    review_p.add_argument("--send-back", default=None, metavar="STEP", help="Send a template step or specialist back.")
+    review_p.add_argument("--remark", default=None, help="What should change (with --send-back).")
+
+    prereg_p = subparsers.add_parser("preregister", help="Pre-registration commands (`e2er preregister deposit`).")
+    prereg_sub = prereg_p.add_subparsers(dest="prereg_command")
+    dep_p = prereg_sub.add_parser("deposit", help="Deposit the frozen pre-registration with your own account (DOI).")
+    dep_p.add_argument("target", help="Paper UUID, or an exported study folder.")
+    dep_p.add_argument("--zenodo", action="store_true", help="Deposit on Zenodo (token in ZENODO_TOKEN).")
+    dep_p.add_argument("--osf", action="store_true", help="OSF Registries (not built yet; says what to do instead).")
+    dep_p.add_argument("--sandbox", action="store_true", help="Use Zenodo's sandbox (token in ZENODO_SANDBOX_TOKEN).")
+
+    # Superseded by `e2er skills sync`. Kept working because it is in the
+    # README, in shell history, and in whatever people have scripted — renaming
+    # a command is not a reason to break it.
     install_skills = subparsers.add_parser(
         "install-skills",
-        help="Copy bundled skill files to ~/.{backend}/skills/ for headless CLI backends.",
+        help="Deprecated alias for `e2er skills sync`.",
+        # In the description too, not only in the runtime note: `--help` exits
+        # during parsing, so anyone reading the help would never see the note.
+        description="Deprecated: this is now `e2er skills sync`. The old name still works. "
+        "Copies e2er's own skill files to ~/.{backend}/skills/ so a headless "
+        "claude/codex/gemini process can see them.",
     )
     install_skills.add_argument(
         "--backend",
@@ -276,8 +315,10 @@ def main() -> None:
         help="Emit a machine-readable JSON report instead of the human-readable summary.",
     )
 
+    # `question` says what it does; `rq` is the abbreviation researchers type.
     rq_p = subparsers.add_parser(
-        "rq",
+        "question",
+        aliases=["rq"],
         help="Sharpen a draft research question against your data + literature (advisory; never starts a run).",
     )
     rq_p.add_argument("--draft", required=True, help="Your draft research question, in quotes.")
@@ -303,6 +344,143 @@ def main() -> None:
         help="Emit comparison.json on stdout instead of the human-readable report.",
     )
 
+    publish_p = subparsers.add_parser(
+        "publish",
+        help="Verify an exported bundle; write its research-object manifest (e2er.json) and registry entry.",
+    )
+    publish_p.add_argument("bundle", help="Path to an exported bundle directory (from `e2er export`).")
+    publish_p.add_argument("--owner", required=True, help="Registry namespace: your GitHub login, lower case.")
+    publish_p.add_argument("--project", required=True, help="Project name within your namespace, e.g. etf-comovement.")
+    publish_p.add_argument("--github", default=None, help="Your GitHub login (contributor identity).")
+    publish_p.add_argument("--orcid", default=None, help="Your ORCID iD, e.g. 0000-0002-1825-0097.")
+    publish_p.add_argument("--name", default=None, help="Your name as it should appear in citations.")
+    publish_p.add_argument("--role", action="append", default=None, dest="roles", help="CRediT role (repeatable).")
+    publish_p.add_argument("--repo", default=None, help="URL of the repository that holds the bundle.")
+    publish_p.add_argument(
+        "--commit", default=None, help="Commit that pins the bundle (needed for registry verification)."
+    )
+    publish_p.add_argument("--path", default=None, help="Path of the bundle inside the repository.")
+    publish_p.add_argument(
+        "--db", default=None, help="Run database, to record which agents actually ran and their model usage."
+    )
+    publish_p.add_argument("--template", default="empirical", help="Template the run followed (default: empirical).")
+    publish_p.add_argument(
+        "--license", default=None, dest="license_id", help="Licence of the research object, e.g. CC-BY-4.0."
+    )
+    publish_p.add_argument(
+        "--derived-from",
+        action="append",
+        default=None,
+        dest="derived_from",
+        help="owner/project of a research object this one builds on (repeatable).",
+    )
+    publish_p.add_argument(
+        "--no-stamp",
+        action="store_true",
+        help="Do not write the e2er author line and dossier footnote into paper/paper.tex.",
+    )
+    publish_p.add_argument(
+        "--out", default=None, help="Where to write the registry entry (default: ./e2er-registry-entry)."
+    )
+    publish_p.add_argument(
+        "--to",
+        default=None,
+        dest="to_url",
+        metavar="URL",
+        help="Publish on this platform, e.g. https://e2er.org (after `e2er login`). Sends the description, "
+        "the dossier and file fingerprints; the files stay here.",
+    )
+    publish_p.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print the exact request --to would send; change nothing and send nothing.",
+    )
+    publish_p.add_argument(
+        "--data",
+        choices=["public", "private"],
+        default=None,
+        help="Whether the study's data are public (default: private; asked when run in a terminal).",
+    )
+    publish_p.add_argument(
+        "--code",
+        choices=["public", "private"],
+        default=None,
+        help="Whether the study's code is public (default: private; asked when run in a terminal).",
+    )
+    publish_p.add_argument("--data-url", default=None, help="Where the public data live (repository or DOI).")
+    publish_p.add_argument(
+        "--code-url", default=None, help="Where the public code lives (default: the repository at --commit)."
+    )
+    publish_p.add_argument(
+        "--zenodo",
+        action="store_true",
+        help="Deposit the public data and code on Zenodo with your own token (ZENODO_TOKEN) and record the DOIs.",
+    )
+    publish_p.add_argument(
+        "--zenodo-sandbox", action="store_true", help="Use sandbox.zenodo.org (token in ZENODO_SANDBOX_TOKEN)."
+    )
+    publish_p.add_argument(
+        "--offline",
+        action="store_true",
+        help="Prepare the folder for publishing in the browser (e2er.org/publish): write the dossier and "
+        "e2er.json, send nothing.",
+    )
+
+    url_help = "Platform address (default: E2ER_URL, else https://e2er.org)."
+    login_p = subparsers.add_parser(
+        "login", help="Sign in to e2er.org from the command line (approve a code in the browser)."
+    )
+    login_p.add_argument("--url", default=None, help=url_help)
+    login_p.add_argument("--no-browser", action="store_true", help="Do not open the browser; print the address only.")
+    logout_p = subparsers.add_parser("logout", help="End the command-line sign-in and forget the token.")
+    logout_p.add_argument("--url", default=None, help=url_help)
+    whoami_p = subparsers.add_parser("whoami", help="Show the account the command line is signed in as.")
+    whoami_p.add_argument("--url", default=None, help=url_help)
+    dossier_p = subparsers.add_parser("dossier", help="Dossier commands (`e2er dossier push`).")
+    dossier_sub = dossier_p.add_subparsers(dest="dossier_command", required=True)
+    push_p = dossier_sub.add_parser("push", help="Register the dossier alone, so a private study's footnote resolves.")
+    push_p.add_argument("bundle", nargs="?", default=".", help="The study folder with e2er.json (default: here).")
+    push_p.add_argument("--url", default=None, help=url_help)
+
+    submit_p = subparsers.add_parser(
+        "submit",
+        help="Send a skill, template, specialist or connector to e2er.org for review (after `e2er login`).",
+    )
+    submit_p.add_argument(
+        "path", nargs="?", default=None, help="A skill folder (with SKILL.md), a template .toml or a specialist file."
+    )
+    submit_p.add_argument("--kind", choices=["skill", "template", "agent", "connector"], default=None)
+    submit_p.add_argument("--name", default=None, help="Display name (a skill's comes from SKILL.md).")
+    submit_p.add_argument(
+        "--slug", default=None, help="Identifier, e.g. codebook-development (default: from the file)."
+    )
+    submit_p.add_argument("--version", required=True, help="Version of this part, e.g. 0.1.0.")
+    submit_p.add_argument("--summary", default=None, help="What it does and for whom (a skill's comes from SKILL.md).")
+    submit_p.add_argument("--licence", required=True, help="SPDX identifier, e.g. MIT, CC-BY-4.0, CC-BY-NC-4.0.")
+    submit_p.add_argument(
+        "--source",
+        default=None,
+        help="https address where the part is published (required under a non-commercial licence).",
+    )
+    submit_p.add_argument(
+        "--improves", default=None, help="A listed part this is a new version of, e.g. skill:ines/codebook-development."
+    )
+    submit_p.add_argument("--handle", default=None, help="Your profile handle, for a first contribution.")
+    submit_p.add_argument("--discipline", default=None, help="Field, e.g. organization-science.")
+    submit_p.add_argument("--role", default=None, help="Specialist: its role, in a sentence.")
+    submit_p.add_argument("--output", default=None, help="Specialist: the file it writes, e.g. codebook.md.")
+    submit_p.add_argument("--direction", choices=["in", "out", "both"], default=None, help="Connector: data direction.")
+    submit_p.add_argument(
+        "--egress",
+        choices=["none", "query", "reference-list", "prompts", "files", "paper-text"],
+        default=None,
+        help="Connector: what leaves the machine.",
+    )
+    submit_p.add_argument("--egress-note", default=None, help="Connector: a sentence on what it sends out.")
+    submit_p.add_argument("--resubmit", default=None, metavar="SUB_ID", help="Send a returned submission again, fixed.")
+    submit_p.add_argument("--url", default=None, help=url_help)
+    submit_p.add_argument("--dry-run", action="store_true", help="Print the request; send nothing.")
+
     export_p = subparsers.add_parser(
         "export",
         help="Assemble a clean, structured project folder (paper/code/data/results/design/reviews) from a run.",
@@ -319,12 +497,90 @@ def main() -> None:
     # nargs=REMAINDER cannot hold a leading `--help` or `--limit`, which argparse
     # claims for the top-level parser first.
     subparsers.add_parser(
-        "corpus",
-        help="A local library of paper claims, each checked against its source (`e2er corpus --help`)",
+        "skills",
+        help="Install skill packs, or sync e2er's own out to a CLI backend (`e2er skills --help`)",
+        add_help=False,
+    )
+    subparsers.add_parser(
+        "library",
+        aliases=["corpus"],
+        help="A local library of paper claims, each checked against its source (`e2er library --help`)",
         add_help=False,
     )
 
     args = parser.parse_args()
+
+    if args.command == "publish":
+        from .cli_publish import publish as _publish
+
+        sys.exit(
+            _publish(
+                args.bundle,
+                owner=args.owner,
+                project=args.project,
+                github=args.github,
+                orcid=args.orcid,
+                name=args.name,
+                roles=args.roles,
+                repo=args.repo,
+                commit=args.commit,
+                path=args.path,
+                db=args.db,
+                template=args.template,
+                license_id=args.license_id,
+                derived_from=args.derived_from,
+                out=args.out,
+                stamp=not args.no_stamp,
+                dry_run=args.dry_run,
+                to_url=args.to_url,
+                offline=args.offline,
+                data=args.data,
+                code=args.code,
+                data_url=args.data_url,
+                code_url=args.code_url,
+                zenodo=args.zenodo or args.zenodo_sandbox,
+                zenodo_sandbox=args.zenodo_sandbox,
+                site=args.to_url,
+            )
+        )
+
+    if args.command in ("login", "logout", "whoami", "dossier"):
+        from . import cli_platform
+
+        if args.command == "login":
+            sys.exit(cli_platform.login(args.url, open_browser=not args.no_browser))
+        if args.command == "logout":
+            sys.exit(cli_platform.logout(args.url))
+        if args.command == "whoami":
+            sys.exit(cli_platform.whoami(args.url))
+        sys.exit(cli_platform.dossier_push(args.bundle, args.url))
+
+    if args.command == "submit":
+        from .cli_submit import submit as _submit
+
+        sys.exit(
+            _submit(
+                args.path,
+                url=args.url,
+                resubmit=args.resubmit,
+                dry_run=args.dry_run,
+                kind=args.kind,
+                name=args.name,
+                slug=args.slug,
+                version=args.version,
+                summary=args.summary,
+                licence=args.licence,
+                source=args.source,
+                improves=args.improves,
+                handle=args.handle,
+                discipline=args.discipline,
+                role=args.role,
+                output=args.output,
+                direction=args.direction,
+                egress=args.egress,
+                egress_note=args.egress_note,
+            )
+        )
 
     if args.command == "export":
         from .cli_export import export as _export
@@ -341,7 +597,7 @@ def main() -> None:
 
         sys.exit(_compare(paths=args.paths, out=args.out, json_output=args.json))
 
-    if args.command == "rq":
+    if args.command in ("question", "rq"):
         from .cli_rq import rq as _rq
 
         sys.exit(
@@ -400,6 +656,10 @@ def main() -> None:
     if args.command == "install-skills":
         from .cli_install_skills import install_skills as _install
 
+        print(
+            "note: `e2er install-skills` is now `e2er skills sync`. The old name still works.",
+            file=sys.stderr,
+        )
         sys.exit(_install(backend=args.backend, force=args.force))
     elif args.command == "run":
         from .cli_run import RQInputError, resolve_rq_input
@@ -431,6 +691,10 @@ def main() -> None:
         from .cli_init import init as _init
 
         sys.exit(_init(force=args.force, defaults=args.defaults))
+    elif args.command == "status" and Path(args.paper_id).expanduser().is_dir():
+        from . import cli_platform
+
+        sys.exit(cli_platform.status(args.paper_id, args.url))
     elif args.command == "status":
         from .cli_status import status as _status
 
@@ -456,6 +720,26 @@ def main() -> None:
                 monitor_seconds=args.monitor_seconds,
             )
         )
+    elif args.command == "review":
+        from .cli_review import review as _review
+
+        sys.exit(
+            _review(
+                args.paper_id,
+                approve=args.approve,
+                instruction=args.instruction,
+                edit=args.edit,
+                send_back=args.send_back,
+                remark=args.remark,
+            )
+        )
+    elif args.command == "preregister":
+        from .cli_review import deposit as _deposit
+
+        if args.prereg_command != "deposit":
+            prereg_p.print_help()
+            sys.exit(1)
+        sys.exit(_deposit(args.target, zenodo=args.zenodo, osf=args.osf, sandbox=args.sandbox))
     elif args.command == "migrate":
         # Importable module (works in both pip-installed wheel AND dev
         # checkout). The previous implementation pointed at
@@ -519,7 +803,7 @@ def _serve(*, host: str, port: int, reload: bool, no_browser: bool) -> int:
     url = f"http://{host}:{port}"
 
     if _already_serving(host, port):
-        print(f"E2ER is already running at {url} — opening it.")
+        print(f"e2er is already running at {url} — opening it.")
         if not no_browser:
             import webbrowser
 
@@ -532,7 +816,7 @@ def _serve(*, host: str, port: int, reload: bool, no_browser: bool) -> int:
     if not no_browser and not reload:
         _open_browser(url)
 
-    print(f"E2ER dashboard → {url}   (ctrl-c to stop)")
+    print(f"e2er dashboard → {url}   (ctrl-c to stop)")
     try:
         uvicorn.run("src.api.app:app", host=host, port=port, reload=reload)
     except SystemExit as e:  # uvicorn raises this on a bind failure
