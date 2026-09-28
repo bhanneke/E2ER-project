@@ -112,6 +112,42 @@ def review(
         print(f"  {name}" + ("" if f["exists"] else " (not written yet)"))
     if data.get("sendable"):
         print(f"  can be sent back: {', '.join(data['sendable'])}")
+    if not _interactive():
+        print(_NO_TERMINAL.format(paper_id=paper_id, dashboard=_dashboard_url(paper_id)), file=sys.stderr)
+        return 2
+    try:
+        return _interactive_loop(http, paper_id, data, files)
+    except (EOFError, KeyboardInterrupt):
+        print(
+            "\nStopped. " + _NO_TERMINAL.format(paper_id=paper_id, dashboard=_dashboard_url(paper_id)), file=sys.stderr
+        )
+        return 2
+
+
+_NO_TERMINAL = (
+    "e2er review: there is no terminal to ask in. Act on the step with a flag instead:\n"
+    "  e2er review {paper_id} --approve\n"
+    '  e2er review {paper_id} --instruction "TEXT"\n'
+    "  e2er review {paper_id} --edit FILE\n"
+    '  e2er review {paper_id} --send-back STEP --remark "TEXT"\n'
+    "or open the step in the dashboard: {dashboard}"
+)
+
+
+def _interactive() -> bool:
+    try:
+        return sys.stdin.isatty()
+    except (AttributeError, ValueError):
+        return False
+
+
+def _dashboard_url(paper_id: str) -> str:
+    from .cli_run import _api_root
+
+    return f"{_api_root()}/papers/{paper_id}/review"
+
+
+def _interactive_loop(http: Any, paper_id: str, data: dict[str, Any], files: dict[str, Any]) -> int:
     while True:
         choice = input("[a]pprove, [e]dit a file, [i]nstruction, [s]end back, [q]uit: ").strip().lower()[:1]
         if choice == "q":

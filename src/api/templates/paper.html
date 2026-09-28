@@ -5,7 +5,7 @@
 <h1>{{ paper.title }}</h1>
 <p class="sub">{{ paper.research_question }}</p>
 <p class="muted">
-  Mode: {{ paper.mode }}
+  Template: {{ paper.pipeline or "empirical" }} · {{ (paper.mode or "single_pass") | replace("_", " ") }}
   {% if paper.github_repo %} · <a href="{{ paper.github_repo }}" target="_blank" rel="noopener">{{ paper.github_repo }}</a>{% endif %}
 </p>
 

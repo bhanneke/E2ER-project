@@ -26,7 +26,18 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(
         prog="e2er",
-        description="e2er v3 — End-to-End Researcher pipeline",
+        description="e2er — End-to-End Researcher. Run `e2er` alone to open it in your browser.",
+    )
+    # For bare `e2er` (which serves the dashboard). Own dests, so that the serve
+    # subcommand's defaults cannot overwrite them.
+    parser.add_argument(
+        "--no-browser",
+        dest="top_no_browser",
+        action="store_true",
+        help="Start the dashboard without opening a browser.",
+    )
+    parser.add_argument(
+        "--port", dest="top_port", type=int, default=None, help="Port for the dashboard (default 8280)."
     )
     subparsers = parser.add_subparsers(dest="command")
 
@@ -523,6 +534,7 @@ def main() -> None:
     )
 
     args = parser.parse_args()
+    _clean_path_args(args)
 
     if args.command == "publish":
         from .cli_publish import publish as _publish
@@ -769,11 +781,42 @@ def main() -> None:
         sys.exit(
             _serve(
                 host=getattr(args, "host", "127.0.0.1"),
-                port=getattr(args, "port", 8280),
+                port=getattr(args, "port", None) or args.top_port or 8280,
                 reload=getattr(args, "reload", False),
-                no_browser=getattr(args, "no_browser", False),
+                no_browser=getattr(args, "no_browser", False) or args.top_no_browser,
             )
         )
+
+
+#: Arguments that take a path, per command. Each is cleaned with the forgiving
+#: path helper, so a path pasted with a prompt glyph, quotes or drag-and-drop
+#: escapes works the same as a typed one.
+_PATH_ARGS: dict[str, tuple[str, ...]] = {
+    "run": ("rq_file",),
+    "run-matrix": ("rq_file", "out"),
+    "status": ("paper_id",),
+    "verify": ("bundle",),
+    "verify-citations": ("draft", "bib"),
+    "publish": ("bundle", "out", "db"),
+    "export": ("to",),
+    "compare": ("paths", "out"),
+    "question": ("out",),
+    "rq": ("out",),
+    "preregister": ("target",),
+    "submit": ("path",),
+    "dossier": ("bundle",),
+}
+
+
+def _clean_path_args(args: argparse.Namespace) -> None:
+    from .paths import clean_path_input
+
+    for name in _PATH_ARGS.get(str(getattr(args, "command", "") or ""), ()):
+        value = getattr(args, name, None)
+        if isinstance(value, str):
+            setattr(args, name, clean_path_input(value))
+        elif isinstance(value, list):
+            setattr(args, name, [clean_path_input(v) if isinstance(v, str) else v for v in value])
 
 
 def _already_serving(host: str, port: int) -> bool:
@@ -791,7 +834,22 @@ def _already_serving(host: str, port: int) -> bool:
         return False
 
 
-def _open_browser(url: str) -> None:
+def _interactive() -> bool:
+    """A person at a terminal (not a script, a service or CI)."""
+    try:
+        return sys.stdout.isatty() and sys.stdin.isatty()
+    except (AttributeError, ValueError):
+        return False
+
+
+def _launch_url(host: str, port: int, token: str | None) -> str:
+    """The address to open. Carries the session token, which the dashboard trades for a cookie."""
+    shown = "127.0.0.1" if host in ("0.0.0.0", "::", "") else host
+    base = f"http://{shown}:{port}/"
+    return f"{base}?t={token}" if token else base
+
+
+def _open_browser(url: str, delay: float = 1.2) -> None:
     """Open the dashboard, a moment after the server is up.
 
     Best-effort: a headless machine, a container or a locked-down desktop has no
@@ -803,7 +861,7 @@ def _open_browser(url: str) -> None:
     def _later() -> None:
         import time
 
-        time.sleep(1.2)
+        time.sleep(delay)
         try:
             webbrowser.open(url)
         except Exception:  # noqa: BLE001
@@ -813,14 +871,24 @@ def _open_browser(url: str) -> None:
 
 
 def _serve(*, host: str, port: int, reload: bool, no_browser: bool) -> int:
-    """Run the dashboard. Returns the process exit code."""
+    """Run the dashboard. Returns the process exit code.
+
+    Opens the browser when a person started it at a terminal (never for
+    scripts or with --no-browser); the address is always printed. When e2er is
+    already running on the port, it opens that one instead of failing.
+    """
+    import os
+
     import uvicorn
 
-    url = f"http://{host}:{port}"
+    from .api import local_session as ls
+
+    open_it = not no_browser and _interactive()
 
     if _already_serving(host, port):
+        url = _launch_url(host, port, ls.read_session_token(port))
         print(f"e2er is already running at {url} — opening it.")
-        if not no_browser:
+        if open_it:
             import webbrowser
 
             try:
@@ -829,23 +897,34 @@ def _serve(*, host: str, port: int, reload: bool, no_browser: bool) -> int:
                 pass
         return 0
 
-    if not no_browser and not reload:
+    token = os.environ.get(ls.ENV_TOKEN) or ls.new_token()
+    os.environ[ls.ENV_TOKEN] = token  # the uvicorn app (and a --reload worker) read it from here
+    url = _launch_url(host, port, token)
+    try:
+        ls.write_session_file(port, token)
+    except OSError:
+        pass  # only a second `e2er` needs it; the printed address works regardless
+
+    if open_it and not reload:
         _open_browser(url)
 
-    print(f"e2er dashboard → {url}   (ctrl-c to stop)")
+    print(f"e2er is running at {url}")
+    print("   (keep this window open while you work; ctrl-c stops e2er)")
     try:
-        uvicorn.run("src.api.app:app", host=host, port=port, reload=reload)
+        uvicorn.run("src.api.app:app", host=host, port=port, reload=reload, log_level="warning")
     except SystemExit as e:  # uvicorn raises this on a bind failure
         code = e.code if isinstance(e.code, int) else 1
         if code:
             print(
-                f"Could not start on {url} — something else is using port {port}.\nTry:  e2er serve --port {port + 1}",
+                f"Could not start on port {port} — something else is using it.\nTry:  e2er --port {port + 1}",
                 file=sys.stderr,
             )
         return code
     except OSError as e:
         print(f"Could not start on {url}: {e}", file=sys.stderr)
         return 1
+    finally:
+        ls.remove_session_file(port)
     return 0
 
 

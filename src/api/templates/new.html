@@ -1,68 +1,82 @@
 {% extends "base.html" %}
-{% block title %}New paper — e2er{% endblock %}
+{% block title %}New study — e2er{% endblock %}
 
 {% block content %}
-<h1>New paper</h1>
+<h1>New study</h1>
 
-<div hx-get="/htmx/preflight-banner" hx-trigger="load" hx-swap="innerHTML">
-  <div class="pf-banner">Checking this machine…</div>
-</div>
+{% if needs_setup %}
+  <div class="pf-banner bad">e2er is not set up yet. <a href="/setup">Set it up first</a> — it takes a minute.</div>
+{% else %}
+  <div hx-get="/htmx/preflight-banner" hx-trigger="load" hx-swap="innerHTML">
+    <div class="pf-banner">Checking this computer…</div>
+  </div>
+{% endif %}
 
-<form method="post" action="/papers" class="paper-form">
-  <label>
-    <span>Title</span>
-    <input type="text" name="title" required maxlength="200"
-           placeholder="e.g. Concentrated liquidity and price discovery on Uniswap v3" />
-  </label>
+{% if error %}
+  <p class="error" role="alert">{{ error }}</p>
+{% endif %}
 
+<form method="post" action="/papers" class="paper-form" id="new-study">
   <label>
     <span>Research question</span>
     <textarea name="research_question" rows="4" required
-              placeholder="What is the empirical question this paper answers?"></textarea>
+              placeholder="What is the question this study answers? For a replication, name the Zenodo record (its DOI).">{{ values.research_question }}</textarea>
   </label>
 
-  <div class="row">
-    <label>
-      <span>Mode</span>
-      <select name="mode">
-        <option value="single_pass" selected>single_pass — one pass, about an hour</option>
-        <option value="iterative">iterative — adds self-attack &amp; polish, considerably longer</option>
-      </select>
-    </label>
+  <fieldset class="plain">
+    <legend>Template</legend>
+    <small class="muted">The steps the study takes, the checks it must pass, and where it stops for you.</small>
+    <div class="tpl-grid">
+      {% for p in pipelines %}
+        <label class="tpl">
+          <input type="radio" name="pipeline" value="{{ p.name }}" {% if p.name == values.pipeline %}checked{% endif %}>
+          <span class="tpl-name">{{ p.name }}</span>
+          <span class="tpl-desc">{{ p.description }}</span>
+          <span class="tpl-pauses">
+            {% if p.pauses %}<b>Stops for you at:</b> {{ p.pauses | join(", ") }}
+            {% else %}Runs through without stopping{% endif %}
+          </span>
+        </label>
+      {% endfor %}
+    </div>
+  </fieldset>
 
-    <label>
-      <span>Pipeline</span>
-      {# Read off the files on disk, not a list in the code: a pipeline dropped
-         into ./pipelines or ~/.e2er/pipelines shows up here by itself. #}
-      <select name="pipeline">
-        {% for p in pipelines %}
-          <option value="{{ p.name }}" {% if p.name == 'empirical' %}selected{% endif %}>
-            {{ p.name }}{% if p.description %} — {{ p.description }}{% endif %}
-          </option>
-        {% endfor %}
-      </select>
-      <small class="muted">
-        The sequence of specialists, gates and reviews this paper runs through.
-        Each is a file you can copy and change — see <code>pipelines/</code>.
-      </small>
-    </label>
+  <label class="check">
+    <input type="checkbox" name="demonstration" value="1" {% if values.demonstration %}checked{% endif %}>
+    <span>Demonstration: this study is made only to show e2er. Its paper and report say so, and it is published as a demonstration.</span>
+  </label>
 
+  <details class="more">
+    <summary>More options</summary>
     <label>
-      <span>Methodology</span>
-      <select name="methodology">
-        <option value="empirical" selected>empirical — data-driven, identification + econometrics</option>
-        <option value="theoretical">theoretical — formal model, hypotheses, no data</option>
-        <option value="mixed">mixed — formal model AND empirical test</option>
-      </select>
+      <span>Title</span>
+      <input type="text" name="title" maxlength="200" value="{{ values.title }}"
+             placeholder="Leave empty to use the first sentence of the question" />
     </label>
+    <div class="row">
+      <label>
+        <span>Thoroughness</span>
+        <select name="mode">
+          <option value="single_pass" {% if values.mode == 'single_pass' %}selected{% endif %}>One pass (about an hour)</option>
+          <option value="iterative" {% if values.mode == 'iterative' %}selected{% endif %}>Iterative: adds self-critique and polish (much longer)</option>
+        </select>
+      </label>
+      <label>
+        <span>Methodology</span>
+        <select name="methodology">
+          <option value="empirical" {% if values.methodology == 'empirical' %}selected{% endif %}>Empirical: data, identification, estimation</option>
+          <option value="theoretical" {% if values.methodology == 'theoretical' %}selected{% endif %}>Theoretical: a formal model, no data</option>
+          <option value="mixed" {% if values.methodology == 'mixed' %}selected{% endif %}>Mixed: a model and an empirical test</option>
+        </select>
+      </label>
+      <label>
+        <span>Spending limit (USD)</span>
+        <input type="number" name="max_cost_usd" min="1" max="500" step="1" value="{{ values.max_cost_usd if values.max_cost_usd is not none else default_cap }}" />
+        <small class="muted">{% if billed %}Your provider bills per use; the study stops at this limit.{% else %}Your provider runs on your subscription, so nothing is billed.{% endif %}</small>
+      </label>
+    </div>
+  </details>
 
-    <label>
-      <span>Cost cap (USD)</span>
-      <input type="number" name="max_cost_usd" min="1" max="500" step="1"
-             value="{{ default_cap }}" />
-    </label>
-  </div>
-
-  <button type="submit" class="btn-primary">Start pipeline</button>
+  <button type="submit" class="btn-primary">Start</button>
 </form>
 {% endblock %}

@@ -7,6 +7,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### e2er in the browser
+
+- **`e2er` alone opens the browser.** It starts the dashboard on 127.0.0.1 and
+  opens it when started from a terminal (`--no-browser` turns that off); the
+  address is always printed. When e2er is already running on the port, it opens
+  that one. `e2er --port N` picks another port.
+- **Setup page (`/setup`)**, shown automatically while no settings exist and
+  under Settings afterwards. One card each for the AI provider (the installed
+  claude/codex/gemini CLIs and whether they are signed in, API keys; a model per
+  provider with the cheapest labelled), literature, data folder, Docker and
+  optional keys (FRED, Allium, Semantic Scholar). With no AI provider found it
+  lists the ways to get one, with links; without Docker it says only the
+  replication template needs it. Saving writes the same `.env` as `e2er init`,
+  owner-only (mode 600), keeps settings it does not manage, shows stored keys
+  only as their last four characters, optionally creates `data/` and
+  `literature/`, then runs the doctor checks.
+- **Folder browser** for literature and data, served by the local server: folders
+  plus .bib and .pdf (or data) files, hidden files left out. A .bib file, a
+  Zotero export (a .bib with a `files/` folder), a Zotero library or a folder of
+  PDFs is recognised and its references and PDFs counted. It needs the session
+  token from the launch URL (traded for an HttpOnly, SameSite=Strict cookie),
+  answers only to loopback clients with a local Host header and no foreign
+  Origin, never adds CORS headers, stays inside the home folder (extra roots only
+  via `E2ER_BROWSE_ROOTS`) and does not follow symlinks out of it.
+- **New study page:** the research question, template cards read from
+  `pipelines/*.toml` (description and the steps where each one stops for you),
+  a demonstration box (recorded for that one study) and the rest under More
+  options. A refused start is shown on the form with what was typed kept.
+- **Progress:** the study's page lists its template's steps with their state,
+  the current step, the specialists done and the checks passed or failed, and
+  links to the review screen at each pause (offered once the run has actually
+  stopped, so approving is never refused).
+- **Finish page** (`/papers/<id>/finish`): prepares the exported folder, runs
+  the five `e2er verify` checks, and publishes to e2er.org with the fields of
+  `e2er publish`: a dry-run preview of the request first, sign-in through the
+  device flow, then publish.
+
+### Fixed
+
+- **The templates were missing from the installed package.** 0.11.0's wheel had
+  no `pipelines/`, so after `pip install e2er` every study failed with "no
+  pipeline named 'empirical'". They now ship.
+- **Forgiving paths.** One helper cleans every path typed at a prompt or given
+  as a flag: a leading prompt glyph (❯ › $ % > #), surrounding quotes,
+  drag-and-drop backslash escapes, `file://` and `~`. `e2er init` accepts a
+  folder holding one .bib ("That is a folder. It contains My Library.bib — use
+  it? [Y/n]"), a Zotero export or a folder of PDFs, and says what it expected
+  and what it found.
+- `e2er review` without a terminal exited with an EOFError traceback; it now
+  names the flags and the dashboard page to use instead.
+- `e2er status` showed "single_pass / empirical" for every study; it now shows
+  the study's template.
+- `e2er doctor` checks the Python version and reports Docker (optional), and
+  points to the install instructions when Python is too old or the claude CLI
+  is missing. The `.env` from `e2er init` is written owner-only.
+
 ## [0.11.0] — 2026-09-29
 
 ### Templates

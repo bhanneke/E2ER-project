@@ -68,6 +68,7 @@ def _format_status_summary(d: dict) -> str:
     rq = d.get("research_question") or ""
     methodology = d.get("methodology") or "empirical"
     mode = d.get("mode") or "single_pass"
+    template = d.get("pipeline") or "empirical"
     workspace = d.get("workspace") or ""
     cap = d.get("max_cost_usd")
     last_error = d.get("last_error")
@@ -81,7 +82,7 @@ def _format_status_summary(d: dict) -> str:
         f"Status:     {status}",
         f"Title:      {_truncate(title, 90)}",
         f"RQ:         {_truncate(rq, 90)}",
-        f"Mode:       {mode} / {methodology}",
+        f"Template:   {template} ({mode.replace('_', ' ')}, {methodology})",
         f"Cost:       ${_format_money(spent)} / ${_format_money(cap)} cap"
         + (" (estimate — CLI backend)" if cost_is_estimate else ""),
         f"Specialists: {calls} calls, {tokens:,} tokens",

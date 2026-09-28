@@ -2400,10 +2400,10 @@ def _reproduction_with_disclaimer(check: Any) -> Any:
 
     def run(workspace: Path, **settings: Any) -> Any:
         verdict = check(workspace, **settings)
-        from ..demonstration import mark_report, resolve_purpose
+        from ..demonstration import mark_report, study_purpose
 
         try:
-            purpose = resolve_purpose()
+            purpose = study_purpose(Path(workspace))
         except ValueError as e:
             logger.warning("reproduction report left unmarked: %s", e)
             return verdict

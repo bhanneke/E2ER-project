@@ -1,0 +1,299 @@
+{% extends "base.html" %}
+{% block title %}Set up — e2er{% endblock %}
+
+{% block content %}
+<h1>{% if exists %}Settings{% else %}Set up e2er{% endif %}</h1>
+<p class="sub">
+  Choose how e2er reaches an AI model, and where your literature and data are.
+  Everything is saved in <code class="path">{{ env_path }}</code>, which only you can read.
+  You can change it here later.
+</p>
+
+{% if not session_ok %}
+  <div class="pf-banner bad" id="session-note">{{ session_problem | ticks }}</div>
+{% endif %}
+
+<form id="setup" class="setup" onsubmit="return false">
+
+  {# ── AI provider ─────────────────────────────────────────────────────── #}
+  <section class="card" id="card-ai" data-state="{{ 'ok' if any_backend else 'bad' }}">
+    <header class="card-h">
+      <span class="dot" aria-hidden="true"></span>
+      <h2>AI provider</h2>
+      <span class="card-status" id="ai-status">{{ "Ready" if any_backend else "None found on this computer" }}</span>
+    </header>
+
+    <p class="card-note">
+      Claude Code, Codex and Gemini run on your own subscription: no extra bill, a study uses part of your plan.
+      The Anthropic and OpenRouter APIs bill per use; every study has a spending limit.
+    </p>
+
+    {% if not any_backend %}
+      <div class="nobackend">
+        <p><strong>e2er needs one of these.</strong> Install or sign up, then press “Check again”.</p>
+        <ul>
+          <li><a href="{{ backend_help.claude_code.url }}" target="_blank" rel="noopener">{{ backend_help.claude_code.label }}</a> — {{ backend_help.claude_code.how | ticks }}</li>
+          <li><a href="{{ backend_help.anthropic.url }}" target="_blank" rel="noopener">{{ backend_help.anthropic.label }}</a> or
+              <a href="{{ backend_help.openrouter.url }}" target="_blank" rel="noopener">{{ backend_help.openrouter.label }}</a> — billed per use. Paste the key below.</li>
+          <li><a href="{{ backend_help.codex.url }}" target="_blank" rel="noopener">{{ backend_help.codex.label }}</a> — {{ backend_help.codex.how | ticks }}</li>
+          <li><a href="{{ backend_help.gemini.url }}" target="_blank" rel="noopener">{{ backend_help.gemini.label }}</a> — {{ backend_help.gemini.how | ticks }}</li>
+        </ul>
+      </div>
+    {% endif %}
+
+    <div class="choices" role="radiogroup" aria-label="AI provider">
+      {% for b in backends %}
+        <label class="choice" data-ready="{{ 'yes' if b.ready else 'no' }}">
+          <input type="radio" name="backend" value="{{ b.name }}" {% if b.name == chosen %}checked{% endif %}>
+          <span class="dot sm" aria-hidden="true"></span>
+          <span class="choice-body">
+            <span class="choice-title">{{ b.label }}</span>
+            <span class="choice-detail">{{ b.detail | ticks }}{% if not b.installed and b.kind == 'cli' %} — <a href="{{ b.help.url }}" target="_blank" rel="noopener">how to install</a>{% endif %}</span>
+          </span>
+        </label>
+        <div class="choice-more" data-for="{{ b.name }}" hidden>
+          {% if b.models %}
+            <label class="field">
+              <span>Model</span>
+              <select name="model-{{ b.name }}">
+                {% for value, label in b.models %}
+                  <option value="{{ value }}" {% if current_models.get(b.model_setting) == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </label>
+          {% endif %}
+          {% if b.kind == 'api' %}
+            <label class="field">
+              <span>{{ b.key_setting }}</span>
+              <input type="password" name="apikey-{{ b.name }}" autocomplete="off" spellcheck="false"
+                     placeholder="{% if api_keys.get(b.key_setting) %}stored ({{ api_keys.get(b.key_setting) }}) — leave empty to keep{% else %}paste your key{% endif %}">
+              <small class="muted"><a href="{{ b.help.url }}" target="_blank" rel="noopener">Get a key</a>. Billed per use.</small>
+            </label>
+          {% endif %}
+        </div>
+      {% endfor %}
+    </div>
+    <p><a class="btn" href="/setup">Check again</a></p>
+  </section>
+
+  {# ── Literature ──────────────────────────────────────────────────────── #}
+  <section class="card" id="card-lit" data-state="{{ 'ok' if literature else 'none' }}">
+    <header class="card-h">
+      <span class="dot" aria-hidden="true"></span>
+      <h2>Literature</h2>
+      <span class="card-status" id="lit-status">{{ "Chosen" if literature else "Optional" }}</span>
+    </header>
+    <p class="card-note">A .bib file, a Zotero export (a .bib with a <code>files</code> folder), or a folder of PDFs.
+      Without it, e2er searches OpenAlex for literature. Your PDFs never leave this computer.</p>
+    <div class="picked">
+      <code class="path" id="lit-path">{{ literature or "Nothing chosen" }}</code>
+      <button type="button" class="btn" data-browse="lit">Choose…</button>
+      <button type="button" class="btn-ghost" data-clear="lit" {% if not literature %}hidden{% endif %}>Remove</button>
+    </div>
+    <p class="found" id="lit-found"></p>
+    <div class="fb" id="fb-lit" hidden></div>
+    <input type="hidden" name="literature" value="{{ literature }}">
+  </section>
+
+  {# ── Data ────────────────────────────────────────────────────────────── #}
+  <section class="card" id="card-data" data-state="{{ 'ok' if data_dir else 'none' }}">
+    <header class="card-h">
+      <span class="dot" aria-hidden="true"></span>
+      <h2>Data folder</h2>
+      <span class="card-status" id="data-status">{{ "Chosen" if data_dir else "Optional" }}</span>
+    </header>
+    <p class="card-note">A folder with your datasets (csv, tsv, xlsx, parquet, json, txt). e2er copies them into each study.
+      Without it, e2er fetches public data (Yahoo Finance, and FRED with a key).</p>
+    <div class="picked">
+      <code class="path" id="data-path">{{ data_dir or "Nothing chosen" }}</code>
+      <button type="button" class="btn" data-browse="data">Choose…</button>
+      <button type="button" class="btn-ghost" data-clear="data" {% if not data_dir %}hidden{% endif %}>Remove</button>
+    </div>
+    <div class="found" id="data-found"></div>
+    <div class="fb" id="fb-data" hidden></div>
+    <input type="hidden" name="data_dir" value="{{ data_dir }}">
+    <label class="check">
+      <input type="checkbox" name="create_folders" {% if not exists %}checked{% endif %}>
+      <span>Create <code class="tick">data</code> and <code class="tick">literature</code> folders in <code class="path">{{ cwd }}</code> to drop files into</span>
+    </label>
+  </section>
+
+  {# ── Docker ──────────────────────────────────────────────────────────── #}
+  <section class="card" id="card-docker" data-state="{{ 'ok' if docker.ok else 'none' }}">
+    <header class="card-h">
+      <span class="dot" aria-hidden="true"></span>
+      <h2>Docker</h2>
+      <span class="card-status">{{ "Installed" if docker.ok else "Not installed" }}</span>
+    </header>
+    <p class="card-note">
+      {% if docker.ok %}Found. The replication template runs published code inside it.
+      {% else %}Only the replication template needs Docker; everything else works without it.
+        <a href="https://docs.docker.com/get-started/get-docker/" target="_blank" rel="noopener">Get Docker Desktop</a>.{% endif %}
+    </p>
+  </section>
+
+  {# ── Optional keys ───────────────────────────────────────────────────── #}
+  <section class="card" id="card-keys" data-state="none">
+    <header class="card-h">
+      <span class="dot" aria-hidden="true"></span>
+      <h2>Optional keys</h2>
+      <span class="card-status">Optional</span>
+    </header>
+    <p class="card-note">For data sources that need an account. Leave a field empty to keep what is stored.</p>
+    {% for k in optional_keys %}
+      <label class="field">
+        <span>{{ k.name }}</span>
+        <input type="password" name="key-{{ k.name }}" autocomplete="off" spellcheck="false"
+               placeholder="{% if k.masked %}stored ({{ k.masked }}) — leave empty to keep{% else %}not set{% endif %}">
+        <small class="muted">{{ k.what }} <a href="{{ k.url }}" target="_blank" rel="noopener">Get a key</a>.</small>
+      </label>
+    {% endfor %}
+  </section>
+
+  <div class="save-row">
+    <button type="button" class="btn-primary" id="save" {% if not session_ok %}disabled{% endif %}>Save and check</button>
+    <span class="form-note" id="save-msg" role="status"></span>
+  </div>
+</form>
+
+<section id="after-save" {% if not saved %}hidden{% endif %}>
+  <h2>Checks</h2>
+  <div id="checks" {% if saved %}hx-get="/htmx/setup-checks" hx-trigger="load" hx-swap="innerHTML"{% endif %}>
+    <p class="muted">Running the checks…</p>
+  </div>
+  <p><a class="btn-primary" href="/papers/new">Start a study</a></p>
+</section>
+
+<script>
+(function () {
+  const form = document.getElementById('setup');
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+  // ── provider radios ──
+  function showMore() {
+    const v = (form.querySelector('input[name=backend]:checked') || {}).value;
+    form.querySelectorAll('.choice-more').forEach((d) => { d.hidden = d.dataset.for !== v; });
+  }
+  form.querySelectorAll('input[name=backend]').forEach((r) => r.addEventListener('change', showMore));
+  showMore();
+
+  // ── folder browser ──
+  const cfg = {
+    lit: { kind: 'literature', input: form.literature, path: 'lit-path', found: 'lit-found', card: 'card-lit', status: 'lit-status' },
+    data: { kind: 'data', input: form.data_dir, path: 'data-path', found: 'data-found', card: 'card-data', status: 'data-status' },
+  };
+
+  async function getJSON(url) {
+    const r = await fetch(url, { credentials: 'same-origin' });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.detail || ('Failed (' + r.status + ')'));
+    return d;
+  }
+
+  function setCard(which, state, status) {
+    const c = cfg[which];
+    document.getElementById(c.card).dataset.state = state;
+    document.getElementById(c.status).textContent = status;
+  }
+
+  async function choose(which, path) {
+    const c = cfg[which];
+    const found = document.getElementById(c.found);
+    found.textContent = 'Looking…';
+    try {
+      const d = await getJSON('/api/local/inspect?kind=' + c.kind + '&path=' + encodeURIComponent(path));
+      if (c.kind === 'data') {
+        found.innerHTML = esc(d.message) + (d.files && d.files.length
+          ? '<ul class="filelist">' + d.files.slice(0, 12).map((f) => '<li>' + esc(f) + '</li>').join('') +
+            (d.files.length > 12 ? '<li class="muted">and ' + (d.files.length - 12) + ' more</li>' : '') + '</ul>' : '');
+      } else {
+        found.textContent = d.message;
+      }
+      if (!d.ok) { setCard(which, 'bad', 'Not usable'); return false; }
+      c.input.value = d.path;
+      document.getElementById(c.path).textContent = d.path;
+      document.querySelector('[data-clear=' + which + ']').hidden = false;
+      setCard(which, 'ok', c.kind === 'data' ? 'Chosen' : (d.summary || 'Chosen'));
+      document.getElementById('fb-' + which).hidden = true;
+      return true;
+    } catch (e) {
+      found.textContent = e.message;
+      setCard(which, 'bad', 'Not usable');
+      return false;
+    }
+  }
+
+  async function open(which, path) {
+    const c = cfg[which];
+    const box = document.getElementById('fb-' + which);
+    box.hidden = false;
+    box.innerHTML = '<p class="muted">Opening…</p>';
+    let d;
+    try {
+      d = await getJSON('/api/local/browse?kind=' + c.kind + '&path=' + encodeURIComponent(path || ''));
+    } catch (e) { box.innerHTML = '<p class="error">' + esc(e.message) + '</p>'; return; }
+    const crumbs = d.crumbs.map((x) => '<button type="button" class="crumb" data-go="' + esc(x.path) + '">' + esc(x.name) + '</button>').join('<span class="sep">/</span>');
+    const rows = [];
+    if (d.parent) rows.push('<li><button type="button" class="fb-row dir" data-go="' + esc(d.parent) + '">↑ Up</button></li>');
+    d.dirs.forEach((x) => rows.push('<li><button type="button" class="fb-row dir" data-go="' + esc(x.path) + '">' + esc(x.name) + '</button></li>'));
+    d.files.forEach((x) => rows.push('<li><button type="button" class="fb-row file" data-pick="' + esc(x.path) + '">' + '<span class="ext">' + esc(x.ext) + '</span>' + esc(x.name) + '</button></li>'));
+    if (!d.dirs.length && !d.files.length) rows.push('<li class="muted fb-empty">Empty — no folders or matching files here.</li>');
+    const hint = c.kind === 'literature'
+      ? 'Open a folder and click a .bib file, or use the whole folder (a Zotero export or a folder of PDFs).'
+      : 'Open the folder that holds your data files, then use it.';
+    box.innerHTML =
+      '<div class="fb-top"><div class="crumbs">' + crumbs + '</div>' +
+      '<button type="button" class="btn-ghost" data-close>Close</button></div>' +
+      '<p class="muted fb-hint">' + hint + '</p>' +
+      '<ul class="fb-list">' + rows.join('') + '</ul>' +
+      '<div class="fb-foot"><code class="path">' + esc(d.path) + '</code>' +
+      '<button type="button" class="btn-primary" data-pick="' + esc(d.path) + '">Use this folder</button></div>';
+    box.querySelectorAll('[data-go]').forEach((b) => b.addEventListener('click', () => open(which, b.dataset.go)));
+    box.querySelectorAll('[data-pick]').forEach((b) => b.addEventListener('click', () => choose(which, b.dataset.pick)));
+    box.querySelector('[data-close]').addEventListener('click', () => { box.hidden = true; });
+  }
+
+  document.querySelectorAll('[data-browse]').forEach((b) => b.addEventListener('click', () => {
+    const which = b.dataset.browse;
+    const cur = cfg[which].input.value;
+    open(which, cur ? cur.replace(/\/[^/]*\.(bib|pdf)$/i, '') : '');
+  }));
+  document.querySelectorAll('[data-clear]').forEach((b) => b.addEventListener('click', () => {
+    const which = b.dataset.clear, c = cfg[which];
+    c.input.value = '';
+    document.getElementById(c.path).textContent = 'Nothing chosen';
+    document.getElementById(c.found).textContent = '';
+    b.hidden = true;
+    setCard(which, 'none', 'Optional');
+  }));
+
+  // Show what the stored choices hold.
+  if (form.literature.value && !document.getElementById('session-note')) choose('lit', form.literature.value);
+  if (form.data_dir.value && !document.getElementById('session-note')) choose('data', form.data_dir.value);
+
+  // ── save ──
+  const msg = document.getElementById('save-msg');
+  document.getElementById('save').addEventListener('click', async () => {
+    const backend = (form.querySelector('input[name=backend]:checked') || {}).value;
+    if (!backend) { msg.textContent = 'Choose an AI provider first.'; return; }
+    const model = form.querySelector('[name=model-' + backend + ']');
+    const apikey = form.querySelector('[name=apikey-' + backend + ']');
+    const keys = {};
+    form.querySelectorAll('input[name^="key-"]').forEach((i) => { if (i.value.trim()) keys[i.name.slice(4)] = i.value.trim(); });
+    msg.textContent = 'Saving…';
+    const r = await fetch('/api/setup/save', {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        backend, model: model ? model.value : '', api_key: apikey ? apikey.value : '',
+        literature: form.literature.value, data_dir: form.data_dir.value, keys,
+        create_folders: form.create_folders.checked,
+      }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { msg.textContent = d.detail || ('Could not save (' + r.status + ')'); return; }
+    location.href = '/setup?saved=1';
+  });
+})();
+</script>
+{% endblock %}
