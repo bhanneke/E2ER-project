@@ -28,6 +28,8 @@ files = ["paper_plan.md", "identification_strategy.md"]
 
 A `preregister` step assembles `preregistration.md` from the design files (question and hypotheses, identification strategy, the machine-readable identification, the analysis plan) and stops for the researcher, who may edit it. Approving it freezes it: the file's SHA-256, the SHA-256 of the plan files and the time go into `preregistration.lock.json`.
 
+Nothing may be estimated before the freeze. When the pre-registration comes up, e2er looks for estimation output in the workspace: the econometrics specialist's results and scripts, any script that estimates, result tables and figures, and data tables named as results. If there is any, the run stops at the step with the list (a `preregistration` check, recorded in the dossier) and approving does not pass it. Send back the specialist that produced it: the outputs are moved to `set_aside/<time>/` with a manifest of their fingerprints and row counts, the move appears in the dossier, and the check runs again. Nothing is deleted.
+
 From then on the estimation check compares the plan files with those fingerprints, and `e2er verify` reports either "estimation follows the pre-registered plan (frozen <date>)" or what changed. A change is a deviation that is disclosed, not a failure of the run.
 
 `e2er preregister deposit <paper_id> --zenodo` deposits the frozen file on Zenodo with the researcher's own token (`ZENODO_TOKEN`; `--sandbox` uses Zenodo's sandbox and `ZENODO_SANDBOX_TOKEN`) and records the DOI. Nothing passes through e2er.org. A deposit on OSF Registries is not built yet.

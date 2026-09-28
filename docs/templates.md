@@ -54,6 +54,10 @@ check fails, and the run stops before estimation, when
   `events_source`, a table in the data that looks like an event list only
   produces a warning.
 
+The calendar is a table `data_dictionary.json` declares under `tables` and the data analyst
+loaded; when it is not, the failure lists the tables in `data.db`. Before the pre-registration
+freezes, the run also stops if anything has already been estimated (see `researcher-step.md`).
+
 The three settings are in the template, under the gate's `[steps.settings]`.
 A failed check stops the run at the check with its reasons (`e2er review`
 shows them): edit `event_design.json` or send the identification strategist

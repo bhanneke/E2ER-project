@@ -43,7 +43,7 @@ describe the same design.
     {"name": "car_m1_p1", "start": -1, "end": 1},
     {"name": "car_0_p5", "start": 0, "end": 5}
   ],
-  "calendar": {"table": "yfinance_history_spy", "date_column": "date"},
+  "calendar": {"table": "spy_prices", "date_column": "date"},
   "events_source": {"table": "fomc_announcement_dates", "date_column": "announcement_date"},
   "overlap_treatment": "none",
   "events": [
@@ -60,7 +60,12 @@ Fields:
   the earliest event window starts.
 - `calendar`: the table and date column in the paper's data (`data.db`) whose
   dates are the trading days, typically the price table of the market index.
-  The check counts windows on these dates.
+  The check counts windows on these dates. Take the table name from
+  `data_dictionary.json` `tables` (see the data-tables skill); if the
+  dictionary is not written yet, use the naming rule it follows,
+  `<ticker>_prices` in lower case (`spy_prices`). The check fails when the
+  table is not one the dictionary declares and the data analyst loaded, and
+  names the tables that are there.
 - `events_source`: when the researcher supplied the list of events (a table
   in `data.db`, e.g. from a CSV in the data folder), name its table and date
   column here and take the events from it: every date in that table, and no

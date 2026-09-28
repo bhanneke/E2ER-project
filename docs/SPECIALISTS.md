@@ -7,8 +7,8 @@ the artifacts it must produce. A specialist that does not write its declared
 artifact fails its contract and is retried with the violation fed back.
 
 - **28** specialists
-- **61** skill files on disk
-- **50** referenced by at least one specialist
+- **62** skill files on disk
+- **51** referenced by at least one specialist
 - **11** never referenced
 
 ## Shipped but never loaded
@@ -41,12 +41,12 @@ methodology guidance exists, and no specialist is given it.
 
 - **Writes:** `data_summary.md`
 - **Sidecars:** `summary_statistics.json`, `figure_spec.json` _(optional)_
-- **Skills (9):** `data/query-data`, `data/cleaning`, `data/figure-spec`, `econometrics/panel-data`, `data/allium-cli`, `data/allium-developer-api`, `data/yfinance`, `data/fred`, `data/summary-statistics-schema`
+- **Skills (10):** `data/data-tables`, `data/query-data`, `data/cleaning`, `data/figure-spec`, `econometrics/panel-data`, `data/allium-cli`, `data/allium-developer-api`, `data/yfinance`, `data/fred`, `data/summary-statistics-schema`
 
 ### `data_architect`
 
 - **Writes:** `data_dictionary.json`
-- **Skills (8):** `data/query-data`, `data/blockchain`, `data/crypto-defi`, `base/economist`, `data/allium-cli`, `data/allium-developer-api`, `data/yfinance`, `data/fred`
+- **Skills (9):** `data/data-tables`, `data/query-data`, `data/blockchain`, `data/crypto-defi`, `base/economist`, `data/allium-cli`, `data/allium-developer-api`, `data/yfinance`, `data/fred`
 
 ### `data_reviewer`
 
@@ -73,7 +73,7 @@ methodology guidance exists, and no specialist is given it.
 
 - **Writes:** `identification_strategy.md`
 - **Sidecars:** `identification_spec.json`
-- **Skills (4):** `causal-inference/judge-designs`, `causal-inference/natural-experiments`, `reasoning/identification`, `causal-inference/identification-spec-schema`
+- **Skills (5):** `data/data-tables`, `causal-inference/judge-designs`, `causal-inference/natural-experiments`, `reasoning/identification`, `causal-inference/identification-spec-schema`
 
 ### `latex_formatter`
 
@@ -195,6 +195,7 @@ The reverse index: who is affected if you edit a skill file.
 | `data/blockchain` | `data_architect` |
 | `data/cleaning` | `data_analyst`, `data_reviewer`, `polish_numerics`, `replication_packager` |
 | `data/crypto-defi` | `data_architect`, `polish_institutions` |
+| `data/data-tables` | `data_analyst`, `data_architect`, `identification_strategist` |
 | `data/figure-spec` | `data_analyst` |
 | `data/fred` | `data_analyst`, `data_architect` |
 | `data/query-data` | `data_analyst`, `data_architect`, `econometrics_specialist` |

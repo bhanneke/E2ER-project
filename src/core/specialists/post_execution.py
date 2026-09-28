@@ -185,8 +185,15 @@ def _discover_script(workspace: Path, convention: ExecutionConvention) -> tuple[
             return p, False
 
     targets = convention._output_targets()
+    # Another specialist's scripts are never run on this one's behalf: the
+    # 2026-09-28 event study had the data analyst's `run_estimation.py` (which
+    # wrote summary_statistics.json among its results) discovered here and
+    # executed, so estimates existed before the pre-registration was frozen.
+    foreign = _foreign_scripts(convention)
     matches: list[Path] = []
     for py in workspace.glob("*.py"):
+        if py.name in foreign:
+            continue
         try:
             src = py.read_text(encoding="utf-8", errors="replace")
         except OSError:
@@ -198,6 +205,13 @@ def _discover_script(workspace: Path, convention: ExecutionConvention) -> tuple[
     # Most recently modified = the specialist's latest script.
     matches.sort(key=lambda p: p.stat().st_mtime, reverse=True)
     return matches[0], True
+
+
+def _foreign_scripts(convention: ExecutionConvention) -> frozenset[str]:
+    """Script names that belong to another specialist's convention."""
+    return frozenset(
+        name for other in EXECUTION_CONVENTIONS.values() if other is not convention for name in other.script_candidates
+    )
 
 
 def _normalize_output(workspace: Path, convention: ExecutionConvention) -> str:

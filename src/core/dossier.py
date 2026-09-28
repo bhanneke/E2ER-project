@@ -254,6 +254,17 @@ def recorded_workflow(db: Path, paper_id: str, bundle: Path | None = None) -> li
                     "remark": data.get("remark"),
                 }
             )
+        elif etype == "estimation_set_aside":
+            steps.append(
+                {
+                    "type": "set_aside",
+                    "phase": phase,
+                    "step": stage,
+                    "at": at,
+                    "reason": data.get("reason"),
+                    "items": data.get("items", []),
+                }
+            )
         elif etype == "preregistration":
             steps.append(
                 {

@@ -88,6 +88,18 @@ template; each verdict is recorded and appears in the dossier. See
   dates (non-trading days move to the next trading day, reported in the verdict);
   missing, extra and shifted dates are each listed. Schema:
   `docs/schemas/event_design.schema.json`.
+- Nothing is estimated before a pre-registration is frozen (every template with a
+  `preregister` step): estimation output found at that point stops the run with the
+  list; sending back the specialist that produced it moves the output to `set_aside/`
+  with a manifest, recorded in the dossier.
+- The data analyst loads, cleans and describes data and never estimates. It loads
+  the tables `data_dictionary.json` declares under `tables` into data.db
+  (`e2er-data ... --table <name>`), and its contract fails when one is missing or
+  empty or `data_summary.md` does not give its actual row count (skill
+  `data/data-tables`). The runner no longer runs the estimation script on the data
+  analyst's behalf.
+- The event_window calendar must be a table the data dictionary declares and the
+  data analyst loaded; a failure names the tables in data.db.
 - Gate steps accept `after = [...]`, like researcher steps: the check runs
   inside the initial phase, after those specialists and before the econometrics
   specialist. A failed check stops the run with its reasons (`e2er review` shows

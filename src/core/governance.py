@@ -38,10 +38,19 @@ REGIMES: tuple[str, ...] = ("off", "contracts", "full")
 DEFAULT_REGIME = "full"
 
 #: Every mechanism a regime can switch between blocking and shadow.
-#: `event_window` runs only in templates that declare it (event studies); it is
-#: listed here so that `full` enforces it and `off`/`contracts` shadow it.
-#: `reproduction` likewise runs only in the replication template.
-GATES: tuple[str, ...] = ("contracts", "estimation", "numbers", "citations", "event_window", "reproduction")
+#: `event_window` runs only in templates that declare it (event studies),
+#: `preregistration` (nothing estimated before the freeze) only in templates with
+#: a preregister step, and `reproduction` only in the replication template; they
+#: are listed so that `full` enforces them and `off`/`contracts` shadow them.
+GATES: tuple[str, ...] = (
+    "contracts",
+    "estimation",
+    "numbers",
+    "citations",
+    "event_window",
+    "reproduction",
+    "preregistration",
+)
 
 #: Deterministic steps of a template whose failure means the run cannot go on,
 #: not that a claim failed verification: the replication package could not be
