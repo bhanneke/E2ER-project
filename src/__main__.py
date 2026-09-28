@@ -80,6 +80,14 @@ def main() -> None:
         help="Which methodology specialists to dispatch. Default: empirical.",
     )
     run_p.add_argument(
+        "--template",
+        "--pipeline",
+        dest="template",
+        default="empirical",
+        help="Template (pipeline file) the run follows, resolved in ./pipelines, ~/.e2er/pipelines, "
+        "then the built-in ones (e.g. empirical-preregistered, event-study-finance). Default: empirical.",
+    )
+    run_p.add_argument(
         "--mode",
         choices=["single_pass", "iterative"],
         default="single_pass",
@@ -685,6 +693,7 @@ def main() -> None:
                 model=args.model,
                 governance=args.governance,
                 review_stages=args.review_at,
+                template=args.template,
             )
         )
     elif args.command == "init":

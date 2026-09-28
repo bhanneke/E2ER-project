@@ -124,7 +124,7 @@ is measured rather than hidden.
 | `e2er init [--defaults]` | Scaffold `data/` + `literature/`, write `.env`, bundle skills |
 | `e2er doctor` | Preflight: backend, DB, and your bring-your-own data + literature |
 | `e2er rq --draft "…"` | Sharpen a draft RQ against your data + library (advisory) |
-| `e2er run "…" [--governance …] [--review-at …]` | Run the pipeline for one RQ |
+| `e2er run "…" [--template …] [--governance …] [--review-at …]` | Run the pipeline for one RQ, following a template (default `empirical`) |
 | `e2er run-matrix "…" --backends a,b,c` | Same RQ across k backends × n repeats |
 | `e2er compare matrix.json` | Diff the design choices across the matrix |
 | `e2er export <paper_id>` | Assemble a clean bundle (+ `provenance.json`) |

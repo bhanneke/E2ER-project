@@ -24,6 +24,8 @@ template; each verdict is recorded and appears in the dossier. See
   inside the initial phase, after those specialists and before the econometrics
   specialist. A failed check stops the run with its reasons (`e2er review` shows
   them) and runs again on resume. `[steps.settings]` holds a check's parameters.
+- `e2er run --template <name>` (alias `--pipeline`) chooses the template from the
+  command line; an unknown name is refused before anything is started.
 - Templates can add skills and machine-readable files to a specialist for their
   own runs (`[skills]`, `[sidecars]`), merged after the registry's; the merged
   skills are recorded in the study's description and dossier.

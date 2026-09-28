@@ -140,6 +140,7 @@ def _submit_paper(
     governance: str | None = None,
     review_stages: list[str] | None = None,
     title_suffix: str = "",
+    template: str | None = None,
 ) -> dict | None:
     """POST /api/papers and return the response body."""
     import httpx
@@ -185,6 +186,8 @@ def _submit_paper(
         body["governance"] = governance
     if review_stages:
         body["review_stages"] = review_stages
+    if template:
+        body["pipeline"] = template
     headers = {}
     if token := os.environ.get("E2ER_API_TOKEN"):
         headers["Authorization"] = f"Bearer {token}"
@@ -244,8 +247,19 @@ def run(
     model: str | None = None,
     governance: str | None = None,
     review_stages: list[str] | None = None,
+    template: str = "empirical",
 ) -> int:
     """Submit a paper and tail it. Entry point for `e2er run "<RQ>"`."""
+    # The template must be a file e2er can load, checked before the server is
+    # started or anything is submitted: a typo costs a message, not a run.
+    from .core.pipeline.spec import PipelineError, available, find_spec
+
+    try:
+        find_spec(template)
+    except PipelineError as e:
+        names = ", ".join(sorted(available())) or "none"
+        print(f"e2er run: {str(e).splitlines()[0]}. Available templates: {names}", file=sys.stderr)
+        return 2
     ok, err = _ensure_api_up()
     if not ok:
         print(f"e2er run: {err}", file=sys.stderr)
@@ -257,7 +271,7 @@ def run(
     gov_note = f", governance={governance}" if governance else ""
     review_note = f", review-at={','.join(review_stages)}" if review_stages else ""
     print(
-        f"  methodology={methodology}, mode={mode}, max_cost=${max_cost}"
+        f"  template={template}, methodology={methodology}, mode={mode}, max_cost=${max_cost}"
         f"{backend_note}{model_note}{gov_note}{review_note}",
         file=sys.stderr,
     )
@@ -271,6 +285,7 @@ def run(
         model=model,
         governance=governance,
         review_stages=review_stages,
+        template=template,
     )
     if not resp:
         return 5
