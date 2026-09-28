@@ -44,6 +44,7 @@ describe the same design.
     {"name": "car_0_p5", "start": 0, "end": 5}
   ],
   "calendar": {"table": "yfinance_history_spy", "date_column": "date"},
+  "events_source": {"table": "fomc_announcement_dates", "date_column": "announcement_date"},
   "overlap_treatment": "none",
   "events": [
     {"id": "fomc-2015-12-16", "date": "2015-12-16", "asset": "KBE"},
@@ -60,6 +61,13 @@ Fields:
 - `calendar`: the table and date column in the paper's data (`data.db`) whose
   dates are the trading days, typically the price table of the market index.
   The check counts windows on these dates.
+- `events_source`: when the researcher supplied the list of events (a table
+  in `data.db`, e.g. from a CSV in the data folder), name its table and date
+  column here and take the events from it: every date in that table, and no
+  other. A date that is not a trading day (a Sunday announcement) becomes the
+  next trading day of `calendar`. Do not add, drop or move events relative to
+  that table; if you believe the list is wrong, say so in
+  `identification_strategy.md` and leave the decision to the researcher.
 - `events`: every event, each with an `id`, a `date` (`YYYY-MM-DD`, the event
   day 0 itself, already moved to a trading day) and the `asset` or `firm` it
   concerns. Leave `asset` out only for an event that concerns every asset in
@@ -69,6 +77,8 @@ Fields:
   date) or `"aggregate"` (calendar-time portfolio). Declare it only if the
   estimation actually does it.
 
+The full schema is `docs/schemas/event_design.schema.json`.
+
 What the check refuses, with the template's defaults (it can change them):
 
 1. an estimation window shorter than 120 trading days, or one that ends fewer
@@ -76,7 +86,9 @@ What the check refuses, with the template's defaults (it can change them):
 2. events of the same asset whose event windows overlap, unless
    `overlap_treatment` says how they are handled;
 3. event dates that are not trading days in `calendar`, and windows that run
-   past the first or last date of the data.
+   past the first or last date of the data;
+4. with `events_source`, any event date missing from, added to, or shifted
+   against the researcher's table (after moving non-trading days forward).
 
 When the check fails, the run stops before estimation and the researcher sees
 the reasons; revise the file rather than the rule. The econometrics specialist

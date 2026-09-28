@@ -47,6 +47,11 @@ check fails, and the run stops before estimation, when
   overlaps (`drop`, `cluster` or `aggregate`);
 - an event date is not a trading day in the data calendar the design names, or
   a window runs past the data.
+- the design names the researcher's own event table (`events_source`) and its
+  event dates are not exactly that table's dates; a date without trading maps
+  to the next trading day, and the verdict lists each such mapping. Without
+  `events_source`, a table in the data that looks like an event list only
+  produces a warning.
 
 The three settings are in the template, under the gate's `[steps.settings]`.
 A failed check stops the run at the check with its reasons (`e2er review`

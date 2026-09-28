@@ -583,3 +583,97 @@ def test_the_preregistration_includes_the_event_design(tmp_path: Path):
     text = prereg.assemble(tmp_path).read_text()
     assert "Events and windows (machine-readable)" in text
     assert EVENT_DESIGN_FILE in prereg.freeze(tmp_path)["plan_files"]
+
+
+# (d) the researcher's own event table
+
+
+def _source_db(ws: Path, dates: list[str], calendar: list[date] = CAL, table: str = "fomc_announcement_dates") -> None:
+    con = sqlite3.connect(ws / "data.db")
+    con.execute('CREATE TABLE spy ("date" TEXT, close REAL)')
+    con.executemany("INSERT INTO spy VALUES (?, 1.0)", [(d.isoformat(),) for d in calendar])
+    con.execute(f'CREATE TABLE "{table}" (announcement_date TEXT, source_url TEXT)')
+    con.executemany(f'INSERT INTO "{table}" VALUES (?, ?)', [(d, "https://www.federalreserve.gov/") for d in dates])
+    con.commit()
+    con.close()
+
+
+SOURCE = {"table": "fomc_announcement_dates", "date_column": "announcement_date"}
+TABLE_DATES = ["2016-03-16", "2016-12-14", "2017-06-14"]
+
+
+def _events(*dates: str) -> list[dict[str, str]]:
+    return [{"id": f"e{i}", "date": d, "asset": "KBE"} for i, d in enumerate(dates)]
+
+
+def test_d_design_matching_the_researchers_table_passes(tmp_path: Path):
+    _source_db(tmp_path, TABLE_DATES)
+    _design(tmp_path, events_source=SOURCE, events=_events(*TABLE_DATES))
+    r = check_event_window(tmp_path)
+    assert r.passed, r.reasons
+    assert r.stats["events_source"] == "fomc_announcement_dates.announcement_date"
+
+
+def test_d_a_missing_event_fails(tmp_path: Path):
+    _source_db(tmp_path, TABLE_DATES)
+    _design(tmp_path, events_source=SOURCE, events=_events("2016-03-16", "2016-12-14"))
+    r = check_event_window(tmp_path)
+    assert not r.passed
+    assert any("1 event(s) of the researcher's table are missing" in x and "2017-06-14" in x for x in r.reasons)
+
+
+def test_d_an_extra_event_fails(tmp_path: Path):
+    _source_db(tmp_path, TABLE_DATES)
+    _design(tmp_path, events_source=SOURCE, events=_events(*TABLE_DATES, "2018-06-13"))
+    r = check_event_window(tmp_path)
+    assert not r.passed
+    assert any("not in the researcher's table" in x and "2018-06-13" in x for x in r.reasons)
+
+
+def test_d_a_shifted_event_fails(tmp_path: Path):
+    _source_db(tmp_path, TABLE_DATES)
+    # FRED's effective date, one day after the announcement.
+    _design(tmp_path, events_source=SOURCE, events=_events("2016-03-17", "2016-12-14", "2017-06-14"))
+    r = check_event_window(tmp_path)
+    assert not r.passed
+    reason = next(x for x in r.reasons if "different day" in x)
+    assert "2016-03-16 in the table, 2016-03-17 in the design" in reason
+    assert not any("missing" in x or "not in the researcher's table" in x for x in r.reasons)
+
+
+def test_d_a_weekend_announcement_maps_to_the_next_trading_day(tmp_path: Path):
+    # 2020-03-15 was a Sunday; the market's day 0 is Monday 2020-03-16.
+    cal = _calendar(date(2019, 1, 1), date(2020, 12, 31))
+    _source_db(tmp_path, ["2020-03-15", "2020-09-16"], calendar=cal)
+    _design(tmp_path, events_source=SOURCE, events=_events("2020-03-16", "2020-09-16"))
+    r = check_event_window(tmp_path)
+    assert r.passed, r.reasons
+    assert any("2020-03-15 → 2020-03-16" in n for n in r.notes)
+    # Keeping the Sunday itself is caught by (c): not a trading day.
+    _design(tmp_path, events_source=SOURCE, events=_events("2020-03-15", "2020-09-16"))
+    assert not check_event_window(tmp_path).passed
+
+
+def test_d_a_missing_source_table_fails(tmp_path: Path):
+    _source_db(tmp_path, TABLE_DATES, table="other_name")
+    _design(tmp_path, events_source=SOURCE, events=_events(*TABLE_DATES))
+    r = check_event_window(tmp_path)
+    assert not r.passed and any(x.startswith("(d)") and "cannot be read" in x for x in r.reasons)
+
+
+def test_d_an_undeclared_event_table_only_warns(tmp_path: Path):
+    _source_db(tmp_path, TABLE_DATES)
+    _design(tmp_path, events=_events("2016-03-16", "2018-06-13"))  # no events_source
+    r = check_event_window(tmp_path)
+    assert r.passed, r.reasons
+    assert any(n.startswith("(d) warning") and "fomc_announcement_dates (announcement_date)" in n for n in r.notes)
+
+
+def test_the_design_schema_accepts_the_documented_example(tmp_path: Path):
+    schema = json.loads((ROOT / "docs" / "schemas" / "event_design.schema.json").read_text())
+    cls = jsonschema.validators.validator_for(schema)
+    cls.check_schema(schema)
+    design = json.loads(_design(tmp_path, events_source=SOURCE).read_text())
+    cls(schema).validate(design)
+    with pytest.raises(jsonschema.ValidationError):
+        cls(schema).validate({**design, "events_source": {"table": "x; drop", "date_column": "d"}})

@@ -20,6 +20,11 @@ an event date is not a trading day in the data. The limits are settings of the
 template; each verdict is recorded and appears in the dossier. See
 `docs/templates.md`.
 
+- Rule (d) of the check: when `event_design.json` names the researcher's own event
+  table (`events_source`), the design's event dates must be exactly that table's
+  dates (non-trading days move to the next trading day, reported in the verdict);
+  missing, extra and shifted dates are each listed. Schema:
+  `docs/schemas/event_design.schema.json`.
 - Gate steps accept `after = [...]`, like researcher steps: the check runs
   inside the initial phase, after those specialists and before the econometrics
   specialist. A failed check stops the run with its reasons (`e2er review` shows

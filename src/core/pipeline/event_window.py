@@ -10,10 +10,14 @@ only after the paper is written:
       or the design says how overlaps are treated (drop, cluster, aggregate);
   (c) every event date is a trading day of the data, and the windows around it
       fit inside the data.
+  (d) when the design names the researcher's own event table (`events_source`),
+      its event dates are exactly that table's dates, each moved to the next
+      trading day when it falls on a day without trading.
 
 The design comes from ``event_design.json``, which the identification
 strategist writes next to ``identification_spec.json`` in templates that ask for
-it (see ``skills/files/econometrics/event-study.md`` for the schema). Windows
+it (see ``skills/files/econometrics/event-study.md`` and
+``docs/schemas/event_design.schema.json``). Windows
 are in trading days relative to the event day 0, counted on the data calendar
 the design names: a table and date column in the paper's ``data.db``.
 
@@ -94,15 +98,15 @@ def _day(value: Any) -> date | None:
         return None
 
 
-def load_calendar(workspace: Path, spec: Any) -> tuple[list[date] | None, str]:
-    """The trading days the design names, from the paper's data.db; (None, why) when unavailable."""
+def _load_dates(workspace: Path, spec: Any, field_name: str) -> tuple[list[date] | None, str]:
+    """The distinct dates in the table and column ``spec`` names, from the paper's data.db."""
     from ...db.paper_data_db import data_db_path
 
     if not isinstance(spec, dict) or not spec.get("table") or not spec.get("date_column"):
-        return None, "event_design.json names no data calendar (calendar.table and calendar.date_column)"
+        return None, f"event_design.json names no {field_name}.table and {field_name}.date_column"
     table, column = str(spec["table"]), str(spec["date_column"])
     if not _IDENT.match(table) or not _IDENT.match(column):
-        return None, f"calendar {table}.{column} is not a plain table and column name"
+        return None, f"{field_name} {table}.{column} is not a plain table and column name"
     db = data_db_path(workspace)
     if not db.is_file():
         return None, "there is no data.db yet, so the event dates cannot be checked against the data"
@@ -113,11 +117,96 @@ def load_calendar(workspace: Path, spec: Any) -> tuple[list[date] | None, str]:
         finally:
             con.close()
     except sqlite3.Error as e:
-        return None, f"calendar {table}.{column} cannot be read from data.db: {e}"
+        return None, f"{field_name} {table}.{column} cannot be read from data.db: {e}"
     days = sorted({d for (v,) in rows if (d := _day(v)) is not None})
     if not days:
-        return None, f"calendar {table}.{column} holds no dates"
+        return None, f"{field_name} {table}.{column} holds no dates"
     return days, f"{table}.{column}"
+
+
+def load_calendar(workspace: Path, spec: Any) -> tuple[list[date] | None, str]:
+    """The trading days the design names, from the paper's data.db; (None, why) when unavailable."""
+    return _load_dates(workspace, spec, "calendar")
+
+
+def _event_like_tables(workspace: Path) -> list[str]:
+    """Tables in data.db that look like a researcher's event list: 'event' or 'announcement' in
+    the name and a column with 'date' in its name. Used only to warn."""
+    from ...db.paper_data_db import data_db_path
+
+    db = data_db_path(workspace)
+    if not db.is_file():
+        return []
+    found: list[str] = []
+    try:
+        con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+        try:
+            names = [r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type = 'table'")]
+            for name in names:
+                low = name.lower()
+                if ("event" not in low and "announcement" not in low) or not _IDENT.match(name):
+                    continue
+                cols = [r[1] for r in con.execute(f'PRAGMA table_info("{name}")')]
+                dated = [c for c in cols if "date" in c.lower()]
+                if dated:
+                    found.append(f"{name} ({', '.join(dated)})")
+        finally:
+            con.close()
+    except sqlite3.Error:
+        return found
+    return found
+
+
+def _match_events_source(
+    design_dates: list[date], source: list[date], calendar: list[date] | None
+) -> tuple[list[str], list[str]]:
+    """Rule (d): the design's event dates against the researcher's own event table.
+
+    Returns (reasons, notes). A source date that is not a trading day maps to the
+    next trading day of the calendar; each such mapping is a note. Missing, extra
+    and shifted dates are each a reason.
+    """
+    mapped: dict[date, date] = {}
+    notes: list[str] = []
+    if calendar:
+        for s in source:
+            nxt = next((c for c in calendar if c >= s), None)
+            mapped[s] = nxt if nxt is not None else s
+        moved = [f"{s.isoformat()} → {t.isoformat()}" for s, t in mapped.items() if s != t]
+        if moved:
+            notes.append(f"(d) announcement dates moved to the next trading day: {', '.join(moved)}")
+    else:
+        mapped = {s: s for s in source}
+    expected = set(mapped.values())
+    got = set(design_dates)
+    missing = sorted(expected - got)
+    extra = sorted(got - expected)
+    # A design date close to a missing one is the same event on a shifted day.
+    shifted: list[tuple[date, date]] = []
+    for m in list(missing):
+        near = sorted((abs((e - m).days), e) for e in extra if abs((e - m).days) <= 7)
+        if near:
+            e = near[0][1]
+            shifted.append((m, e))
+            missing.remove(m)
+            extra.remove(e)
+    reasons: list[str] = []
+    if missing:
+        reasons.append(
+            f"(d) {len(missing)} event(s) of the researcher's table are missing from the design: "
+            + _names([d.isoformat() for d in missing])
+        )
+    if extra:
+        reasons.append(
+            f"(d) {len(extra)} event(s) in the design are not in the researcher's table: "
+            + _names([d.isoformat() for d in extra])
+        )
+    if shifted:
+        reasons.append(
+            f"(d) {len(shifted)} event(s) are on a different day than in the researcher's table: "
+            + _names([f"{m.isoformat()} in the table, {e.isoformat()} in the design" for m, e in shifted])
+        )
+    return reasons, notes
 
 
 def _weekdays(first: date, last: date) -> list[date]:
@@ -137,7 +226,7 @@ def check_event_window(
     max_overlap_share: float = DEFAULTS["max_overlap_share"],
     calendar: Iterable[date] | None = None,
 ) -> EventWindowResult:
-    """Check ``event_design.json`` in ``workspace`` against rules (a), (b) and (c).
+    """Check ``event_design.json`` in ``workspace`` against rules (a) to (d).
 
     ``calendar`` replaces the data calendar the design names (tests, or a caller
     that already holds the trading days).
@@ -277,5 +366,25 @@ def check_event_window(
                     f"same asset: {listed}; the limit is {max_overlap_share:.0%} unless overlap_treatment is "
                     f"one of {', '.join(sorted(OVERLAP_TREATMENTS))}"
                 )
+
+    # ── (d) the researcher's own event table ────────────────────────────────
+    source_spec = design.get("events_source")
+    if source_spec:
+        source_dates, where = _load_dates(Path(workspace), source_spec, "events_source")
+        if source_dates is None:
+            reasons.append(f"(d) {where}")
+        else:
+            stats["events_source"] = where
+            r, n = _match_events_source([d for _e, d, _a in events], source_dates, days if exact else None)
+            reasons += r
+            notes += n
+    else:
+        candidates = _event_like_tables(Path(workspace))
+        if candidates:
+            notes.append(
+                "(d) warning: the data holds a table that looks like the researcher's event list ("
+                + ", ".join(candidates)
+                + ") but event_design.json declares no events_source, so the events were not compared with it"
+            )
 
     return EventWindowResult(not reasons, tuple(reasons), tuple(notes), stats)
