@@ -27,3 +27,7 @@ e2er publish ./my-study … --data public --code public --zenodo
 The data files are deposited one by one, the code (`code/` and `replication/`) as one zip. Each deposit names the study's authors with their ORCID iDs, its licence, and links back to the study page and the dossier; the DOIs go into the dossier and the study page. The files go from your computer straight to Zenodo; the token is never sent to e2er.org. Private material is never deposited.
 
 To try it first, use Zenodo's sandbox (`--zenodo-sandbox`, token in `ZENODO_SANDBOX_TOKEN`), or add `--dry-run` to see what would be deposited without depositing anything.
+
+## Demonstration studies
+
+`e2er publish --demonstration` (or `E2ER_PURPOSE=demonstration` in the study folder's `.env`) marks a study as published only to demonstrate e2er: e2er.json and the dossier record `purpose: "demonstration"`, and the paper's first page carries the disclaimer; with `--template replication` the study is recorded as `kind: "replication"`, and the paper and the reproduction report carry the replication wording (src/core/demonstration.py).

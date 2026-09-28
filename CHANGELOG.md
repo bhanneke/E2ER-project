@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Demonstration studies
+
+- `e2er publish --demonstration`, or `E2ER_PURPOSE=demonstration` in the
+  environment or the study folder's `.env`, records `purpose: "demonstration"`
+  in e2er.json and the dossier (a dossier without it hashes as before). Studies
+  made with the replication template also record `kind: "replication"`.
+- The paper stamp adds the disclaimer as a second first-page footnote; the
+  reproduction report of the replication template carries the replication
+  wording at the top (at the reproduction step and at publish). The wording is
+  kept in `src/core/demonstration.py`.
+
 ### Replication: two levels of targets, and the paper as researcher input
 
 - Targets in `replication_plan.json` carry `level`: 1 = a cell of a result file

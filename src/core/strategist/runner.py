@@ -2335,6 +2335,26 @@ _SEQUENCE_CHECK_FILES: dict[str, tuple[str, ...]] = {
 }
 
 
+def _reproduction_with_disclaimer(check: Any) -> Any:
+    """The reproduction check; in a demonstration study (E2ER_PURPOSE) it also puts the
+    replication disclaimer at the top of reproduction_report.md, which the researcher reads next."""
+
+    def run(workspace: Path, **settings: Any) -> Any:
+        verdict = check(workspace, **settings)
+        from ..demonstration import mark_report, resolve_purpose
+
+        try:
+            purpose = resolve_purpose()
+        except ValueError as e:
+            logger.warning("reproduction report left unmarked: %s", e)
+            return verdict
+        if purpose:
+            mark_report(Path(workspace) / "reproduction_report.md", "replication")
+        return verdict
+
+    return run
+
+
 def _sequence_check(check: str) -> Any:
     """The function behind a check that runs as a step: (workspace, **settings) -> verdict."""
     if check == "package_integrity":
@@ -2348,7 +2368,7 @@ def _sequence_check(check: str) -> Any:
     if check == "reproduction":
         from ..pipeline.reproduction import check_reproduction
 
-        return check_reproduction
+        return _reproduction_with_disclaimer(check_reproduction)
     raise ValueError(f"check {check!r} cannot run as a step of its own")
 
 

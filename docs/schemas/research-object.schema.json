@@ -35,6 +35,14 @@
     "question": {
       "type": "string"
     },
+    "purpose": {
+      "enum": ["demonstration"],
+      "description": "Why the study is published. demonstration: published as is, only to demonstrate e2er; the paper, the dossier and the study page carry a disclaimer. Absent for an ordinary study."
+    },
+    "kind": {
+      "enum": ["study", "replication"],
+      "description": "What the study is. replication: a computational reproduction of someone else's study (the replication template), whose demonstration disclaimer uses the replication wording. Absent means study."
+    },
     "contributors": {
       "type": "array",
       "minItems": 1,
