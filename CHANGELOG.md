@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Replication: two levels of targets, and the paper as researcher input
+
+- Targets in `replication_plan.json` carry `level`: 1 = a cell of a result file
+  the package ships (`source.kind = "package_file"`, file and locator; the
+  contract reads the cell), 2 = a number printed in the paper, taken only from
+  the paper (`source.kind = "paper"`: document, page, table or figure, printed
+  decimals; the contract finds the printed value on that page). The report
+  gives each result a `target_level`, the reproduction check recomputes and
+  counts each level separately and reads level-1 numbers from the rebuilt copy
+  of the target's own file. Schemas, the planner, comparer and protocol skills
+  updated.
+- The paper can be supplied by the researcher (`PAPER_PDF`,
+  `<LOCAL_DATA_DIR>/paper.pdf` or the workspace's `data/paper.pdf`). The fetch
+  step, which now runs at every start, stages it read-only as
+  `paper/paper.pdf`, fingerprints it, extracts its text page by page for the
+  planner, and records it in the dossier as researcher-supplied
+  (`supplied_input`). A send-back runs such every-start checks first.
+
 ### A template for computational reproductions
 
 `pipelines/replication.toml`: rerun a published study from its Zenodo

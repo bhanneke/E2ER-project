@@ -865,8 +865,14 @@ class PipelineRunner:
         blocking failure stops the run at this step with its reasons, and the
         check runs again on resume. Approving does not pass it.
         """
+        from ...db.events import log_event
+
         fn = _sequence_check(step.check)
         result = await asyncio.to_thread(fn, self._workspace, **step.settings)
+        for supplied in getattr(result, "inputs", ()) or ():
+            # A file the researcher supplied (e.g. the paper), fingerprinted: the
+            # dossier lists it as researcher input, apart from the package.
+            await log_event(self._paper_id, "researcher_input", stage=step.name, payload=dict(supplied))
         shadow = step.on_fail == "shadow"
         blocking = await self._record_gate(step.check, passed=result.passed, detail=result.detail(), enforce=not shadow)
         retry_key = f"retried_{step.name}"
@@ -919,6 +925,16 @@ class PipelineRunner:
         if not reruns:
             return
         state.metadata.pop("sent_back", None)
+        # Checks that run at every start (a sequence gate with resumable=false,
+        # e.g. the replication template's fetch, which also picks up a paper the
+        # researcher supplied) run before a specialist is sent back to work, so
+        # it works on what they provide.
+        pending_at = state.pending_review_stage
+        for s in self._spec.steps:
+            if s.name == pending_at:
+                break
+            if s.kind == "gate" and not s.resumable and s.check in SEQUENCE_CHECKS and s.applies_to(self._mode):
+                await self._run_check_step(s, state)
         step_names = [s.name for s in self._spec.steps]
         rerun_steps = False
         for r in reruns:

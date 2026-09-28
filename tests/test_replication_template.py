@@ -35,7 +35,7 @@ from src.core.pipeline.sandbox import (
 from src.core.pipeline.spec import SCHEMA_PATH, PipelineError, find_spec, spec_from_dict
 from src.core.pipeline.state import PipelineState
 from src.core.specialists.contracts import Contribution
-from src.core.strategist.state import GateHaltError
+from src.core.strategist.state import GateHaltError, HumanReviewRequestedError
 from src.modules.data.zenodo import (
     ZenodoChecksumError,
     ZenodoClient,
@@ -65,7 +65,35 @@ PACKAGE = {
     "study/code/main.R": b"x <- read.csv('data/panel.csv')\nwrite.csv(x, 'output/table1.csv')\n",
     "study/data/panel.csv": b"id,y\n1,2\n",
     "study/output/shipped.csv": b"term,estimate\natt,-0.012\n",
+    "study/output/untouched.csv": b"term,estimate\nn,5570\n",
 }
+
+
+def _pdf(pages: list[str]) -> bytes:
+    """A minimal valid PDF with one line of text per page."""
+    objs = ["<< /Type /Catalog /Pages 2 0 R >>", "", "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"]
+    kids = []
+    for text in pages:
+        stream = f"BT /F1 12 Tf 72 720 Td ({text}) Tj ET".encode()
+        objs.append(f"<< /Length {len(stream)} >>\nstream\n{stream.decode()}\nendstream")
+        objs.append(
+            f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> "
+            f"/Contents {len(objs)} 0 R >>"
+        )
+        kids.append(f"{len(objs)} 0 R")
+    objs[1] = f"<< /Type /Pages /Kids [{' '.join(kids)}] /Count {len(kids)} >>"
+    out, offsets = b"%PDF-1.4\n", []
+    for i, body in enumerate(objs, 1):
+        offsets.append(len(out))
+        out += f"{i} 0 obj\n{body}\nendobj\n".encode()
+    xref = len(out)
+    out += f"xref\n0 {len(objs) + 1}\n0000000000 65535 f \n".encode()
+    out += b"".join(f"{o:010d} 00000 n \n".encode() for o in offsets)
+    out += f"trailer\n<< /Size {len(objs) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode()
+    return out
+
+
+PAPER = _pdf(["A study of things", "Table 1: ATT -0.012 (0.004) N 5570"])
 
 
 def _record(files: dict[str, bytes], *, access: str = "open", checksum_override: str | None = None) -> dict:
@@ -266,12 +294,32 @@ def _plan(**over: Any) -> dict:
         "targets": [
             {
                 "id": "t1_att",
+                "level": 2,
                 "exhibit": "table_1",
                 "label": "ATT",
                 "value": -0.012,
                 "reported": "-0.012",
-                "source": {"document": "paper.pdf", "page": 12, "table": "Table 1"},
-            }
+                "source": {
+                    "kind": "paper",
+                    "document": "paper/paper.pdf",
+                    "page": 2,
+                    "table": "Table 1",
+                    "decimals": 3,
+                },
+            },
+            {
+                "id": "l1_att",
+                "level": 1,
+                "exhibit": "table_1",
+                "label": "ATT in the shipped result file",
+                "value": -0.012,
+                "reported": "-0.012",
+                "source": {
+                    "kind": "package_file",
+                    "file": "study/output/shipped.csv",
+                    "locator": {"row": {"term": "att"}, "column": "estimate"},
+                },
+            },
         ],
     }
     plan.update(over)
@@ -314,6 +362,7 @@ def test_the_plan_schema_accepts_the_documented_example():
 def test_the_planner_contract_includes_the_plan_structure(workspace: Path):
     from src.core.specialists.contract_check import check_specialist_artifacts
 
+    _supply_paper(workspace)
     _fetched(workspace)
     (workspace / "replication_plan.md").write_text("# Plan\n" + "x" * 200)
     (workspace / "replication_plan.json").write_text(json.dumps(_plan(language="Stata")))
@@ -415,11 +464,19 @@ class FakeDocker:
             out = self.ws / "sandbox" / "run" / "study" / "output"
             out.mkdir(parents=True, exist_ok=True)
             (out / "table1.csv").write_text("term,estimate,se\natt,-0.01214,0.004\n")
+            (out / "shipped.csv").write_text("term,estimate\natt,-0.0131\n")  # the rebuilt shipped file
             return ok
         raise AssertionError(f"unexpected docker call {argv}")
 
 
+def _supply_paper(ws: Path, pdf: bytes = PAPER) -> Path:
+    (ws / "data").mkdir(exist_ok=True)
+    (ws / "data" / "paper.pdf").write_bytes(pdf)
+    return ws / "data" / "paper.pdf"
+
+
 def _ready(ws: Path, plan: dict | None = None) -> None:
+    _supply_paper(ws)
     _fetched(ws)
     (ws / "replication_plan.json").write_text(json.dumps(plan or _plan()))
 
@@ -439,7 +496,8 @@ def test_the_sandbox_runs_logs_and_hashes_through_docker_only(workspace: Path):
         written["study/output/table1.csv"]["sha256"]
         == hashlib.sha256((workspace / "sandbox/run/study/output/table1.csv").read_bytes()).hexdigest()
     )
-    assert "study/output/shipped.csv" not in written  # the package's own result is not an output of the run
+    assert written["study/output/shipped.csv"]["state"] == "changed"  # rebuilt by the run
+    assert "study/output/untouched.csv" not in written  # a shipped result the run did not write
     assert log["package_intact"] is True
     kinds = [c[1] for c in fake.calls]
     assert kinds.count("pull") == 1 and kinds.count("commit") == 1
@@ -502,7 +560,18 @@ def _ran(ws: Path) -> None:
     assert run_sandbox(ws, runner=FakeDocker(ws), docker="docker").passed
 
 
-def _report(level: str = "reproduced_minor", reproduced: Any = -0.01214, **comp: Any) -> dict:
+def _l1(level: str = "reproduced_minor", reproduced: Any = -0.0131, **comp: Any) -> dict:
+    c = {
+        "target_id": "l1_att",
+        "published": -0.012,
+        "reproduced": reproduced,
+        "source": {"file": "study/output/shipped.csv"},
+    }
+    c.update(comp)
+    return {"id": "table_1_l1", "target_level": 1, "level": level, "reason": "r", "comparisons": [c]}
+
+
+def _report(level: str = "reproduced_minor", reproduced: Any = -0.01214, l1: dict | None = None, **comp: Any) -> dict:
     c = {
         "target_id": "t1_att",
         "published": -0.012,
@@ -511,7 +580,12 @@ def _report(level: str = "reproduced_minor", reproduced: Any = -0.01214, **comp:
         "source": {"file": "study/output/table1.csv", "locator": {"row": {"term": "att"}, "column": "estimate"}},
     }
     c.update(comp)
-    return {"results": [{"id": "table_1", "level": level, "reason": "r", "comparisons": [c]}]}
+    return {
+        "results": [
+            {"id": "table_1_l2", "target_level": 2, "level": level, "reason": "r", "comparisons": [c]},
+            l1 or _l1(),
+        ]
+    }
 
 
 def _write(ws: Path, report: dict) -> None:
@@ -538,13 +612,18 @@ def test_equal_at_the_published_precision_may_be_called_reproduced(workspace: Pa
     [
         (_report(reproduced=-0.0131), "holds -0.01214, not the claimed -0.0131"),
         (_report(source={"file": "study/output/table1.csv"}, reproduced=-0.5), "no number"),
-        (_report(source={"file": "study/output/shipped.csv"}), "not a file the sandbox run wrote"),
+        (_report(source={"file": "study/output/untouched.csv"}), "not a file the sandbox run wrote"),
         (_report(published=-0.02), "is not the plan's"),
         (_report(target_id="t9"), "not a target"),
         (_report(level="could_not_run"), "could_not_run"),
         (_report(level="reproduced", reproduced=-0.01214, published=-0.012), None),
         (_report(abs_diff=0.5), "abs_diff"),
         ({"results": [], "unassessed": []}, "neither compared nor listed"),
+        ({"results": [_l1()], "unassessed": []}, "level-2 target(s) neither compared"),
+        (_report(l1=_l1(source={"file": "study/output/table1.csv"}, reproduced=-0.01214)), "read from the rebuilt"),
+        (_report(l1=_l1(level="reproduced")), "'reproduced' but -0.0131 differs"),
+        (_report(l1={**_l1(), "target_level": 2}), "a level-1 target reported under a level-2 result"),
+        (_report(l1={**_l1(), "target_level": 3}), "target_level must be 1"),
     ],
 )
 def test_a_report_that_claims_what_the_outputs_do_not_hold_fails(workspace: Path, report, match):
@@ -572,7 +651,10 @@ def test_a_level_that_contradicts_the_numbers_fails(workspace: Path):
 
 def test_an_unassessed_target_with_a_reason_is_accounted_for(workspace: Path):
     _ran(workspace)
-    _write(workspace, {"results": [], "unassessed": [{"target_id": "t1_att", "reason": "only in a figure"}]})
+    _write(
+        workspace,
+        {"results": [_l1()], "unassessed": [{"target_id": "t1_att", "reason": "only in a figure"}]},
+    )
     assert check_reproduction(workspace).passed
 
 
@@ -748,5 +830,240 @@ async def test_the_run_stops_at_the_plan_review_after_fetch_and_plan(workspace: 
     monkeypatch.setattr("src.core.pipeline.state.PipelineState.save", lambda self, ws: None)
     out = await r.run()
     assert out["status"] == "paused" and out["stage"] == "review_plan"
-    assert r._state.is_complete("fetch") and r._state.is_complete("plan") and ran == []
+    # fetch runs at every start (it re-verifies the package and picks up the paper), so it is never "complete"
+    assert not r._state.is_complete("fetch") and r._state.is_complete("plan") and ran == []
+    assert ("gate_enforced", "package_integrity", True) in [(k, st, p.get("passed")) for k, st, p in events]
     assert r._state.metadata["review"]["files"] == ["replication_plan.md", "replication_plan.json"]
+
+
+# ── two levels of targets ───────────────────────────────────────────────────
+
+
+def _level_errs(ws: Path, target: dict) -> list[str]:
+    plan = _plan()
+    plan["targets"] = [target]
+    return repl.validate_plan(plan, ws / "package", ws)
+
+
+def _l2_target(**src: Any) -> dict:
+    t = _plan()["targets"][0]
+    return {**t, "source": {**t["source"], **src}}
+
+
+def _l1_target(**over: Any) -> dict:
+    return {**_plan()["targets"][1], **over}
+
+
+def test_both_levels_pass_with_the_paper_supplied(workspace: Path):
+    _supply_paper(workspace)
+    _fetched(workspace)
+    assert repl.validate_plan(_plan(), workspace / "package", workspace) == []
+
+
+@pytest.mark.parametrize(
+    ("target", "match"),
+    [
+        (_l1_target(level=3), "level must be 1"),
+        ({k: v for k, v in _l1_target().items() if k != "level"}, "level must be 1"),
+        (_l1_target(source={"kind": "paper"}), "source.kind is 'package_file'"),
+        (_l1_target(source={"kind": "package_file", "file": "study/output/shipped.csv"}), "locator needs row"),
+        (_l1_target(source={"kind": "package_file", "file": "study/code/main.R", "locator": {}}), ".csv or .tsv"),
+        (_l1_target(value=-0.5), "holds -0.012 at that cell, not -0.5"),
+        (
+            _l1_target(
+                source={
+                    "kind": "package_file",
+                    "file": "study/output/none.csv",
+                    "locator": {"row": {"term": "att"}, "column": "estimate"},
+                }
+            ),
+            "is not a file of the package",
+        ),
+        (
+            _l1_target(
+                source={
+                    "kind": "package_file",
+                    "file": "study/output/shipped.csv",
+                    "locator": {"row": {"term": "zzz"}, "column": "estimate"},
+                }
+            ),
+            "matches 0 rows",
+        ),
+        (_l2_target(kind="package_file"), "source.kind is 'paper'"),
+        (_l2_target(page=None), "source.page must be the page number"),
+        (_l2_target(table=None), "name the table or figure"),
+        (_l2_target(decimals=4), "has 3 decimals, source.decimals says 4"),
+        (_l2_target(decimals=None), "printed precision"),
+        (_l2_target(page=1), "is not printed on page 1"),
+        (_l2_target(document="shipped_results.csv"), "must be the paper's PDF"),
+        ({**_l2_target(), "value": None}, "belongs in missing_targets"),
+    ],
+)
+def test_each_level_has_its_own_source_rules(workspace: Path, target, match):
+    _supply_paper(workspace)
+    _fetched(workspace)
+    errs = _level_errs(workspace, target)
+    assert any(match in e for e in errs), errs
+
+
+def test_a_level_2_target_needs_the_paper(workspace: Path):
+    _fetched(workspace)  # no paper supplied
+    errs = _level_errs(workspace, _l2_target())
+    assert any("does not exist (the researcher supplies the paper as paper/paper.pdf)" in e for e in errs), errs
+    # without it, level 1 still works on its own
+    assert _level_errs(workspace, _l1_target()) == []
+
+
+def test_the_plan_schema_encodes_the_level_rules():
+    schema = json.loads((ROOT / "docs" / "schemas" / "replication_plan.schema.json").read_text())
+    v = jsonschema.validators.validator_for(schema)(schema)
+    v.validate(_plan())
+    bad = _plan()
+    bad["targets"][1]["source"] = {
+        "kind": "paper",
+        "document": "paper/paper.pdf",
+        "page": 1,
+        "decimals": 3,
+        "table": "T1",
+    }
+    with pytest.raises(jsonschema.ValidationError):
+        v.validate(bad)
+    bad = _plan()
+    bad["targets"][0]["source"].pop("decimals")
+    with pytest.raises(jsonschema.ValidationError):
+        v.validate(bad)
+
+
+def test_a_report_with_levels_separately_passes_and_counts_each_level(workspace: Path):
+    _ran(workspace)
+    _write(workspace, _report())
+    assert check_reproduction(workspace).passed
+    stats = json.loads((workspace / CHECK_FILE).read_text())["stats"]
+    assert stats["level_1"] == {"targets": 1, "numbers_checked": 1, "results": {"reproduced_minor": 1}}
+    assert stats["level_2"]["numbers_checked"] == 1
+
+
+def test_the_comparer_contract_needs_the_target_level(tmp_path: Path):
+    (tmp_path / "reproduction_report.json").write_text(
+        json.dumps({"results": [{"level": "reproduced", "reason": "r"}]})
+    )
+    assert "target_level" in check_report(tmp_path)[0]
+
+
+# ── the researcher-supplied paper ───────────────────────────────────────────
+
+
+def test_the_paper_is_staged_fingerprinted_and_its_text_extracted(workspace: Path):
+    src = _supply_paper(workspace)
+    blob = _zip_bytes(PACKAGE)
+    r = repl.fetch_package(workspace, client=_client(_record({"pkg.zip": blob}), {"pkg.zip": blob}))
+    assert r.passed and len(r.inputs) == 1
+    rec = r.inputs[0]
+    assert rec["supplied_by"] == "researcher" and rec["file"] == "paper/paper.pdf"
+    assert rec["sha256"] == hashlib.sha256(PAPER).hexdigest() and rec["pages"] == 2
+    assert rec["original_path"] == str(src)
+    manifest = json.loads((workspace / "package_manifest.json").read_text())
+    assert manifest["paper"]["sha256"] == rec["sha256"] and "new" not in manifest["paper"]
+    text = (workspace / "paper_text" / "paper.pdf.txt").read_text()
+    assert "=== page 2 ===" in text and "-0.012" in text.split("=== page 2 ===")[1]
+    assert (workspace / "paper" / "paper.pdf").read_bytes() == PAPER
+    # the paper is researcher input, never part of the package
+    assert not any("paper.pdf" in f["path"] for f in manifest["package_files"])
+    # on the next start: re-verified, not recorded again
+    again = repl.fetch_package(workspace)
+    assert again.passed and again.inputs == () and again.stats["paper_pages"] == 2
+
+
+def test_a_replaced_paper_is_recorded_again_with_what_it_replaces(workspace: Path):
+    _supply_paper(workspace)
+    first = repl.fetch_package(workspace, client=_client(*_pkg()))
+    _supply_paper(workspace, _pdf(["v2", "Table 1: ATT -0.012"]))
+    second = repl.fetch_package(workspace)
+    assert second.inputs[0]["replaces_sha256"] == first.inputs[0]["sha256"]
+
+
+def _pkg() -> tuple[dict, dict]:
+    blob = _zip_bytes(PACKAGE)
+    return _record({"pkg.zip": blob}), {"pkg.zip": blob}
+
+
+def test_the_paper_can_come_from_the_paper_pdf_setting(workspace: Path, tmp_path: Path, monkeypatch):
+    from src.config import get_settings
+
+    elsewhere = tmp_path / "downloads" / "paper.pdf"
+    elsewhere.parent.mkdir()
+    elsewhere.write_bytes(PAPER)
+    monkeypatch.setattr(get_settings(), "paper_pdf", str(elsewhere))
+    r = repl.fetch_package(workspace, client=_client(*_pkg()))
+    assert r.passed and r.inputs[0]["original_path"] == str(elsewhere)
+
+
+def test_something_that_is_not_a_pdf_is_refused(workspace: Path):
+    (workspace / "data").mkdir()
+    (workspace / "data" / "paper.pdf").write_text("<html>403 Forbidden</html>")
+    r = repl.fetch_package(workspace, client=_client(*_pkg()))
+    assert not r.passed and "is not a PDF" in r.reasons[0]
+
+
+def test_without_a_paper_the_step_passes_and_says_so(workspace: Path):
+    r = repl.fetch_package(workspace, client=_client(*_pkg()))
+    assert r.passed and r.inputs == () and any("no paper supplied" in n for n in r.notes)
+
+
+async def test_the_supplied_paper_reaches_the_dossier(workspace: Path, events, tmp_path: Path):
+    import sqlite3
+
+    from src.core.dossier import recorded_workflow
+
+    _supply_paper(workspace)
+    _fetched(workspace)  # fetched with the paper; manifest records it
+    (workspace / "paper" / "paper.pdf").chmod(0o644)
+    _supply_paper(workspace, _pdf(["v2", "Table 1: ATT -0.012"]))
+    r = _runner(workspace)
+    await r._run_check_step(r._spec.step("fetch"), r._state)
+    supplied = [p for k, _s, p in events if k == "researcher_input"]
+    assert len(supplied) == 1 and supplied[0]["supplied_by"] == "researcher"
+
+    db = tmp_path / "run.db"
+    con = sqlite3.connect(db)
+    con.executescript(
+        "CREATE TABLE pipeline_events (id TEXT, paper_id TEXT, event_type TEXT, stage TEXT, specialist TEXT,"
+        " payload TEXT, created_at TEXT);"
+        "CREATE TABLE contributions (id TEXT, paper_id TEXT, specialist TEXT, stage TEXT, output_file TEXT,"
+        " success INT, error_msg TEXT, usage_tokens INT, cost_usd REAL, duration_sec REAL, created_at TEXT);"
+        "CREATE TABLE llm_usage (id TEXT, paper_id TEXT, specialist TEXT, backend TEXT, model TEXT,"
+        " input_tokens INT, output_tokens INT, cache_read_tokens INT, cache_write_tokens INT,"
+        " cost_usd REAL, created_at TEXT);"
+    )
+    con.execute(
+        "INSERT INTO pipeline_events VALUES ('1', ?, 'researcher_input', 'fetch', NULL, ?, '2026-09-28 16:00:00')",
+        (PID, json.dumps(supplied[0])),
+    )
+    con.commit()
+    con.close()
+    step = recorded_workflow(db, PID)[0]
+    assert step["type"] == "researcher" and step["action"] == "supplied_input"
+    assert step["file"] == "paper/paper.pdf" and step["sha256"] == supplied[0]["sha256"]
+    assert step["replaces_sha256"]
+
+
+async def test_a_send_back_first_refreshes_the_fetch_so_the_planner_sees_the_paper(
+    workspace: Path, events, monkeypatch
+):
+    _fetched(workspace)  # no paper yet
+    r = _runner(workspace)
+    r._state.pending_review_stage = "review_plan"
+    r._state.metadata["rerun"] = [{"target": "replication_planner", "remark": "use the paper"}]
+    _supply_paper(workspace)
+    order: list[str] = []
+
+    async def _exec(orders):
+        order.append("planner:" + str((workspace / "paper_text" / "paper.pdf.txt").is_file()))
+        return []
+
+    monkeypatch.setattr(r, "_execute_orders", _exec)
+    monkeypatch.setattr("src.core.pipeline.state.PipelineState.save", lambda self, ws: None)
+    with pytest.raises(HumanReviewRequestedError):  # stops again at the pending review
+        await r._settle_researcher_decisions(r._state)
+    assert order == ["planner:True"]
+    assert [k for k, _s, _p in events][:2] == ["researcher_input", "gate_enforced"]

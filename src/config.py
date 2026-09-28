@@ -110,6 +110,12 @@ class Settings(BaseSettings):
     # When True, file destinations under workspace/data/ preserve the
     # relative path from the corpus root (so a/raw/x.csv → workspace/data/a/raw/x.csv).
     local_data_dir_recursive: bool = False
+    # Replication template: the published paper as a PDF the researcher
+    # supplies (e.g. downloaded in a browser when the publisher refuses
+    # automated downloads). Looked for here, then as paper.pdf in each
+    # LOCAL_DATA_DIR folder, then as data/paper.pdf in the paper's workspace.
+    # The fetch step fingerprints it and records it as researcher-supplied.
+    paper_pdf: str = ""
 
     # ── Literature ────────────────────────────────────────────────────────────
     literature_bibtex_file: str | None = None

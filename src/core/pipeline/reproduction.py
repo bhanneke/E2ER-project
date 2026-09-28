@@ -32,10 +32,11 @@ import io
 import json
 import math
 import re
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
-from .replication import LEVELS, PLAN_FILE, CheckResult, load_plan
+from .replication import LEVELS, PLAN_FILE, TARGET_LEVELS, CheckResult, load_plan
 from .sandbox import LOG_FILE
 
 REPORT_FILE = "reproduction_report.json"
@@ -184,6 +185,7 @@ def check_reproduction(workspace: Path, *, minor_rel_tolerance: float = DEFAULT_
     reasons: list[str] = []
     checked: list[dict[str, Any]] = []
     covered: set[str] = set()
+    by_level: dict[int, Counter[str]] = {tier: Counter() for tier in TARGET_LEVELS}
 
     for r_i, res in enumerate(report["results"]):
         rid = res.get("id") if isinstance(res, dict) else None
@@ -195,6 +197,11 @@ def check_reproduction(workspace: Path, *, minor_rel_tolerance: float = DEFAULT_
         if level not in LEVELS:
             reasons.append(f"{where}: level {level!r} is not one of {', '.join(LEVELS)}")
             continue
+        tier = res.get("target_level")
+        if tier not in TARGET_LEVELS:
+            reasons.append(f"{where}: target_level must be 1 (package result files) or 2 (the paper)")
+            continue
+        by_level[tier][level] += 1
         comps = res.get("comparisons") or []
         if level != "could_not_run" and not comps:
             reasons.append(f"{where}: level {level} compares no number")
@@ -206,13 +213,22 @@ def check_reproduction(workspace: Path, *, minor_rel_tolerance: float = DEFAULT_
                 continue
             covered.add(tid)
             target = targets[tid]
+            if target.get("level") != tier:
+                reasons.append(f"{cw}: a level-{target.get('level')} target reported under a level-{tier} result")
+                continue
             published = float(target["value"])
             if not isinstance(comp.get("published"), int | float) or not math.isclose(
                 float(comp["published"]), published, rel_tol=1e-12, abs_tol=1e-15
             ):
                 reasons.append(f"{cw}: published value {comp.get('published')!r} is not the plan's {published}")
             claimed = comp.get("reproduced")
-            entry: dict[str, Any] = {"result": rid, "target_id": tid, "level": level, "published": published}
+            entry: dict[str, Any] = {
+                "result": rid,
+                "target_id": tid,
+                "target_level": tier,
+                "level": level,
+                "published": published,
+            }
             if level == "could_not_run":
                 if claimed is not None:
                     reasons.append(f"{cw}: 'could_not_run' but a reproduced number {claimed!r} is claimed")
@@ -221,8 +237,17 @@ def check_reproduction(workspace: Path, *, minor_rel_tolerance: float = DEFAULT_
             if isinstance(claimed, bool) or not isinstance(claimed, int | float):
                 reasons.append(f"{cw}: level {level} needs a reproduced number")
                 continue
-            source = comp.get("source") if isinstance(comp.get("source"), dict) else {}
+            source = dict(comp["source"]) if isinstance(comp.get("source"), dict) else {}
             rel = str(source.get("file") or "")
+            if tier == 1:
+                # Level 1 asks whether the code rebuilds the package's own result
+                # file: the number is read from the rebuilt copy of that file.
+                shipped = (target.get("source") or {}).get("file")
+                if rel != shipped:
+                    reasons.append(f"{cw}: a level-1 number is read from the rebuilt {shipped}, not {rel or 'no file'}")
+                    checked.append({**entry, "claimed": claimed, "file": rel, "ok": False})
+                    continue
+                source.setdefault("locator", (target.get("source") or {}).get("locator"))
             if rel and rel not in written:
                 reasons.append(
                     f"{cw}: {rel} is not a file the sandbox run wrote (a shipped result is not a reproduction)"
@@ -270,17 +295,26 @@ def check_reproduction(workspace: Path, *, minor_rel_tolerance: float = DEFAULT_
                 )
 
     unassessed = {u.get("target_id") for u in report.get("unassessed") or [] if isinstance(u, dict) and u.get("reason")}
-    missing = sorted(set(targets) - covered - unassessed)
-    if missing:
-        shown = ", ".join(missing[:10]) + (f" and {len(missing) - 10} more" if len(missing) > 10 else "")
-        reasons.append(f"target(s) neither compared nor listed as unassessed with a reason: {shown}")
+    for tier in TARGET_LEVELS:
+        tier_ids = {t for t, v in targets.items() if v.get("level") == tier}
+        missing = sorted(tier_ids - covered - unassessed)
+        if missing:
+            shown = ", ".join(missing[:10]) + (f" and {len(missing) - 10} more" if len(missing) > 10 else "")
+            reasons.append(f"level-{tier} target(s) neither compared nor listed as unassessed with a reason: {shown}")
 
-    stats = {
+    stats: dict[str, Any] = {
         "results": len(report["results"]),
         "numbers_checked": sum(1 for c in checked if "recomputed" in c),
         "targets": len(targets),
         "unassessed": len(unassessed & set(targets)),
     }
+    for tier in TARGET_LEVELS:
+        tier_checked = [c for c in checked if c.get("target_level") == tier]
+        stats[f"level_{tier}"] = {
+            "targets": sum(1 for v in targets.values() if v.get("level") == tier),
+            "numbers_checked": sum(1 for c in tier_checked if "recomputed" in c),
+            "results": dict(by_level[tier]),
+        }
     doc = {
         "passed": not reasons,
         "reasons": reasons,
@@ -289,7 +323,10 @@ def check_reproduction(workspace: Path, *, minor_rel_tolerance: float = DEFAULT_
         "minor_rel_tolerance": minor_rel_tolerance,
     }
     (workspace / CHECK_FILE).write_text(json.dumps(doc, indent=2, default=str) + "\n", encoding="utf-8")
-    return CheckResult(not reasons, tuple(reasons[:20]), stats=stats)
+    flat = {k: v for k, v in stats.items() if not isinstance(v, dict)}
+    for tier in TARGET_LEVELS:
+        flat[f"level_{tier}_numbers_checked"] = stats[f"level_{tier}"]["numbers_checked"]
+    return CheckResult(not reasons, tuple(reasons[:20]), stats=flat)
 
 
 def check_report(workspace: Path) -> list[str]:
@@ -305,6 +342,8 @@ def check_report(workspace: Path) -> list[str]:
     for i, res in enumerate(report["results"]):
         if not isinstance(res, dict) or res.get("level") not in LEVELS:
             errs.append(f"results[{i}].level must be one of {', '.join(LEVELS)}")
+        elif res.get("target_level") not in TARGET_LEVELS:
+            errs.append(f"results[{i}].target_level must be 1 (package result files) or 2 (the paper)")
         elif not res.get("reason"):
             errs.append(f"results[{i}] needs a reason for its level")
     return errs

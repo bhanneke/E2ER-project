@@ -7,7 +7,12 @@
 #
 #   fetch               download the record keyless from Zenodo, verify every
 #                       file against Zenodo's checksum, hash it (SHA-256),
-#                       unpack it read-only into package/
+#                       unpack it read-only into package/; stage the paper the
+#                       researcher supplies (paper.pdf), fingerprinted
+#
+# Two levels of targets. Level 1: the package's own result files (does the
+# code rebuild them?). Level 2: the numbers printed in the paper (does the
+# rerun reproduce what was published?), taken only from the paper.
 #   plan                the replication planner maps each table and figure to
 #                       the script that produces it and records the published
 #                       numbers to compare against (replication_plan.json)
@@ -40,6 +45,10 @@ finalize = ["audit_export", "structured_export"]
 kind  = "gate"
 name  = "fetch"
 check = "package_integrity"
+# Runs at every start: re-verifies the package byte for byte and picks up the
+# researcher's paper (PAPER_PDF, <LOCAL_DATA_DIR>/paper.pdf or the workspace's
+# data/paper.pdf) whenever it is supplied or replaced.
+resumable = false
 
 [steps.settings]
 max_mb = 1000

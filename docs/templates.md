@@ -80,8 +80,8 @@ e2er run "Computational reproduction of <paper title> (10.5281/zenodo.<id>)" --t
 
 | Step | Kind | What happens |
 |---|---|---|
-| `fetch` | check `package_integrity` | The record is read from the public Zenodo API (no key). Every file is downloaded, verified against the checksum Zenodo publishes (MD5) and hashed with SHA-256; a mismatch fails the step. Archives are unpacked into `package/`, every unpacked file is hashed, and the tree is made read-only. PDF text goes to `package_text/`, page by page. All of it is in `package_manifest.json`. On resume the package is re-hashed; one changed byte fails the step. |
-| `plan` | specialist `replication_planner` | Reads the README, the documentation and the code; lists the entry points in run order, the pinned image and the packages, maps every table and figure to its script and output, and records the published numbers (targets) with page and table or figure. Writes `replication_plan.json` (schema `docs/schemas/replication_plan.schema.json`) and `replication_plan.md`. The plan is validated before it is accepted: pinned official image, interpreter plus package-relative script, no inline code, no shell. |
+| `fetch` | check `package_integrity` | The record is read from the public Zenodo API (no key). Every file is downloaded, verified against the checksum Zenodo publishes (MD5) and hashed with SHA-256; a mismatch fails the step. Archives are unpacked into `package/`, every unpacked file is hashed, and the tree is made read-only. PDF text goes to `package_text/`, page by page. All of it is in `package_manifest.json`. The step runs at every start: the package is re-hashed (one changed byte fails the step), and the paper the researcher supplies is staged (below). |
+| `plan` | specialist `replication_planner` | Reads the README, the documentation and the code; lists the entry points in run order, the pinned image and the packages, maps every table and figure to its script and output, and records the targets at two levels (below). Writes `replication_plan.json` (schema `docs/schemas/replication_plan.schema.json`) and `replication_plan.md`. The plan is validated before it is accepted: pinned official image, interpreter plus package-relative script, no inline code, no shell. |
 | `review_plan` | researcher | The run stops. Approve, edit the plan, or send the planner back. |
 | `sandbox_run` | check `sandbox` | Runs the plan in Docker (below). Fails only when the sandbox cannot work (no Docker, invalid plan, image unavailable, package modified); a script that fails is a result. |
 | `compare` | specialist `reproduction_comparer` | Levels each result by the protocol: reproduced, reproduced with minor differences, not reproduced, could not be run. Writes `reproduction_report.json` (schema `docs/schemas/reproduction_report.schema.json`) and `reproduction_report.md`. |
@@ -89,6 +89,44 @@ e2er run "Computational reproduction of <paper title> (10.5281/zenodo.<id>)" --t
 | `review_report` | researcher | The run stops for the researcher to read the report. |
 
 The protocol both specialists follow is `skills/files/replication/reproduction-protocol.md`.
+
+### Two levels of targets
+
+Every target in `replication_plan.json` has `level: 1` or `level: 2`, and the
+report and the check treat the levels separately.
+
+- **Level 1: the package's own result files.** Does the code rebuild them? The
+  source is `{"kind": "package_file", "file", "locator": {"row", "column"}}`, a
+  cell of a shipped `.csv`/`.tsv`. The plan contract reads the cell and refuses
+  a value that is not there; the reproduction check reads the same cell of the
+  rebuilt copy of that file.
+- **Level 2: the published paper.** Does the rerun reproduce the printed
+  numbers? Taken only from the paper: `{"kind": "paper", "document", "page",
+  "table" | "figure", "decimals"}`. The contract checks that the printed value
+  is on that page of the paper's extracted text and that `decimals` matches
+  it.
+
+Each result of `reproduction_report.json` carries `target_level` and compares
+only targets of that level; every target of each level is compared or listed
+as unassessed; `reproduction_check.json` counts each level separately.
+
+### The paper, supplied by the researcher
+
+Publishers often refuse automated downloads (SSRN answers 403), so the paper
+is researcher input: save it as a PDF where the fetch step looks, in this
+order — the `PAPER_PDF` setting, `paper.pdf` in a `LOCAL_DATA_DIR` folder, or
+`data/paper.pdf` in the study's workspace. At the next start of the run the
+fetch step copies it to `paper/paper.pdf` (read-only), records its SHA-256,
+size, pages and original path under `paper` in `package_manifest.json`, and
+extracts its text page by page (`pdftotext -layout` when installed, else
+pypdf) into `paper_text/paper.pdf.txt` for the planner. The run logs a
+`researcher_input` event, which the dossier lists as a researcher step
+(`supplied_input`, with the SHA-256, and the one it replaces when the paper
+changes). Without a paper there are no level-2 targets.
+
+After supplying it at the plan review, send back the step `plan` or the
+specialist `replication_planner`: the fetch step runs first either way, so the
+planner works with the paper.
 
 ### The sandbox
 

@@ -228,6 +228,20 @@ def recorded_workflow(db: Path, paper_id: str, bundle: Path | None = None) -> li
             )
         elif etype == "researcher_action":
             steps.append(researcher_step(data, at, phase))
+        elif etype == "researcher_input":
+            steps.append(
+                {
+                    "type": "researcher",
+                    "action": "supplied_input",
+                    "phase": phase,
+                    "step": stage,
+                    "at": at,
+                    "file": data.get("file"),
+                    "sha256": data.get("sha256"),
+                    "supplied_by": data.get("supplied_by", "researcher"),
+                    **({"replaces_sha256": data["replaces_sha256"]} if data.get("replaces_sha256") else {}),
+                }
+            )
         elif etype == "researcher_rerun":
             steps.append(
                 {

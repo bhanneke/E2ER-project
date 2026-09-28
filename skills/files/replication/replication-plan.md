@@ -12,6 +12,36 @@ do not run anything and you do not change the package.
 - `package_text/` — the text of every PDF in the package, one file per PDF,
   with `=== page N ===` markers. Use it to find numbers and to cite pages;
   open the PDF itself (`package/...pdf`) when a table's layout matters.
+- `paper/paper.pdf` — the published paper, when the researcher supplied it
+  (`package_manifest.json` → `paper` records it, with its SHA-256). Its text,
+  page by page, is in `paper_text/paper.pdf.txt`. Page numbers are PDF pages:
+  the first page of the file is page 1, whatever the journal prints.
+
+## Two levels of targets
+
+A reproduction is checked at two levels, and every target says which one it
+belongs to (`level`).
+
+- **Level 1 — the package's own results.** Does the code rebuild the result
+  files the package ships? A level-1 target is one cell of a shipped `.csv` or
+  `.tsv` result file: `source.kind` is `package_file`, `source.file` its path
+  relative to `package/`, and `source.locator` picks the cell (`row`: column:
+  value pairs that match exactly one row; `column`). `value` is the number in
+  that cell and `reported` the cell text as it stands in the file. The code
+  checks that the cell holds that value.
+- **Level 2 — the published paper.** Does the rerun reproduce the numbers
+  printed in the paper? A level-2 target comes only from the paper, never from
+  a package file: `source.kind` is `paper`, `source.document` the paper's PDF
+  (`paper/paper.pdf`, or a PDF of the paper in the package), `source.page`
+  the PDF page, `source.table` or `source.figure`, the row and column, and
+  `source.decimals` the printed precision (decimal places of the printed
+  value). `reported` is the value exactly as printed; the code checks that it
+  is printed on that page. Without the paper there are no level-2 targets:
+  list the numbers you would take in `missing_targets` with `"level": 2` and
+  say that the paper is needed.
+
+Do not copy a number from one level to the other. A level-2 value read from a
+results file is a level-1 target, whatever the paper says.
 
 ## What to do
 
@@ -29,16 +59,17 @@ do not run anything and you do not change the package.
    script that produces it and the output file it writes. Where the package
    says so (a reproduction map, comments), cite that; where you inferred it
    from the code, say so.
-4. Record the published numbers to compare against (`targets`), from the paper
-   itself: the PDF in the package if it ships one, otherwise the linked
-   publication. For each: the value, the value exactly as printed, the
-   document, the page, and the table or figure with its row and column. Prefer
-   the headline numbers of each main table (the coefficient of interest, its
-   standard error, the number of observations) over exhaustive transcription;
-   ten to forty targets is a good range. Never infer a target from a results
-   file the package ships; those are what is being tested.
-5. Anything you cannot map or find goes in `missing_targets` or
-   `not_reproducible`, with the reason.
+4. List every package the code loads (`library()`, `require()`,
+   `requireNamespace()`, `pkg::`, `import`), including those loaded by a setup
+   script every entry point sources. The run has no network, so a package
+   missing from the plan makes every script that loads it fail.
+5. Record the targets (one `targets` list, each with its `level`; see above).
+   Prefer the headline numbers of each main table (the coefficient of
+   interest, its standard error, the number of observations) over exhaustive
+   transcription; ten to forty per level is a good range. Level-1 and level-2
+   targets of the same quantity get different ids (e.g. `l1_…`, `l2_…`).
+6. Anything you cannot map or find goes in `missing_targets` (with its level)
+   or `not_reproducible`, with the reason.
 
 ## `replication_plan.json`
 
@@ -70,12 +101,16 @@ do not run anything and you do not change the package.
      "mapping_basis": "README.md, section Exhibits"}
   ],
   "targets": [
-    {"id": "t2_att_col1", "exhibit": "table_2", "label": "ATT, column 1",
+    {"id": "l1_att_col1", "level": 1, "exhibit": "table_2", "label": "ATT, column 1 (shipped result file)",
+     "value": -0.0121437, "reported": "-0.0121437",
+     "source": {"kind": "package_file", "file": "study_package/output/tables/did_main.csv",
+                "locator": {"row": {"outcome": "y1", "estimator": "cs"}, "column": "att"}}},
+    {"id": "l2_att_col1", "level": 2, "exhibit": "table_2", "label": "ATT, column 1 (printed)",
      "value": -0.012, "reported": "-0.012",
-     "source": {"document": "docs/paper.pdf", "page": 14, "table": "Table 2",
-                "row": "ATT", "column": "(1)"}}
+     "source": {"kind": "paper", "document": "paper/paper.pdf", "page": 14, "table": "Table 2",
+                "row": "ATT", "column": "(1)", "decimals": 3}}
   ],
-  "missing_targets": [{"exhibit": "figure_3", "why": "values only shown graphically"}],
+  "missing_targets": [{"level": 2, "exhibit": "figure_3", "why": "values only shown graphically"}],
   "not_reproducible": [{"what": "code/00_download.R", "why": "downloads the raw data from an external portal"}]
 }
 ```
@@ -94,14 +129,21 @@ Rules the code enforces (the run stops at the plan if one is broken):
   `package/`. Allowed flags: `--vanilla`, `--no-save`, `--no-restore`,
   `--no-environ`, `-u`. No inline code (`-e`, `-c`), no `..`, no absolute
   paths, no shell. The script must exist.
-- Each target's `exhibit` is an `exhibits` id; `value` is a number; `reported`
-  is the printed string; `source` names the document and the page.
+- Each target's `exhibit` is an `exhibits` id; `level` is 1 or 2; `value` is a
+  number; `reported` is the printed string.
+- Level 1: `source` is `{"kind": "package_file", "file", "locator": {"row",
+  "column"}}`, the file a `.csv` or `.tsv` of the package, and the located cell
+  holds `value`.
+- Level 2: `source` is `{"kind": "paper", "document", "page", "table" or
+  "figure", "decimals"}`; `decimals` equals the decimal places of `reported`,
+  and `reported` is printed on that page of the paper's extracted text.
 
 ## `replication_plan.md`
 
 For the researcher who approves the plan before anything runs: the study and
-the paper; the environment and where its versions come from; the entry points
-in order and what each produces; a table of exhibits → scripts → outputs; the
-targets, grouped by exhibit, each with its page; what is missing and why; and
+the paper (and whether the researcher supplied it); the environment and where
+its versions come from; the entry points in order and what each produces; a
+table of exhibits → scripts → outputs; the targets, level 1 and level 2 in
+separate sections, grouped by exhibit, each with its file and cell or its page; what is missing and why; and
 anything in the package that looks unsafe or surprising (code that writes
 outside its folder, deletes files, calls the network, or runs shell commands).

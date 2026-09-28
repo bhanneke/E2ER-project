@@ -22,15 +22,35 @@ that a robustness check should examine (a coding choice, an odd sample
 restriction), write it down under "notes for a robustness study" and leave the
 levels alone.
 
+## Two levels of targets
+
+Every target belongs to one of two levels, and they are reported separately.
+
+- **Level 1 — the package's own results.** The target is a cell of a result
+  file the package ships. The question is whether the code, run again,
+  rebuilds its own results. The reproduced number is read from the rebuilt
+  copy of the same file.
+- **Level 2 — the published paper.** The target is a number printed in the
+  paper, taken only from the paper, with its page. The question is whether the
+  rerun reproduces what was published.
+
+A study can pass level 1 and fail level 2 (the package's results are not the
+paper's, e.g. a later version of the code) or the reverse. Neither level
+stands in for the other: a number read from a shipped results file is never a
+level-2 target, and a printed number is never a level-1 target.
+
 ## What counts as the published result
 
-- The target is the number as printed in the paper (or its online appendix):
+- For level 2, the target is the number as printed in the paper (or its online appendix):
   the coefficient, standard error, confidence bound, sample size, test
   statistic, or figure value the paper reports. Record it exactly as printed,
   with its page and its table or figure, column and row.
 - A number that only exists in a results file the package ships is not a
-  published target. Shipped results files are useful to locate things; the
-  paper is the reference.
+  published target; it is a level-1 target. For level 2 the paper is the
+  reference.
+- The paper may come from the researcher (`paper/paper.pdf`, fingerprinted and
+  recorded as researcher-supplied) when the publisher refuses automated
+  downloads. Without it there are no level-2 targets.
 - If the paper reports a number only in a figure, record that the target is
   graphical and compare the figure's underlying data if the code writes it.
   Do not read values off a picture and treat them as exact.
@@ -40,7 +60,9 @@ levels alone.
 ## Levels, per result
 
 Each table or figure (or each headline number, when a table is large) gets one
-level.
+level, per target level: a table can be `reproduced` at level 1 and
+`not_reproduced` at level 2. "Published precision" is the printed decimals for
+level 2 and the decimals of the cell text in the shipped file for level 1.
 
 | Level | Rule |
 |---|---|

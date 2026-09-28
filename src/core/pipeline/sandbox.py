@@ -310,7 +310,7 @@ def run_sandbox(
     plan, why = load_plan(workspace)
     if plan is None:
         return CheckResult(False, (why,))
-    errors = validate_plan(plan, package)
+    errors = validate_plan(plan, package, workspace)
     if errors:
         return CheckResult(False, tuple(f"replication_plan.json: {e}" for e in errors[:15]))
     docker = docker or docker_binary()

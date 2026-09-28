@@ -27,13 +27,15 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import re
 import shutil
 import stat
+import subprocess
 import tarfile
 import zipfile
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -68,6 +70,13 @@ _PKG_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9._-]{0,99}$")
 _PKG_VERSION = re.compile(r"^[0-9][0-9A-Za-z.+_-]{0,39}$")
 _SYS_PKG = re.compile(r"^[a-z0-9][a-z0-9+.-]{0,99}$")
 LEVELS = ("reproduced", "reproduced_minor", "not_reproduced", "could_not_run")
+#: What a target is compared against: 1 = a result file the package ships
+#: (does the code rebuild its own results?), 2 = a number printed in the paper
+#: (does the rerun reproduce what was published?).
+TARGET_LEVELS = (1, 2)
+PAPER_DIR = "paper"
+PAPER_FILE = "paper/paper.pdf"
+PAPER_TEXT_DIR = "paper_text"
 
 
 @dataclass(frozen=True)
@@ -78,6 +87,8 @@ class CheckResult:
     reasons: tuple[str, ...] = ()
     notes: tuple[str, ...] = ()
     stats: dict[str, Any] = field(default_factory=dict, hash=False)
+    #: Researcher-supplied inputs this step recorded (logged for the dossier).
+    inputs: tuple[dict[str, Any], ...] = ()
 
     def detail(self) -> str:
         if self.passed:
@@ -239,8 +250,129 @@ def _verify_existing(workspace: Path, manifest: dict[str, Any]) -> CheckResult:
     )
 
 
-def fetch_package(workspace: Path, *, max_mb: int = DEFAULT_MAX_MB, client: Any = None) -> CheckResult:
-    """The `fetch` step: download, verify, unpack, hash and freeze the package."""
+def fetch_package(
+    workspace: Path, *, max_mb: int = DEFAULT_MAX_MB, client: Any = None, paper_pdf: str | Path | None = None
+) -> CheckResult:
+    """The `fetch` step: the package (downloaded once, re-verified on every start) and the researcher's paper.
+
+    The step runs at every start of the run (``resumable = false`` in the
+    template), so a paper the researcher supplies after the plan review is
+    picked up the next time the run resumes.
+    """
+    workspace = Path(workspace)
+    result = _fetch(workspace, max_mb=max_mb, client=client)
+    if not result.passed:
+        return result
+    try:
+        paper = stage_paper(workspace, paper_pdf)
+    except (OSError, ValueError) as e:
+        return CheckResult(False, (f"the researcher-supplied paper cannot be used: {e}",))
+    if paper is None:
+        return replace(result, notes=(*result.notes, f"no paper supplied ({PAPER_FILE}): level-2 targets unavailable"))
+    stats = {**result.stats, "paper_sha256": paper["sha256"][:12], "paper_pages": paper["pages"]}
+    inputs = (paper,) if paper.pop("new", False) else ()
+    return replace(result, stats=stats, inputs=inputs)
+
+
+def paper_candidates(workspace: Path, explicit: str | Path | None = None) -> list[Path]:
+    """Where a researcher-supplied paper is looked for, in order.
+
+    ``explicit`` (a caller's path), then the ``PAPER_PDF`` setting, then
+    ``paper.pdf`` in each ``LOCAL_DATA_DIR`` folder, then ``data/paper.pdf`` in
+    the paper's workspace.
+    """
+    found: list[Path] = []
+    if explicit:
+        found.append(Path(explicit).expanduser())
+    try:
+        from ...config import get_settings
+
+        settings = get_settings()
+        if getattr(settings, "paper_pdf", ""):
+            found.append(Path(settings.paper_pdf).expanduser())
+        for d in (settings.local_data_dir or "").split(","):
+            if d.strip():
+                found.append(Path(d.strip()).expanduser() / "paper.pdf")
+    except Exception:  # noqa: BLE001 — settings are optional here (tests, scripts)
+        pass
+    found.append(Path(workspace) / "data" / "paper.pdf")
+    return found
+
+
+def _pdf_pages(pdf: Path) -> tuple[list[str], str]:
+    """Per-page text: pdftotext -layout when installed (keeps table columns), else pypdf."""
+    known = ("/opt/homebrew/bin/pdftotext", "/usr/local/bin/pdftotext", "/usr/bin/pdftotext")
+    exe = shutil.which("pdftotext") or next((c for c in known if Path(c).is_file()), None)
+    if exe:
+        cp = subprocess.run([exe, "-layout", "-enc", "UTF-8", str(pdf), "-"], capture_output=True, timeout=300)
+        if cp.returncode == 0:
+            pages = cp.stdout.decode("utf-8", "replace").split("\f")
+            if pages and not pages[-1].strip():
+                pages = pages[:-1]
+            return pages, "pdftotext -layout"
+    from pypdf import PdfReader
+
+    return [(p.extract_text() or "") for p in PdfReader(str(pdf)).pages], "pypdf"
+
+
+def stage_paper(workspace: Path, explicit: str | Path | None = None) -> dict[str, Any] | None:
+    """Copy the researcher's paper into the workspace, fingerprint it, and extract its text.
+
+    Returns the record written to ``package_manifest.json`` under ``paper``
+    (with ``new: True`` when this call staged it or it changed), or None when no
+    paper was supplied. The paper is researcher input, not part of the package:
+    it is recorded as such and never mixed into ``package/``.
+    """
+    workspace = Path(workspace)
+    source = next((p for p in paper_candidates(workspace, explicit) if p.is_file()), None)
+    manifest_path = workspace / MANIFEST_FILE
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.is_file() else {}
+    staged = workspace / PAPER_FILE
+    if source is None:
+        if staged.is_file() and manifest.get("paper"):
+            if sha256_file(staged) != manifest["paper"]["sha256"]:
+                raise ValueError(f"{PAPER_FILE} changed after it was recorded")
+            return dict(manifest["paper"])
+        return None
+    with source.open("rb") as fh:
+        if fh.read(5) != b"%PDF-":
+            raise ValueError(f"{source} is not a PDF")
+    digest = sha256_file(source)
+    previous = manifest.get("paper") or {}
+    if previous.get("sha256") == digest and staged.is_file() and sha256_file(staged) == digest:
+        return dict(previous)
+    if staged.exists():
+        staged.chmod(0o644)
+    staged.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(source, staged)
+    staged.chmod(stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH)
+    pages, extractor = _pdf_pages(staged)
+    text_path = workspace / PAPER_TEXT_DIR / f"{staged.name}.txt"
+    text_path.parent.mkdir(parents=True, exist_ok=True)
+    body = "\n".join(f"=== page {i} ===\n{p.rstrip()}\n" for i, p in enumerate(pages, 1))
+    text_path.write_text(
+        f"# Text of {PAPER_FILE} ({len(pages)} pages, researcher-supplied), extracted with {extractor}\n\n{body}",
+        encoding="utf-8",
+    )
+    record = {
+        "supplied_by": "researcher",
+        "file": PAPER_FILE,
+        "original_path": str(source),
+        "sha256": digest,
+        "size": staged.stat().st_size,
+        "pages": len(pages),
+        "text": text_path.relative_to(workspace).as_posix(),
+        "extractor": extractor,
+        "recorded_at": datetime.now(UTC).isoformat(timespec="seconds"),
+    }
+    if previous:
+        record["replaces_sha256"] = previous.get("sha256")
+    manifest["paper"] = record
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    return {**record, "new": True}
+
+
+def _fetch(workspace: Path, *, max_mb: int, client: Any) -> CheckResult:
     from ...modules.data.zenodo import ZenodoClient, ZenodoError, parse_record_id
 
     workspace = Path(workspace)
@@ -337,7 +469,7 @@ def load_plan(workspace: Path) -> tuple[dict[str, Any] | None, str]:
     return plan, ""
 
 
-def validate_plan(plan: dict[str, Any], package_dir: Path | None = None) -> list[str]:
+def validate_plan(plan: dict[str, Any], package_dir: Path | None = None, workspace: Path | None = None) -> list[str]:
     """Every way ``plan`` breaks the contract, as sentences. Empty when it is sound."""
     errs: list[str] = []
     language = plan.get("language")
@@ -442,17 +574,113 @@ def validate_plan(plan: dict[str, Any], package_dir: Path | None = None) -> list
             errs.append(f"{where}.id {tid!r} is used twice")
         else:
             t_ids.add(tid)
+        where = f"{where} ({tid})"
         if t.get("exhibit") not in ex_ids:
-            errs.append(f"{where} ({tid}) names exhibit {t.get('exhibit')!r}, which is not in exhibits")
+            errs.append(f"{where} names exhibit {t.get('exhibit')!r}, which is not in exhibits")
         v = t.get("value")
         if isinstance(v, bool) or not isinstance(v, int | float):
-            errs.append(f"{where} ({tid}).value must be a number")
+            errs.append(f"{where}.value must be a number (a target without a value belongs in missing_targets)")
         if not isinstance(t.get("reported"), str) or not t.get("reported"):
-            errs.append(f"{where} ({tid}).reported must be the number as printed in the paper")
-        src = t.get("source")
-        if not isinstance(src, dict) or not src.get("document") or not (src.get("page") or src.get("locator")):
-            errs.append(f"{where} ({tid}).source must name the document and the page (or locator) it comes from")
+            errs.append(f"{where}.reported must be the value exactly as printed in its source")
+        level = t.get("level")
+        raw_src = t.get("source")
+        src: dict[str, Any] = raw_src if isinstance(raw_src, dict) else {}
+        if level not in TARGET_LEVELS:
+            errs.append(f"{where}.level must be 1 (the package's own result files) or 2 (the published paper)")
+        elif level == 1:
+            errs += _level_1_problems(where, t, src, package_dir)
+        else:
+            errs += _level_2_problems(where, t, src, package_dir, workspace)
     return errs
+
+
+def _level_1_problems(where: str, t: dict[str, Any], src: dict[str, Any], package_dir: Path | None) -> list[str]:
+    """A level-1 target is a cell of a result file the package ships, read by code."""
+    if src.get("kind") != "package_file":
+        return [f"{where}: a level-1 target's source.kind is 'package_file'"]
+    file, locator = src.get("file"), src.get("locator")
+    if not _safe_rel(file) or not str(file).lower().endswith((".csv", ".tsv")):
+        return [f"{where}: source.file must be a package-relative .csv or .tsv path"]
+    if not isinstance(locator, dict) or not isinstance(locator.get("row"), dict) or not locator.get("row"):
+        return [f"{where}: source.locator needs row (column: value pairs picking one row) and column"]
+    if not isinstance(locator.get("column"), str):
+        return [f"{where}: source.locator.column must name a column"]
+    if package_dir is None:
+        return []
+    path = package_dir / str(file)
+    if not path.is_file():
+        return [f"{where}: {file} is not a file of the package"]
+    from .reproduction import _cell
+
+    value, problem = _cell(path, locator)
+    if value is None:
+        return [f"{where}: {problem}"]
+    v = t.get("value")
+    if (
+        isinstance(v, int | float)
+        and not isinstance(v, bool)
+        and not math.isclose(value, v, rel_tol=1e-9, abs_tol=1e-12)
+    ):
+        return [f"{where}: the package's {file} holds {value!r} at that cell, not {v!r}"]
+    return []
+
+
+def _level_2_problems(
+    where: str, t: dict[str, Any], src: dict[str, Any], package_dir: Path | None, workspace: Path | None
+) -> list[str]:
+    """A level-2 target is a number printed in the paper, cited by page and exhibit."""
+    from .reproduction import _decimals
+
+    errs: list[str] = []
+    if src.get("kind") != "paper":
+        return [f"{where}: a level-2 target's source.kind is 'paper'"]
+    doc, page = src.get("document"), src.get("page")
+    if not _safe_rel(doc) or not str(doc).lower().endswith(".pdf"):
+        errs.append(f"{where}: source.document must be the paper's PDF ({PAPER_FILE}, or a PDF in the package)")
+    if isinstance(page, bool) or not isinstance(page, int) or page < 1:
+        errs.append(f"{where}: source.page must be the page number (1 = first page of the PDF)")
+    if not (src.get("table") or src.get("figure")):
+        errs.append(f"{where}: source must name the table or figure")
+    dec = src.get("decimals")
+    reported = t.get("reported")
+    if isinstance(dec, bool) or not isinstance(dec, int) or dec < 0:
+        errs.append(f"{where}: source.decimals must be the printed precision (decimal places)")
+    elif isinstance(reported, str) and _decimals(reported) != dec:
+        errs.append(f"{where}: reported {reported!r} has {_decimals(reported)} decimals, source.decimals says {dec}")
+    if errs or workspace is None:
+        return errs
+    pdf = workspace / str(doc) if str(doc) == PAPER_FILE else (package_dir / str(doc) if package_dir else None)
+    if pdf is None or not pdf.is_file():
+        return [f"{where}: {doc} does not exist (the researcher supplies the paper as {PAPER_FILE})"]
+    text = _page_text(workspace, str(doc), page if isinstance(page, int) else 0)
+    if text is None:
+        return []  # no extractable text (a scanned PDF): the researcher checks the page at review
+    token = _printed_number(str(reported))
+    if token and token not in _normalise(text):
+        errs.append(f"{where}: {reported!r} is not printed on page {page} of {doc}")
+    return errs
+
+
+def _normalise(text: str) -> str:
+    return text.replace("\u2212", "-").replace("\u2013", "-").replace("\u2009", "").replace("\u00a0", " ")
+
+
+def _printed_number(reported: str) -> str:
+    m = re.search(r"[-+]?(?:\d[\d,]*\.?\d*|\.\d+)", _normalise(reported))
+    return m.group(0) if m else ""
+
+
+def _page_text(workspace: Path, document: str, page: int) -> str | None:
+    """Extracted text of one page, from paper_text/ or package_text/; None when there is none."""
+    root = PAPER_TEXT_DIR if document == PAPER_FILE else TEXT_DIR
+    rel = Path(document).name if document == PAPER_FILE else document
+    path = workspace / root / f"{rel}.txt"
+    if not path.is_file():
+        return None
+    pages = re.split(r"^=== page (\d+) ===$", path.read_text(encoding="utf-8", errors="replace"), flags=re.M)
+    found = {int(pages[i]): pages[i + 1] for i in range(1, len(pages) - 1, 2)}
+    text = found.get(page)
+    return text if text and text.strip() else None
 
 
 def check_plan(workspace: Path) -> list[str]:
@@ -461,4 +689,4 @@ def check_plan(workspace: Path) -> list[str]:
     if plan is None:
         return [why]
     package = Path(workspace) / PACKAGE_DIR
-    return validate_plan(plan, package if package.is_dir() else None)
+    return validate_plan(plan, package if package.is_dir() else None, Path(workspace))

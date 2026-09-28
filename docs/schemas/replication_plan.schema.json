@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/bhanneke/E2ER-project/docs/schemas/replication_plan.schema.json",
   "title": "e2er replication plan",
-  "description": "replication_plan.json, written by the replication planner in the `replication` template and executed by the sandbox. The code (src/core/pipeline/replication.py, validate_plan) enforces more than this schema: the script paths must exist in the package, exhibit and entry-point references must resolve, and ids must be unique. See skills/files/replication/replication-plan.md.",
+  "description": "replication_plan.json, written by the replication planner in the `replication` template and executed by the sandbox. The code (src/core/pipeline/replication.py, validate_plan) enforces more than this schema: the script paths must exist in the package, exhibit and entry-point references must resolve, ids must be unique, a level-1 value must be the shipped cell, and a level-2 printed value must appear on the cited page of the paper's extracted text. See skills/files/replication/replication-plan.md.",
   "type": "object",
   "required": [
     "language",
@@ -166,11 +166,12 @@
     },
     "targets": {
       "type": "array",
-      "description": "The published numbers to compare against, from the paper, each with its page.",
+      "description": "Numbers to compare against, in two levels. Level 1: a cell of a result file the package ships (does the code rebuild its own results?). Level 2: a number printed in the published paper, taken only from the paper (does the rerun reproduce what was published?).",
       "items": {
         "type": "object",
         "required": [
           "id",
+          "level",
           "exhibit",
           "value",
           "reported",
@@ -179,6 +180,12 @@
         "properties": {
           "id": {
             "type": "string"
+          },
+          "level": {
+            "enum": [
+              1,
+              2
+            ]
           },
           "exhibit": {
             "type": "string"
@@ -191,42 +198,162 @@
           },
           "reported": {
             "type": "string",
-            "minLength": 1
+            "minLength": 1,
+            "description": "The value exactly as printed: the cell text for level 1, the paper's printed value for level 2."
           },
           "source": {
-            "type": "object",
-            "required": [
-              "document"
-            ],
-            "properties": {
-              "document": {
-                "type": "string"
-              },
-              "page": {},
-              "table": {
-                "type": "string"
-              },
-              "figure": {
-                "type": "string"
-              },
-              "row": {},
-              "column": {},
-              "locator": {}
+            "type": "object"
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "level": {
+                  "const": 1
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "source": {
+                  "$ref": "#/$defs/package_file"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "level": {
+                  "const": 2
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "source": {
+                  "$ref": "#/$defs/paper"
+                }
+              }
             }
           }
-        }
+        ]
       }
     },
     "missing_targets": {
       "type": "array",
       "items": {
-        "type": "object"
+        "type": "object",
+        "properties": {
+          "level": {
+            "enum": [
+              1,
+              2
+            ]
+          },
+          "exhibit": {
+            "type": "string"
+          },
+          "what": {
+            "type": "string"
+          },
+          "why": {
+            "type": "string"
+          }
+        }
       }
     },
     "not_reproducible": {
       "type": "array",
       "items": {
         "type": "object"
+      }
+    }
+  },
+  "$defs": {
+    "package_file": {
+      "type": "object",
+      "required": [
+        "kind",
+        "file",
+        "locator"
+      ],
+      "properties": {
+        "kind": {
+          "const": "package_file"
+        },
+        "file": {
+          "type": "string",
+          "pattern": "\\.(csv|tsv)$",
+          "description": "Relative to package/ (the same path in the sandbox's output folder is the rebuilt file)."
+        },
+        "locator": {
+          "type": "object",
+          "required": [
+            "row",
+            "column"
+          ],
+          "properties": {
+            "row": {
+              "type": "object",
+              "minProperties": 1,
+              "description": "column: value pairs that pick exactly one row"
+            },
+            "column": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "paper": {
+      "type": "object",
+      "required": [
+        "kind",
+        "document",
+        "page",
+        "decimals"
+      ],
+      "anyOf": [
+        {
+          "required": [
+            "table"
+          ]
+        },
+        {
+          "required": [
+            "figure"
+          ]
+        }
+      ],
+      "properties": {
+        "kind": {
+          "const": "paper"
+        },
+        "document": {
+          "type": "string",
+          "pattern": "\\.pdf$",
+          "description": "paper/paper.pdf (researcher-supplied) or a PDF in the package."
+        },
+        "page": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "PDF page, 1 = first page."
+        },
+        "table": {
+          "type": "string"
+        },
+        "figure": {
+          "type": "string"
+        },
+        "row": {},
+        "column": {},
+        "decimals": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Printed precision: decimal places of the printed value."
+        }
       }
     }
   }
