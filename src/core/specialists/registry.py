@@ -51,6 +51,8 @@ SPECIALIST_SKILLS: dict[str, list[str]] = {
     ],
     "literature_scanner": ["base/researcher", "synthesis/context-builder"],
     "data_architect": [
+        # Declares the data.db tables the analyst loads (data_dictionary.json `tables`).
+        "data/data-tables",
         "data/query-data",
         "data/blockchain",
         "data/crypto-defi",
@@ -61,6 +63,8 @@ SPECIALIST_SKILLS: dict[str, list[str]] = {
         "data/fred",
     ],
     "identification_strategist": [
+        # Names data by the tables the data dictionary declares.
+        "data/data-tables",
         "causal-inference/judge-designs",
         "causal-inference/natural-experiments",
         "reasoning/identification",
@@ -83,6 +87,8 @@ SPECIALIST_SKILLS: dict[str, list[str]] = {
         "econometrics/estimation-results-schema",
     ],
     "data_analyst": [
+        # Loads the declared tables into data.db, reports real row counts, never estimates.
+        "data/data-tables",
         "data/query-data",
         "data/cleaning",
         "data/figure-spec",

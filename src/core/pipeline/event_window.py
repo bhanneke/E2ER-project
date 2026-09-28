@@ -308,6 +308,27 @@ def check_event_window(
     else:
         days, source = load_calendar(Path(workspace), design.get("calendar"))  # type: ignore[assignment]
     exact = days is not None
+    if calendar is None:
+        # The calendar must be data the analyst actually loaded: a table the
+        # data dictionary declares, present in data.db. Name what is there.
+        from ..specialists.contract_check import declared_tables, table_row_counts
+
+        raw_cal = design.get("calendar")
+        cal_table = str(raw_cal.get("table") or "") if isinstance(raw_cal, dict) else ""
+        declared = declared_tables(Path(workspace))
+        counts = table_row_counts(Path(workspace))
+        have = ", ".join(f"{k} ({v} rows)" for k, v in sorted(counts.items())) or "none"
+        if (Path(workspace) / "data_dictionary.json").is_file() and not declared:
+            reasons.append(
+                "(c) data_dictionary.json declares no `tables`, so the calendar cannot be checked as loaded data"
+            )
+        elif declared and cal_table and cal_table not in declared:
+            reasons.append(
+                f"(c) calendar table {cal_table!r} is not one of the tables data_dictionary.json declares "
+                f"({', '.join(declared)})"
+            )
+        if not exact:
+            source = f"{source}. Tables in data.db: {have}"
     if not exact:
         reasons.append(f"(c) {source}")
         if events:

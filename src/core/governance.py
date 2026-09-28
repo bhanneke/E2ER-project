@@ -38,9 +38,11 @@ REGIMES: tuple[str, ...] = ("off", "contracts", "full")
 DEFAULT_REGIME = "full"
 
 #: Every mechanism a regime can switch between blocking and shadow.
-#: `event_window` runs only in templates that declare it (event studies); it is
-#: listed here so that `full` enforces it and `off`/`contracts` shadow it.
-GATES: tuple[str, ...] = ("contracts", "estimation", "numbers", "citations", "event_window")
+#: `event_window` runs only in templates that declare it (event studies), and
+#: `preregistration` (nothing estimated before the freeze) only in templates with
+#: a preregister step; they are listed so that `full` enforces them and
+#: `off`/`contracts` shadow them.
+GATES: tuple[str, ...] = ("contracts", "estimation", "numbers", "citations", "event_window", "preregistration")
 
 _ENFORCEMENT: dict[str, frozenset[str]] = {
     "full": frozenset(GATES),

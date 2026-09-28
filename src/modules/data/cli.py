@@ -316,6 +316,37 @@ async def _run_distinct_values(args: argparse.Namespace) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _maybe_save_table(result: dict, args: argparse.Namespace) -> None:
+    """If `--table <name>` was passed, write result['items'] into the paper's
+    data.db as that table (replacing it), so later specialists and the checks
+    read the exact rows that were loaded. Reports ``saved_table`` and
+    ``saved_table_rows`` (the real count) in the result envelope.
+    """
+    table = getattr(args, "table", None)
+    if not table:
+        return
+    items = (result or {}).get("items") or []
+    if not items:
+        result["table_skipped"] = "no items to persist"
+        return
+    from ...db.paper_data_db import _materialize_dataframe_sync, data_db_path, sanitize_table_name
+
+    name = sanitize_table_name(table)
+    try:
+        import pandas as pd
+
+        rows = _materialize_dataframe_sync(
+            data_db_path(_resolve_workspace(args.paper_id)), name, pd.DataFrame(items), if_exists="replace"
+        )
+    except Exception as e:  # noqa: BLE001 — reported to the model, never raised into its loop
+        result["table_error"] = f"{type(e).__name__}: {e}"
+        return
+    result["saved_table"] = name
+    result["saved_table_rows"] = rows
+    if name != table:
+        result["table_renamed"] = f"{table!r} is stored as {name!r} (lower case, letters, digits and _ only)"
+
+
 def _maybe_save_csv(result: dict, args: argparse.Namespace) -> None:
     """If `--save-to <rel/path>` was passed, dump result['items'] to a CSV
     under ``workspace/data/<rel/path>``. The summary text and `error` are
@@ -405,6 +436,7 @@ async def _run_yf_history(args: argparse.Namespace) -> str:
         auto_adjust=not args.raw,
     )
     _maybe_save_csv(result, args)
+    _maybe_save_table(result, args)
     return _json.dumps(result, indent=2, default=str)
 
 
@@ -428,6 +460,7 @@ async def _run_yf_fundamentals(args: argparse.Namespace) -> str:
     provider = YFinanceProvider()
     result = await provider.fundamentals(ticker=args.ticker, statement=args.statement)
     _maybe_save_csv(result, args)
+    _maybe_save_table(result, args)
     return _json.dumps(result, indent=2, default=str)
 
 
@@ -440,6 +473,7 @@ async def _run_yf_dividends(args: argparse.Namespace) -> str:
     provider = YFinanceProvider()
     result = await provider.dividends(ticker=args.ticker)
     _maybe_save_csv(result, args)
+    _maybe_save_table(result, args)
     return _json.dumps(result, indent=2, default=str)
 
 
@@ -498,6 +532,7 @@ async def _run_fred_series(args: argparse.Namespace) -> str:
         limit=args.limit,
     )
     _maybe_save_csv(result, args)
+    _maybe_save_table(result, args)
     return _json.dumps(result, indent=2, default=str)
 
 
@@ -555,6 +590,15 @@ def _add_save_to(p: argparse.ArgumentParser) -> None:
             "Use this whenever the data will be referenced in the paper — replication "
             "scripts re-read from disk, not from re-running the API call. Path is "
             "relative to workspace/data/; absolute paths are rejected."
+        ),
+    )
+    p.add_argument(
+        "--table",
+        dest="table",
+        default=None,
+        help=(
+            "Also write the rows into the paper's data.db as this table (replaced if it exists). "
+            "Use the table name declared in data_dictionary.json `tables`, e.g. spy_prices or dgs2."
         ),
     )
 

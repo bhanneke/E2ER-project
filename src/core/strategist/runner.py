@@ -672,7 +672,7 @@ class PipelineRunner:
         specialist layer (output contracts, cascade guard) consults the same
         table — when it didn't, `off` and `contracts` behaved identically.
         """
-        return governance_enforces(self._governance, gate)
+        return governance_enforces(getattr(self, "_governance", DEFAULT_REGIME), gate)
 
     def _should_pause_for_review(self, stage: str, state: Any) -> bool:
         """True iff the run should pause after `stage` for human review — i.e.
@@ -687,6 +687,7 @@ class PipelineRunner:
 
         files = list(step.files)
         if step.kind == "preregister":
+            await self._guard_preregistration(step.name, state)
             assemble(self._workspace, step.files)
             files = [PREREG_FILE]
         state.pending_review_stage = step.name
@@ -694,9 +695,56 @@ class PipelineRunner:
         state.save(self._workspace)
         raise HumanReviewRequestedError(step.name)
 
+    async def _guard_preregistration(self, name: str, state: Any) -> None:
+        """Refuse to present or freeze a pre-registration once anything has been estimated.
+
+        A pre-registration fixes the plan before results exist; one assembled
+        after the estimates is not one. When estimation output is already in
+        the workspace (see preregistration.estimation_outputs), the check is
+        recorded like every gate and the run stops at this step with the list.
+        Approving does not pass it: the researcher sends the specialist that
+        produced the output back, the outputs are moved aside and recorded
+        (never deleted), and the check runs again.
+        """
+        from ..pipeline.preregistration import LOCK_FILE, estimation_outputs
+
+        if (self._workspace / LOCK_FILE).is_file():
+            return  # already frozen: later estimates are the point
+        found = estimation_outputs(self._workspace)
+        detail = ("estimation output before the freeze: " + ", ".join(found)) if found else "clean"
+        blocking = await self._record_gate("preregistration", passed=not found, detail=detail)
+        if not found or not blocking:
+            if isinstance(getattr(state, "metadata", None), dict):
+                state.metadata.pop("preregistration_blocked", None)
+            return
+        state.metadata["preregistration_blocked"] = found
+        if name in state.approved_stages:
+            state.approved_stages.remove(name)
+        reason = (
+            f"estimation output already exists before the pre-registration was frozen: {', '.join(found)}. "
+            "Send back the specialist that produced it; the outputs are then moved to set_aside/ and "
+            "recorded, and this check runs again."
+        )
+        state.pending_review_stage = name
+        state.metadata["review"] = {"kind": "gate", "files": [], "reasons": [reason]}
+        state.save(self._workspace)
+        raise GateHaltError(name, [reason])
+
     async def _freeze_preregistration(self, name: str) -> None:
         from ...db.events import log_event
         from ..pipeline.preregistration import LOCK_FILE, freeze
+
+        state = getattr(self, "_state", None)
+        if state is not None and isinstance(getattr(state, "metadata", None), dict):
+            was_blocked = "preregistration_blocked" in state.metadata
+            await self._guard_preregistration(name, state)  # raises while estimates exist
+            step = self._spec.step(name) if getattr(self, "_spec", None) is not None else None
+            if was_blocked and step is not None:
+                # The approval cleared the check; the researcher has yet to see
+                # the pre-registration itself, so stop there before freezing.
+                if name in state.approved_stages:
+                    state.approved_stages.remove(name)
+                await self._stop_for_researcher(step, state)
 
         already = (self._workspace / LOCK_FILE).is_file()
         lock = freeze(self._workspace)
@@ -817,6 +865,17 @@ class PipelineRunner:
         if not reruns:
             return
         state.metadata.pop("sent_back", None)
+        if state.metadata.get("preregistration_blocked"):
+            # Sent back from a pre-registration that estimation output blocked:
+            # move that output aside (recorded, never deleted) before the rerun.
+            from ..pipeline.preregistration import estimation_outputs, set_aside
+
+            found = estimation_outputs(self._workspace)
+            if found:
+                manifest = set_aside(self._workspace, found)
+                await log_event(
+                    self._paper_id, "estimation_set_aside", stage=state.pending_review_stage, payload=manifest
+                )
         step_names = [s.name for s in self._spec.steps]
         rerun_steps = False
         for r in reruns:
@@ -862,7 +921,7 @@ class PipelineRunner:
                 "gate": gate,
                 "passed": passed,
                 "enforced": enforced,
-                "regime": self._governance,
+                "regime": getattr(self, "_governance", DEFAULT_REGIME),
                 "detail": detail[:2000],
             },
         )
