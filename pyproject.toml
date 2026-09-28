@@ -86,7 +86,7 @@ build-backend = "setuptools.build_meta"
 #          wheel layouts.
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["src*", "skills*", "sql*"]
+include = ["src*", "skills*", "sql*", "pipelines"]
 exclude = ["tests*", "Tests*", "docs*", "examples*", "scripts*", "docker*"]
 
 [tool.setuptools.package-data]
@@ -102,6 +102,9 @@ exclude = ["tests*", "Tests*", "docs*", "examples*", "scripts*", "docker*"]
 # Postgres migrations (kept for `scripts/migrate.py` users who pip-install
 # the dev extra or run from a source checkout).
 "sql" = ["*.sql"]
+# The templates. Without them a fresh install could not start a study: every
+# template name failed with "no pipeline named 'empirical'" (0.11.0 and before).
+"pipelines" = ["*.toml"]
 
 [tool.ruff]
 line-length = 120
