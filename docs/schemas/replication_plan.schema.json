@@ -1,0 +1,360 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/bhanneke/E2ER-project/docs/schemas/replication_plan.schema.json",
+  "title": "e2er replication plan",
+  "description": "replication_plan.json, written by the replication planner in the `replication` template and executed by the sandbox. The code (src/core/pipeline/replication.py, validate_plan) enforces more than this schema: the script paths must exist in the package, exhibit and entry-point references must resolve, ids must be unique, a level-1 value must be the shipped cell, and a level-2 printed value must appear on the cited page of the paper's extracted text. See skills/files/replication/replication-plan.md.",
+  "type": "object",
+  "required": [
+    "language",
+    "environment",
+    "entry_points",
+    "exhibits",
+    "targets"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "study": {
+      "type": "object",
+      "description": "Title, authors, the Zenodo DOI and the linked publication."
+    },
+    "language": {
+      "enum": [
+        "R",
+        "Python"
+      ]
+    },
+    "environment": {
+      "type": "object",
+      "required": [
+        "image"
+      ],
+      "properties": {
+        "image": {
+          "type": "string",
+          "pattern": "^(rocker/r-ver:\\d+\\.\\d+\\.\\d+|python:\\d+\\.\\d+(\\.\\d+)?-slim(-bookworm|-bullseye|-trixie)?)$",
+          "description": "A pinned official image: rocker/r-ver:X.Y.Z for R, python:X.Y[.Z]-slim for Python."
+        },
+        "version_source": {
+          "type": "string"
+        },
+        "packages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9._-]{0,99}$"
+              },
+              "version": {
+                "type": "string",
+                "pattern": "^[0-9][0-9A-Za-z.+_-]{0,39}$"
+              }
+            }
+          }
+        },
+        "system_packages": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9+.-]{0,99}$"
+          }
+        },
+        "notes": {
+          "type": "string"
+        }
+      }
+    },
+    "entry_points": {
+      "type": "array",
+      "minItems": 1,
+      "description": "The scripts, in run order. Each runs in its own container, without network.",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "command"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"
+          },
+          "command": {
+            "type": "array",
+            "minItems": 2,
+            "items": {
+              "type": "string"
+            },
+            "description": "Interpreter (Rscript; python or python3) and a script path relative to cwd. Allowed flags: --vanilla, --no-save, --no-restore, --no-environ, -u. No inline code, no shell."
+          },
+          "cwd": {
+            "type": "string",
+            "description": "Relative to package/; default '.'."
+          },
+          "timeout_minutes": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 720
+          },
+          "needs_network": {
+            "type": "boolean",
+            "description": "true: the script downloads data; the sandbox skips it."
+          },
+          "produces": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "notes": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "exhibits": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "label"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "table",
+              "figure",
+              "other"
+            ]
+          },
+          "description": {
+            "type": "string"
+          },
+          "scripts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "outputs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "source": {
+            "type": "object"
+          },
+          "mapping_basis": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "targets": {
+      "type": "array",
+      "description": "Numbers to compare against, in two levels. Level 1: a cell of a result file the package ships (does the code rebuild its own results?). Level 2: a number printed in the published paper, taken only from the paper (does the rerun reproduce what was published?).",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "level",
+          "exhibit",
+          "value",
+          "reported",
+          "source"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "level": {
+            "enum": [
+              1,
+              2
+            ]
+          },
+          "exhibit": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "value": {
+            "type": "number"
+          },
+          "reported": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The value exactly as printed: the cell text for level 1, the paper's printed value for level 2."
+          },
+          "source": {
+            "type": "object"
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "level": {
+                  "const": 1
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "source": {
+                  "$ref": "#/$defs/package_file"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "level": {
+                  "const": 2
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "source": {
+                  "$ref": "#/$defs/paper"
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    "missing_targets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "level": {
+            "enum": [
+              1,
+              2
+            ]
+          },
+          "exhibit": {
+            "type": "string"
+          },
+          "what": {
+            "type": "string"
+          },
+          "why": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "not_reproducible": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  },
+  "$defs": {
+    "package_file": {
+      "type": "object",
+      "required": [
+        "kind",
+        "file",
+        "locator"
+      ],
+      "properties": {
+        "kind": {
+          "const": "package_file"
+        },
+        "file": {
+          "type": "string",
+          "pattern": "\\.(csv|tsv)$",
+          "description": "Relative to package/ (the same path in the sandbox's output folder is the rebuilt file)."
+        },
+        "locator": {
+          "type": "object",
+          "required": [
+            "row",
+            "column"
+          ],
+          "properties": {
+            "row": {
+              "type": "object",
+              "minProperties": 1,
+              "description": "column: value pairs that pick exactly one row"
+            },
+            "column": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "paper": {
+      "type": "object",
+      "required": [
+        "kind",
+        "document",
+        "page",
+        "decimals"
+      ],
+      "anyOf": [
+        {
+          "required": [
+            "table"
+          ]
+        },
+        {
+          "required": [
+            "figure"
+          ]
+        }
+      ],
+      "properties": {
+        "kind": {
+          "const": "paper"
+        },
+        "document": {
+          "type": "string",
+          "pattern": "\\.pdf$",
+          "description": "paper/paper.pdf (researcher-supplied) or a PDF in the package."
+        },
+        "page": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "PDF page, 1 = first page."
+        },
+        "table": {
+          "type": "string"
+        },
+        "figure": {
+          "type": "string"
+        },
+        "row": {},
+        "column": {},
+        "decimals": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Printed precision: decimal places of the printed value."
+        }
+      }
+    }
+  }
+}

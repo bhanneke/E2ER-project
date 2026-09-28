@@ -39,6 +39,7 @@ from .core import zenodo as zen
 from .core.availability import describe as describe_availability
 from .core.availability import resolve
 from .core.bibliography import escape_bib, point_bibliography, unresolved_citations
+from .core.demonstration import disclaimer, kind_for, mark_report, resolve_purpose
 from .core.dossier import build_dossier, dossier_id, dossier_url, stamp_paper
 from .core.research_object import MANIFEST_NAME, PublishError, build_manifest, write_manifest
 from .core.secret_scan import find_local_paths, find_secrets, sanitize
@@ -74,6 +75,7 @@ def _describe(
     zenodo_sandbox: bool = False,
     zenodo_plan_only: bool = False,
     site: str | None = None,
+    demonstration: bool = False,
 ) -> tuple[int, dict[str, Any] | None]:
     from .cli_verify import _run_checks, _verdict
 
@@ -94,6 +96,15 @@ def _describe(
         return 1, None
     for n in notes:
         print(f"note: {n}")
+    # A demonstration study (--demonstration, or E2ER_PURPOSE=demonstration in the
+    # environment or the study folder's .env) says so in e2er.json, the dossier,
+    # the paper's first page and, for a reproduction, the reproduction report.
+    try:
+        purpose = resolve_purpose(demonstration)
+    except ValueError as e:
+        print(f"error: {e}")
+        return 1, None
+    kind = kind_for(template) if purpose else None
     deposits = _deposit_plan(b, availability, project) if (zenodo or zenodo_plan_only) else {}
     if zenodo or zenodo_plan_only:
         refused = [i for i in ("data", "code") if availability[i]["access"] == "private"]
@@ -119,6 +130,12 @@ def _describe(
             tex.write_text(fixed, encoding="utf-8")
             _rehash(b, ["paper/paper.tex"])
             print("✓ Pointed paper.tex at the bibliography the bundle ships (refs.bib)")
+    if purpose:
+        reports = [p for p in (b / "reproduction_report.md", b / "misc" / "reproduction_report.md") if p.is_file()]
+        marked = [p.relative_to(b).as_posix() for p in reports if mark_report(p, kind)]
+        if marked:
+            _rehash(b, marked)
+            print(f"✓ Put the demonstration disclaimer at the top of {', '.join(marked)}")
     refs = b / "paper" / "refs.bib"
     if refs.is_file():
         raw = refs.read_text(encoding="utf-8")
@@ -154,6 +171,7 @@ def _describe(
             derived_from=derived_from,
             verification=verification,
         )
+        _declare(manifest, purpose, kind)
     except PublishError as e:
         print(f"error: {e}")
         return 1, None
@@ -199,7 +217,7 @@ def _describe(
             return 1, None
     if stamp and name and (b / "paper" / "paper.tex").is_file():
         try:
-            changed = _stamp_and_compile(b, name, did)
+            changed = _stamp_and_compile(b, name, did, purpose=purpose, kind=kind)
         except PublishError as e:
             print(f"error: {e}")
             return 1, None
@@ -224,7 +242,9 @@ def _describe(
                 derived_from=derived_from,
                 verification=verification,
             )
-            print(f"✓ Stamped paper/paper.tex ({name} with e2er, dossier footnote) and updated provenance.json")
+            _declare(manifest, purpose, kind)
+            extra = ", demonstration footnote" if purpose else ""
+            print(f"✓ Stamped paper/paper.tex ({name} with e2er, dossier footnote{extra}) and updated provenance.json")
     manifest["availability"] = availability
     manifest["dossier"] = {"id": did, "url": dossier_url(did), "doc": doc}
 
@@ -247,6 +267,8 @@ def _describe(
     )
     print(f"✓ Dossier {did[:23]}…  {dossier_url(did)}")
     print(f"  availability: {describe_availability(availability)}")
+    if purpose:
+        print(f"  purpose: {purpose}{f' ({kind})' if kind else ''}: {disclaimer(kind)}")
     if entry:
         print(f"✓ Registry entry: {entry}")
     if not repository.get("commit"):
@@ -256,6 +278,14 @@ def _describe(
             f"\nTo publish, open a pull request against {REGISTRY} that adds\n  {REGISTRY_DIR}/{owner}/{project}.json"
         )
     return 0, manifest
+
+
+def _declare(manifest: dict[str, Any], purpose: str | None, kind: str | None) -> None:
+    """Record the study's purpose (and kind) in the manifest; nothing when it has none."""
+    if purpose:
+        manifest["purpose"] = purpose
+        if kind:
+            manifest["kind"] = kind
 
 
 def request_body(manifest: dict[str, Any], bundle: Path) -> dict[str, Any]:
@@ -411,7 +441,9 @@ def _rehash(bundle: Path, rels: list[str]) -> None:
     prov_path.write_text(json.dumps(prov, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
-def _stamp_and_compile(bundle: Path, author: str, did: str) -> bool:
+def _stamp_and_compile(
+    bundle: Path, author: str, did: str, *, purpose: str | None = None, kind: str | None = None
+) -> bool:
     """Stamp paper.tex and recompile paper.pdf with tectonic when it is installed.
 
     The paper is pointed at the bibliography the bundle ships (refs.bib). A
@@ -421,7 +453,7 @@ def _stamp_and_compile(bundle: Path, author: str, did: str) -> bool:
     """
     tex = bundle / "paper" / "paper.tex"
     old = tex.read_text(encoding="utf-8")
-    new = stamp_paper(point_bibliography(old, tex.parent), author, did)
+    new = stamp_paper(point_bibliography(old, tex.parent), author, did, purpose=purpose, kind=kind)
     if new == old:
         return False
     tex.write_text(new, encoding="utf-8")

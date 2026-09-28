@@ -28,6 +28,8 @@ files = ["paper_plan.md", "identification_strategy.md"]
 
 A `preregister` step assembles `preregistration.md` from the design files (question and hypotheses, identification strategy, the machine-readable identification, the analysis plan) and stops for the researcher, who may edit it. Approving it freezes it: the file's SHA-256, the SHA-256 of the plan files and the time go into `preregistration.lock.json`.
 
+Nothing may be estimated before the freeze. When the pre-registration comes up, e2er looks for estimation output in the workspace: the econometrics specialist's results and scripts, any script that estimates, result tables and figures, and data tables named as results. If there is any, the run stops at the step with the list (a `preregistration` check, recorded in the dossier) and approving does not pass it. Send back the specialist that produced it: the outputs are moved to `set_aside/<time>/` with a manifest of their fingerprints and row counts, the move appears in the dossier, and the check runs again. Nothing is deleted.
+
 From then on the estimation check compares the plan files with those fingerprints, and `e2er verify` reports either "estimation follows the pre-registered plan (frozen <date>)" or what changed. A change is a deviation that is disclosed, not a failure of the run.
 
 `e2er preregister deposit <paper_id> --zenodo` deposits the frozen file on Zenodo with the researcher's own token (`ZENODO_TOKEN`; `--sandbox` uses Zenodo's sandbox and `ZENODO_SANDBOX_TOKEN`) and records the DOI. Nothing passes through e2er.org. A deposit on OSF Registries is not built yet.
@@ -50,4 +52,4 @@ An instruction is kept in `researcher_instructions.md`; every later specialist a
 
 ## In the dossier
 
-Each action is a workflow step of type `researcher`: `edit` (file, SHA-256 before and after), `instruction` (the text), `send_back` and `rerun` (target and remark), `approve`, and `preregistration_frozen` (SHA-256). A frozen pre-registration also appears as its own block: file, SHA-256, time of freezing and, after a deposit, the DOI. Dossiers with either use the format `e2er-dossier/0.4`; a study without them keeps `0.3`, so existing dossier addresses stay valid.
+Each action is a workflow step of type `researcher`: `edit` (file, SHA-256 before and after), `instruction` (the text), `send_back` and `rerun` (target and remark), `approve`, `preregistration_frozen` (SHA-256), and `supplied_input` (a file the researcher supplied, such as the paper in the replication template: file, SHA-256, and the SHA-256 it replaces when it was changed). A frozen pre-registration also appears as its own block: file, SHA-256, time of freezing and, after a deposit, the DOI. Dossiers with either use the format `e2er-dossier/0.4`; a study without them keeps `0.3`, so existing dossier addresses stay valid.

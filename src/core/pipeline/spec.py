@@ -23,12 +23,12 @@ See docs/PIPELINES.md.
 from __future__ import annotations
 
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from ...logging_config import get_logger
-from ..governance import GATES
+from ..governance import GATES, RELIABILITY_CHECKS
 
 logger = get_logger(__name__)
 
@@ -43,7 +43,7 @@ MANDATORY_CHECKS: frozenset[str] = frozenset({"contracts"})
 #: `claims` is not in governance.GATES yet — it arrived with the corpus and is
 #: enforced by the extractor rather than the runner. Allowed in a pipeline so a
 #: theory process can declare it, and listed apart so the difference is visible.
-KNOWN_CHECKS: frozenset[str] = frozenset(GATES) | {"claims"}
+KNOWN_CHECKS: frozenset[str] = frozenset(GATES) | {"claims"} | frozenset(RELIABILITY_CHECKS)
 
 STEP_KINDS: frozenset[str] = frozenset({"strategist", "specialists", "gate", "aggregate", "researcher", "preregister"})
 
@@ -56,6 +56,20 @@ STEP_KINDS: frozenset[str] = frozenset({"strategist", "specialists", "gate", "ag
 RESEARCHER_KINDS: frozenset[str] = frozenset({"researcher", "preregister"})
 FINALIZE_ACTIONS: frozenset[str] = frozenset({"compile", "audit_export", "github_push", "structured_export"})
 RUN_MODES: frozenset[str] = frozenset({"single_pass", "iterative"})
+
+#: Settings a gate step may carry, per check, with their type. A check that is
+#: not listed takes none. Unknown keys are refused, like every other typo.
+CHECK_SETTINGS: dict[str, dict[str, type | tuple[type, ...]]] = {
+    "event_window": {"min_estimation_days": int, "min_gap_days": int, "max_overlap_share": (int, float)},
+    "package_integrity": {"max_mb": int},
+    "sandbox": {"cpus": int, "memory_gb": int, "timeout_minutes": int, "install_timeout_minutes": int},
+    "reproduction": {"minor_rel_tolerance": (int, float)},
+}
+
+#: Checks that run as a step of their own, in sequence, rather than inside the
+#: strategist's dispatch. Each is a function of the workspace and the step's
+#: settings that returns a verdict (see `_run_check_step` in the runner).
+SEQUENCE_CHECKS: frozenset[str] = frozenset({"package_integrity", "sandbox", "reproduction"})
 
 
 class PipelineError(ValueError):
@@ -78,7 +92,8 @@ class StepSpec:
     modes: tuple[str, ...] = ()  # empty = every mode
     resumable: bool = True
     files: tuple[str, ...] = ()  # researcher/preregister: files the researcher sees and may edit
-    after: tuple[str, ...] = ()  # researcher/preregister: stop right after these specialists
+    after: tuple[str, ...] = ()  # researcher/preregister/gate: act right after these specialists
+    settings: dict[str, Any] = field(default_factory=dict, hash=False)  # gate: the check's parameters
 
     def applies_to(self, mode: str) -> bool:
         return not self.modes or mode in self.modes
@@ -102,6 +117,9 @@ class PipelineSpec:
     steps: tuple[StepSpec, ...] = ()
     finalize: tuple[str, ...] = ()
     source: Path | None = None
+    #: specialist -> skills / sidecar files this template adds (see components.py)
+    skills: dict[str, tuple[str, ...]] = field(default_factory=dict, hash=False)
+    sidecars: dict[str, tuple[str, ...]] = field(default_factory=dict, hash=False)
 
     def sequence_for(self, mode: str, complete: frozenset[str] | set[str] = frozenset()) -> list[str]:
         """The stage names that would run, in order.
@@ -137,7 +155,19 @@ def _step_from(raw: Any, source: Path | str, index: int) -> StepSpec:
     if not isinstance(raw, dict):
         _fail(source, f"{where} is not a table")
 
-    unknown = set(raw) - {"kind", "name", "run", "check", "on_fail", "parallel", "modes", "resumable", "files", "after"}
+    unknown = set(raw) - {
+        "kind",
+        "name",
+        "run",
+        "check",
+        "on_fail",
+        "parallel",
+        "modes",
+        "resumable",
+        "files",
+        "after",
+        "settings",
+    }
     if unknown:
         # A typo is a mistake, not an extension point. Silently ignoring
         # `specialists = [...]` where `run = [...]` was meant would produce a
@@ -185,8 +215,39 @@ def _step_from(raw: Any, source: Path | str, index: int) -> StepSpec:
         bad = [f for f in files if "/" in f or f.startswith(".")]
         if bad:
             _fail(source, f"{where} ({name}) names files outside the workspace: {', '.join(bad)}")
+    elif kind == "gate" and after and check in SEQUENCE_CHECKS:
+        _fail(source, f"{where} ({name}): the {check} check runs as a step of its own; it takes no `after`")
+    elif kind == "gate" and after:
+        # A gate with `after` runs inside the strategist's dispatch, right after
+        # those specialists and before anything else of that phase — which is
+        # how a design check can sit between the design and the estimation.
+        if files:
+            _fail(source, f"{where} ({name}): `files` belongs to researcher and preregister steps")
     elif files or after:
-        _fail(source, f"{where} ({name}): `files` and `after` belong to researcher and preregister steps")
+        _fail(source, f"{where} ({name}): `files` and `after` belong to researcher, preregister and gate steps")
+
+    settings: dict[str, Any] = raw.get("settings", {}) or {}
+    if settings:
+        if kind != "gate":
+            _fail(source, f"{where} ({name}): `settings` belongs to gate steps")
+        if not isinstance(settings, dict):
+            _fail(source, f"{where} ({name}): `settings` must be a table")
+        allowed = CHECK_SETTINGS.get(check, {})
+        bad_keys = set(settings) - set(allowed)
+        if bad_keys:
+            _fail(
+                source,
+                f"{where} ({name}): check {check!r} has no setting(s) {', '.join(sorted(bad_keys))}"
+                + (f" (known: {', '.join(sorted(allowed))})" if allowed else ""),
+            )
+        for key, value in settings.items():
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
+                _fail(source, f"{where} ({name}): setting {key} must be a non-negative number, not {value!r}")
+            if not isinstance(value, allowed[key]):
+                _fail(source, f"{where} ({name}): setting {key} must be a whole number, not {value!r}")
+        for share in ("max_overlap_share", "minor_rel_tolerance"):
+            if float(settings.get(share, 0)) > 1:
+                _fail(source, f"{where} ({name}): {share} is a share between 0 and 1")
 
     on_fail = raw.get("on_fail", "halt")
     if on_fail not in ("halt", "retry", "shadow"):
@@ -207,12 +268,13 @@ def _step_from(raw: Any, source: Path | str, index: int) -> StepSpec:
         resumable=bool(raw.get("resumable", True)),
         files=files,
         after=after,
+        settings=dict(settings),
     )
 
 
 def spec_from_dict(data: dict[str, Any], *, source: Path | str = "<dict>") -> PipelineSpec:
     """Build and validate a spec from parsed TOML."""
-    unknown = set(data) - {"name", "description", "methodologies", "steps", "finalize"}
+    unknown = set(data) - {"name", "description", "methodologies", "steps", "finalize", "skills", "sidecars"}
     if unknown:
         _fail(source, f"unknown top-level key(s): {', '.join(sorted(unknown))}")
 
@@ -246,7 +308,39 @@ def spec_from_dict(data: dict[str, Any], *, source: Path | str = "<dict>") -> Pi
         steps=steps,
         finalize=finalize,
         source=Path(source) if isinstance(source, Path) else None,
+        skills=_components(data.get("skills"), "skills", source),
+        sidecars=_components(data.get("sidecars"), "sidecars", source),
     )
+
+
+def _components(raw: Any, table: str, source: Path | str) -> dict[str, tuple[str, ...]]:
+    """`[skills]` or `[sidecars]`: specialist -> what the template adds to it.
+
+    Checked at load: the specialist must exist, a skill must resolve to a file
+    e2er ships or has installed, and a sidecar must be a top-level JSON file —
+    a skill that silently fails to load would make the template claim a method
+    its specialists never read.
+    """
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        _fail(source, f"[{table}] must be a table of specialist = [...]")
+    from ...skills.loader import skill_exists
+    from ..specialists.registry import SPECIALIST_ARTIFACTS
+
+    out: dict[str, tuple[str, ...]] = {}
+    for specialist, items in raw.items():
+        if specialist not in SPECIALIST_ARTIFACTS:
+            _fail(source, f"[{table}] names unknown specialist {specialist!r}")
+        if not isinstance(items, list) or not all(isinstance(i, str) and i for i in items):
+            _fail(source, f"[{table}] {specialist} must be a list of names")
+        for item in items:
+            if table == "skills" and not skill_exists(item):
+                _fail(source, f"[skills] {specialist}: no skill {item!r} (a path under skills/files, without .md)")
+            if table == "sidecars" and ("/" in item or item.startswith(".") or not item.endswith(".json")):
+                _fail(source, f"[sidecars] {specialist}: {item!r} must be a top-level .json file name")
+        out[specialist] = tuple(dict.fromkeys(items))
+    return out
 
 
 def load_spec(path: Path) -> PipelineSpec:

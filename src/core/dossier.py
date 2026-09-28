@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Any
 
 from .availability import any_public
+from .demonstration import DEMONSTRATION, disclaimer
 
 SCHEMA = "e2er-dossier/0.3"
 #: Used only when a dossier records researcher steps or a pre-registration, so a
@@ -228,6 +229,20 @@ def recorded_workflow(db: Path, paper_id: str, bundle: Path | None = None) -> li
             )
         elif etype == "researcher_action":
             steps.append(researcher_step(data, at, phase))
+        elif etype == "researcher_input":
+            steps.append(
+                {
+                    "type": "researcher",
+                    "action": "supplied_input",
+                    "phase": phase,
+                    "step": stage,
+                    "at": at,
+                    "file": data.get("file"),
+                    "sha256": data.get("sha256"),
+                    "supplied_by": data.get("supplied_by", "researcher"),
+                    **({"replaces_sha256": data["replaces_sha256"]} if data.get("replaces_sha256") else {}),
+                }
+            )
         elif etype == "researcher_rerun":
             steps.append(
                 {
@@ -237,6 +252,17 @@ def recorded_workflow(db: Path, paper_id: str, bundle: Path | None = None) -> li
                     "step": stage,
                     "at": at,
                     "remark": data.get("remark"),
+                }
+            )
+        elif etype == "estimation_set_aside":
+            steps.append(
+                {
+                    "type": "set_aside",
+                    "phase": phase,
+                    "step": stage,
+                    "at": at,
+                    "reason": data.get("reason"),
+                    "items": data.get("items", []),
                 }
             )
         elif etype == "preregistration":
@@ -276,6 +302,9 @@ def build_dossier(
     availability: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """The dossier document for a research-object manifest (see research_object.py).
+
+    A manifest with ``purpose`` (and ``kind``) passes them into the dossier; a
+    dossier without them is exactly the document it was before, with its address.
 
     With the run database, the E2ER commit is the one the run itself recorded,
     parts are pinned at that commit, and the workflow is included.
@@ -329,6 +358,10 @@ def build_dossier(
     if any_public(availability):
         doc["schema"] = SCHEMA_AVAILABILITY
         doc["availability"] = availability
+    if manifest.get("purpose"):
+        doc["purpose"] = manifest["purpose"]
+        if manifest.get("kind"):
+            doc["kind"] = manifest["kind"]
     return doc
 
 
@@ -354,18 +387,23 @@ def _preregistration(bundle: Path | None) -> dict[str, Any] | None:
 _AUTHOR = re.compile(r"\\author\{((?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*)\}")
 
 
-def stamp_paper(tex: str, author: str, did: str) -> str:
+def stamp_paper(tex: str, author: str, did: str, *, purpose: str | None = None, kind: str | None = None) -> str:
     """Write the standard e2er author line and first-page footnote into a paper.
 
     ``\\author{<author> with e2er\\thanks{...dossier link...}}``. An existing
-    stamp is replaced, so stamping twice gives the same text.
+    stamp is replaced, so stamping twice gives the same text. A demonstration
+    study (``purpose="demonstration"``) gets the disclaimer as a second
+    first-page footnote, the replication wording when ``kind="replication"``.
     """
     note = (
         "This paper was produced with e2er. Its dossier lists every step of the run, the files each step "
         "produced, and the template, specialists, skills, connectors and AI models used, pinned to their "
         f"exact versions: \\url{{{dossier_url(did)}}}."
     )
-    block = f"\\author{{{author} with e2er\\thanks{{{note}}}}}"
+    block = f"\\author{{{author} with e2er\\thanks{{{note}}}"
+    if purpose == DEMONSTRATION:
+        block += f"\\thanks{{{disclaimer(kind)}}}"
+    block += "}"
     if _AUTHOR.search(tex):
         return _AUTHOR.sub(lambda _: block, tex, count=1)
     return tex.replace("\\begin{document}", block + "\n\\begin{document}", 1)

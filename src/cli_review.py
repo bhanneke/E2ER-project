@@ -104,7 +104,10 @@ def review(
         return _post(http, paper_id, {"action": "approve"})
 
     # Interactive.
-    print(f"Researcher step: {pending['stage']}" + (" (pre-registration)" if pending["kind"] == "preregister" else ""))
+    label = {"preregister": " (pre-registration)", "gate": " (a check failed; it runs again on resume)"}
+    print(f"Researcher step: {pending['stage']}" + label.get(pending["kind"], ""))
+    for reason in pending.get("reasons") or []:
+        print(f"  - {reason}")
     for name, f in files.items():
         print(f"  {name}" + ("" if f["exists"] else " (not written yet)"))
     if data.get("sendable"):

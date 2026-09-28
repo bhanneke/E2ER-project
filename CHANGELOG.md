@@ -7,6 +7,112 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] — 2026-09-29
+
+### Templates
+
+- **event-study-finance** (`pipelines/event-study-finance.toml`): abnormal-return
+  event studies around announcements. A fork of `empirical-preregistered` that
+  checks the design before estimation. The identification strategist declares
+  events and windows in `event_design.json` (schema
+  `docs/schemas/event_design.schema.json`, specified in
+  `skills/files/econometrics/event-study.md`); the pre-registration includes it
+  and treats a later change as a deviation. `docs/proposals/event-study-demo.md`
+  proposes a first study (FOMC target-rate changes and bank stocks, 2015–2025),
+  not yet run.
+- **replication** (`pipelines/replication.toml`): reruns a published study from
+  its Zenodo replication package and compares every reported number with the
+  rerun. Steps: `fetch` (keyless Zenodo download, each file checked against
+  Zenodo's checksum, hashed with SHA-256 and unpacked read-only), `plan` (new
+  specialist `replication_planner`), `review_plan` (researcher), `sandbox_run`
+  (Docker: dependencies installed with network and without the package, then
+  each script run with `--network none`, CPU, memory, process and time limits,
+  read-only root, no capabilities, non-root, the package mounted read-only and
+  outputs in a separate folder, everything logged with hashes), `compare` (new
+  specialist `reproduction_comparer`: reproduced / minor differences / not
+  reproduced / could not be run), `reproduction_gate` and `review_report`
+  (researcher). The product is the reproduction report and the dossier.
+  - Targets have two levels: 1 = a cell of a result file the package ships,
+    2 = a number printed in the paper, taken only from the paper (page, table or
+    figure, printed decimals).
+  - The researcher can supply the paper (`PAPER_PDF`,
+    `<LOCAL_DATA_DIR>/paper.pdf` or the workspace's `data/paper.pdf`). The fetch
+    step, which runs at every start, stages it read-only as `paper/paper.pdf`,
+    fingerprints it, extracts its text page by page for the planner, and records
+    it in the dossier as researcher-supplied (`supplied_input`).
+  - `src/modules/data/zenodo.py`: keyless Zenodo connector (record metadata,
+    linked publications, paced downloads, checksum verification).
+  - Skills `replication/reproduction-protocol` (after the Institute for
+    Replication and Brodeur et al., 2025), `replication/replication-plan`,
+    `replication/reproduction-report`; schemas
+    `docs/schemas/replication_plan.schema.json` and
+    `docs/schemas/reproduction_report.schema.json`.
+- Templates can add skills and machine-readable files to a specialist for their
+  own runs (`[skills]`, `[sidecars]`), merged after the registry's; the merged
+  skills are recorded in the study's description and dossier.
+- Gate steps accept `after = [...]`, like researcher steps: the check runs
+  inside the initial phase, after those specialists and before the econometrics
+  specialist. `[steps.settings]` holds a check's parameters. A `specialists`
+  step without a phase of its own dispatches its `run` list with the registry's
+  default work order; a template without a `revision` step completes after its
+  last step.
+
+### Checks
+
+- **event_window** (event-study-finance): reads `event_design.json` and stops
+  the run when the estimation window is too short (default 120 trading days) or
+  too close to the event window (default gap 10), when events of the same asset
+  overlap in their event windows without a declared treatment (drop, cluster,
+  aggregate), or when an event date is not a trading day in the data. Rule (d):
+  when the design names the researcher's own event table (`events_source`), its
+  event dates must be exactly that table's dates (non-trading days move to the
+  next trading day, reported in the verdict); missing, extra and shifted dates
+  are each listed. The calendar must be a table the data dictionary declares and
+  the data analyst loaded. The limits are settings of the template; each verdict
+  is recorded and appears in the dossier.
+- **No estimation before the pre-registration freezes** (check
+  `preregistration`, every template with a `preregister` step): estimation
+  output in the workspace at that point stops the run with the list. Approving
+  does not pass it; sending back the specialist that produced it moves the
+  output to `set_aside/` with a manifest, recorded in the dossier.
+- **Data-analyst tables**: the data analyst loads, cleans and describes data and
+  never estimates. It loads the tables `data_dictionary.json` declares under
+  `tables` into data.db (`e2er-data ... --table <name>`), and its contract fails
+  when one is missing or empty or `data_summary.md` does not give its actual row
+  count (skill `data/data-tables`).
+- **reproduction** (replication): re-reads every compared number from the run's
+  own output files, reads level-1 numbers from the rebuilt copy of the target's
+  own file, and counts each level separately. It follows the governance regime.
+  Two further checks, `package_integrity` and `sandbox`, block in every regime
+  (the package could not be fetched and verified, or the sandbox could not run).
+  The planner's and comparer's JSON files are part of their output contract.
+- A failed check stops the run with its reasons and runs again on resume.
+
+### Command line
+
+- `e2er run "<question>" --template <name>` (alias `--pipeline`) chooses the
+  template; an unknown name is refused before anything is started.
+- `e2er review` shows why a check stopped the run.
+
+### Publishing
+
+- `e2er publish --demonstration`, or `E2ER_PURPOSE=demonstration` in the
+  environment or the study folder's `.env`, records `purpose: "demonstration"`
+  in e2er.json and the dossier (a dossier without it hashes as before). Studies
+  made with the replication template also record `kind: "replication"`.
+- For a demonstration, the paper stamp adds the disclaimer as a second
+  first-page footnote, and the replication template's reproduction report
+  carries the replication wording at the top. The wording is kept in
+  `src/core/demonstration.py`.
+
+### Fixed
+
+- `e2er run` cut the title at the first "." anywhere in the question, so a DOI
+  or a decimal ended it ("… Brazil (10"). The title is now the first sentence.
+- The runner no longer runs another specialist's script on the data analyst's
+  behalf (in the 2026-09-28 event study it ran `run_estimation.py`, and
+  abnormal returns existed before the pre-registration).
+
 ## [0.10.0] — 2026-09-26
 
 ### Publishing on e2er.org, with a dossier on every paper

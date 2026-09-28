@@ -1,0 +1,144 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/bhanneke/E2ER-project/docs/schemas/reproduction_report.schema.json",
+  "title": "e2er reproduction report",
+  "description": "reproduction_report.json, written by the reproduction comparer in the `replication` template. The reproduction check (src/core/pipeline/reproduction.py) re-reads every reproduced number from the file it names and verifies the levels against the recomputed differences. See skills/files/replication/reproduction-report.md and reproduction-protocol.md. Levels 1 and 2 are reported separately: every result carries target_level, and all of its comparisons are targets of that level.",
+  "type": "object",
+  "required": [
+    "results"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "study": {
+      "type": "object"
+    },
+    "summary": {
+      "type": "object",
+      "description": "Counts of result levels, reported separately for level_1 and level_2.",
+      "properties": {
+        "level_1": {
+          "type": "object"
+        },
+        "level_2": {
+          "type": "object"
+        }
+      }
+    },
+    "results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "target_level",
+          "level",
+          "reason"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "exhibit": {
+            "type": "string"
+          },
+          "level": {
+            "enum": [
+              "reproduced",
+              "reproduced_minor",
+              "not_reproduced",
+              "could_not_run"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          },
+          "entry_points": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "comparisons": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "target_id",
+                "published",
+                "reproduced"
+              ],
+              "properties": {
+                "target_id": {
+                  "type": "string"
+                },
+                "published": {
+                  "type": "number"
+                },
+                "reproduced": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "reproduced_printed": {
+                  "type": "string"
+                },
+                "abs_diff": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "source": {
+                  "type": "object",
+                  "properties": {
+                    "file": {
+                      "type": "string"
+                    },
+                    "locator": {
+                      "type": "object",
+                      "properties": {
+                        "row": {
+                          "type": "object"
+                        },
+                        "column": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "target_level": {
+            "enum": [
+              1,
+              2
+            ],
+            "description": "1: the package's own result files, rebuilt; 2: the numbers printed in the paper."
+          }
+        }
+      }
+    },
+    "unassessed": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "target_id",
+          "reason"
+        ]
+      }
+    },
+    "notes_for_robustness": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

@@ -46,13 +46,14 @@ def _inject_context(work_order: WorkOrder, workspace: Path) -> WorkOrder:
     dominated review-phase token usage (each tool result re-sent on
     every subsequent turn → quadratic input growth).
     """
+    from ..pipeline.components import sidecars_for
     from ..strategist.context import (
         build_review_context,
         build_tier0_context,
         build_tier1_context,
         build_tier2_context,
     )
-    from .registry import REVIEWER_SPECIALISTS, SPECIALIST_ARTIFACTS, SPECIALIST_SIDECAR_ARTIFACTS
+    from .registry import REVIEWER_SPECIALISTS, SPECIALIST_ARTIFACTS
 
     updates: dict[str, object] = {}
 
@@ -76,7 +77,9 @@ def _inject_context(work_order: WorkOrder, workspace: Path) -> WorkOrder:
     # silently not be emitted — the exact failure mode the v0.5 live runs
     # surfaced.
     if not work_order.sidecar_artifacts:
-        sidecars = SPECIALIST_SIDECAR_ARTIFACTS.get(work_order.specialist)
+        # The registry's sidecars plus any the active template adds
+        # (`[sidecars]`; see core/pipeline/components.py).
+        sidecars = sidecars_for(work_order.specialist)
         if sidecars:
             updates["sidecar_artifacts"] = list(sidecars)
 

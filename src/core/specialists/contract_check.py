@@ -419,6 +419,123 @@ def check_no_inline_tables(workspace: Path, relative: str = "paper_draft.tex") -
     )
 
 
+def _plan_problems(workspace: Path) -> list[str]:
+    from ..pipeline.replication import check_plan
+
+    return check_plan(workspace)
+
+
+def _report_problems(workspace: Path) -> list[str]:
+    from ..pipeline.reproduction import check_report
+
+    return check_report(workspace)
+
+
+#: specialist -> (file, structural check returning its problems as sentences)
+_STRUCTURAL_CHECKS: dict[str, tuple[str, Any]] = {
+    "replication_planner": ("replication_plan.json", _plan_problems),
+    "reproduction_comparer": ("reproduction_report.json", _report_problems),
+}
+
+DATA_DICTIONARY_FILE = "data_dictionary.json"
+DATA_SUMMARY_FILE = "data_summary.md"
+
+
+def declared_tables(workspace: Path) -> list[str] | None:
+    """The data.db tables ``data_dictionary.json`` declares under ``tables``.
+
+    Entries are table names or objects with a ``name``. None when the
+    dictionary is absent, unreadable or declares no ``tables`` key: the
+    check below then does not apply (older runs, Allium-only dictionaries).
+    """
+    path = Path(workspace) / DATA_DICTIONARY_FILE
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    raw = data.get("tables") if isinstance(data, dict) else None
+    if not isinstance(raw, list):
+        return None
+    names = [t.get("name") if isinstance(t, dict) else t for t in raw]
+    return [str(n) for n in names if isinstance(n, str) and n.strip()]
+
+
+def table_row_counts(workspace: Path) -> dict[str, int]:
+    """Every table in the paper's data.db with its row count ({} without a data.db)."""
+    import sqlite3
+
+    db = Path(workspace) / "data.db"
+    if not db.is_file():
+        return {}
+    counts: dict[str, int] = {}
+    con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+    try:
+        for (name,) in con.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall():
+            counts[name] = int(con.execute(f'SELECT COUNT(*) FROM "{name}"').fetchone()[0])  # noqa: S608 — names from sqlite_master
+    finally:
+        con.close()
+    return counts
+
+
+def _count_forms(n: int) -> tuple[str, ...]:
+    return (str(n), f"{n:,}", f"{n:,}".replace(",", " "), f"{n:,}".replace(",", "\u202f"))
+
+
+def check_declared_tables(workspace: Path) -> list[ContractCheck]:
+    """The data analyst loaded what the data dictionary declares, and reports it truthfully.
+
+    1. Every table named in ``data_dictionary.json`` ``tables`` exists in
+       data.db and has rows (reliability: the data were not loaded).
+    2. ``data_summary.md`` names each table with its actual row count
+       (verification: a written "expected ~2,520 rows" is not a count).
+    """
+    names = declared_tables(workspace)
+    if not names:
+        return []
+    counts = table_row_counts(workspace)
+    absent = [n for n in names if n not in counts]
+    empty = [n for n in names if counts.get(n) == 0]
+    problems = []
+    if absent:
+        problems.append(f"missing from data.db: {', '.join(absent)}")
+    if empty:
+        problems.append(f"empty in data.db: {', '.join(empty)}")
+    available = ", ".join(f"{k} ({v} rows)" for k, v in sorted(counts.items())) or "none"
+    checks = [
+        ContractCheck(
+            artifact="data.db",
+            ok=not problems,
+            reason=(
+                "data_dictionary.json declares tables that were not loaded — "
+                + "; ".join(problems)
+                + f". Tables in data.db: {available}. Load each series with `e2er-data ... --table <name>`."
+            )
+            if problems
+            else "",
+        )
+    ]
+    if problems:
+        return checks
+    summary = Path(workspace) / DATA_SUMMARY_FILE
+    text = summary.read_text(encoding="utf-8", errors="replace") if summary.is_file() else ""
+    wrong = [n for n in names if n not in text or not any(f in text for f in _count_forms(counts[n]))]
+    checks.append(
+        ContractCheck(
+            artifact=DATA_SUMMARY_FILE,
+            ok=not wrong,
+            reason=(
+                "data_summary.md must name each loaded table with its actual row count from data.db; "
+                + "missing or wrong for: "
+                + ", ".join(f"{n} (actual {counts[n]} rows)" for n in wrong)
+            )
+            if wrong
+            else "",
+            kind=KIND_VERIFICATION,
+        )
+    )
+    return checks
+
+
 def check_specialist_artifacts(workspace: Path, specialist: str) -> list[ContractCheck]:
     """Check every required artifact for ``specialist`` — the primary
     plus any declared sidecars. Returns one ``ContractCheck`` per
@@ -464,6 +581,21 @@ def check_specialist_artifacts(workspace: Path, specialist: str) -> list[Contrac
             # retry feedback.
             if regression_check.ok:
                 checks.append(replace(check_matches_declared_spec(workspace, regression_file), kind=KIND_VERIFICATION))
+
+    # The replication template's JSON files are contracts other code executes
+    # (the plan) or verifies (the report): a file that parses but breaks its
+    # schema is as unusable as a missing one, so this is reliability.
+    structural = _STRUCTURAL_CHECKS.get(specialist)
+    if structural:
+        filename, check = structural
+        if not any(c.artifact == filename and not c.ok for c in checks):
+            problems = check(workspace)
+            checks.append(ContractCheck(filename, not problems, "; ".join(problems[:8])))
+
+    # The data analyst loads what the data dictionary declares, into data.db,
+    # and reports the real row counts (docs: skills/files/data/data-tables.md).
+    if specialist == "data_analyst" and not any(c.artifact == primary and not c.ok for c in checks):
+        checks.extend(check_declared_tables(workspace))
 
     # Draft-writing specialists may reference tables, never contain them.
     if specialist in _NO_INLINE_TABLES:

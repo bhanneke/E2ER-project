@@ -819,8 +819,10 @@ async def get_review(paper_id: str = Depends(_validate_uuid)) -> dict[str, Any]:
                 "content": p.read_text(encoding="utf-8", errors="replace") if p.is_file() else "",
             }
         )
+    reasons = list(state.metadata.get("review", {}).get("reasons") or [])
     return {
-        "pending": {"stage": pending.stage, "kind": pending.kind},
+        # A halted check says why, so the researcher knows what to fix.
+        "pending": {"stage": pending.stage, "kind": pending.kind, **({"reasons": reasons} if reasons else {})},
         "files": files,
         "sendable": _sendable(workspace, state, pending, spec),
         "actions": past,

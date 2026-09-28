@@ -95,6 +95,12 @@ The paper's `Methodology:` field (in the context block) is one of `empirical`,
 - `mixed`: dispatch `theory_specialist` AND the empirical specialists. Theory
   develops the model; empirical specialists test its predictions.
 
+Division of labour for data: `data_architect` declares the tables in
+`data_dictionary.json`; `data_analyst` loads, cleans and describes them and
+NEVER estimates (no abnormal returns, CARs, regressions or test statistics);
+every estimate is the `econometrics_specialist`'s. Do not ask the data analyst
+for results.
+
 `theory_specialist` writes `model_spec.md` (formal model in LaTeX with
 assumptions, derivations, propositions). Place it in the same parallel_group
 as `identification_strategist` since they're both upstream of writing.

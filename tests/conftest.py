@@ -187,6 +187,16 @@ _SPECIALIST_OUTPUTS: dict[str, tuple[str, str]] = {
         "statsmodels.api as sm\n\n# Load and clean.\n# Estimate with TWFE.\n"
         "# Output to estimation_results.json.\nprint('estimation complete')\n",
     ),
+    "replication_planner": (
+        "replication_plan.md",
+        "# Replication plan\n\nEntry points, in run order: code/main.R (Rscript, from study/). "
+        "Table 1 comes from code/main.R and output/table1.csv; its ATT is printed on page 12.",
+    ),
+    "reproduction_comparer": (
+        "reproduction_report.md",
+        "# Reproduction report\n\nTable 1: reproduced with minor differences. The ATT is -0.01214 "
+        "in output/table1.csv against -0.012 printed on page 12.",
+    ),
 }
 
 

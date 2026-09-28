@@ -80,6 +80,14 @@ def main() -> None:
         help="Which methodology specialists to dispatch. Default: empirical.",
     )
     run_p.add_argument(
+        "--template",
+        "--pipeline",
+        dest="template",
+        default="empirical",
+        help="Template (pipeline file) the run follows, resolved in ./pipelines, ~/.e2er/pipelines, "
+        "then the built-in ones (e.g. empirical-preregistered, event-study-finance). Default: empirical.",
+    )
+    run_p.add_argument(
         "--mode",
         choices=["single_pass", "iterative"],
         default="single_pass",
@@ -380,6 +388,12 @@ def main() -> None:
         help="Do not write the e2er author line and dossier footnote into paper/paper.tex.",
     )
     publish_p.add_argument(
+        "--demonstration",
+        action="store_true",
+        help="Mark the study as published only to demonstrate e2er: e2er.json and the dossier record it, and the "
+        "paper and the reproduction report carry a disclaimer (default: E2ER_PURPOSE from the environment or .env).",
+    )
+    publish_p.add_argument(
         "--out", default=None, help="Where to write the registry entry (default: ./e2er-registry-entry)."
     )
     publish_p.add_argument(
@@ -541,6 +555,7 @@ def main() -> None:
                 zenodo=args.zenodo or args.zenodo_sandbox,
                 zenodo_sandbox=args.zenodo_sandbox,
                 site=args.to_url,
+                demonstration=args.demonstration,
             )
         )
 
@@ -685,6 +700,7 @@ def main() -> None:
                 model=args.model,
                 governance=args.governance,
                 review_stages=args.review_at,
+                template=args.template,
             )
         )
     elif args.command == "init":

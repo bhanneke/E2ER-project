@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -29,10 +30,12 @@ SOURCES: tuple[tuple[str, str], ...] = (
     ("Research question and hypotheses", "paper_plan.md"),
     ("Identification strategy", "identification_strategy.md"),
     ("Identification (machine-readable)", "identification_spec.json"),
+    # Written only in templates that ask for it (event-study-finance).
+    ("Events and windows (machine-readable)", "event_design.json"),
     ("Analysis plan", "econometric_spec.md"),
 )
 #: The files whose later change counts as a deviation from the plan.
-PLAN_FILES: tuple[str, ...] = ("identification_spec.json", "econometric_spec.md")
+PLAN_FILES: tuple[str, ...] = ("identification_spec.json", "event_design.json", "econometric_spec.md")
 
 
 def _sha256(path: Path) -> str:
@@ -139,3 +142,137 @@ def deposit_zenodo(
     deposit = deposit_files([(prereg.name, prereg.read_bytes())], metadata, token, base=base_url, client=client)
     record_deposit(workspace, deposit)
     return deposit
+
+
+# ── nothing estimated before the freeze ─────────────────────────────────────
+
+#: Words that mark a file, figure or data.db table as a result rather than data.
+_RESULT_TOKENS: frozenset[str] = frozenset(
+    {
+        "car",
+        "cars",
+        "caar",
+        "abnormal",
+        "result",
+        "results",
+        "estimate",
+        "estimates",
+        "estimation",
+        "estimated",
+        "regression",
+        "regressions",
+        "coef",
+        "coefs",
+        "coefficient",
+        "coefficients",
+        "tstat",
+        "pvalue",
+    }
+)
+#: Source fragments that mark a Python script as estimation code.
+_ESTIMATION_CODE = (
+    "estimation_results.json",
+    "statsmodels",
+    "sm.OLS",
+    "smf.ols",
+    "linregress",
+    "lstsq",
+    "linearmodels",
+    "abnormal",
+)
+_FIGURE_SUFFIXES = (".pdf", ".png", ".svg", ".jpg", ".jpeg")
+SET_ASIDE_DIR = "set_aside"
+
+
+def _tokens(name: str) -> set[str]:
+    return {t for t in re.split(r"[^a-z0-9]+", name.lower()) if t}
+
+
+def estimation_outputs(workspace: Path) -> list[str]:
+    """Everything in the workspace that is an estimate or estimation code.
+
+    Called before a pre-registration is frozen, when none of it may exist yet:
+    the estimation specialist's files (results JSON, its scripts and logs),
+    result tables (``tables/*.tex``), figures named as results, any Python
+    script that estimates, and data.db tables named as results. Returns
+    workspace-relative paths, and ``data.db:<table>`` for tables.
+    """
+    from ..specialists.post_execution import EXECUTION_CONVENTIONS
+
+    ws = Path(workspace)
+    conv = EXECUTION_CONVENTIONS["econometrics_specialist"]
+    named = {conv.sidecar, conv.log, *conv.script_candidates, *conv.output_candidates, "robustness_results.json"}
+    found: set[str] = {n for n in named if (ws / n).is_file()}
+    for py in ws.glob("*.py"):
+        try:
+            src = py.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if any(frag in src for frag in _ESTIMATION_CODE):
+            found.add(py.name)
+    found.update(str(p.relative_to(ws)) for p in (ws / "tables").glob("*.tex"))
+    for folder in (ws, ws / "figures"):
+        for p in folder.glob("*"):
+            if p.suffix.lower() in _FIGURE_SUFFIXES and _tokens(p.stem) & _RESULT_TOKENS:
+                found.add(str(p.relative_to(ws)))
+    db = ws / "data.db"
+    if db.is_file():
+        import sqlite3
+
+        con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+        try:
+            tables = [r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type = 'table'")]
+        finally:
+            con.close()
+        found.update(f"data.db:{t}" for t in tables if _tokens(t) & _RESULT_TOKENS)
+    return sorted(found)
+
+
+def set_aside(workspace: Path, found: list[str]) -> dict[str, Any]:
+    """Move estimation outputs out of the way before a specialist is sent back.
+
+    Files go to ``set_aside/<time>/`` with their paths kept; data.db tables are
+    copied into ``set_aside/<time>/tables.db`` and then dropped from data.db.
+    Nothing is deleted: ``set_aside/<time>/manifest.json`` records every item
+    with its SHA-256 (files) or row count (tables), and the returned manifest
+    is logged, so the dossier shows what was moved and when.
+    """
+    import shutil
+    import sqlite3
+
+    ws = Path(workspace)
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    dest = ws / SET_ASIDE_DIR / stamp
+    dest.mkdir(parents=True, exist_ok=True)
+    items: list[dict[str, Any]] = []
+    tables = [f.split(":", 1)[1] for f in found if f.startswith("data.db:")]
+    for rel in (f for f in found if not f.startswith("data.db:")):
+        src = ws / rel
+        if not src.is_file():
+            continue
+        target = dest / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        digest = _sha256(src)
+        shutil.move(str(src), str(target))
+        items.append({"file": rel, "sha256": digest, "moved_to": str(target.relative_to(ws))})
+    if tables:
+        db = ws / "data.db"
+        con = sqlite3.connect(db)
+        try:
+            con.execute("ATTACH DATABASE ? AS aside", (str(dest / "tables.db"),))
+            for t in tables:
+                n = con.execute(f'SELECT COUNT(*) FROM "{t}"').fetchone()[0]  # noqa: S608 — names from sqlite_master
+                con.execute(f'CREATE TABLE aside."{t}" AS SELECT * FROM main."{t}"')  # noqa: S608
+                con.execute(f'DROP TABLE main."{t}"')  # noqa: S608
+                items.append({"table": t, "rows": int(n), "moved_to": f"{SET_ASIDE_DIR}/{stamp}/tables.db"})
+            con.commit()
+            con.execute("DETACH DATABASE aside")
+        finally:
+            con.close()
+    manifest = {
+        "set_aside_at": stamp,
+        "reason": "estimation output found before the pre-registration was frozen",
+        "items": items,
+    }
+    (dest / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    return manifest
