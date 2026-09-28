@@ -2,13 +2,14 @@
 
 A template is a pipeline file in `pipelines/` (schema:
 `docs/schemas/pipeline.schema.json`). A run follows the template chosen when the
-paper is created; resume keeps it. e2er ships three:
+paper is created; resume keeps it. e2er ships four:
 
 | Template | For |
 |---|---|
 | `empirical` | Question and data in, empirical paper out. The default. |
 | `empirical-preregistered` | `empirical` with a design review, a pre-registration frozen before estimation, and a review of the draft (see `researcher-step.md`). |
 | `event-study-finance` | Abnormal-return event studies around announcements; checks the estimation window and overlapping events before estimation. |
+| `replication` | Computational reproduction of a published study from its Zenodo replication package; the product is a reproduction report, not a paper. |
 
 ## Skills and files a template adds
 
@@ -64,3 +65,62 @@ reasons before the run stops; with `"shadow"` the verdict is only recorded.
 A gate step with `after = [...]` is how any check can sit inside the initial
 phase; it also runs before a group that contains the econometrics specialist,
 so a plan that leaves out one of the named specialists does not skip it.
+
+## `replication`
+
+A computational reproduction: rerun a published study with its own data and
+code and compare every reported number with what the rerun produces
+("reproduction tests rerun published studies", Brodeur et al., 2025; Kohler et
+al., 2026). Robustness checks are a separate study. The question names the
+Zenodo record:
+
+```bash
+e2er run "Computational reproduction of <paper title> (10.5281/zenodo.<id>)" --template replication
+```
+
+| Step | Kind | What happens |
+|---|---|---|
+| `fetch` | check `package_integrity` | The record is read from the public Zenodo API (no key). Every file is downloaded, verified against the checksum Zenodo publishes (MD5) and hashed with SHA-256; a mismatch fails the step. Archives are unpacked into `package/`, every unpacked file is hashed, and the tree is made read-only. PDF text goes to `package_text/`, page by page. All of it is in `package_manifest.json`. On resume the package is re-hashed; one changed byte fails the step. |
+| `plan` | specialist `replication_planner` | Reads the README, the documentation and the code; lists the entry points in run order, the pinned image and the packages, maps every table and figure to its script and output, and records the published numbers (targets) with page and table or figure. Writes `replication_plan.json` (schema `docs/schemas/replication_plan.schema.json`) and `replication_plan.md`. The plan is validated before it is accepted: pinned official image, interpreter plus package-relative script, no inline code, no shell. |
+| `review_plan` | researcher | The run stops. Approve, edit the plan, or send the planner back. |
+| `sandbox_run` | check `sandbox` | Runs the plan in Docker (below). Fails only when the sandbox cannot work (no Docker, invalid plan, image unavailable, package modified); a script that fails is a result. |
+| `compare` | specialist `reproduction_comparer` | Levels each result by the protocol: reproduced, reproduced with minor differences, not reproduced, could not be run. Writes `reproduction_report.json` (schema `docs/schemas/reproduction_report.schema.json`) and `reproduction_report.md`. |
+| `reproduction_gate` | check `reproduction` | Re-reads every reproduced number from the output file the report names (a CSV cell when a locator is given), requires that file to be one the run wrote, not one the package shipped, recomputes the differences, checks each level against them, and checks that every target is compared or listed as unassessed with a reason. Writes `reproduction_check.json`. |
+| `review_report` | researcher | The run stops for the researcher to read the report. |
+
+The protocol both specialists follow is `skills/files/replication/reproduction-protocol.md`.
+
+### The sandbox
+
+- **Image**: the plan's pinned official image, `rocker/r-ver:X.Y.Z` or
+  `python:X.Y[.Z]-slim`; its digest is logged.
+- **Install phase** (network on): a container with no mounts at all installs
+  the listed apt and R or Python packages, prints what was installed, and is
+  committed as a local image (reused on resume). Only package managers run; no
+  code from the package runs while the network is available.
+- **Run phase**: the package is copied to `sandbox/run/`, the output folder.
+  Each entry point runs in its own container with `--network none`,
+  `--cpus`, `--memory` (no swap), `--pids-limit`, `--read-only` root file
+  system with a `/tmp` tmpfs, `--cap-drop=ALL`, `no-new-privileges`, as user
+  1000:1000, and a time limit (the container is removed when it runs over).
+  The only mounts are the original package, read-only, at `/work/package`, and
+  the output folder at `/work/run`. The home directory is never mounted.
+- **Log**: `sandbox_log.json` holds each `docker` command, exit code, duration,
+  the tails of stdout and stderr (full logs in `sandbox/logs/`), the installed
+  versions, and the SHA-256 of every file the run wrote or changed. The package
+  is re-hashed after the run.
+- Scripts marked `needs_network` (downloaders) are skipped and their results
+  become "could not be run".
+
+Settings, in the template: `max_mb` (fetch, default 1000), `cpus`,
+`memory_gb`, `timeout_minutes` per entry point and `install_timeout_minutes`
+(sandbox), `minor_rel_tolerance` (reproduction, default 0.10). `fetch` and
+`sandbox_run` block in every governance regime; `reproduction` follows the
+regime like the other verification checks.
+
+A `specialists` step whose name has no phase of its own in the runner
+dispatches its `run` list with the registry's default work order
+(`SPECIALIST_DEFAULT_FOCUS`), and a gate whose check runs as a step
+(`package_integrity`, `sandbox`, `reproduction`) runs in sequence and halts
+like a check inside the dispatch. A template without a `revision` step is
+complete when its last step is done.

@@ -40,7 +40,15 @@ DEFAULT_REGIME = "full"
 #: Every mechanism a regime can switch between blocking and shadow.
 #: `event_window` runs only in templates that declare it (event studies); it is
 #: listed here so that `full` enforces it and `off`/`contracts` shadow it.
-GATES: tuple[str, ...] = ("contracts", "estimation", "numbers", "citations", "event_window")
+#: `reproduction` likewise runs only in the replication template.
+GATES: tuple[str, ...] = ("contracts", "estimation", "numbers", "citations", "event_window", "reproduction")
+
+#: Deterministic steps of a template whose failure means the run cannot go on,
+#: not that a claim failed verification: the replication package could not be
+#: fetched and verified, or the sandbox could not run. Like a reliability
+#: contract failure they block in every regime, so they are not in GATES (a
+#: regime cannot switch them off) and are recorded as enforced wherever they fail.
+RELIABILITY_CHECKS: tuple[str, ...] = ("package_integrity", "sandbox")
 
 _ENFORCEMENT: dict[str, frozenset[str]] = {
     "full": frozenset(GATES),
@@ -51,7 +59,10 @@ _ENFORCEMENT: dict[str, frozenset[str]] = {
 
 def enforces(regime: str, gate: str) -> bool:
     """True iff `gate` should BLOCK under `regime`. Unknown regime → `full`,
-    so a typo fails closed (all institutions on) rather than silently open."""
+    so a typo fails closed (all institutions on) rather than silently open.
+    A reliability check (RELIABILITY_CHECKS) blocks in every regime."""
+    if gate in RELIABILITY_CHECKS:
+        return True
     return gate in _ENFORCEMENT.get(regime, _ENFORCEMENT[DEFAULT_REGIME])
 
 

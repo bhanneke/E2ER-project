@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import Any
 
 from ...logging_config import get_logger
-from ..governance import GATES
+from ..governance import GATES, RELIABILITY_CHECKS
 
 logger = get_logger(__name__)
 
@@ -43,7 +43,7 @@ MANDATORY_CHECKS: frozenset[str] = frozenset({"contracts"})
 #: `claims` is not in governance.GATES yet — it arrived with the corpus and is
 #: enforced by the extractor rather than the runner. Allowed in a pipeline so a
 #: theory process can declare it, and listed apart so the difference is visible.
-KNOWN_CHECKS: frozenset[str] = frozenset(GATES) | {"claims"}
+KNOWN_CHECKS: frozenset[str] = frozenset(GATES) | {"claims"} | frozenset(RELIABILITY_CHECKS)
 
 STEP_KINDS: frozenset[str] = frozenset({"strategist", "specialists", "gate", "aggregate", "researcher", "preregister"})
 
@@ -61,7 +61,15 @@ RUN_MODES: frozenset[str] = frozenset({"single_pass", "iterative"})
 #: not listed takes none. Unknown keys are refused, like every other typo.
 CHECK_SETTINGS: dict[str, dict[str, type | tuple[type, ...]]] = {
     "event_window": {"min_estimation_days": int, "min_gap_days": int, "max_overlap_share": (int, float)},
+    "package_integrity": {"max_mb": int},
+    "sandbox": {"cpus": int, "memory_gb": int, "timeout_minutes": int, "install_timeout_minutes": int},
+    "reproduction": {"minor_rel_tolerance": (int, float)},
 }
+
+#: Checks that run as a step of their own, in sequence, rather than inside the
+#: strategist's dispatch. Each is a function of the workspace and the step's
+#: settings that returns a verdict (see `_run_check_step` in the runner).
+SEQUENCE_CHECKS: frozenset[str] = frozenset({"package_integrity", "sandbox", "reproduction"})
 
 
 class PipelineError(ValueError):
@@ -207,6 +215,8 @@ def _step_from(raw: Any, source: Path | str, index: int) -> StepSpec:
         bad = [f for f in files if "/" in f or f.startswith(".")]
         if bad:
             _fail(source, f"{where} ({name}) names files outside the workspace: {', '.join(bad)}")
+    elif kind == "gate" and after and check in SEQUENCE_CHECKS:
+        _fail(source, f"{where} ({name}): the {check} check runs as a step of its own; it takes no `after`")
     elif kind == "gate" and after:
         # A gate with `after` runs inside the strategist's dispatch, right after
         # those specialists and before anything else of that phase — which is
@@ -235,8 +245,9 @@ def _step_from(raw: Any, source: Path | str, index: int) -> StepSpec:
                 _fail(source, f"{where} ({name}): setting {key} must be a non-negative number, not {value!r}")
             if not isinstance(value, allowed[key]):
                 _fail(source, f"{where} ({name}): setting {key} must be a whole number, not {value!r}")
-        if float(settings.get("max_overlap_share", 0)) > 1:
-            _fail(source, f"{where} ({name}): max_overlap_share is a share between 0 and 1")
+        for share in ("max_overlap_share", "minor_rel_tolerance"):
+            if float(settings.get(share, 0)) > 1:
+                _fail(source, f"{where} ({name}): {share} is a share between 0 and 1")
 
     on_fail = raw.get("on_fail", "halt")
     if on_fail not in ("halt", "retry", "shadow"):

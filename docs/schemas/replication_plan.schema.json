@@ -1,0 +1,233 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/bhanneke/E2ER-project/docs/schemas/replication_plan.schema.json",
+  "title": "e2er replication plan",
+  "description": "replication_plan.json, written by the replication planner in the `replication` template and executed by the sandbox. The code (src/core/pipeline/replication.py, validate_plan) enforces more than this schema: the script paths must exist in the package, exhibit and entry-point references must resolve, and ids must be unique. See skills/files/replication/replication-plan.md.",
+  "type": "object",
+  "required": [
+    "language",
+    "environment",
+    "entry_points",
+    "exhibits",
+    "targets"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "study": {
+      "type": "object",
+      "description": "Title, authors, the Zenodo DOI and the linked publication."
+    },
+    "language": {
+      "enum": [
+        "R",
+        "Python"
+      ]
+    },
+    "environment": {
+      "type": "object",
+      "required": [
+        "image"
+      ],
+      "properties": {
+        "image": {
+          "type": "string",
+          "pattern": "^(rocker/r-ver:\\d+\\.\\d+\\.\\d+|python:\\d+\\.\\d+(\\.\\d+)?-slim(-bookworm|-bullseye|-trixie)?)$",
+          "description": "A pinned official image: rocker/r-ver:X.Y.Z for R, python:X.Y[.Z]-slim for Python."
+        },
+        "version_source": {
+          "type": "string"
+        },
+        "packages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9._-]{0,99}$"
+              },
+              "version": {
+                "type": "string",
+                "pattern": "^[0-9][0-9A-Za-z.+_-]{0,39}$"
+              }
+            }
+          }
+        },
+        "system_packages": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9+.-]{0,99}$"
+          }
+        },
+        "notes": {
+          "type": "string"
+        }
+      }
+    },
+    "entry_points": {
+      "type": "array",
+      "minItems": 1,
+      "description": "The scripts, in run order. Each runs in its own container, without network.",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "command"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"
+          },
+          "command": {
+            "type": "array",
+            "minItems": 2,
+            "items": {
+              "type": "string"
+            },
+            "description": "Interpreter (Rscript; python or python3) and a script path relative to cwd. Allowed flags: --vanilla, --no-save, --no-restore, --no-environ, -u. No inline code, no shell."
+          },
+          "cwd": {
+            "type": "string",
+            "description": "Relative to package/; default '.'."
+          },
+          "timeout_minutes": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 720
+          },
+          "needs_network": {
+            "type": "boolean",
+            "description": "true: the script downloads data; the sandbox skips it."
+          },
+          "produces": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "notes": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "exhibits": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "label"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "table",
+              "figure",
+              "other"
+            ]
+          },
+          "description": {
+            "type": "string"
+          },
+          "scripts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "outputs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "source": {
+            "type": "object"
+          },
+          "mapping_basis": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "targets": {
+      "type": "array",
+      "description": "The published numbers to compare against, from the paper, each with its page.",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "exhibit",
+          "value",
+          "reported",
+          "source"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "exhibit": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "value": {
+            "type": "number"
+          },
+          "reported": {
+            "type": "string",
+            "minLength": 1
+          },
+          "source": {
+            "type": "object",
+            "required": [
+              "document"
+            ],
+            "properties": {
+              "document": {
+                "type": "string"
+              },
+              "page": {},
+              "table": {
+                "type": "string"
+              },
+              "figure": {
+                "type": "string"
+              },
+              "row": {},
+              "column": {},
+              "locator": {}
+            }
+          }
+        }
+      }
+    },
+    "missing_targets": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "not_reproducible": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  }
+}

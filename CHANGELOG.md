@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### A template for computational reproductions
+
+`pipelines/replication.toml`: rerun a published study from its Zenodo
+replication package and compare every reported number with the rerun. Steps:
+`fetch` (keyless Zenodo download, every file verified against Zenodo's checksum
+and hashed with SHA-256, unpacked read-only), `plan` (new specialist
+`replication_planner`: entry points, pinned image, packages, tables and figures
+mapped to scripts, published targets with pages), `review_plan` (researcher),
+`sandbox_run` (Docker: dependencies installed with network and without the
+package; each script run with `--network none`, CPU, memory, process and time
+limits, read-only root, no capabilities, non-root, the package mounted
+read-only and outputs in a separate folder; everything logged with hashes),
+`compare` (new specialist `reproduction_comparer`: reproduced / minor
+differences / not reproduced / could not be run), `reproduction_gate` (the new
+`reproduction` check re-reads every compared number from the run's own output
+files) and `review_report` (researcher). No drafting steps; the product is the
+report and the dossier. See `docs/templates.md`.
+
+- `src/modules/data/zenodo.py`: keyless Zenodo connector (record metadata,
+  linked publications, paced downloads, checksum verification).
+- New checks `package_integrity`, `sandbox` and `reproduction`, run as steps of
+  their own. The first two block in every governance regime (they are
+  reliability, like a missing artifact); `reproduction` follows the regime.
+- A `specialists` step without a phase of its own dispatches its `run` list with
+  the registry's default work order; a template without a `revision` step
+  completes after its last step.
+- The planner's and comparer's JSON files are part of their output contract
+  (structural validation feeds back into the retry).
+- Skills `replication/reproduction-protocol` (the protocol, after the Institute
+  for Replication and Brodeur et al., 2025), `replication/replication-plan`,
+  `replication/reproduction-report`; schemas
+  `docs/schemas/replication_plan.schema.json` and
+  `docs/schemas/reproduction_report.schema.json`.
+
 ### A template for event studies in finance
 
 `pipelines/event-study-finance.toml`: abnormal-return event studies around

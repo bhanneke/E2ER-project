@@ -40,6 +40,12 @@ SPECIALIST_ARTIFACTS: dict[str, str] = {
     # list, applies in-scope edits, emits a unified diff side artifact.
     "patch_revisor": "paper_draft.tex.edits.json",
     "replication_packager": "replication/estimation.py",
+    # Replication template (pipelines/replication.toml): reproduce a published
+    # study from its replication package. The planner maps the paper's tables
+    # and figures to the package's scripts and records the published numbers;
+    # the comparer levels each result against what the sandbox run produced.
+    "replication_planner": "replication_plan.md",
+    "reproduction_comparer": "reproduction_report.md",
 }
 
 SPECIALIST_SKILLS: dict[str, list[str]] = {
@@ -166,6 +172,8 @@ SPECIALIST_SKILLS: dict[str, list[str]] = {
         "reasoning/anti-slop",
     ],
     "replication_packager": ["data/cleaning", "base/researcher", "synthesis/replication-package"],
+    "replication_planner": ["replication/reproduction-protocol", "replication/replication-plan"],
+    "reproduction_comparer": ["replication/reproduction-protocol", "replication/reproduction-report"],
 }
 
 # Sidecar artifacts produced ALONGSIDE the primary SPECIALIST_ARTIFACTS file.
@@ -199,6 +207,10 @@ SPECIALIST_SIDECAR_ARTIFACTS: dict[str, list[str]] = {
         # required by the registry; the skill file explains when to
         # include it.
     ],
+    # The plan is what the sandbox executes; the report is what the
+    # reproduction check verifies number by number. Both are required.
+    "replication_planner": ["replication_plan.json"],
+    "reproduction_comparer": ["reproduction_report.json"],
     "paper_drafter": [
         # Declarative results-table spec. Prompted via the multi-file
         # output block; the renderer (core/renderer/tables.py) fills the
@@ -248,3 +260,30 @@ POLISH_SPECIALISTS = [
     "polish_bibliography",
     "polish_equilibria",
 ]
+
+
+#: The work order a fixed `specialists` step of a template gives a specialist
+#: when the runner has no phase of its own for that step (the strategist writes
+#: the focus everywhere else). Paths are workspace-relative.
+SPECIALIST_DEFAULT_FOCUS: dict[str, str] = {
+    "replication_planner": (
+        "Plan the computational reproduction of the published study whose replication package was fetched "
+        "into `package/` (read-only; file list and SHA-256 in `package_manifest.json`, which also names the "
+        "record's linked publication). The text of every PDF in the package, page by page, is in "
+        "`package_text/`. Read the package's README and documentation and its code. Write "
+        "`replication_plan.json` exactly as your replication-plan skill specifies (entry points in run order, "
+        "the pinned image, the packages, every table and figure mapped to the script that produces it, and the "
+        "published numbers to compare against, each with its page and table or figure), and "
+        "`replication_plan.md` for the researcher who reviews it. Do not run anything and do not change the "
+        "package. Where a published number cannot be found, list it under missing_targets; never estimate one."
+    ),
+    "reproduction_comparer": (
+        "Compare what the sandbox run reproduced with the published targets, number by number, following the "
+        "reproduction protocol. The plan (with the targets) is `replication_plan.json`; what ran, with exit "
+        "codes, logs and the files each run wrote, is `sandbox_log.json`; the output files are under "
+        "`sandbox/run/`. Read each reproduced number from an output file the run wrote (never from a file the "
+        "package shipped), and write `reproduction_report.json` exactly as your reproduction-report skill "
+        "specifies, plus `reproduction_report.md`. A deterministic check re-reads every number you report "
+        "from the files and fails the run if one is not there."
+    ),
+}

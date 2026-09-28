@@ -419,6 +419,25 @@ def check_no_inline_tables(workspace: Path, relative: str = "paper_draft.tex") -
     )
 
 
+def _plan_problems(workspace: Path) -> list[str]:
+    from ..pipeline.replication import check_plan
+
+    return check_plan(workspace)
+
+
+def _report_problems(workspace: Path) -> list[str]:
+    from ..pipeline.reproduction import check_report
+
+    return check_report(workspace)
+
+
+#: specialist -> (file, structural check returning its problems as sentences)
+_STRUCTURAL_CHECKS: dict[str, tuple[str, Any]] = {
+    "replication_planner": ("replication_plan.json", _plan_problems),
+    "reproduction_comparer": ("reproduction_report.json", _report_problems),
+}
+
+
 def check_specialist_artifacts(workspace: Path, specialist: str) -> list[ContractCheck]:
     """Check every required artifact for ``specialist`` — the primary
     plus any declared sidecars. Returns one ``ContractCheck`` per
@@ -464,6 +483,16 @@ def check_specialist_artifacts(workspace: Path, specialist: str) -> list[Contrac
             # retry feedback.
             if regression_check.ok:
                 checks.append(replace(check_matches_declared_spec(workspace, regression_file), kind=KIND_VERIFICATION))
+
+    # The replication template's JSON files are contracts other code executes
+    # (the plan) or verifies (the report): a file that parses but breaks its
+    # schema is as unusable as a missing one, so this is reliability.
+    structural = _STRUCTURAL_CHECKS.get(specialist)
+    if structural:
+        filename, check = structural
+        if not any(c.artifact == filename and not c.ok for c in checks):
+            problems = check(workspace)
+            checks.append(ContractCheck(filename, not problems, "; ".join(problems[:8])))
 
     # Draft-writing specialists may reference tables, never contain them.
     if specialist in _NO_INLINE_TABLES:

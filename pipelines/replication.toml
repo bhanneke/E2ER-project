@@ -1,0 +1,84 @@
+# Computational reproduction of a published study from its replication package.
+#
+# "Reproduction tests rerun published studies" (Brodeur et al., 2025; Kohler
+# et al., 2026): this template reruns one. The question names a Zenodo record
+# (its DOI, 10.5281/zenodo.<id>); the product is a reproduction report and the
+# dossier, not a paper. There are no drafting or review-panel steps.
+#
+#   fetch               download the record keyless from Zenodo, verify every
+#                       file against Zenodo's checksum, hash it (SHA-256),
+#                       unpack it read-only into package/
+#   plan                the replication planner maps each table and figure to
+#                       the script that produces it and records the published
+#                       numbers to compare against (replication_plan.json)
+#   review_plan         the researcher reads and may edit the plan
+#   sandbox_run         the entry points run inside Docker: a pinned official
+#                       image, dependencies installed first with network, then
+#                       each script with --network none, CPU/memory/time limits,
+#                       the package read-only and outputs in a separate folder
+#   compare             the reproduction comparer levels each result
+#                       (reproduced / minor differences / not reproduced /
+#                       could not be run) against the targets
+#   reproduction_gate   re-reads every compared number from the output files
+#                       and fails when the report claims one they do not hold
+#   review_report       the researcher reads the report
+#
+# Computational reproduction only: same data, same code. Robustness checks
+# (other data, other specifications) are a separate study, per the protocol in
+# skills/files/replication/reproduction-protocol.md.
+#
+# Maintained by the e2er contributors.
+
+name = "replication"
+description = "Computational reproduction of a published study from its Zenodo replication package: fetch and verify the package, plan, run it in a Docker sandbox, and compare every reported number with what the rerun produced."
+methodologies = ["empirical", "replication"]
+
+# Teardown, not a step. No compile: there is no paper to compile.
+finalize = ["audit_export", "structured_export"]
+
+[[steps]]
+kind  = "gate"
+name  = "fetch"
+check = "package_integrity"
+
+[steps.settings]
+max_mb = 1000
+
+[[steps]]
+kind = "specialists"
+name = "plan"
+run  = ["replication_planner"]
+
+[[steps]]
+kind  = "researcher"
+name  = "review_plan"
+files = ["replication_plan.md", "replication_plan.json"]
+
+[[steps]]
+kind  = "gate"
+name  = "sandbox_run"
+check = "sandbox"
+
+[steps.settings]
+cpus                    = 2
+memory_gb               = 6
+timeout_minutes         = 60
+install_timeout_minutes = 60
+
+[[steps]]
+kind = "specialists"
+name = "compare"
+run  = ["reproduction_comparer"]
+
+[[steps]]
+kind  = "gate"
+name  = "reproduction_gate"
+check = "reproduction"
+
+[steps.settings]
+minor_rel_tolerance = 0.10
+
+[[steps]]
+kind  = "researcher"
+name  = "review_report"
+files = ["reproduction_report.md", "reproduction_report.json", "reproduction_check.json"]

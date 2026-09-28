@@ -12,7 +12,7 @@ from ...logging_config import get_logger
 from ...modules.llm.base import LLMBackend, ToolHandler
 from ..governance import DEFAULT_REGIME, KIND_RELIABILITY
 from ..governance import enforces as governance_enforces
-from ..pipeline.spec import RESEARCHER_KINDS, find_spec
+from ..pipeline.spec import RESEARCHER_KINDS, SEQUENCE_CHECKS, find_spec
 from ..specialists.contracts import Contribution, WorkOrder
 from ..specialists.dispatcher import (
     MAX_SPECIALIST_ATTEMPTS,
@@ -267,7 +267,22 @@ class PipelineRunner:
                 raise HumanReviewRequestedError("revision")
             return status
 
-        handler = getattr(self, effects.handler or f"_run_{name}_phase")
+        handler = getattr(self, effects.handler or f"_run_{name}_phase", None)
+        if handler is None:
+            # A step this runner has no phase of its own for: a template's fixed
+            # set of specialists, or a check that runs as a step of its own.
+            if step.kind == "specialists":
+
+                async def handler() -> None:
+                    await self._run_specialists_step(step)
+
+            elif step.kind == "gate" and step.check in SEQUENCE_CHECKS:
+
+                async def handler() -> None:
+                    await self._run_check_step(step, state)
+
+            else:
+                raise RuntimeError(f"step {name!r} ({step.kind}) has no phase in this runner")
         result = await _phase(name, handler)
 
         if effects.captures_status and isinstance(result, PaperStatus):
@@ -385,6 +400,12 @@ class PipelineRunner:
             # row would stay at `designing` (the state run() set on entry).
             # Mirror state.last_status — typically `completed` — back to
             # the DB so the dashboard reflects reality.
+            if not state.last_status and self._spec.step("revision") is None:
+                # A template without a revision step (e.g. `replication`, whose
+                # product is a report and a dossier, not a reviewed paper) is
+                # complete when its last step is done.
+                state.last_status = PaperStatus.COMPLETED.value
+                state.save(self._workspace)
             if state.last_status:
                 final_status = _coerce_paper_status(state.last_status, status)
                 await self._update_status(final_status)
@@ -463,8 +484,8 @@ class PipelineRunner:
             await self._update_status(
                 PaperStatus.PAUSED,
                 error=(
-                    f"Halted by the check '{gh.stage}' before estimation: {'; '.join(gh.reasons)[:1500]}. "
-                    "Fix the design file (e2er review --edit) or send its specialist back, then resume; "
+                    f"Halted by the check '{gh.stage}': {'; '.join(gh.reasons)[:1500]}. "
+                    "Fix what it names (e2er review --edit) or send its specialist back, then resume; "
                     "the check runs again."
                 ),
             )
@@ -786,6 +807,87 @@ class PipelineRunner:
         files = [f for f in (design_file, "identification_strategy.md") if f]
         state.pending_review_stage = step.name
         state.metadata["review"] = {"kind": "gate", "files": files, "reasons": list(result.reasons)}
+        state.save(self._workspace)
+        raise GateHaltError(step.name, result.reasons)
+
+    async def _run_specialists_step(self, step: Any) -> None:
+        """A template's fixed set of specialists (a `specialists` step with no phase of its own).
+
+        One group when `parallel`, else one after another in the listed order.
+        Each gets the registry's default focus for it; retries, contract
+        feedback and the cascade guard are the dispatcher's, as everywhere.
+        """
+        from ..specialists.registry import POLISH_SPECIALISTS, REVIEWER_SPECIALISTS, SPECIALIST_DEFAULT_FOCUS
+
+        tolerant = set(REVIEWER_SPECIALISTS) | set(POLISH_SPECIALISTS)
+        for spec_name in step.run:
+            if spec_name not in tolerant and self._failure_counts.get(spec_name, 0) >= _MAX_SPECIALIST_ATTEMPTS:
+                raise CircuitBreakerError(
+                    specialist=spec_name,
+                    attempts=self._failure_counts[spec_name],
+                    last_error=self._last_specialist_errors.get(spec_name),
+                )
+        orders = [
+            WorkOrder(
+                paper_id=self._paper_id,
+                specialist=spec_name,
+                focus=SPECIALIST_DEFAULT_FOCUS.get(
+                    spec_name, f"Carry out your part of this study (step '{step.name}') as your skills describe."
+                ),
+                parallel_group=0 if step.parallel else i,
+                context_tier=1,
+            )
+            for i, spec_name in enumerate(step.run)
+        ]
+        contributions = await execute_with_dependencies(
+            orders,
+            self._backend,
+            self._workspace,
+            self._model,
+            self._extra_tools,
+            self._extra_handlers,
+            self._backend_name,
+            self._governance,
+        )
+        self._contributions.extend(contributions)
+        self._update_failure_counts(contributions)
+        failed = [c for c in contributions if not c.success and c.specialist not in tolerant]
+        if failed:
+            raise RuntimeError(
+                f"step '{step.name}': " + "; ".join(f"{c.specialist} failed: {(c.error or '?')[:500]}" for c in failed)
+            )
+
+    async def _run_check_step(self, step: Any, state: Any) -> None:
+        """A check that runs as a step of its own: pass, record, retry once, or halt.
+
+        Same contract as a gate inside the dispatch: the verdict is recorded
+        (``gate_enforced`` / ``gate_shadow``) and appears in the dossier; a
+        blocking failure stops the run at this step with its reasons, and the
+        check runs again on resume. Approving does not pass it.
+        """
+        fn = _sequence_check(step.check)
+        result = await asyncio.to_thread(fn, self._workspace, **step.settings)
+        shadow = step.on_fail == "shadow"
+        blocking = await self._record_gate(step.check, passed=result.passed, detail=result.detail(), enforce=not shadow)
+        retry_key = f"retried_{step.name}"
+        if not result.passed and blocking and step.on_fail == "retry" and not state.metadata.get(retry_key):
+            state.metadata[retry_key] = True
+            state.save(self._workspace)
+            result = await asyncio.to_thread(fn, self._workspace, **step.settings)
+            blocking = await self._record_gate(
+                step.check, passed=result.passed, detail=result.detail(), enforce=not shadow
+            )
+        if result.passed or not blocking:
+            if state.pending_review_stage == step.name:
+                state.pending_review_stage = None
+                state.metadata.pop("review", None)
+            return
+        state.pending_review_stage = step.name
+        state.metadata["review"] = {
+            "kind": "gate",
+            "files": list(_SEQUENCE_CHECK_FILES.get(step.check, ())),
+            "reasons": list(result.reasons),
+        }
         state.save(self._workspace)
         raise GateHaltError(step.name, result.reasons)
 
@@ -2207,6 +2309,31 @@ class PipelineRunner:
                 )
         except Exception as e:
             logger.debug("Status update skipped (no DB?): %s", e)
+
+
+#: Files a researcher sees when a sequence check halts (what to inspect or fix).
+_SEQUENCE_CHECK_FILES: dict[str, tuple[str, ...]] = {
+    "package_integrity": ("package_manifest.json",),
+    "sandbox": ("replication_plan.json", "sandbox_log.json"),
+    "reproduction": ("reproduction_report.json", "reproduction_check.json"),
+}
+
+
+def _sequence_check(check: str) -> Any:
+    """The function behind a check that runs as a step: (workspace, **settings) -> verdict."""
+    if check == "package_integrity":
+        from ..pipeline.replication import fetch_package
+
+        return fetch_package
+    if check == "sandbox":
+        from ..pipeline.sandbox import run_sandbox
+
+        return run_sandbox
+    if check == "reproduction":
+        from ..pipeline.reproduction import check_reproduction
+
+        return check_reproduction
+    raise ValueError(f"check {check!r} cannot run as a step of its own")
 
 
 def _estimation_next(orders: list[WorkOrder]) -> bool:

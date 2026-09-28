@@ -6,9 +6,9 @@ Every specialist the strategist can dispatch, the skill files it is given, and
 the artifacts it must produce. A specialist that does not write its declared
 artifact fails its contract and is retried with the violation fed back.
 
-- **26** specialists
-- **58** skill files on disk
-- **47** referenced by at least one specialist
+- **28** specialists
+- **61** skill files on disk
+- **50** referenced by at least one specialist
 - **11** never referenced
 
 ## Shipped but never loaded
@@ -136,6 +136,18 @@ methodology guidance exists, and no specialist is given it.
 - **Writes:** `replication/estimation.py`
 - **Skills (3):** `data/cleaning`, `base/researcher`, `synthesis/replication-package`
 
+### `replication_planner`
+
+- **Writes:** `replication_plan.md`
+- **Sidecars:** `replication_plan.json`
+- **Skills (2):** `replication/reproduction-protocol`, `replication/replication-plan`
+
+### `reproduction_comparer`
+
+- **Writes:** `reproduction_report.md`
+- **Sidecars:** `reproduction_report.json`
+- **Skills (2):** `replication/reproduction-protocol`, `replication/reproduction-report`
+
 ### `revisor`
 
 - **Writes:** `paper_draft.tex`
@@ -207,6 +219,9 @@ The reverse index: who is affected if you edit a skill file.
 | `reasoning/creative-ideation` | `idea_developer` |
 | `reasoning/identification` | `identification_strategist`, `theory_specialist` |
 | `reasoning/novelty` | `idea_developer` |
+| `replication/replication-plan` | `replication_planner` |
+| `replication/reproduction-protocol` | `replication_planner`, `reproduction_comparer` |
+| `replication/reproduction-report` | `reproduction_comparer` |
 | `review/consistency-check` | `polish_numerics`, `technical_reviewer` |
 | `review/data-quality` | `data_reviewer` |
 | `review/referee-simulation` | `literature_reviewer`, `mechanism_reviewer`, `self_attacker` |
