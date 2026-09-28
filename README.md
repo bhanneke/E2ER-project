@@ -46,7 +46,26 @@ nearly free; e2er's aim is to make *verification* cheap too.
 pip install e2er
 e2er init --defaults                         # scaffold data/ + literature/, write .env
 e2er run "<your research question>"          # → a paper in workspaces/<id>/
+e2er run "<question>" --template <name>      # follow another template
 ```
+
+A template fixes the steps a run takes, the checks it must pass and where it
+stops for you. Four ship in `pipelines/`:
+
+- `empirical` (default): question and data in, empirical paper out.
+- `empirical-preregistered`: the empirical template with the researcher in it;
+  a design review, a pre-registration frozen before any estimation, and a
+  review of the draft.
+- `event-study-finance`: abnormal-return event studies around announcements;
+  checks the estimation window, overlapping events and the event dates before
+  estimation.
+- `replication`: computational reproduction of a published study from its
+  Zenodo replication package, run in a Docker sandbox, with every reported
+  number compared with the rerun.
+
+When a run pauses for you (a design review, a pre-registration, a failed
+check), `e2er review <paper_id>` shows the step and its files; approve, edit a
+file, add an instruction, or send a step back with a remark.
 
 `e2er init --defaults` sets up non-interactively (or run `e2er init` for the
 guided wizard). New here? The **[For reviewers](#for-reviewers)** tour goes
@@ -125,6 +144,7 @@ is measured rather than hidden.
 | `e2er doctor` | Preflight: backend, DB, and your bring-your-own data + literature |
 | `e2er rq --draft "…"` | Sharpen a draft RQ against your data + library (advisory) |
 | `e2er run "…" [--template …] [--governance …] [--review-at …]` | Run the pipeline for one RQ, following a template (default `empirical`) |
+| `e2er review <paper_id> [--approve] [--edit …] [--send-back …]` | Act on a paused run: approve, edit a file, add an instruction, send a step back |
 | `e2er run-matrix "…" --backends a,b,c` | Same RQ across k backends × n repeats |
 | `e2er compare matrix.json` | Diff the design choices across the matrix |
 | `e2er export <paper_id>` | Assemble a clean bundle (+ `provenance.json`) |
@@ -619,7 +639,7 @@ The automated research space is developing quickly. Two projects most relevant t
   title        = {{e2er: End-to-End Researcher, An Open-Source Pipeline
                    for Automated Empirical Research}},
   year         = {2026},
-  version      = {0.10.0},
+  version      = {0.11.0},
   url          = {https://github.com/bhanneke/E2ER-project},
   doi          = {10.5281/zenodo.20187238},
   license      = {MIT},

@@ -19,6 +19,7 @@ they can re-attach by visiting the dashboard URL.
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 import time
@@ -129,6 +130,23 @@ def _ensure_api_up(deadline_seconds: float = 12.0) -> tuple[bool, str | None]:
     return False, (f"Failed to bring up uvicorn within {deadline_seconds:.0f}s. Check ~/.e2er/uvicorn.log for errors.")
 
 
+#: Where the first sentence of a research question ends: a question or
+#: exclamation mark, or a full stop followed by whitespace and a capital letter
+#: (or the end of the text). A full stop inside a token (a DOI such as
+#: 10.1016/j.jfineco.2020.01.001, a decimal, "U.S.") does not end it.
+_SENTENCE_END = re.compile(r"[?!]|\.(?=\s+[A-Z(\"'\u201c]|\s*$)")
+
+
+def derive_title(rq: str, limit: int = 80) -> str:
+    """The run's title: the first sentence of the research question, at most `limit` characters."""
+    title = _SENTENCE_END.split(rq.strip(), maxsplit=1)[0].strip()
+    if not title:
+        title = rq.strip()
+    if len(title) > limit:
+        title = title[: limit - 3] + "..."
+    return title
+
+
 def _submit_paper(
     rq: str,
     methodology: str,
@@ -149,9 +167,7 @@ def _submit_paper(
 
     # Derive a title: first sentence of the RQ, truncated. run-matrix passes a
     # title_suffix like " [claude_code/rep-1]" so sibling runs are labeled.
-    title = rq.split("?")[0].split(".")[0].strip()
-    if len(title) > 80:
-        title = title[:77] + "..."
+    title = derive_title(rq)
     if title_suffix:
         title = f"{title}{title_suffix}"
 
