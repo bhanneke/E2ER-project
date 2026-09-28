@@ -1,0 +1,141 @@
+# Abnormal-return event studies around announcements.
+#
+# A fork of empirical-preregistered.toml (docs/researcher-step.md): the same
+# design review, pre-registration and draft review, plus one check before
+# estimation. The identification strategist declares the events and windows in
+# event_design.json (schema: skills/files/econometrics/event-study.md), and the
+# `event_window` check verifies, before any model is estimated, that
+#
+#   (a) the estimation window ends before the event window, with a gap of at
+#       least `min_gap_days`, and is at least `min_estimation_days` long;
+#   (b) no more than `max_overlap_share` of the events overlap in their event
+#       windows for the same firm or asset, unless the design says how overlaps
+#       are treated (drop, cluster or aggregate);
+#   (c) every event date is a trading day in the data calendar the design names,
+#       and the windows around it fit inside the data.
+#
+# Windows are counted in trading days relative to the event day 0.
+#
+# Order inside the initial phase:
+#
+#   design specialists  ->  review_design (researcher)
+#   data_analyst        ->  event_window_gate  ->  preregister (researcher)
+#   econometrics_specialist, then the rest
+#
+# The check waits for the data analyst because rule (c) needs the acquired data;
+# the pre-registration waits for the check, so what is frozen is a design that
+# passed it. A failed check halts the run at the check: edit event_design.json
+# (`e2er review --edit`) or send the identification strategist back, and the
+# check runs again when the run resumes.
+#
+# Maintained by the e2er contributors.
+
+name = "event-study-finance"
+description = "A fork of the empirical template for abnormal-return event studies around announcements: it checks the estimation window and overlapping events before estimation."
+methodologies = ["empirical", "event study"]
+
+# Teardown, not a step (see empirical.toml). Declared above the first step
+# table, because TOML binds a bare key after a table array to that table.
+finalize = ["compile", "audit_export", "github_push", "structured_export"]
+
+[[steps]]
+kind  = "researcher"
+name  = "review_design"
+after = ["idea_developer", "literature_scanner", "identification_strategist", "data_architect"]
+files = ["paper_plan.md", "literature_review.md", "identification_strategy.md", "event_design.json", "data_dictionary.json"]
+
+# Listed before the pre-registration, so that when both are due the check runs
+# first. It also runs before any group that contains the econometrics
+# specialist, and is never approved past: it runs until the design passes.
+[[steps]]
+kind    = "gate"
+name    = "event_window_gate"
+check   = "event_window"
+on_fail = "halt"
+after   = ["identification_strategist", "data_architect", "data_analyst"]
+
+[steps.settings]
+min_estimation_days = 120
+min_gap_days        = 10
+max_overlap_share   = 0.0
+
+[[steps]]
+kind  = "preregister"
+name  = "preregister"
+after = ["idea_developer", "literature_scanner", "identification_strategist", "data_architect", "data_analyst"]
+
+[[steps]]
+kind = "strategist"
+name = "initial"
+
+[[steps]]
+kind  = "strategist"
+name  = "iterative"
+modes = ["iterative"]
+
+# As in empirical.toml: an empirical paper must have a contract-clean
+# estimation before anything is drafted around it.
+[[steps]]
+kind      = "gate"
+name      = "estimation_gate"
+check     = "estimation"
+on_fail   = "halt"
+resumable = false
+
+[[steps]]
+kind  = "researcher"
+name  = "review_draft"
+files = ["paper_draft.tex", "abstract.tex"]
+
+[[steps]]
+kind  = "specialists"
+name  = "self_attack"
+modes = ["iterative"]
+run   = ["self_attacker"]
+
+[[steps]]
+kind     = "specialists"
+name     = "polish"
+modes    = ["iterative"]
+parallel = true
+run = [
+    "polish_formula",
+    "polish_numerics",
+    "polish_institutions",
+    "polish_equilibria",
+    "polish_bibliography",
+]
+
+[[steps]]
+kind     = "aggregate"
+name     = "review"
+parallel = true
+run = [
+    "mechanism_reviewer",
+    "technical_reviewer",
+    "literature_reviewer",
+    "data_reviewer",
+    "identification_reviewer",
+    "writing_reviewer",
+]
+
+[[steps]]
+kind = "specialists"
+name = "revision"
+run  = ["revisor", "patch_revisor"]
+
+[[steps]]
+kind = "specialists"
+name = "replication"
+run  = ["replication_packager"]
+
+# Skills this template adds for its runs, after each specialist's own. The
+# econometrics specialist already reads the event-study skill in every
+# template; it is listed so the template states its method in one place.
+[skills]
+identification_strategist = ["econometrics/event-study"]
+econometrics_specialist   = ["econometrics/event-study"]
+
+# The machine-readable design the check reads.
+[sidecars]
+identification_strategist = ["event_design.json"]

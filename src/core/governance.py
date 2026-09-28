@@ -38,7 +38,9 @@ REGIMES: tuple[str, ...] = ("off", "contracts", "full")
 DEFAULT_REGIME = "full"
 
 #: Every mechanism a regime can switch between blocking and shadow.
-GATES: tuple[str, ...] = ("contracts", "estimation", "numbers", "citations")
+#: `event_window` runs only in templates that declare it (event studies); it is
+#: listed here so that `full` enforces it and `off`/`contracts` shadow it.
+GATES: tuple[str, ...] = ("contracts", "estimation", "numbers", "citations", "event_window")
 
 _ENFORCEMENT: dict[str, frozenset[str]] = {
     "full": frozenset(GATES),

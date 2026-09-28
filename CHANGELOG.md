@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### A template for event studies in finance
+
+`pipelines/event-study-finance.toml`: abnormal-return event studies around
+announcements. A fork of `empirical-preregistered` that checks the design before
+estimation. The new `event_window` check reads `event_design.json`, which the
+identification strategist writes in this template, and stops the run when the
+estimation window is too short (default 120 trading days) or too close to the
+event window (default gap 10), when events of the same asset overlap in their
+event windows without a declared treatment (drop, cluster, aggregate), or when
+an event date is not a trading day in the data. The limits are settings of the
+template; each verdict is recorded and appears in the dossier. See
+`docs/templates.md`.
+
+- Gate steps accept `after = [...]`, like researcher steps: the check runs
+  inside the initial phase, after those specialists and before the econometrics
+  specialist. A failed check stops the run with its reasons (`e2er review` shows
+  them) and runs again on resume. `[steps.settings]` holds a check's parameters.
+- Templates can add skills and machine-readable files to a specialist for their
+  own runs (`[skills]`, `[sidecars]`), merged after the registry's; the merged
+  skills are recorded in the study's description and dossier.
+- `skills/files/econometrics/event-study.md` specifies `event_design.json`; the
+  pre-registration includes it and treats a later change as a deviation.
+- `docs/proposals/event-study-demo.md`: the proposed first study on this template
+  (FOMC target-rate changes and bank stocks, 2015–2025), not yet run.
+
 ## [0.10.0] — 2026-09-26
 
 ### Publishing on e2er.org, with a dossier on every paper

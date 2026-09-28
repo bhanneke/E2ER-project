@@ -29,10 +29,25 @@
       "type": "array",
       "items": { "enum": ["compile", "audit_export", "github_push", "structured_export"] },
       "description": "Teardown actions, run regardless of how the run ended — completed, rejected, cancelled, circuit-broken, out of budget. Not steps: each swallows its own errors and none can halt the run, because their whole purpose is to leave the partial artifacts usable when something has already gone wrong."
+    },
+    "skills": {
+      "$ref": "#/$defs/components",
+      "description": "Skills this template adds to a specialist, as specialist = [\"category/skill\", ...]. Merged after the specialist's own skills (never instead of them) for runs of this template, and recorded in the study's description and dossier. Each must name a skill file e2er ships or has installed."
+    },
+    "sidecars": {
+      "$ref": "#/$defs/components",
+      "description": "Machine-readable files this template asks a specialist to write next to its main output, as specialist = [\"file.json\", ...]. Merged after the specialist's own sidecars; a check of the template reads them (e.g. event_design.json for the event_window check)."
     }
   },
 
   "$defs": {
+    "components": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": { "type": "string", "minLength": 1 }
+      }
+    },
     "step": {
       "type": "object",
       "required": ["kind", "name"],
@@ -53,8 +68,8 @@
           "description": "Specialists to dispatch. Required for `specialists` and `aggregate`; meaningless for `gate` and `strategist`."
         },
         "check": {
-          "enum": ["contracts", "estimation", "numbers", "citations", "claims"],
-          "description": "Which deterministic check to run. Required for `gate`."
+          "enum": ["contracts", "estimation", "numbers", "citations", "claims", "event_window"],
+          "description": "Which deterministic check to run. Required for `gate`. event_window verifies an event study's design (event_design.json) before estimation: estimation window length and gap, overlapping events, event dates in the data calendar."
         },
         "on_fail": {
           "enum": ["halt", "retry", "shadow"],
@@ -84,7 +99,17 @@
         "after": {
           "type": "array",
           "items": { "type": "string" },
-          "description": "researcher and preregister steps: stop inside the strategist's dispatch, right after these specialists have written their output, instead of at this position in the list."
+          "description": "researcher, preregister and gate steps: act inside the strategist's dispatch, right after these specialists have written their output, instead of at this position in the list. A gate with `after` also runs before any group that contains the econometrics specialist, so the estimation cannot pass it by."
+        },
+        "settings": {
+          "type": "object",
+          "description": "gate steps: parameters of the check. event_window takes min_estimation_days (default 120), min_gap_days (default 10) and max_overlap_share (0 to 1, default 0).",
+          "properties": {
+            "min_estimation_days": { "type": "integer", "minimum": 0 },
+            "min_gap_days": { "type": "integer", "minimum": 0 },
+            "max_overlap_share": { "type": "number", "minimum": 0, "maximum": 1 }
+          },
+          "additionalProperties": false
         }
       }
     }

@@ -115,10 +115,20 @@ def _template_agents(template_file: Path, mode: str) -> list[str]:
     return agents
 
 
-def _skills_for(agents: list[str]) -> dict[str, list[str]]:
+def _template_components(template_file: Path | None, table: str) -> dict[str, list[str]]:
+    """A template's `[skills]` or `[sidecars]` table, read from the file itself."""
+    if template_file is None or not template_file.is_file():
+        return {}
+    raw = tomllib.loads(template_file.read_text(encoding="utf-8")).get(table) or {}
+    return {k: [str(x) for x in v] for k, v in raw.items() if isinstance(v, list)}
+
+
+def _skills_for(agents: list[str], template_file: Path | None = None) -> dict[str, list[str]]:
+    """Each agent's skills: the registry's, then the ones the template adds (as the run merged them)."""
     from .specialists.registry import SPECIALIST_SKILLS
 
-    return {a: list(SPECIALIST_SKILLS.get(a, [])) for a in agents}
+    extra = _template_components(template_file, "skills")
+    return {a: list(dict.fromkeys([*SPECIALIST_SKILLS.get(a, []), *extra.get(a, [])])) for a in agents}
 
 
 def build_manifest(
@@ -165,7 +175,7 @@ def build_manifest(
         agents_source = "declared"
     else:
         agents, agents_source = [], "unknown"
-    skills = _skills_for(agents)
+    skills = _skills_for(agents, template_file)
 
     citations = [e for e in prov.get("edges", []) if e.get("type") == "citation"]
     files = prov["files"]

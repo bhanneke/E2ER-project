@@ -29,10 +29,12 @@ SOURCES: tuple[tuple[str, str], ...] = (
     ("Research question and hypotheses", "paper_plan.md"),
     ("Identification strategy", "identification_strategy.md"),
     ("Identification (machine-readable)", "identification_spec.json"),
+    # Written only in templates that ask for it (event-study-finance).
+    ("Events and windows (machine-readable)", "event_design.json"),
     ("Analysis plan", "econometric_spec.md"),
 )
 #: The files whose later change counts as a deviation from the plan.
-PLAN_FILES: tuple[str, ...] = ("identification_spec.json", "econometric_spec.md")
+PLAN_FILES: tuple[str, ...] = ("identification_spec.json", "event_design.json", "econometric_spec.md")
 
 
 def _sha256(path: Path) -> str:

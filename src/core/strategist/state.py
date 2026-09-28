@@ -74,6 +74,20 @@ class HumanReviewRequestedError(Exception):
         super().__init__(f"Human review requested after stage '{stage}'")
 
 
+class GateHaltError(HumanReviewRequestedError):
+    """A check placed inside the dispatch (a gate step with `after`) failed and halts the run.
+
+    A halt is a stop for the researcher: the step's design files can be edited,
+    or the specialist that wrote them sent back, and the check runs again when
+    the run resumes. Approving does not pass a failed check; only a design that
+    passes it does.
+    """
+
+    def __init__(self, stage: str, reasons: list[str] | tuple[str, ...]) -> None:
+        super().__init__(stage)
+        self.reasons = list(reasons)
+
+
 class CircuitBreakerError(Exception):
     """Raised when a non-tolerant specialist has failed ``max_attempts`` times in a row.
 

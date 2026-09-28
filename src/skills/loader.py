@@ -35,15 +35,22 @@ def load_skills_for_specialist(specialist: str) -> str:
     """
     # Lazy import to avoid a circular dependency: registry imports nothing
     # from this module, but other things in `core.specialists` do.
-    from ..core.specialists.registry import SPECIALIST_SKILLS
+    # The registry's skills, plus any the active template adds for this
+    # specialist (`[skills]` in the template; see core/pipeline/components.py).
+    from ..core.pipeline.components import skills_for
 
-    skill_paths = SPECIALIST_SKILLS.get(specialist, [])
+    skill_paths = skills_for(specialist)
     parts = []
     for path in skill_paths:
         content = _load_skill(path)
         if content:
             parts.append(content)
     return "\n\n---\n\n".join(parts)
+
+
+def skill_exists(path: str) -> bool:
+    """True iff ``path`` (e.g. ``"econometrics/event-study"``) names a skill file on disk."""
+    return any((d / f"{path}.md").is_file() for d in _SKILLS_DIRS)
 
 
 def _load_skill(path_or_stem: str) -> str:

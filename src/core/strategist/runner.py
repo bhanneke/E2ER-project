@@ -26,6 +26,7 @@ from ..strategist.review_aggregator import aggregate_reviews, parse_review_outpu
 from ..strategist.state import (
     BudgetExceededError,
     CircuitBreakerError,
+    GateHaltError,
     HumanReviewRequestedError,
     PaperStatus,
 )
@@ -90,6 +91,18 @@ _MAX_DEEP_REVISIONS = 1
 # while it is buying progress.
 _MAX_TABLE_SPEC_REPAIRS = 3
 
+#: The specialist whose work a design check must precede. A gate with `after`
+#: runs as soon as its specialists are done, and in any case before a group that
+#: contains this one, so a plan that leaves out one of those specialists cannot
+#: slip the estimation past the check.
+_ESTIMATION_SPECIALIST = "econometrics_specialist"
+
+#: Checks that can sit inside the dispatch (gate steps with `after`): the design
+#: file they read, and the specialist that writes it (sent back on `retry`).
+_DESIGN_CHECKS: dict[str, tuple[str, str]] = {
+    "event_window": ("event_design.json", "identification_strategist"),
+}
+
 
 @dataclass(frozen=True)
 class _StepEffects:
@@ -153,9 +166,10 @@ class PipelineRunner:
         # Human-in-the-loop: stages after which the run pauses for the
         # researcher to inspect/edit the workspace before continuing.
         self._review_stages = set(review_stages or [])
-        # Researcher steps with `after = [...]` stop inside the strategist's
-        # dispatch, right after those specialists; the rest are ordinary steps.
-        self._triggers = [s for s in self._spec.steps if s.kind in RESEARCHER_KINDS and s.after]
+        # Researcher steps and gates with `after = [...]` act inside the
+        # strategist's dispatch, right after those specialists; the rest are
+        # ordinary steps.
+        self._triggers = [s for s in self._spec.steps if (s.kind in RESEARCHER_KINDS or s.kind == "gate") and s.after]
         self._state: Any = None
         self._in_initial = False
         # Methodology drives phase routing (data_reviewer + replication_packager
@@ -287,6 +301,21 @@ class PipelineRunner:
 
         logger.info("Run identity for paper %s: %s", self._paper_id, identity_summary())
         await log_event(self._paper_id, "run_identity", payload=run_identity())
+        # The template's own skills and sidecar files (`[skills]`, `[sidecars]`)
+        # apply to every specialist this run dispatches.
+        from ..pipeline.components import activate, deactivate
+
+        template_token = activate(self._spec)
+        if self._spec.skills or self._spec.sidecars:
+            await log_event(
+                self._paper_id,
+                "template_components",
+                payload={
+                    "template": self._spec.name,
+                    "skills": {k: list(v) for k, v in self._spec.skills.items()},
+                    "sidecars": {k: list(v) for k, v in self._spec.sidecars.items()},
+                },
+            )
 
         state: PipelineState | None = None
         try:
@@ -302,6 +331,7 @@ class PipelineRunner:
             logger.error("Pipeline setup failed for paper %s: %s", self._paper_id, e)
             await log_event(self._paper_id, "failed", payload={"error": f"setup: {type(e).__name__}: {e}"})
             await self._update_status(PaperStatus.FAILED, error=f"setup error: {e}")
+            deactivate(template_token)
             return {"status": "failed", "error": f"setup: {type(e).__name__}: {e}"}
 
         async def _phase(name: str, fn) -> Any:
@@ -336,12 +366,17 @@ class PipelineRunner:
             for step in self._spec.steps:
                 if not step.applies_to(self._mode):
                     continue
-                if step.kind in RESEARCHER_KINDS and step.after:
-                    continue  # stops inside the dispatch (see _between_groups)
+                if step.after and (step.kind in RESEARCHER_KINDS or step.kind == "gate"):
+                    continue  # acts inside the dispatch (see _between_groups)
                 # resumable=false is how the estimation gate stays unskippable:
                 # it runs even when something claims the stage is done.
                 if step.resumable and state.is_complete(step.name):
                     continue
+                if state.is_complete("initial"):
+                    # A gate meant for inside the initial dispatch that never ran
+                    # there (its specialists were not dispatched) runs now,
+                    # before anything later builds on the unchecked design.
+                    await self._run_open_gates(state, [])
                 status = await self._run_spec_step(step, _phase, state, prior_contributions, status)
 
             # Closes #6: when run() is called on a paper whose state.json
@@ -419,6 +454,21 @@ class PipelineRunner:
             )
             await self._update_status(PaperStatus.PAUSED, error=error_msg)
             return {"status": "paused", "reason": "budget_exhausted", "spent": be.spent, "cap": be.cap}
+        except GateHaltError as gh:
+            # A design check failed before estimation. The run stops for the
+            # researcher at the check; it runs again on resume.
+            state.save(self._workspace)
+            logger.warning("Pipeline halted by %s for paper %s: %s", gh.stage, self._paper_id, "; ".join(gh.reasons))
+            await log_event(self._paper_id, "gate_halted", stage=gh.stage, payload={"reasons": gh.reasons})
+            await self._update_status(
+                PaperStatus.PAUSED,
+                error=(
+                    f"Halted by the check '{gh.stage}' before estimation: {'; '.join(gh.reasons)[:1500]}. "
+                    "Fix the design file (e2er review --edit) or send its specialist back, then resume; "
+                    "the check runs again."
+                ),
+            )
+            return {"status": "paused", "reason": "gate_halted", "stage": gh.stage, "reasons": gh.reasons}
         except HumanReviewRequestedError as hr:
             # Clean, resumable pause at a researcher-chosen checkpoint. State
             # (incl. the completed stage + pending_review_stage) was saved in
@@ -447,6 +497,7 @@ class PipelineRunner:
             # LaTeX compiled, audit log exported, and git push attempted.
             # Each step swallows its own exceptions so finalize never raises.
             await self._best_effort_finalize()
+            deactivate(template_token)
 
     async def _best_effort_finalize(self) -> None:
         """Run compile + audit-export + GitHub push, swallowing all errors.
@@ -662,11 +713,89 @@ class PipelineRunner:
         finished = set(state.metadata.get("done_specialists", [])) | done
         state.metadata["done_specialists"] = sorted(finished)
         for trig in self._triggers:
-            if not trig.applies_to(self._mode) or state.is_approved(trig.name) or state.is_complete(trig.name):
+            if not trig.applies_to(self._mode) or state.is_complete(trig.name):
+                continue
+            if trig.kind == "gate":
+                # A check is never approved past; it runs until the design passes.
+                if set(trig.after) <= finished or _estimation_next(remaining):
+                    await self._run_gate_trigger(trig, state, remaining)
+                continue
+            if state.is_approved(trig.name):
                 continue
             if set(trig.after) <= finished:
                 state.metadata["pending_orders"] = [wo.model_dump() for wo in remaining]
                 await self._stop_for_researcher(trig, state)
+
+    async def _run_open_gates(self, state: Any, remaining: list[WorkOrder]) -> None:
+        """Run every gate trigger that applies and has not passed yet."""
+        for trig in getattr(self, "_triggers", []):
+            if trig.kind == "gate" and trig.applies_to(self._mode) and not state.is_complete(trig.name):
+                await self._run_gate_trigger(trig, state, remaining)
+
+    async def _run_gate_trigger(self, step: Any, state: Any, remaining: list[WorkOrder]) -> None:
+        """Run a check that sits inside the dispatch; pass, record, retry once, or halt.
+
+        Recorded like every gate (``gate_enforced`` or ``gate_shadow``), so the
+        verdict and its reasons appear in the dossier. On a blocking failure the
+        run stops for the researcher at this step (GateHaltError), with the work
+        orders that had not run saved, and the check runs again on resume.
+        """
+        from ..specialists.dispatcher import execute_work_order
+
+        design_file, owner = _DESIGN_CHECKS.get(step.check, ("", ""))
+        result = self._run_design_check(step)
+        shadow = step.on_fail == "shadow"
+        blocking = await self._record_gate(step.check, passed=result.passed, detail=result.detail(), enforce=not shadow)
+        retry_key = f"retried_{step.name}"
+        if not result.passed and blocking and step.on_fail == "retry" and owner and not state.metadata.get(retry_key):
+            state.metadata[retry_key] = True
+            state.save(self._workspace)
+            order = WorkOrder(
+                paper_id=self._paper_id,
+                specialist=owner,
+                focus=(
+                    f"The check '{step.check}' refused the design in {design_file} before estimation. "
+                    f"Revise {design_file} (and your strategy file where it changes) so that it passes: "
+                    + "; ".join(result.reasons)
+                ),
+            )
+            contribution = await execute_work_order(
+                order,
+                self._backend,
+                self._workspace,
+                self._model,
+                self._extra_tools,
+                self._extra_handlers,
+                self._backend_name,
+                self._governance,
+            )
+            self._contributions.append(contribution)
+            self._update_failure_counts([contribution])
+            result = self._run_design_check(step)
+            blocking = await self._record_gate(
+                step.check, passed=result.passed, detail=result.detail(), enforce=not shadow
+            )
+        if result.passed or not blocking:
+            state.mark_complete(step.name)
+            if state.pending_review_stage == step.name:
+                state.pending_review_stage = None
+            state.save(self._workspace)
+            return
+        if getattr(self, "_in_initial", False):
+            state.metadata["pending_orders"] = [wo.model_dump() for wo in remaining]
+        files = [f for f in (design_file, "identification_strategy.md") if f]
+        state.pending_review_stage = step.name
+        state.metadata["review"] = {"kind": "gate", "files": files, "reasons": list(result.reasons)}
+        state.save(self._workspace)
+        raise GateHaltError(step.name, result.reasons)
+
+    def _run_design_check(self, step: Any) -> Any:
+        """The deterministic check a gate trigger names, with the template's settings."""
+        if step.check == "event_window":
+            from ..pipeline.event_window import check_event_window
+
+            return check_event_window(self._workspace, **step.settings)
+        raise ValueError(f"check {step.check!r} cannot run inside the dispatch")
 
     async def _settle_researcher_decisions(self, state: Any) -> None:
         """On (re)start: freeze approved pre-registrations, run what was sent back,
@@ -712,7 +841,7 @@ class PipelineRunner:
         if pending and not state.is_approved(pending) and not rerun_steps:
             raise HumanReviewRequestedError(pending)
 
-    async def _record_gate(self, gate: str, *, passed: bool, detail: str = "") -> bool:
+    async def _record_gate(self, gate: str, *, passed: bool, detail: str = "", enforce: bool = True) -> bool:
         """Log a gate verdict and return whether it should BLOCK this run.
 
         Emits `gate_enforced` when the regime enforces this gate, else
@@ -722,7 +851,9 @@ class PipelineRunner:
         """
         from ...db.events import log_event
 
-        enforced = self._governance_enforces(gate)
+        # `enforce=False` is a step's own `on_fail = "shadow"`: the verdict is
+        # recorded, never blocking, whatever the regime.
+        enforced = enforce and self._governance_enforces(gate)
         await log_event(
             self._paper_id,
             "gate_enforced" if enforced else "gate_shadow",
@@ -1857,7 +1988,10 @@ class PipelineRunner:
         if not getattr(self, "_in_initial", False) or state is None:
             return orders
         open_steps = [
-            t for t in getattr(self, "_triggers", []) if t.applies_to(self._mode) and not state.is_approved(t.name)
+            t
+            for t in getattr(self, "_triggers", [])
+            if t.applies_to(self._mode)
+            and not (state.is_complete(t.name) if t.kind == "gate" else state.is_approved(t.name))
         ]
         if not open_steps:
             return orders
@@ -1876,6 +2010,10 @@ class PipelineRunner:
     async def _execute_orders(self, contract_orders: list[WorkOrder]) -> list[Contribution]:
         """Run work orders (one alone, or grouped), stopping at researcher steps between groups."""
         contract_orders = self._order_for_researcher_steps(contract_orders)
+        state = getattr(self, "_state", None)
+        if getattr(self, "_in_initial", False) and state is not None and _estimation_next(contract_orders):
+            # The first group would estimate: an open design check runs first.
+            await self._run_open_gates(state, contract_orders)
         if len(contract_orders) == 1:
             from ..specialists.dispatcher import execute_work_order, guard_artifacts
 
@@ -2069,6 +2207,14 @@ class PipelineRunner:
                 )
         except Exception as e:
             logger.debug("Status update skipped (no DB?): %s", e)
+
+
+def _estimation_next(orders: list[WorkOrder]) -> bool:
+    """True iff the next group of ``orders`` to run contains the estimation specialist."""
+    if not orders:
+        return False
+    first = min(o.parallel_group for o in orders)
+    return any(o.specialist == _ESTIMATION_SPECIALIST and o.parallel_group == first for o in orders)
 
 
 def _select_polish_specialists(attack_report_path: Path) -> list[str]:
