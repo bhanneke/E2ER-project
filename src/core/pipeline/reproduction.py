@@ -334,7 +334,17 @@ def check_reproduction(workspace: Path, *, minor_rel_tolerance: float = DEFAULT_
             "numbers_checked": sum(1 for c in tier_checked if "recomputed" in c),
             "results": dict(by_level[tier]),
         }
+    install = log.get("install") or {}
     doc = {
+        # the environment of the rerun, recorded by code from the sandbox log
+        "environment": {
+            "snapshot": log.get("snapshot"),
+            "platform": install.get("platform"),
+            "image": log.get("image"),
+            "image_digest": log.get("image_digest"),
+            "declared_versions": log.get("declared_versions"),
+            "installed": install.get("installed"),
+        },
         "passed": not reasons,
         "reasons": reasons,
         "stats": stats,
@@ -424,10 +434,19 @@ def reason_text_problems(text: Any, equal_flags: list[bool]) -> list[str]:
 
 
 def check_environment(report: dict[str, Any], log: dict[str, Any]) -> list[str]:
-    """The report's environment block must be the sandbox log's: snapshot, platform, every installed version."""
+    """The report's environment block must agree with the sandbox log.
+
+    The report states the snapshot (date and URL) and the versions of the
+    packages it discusses; each must be the log's. The full list of installed
+    versions is a fact of the run, so code records it (``sandbox_log.json``
+    and ``reproduction_check.json``) rather than a model transcribing it.
+    """
     env = report.get("environment")
     if not isinstance(env, dict):
-        return ["the report has no environment block (snapshot, platform, installed versions from sandbox_log.json)"]
+        return [
+            "the report has no environment block: add environment.snapshot (date and url from sandbox_log.json "
+            "-> snapshot) and environment.installed with the versions of the packages you discuss"
+        ]
     out: list[str] = []
     snap = log.get("snapshot") or {}
     raw = env.get("snapshot")
@@ -438,7 +457,7 @@ def check_environment(report: dict[str, Any], log: dict[str, Any]) -> list[str]:
     installed = (log.get("install") or {}).get("installed") or {}
     raw_inst = env.get("installed")
     claimed: dict[str, Any] = raw_inst if isinstance(raw_inst, dict) else {}
-    wrong = sorted(k for k in installed if claimed.get(k) != installed[k])
+    wrong = sorted(k for k in claimed if k in installed and claimed[k] != installed[k])
     extra = sorted(set(claimed) - set(installed))
     if wrong:
         out.append(

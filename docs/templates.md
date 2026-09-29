@@ -104,7 +104,9 @@ with `remotes::install_version`, Python pins them with `==`. After the install a
 no-network container of the committed image reports the repository, the
 platform and every installed version, dependencies included; `sandbox_log.json`
 records them under `snapshot`, `install.installed`, `install.platform` and
-`declared_versions`, and the reproduction report must carry the same block.
+`declared_versions`, and the reproduction check copies them into
+`reproduction_check.json`. The comparer's report states the snapshot and the
+versions of the packages it discusses; the check compares each with the log.
 
 ### Strict labels
 

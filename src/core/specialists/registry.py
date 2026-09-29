@@ -292,8 +292,9 @@ SPECIALIST_DEFAULT_FOCUS: dict[str, str] = {
         "`reproduction_report.md`. Label every number strictly by the protocol's thresholds (`reproduced` only "
         "when equal at the target's own precision: printed decimals for the paper, 1e-9 relative for a package "
         "cell); a result takes its worst number's label. Name causes of a difference only as possible causes, "
-        "and copy the environment (snapshot date and URL, platform, every installed version) from "
-        "`sandbox_log.json`. A deterministic check re-reads every number, recomputes every label, compares the "
-        "reason texts and the environment with the numbers and the log, and fails the run on any disagreement."
+        "and copy the environment (snapshot date and URL, platform, and the versions of the packages you "
+        "discuss) from `sandbox_log.json` into the report's `environment` block. A deterministic check "
+        "re-reads every number, recomputes every label, compares the reason texts and the environment with "
+        "the numbers and the log, and fails the run on any disagreement."
     ),
 }

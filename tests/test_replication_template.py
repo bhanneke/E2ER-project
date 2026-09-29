@@ -1263,10 +1263,19 @@ def test_reason_texts_may_not_contradict_the_numbers_or_assert_causes(text, flag
 
 def test_the_report_must_carry_the_sandbox_environment(workspace: Path):
     _ran(workspace)
+    # a partial list is fine: the versions the report names must be the log's
+    rep = {**_report(), "environment": {**_env(workspace), "installed": {"DRDID": "1.3.0"}}}
+    _write(workspace, rep)
+    assert check_reproduction(workspace).passed
+    full = json.loads((workspace / CHECK_FILE).read_text())["environment"]
+    assert full["installed"] == {"fixest": "0.12.1", "DRDID": "1.3.0"} and full["snapshot"]["date"] == "2026-08-30"
     rep = {**_report(), "environment": {**_env(workspace), "installed": {"fixest": "0.12.1", "DRDID": "1.2.0"}}}
     _write(workspace, rep)
     r = check_reproduction(workspace)
     assert any("environment.installed differs from sandbox_log.json for 1 package(s): DRDID" in x for x in r.reasons)
+    rep["environment"]["installed"] = {"lme4": "1.1"}
+    _write(workspace, rep)
+    assert any("did not install: lme4" in x for x in check_reproduction(workspace).reasons)
     rep["environment"] = {**_env(workspace), "snapshot": {"date": None, "url": "latest"}}
     _write(workspace, rep)
     assert any("environment.snapshot.date" in x for x in check_reproduction(workspace).reasons)

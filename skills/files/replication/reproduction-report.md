@@ -51,8 +51,10 @@ For every exhibit with targets:
    differs.
 5. Copy the environment from `sandbox_log.json` into the report's
    `environment` block: `snapshot` (`date`, `url`), `platform`, and
-   `installed` (every package and version in `install.installed`, including
-   dependencies). The check compares it with the log entry by entry.
+   `installed` with the versions of the declared packages and of every package
+   you name (e.g. as a possible cause). The check compares each entry with the
+   log; the full list of installed versions, dependencies included, is recorded
+   by code in `sandbox_log.json` and `reproduction_check.json`.
 6. A target you cannot assess (the output does not contain it, the value is
    only graphical) goes in `unassessed` with the reason.
 
@@ -96,7 +98,7 @@ For every exhibit with targets:
   "environment": {
     "snapshot": {"date": "2026-08-30", "url": "https://p3m.dev/cran/__linux__/noble/2026-08-30"},
     "platform": "aarch64-unknown-linux-gnu",
-    "installed": {"did": "2.5.1", "DRDID": "1.3.0", "fixest": "0.14.2", "…": "every package in sandbox_log.json"}
+    "installed": {"did": "2.5.1", "DRDID": "1.3.0", "fixest": "0.14.2"}
   },
   "unassessed": [{"target_id": "t5_power", "reason": "the output does not report the power figure"}],
   "notes_for_robustness": ["…"]
@@ -111,8 +113,8 @@ broken):
 - Each comparison's `label` and each result's `level` follow the protocol's
   thresholds exactly; the reason text does not contradict the numbers and
   names causes only as possible ones.
-- `environment` matches `sandbox_log.json`: snapshot date and URL, and every
-  installed package with its version.
+- `environment` matches `sandbox_log.json`: the snapshot date and URL, and the
+  version of every package it lists.
 - A level-1 number is read from the rebuilt copy of the target's own file.
 - `reproduced` is a number read from `source.file`, a file the run wrote. With
   a `locator` the check reads that exact cell; without one it needs a number in

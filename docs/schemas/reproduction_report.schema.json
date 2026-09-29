@@ -162,8 +162,7 @@
     "environment": {
       "type": "object",
       "required": [
-        "snapshot",
-        "installed"
+        "snapshot"
       ],
       "properties": {
         "snapshot": {
@@ -192,7 +191,7 @@
           "additionalProperties": {
             "type": "string"
           },
-          "description": "Every installed package and version, from sandbox_log.json (install.installed)."
+          "description": "Versions of the declared packages and of every package the report discusses, as in sandbox_log.json. The full list is recorded by code in sandbox_log.json and reproduction_check.json."
         }
       }
     }

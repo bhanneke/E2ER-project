@@ -22,7 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `reproduced_minor` up to 10 % with the same sign, `not_reproduced` beyond; a
   result takes its worst number's label. The check and the comparer's
   contract refuse reason texts that contradict the numbers or state a cause as
-  established, and require the report's environment block to match the log.
+  established, and require the report's environment block (snapshot, and the versions it
+  names) to match the log; the full list of installed versions is written by
+  code into `reproduction_check.json`, not transcribed by the model.
 
 ### Replication: two levels of targets, and the paper as researcher input
 

@@ -95,9 +95,10 @@ estimate is larger) is a note, not a label.
   not write "because", "due to", "caused by", "the reason is", "bug" or
   "mistake" as a finding; the check refuses a reason text that states a cause
   without "possible", "may", "might" or "could".
-- Record the environment the rerun used (the package snapshot date and
-  repository, the platform, every installed version including dependencies)
-  from `sandbox_log.json`; differences in it are among the possible causes.
+- Record the environment the rerun used from `sandbox_log.json`: the package
+  snapshot date and repository, the platform, and the versions of the packages
+  you discuss. Code records every installed version, dependencies included.
+  Differences in it are among the possible causes.
 
 ## Practical rules for running
 
