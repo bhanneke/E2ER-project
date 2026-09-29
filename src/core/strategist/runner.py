@@ -400,10 +400,14 @@ class PipelineRunner:
             # row would stay at `designing` (the state run() set on entry).
             # Mirror state.last_status — typically `completed` — back to
             # the DB so the dashboard reflects reality.
-            if not state.last_status and self._spec.step("revision") is None:
+            if state.last_status in ("", PaperStatus.IN_PROGRESS.value) and self._spec.step("revision") is None:
                 # A template without a revision step (e.g. `replication`, whose
                 # product is a report and a dossier, not a reviewed paper) is
-                # complete when its last step is done.
+                # complete when its last step is done. The loop only gets here
+                # when no step stopped the run. `in_progress` is the state
+                # file's default, not a status any step set: testing for an
+                # empty value instead left a run whose last step was an
+                # approved researcher step at `in_progress` for good.
                 state.last_status = PaperStatus.COMPLETED.value
                 state.save(self._workspace)
             if state.last_status:
