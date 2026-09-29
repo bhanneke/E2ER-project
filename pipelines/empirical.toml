@@ -1,4 +1,4 @@
-# The pipeline E2ER has always run, written down.
+# The pipeline e2er has always run, written down.
 #
 # This file drives the runner: PipelineRunner.run() loops over these steps
 # rather than sequencing phases in Python. Copy it, change the steps, and pass
@@ -17,7 +17,7 @@
 # `resumable = false` means the step runs even when state says it is complete.
 
 name = "empirical"
-description = "Question and data in, empirical paper out. E2ER's default."
+description = "Question and data in, empirical paper out. e2er's default."
 methodologies = ["empirical", "theoretical"]
 
 # Teardown, not a step. Runs regardless of how the run ended — completed,

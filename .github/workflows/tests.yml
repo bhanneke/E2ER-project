@@ -40,3 +40,30 @@ jobs:
 
       - name: Run tests
         run: pytest tests/ -v --tb=short -m "not e2e"
+
+  package:
+    # The wheel a user installs must be able to start a study. 0.11.0 shipped
+    # without pipelines/, so every template name failed after `pip install e2er`
+    # while every test above passed from the checkout. This job builds the
+    # wheel, installs it into a fresh virtualenv outside the checkout and runs
+    # scripts/check_wheel.sh: `e2er --help`, the four templates and the skill
+    # files resolve, and `e2er verify` passes on a copy of examples/showcase.
+    name: package (built wheel, clean install)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Build the wheel
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build --wheel --outdir "$RUNNER_TEMP/dist" .
+
+      - name: Install it outside the checkout and check it
+        run: PYTHON=python scripts/check_wheel.sh "$RUNNER_TEMP"/dist/e2er-*.whl

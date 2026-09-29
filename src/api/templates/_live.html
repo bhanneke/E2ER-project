@@ -15,16 +15,60 @@
             hx-confirm="Cancel this run?"
             hx-swap="none">Cancel</button>
   {% endif %}
-  {% if awaiting_review %}
-    <a class="btn-primary" href="/papers/{{ paper.id }}/review">Review step “{{ awaiting_review }}”</a>
-  {% endif %}
-  {% if can_resume %}
+  {% if can_resume and not awaiting_review %}
     <button class="btn-primary"
             hx-post="/api/papers/{{ paper.id }}/resume"
             hx-confirm="Resume this run?"
             hx-swap="none">Resume</button>
   {% endif %}
 </div>
+
+{% if awaiting_review %}
+  <div class="waiting-box">
+    <span><strong>The study is waiting for you.</strong> Read what the specialists wrote, change it if you want, and let it continue.</span>
+    <a class="btn-primary" href="/papers/{{ paper.id }}/review">Review now</a>
+  </div>
+{% elif paper.status == "completed" %}
+  <div class="done-box">
+    <span><strong>The study is finished.</strong> Check it and publish it.</span>
+    <a class="btn-primary" href="/papers/{{ paper.id }}/finish">Verify and publish</a>
+  </div>
+{% endif %}
+
+{% if tp and tp.steps %}
+  <h2>Steps <span class="muted">template {{ tp.template }}{% if tp.current %} · now: {{ tp.current }}{% endif %}</span></h2>
+  <ol class="steps">
+    {% for st in tp.steps %}
+      <li class="st-{{ st.state }}"{% if st.sub %} style="padding-left:34px"{% endif %}>
+        <span class="st-mark" aria-hidden="true"></span>
+        <span><span class="st-name">{{ st.label }}</span><span class="st-kind">{{ st.kind }}</span></span>
+        <span class="st-note">
+          {% if st.state == "waiting" or (st.state == "failed" and awaiting_review) %}<a href="/papers/{{ paper.id }}/review">{{ st.note }} →</a>
+          {% else %}{{ st.note }}{% endif %}
+        </span>
+      </li>
+    {% endfor %}
+  </ol>
+  <div class="row-2">
+    <div>
+      <h3 class="h3">Specialists done <span class="muted">{{ tp.specialists_done | length }}</span></h3>
+      {% if tp.specialists_done or tp.specialists_failed %}
+        <ul class="chips">
+          {% for s in tp.specialists_done %}<li>{{ s }}</li>{% endfor %}
+          {% for s in tp.specialists_failed %}<li class="bad">{{ s }} failed</li>{% endfor %}
+        </ul>
+      {% else %}<p class="muted">None yet.</p>{% endif %}
+    </div>
+    <div>
+      <h3 class="h3">Checks</h3>
+      {% if tp.checks %}
+        <ul class="chips">
+          {% for g in tp.checks %}<li class="{{ '' if g.ok else 'bad' }}" title="{{ g.note }}">{{ g.label }}: {{ "passed" if g.ok else "failed" }}</li>{% endfor %}
+        </ul>
+      {% else %}<p class="muted">None run yet.</p>{% endif %}
+    </div>
+  </div>
+{% endif %}
 
 {% if progress %}
   <div class="prog">
@@ -44,7 +88,7 @@
       <div class="muted prog-elapsed">{{ progress.elapsed_min }} min since the run started</div>
     {% endif %}
 
-    {% if progress.phases %}
+    {% if progress.phases and not (tp and tp.steps) %}
       <ol class="phases">
         {% for p in progress.phases %}
           <li class="ph ph-{{ p.state }}">
@@ -56,7 +100,7 @@
   </div>
 {% endif %}
 
-{% if failure and failure.failed %}
+{% if failure and failure.failed and not awaiting_review %}
   <section class="fail fail-{{ failure.status }}">
     <h3>{{ failure.status | capitalize }}</h3>
     <p class="fail-head">{{ failure.headline }}</p>
@@ -86,11 +130,12 @@
       </details>
     {% endif %}
   </section>
-{% elif paper.last_error %}
+{% elif paper.last_error and not awaiting_review %}
   <p class="error">{{ paper.last_error }}</p>
 {% endif %}
 
-<h2>Events</h2>
+<details class="events">
+<summary>Event log ({{ events | length }} most recent)</summary>
 {% if not events %}
   <p class="muted">Waiting for first event…</p>
 {% else %}
@@ -105,3 +150,4 @@
   {% endfor %}
 </ol>
 {% endif %}
+</details>

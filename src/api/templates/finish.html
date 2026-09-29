@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+{% block title %}Finish — {{ paper.title[:60] }} — e2er{% endblock %}
+
+{% block content %}
+<p><a href="/papers/{{ paper.id }}">← back to the study</a></p>
+<h1>Finish: verify and publish</h1>
+<p class="sub">{{ paper.title }}</p>
+
+{% if not session_ok %}
+  <div class="pf-banner bad">{{ session_problem | ticks }}</div>
+{% endif %}
+{% if paper.status != "completed" %}
+  <div class="pf-banner bad">This study has not finished (status: {{ paper.status }}). You can still check what it has produced.</div>
+{% endif %}
+
+<section class="card" id="card-folder" data-state="{{ 'ok' if export else 'none' }}">
+  <header class="card-h">
+    <span class="dot" aria-hidden="true"></span>
+    <h2>Study folder</h2>
+    <span class="card-status">{{ "Ready" if export else "Not prepared yet" }}</span>
+  </header>
+  <p class="card-note">The paper, code, data, results and the record of how they were made, in one folder.
+    Verifying and publishing work on this folder.</p>
+  <div class="picked">
+    <code class="path" id="export-path">{{ export or ("will be written to " ~ output_root) }}</code>
+    <button type="button" class="btn" id="do-export" {% if not session_ok %}disabled{% endif %}>{{ "Prepare again" if export else "Prepare the folder" }}</button>
+  </div>
+  <p class="found" id="export-msg"></p>
+</section>
+
+<section class="card" id="card-verify" data-state="none">
+  <header class="card-h">
+    <span class="dot" aria-hidden="true"></span>
+    <h2>Verify</h2>
+    <span class="card-status" id="verify-status">Not run</span>
+  </header>
+  <p class="card-note">The same five checks as <code>e2er verify</code>, offline: every file matches its fingerprint,
+    every table number traces to its source, the estimation follows the declared design, and every citation is in the bibliography.</p>
+  <button type="button" class="btn-primary" id="do-verify" {% if not session_ok %}disabled{% endif %}>Verify</button>
+  <div id="verify-out"></div>
+</section>
+
+<section class="card" id="card-publish" data-state="none">
+  <header class="card-h">
+    <span class="dot" aria-hidden="true"></span>
+    <h2>Publish to e2er.org</h2>
+    <span class="card-status" id="publish-status">Not published</span>
+  </header>
+  <p class="card-note">Publishing sends the study's description, its record and the fingerprints of its files to
+    <code>{{ platform }}</code>. The files themselves stay on this computer. You see the exact request first.</p>
+
+  <div class="field-grid">
+    <label class="field">
+      <span>Owner (your GitHub login, lower case)</span>
+      <input name="owner" id="pub-owner" value="{{ owner }}" autocomplete="off" spellcheck="false">
+    </label>
+    <label class="field">
+      <span>Project name</span>
+      <input name="project" id="pub-project" value="{{ project }}" autocomplete="off" spellcheck="false">
+    </label>
+  </div>
+  <div class="field">
+    <span>Data</span>
+    <div class="radio-row">
+      <label><input type="radio" name="data" value="private" checked> private</label>
+      <label><input type="radio" name="data" value="public"> public</label>
+    </div>
+  </div>
+  <div class="field">
+    <span>Code</span>
+    <div class="radio-row">
+      <label><input type="radio" name="code" value="private" checked> private</label>
+      <label><input type="radio" name="code" value="public"> public</label>
+    </div>
+  </div>
+  <label class="check">
+    <input type="checkbox" id="pub-demo" {% if demonstration %}checked{% endif %}>
+    <span>Demonstration: published only to show e2er; the paper and the record say so.</span>
+  </label>
+
+  <div class="save-row">
+    <button type="button" class="btn" id="do-preview" {% if not session_ok %}disabled{% endif %}>Preview the request</button>
+    <button type="button" class="btn-primary" id="do-publish" disabled>Publish</button>
+    <span class="form-note" id="pub-msg" role="status"></span>
+  </div>
+
+  <div id="signin" {% if signed_in %}hidden{% endif %}>
+    <p class="card-note">Publishing needs you signed in to {{ platform }}. You approve a code in the browser; no password goes through e2er.</p>
+    <button type="button" class="btn" id="do-login" {% if not session_ok %}disabled{% endif %}>Sign in to e2er.org</button>
+    <div id="login-out"></div>
+  </div>
+  <p class="muted" id="signed-in-note" {% if not signed_in %}hidden{% endif %}>Signed in to {{ platform }}.</p>
+
+  <div id="pub-out"></div>
+</section>
+
+<script>
+(function () {
+  const pid = '{{ paper.id }}';
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  async function call(method, url, body) {
+    const r = await fetch(url, { method, credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.detail || ('Failed (' + r.status + ')'));
+    return d;
+  }
+  const card = (id, state, status) => { const c = document.getElementById(id); c.dataset.state = state; if (status) c.querySelector('.card-status').textContent = status; };
+
+  document.getElementById('do-export').addEventListener('click', async () => {
+    const m = document.getElementById('export-msg'); m.textContent = 'Preparing…';
+    try { const d = await call('POST', '/api/papers/' + pid + '/export'); document.getElementById('export-path').textContent = d.path; m.textContent = 'Ready.'; card('card-folder', 'ok', 'Ready'); }
+    catch (e) { m.textContent = e.message; card('card-folder', 'bad', 'Could not prepare'); }
+  });
+
+  document.getElementById('do-verify').addEventListener('click', async () => {
+    const out = document.getElementById('verify-out'); out.innerHTML = '<p class="muted">Checking…</p>';
+    try {
+      const d = await call('POST', '/api/papers/' + pid + '/verify');
+      const mark = { PASS: '✓', FAIL: '✗', SKIP: '·' };
+      out.innerHTML = '<div class="vf-list pf-list">' + d.checks.map((c) =>
+        '<div class="pf pf-' + c.status.toLowerCase() + '"><span class="pf-mark">' + mark[c.status] + '</span><span class="pf-name">' + esc(c.name) + '</span><span class="pf-detail">' + esc(c.detail) + '</span></div>').join('') +
+        '</div><p>' + esc(d.verdict) + '</p>';
+      card('card-verify', d.verified ? 'ok' : 'bad', d.verified ? 'Verified' : 'Not verified');
+    } catch (e) { out.innerHTML = '<p class="error">' + esc(e.message) + '</p>'; card('card-verify', 'bad', 'Could not run'); }
+  });
+
+  const form = () => ({
+    owner: document.getElementById('pub-owner').value, project: document.getElementById('pub-project').value,
+    data: document.querySelector('input[name=data]:checked').value, code: document.querySelector('input[name=code]:checked').value,
+    demonstration: document.getElementById('pub-demo').checked,
+  });
+  const pubMsg = document.getElementById('pub-msg');
+  const pubBtn = document.getElementById('do-publish');
+  let previewOk = false;
+  document.getElementById('do-preview').addEventListener('click', async () => {
+    const out = document.getElementById('pub-out'); pubMsg.textContent = 'Preparing the preview…';
+    try {
+      const d = await call('POST', '/api/papers/' + pid + '/publish', { ...form(), dry_run: true });
+      out.innerHTML = '<h3 class="h3">The request that would be sent to ' + esc(d.platform) + '</h3>' +
+        (d.request ? '<pre class="preview">' + esc(JSON.stringify(d.request, null, 2)) + '</pre>' : '') +
+        (d.output ? '<pre class="preview">' + esc(d.output) + '</pre>' : '');
+      pubMsg.textContent = d.ok ? 'Nothing was sent. Publish when it looks right.' : 'The preview found a problem; see above.';
+      previewOk = d.ok;
+      pubBtn.disabled = !d.ok || document.getElementById('signin').hidden === false;
+    } catch (e) { pubMsg.textContent = e.message; }
+  });
+  pubBtn.addEventListener('click', async () => {
+    pubMsg.textContent = 'Publishing…';
+    try {
+      const d = await call('POST', '/api/papers/' + pid + '/publish', { ...form(), dry_run: false });
+      document.getElementById('pub-out').innerHTML = '<pre class="preview">' + esc(d.output) + '</pre>';
+      pubMsg.textContent = d.ok ? 'Published.' : 'Not published; see above.';
+      card('card-publish', d.ok ? 'ok' : 'bad', d.ok ? 'Published' : 'Not published');
+    } catch (e) { pubMsg.textContent = e.message; }
+  });
+
+  const loginBtn = document.getElementById('do-login');
+  if (loginBtn) loginBtn.addEventListener('click', async () => {
+    const out = document.getElementById('login-out');
+    try { await call('POST', '/api/platform/login'); } catch (e) { out.innerHTML = '<p class="error">' + esc(e.message) + '</p>'; return; }
+    out.innerHTML = '<p class="muted">Contacting e2er.org…</p>';
+    const poll = async () => {
+      let d; try { d = await call('GET', '/api/platform/login'); } catch (e) { out.innerHTML = '<p class="error">' + esc(e.message) + '</p>'; return; }
+      if (d.state === 'waiting') {
+        out.innerHTML = '<p>Open <a href="' + esc(d.verify_url) + '" target="_blank" rel="noopener">' + esc(d.verify_url) + '</a> and confirm this code:</p><div class="code-box">' + esc(d.code) + '</div><p class="muted">Waiting for your approval…</p>';
+      } else if (d.state === 'done' || d.signed_in) {
+        out.innerHTML = '<p>' + esc(d.message || 'Signed in.') + '</p>';
+        document.getElementById('signin').hidden = true; document.getElementById('signed-in-note').hidden = false; pubBtn.disabled = !previewOk;
+        return;
+      } else if (d.state === 'error') { out.innerHTML = '<p class="error">' + esc(d.message) + '</p>'; return; }
+      setTimeout(poll, 2000);
+    };
+    poll();
+  });
+})();
+</script>
+{% endblock %}

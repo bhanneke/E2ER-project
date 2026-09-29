@@ -1,0 +1,37 @@
+{% set labels = {
+  "python": "Python",
+  "db": "Study database",
+  "skills.installed": "Specialists' instructions",
+  "workspace.writable": "Study folder",
+  "byod.local_data_dir": "Your data",
+  "byod.literature": "Your literature",
+  "docker": "Docker (replication only)",
+  "data.list_data_sources": "Data sources",
+  "data.yfinance.history": "Yahoo Finance",
+  "data.fred.observations": "FRED",
+  "data.allium.list_tables": "Allium",
+  "lit.search_papers": "Literature search",
+  "lit.read_reference (OA PDF)": "Reading open-access PDFs",
+  "lit.zotero.library": "Zotero web library",
+} %}
+{% if error %}
+  <p class="error">The checks could not run: {{ error }}</p>
+{% else %}
+<div class="pf-verdict {% if ready %}ok{% else %}bad{% endif %}">
+  {% if ready %}
+    <strong>Ready to start a study.</strong>
+  {% else %}
+    <strong>Not ready yet.</strong> Fix the red lines below first.
+  {% endif %}
+  <span class="muted">{{ n_pass }} passed · {{ n_skip }} not set up (optional) · {{ n_fail }} failed</span>
+</div>
+<div class="pf-list">
+  {% for c in checks %}
+    <div class="pf pf-{{ c.status | lower }}">
+      <span class="pf-mark">{% if c.status == "PASS" %}✓{% elif c.status == "FAIL" %}✗{% else %}·{% endif %}</span>
+      <span class="pf-name">{{ labels.get(c.name) or (("AI provider (" ~ c.name[8:] ~ ")") if c.name.startswith("backend.") else c.name) }}</span>
+      <span class="pf-detail">{{ c.detail | ticks }}</span>
+    </div>
+  {% endfor %}
+</div>
+{% endif %}

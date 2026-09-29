@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import uuid
 from pathlib import Path
 from typing import Any
@@ -11,6 +12,10 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from src.modules.llm.base import LLMBackend, TokenUsage, ToolHandler, ToolLoopResult
+
+# The dashboard sends a first-time user to /setup while no settings exist. Tests
+# of other pages run without a .env; tests of the setup page delete this.
+os.environ.setdefault("E2ER_SKIP_SETUP_REDIRECT", "1")
 
 # ---------------------------------------------------------------------------
 # Deterministic specialist outputs (filename, content)

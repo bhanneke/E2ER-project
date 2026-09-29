@@ -24,6 +24,7 @@ than blocking on `input()`.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -84,6 +85,33 @@ def _ask_yes_no(prompt: str, default: bool = False) -> bool:
         if raw in {"n", "no"}:
             return False
         print("  Please answer y or n.")
+
+
+def ask_literature() -> dict[str, str]:
+    """Ask for the researcher's literature until it resolves, or they leave it blank.
+
+    Forgiving about how the path arrives (prompt glyph, quotes, drag-and-drop
+    escapes, ~) and about what it is: a folder holding one .bib, a Zotero
+    export or a folder of PDFs is offered for confirmation. Returns the .env
+    settings for it ({} when skipped).
+    """
+    from .paths import resolve_bib_answer
+
+    while True:
+        raw = _ask("  Path to your .bib file or literature folder (blank to skip)", default="")
+        if not raw.strip():
+            return {}
+        ans = resolve_bib_answer(raw)
+        if ans.bib and ans.literature is not None:
+            print(f"  ✓ Using {ans.bib} ({ans.literature.n_references} references)")
+            return ans.literature.settings()
+        if ans.ask and ans.literature is not None:
+            if _ask_yes_no(f"  {ans.ask}", default=True):
+                lit = ans.literature
+                print(f"  ✓ Using {lit.path}" + (f" ({lit.summary()})" if lit.summary() else ""))
+                return lit.settings()
+            continue
+        print(f"  ✗ {ans.error} Leave blank to skip.")
 
 
 # ---------------------------------------------------------------------------
@@ -219,27 +247,50 @@ def _env_block(
     github_owner: str,
     local_data_dir: str = "",
     literature_dir: str = "",
+    *,
+    model: tuple[str, str] | None = None,
+    keys: dict[str, str] | None = None,
+    purpose: str = "",
+    written_by: str = "`e2er init`",
 ) -> str:
-    """Assemble the `.env` body with comments so the user can edit later."""
+    """Assemble the `.env` body with comments so the user can edit later.
+
+    `model` is a (setting, value) pair such as ("CLAUDE_CODE_MODEL", "haiku");
+    `keys` are API keys the researcher typed into the setup page. The file is
+    written owner-only (see `write_env_file`), so keys may live in it.
+    """
+    keys = {k: v for k, v in (keys or {}).items() if v}
     lines = [
-        "# e2er v3 configuration — written by `e2er init`",
-        "# Re-run `e2er init` to overwrite, or edit by hand.",
+        f"# e2er v3 configuration — written by {written_by}",
+        "# Re-run `e2er init` (or open Settings in the dashboard) to change it, or edit by hand.",
         "",
         "# ── LLM backend ──────────────────────────────────────────────────",
         f"LLM_BACKEND={backend}",
     ]
-    if backend == "anthropic":
+    if model and model[1]:
+        lines.append(f"{model[0]}={model[1]}")
+    if backend == "anthropic" and "ANTHROPIC_API_KEY" not in keys:
         lines.append("# ANTHROPIC_API_KEY=sk-ant-...   (set in shell env, not here)")
-    elif backend == "openrouter":
+    elif backend == "openrouter" and "OPENROUTER_API_KEY" not in keys:
         lines.append("# OPENROUTER_API_KEY=sk-or-v1-... (set in shell env, not here)")
     lines.append("")
+
+    if keys:
+        lines.append("# ── Keys (this file is readable by you only) ─────────────────────")
+        lines.extend(f"{k}={_env_quote(v)}" for k, v in keys.items())
+        lines.append("")
+
+    if purpose:
+        lines.extend(
+            ["# ── Purpose of the studies made here ─────────────────────────────", f"E2ER_PURPOSE={purpose}", ""]
+        )
 
     if local_data_dir or literature_dir:
         lines.append("# ── Bring your own data + papers ─────────────────────────────────")
         if local_data_dir:
-            lines.append(f"LOCAL_DATA_DIR={local_data_dir}")
+            lines.append(f"LOCAL_DATA_DIR={_env_quote(local_data_dir)}")
         if literature_dir:
-            lines.append(f"LITERATURE_DIR={literature_dir}")
+            lines.append(f"LITERATURE_DIR={_env_quote(literature_dir)}")
         lines.append("")
 
     # The Allium data module enables itself whenever ALLIUM_API_KEY is
@@ -258,7 +309,7 @@ def _env_block(
         lines.extend(
             [
                 "# ── Literature (BibTeX) ──────────────────────────────────────────",
-                f"LITERATURE_BIBTEX_FILE={bibtex_path}",
+                f"LITERATURE_BIBTEX_FILE={_env_quote(bibtex_path)}",
                 "",
             ]
         )
@@ -299,6 +350,29 @@ def _env_block(
     return "\n".join(lines) + "\n"
 
 
+def _env_quote(value: str) -> str:
+    """A value as python-dotenv reads it back: quoted when it holds spaces, quotes, # or =."""
+    if value and not re.search(r"[\s'\"#=\\$]", value):
+        return value
+    return "'" + value.replace("\\", "\\\\").replace("'", "\\'") + "'"
+
+
+def write_env_file(env_path: Path, content: str) -> None:
+    """Write the settings file readable and writable by its owner only (mode 600).
+
+    It may hold API keys. Created with that mode rather than chmod-ed after,
+    so there is no moment in which another user could read it.
+    """
+    env_path = Path(env_path)
+    tmp = env_path.with_name(env_path.name + ".tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(content)
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, env_path)
+    os.chmod(env_path, 0o600)
+
+
 def _write_env(env_path: Path, content: str, force: bool) -> bool:
     """Write `.env` with confirm-overwrite semantics. Returns True iff written."""
     if env_path.exists() and not force:
@@ -306,7 +380,7 @@ def _write_env(env_path: Path, content: str, force: bool) -> bool:
         if not _ask_yes_no("    Overwrite?", default=False):
             print("    Keeping the existing file. Edit it by hand if needed.")
             return False
-    env_path.write_text(content, encoding="utf-8")
+    write_env_file(env_path, content)
     print(f"  ✓ Wrote {env_path}")
     return True
 
@@ -401,21 +475,17 @@ def init(force: bool = False, defaults: bool = False) -> int:
     # 3. Literature
     print("Step 3/4 — Literature (optional).")
     print(
-        "  e2er does not auto-fetch papers. Supply your own BibTeX file\n"
-        "  (e.g. exported from Zotero / Mendeley) for grounded citations."
+        "  Your own references: a .bib file (e.g. exported from Zotero or\n"
+        "  Mendeley), a Zotero export folder, or a folder of PDFs. You can\n"
+        "  drag the file or folder into this window."
     )
     bibtex = ""
-    if _ask_yes_no("Configure a BibTeX file now?", default=False):
-        while True:
-            path = _ask("  Path to .bib file", default="")
-            if not path:
-                break
-            expanded = Path(path).expanduser()
-            if expanded.is_file():
-                bibtex = str(expanded.resolve())
-                print(f"  ✓ Using {bibtex}")
-                break
-            print(f"  ✗ Not found: {expanded}. Leave blank to skip.")
+    literature_dir = "./literature"
+    if _ask_yes_no("Configure your literature now?", default=False):
+        chosen = ask_literature()
+        if chosen:
+            bibtex = chosen.get("LITERATURE_BIBTEX_FILE", "")
+            literature_dir = chosen.get("LITERATURE_DIR", literature_dir)
     print()
 
     # 4. Database (advanced — most users skip)
@@ -461,7 +531,7 @@ def init(force: bool = False, defaults: bool = False) -> int:
         github_token_pat=github_token_pat,
         github_owner=github_owner,
         local_data_dir="./data",
-        literature_dir="./literature",
+        literature_dir=literature_dir,
     )
     _write_env(env_path, content, force=force)
 

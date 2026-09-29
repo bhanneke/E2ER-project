@@ -43,7 +43,19 @@ a finished bundle is internally consistent and untampered. Generation is
 nearly free; e2er's aim is to make *verification* cheap too.
 
 ```bash
-pip install e2er
+uv tool install --python 3.12 e2er    # installs Python 3.12 and e2er (see Install)
+e2er                                  # your browser opens
+```
+
+`e2er` alone opens a page in your browser where you choose your AI provider,
+your literature (a .bib file, a Zotero export or a folder of PDFs) and your data
+folder, start a study, review it at the points where it stops for you, verify it
+and publish it. The terminal stays open while you work; nothing else happens
+there. `e2er --no-browser` prints the address without opening it.
+
+The terminal commands remain for power users:
+
+```bash
 e2er init --defaults                         # scaffold data/ + literature/, write .env
 e2er run "<your research question>"          # → a paper in workspaces/<id>/
 e2er run "<question>" --template <name>      # follow another template
@@ -198,30 +210,78 @@ automated-research systems (RISE) — that situates e2er against the landscape.
 
 ## Install
 
-**Prerequisites:** Python 3.11 or 3.12. That's it — SQLite is auto-created at `~/.e2er/papers.db`, so no database setup is needed for the default flow.
+The recommended way installs Python for you. e2er needs Python 3.11 or newer
+and is tested on 3.11 and 3.12, so the commands pin 3.12.
+
+**Mac and Linux**, in a terminal:
 
 ```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh     # installs uv, a Python installer
+uv tool install --python 3.12 e2er                  # downloads Python 3.12 and e2er
+uv tool update-shell                                # then open a new terminal window
+e2er                                                # your browser opens
+```
+
+**Windows**, in PowerShell:
+
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+uv tool install --python 3.12 e2er
+uv tool update-shell        # then open a new PowerShell window
+e2er
+```
+
+e2er's automated tests run on Linux (Ubuntu, Python 3.11 and 3.12), and it is
+developed on macOS. Windows is not yet tested.
+
+**Updating:** `uv tool upgrade e2er`.
+
+**If you manage Python yourself** (Python 3.11 or newer), use a virtual
+environment. On a Mac, for example:
+
+```bash
+python3.12 -m venv .venv && source .venv/bin/activate
 pip install e2er
+e2er
+```
+
+### AI access
+
+e2er needs one of these. The setup page shows which ones it finds.
+
+- **A Claude subscription, through Claude Code.** Install Claude Code following
+  [Anthropic's instructions](https://code.claude.com/docs/en/setup), then run
+  `claude` once and sign in in the browser. Claude Code needs a Pro, Max, Team
+  or Enterprise plan (or a Console account). Studies then run on your
+  subscription with no extra bill.
+- **An API key**, billed per use: [Anthropic](https://console.anthropic.com/settings/keys)
+  or [OpenRouter](https://openrouter.ai/keys). Paste it on the setup page; every
+  study has a spending limit.
+- The **Codex CLI** (ChatGPT Plus/Pro, [install](https://github.com/openai/codex))
+  and the **Gemini CLI** (Google AI Pro/Ultra, [install](https://github.com/google-gemini/gemini-cli))
+  are supported the same way as Claude Code.
+
+**Docker Desktop** ([get it](https://docs.docker.com/get-started/get-docker/)) is
+needed only for the replication template, which runs published code inside it.
+
+### Setting up in the terminal instead
+
+SQLite is auto-created at `~/.e2er/papers.db`, so no database setup is needed.
+
+```bash
 e2er init                # guided setup: backend pick, prereq check, .env, skills
 ```
 
-`e2er init` is the recommended path — it asks you a handful of questions, checks that your chosen LLM backend is installed, writes a working `.env` to the current directory, runs `skills sync`, and prints example research questions you can copy. Re-run it any time to reconfigure (`--force` overwrites without prompting).
+`e2er init` asks a handful of questions, checks that your chosen LLM backend is installed, writes a working `.env` to the current directory (readable by you only), runs `skills sync`, and prints example research questions you can copy. It accepts paths the way you paste or drag them: with quotes, with the terminal prompt in front, or a folder where a .bib is asked for. Re-run it any time to reconfigure (`--force` overwrites without prompting). The setup page in the browser writes the same `.env`.
 
 If you'd rather do it by hand:
 
 ```bash
-pip install e2er
 e2er skills sync         # makes the specialists' skill files visible to your CLI backend
 export LLM_BACKEND=claude_code   # or anthropic / openrouter / codex / gemini
 ```
 
-To verify your install without spending any tokens:
-
-```bash
-e2er run --help          # CLI is wired
-```
-
-That's all you need to run a paper. The rest of this section covers optional setup.
+`e2er doctor` checks the setup without spending any tokens.
 
 **Optional — Postgres + pgvector** (for production, multi-user, or the literature KB):
 
@@ -270,7 +330,7 @@ e2er is "bring your own LLM" — choose whichever you already have access to. Th
 
 | Backend | Setting | Cost per paper | Install |
 |---|---|---|---|
-| **Claude Code CLI** (Anthropic Max) | `LLM_BACKEND=claude_code` | $0/token | `npm i -g @anthropic-ai/claude-code` |
+| **Claude Code CLI** (Claude subscription) | `LLM_BACKEND=claude_code` | $0/token | [Anthropic's instructions](https://code.claude.com/docs/en/setup) |
 | **Codex CLI** (ChatGPT Plus/Pro) | `LLM_BACKEND=codex` | $0/token | `npm i -g @openai/codex` |
 | **Gemini CLI** (Google AI Pro/Ultra) | `LLM_BACKEND=gemini` | $0/token | `npm i -g @google/gemini-cli` |
 | Anthropic SDK | `LLM_BACKEND=anthropic` | per-token | `export ANTHROPIC_API_KEY=...` |
@@ -639,7 +699,7 @@ The automated research space is developing quickly. Two projects most relevant t
   title        = {{e2er: End-to-End Researcher, An Open-Source Pipeline
                    for Automated Empirical Research}},
   year         = {2026},
-  version      = {0.11.0},
+  version      = {0.12.0},
   url          = {https://github.com/bhanneke/E2ER-project},
   doi          = {10.5281/zenodo.20187238},
   license      = {MIT},

@@ -13,10 +13,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import re
 import shutil
-from dataclasses import asdict, dataclass
+import sys
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from typing import Any
 
 PASS, SKIP, FAIL = "PASS", "SKIP", "FAIL"
 
@@ -34,6 +37,192 @@ _BACKEND_CLI = {
     "codex": "codex",
     "gemini": "gemini",
 }
+
+
+#: Where to install things. One place, so the README, `e2er doctor` and the
+#: setup page point to the same instructions.
+INSTALL_URL = "https://github.com/bhanneke/E2ER-project#install"
+CLAUDE_CODE_SETUP_URL = "https://code.claude.com/docs/en/setup"
+DOCKER_URL = "https://docs.docker.com/get-started/get-docker/"
+
+#: How to get each backend, for a person who has none.
+BACKEND_HELP: dict[str, dict[str, str]] = {
+    "claude_code": {
+        "label": "Claude subscription, through Claude Code",
+        "how": "Install Claude Code, then run `claude` once and sign in in the browser.",
+        "url": CLAUDE_CODE_SETUP_URL,
+    },
+    "anthropic": {
+        "label": "Anthropic API key",
+        "how": "Create a key in the Anthropic Console. Billed per use.",
+        "url": "https://console.anthropic.com/settings/keys",
+    },
+    "openrouter": {
+        "label": "OpenRouter API key",
+        "how": "Create a key on OpenRouter. Billed per use.",
+        "url": "https://openrouter.ai/keys",
+    },
+    "codex": {
+        "label": "ChatGPT subscription, through the Codex CLI",
+        "how": "Install the Codex CLI, then run `codex login`.",
+        "url": "https://github.com/openai/codex",
+    },
+    "gemini": {
+        "label": "Google AI subscription, through the Gemini CLI",
+        "how": "Install the Gemini CLI, then run `gemini` once and sign in.",
+        "url": "https://github.com/google-gemini/gemini-cli",
+    },
+}
+
+#: The models the setup page offers per backend: (value, label). The first
+#: entry marked cheapest is the cheapest; "" means the CLI's own default.
+BACKEND_MODELS: dict[str, tuple[str, list[tuple[str, str]]]] = {
+    "claude_code": (
+        "CLAUDE_CODE_MODEL",
+        [
+            ("haiku", "Haiku — cheapest, uses the least of your plan"),
+            ("sonnet", "Sonnet — recommended"),
+            ("opus", "Opus — strongest, uses the most of your plan"),
+        ],
+    ),
+    "anthropic": (
+        "ANTHROPIC_MODEL",
+        [
+            ("claude-haiku-4-5", "Haiku 4.5 — cheapest"),
+            ("claude-sonnet-4-5", "Sonnet 4.5 — recommended"),
+            ("claude-opus-4-7", "Opus 4.7 — strongest, most expensive"),
+        ],
+    ),
+    "openrouter": (
+        "OPENROUTER_MODEL",
+        [
+            ("anthropic/claude-haiku-4-5", "Claude Haiku 4.5 — cheapest"),
+            ("anthropic/claude-sonnet-4-5", "Claude Sonnet 4.5 — recommended"),
+        ],
+    ),
+    "codex": ("CODEX_MODEL", [("", "The Codex CLI's own default")]),
+    "gemini": (
+        "GEMINI_MODEL",
+        [
+            ("gemini-2.5-flash", "Gemini 2.5 Flash — cheapest"),
+            ("gemini-2.5-pro", "Gemini 2.5 Pro — strongest"),
+        ],
+    ),
+}
+
+
+def cli_signed_in(backend: str, home: Path | None = None) -> tuple[bool | None, str]:
+    """Is the backend's CLI signed in? (True, False, or None when it cannot be told.)
+
+    Read from the files each CLI keeps, without starting it: starting a CLI
+    can open a browser or a permission prompt, which a status check must not.
+    """
+    h = home or Path.home()
+    if backend == "claude_code":
+        if os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"):
+            return True, "signed in with a key from the environment"
+        if (h / ".claude" / ".credentials.json").is_file():
+            return True, "signed in"
+        try:
+            data = json.loads((h / ".claude.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            data = None
+        if isinstance(data, dict):
+            if data.get("oauthAccount"):
+                return True, "signed in"
+            return False, "not signed in — run `claude` once and sign in in the browser"
+        return None, "could not tell whether it is signed in — run `claude` once to check"
+    if backend == "codex":
+        codex_home = Path(os.environ.get("CODEX_HOME") or h / ".codex")
+        if os.environ.get("OPENAI_API_KEY") or (codex_home / "auth.json").is_file():
+            return True, "signed in"
+        return False, "not signed in — run `codex login`"
+    if backend == "gemini":
+        if os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"):
+            return True, "signed in with a key from the environment"
+        if (h / ".gemini" / "oauth_creds.json").is_file():
+            return True, "signed in"
+        return False, "not signed in — run `gemini` once and sign in"
+    return None, ""
+
+
+@dataclass
+class BackendStatus:
+    name: str
+    label: str
+    kind: str  # "cli" (runs on a subscription) | "api" (billed per use)
+    installed: bool
+    signed_in: bool | None
+    detail: str
+    ready: bool
+    help: dict[str, str] = field(default_factory=dict)
+    model_setting: str = ""
+    models: list[tuple[str, str]] = field(default_factory=list)
+    key_setting: str = ""
+
+
+def detect_backends(settings: Any = None) -> list[BackendStatus]:
+    """Every AI backend e2er can use, and whether this computer has it ready."""
+    out: list[BackendStatus] = []
+    for name in ("claude_code", "codex", "gemini", "anthropic", "openrouter"):
+        model_setting, models = BACKEND_MODELS[name]
+        info = BACKEND_HELP[name]
+        if name in _BACKEND_CLI:
+            path = shutil.which(_BACKEND_CLI[name])
+            if path:
+                signed, note = cli_signed_in(name)
+                detail = f"`{_BACKEND_CLI[name]}` found; {note}"
+            else:
+                signed, detail = None, f"`{_BACKEND_CLI[name]}` is not installed"
+            out.append(
+                BackendStatus(
+                    name,
+                    info["label"],
+                    "cli",
+                    bool(path),
+                    signed,
+                    detail,
+                    bool(path) and signed is not False,
+                    info,
+                    model_setting,
+                    models,
+                )
+            )
+        else:
+            key_setting = f"{name.upper()}_API_KEY"
+            key = getattr(settings, f"{name}_api_key", None) if settings is not None else None
+            key = key or os.environ.get(key_setting)
+            out.append(
+                BackendStatus(
+                    name,
+                    info["label"],
+                    "api",
+                    bool(key),
+                    None,
+                    "key found" if key else "no key yet",
+                    bool(key),
+                    info,
+                    model_setting,
+                    models,
+                    key_setting,
+                )
+            )
+    return out
+
+
+def python_check() -> Check:
+    major, minor, micro = tuple(sys.version_info)[:3]
+    if (major, minor) < (3, 11):
+        return Check("python", FAIL, f"Python {major}.{minor} is too old; e2er needs 3.11 or newer. See {INSTALL_URL}")
+    return Check("python", PASS, f"Python {major}.{minor}.{micro}")
+
+
+def docker_check() -> Check:
+    """Docker runs the replication template's sandbox; nothing else needs it."""
+    path = shutil.which("docker")
+    if path:
+        return Check("docker", PASS, f"docker at {path} (used by the replication template)")
+    return Check("docker", SKIP, f"Docker is not installed; only the replication template needs it ({DOCKER_URL})")
 
 
 def _mask_db_url(url: str) -> str:
@@ -55,7 +244,15 @@ async def backend_check(settings) -> Check:
         return Check(f"backend.{backend}", FAIL, f"unknown backend literal: {backend!r}")
     path = shutil.which(cli)
     if not path:
-        return Check(f"backend.{backend}", FAIL, f"`{cli}` CLI not on PATH — install per the README")
+        where = CLAUDE_CODE_SETUP_URL if backend == "claude_code" else BACKEND_HELP[backend]["url"]
+        return Check(
+            f"backend.{backend}",
+            FAIL,
+            f"`{cli}` CLI not on PATH — install it ({where}), or see {INSTALL_URL}",
+        )
+    signed, note = cli_signed_in(backend)
+    if signed is False:
+        return Check(f"backend.{backend}", PASS, f"CLI at {path} ($0 flat-rate); {note}")
     return Check(f"backend.{backend}", PASS, f"CLI at {path} ($0 flat-rate)")
 
 
@@ -368,12 +565,14 @@ def workspace_writable_check(settings) -> Check:
 async def run_doctor(settings) -> list[Check]:
     """Full preflight: setup (backend, skills, DB) + BYOD corpus + provider probes."""
     return [
+        python_check(),
         await backend_check(settings),
         await skills_check(settings),
         await db_check(settings),
         workspace_writable_check(settings),
         await byod_local_data_check(settings),
         await byod_literature_check(settings),
+        docker_check(),
         *await run_provider_checks(settings),
     ]
 
@@ -381,7 +580,7 @@ async def run_doctor(settings) -> list[Check]:
 # ── Output ───────────────────────────────────────────────────────────────────
 
 
-_BLOCKERS_PREFIXES = ("backend.", "db", "skills.", "workspace.")
+_BLOCKERS_PREFIXES = ("python", "backend.", "db", "skills.", "workspace.")
 
 
 def render_human(checks: list[Check]) -> str:

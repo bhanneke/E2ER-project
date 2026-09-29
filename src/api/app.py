@@ -77,6 +77,50 @@ app.add_middleware(
 app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
 
+
+def _ticks(text: object) -> Any:
+    """`name` in a message (as the terminal writes it) → <code>name</code>, everything else escaped."""
+    import re as _re
+
+    from markupsafe import Markup, escape
+
+    return Markup(_re.sub(r"`([^`]+)`", r'<code class="tick">\1</code>', str(escape(str(text)))))
+
+
+templates.env.filters["ticks"] = _ticks
+
+
+@app.middleware("http")
+async def _session_from_launch_url(request: Request, call_next):
+    """Trade the token in the launch URL (`/?t=…`) for a session cookie.
+
+    `e2er` opens the browser at that URL; the cookie then unlocks the parts of
+    the dashboard that touch this computer (see local_session.py). The redirect
+    drops the token from the address bar and the history.
+    """
+    from . import local_session as ls
+
+    token = request.query_params.get(ls.QUERY)
+    if request.method == "GET" and token is not None:
+        import secrets
+
+        from starlette.datastructures import URL
+
+        clean = URL(str(request.url)).remove_query_params(ls.QUERY)
+        target = clean.path + (f"?{clean.query}" if clean.query else "")
+        resp = RedirectResponse(url=target, status_code=303)
+        if secrets.compare_digest(token, ls.session_token()):
+            resp.set_cookie(ls.cookie_name(request), token, httponly=True, samesite="strict", path="/")
+        return resp
+    return await call_next(request)
+
+
+from .finish import router as _finish_router  # noqa: E402 — needs `templates` above
+from .setup import router as _setup_router  # noqa: E402
+
+app.include_router(_setup_router)
+app.include_router(_finish_router)
+
 # Registry of running pipeline tasks, keyed by paper_id.
 # Used by POST /api/papers/{id}/cancel to cancel an in-flight run.
 _RUNNING: dict[str, asyncio.Task] = {}
@@ -447,6 +491,10 @@ class CreatePaperRequest(BaseModel):
     # requester explicitly acknowledges. Defaults to False so the cheap path
     # is the easy path. See `_UNPROVEN_TUPLE_CAP`.
     acknowledge_unproven_tuple: bool = False
+    # "demonstration" marks a study made only to show e2er (E2ER_PURPOSE for
+    # this one study): recorded in manifest.json, and the replication report
+    # and a later `e2er publish` carry the disclaimer.
+    purpose: str | None = None
 
 
 class ResumeRequest(BaseModel):
@@ -613,6 +661,9 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
             "" if ack else "; user did NOT ack — cap was capped to the floor",
         )
 
+    if req.purpose is not None and req.purpose not in {"", "demonstration"}:
+        raise HTTPException(status_code=422, detail=f"purpose must be 'demonstration' or empty, got {req.purpose!r}")
+
     manifest = {
         "paper_id": paper_id,
         "title": req.title,
@@ -625,6 +676,8 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
         "governance": effective_governance,
         "review_stages": req.review_stages,
         "current_stage": "idea",
+        "pipeline": req.pipeline,
+        **({"purpose": req.purpose} if req.purpose else {}),
     }
     (workspace / "manifest.json").write_text(json.dumps(manifest, indent=2))
     try:
@@ -807,6 +860,12 @@ async def get_review(paper_id: str = Depends(_validate_uuid)) -> dict[str, Any]:
 
     _row, workspace, state, (pending, spec) = await _review_context(paper_id)
     past = [e for e in await fetch_events(paper_id) if e.get("event_type") == "researcher_action"]
+    for e in past:  # SQLite hands the payload back as JSON text
+        if isinstance(e.get("payload"), str):
+            try:
+                e["payload"] = json.loads(e["payload"])
+            except ValueError:
+                e["payload"] = {}
     if pending is None:
         return {"pending": None, "actions": past}
     files = []
@@ -1344,8 +1403,12 @@ _TERMINAL_STATUSES = {"completed", "failed", "cancelled"}
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard_index(request: Request) -> Any:
-    """Papers list — landing page."""
+    """Papers list — landing page. The first time, the setup page instead."""
     from ..db.client import fetch_all
+    from .setup import needs_setup
+
+    if needs_setup():
+        return RedirectResponse(url="/setup", status_code=303)
 
     try:
         rows = await fetch_all(
@@ -1432,7 +1495,7 @@ def _workflow_inventory() -> dict[str, Any]:
 
 async def _preflight() -> dict[str, Any]:
     """Run the same checks `e2er doctor` runs."""
-    from ..doctor import FAIL, PASS, SKIP, run_doctor
+    from ..doctor import _BLOCKERS_PREFIXES, FAIL, PASS, SKIP, run_doctor
 
     try:
         checks = await run_doctor(get_settings())
@@ -1441,9 +1504,7 @@ async def _preflight() -> dict[str, Any]:
         return {"checks": [], "ready": False, "error": str(e)[:200], "n_fail": 0}
 
     rows = [{"name": c.name, "status": c.status, "detail": c.detail} for c in checks]
-    blockers = [
-        c for c in checks if c.status == FAIL and c.name.startswith(("backend.", "db", "skills.", "workspace."))
-    ]
+    blockers = [c for c in checks if c.status == FAIL and c.name.startswith(_BLOCKERS_PREFIXES)]
     return {
         "checks": rows,
         "ready": not blockers,
@@ -1588,17 +1649,55 @@ async def install_skill_pack(pack: str = Form(...)) -> Any:
     return RedirectResponse(url=f"/skills?message={quote_plus(note)}", status_code=303)
 
 
+#: The order the built-in templates are offered in; others follow by name.
+_TEMPLATE_ORDER = ("empirical", "empirical-preregistered", "event-study-finance", "replication")
+
+#: Names for the researcher steps of the built-in templates. Any other step is named from its id.
+_PAUSE_LABELS = {
+    "review_design": "Design review",
+    "preregister": "Pre-registration",
+    "review_draft": "Draft review",
+    "review_plan": "Plan review",
+    "review_report": "Report review",
+}
+
+
+def _step_label(name: str) -> str:
+    return _PAUSE_LABELS.get(name) or name.replace("_", " ").capitalize()
+
+
+def _new_form_context(values: dict[str, Any] | None = None, error: str = "") -> dict[str, Any]:
+    from .setup import needs_setup
+
+    settings = get_settings()
+    v = {
+        "research_question": "",
+        "title": "",
+        "pipeline": "empirical",
+        "mode": "single_pass",
+        "methodology": "empirical",
+        "max_cost_usd": settings.default_max_cost_usd,
+        "demonstration": False,
+        **(values or {}),
+    }
+    return {
+        "default_cap": settings.default_max_cost_usd,
+        "pipelines": _pipeline_choices(),
+        "values": v,
+        "error": error,
+        "backend": getattr(settings, "llm_backend", ""),
+        "billed": getattr(settings, "llm_backend", "") in {"anthropic", "openrouter"},
+        "needs_setup": needs_setup(),
+    }
+
+
 @app.get("/papers/new", response_class=HTMLResponse)
 async def new_paper_form(request: Request) -> Any:
-    return templates.TemplateResponse(
-        request,
-        "new.html",
-        {"default_cap": get_settings().default_max_cost_usd, "pipelines": _pipeline_choices()},
-    )
+    return templates.TemplateResponse(request, "new.html", _new_form_context())
 
 
-def _pipeline_choices() -> list[dict[str, str]]:
-    """Every pipeline the runner could resolve, with its own description.
+def _pipeline_choices() -> list[dict[str, Any]]:
+    """Every pipeline the runner could resolve, with its own description and pauses.
 
     The names come from the files on disk, so a pipeline someone drops into
     ./pipelines or ~/.e2er/pipelines appears in the form without E2ER being
@@ -1609,28 +1708,38 @@ def _pipeline_choices() -> list[dict[str, str]]:
     nowhere to look; listing it means the error surfaces at submit time, where
     it names the file and the problem.
     """
-    from ..core.pipeline.spec import PipelineError, available, load_spec
+    from ..core.pipeline.spec import RESEARCHER_KINDS, PipelineError, available, load_spec
 
-    out: list[dict[str, str]] = []
-    for name, path in sorted(available().items()):
+    out: list[dict[str, Any]] = []
+    found = available()
+    names = [n for n in _TEMPLATE_ORDER if n in found] + sorted(n for n in found if n not in _TEMPLATE_ORDER)
+    for name in names:
+        path = found[name]
         try:
-            out.append({"name": name, "description": load_spec(path).description})
+            spec = load_spec(path)
+            pauses = [_step_label(st.name) for st in spec.steps if st.kind in RESEARCHER_KINDS]
+            out.append({"name": name, "description": spec.description, "pauses": pauses})
         except (PipelineError, OSError) as e:
             logger.warning("pipeline %s at %s did not parse: %s", name, path, e)
-            out.append({"name": name, "description": "(this file did not parse)"})
+            out.append({"name": name, "description": "(this file did not parse)", "pauses": []})
     return out
 
 
 @app.post("/papers")
 async def submit_new_paper(
-    title: str = Form(...),
+    request: Request,
     research_question: str = Form(...),
-    mode: str = Form("iterative"),
+    title: str = Form(""),
+    mode: str = Form("single_pass"),
     methodology: str = Form("empirical"),
     pipeline: str = Form("empirical"),
-    max_cost_usd: float = Form(None),
-) -> RedirectResponse:
-    """Form-encoded handler that mirrors POST /api/papers. Redirects to detail page.
+    max_cost_usd: float | None = Form(None),
+    demonstration: str = Form(""),
+) -> Any:
+    """Form-encoded handler that mirrors POST /api/papers. Redirects to the progress page.
+
+    A refusal (a first run over the $1 floor, an unknown template) is shown on
+    the form, with what was typed kept, rather than as a JSON error page.
 
     NOT bearer-auth-protected: browsers can't add `Authorization: Bearer ...`
     to a regular form POST. The JSON /api/papers IS auth-protected, so machine
@@ -1638,16 +1747,43 @@ async def submit_new_paper(
     the dashboard down at the network layer (Tailscale, VPN, localhost-only
     bind) — see SECURITY.md.
     """
+    from ..cli_run import derive_title
+    from ..core.demonstration import DEMONSTRATION
+
+    rq = research_question.strip()
+    values = {
+        "research_question": research_question,
+        "title": title,
+        "pipeline": pipeline,
+        "mode": mode,
+        "methodology": methodology,
+        "max_cost_usd": max_cost_usd,
+        "demonstration": bool(demonstration),
+    }
+    if not rq:
+        return templates.TemplateResponse(
+            request, "new.html", _new_form_context(values, "Write the research question first."), status_code=422
+        )
+    backend = get_settings().llm_backend
     req = CreatePaperRequest(
-        title=title,
-        research_question=research_question,
+        title=title.strip() or derive_title(rq),
+        research_question=rq,
         mode=mode,
         methodology=methodology,
         pipeline=pipeline,
         max_cost_usd=max_cost_usd,
+        # The CLI backends run on the researcher's subscription at $0, so the
+        # $1 first-run floor protects nothing there (as `e2er run` does).
+        acknowledge_unproven_tuple=backend in {"claude_code", "codex", "gemini"},
+        purpose=DEMONSTRATION if demonstration else None,
     )
     bg = BackgroundTasks()
-    resp = await create_paper(req, bg)
+    try:
+        resp = await create_paper(req, bg)
+    except HTTPException as e:
+        return templates.TemplateResponse(
+            request, "new.html", _new_form_context(values, str(e.detail)), status_code=e.status_code
+        )
     # FastAPI normally runs background_tasks after the response; here we manually
     # await any tasks the create_paper handler queued (github repo creation).
     await bg()
@@ -2020,6 +2156,120 @@ def _progress(events: list[dict[str, Any]], paper: dict[str, Any]) -> dict[str, 
     }
 
 
+#: Plain names for the template steps of the built-in templates.
+_STEP_NAMES = {
+    "initial": "Design, data, estimation and draft",
+    "iterative": "Improve until it stops getting better",
+    "estimation_gate": "Estimation check",
+    "self_attack": "Self-critique",
+    "polish": "Polish",
+    "review": "Review panel",
+    "revision": "Revision",
+    "replication": "Replication package",
+    "fetch": "Fetch and verify the package",
+    "plan": "Plan the reproduction",
+    "sandbox_run": "Run the code in Docker",
+    "compare": "Compare every number",
+    "reproduction_gate": "Reproduction check",
+    "event_window_gate": "Event-window check",
+}
+
+_STEP_KINDS = {
+    "researcher": "your review",
+    "preregister": "your review; frozen on approval",
+    "gate": "check",
+    "strategist": "specialists",
+    "specialists": "specialists",
+    "aggregate": "reviewers",
+}
+
+
+def _template_progress(paper: dict[str, Any], events: list[dict[str, Any]]) -> dict[str, Any]:
+    """The study's template steps with their state, the specialists done, and the checks.
+
+    Read from the template file, the run's saved state and its event log, so the
+    page shows the steps this study's template has rather than a fixed list.
+    """
+    from ..core.pipeline.spec import find_spec
+    from ..core.pipeline.state import PipelineState
+
+    name = str(paper.get("pipeline") or "empirical")
+    mode = str(paper.get("mode") or "single_pass")
+    status = str(paper.get("status") or "")
+    workspace = Path(str(paper.get("workspace") or Path(get_settings().workspace_root) / str(paper.get("id"))))
+    try:
+        spec = find_spec(name)
+    except Exception:  # noqa: BLE001 — a missing template must not break the page
+        spec = None
+    try:
+        state = PipelineState.load(workspace, str(paper.get("id")), mode)
+    except Exception:  # noqa: BLE001
+        state = None
+    completed = set(state.completed_stages if state else []) | set(state.approved_stages if state else [])
+    pending = state.pending_review_stage if state else None
+
+    opened: list[str] = []
+    finished: set[str] = set()
+    halted: set[str] = set()
+    done_specialists: list[str] = []
+    failed_specialists: list[str] = []
+    for e in reversed(events):  # oldest first
+        et, stage, who = str(e.get("event_type") or ""), str(e.get("stage") or ""), e.get("specialist")
+        if et == "phase_start" and stage:
+            opened.append(stage)
+        elif et == "phase_end" and stage:
+            finished.add(stage)
+        elif et == "gate_halted" and stage:
+            halted.add(stage)
+        elif et == "specialist_end" and who and who not in done_specialists:
+            done_specialists.append(str(who))
+            if who in failed_specialists:
+                failed_specialists.remove(str(who))
+        elif et == "specialist_failed" and who and who not in failed_specialists and who not in done_specialists:
+            failed_specialists.append(str(who))
+
+    steps: list[dict[str, Any]] = []
+    if spec is not None:
+        inner = [st for st in spec.steps if st.after]
+        for st in spec.steps:
+            if st.after:
+                continue
+            steps.append(_step_row(st, mode, status, completed, pending, opened, finished, halted, sub=False))
+            if st.kind == "strategist" and st.name == "initial":
+                steps.extend(
+                    _step_row(x, mode, status, completed, pending, opened, finished, halted, sub=True) for x in inner
+                )
+    current = next((s["label"] for s in steps if s["state"] in {"waiting", "running"}), "")
+    return {
+        "template": name,
+        "steps": steps,
+        "current": current,
+        "specialists_done": done_specialists,
+        "specialists_failed": failed_specialists,
+        "checks": _gate_verdicts(workspace) if workspace.is_dir() else [],
+    }
+
+
+def _step_row(st, mode, status, completed, pending, opened, finished, halted, *, sub: bool) -> dict[str, Any]:
+    label = _STEP_NAMES.get(st.name) or _step_label(st.name)
+    kind = _STEP_KINDS.get(st.kind, st.kind)
+    if not st.applies_to(mode):
+        state, note = "skipped", f"not in {mode.replace('_', ' ')} mode"
+    elif pending == st.name and status == "paused":
+        state, note = (
+            ("failed", "check failed; waiting for you") if st.name in halted else ("waiting", "waiting for you")
+        )
+    elif st.name in completed or (st.name in finished and st.name != pending):
+        state, note = "done", ""
+    elif st.name in halted and status in {"paused", "rejected", "failed"}:
+        state, note = "failed", "check failed"
+    elif st.name in opened and status not in {"completed", "failed", "cancelled", "rejected", "paused"}:
+        state, note = "running", "running now"
+    else:
+        state, note = "pending", ""
+    return {"name": st.name, "label": label, "kind": kind, "state": state, "note": note, "sub": sub}
+
+
 def _failure_detail(workspace: Path, paper: dict[str, Any], events: list[dict[str, Any]]) -> dict[str, Any]:
     """Assemble a readable account of why a run stopped.
 
@@ -2123,7 +2373,7 @@ async def paper_live_fragment(request: Request, paper_id: str = Depends(_validat
             FROM pipeline_events
             WHERE paper_id = %(id)s
             ORDER BY created_at DESC
-            LIMIT 50
+            LIMIT 1000
             """,
             {"id": paper_id},
         )
@@ -2140,10 +2390,11 @@ async def paper_live_fragment(request: Request, paper_id: str = Depends(_validat
         {
             "paper": paper,
             "progress": _progress(list(events or []), dict(paper)),
+            "tp": _template_progress(dict(paper), list(events or [])),
             "failure": _failure_detail(Path(get_settings().workspace_root) / paper_id, dict(paper), list(events or [])),
             "cost_spent": cost_spent,
             "cost_pct": cost_pct,
-            "events": events or [],
+            "events": (events or [])[:50],
             "can_cancel": (paper.get("status") not in _TERMINAL_STATUSES) and (paper_id in _RUNNING),
             "can_resume": (paper.get("status") == "paused") and (paper_id not in _RUNNING),
             "awaiting_review": _awaiting_review(paper),
@@ -2154,6 +2405,11 @@ async def paper_live_fragment(request: Request, paper_id: str = Depends(_validat
 def _awaiting_review(paper: Any) -> str | None:
     """The researcher step a paused run waits at, for the dashboard's review link."""
     if paper.get("status") != "paused" or not paper.get("workspace"):
+        return None
+    # The status turns to paused a moment before the run task has wound down;
+    # a review offered in that moment is refused (409) when approved.
+    task = _RUNNING.get(str(paper.get("id")))
+    if task is not None and not task.done():
         return None
     try:
         from ..core.pipeline.state import PipelineState
@@ -2168,7 +2424,9 @@ def _awaiting_review(paper: Any) -> str | None:
 async def review_page(request: Request, paper_id: str = Depends(_validate_uuid)) -> Any:
     """The researcher step in the dashboard: files in an editor, an instruction, send back, approve."""
     data = await get_review(paper_id)
-    return templates.TemplateResponse(request, "review.html", {"paper_id": paper_id, **data})
+    stage = (data.get("pending") or {}).get("stage") or ""
+    label = _STEP_NAMES.get(stage) or _step_label(stage) if stage else ""
+    return templates.TemplateResponse(request, "review.html", {"paper_id": paper_id, "step_label": label, **data})
 
 
 @app.get("/api/papers/{paper_id}/events")

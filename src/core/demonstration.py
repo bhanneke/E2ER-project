@@ -77,6 +77,24 @@ def resolve_purpose(flag: bool = False, folder: Path | None = None) -> str | Non
     return value
 
 
+def study_purpose(workspace: Path | None = None) -> str | None:
+    """A study's purpose: the one chosen for it when it started (manifest.json), else E2ER_PURPOSE.
+
+    The dashboard's "demonstration" box marks one study, not the whole server,
+    so it is recorded in that study's manifest.
+    """
+    if workspace is not None:
+        import json
+
+        try:
+            recorded = json.loads((Path(workspace) / "manifest.json").read_text(encoding="utf-8")).get("purpose")
+        except (OSError, ValueError, AttributeError):
+            recorded = None
+        if recorded in PURPOSES:
+            return str(recorded)
+    return resolve_purpose()
+
+
 def mark_report(path: Path, kind: str | None = "replication") -> bool:
     """Put the disclaimer at the top of a Markdown report. Idempotent; returns True when the file changed."""
     if not path.is_file():
@@ -98,4 +116,5 @@ __all__ = [
     "kind_for",
     "mark_report",
     "resolve_purpose",
+    "study_purpose",
 ]

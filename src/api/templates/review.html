@@ -2,12 +2,13 @@
 {% block title %}Researcher step — e2er{% endblock %}
 
 {% block content %}
-<p><a href="/papers/{{ paper_id }}">← back to the paper</a></p>
+<p><a href="/papers/{{ paper_id }}">← back to the study</a></p>
 {% if not pending %}
   <h1>No researcher step</h1>
   <p class="sub">The run is not stopped at a researcher step.</p>
 {% else %}
-  <h1>Researcher step: {{ pending.stage }}</h1>
+  <h1>Your review: {{ step_label or pending.stage }}</h1>
+  <p class="muted">Researcher step: {{ pending.stage }}</p>
   <p class="sub">
     {% if pending.kind == "preregister" %}
       The pre-registration below was assembled from the study's design files. Edit it if needed;
@@ -51,7 +52,7 @@
 
 {% if actions %}
   <h2>What you did at researcher steps</h2>
-  <ul>{% for a in actions %}<li class="small">{{ a.created_at }} · {{ a.payload.action }} {{ a.payload.file or a.payload.target or "" }} {{ a.payload.text or a.payload.remark or "" }}</li>{% endfor %}</ul>
+  <ul>{% for a in actions %}<li class="small">{{ (a.created_at|string)[:19] }} · {{ a.stage }} · {{ a.payload.action }} {{ a.payload.file or a.payload.target or "" }} {{ a.payload.text or a.payload.remark or "" }}</li>{% endfor %}</ul>
 {% endif %}
 
 <script>
