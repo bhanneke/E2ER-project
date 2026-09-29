@@ -15,6 +15,13 @@
             hx-confirm="Cancel this run?"
             hx-swap="none">Cancel</button>
   {% endif %}
+  {% if can_cancel_attempt %}
+    <button class="btn"
+            hx-post="/api/papers/{{ paper.id }}/cancel-attempt"
+            hx-confirm="Cancel this attempt? It stops for good and cannot be resumed. Its files are kept, and you can archive it afterwards."
+            hx-swap="none"
+            hx-on::after-request="if (!event.detail.successful) { try { alert(JSON.parse(event.detail.xhr.responseText).detail); } catch (e) { alert('Could not cancel.'); } }">Cancel attempt</button>
+  {% endif %}
   {% if can_resume and not awaiting_review %}
     <button class="btn-primary"
             hx-post="/api/papers/{{ paper.id }}/resume"

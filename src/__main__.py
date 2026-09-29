@@ -231,7 +231,7 @@ def main() -> None:
 
     cancel_p = subparsers.add_parser(
         "cancel",
-        help="Cancel an in-flight paper. Workspace + completed phases are preserved.",
+        help="Cancel a running or paused paper. Workspace + completed phases are preserved.",
     )
     cancel_p.add_argument("paper_id", help="The paper UUID returned by `e2er run`.")
     cancel_p.add_argument(

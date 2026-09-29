@@ -60,6 +60,9 @@
       <td class="c-dates muted"><span class="d">started {{ a.created_at[:16] }}</span> <span class="d">updated {{ a.updated_at[:16] }}</span></td>
       <td class="c-model muted"><span class="d">{{ a.model or "—" }}</span>{% if a.backend %} <span class="d">{{ a.backend }}</span>{% endif %}</td>
       <td class="c-action">
+        {% if a.status == "paused" %}
+          <button type="button" class="btn btn-small" data-cancel="{{ a.id }}" data-v="{{ a.version }}">Cancel attempt</button>
+        {% endif %}
         {% if a.archived %}
           <button type="button" class="btn btn-small" data-unarchive="{{ a.id }}">Unarchive</button>
         {% else %}
@@ -110,6 +113,10 @@
   document.querySelectorAll('[data-archive]').forEach((b) => b.addEventListener('click', () => {
     if (!confirm('Archive v' + b.dataset.v + '? Nothing is deleted; you can unarchive it.')) return;
     act(b, () => call('POST', '/api/papers/' + b.dataset.archive + '/archive'));
+  }));
+  document.querySelectorAll('[data-cancel]').forEach((b) => b.addEventListener('click', () => {
+    if (!confirm('Cancel v' + b.dataset.v + '? It stops for good and cannot be resumed. Its files are kept, and you can archive it afterwards.')) return;
+    act(b, () => call('POST', '/api/papers/' + b.dataset.cancel + '/cancel-attempt'));
   }));
   document.querySelectorAll('[data-unarchive]').forEach((b) => b.addEventListener('click', () => act(b, () => call('POST', '/api/papers/' + b.dataset.unarchive + '/unarchive'))));
   document.querySelectorAll('[data-move]').forEach((b) => b.addEventListener('click', () => {

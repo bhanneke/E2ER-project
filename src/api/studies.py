@@ -170,6 +170,16 @@ async def api_archive_failed(body: BulkArchive) -> dict[str, Any]:
     return {"archived": len(done), "ids": [a["id"] for a in done]}
 
 
+@router.post("/api/papers/{paper_id}/cancel-attempt", dependencies=_GUARD)
+async def api_cancel_attempt(paper_id: str) -> dict[str, Any]:
+    """Cancel a paused attempt (see studies.cancel_attempt). The workspace stays."""
+    try:
+        a = await st.cancel_attempt(paper_id, via="dashboard")
+    except st.StudyError as e:
+        raise _refused(e) from e
+    return {"cancelled": 1, "id": a["id"], "message": f"Cancelled v{a['version']}. Its files are kept."}
+
+
 class MoveRequest(BaseModel):
     study: str  # a study key, an attempt id, or "new"
 

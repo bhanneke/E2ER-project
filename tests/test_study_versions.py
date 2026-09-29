@@ -438,3 +438,115 @@ def test_dashboard_archive_flow(db: Path, monkeypatch):
 
     paper = c.get(f"/papers/{ids['v3']}").text
     assert "v2 of 3" in paper  # v1 was split off, so v3 is now the second of three
+
+
+# ── cancelling a paused attempt ──────────────────────────────────────────────
+
+
+def _events(db: Path, pid: str) -> list[tuple[str, str]]:
+    with sqlite3.connect(db) as c:
+        return list(c.execute("SELECT event_type, payload FROM pipeline_events WHERE paper_id = ?", (pid,)))
+
+
+def test_cancel_a_paused_attempt_records_who_and_when_and_keeps_files(db: Path, tmp_path: Path):
+    import json
+
+    ws = tmp_path / "ws-paused"
+    ws.mkdir()
+    (ws / "event_design.json").write_text("{}")
+    (ws / ".pipeline_state.json").write_text(
+        json.dumps({"paper_id": "x", "mode": "single_pass", "pending_review_stage": "g"})
+    )
+    pid = _run(_add(status="paused"))
+    _run(_client.execute("UPDATE papers SET workspace = %(w)s WHERE id = %(id)s", {"w": str(ws), "id": pid}))
+
+    done = _run(st.cancel_attempt(pid[:8], via="command line"))
+
+    assert done["status"] == "cancelled"
+    with sqlite3.connect(db) as c:
+        status, err = c.execute("SELECT status, last_error FROM papers WHERE id = ?", (pid,)).fetchone()
+    assert status == "cancelled" and err == "Cancelled by the researcher."
+    (etype, payload), *_ = _events(db, pid)
+    ev = json.loads(payload)
+    assert etype == "researcher_action"
+    assert ev["action"] == "cancel" and ev["remark"] == "cancelled by the researcher"
+    assert ev["by"] == "researcher" and ev["via"] == "command line" and ev["at"].endswith("Z")
+    assert ev["previous_status"] == "paused" and ev["step"] == "g"
+    assert (ws / "event_design.json").exists()  # the workspace is kept
+
+    # Now it archives like any cancelled attempt.
+    _run(st.archive_attempt(pid))
+    assert _archived(db) == {pid}
+
+
+def test_the_dossier_lists_the_cancellation(db: Path):
+    from src.core.dossier import researcher_step
+
+    pid = _run(_add(status="paused"))
+    _run(st.cancel_attempt(pid))
+    import json
+
+    (_etype, payload), *_ = _events(db, pid)
+    step = researcher_step(json.loads(payload), "2026-09-29 10:00:00")
+    assert step["type"] == "researcher" and step["action"] == "cancel"
+    assert step["remark"] == "cancelled by the researcher"
+
+
+@pytest.mark.parametrize("status", ["completed", "failed", "cancelled", "rejected", "designing", "in_progress"])
+def test_cancel_refuses_attempts_that_are_not_paused(db: Path, status: str):
+    pid = _run(_add(status=status))
+    with pytest.raises(st.StudyError) as e:
+        _run(st.cancel_attempt(pid))
+    assert ("already" in str(e.value)) if status in st.ARCHIVABLE else ("still running" in str(e.value))
+    with sqlite3.connect(db) as c:
+        assert c.execute("SELECT status FROM papers WHERE id = ?", (pid,)).fetchone()[0] == status
+    assert _events(db, pid) == []
+
+
+def test_cancel_refuses_an_attempt_another_live_process_owns(db: Path):
+    import json
+    import os
+
+    from src.core import run_owner
+
+    pid = _run(_add(status="paused"))
+    other = {**run_owner.this_owner(8280), "instance": "the-other-server", "pid": os.getppid(), "started": None}
+    _run(_client.execute("UPDATE papers SET run_owner = %(o)s WHERE id = %(id)s", {"o": json.dumps(other), "id": pid}))
+    with pytest.raises(st.StudyError) as e:
+        _run(st.cancel_attempt(pid))
+    assert "another e2er process" in str(e.value) and "port 8280" in str(e.value)
+    with sqlite3.connect(db) as c:
+        assert c.execute("SELECT status FROM papers WHERE id = ?", (pid,)).fetchone()[0] == "paused"
+
+    # A dead owner does not block it.
+    dead = {**other, "pid": 2**22 + 7}
+    _run(_client.execute("UPDATE papers SET run_owner = %(o)s WHERE id = %(id)s", {"o": json.dumps(dead), "id": pid}))
+    assert _run(st.cancel_attempt(pid))["status"] == "cancelled"
+
+
+def test_cli_cancel_a_paused_attempt(db: Path, capsys, monkeypatch):
+    from src import cli_status
+
+    pid = _run(_add(status="paused"))
+    monkeypatch.setattr("builtins.input", lambda _p: "n")
+    assert cli_status.cancel(pid[:8]) == 0
+    assert "Nothing was cancelled" in capsys.readouterr().out
+    assert cli_status.cancel(pid[:8], yes=True) == 0
+    assert "Cancelled v1" in capsys.readouterr().out
+    with sqlite3.connect(db) as c:
+        assert c.execute("SELECT status FROM papers WHERE id = ?", (pid,)).fetchone()[0] == "cancelled"
+
+
+def test_dashboard_cancel_attempt(db: Path, monkeypatch):
+    monkeypatch.setenv(ls.ENV_TOKEN, TOKEN)
+    pid = _run(_add(status="paused"))
+    assert _http(cookie=False).post(f"/api/papers/{pid}/cancel-attempt").status_code == 403
+    c = _http(cookie=True)
+    key = st.study_key(Q, "empirical")
+    assert "Cancel attempt" in c.get(f"/studies/{key}").text
+    assert "cancel-attempt" in c.get(f"/htmx/papers/{pid}/live").text
+    r = c.post(f"/api/papers/{pid}/cancel-attempt")
+    assert r.status_code == 200 and "files are kept" in r.json()["message"]
+    again = c.post(f"/api/papers/{pid}/cancel-attempt")
+    assert again.status_code == 409 and "already cancelled" in again.json()["detail"]
+    assert "cancel-attempt" not in c.get(f"/htmx/papers/{pid}/live").text

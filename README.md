@@ -412,7 +412,7 @@ After `e2er run` you have four lightweight CLI commands for managing the paper f
 ```bash
 e2er status <paper_id>                       # one-shot snapshot
 e2er status <paper_id> --tail                # re-attach the live tailer
-e2er cancel <paper_id>                       # stop a running paper (confirms first)
+e2er cancel <paper_id>                       # stop a running paper, or end a paused one (confirms first)
 e2er cancel <paper_id> --yes                 # skip the confirmation
 e2er resume <paper_id>                       # restart a paused / failed paper
 e2er resume <paper_id> --max-cost 15         # raise the cap while resuming
@@ -431,7 +431,7 @@ Two e2er servers can share one database (say a study server on 8280 and the ever
 
 Running the same question again gives a new attempt, not a new study. The dashboard and `e2er list` show one row per study, where a study is every attempt with the same research question (ignoring spacing, case and trailing punctuation) and the same template. The attempts are numbered v1, v2, … by start time, and the study takes the title of its latest attempt. On a study's page, "Move to study…" puts an attempt into another study or splits it off into one of its own.
 
-Archiving hides attempts from the lists. It never deletes a record, a file or a workspace, and it refuses attempts that are running or paused.
+Archiving hides attempts from the lists. It never deletes a record, a file or a workspace, and it refuses attempts that are running or paused. A paused attempt you have given up on (stopped by the budget, or waiting at a researcher step) can be ended with "Cancel attempt" on its page or `e2er cancel <paper_id>`: it becomes cancelled, the cancellation is recorded as a researcher step in the dossier, its files stay, and it can then be archived. An attempt that another running e2er owns is refused.
 
 ```bash
 e2er list                      # one entry per study

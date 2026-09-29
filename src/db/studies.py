@@ -373,6 +373,86 @@ async def archive_failed(only: list[str] | None = None) -> list[dict[str, Any]]:
     return candidates
 
 
+# ── cancelling a stopped attempt ─────────────────────────────────────────────
+
+#: Statuses a researcher can cancel from here: the run has stopped and waits.
+CANCELLABLE = ("paused",)
+
+
+async def cancel_attempt(ref: str, via: str = "dashboard") -> dict[str, Any]:
+    """Cancel a paused attempt (budget pause, circuit breaker, or waiting at a researcher step).
+
+    Sets the status to ``cancelled`` and records a ``researcher_action`` event
+    (who, when, how), which the dossier lists as a researcher step. The
+    workspace is left as it is. Refused when another live e2er process owns
+    the attempt (src/core/run_owner.py), and for attempts that are running or
+    already over. A run in progress in the current server is cancelled with
+    the dashboard's Cancel button (``POST /api/papers/{id}/cancel``) instead.
+    """
+    from datetime import UTC, datetime
+
+    from ..core import run_owner
+    from . import client
+    from .events import log_event
+
+    _st, attempt = await find_attempt(ref)
+    label = f"v{attempt['version']} ({attempt['short_id']})"
+    row = await client.fetch_one(
+        "SELECT status, run_owner, heartbeat_at, workspace, mode FROM papers WHERE id = %(id)s", {"id": attempt["id"]}
+    )
+    status = str((row or {}).get("status") or "")
+    if status in ARCHIVABLE:
+        raise StudyError(f"{label} is already {status}; there is nothing to cancel.")
+    if status not in CANCELLABLE:
+        raise StudyError(
+            f"{label} is still running ({status.replace('_', ' ')}). Stop it with Cancel on its page, "
+            "in the e2er that runs it."
+        )
+    owner = run_owner.parse_owner((row or {}).get("run_owner"))
+    if owner:
+        seen = await run_owner.last_seen(attempt["id"], (row or {}).get("heartbeat_at"))
+        state = run_owner.owner_state(owner, seen)
+        if state == "alive":
+            raise StudyError(f"{label} belongs to another e2er process ({run_owner.describe(owner)}). Cancel it there.")
+        if state == "mine":
+            raise StudyError(f"{label} is still winding down in this e2er. Try again in a moment.")
+
+    step = _pending_step((row or {}).get("workspace"), attempt["id"], (row or {}).get("mode"))
+    await client.execute(
+        "UPDATE papers SET status = 'cancelled', last_error = %(e)s, run_owner = NULL "
+        "WHERE id = %(id)s AND status = 'paused'",
+        {"id": attempt["id"], "e": "Cancelled by the researcher."},
+    )
+    after = await client.fetch_one("SELECT status FROM papers WHERE id = %(id)s", {"id": attempt["id"]})
+    if (after or {}).get("status") != "cancelled":
+        raise StudyError(f"{label} changed status while cancelling; nothing was done. Reload and try again.")
+    payload = {
+        "action": "cancel",
+        "step": step,
+        "at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "by": "researcher",
+        "via": via,
+        "remark": "cancelled by the researcher",
+        "previous_status": status,
+    }
+    await log_event(attempt["id"], "researcher_action", stage=step, payload=payload)
+    return {**attempt, "status": "cancelled", "event": payload}
+
+
+def _pending_step(workspace: Any, paper_id: str, mode: Any) -> str | None:
+    """The researcher step a paused run waits at, if any (for the event record)."""
+    if not workspace:
+        return None
+    try:
+        from pathlib import Path
+
+        from ..core.pipeline.state import PipelineState
+
+        return PipelineState.load(Path(str(workspace)), paper_id, str(mode or "single_pass")).pending_review_stage
+    except Exception:  # noqa: BLE001 — the record is useful without it
+        return None
+
+
 # ── moving ───────────────────────────────────────────────────────────────────
 
 

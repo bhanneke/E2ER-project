@@ -2471,6 +2471,7 @@ async def paper_live_fragment(request: Request, paper_id: str = Depends(_validat
             "can_cancel": (paper.get("status") not in _TERMINAL_STATUSES) and (paper_id in _RUNNING),
             "can_resume": (paper.get("status") == "paused") and (paper_id not in _RUNNING) and not elsewhere,
             "awaiting_review": None if elsewhere else _awaiting_review(paper),
+            "can_cancel_attempt": (paper.get("status") == "paused") and (paper_id not in _RUNNING) and not elsewhere,
             "elsewhere": elsewhere,
             "elsewhere_text": _elsewhere_text(elsewhere) if elsewhere else "",
         },
