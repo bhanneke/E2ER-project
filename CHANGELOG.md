@@ -7,7 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Checks
+
+- **Every pre-registered hypothesis has a result.** The preregister step now
+  ends `preregistration.md` with a machine-readable block: the hypotheses the
+  plan declares (`[{"id": "H1", "statement": …, "parts": ["H1a", "H1b"]}]`)
+  and the sample size the design fixes (the events of `event_design.json`, or
+  a `sample_size` in `identification_spec.json`). The researcher may correct
+  it; on approval it is frozen into `preregistration.lock.json`. The
+  estimation check and `e2er verify`'s `preregistration` check then require at
+  least one result entry per hypothesis (entries name it in a `hypothesis`
+  field; a part such as H1a counts for H1) and fail with the list of missing
+  ones. The headline estimate's `n_observations` must equal the registered
+  sample size unless `exclusions`, each with a reason, account for the
+  difference; the declared exclusions are reported. A lock frozen before this
+  release falls back to the hypotheses its frozen text declares.
+- **p-values follow from the test statistic.** The estimation check and
+  `e2er verify`'s numbers check recompute, for every coefficient with an
+  estimate, standard error, t and p: t = estimate / se (allowing for
+  rounding), and the p-value from t with the stated `df`, G − 1 to the normal
+  for clustered errors, `df_residual`, n − k, or n − 1 for a one-sample mean
+  test, within 0.005 (more when `rounding` is declared). When df is unknown the
+  p-value must lie between the normal and the t with the fewest df the entry
+  allows, and the check says df was unknown. One-sided tests
+  (`alternative`) are checked one-sided; p-values from bootstrap or
+  permutation (`p_value_method`) are left out and listed. A mismatch fails and
+  names the coefficient. The t distribution is computed from the regularized
+  incomplete beta function (no scipy dependency) and tested against closed
+  forms and published critical values.
+- **Replications verify offline.** A replication export now carries
+  `sandbox/logs/` and, under `sandbox/run/`, the output files the entry points
+  wrote and every file `reproduction_report.json` reads a number from, all
+  hashed in `provenance.json`. `e2er verify` has a `reproduction` check for
+  bundles with a reproduction report: it re-reads every compared number from
+  those files at its locator, recomputes each number's label with the
+  pipeline's own reproduction code and the tolerance the run used, and
+  confirms the report's summary counts. A replication bundle can now be
+  verified. Paper bundles are unchanged.
+- The reproduction check (pipeline and verify) recomputes a label per
+  compared number, fails on a stated `label` that differs, and checks the
+  report's `summary` counts (numbers by label, or results by level).
+- The econometrics skill requires `scipy.stats` or the fitted
+  `statsmodels`/`linearmodels` result for every distribution function and
+  forbids hand-written approximations; entries carry `hypothesis` and `df`.
+
 ### Fixed
+
+- `event_design.json` is exported to `design/` with the other plan files. It
+  went to `misc/`, so `e2er verify` reported a pre-registered event study's
+  design as missing.
 
 - The pre-registration check now recognises result files as estimation output:
   csv, tsv, parquet, json or xlsx outside `data/` and the declared data tables,

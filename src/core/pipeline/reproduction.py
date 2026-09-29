@@ -160,28 +160,90 @@ def _recompute(run_dir: Path, source: dict[str, Any], claimed: float, printed: A
     return min(found, key=lambda x: abs(x - claimed)), ""
 
 
-def check_reproduction(workspace: Path, *, minor_rel_tolerance: float = DEFAULT_MINOR_REL_TOLERANCE) -> CheckResult:
-    workspace = Path(workspace)
-    plan, why = load_plan(workspace)
-    if plan is None:
-        return CheckResult(False, (why,))
-    report_path = workspace / REPORT_FILE
-    log_path = workspace / LOG_FILE
-    if not report_path.is_file():
-        return CheckResult(False, (f"{REPORT_FILE} is missing: the reproduction comparer must write it",))
-    if not log_path.is_file():
-        return CheckResult(False, (f"{LOG_FILE} is missing: nothing was run, so nothing can be compared",))
-    try:
-        report = json.loads(report_path.read_text(encoding="utf-8"))
-        log = json.loads(log_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as e:
-        return CheckResult(False, (f"{REPORT_FILE} or {LOG_FILE} is not valid JSON: {e}",))
-    if not isinstance(report, dict) or not isinstance(report.get("results"), list):
-        return CheckResult(False, (f"{REPORT_FILE} must be an object with a results list",))
+def label_for(value: float, published: float, published_decimals: int, minor_rel_tolerance: float) -> dict[str, Any]:
+    """The level one compared number earns, and the differences behind it.
 
+    "reproduced": equal to the published value at its printed precision;
+    "reproduced_minor": relative difference within the tolerance and no sign
+    change; otherwise "not_reproduced". The pipeline's check and ``e2er
+    verify`` both call this, so the thresholds cannot drift apart.
+    """
+    diff = value - published
+    rel_diff = abs(diff) / abs(published) if published else (0.0 if diff == 0 else math.inf)
+    same = _equal_at(value, published, published_decimals)
+    sign_flip = (value > 0) != (published > 0) and not same and value != 0 and published != 0
+    if same:
+        label = "reproduced"
+    elif rel_diff <= minor_rel_tolerance and not sign_flip:
+        label = "reproduced_minor"
+    else:
+        label = "not_reproduced"
+    return {"label": label, "abs_diff": diff, "rel_diff": rel_diff, "same": same, "sign_flip": sign_flip}
+
+
+def _summary_problems(
+    report: dict[str, Any], checked: list[dict[str, Any]], by_level: dict[int, Counter[str]]
+) -> tuple[list[str], dict[str, Any]]:
+    """Does the report's summary state the counts the check recomputed?
+
+    A summary may count compared numbers by their label or results by their
+    level; either basis is accepted when every count agrees, and the one that
+    agrees is recorded.
+    """
+    summary = report.get("summary")
+    if not isinstance(summary, dict):
+        return [], {}
+    numbers: dict[int, Counter[str]] = {tier: Counter() for tier in TARGET_LEVELS}
+    for c in checked:
+        tier = c.get("target_level")
+        lab = c.get("recomputed_label") or ("could_not_run" if c.get("level") == "could_not_run" else None)
+        if tier in numbers and lab:
+            numbers[tier][lab] += 1
+    problems: list[str] = []
+    bases: dict[str, Any] = {}
+    for tier in TARGET_LEVELS:
+        stated = summary.get(f"level_{tier}")
+        if not isinstance(stated, dict):
+            continue
+        want = {
+            lv: int(v) for lv, v in stated.items() if lv in LEVELS and isinstance(v, int) and not isinstance(v, bool)
+        }
+        as_numbers = {lv: numbers[tier].get(lv, 0) for lv in LEVELS}
+        as_results = {lv: by_level[tier].get(lv, 0) for lv in LEVELS}
+        full = {lv: want.get(lv, 0) for lv in LEVELS}
+        if full == as_numbers:
+            bases[f"level_{tier}"] = {"counts": "compared numbers", **as_numbers}
+        elif full == as_results:
+            bases[f"level_{tier}"] = {"counts": "results", **as_results}
+        else:
+            shown = ", ".join(f"{as_numbers[lv]} {lv}" for lv in LEVELS if as_numbers[lv])
+            problems.append(
+                f"summary.level_{tier} {', '.join(f'{v} {k}' for k, v in want.items() if v) or 'is empty'}: "
+                f"the recomputed labels give {shown or 'nothing'} (numbers) and "
+                f"{', '.join(f'{as_results[lv]} {lv}' for lv in LEVELS if as_results[lv]) or 'nothing'} (results)"
+            )
+    return problems, bases
+
+
+def evaluate(
+    plan: dict[str, Any],
+    report: Any,
+    log: dict[str, Any],
+    run_dir: Path,
+    *,
+    minor_rel_tolerance: float = DEFAULT_MINOR_REL_TOLERANCE,
+) -> dict[str, Any]:
+    """Recompute a reproduction report from the run's output files.
+
+    The one implementation behind the pipeline's check (``check_reproduction``)
+    and ``e2er verify``'s reproduction check. Returns the document written to
+    ``reproduction_check.json``: passed, reasons, stats, every checked number
+    with its recomputed value and label, and the tolerance used.
+    """
+    if not isinstance(report, dict) or not isinstance(report.get("results"), list):
+        return {"passed": False, "reasons": [f"{REPORT_FILE} must be an object with a results list"], "stats": {}}
     targets = {t["id"]: t for t in plan.get("targets") or [] if isinstance(t, dict) and isinstance(t.get("id"), str)}
-    run_dir = workspace / str(log.get("run_dir") or "sandbox/run")
-    written = {o["path"] for o in log.get("outputs") or [] if o.get("written_by_run")}
+    written = {o["path"] for o in log.get("outputs") or [] if isinstance(o, dict) and o.get("written_by_run")}
     reasons: list[str] = []
     checked: list[dict[str, Any]] = []
     covered: set[str] = set()
@@ -263,16 +325,19 @@ def check_reproduction(workspace: Path, *, minor_rel_tolerance: float = DEFAULT_
             if not _equal_at(value, float(claimed), decimals):
                 reasons.append(f"{cw}: the output holds {value}, not the claimed {claimed}")
             dp = _decimals(str(target.get("reported") or ""))
-            diff = value - published
-            rel_diff = abs(diff) / abs(published) if published else (0.0 if diff == 0 else math.inf)
-            same = _equal_at(value, published, dp)
-            sign_flip = (value > 0) != (published > 0) and not same and value != 0 and published != 0
+            lab = label_for(value, published, dp, minor_rel_tolerance)
+            diff = lab["abs_diff"]
             claimed_diff = comp.get("abs_diff")
             if isinstance(claimed_diff, int | float) and not isinstance(claimed_diff, bool):
                 if not math.isclose(
                     float(claimed_diff), diff, rel_tol=1e-3, abs_tol=0.5 * 10 ** (-max(dp, decimals)) + _EPS
                 ):
                     reasons.append(f"{cw}: abs_diff {claimed_diff} is not reproduced minus published ({diff:.6g})")
+            stated_label = comp.get("label")
+            if stated_label is not None and stated_label != lab["label"]:
+                reasons.append(
+                    f"{cw}: labelled {stated_label!r}, but the recomputed difference makes it {lab['label']!r}"
+                )
             checked.append(
                 {
                     **entry,
@@ -280,18 +345,20 @@ def check_reproduction(workspace: Path, *, minor_rel_tolerance: float = DEFAULT_
                     "recomputed": value,
                     "file": rel,
                     "abs_diff": diff,
-                    "rel_diff": rel_diff,
-                    "equal_at_published_precision": same,
-                    "sign_change": sign_flip,
+                    "rel_diff": lab["rel_diff"],
+                    "equal_at_published_precision": lab["same"],
+                    "sign_change": lab["sign_flip"],
+                    "recomputed_label": lab["label"],
                     "ok": True,
                 }
             )
-            if level == "reproduced" and not same:
+            if level == "reproduced" and lab["label"] != "reproduced":
                 reasons.append(f"{cw}: 'reproduced' but {value} differs from the published {target.get('reported')}")
-            if level == "reproduced_minor" and (rel_diff > minor_rel_tolerance or sign_flip):
+            if level == "reproduced_minor" and lab["label"] == "not_reproduced":
                 reasons.append(
-                    f"{cw}: 'reproduced_minor' but the difference ({rel_diff:.1%}"
-                    f"{', sign change' if sign_flip else ''}) exceeds the minor tolerance of {minor_rel_tolerance:.0%}"
+                    f"{cw}: 'reproduced_minor' but the difference ({lab['rel_diff']:.1%}"
+                    f"{', sign change' if lab['sign_flip'] else ''}) exceeds the minor tolerance "
+                    f"of {minor_rel_tolerance:.0%}"
                 )
 
     unassessed = {u.get("target_id") for u in report.get("unassessed") or [] if isinstance(u, dict) and u.get("reason")}
@@ -302,6 +369,9 @@ def check_reproduction(workspace: Path, *, minor_rel_tolerance: float = DEFAULT_
             shown = ", ".join(missing[:10]) + (f" and {len(missing) - 10} more" if len(missing) > 10 else "")
             reasons.append(f"level-{tier} target(s) neither compared nor listed as unassessed with a reason: {shown}")
 
+    summary_problems, summary_basis = _summary_problems(report, checked, by_level)
+    reasons += summary_problems
+
     stats: dict[str, Any] = {
         "results": len(report["results"]),
         "numbers_checked": sum(1 for c in checked if "recomputed" in c),
@@ -310,10 +380,13 @@ def check_reproduction(workspace: Path, *, minor_rel_tolerance: float = DEFAULT_
     }
     for tier in TARGET_LEVELS:
         tier_checked = [c for c in checked if c.get("target_level") == tier]
+        labels = Counter(c["recomputed_label"] for c in tier_checked if "recomputed_label" in c)
+        labels.update(c["level"] for c in tier_checked if c.get("level") == "could_not_run")
         stats[f"level_{tier}"] = {
             "targets": sum(1 for v in targets.values() if v.get("level") == tier),
             "numbers_checked": sum(1 for c in tier_checked if "recomputed" in c),
             "results": dict(by_level[tier]),
+            "numbers": dict(labels),
         }
     doc = {
         "passed": not reasons,
@@ -322,11 +395,38 @@ def check_reproduction(workspace: Path, *, minor_rel_tolerance: float = DEFAULT_
         "checked": checked,
         "minor_rel_tolerance": minor_rel_tolerance,
     }
+    if summary_basis:
+        doc["summary"] = summary_basis
+    return doc
+
+
+def check_reproduction(workspace: Path, *, minor_rel_tolerance: float = DEFAULT_MINOR_REL_TOLERANCE) -> CheckResult:
+    workspace = Path(workspace)
+    plan, why = load_plan(workspace)
+    if plan is None:
+        return CheckResult(False, (why,))
+    report_path = workspace / REPORT_FILE
+    log_path = workspace / LOG_FILE
+    if not report_path.is_file():
+        return CheckResult(False, (f"{REPORT_FILE} is missing: the reproduction comparer must write it",))
+    if not log_path.is_file():
+        return CheckResult(False, (f"{LOG_FILE} is missing: nothing was run, so nothing can be compared",))
+    try:
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        log = json.loads(log_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        return CheckResult(False, (f"{REPORT_FILE} or {LOG_FILE} is not valid JSON: {e}",))
+    if not isinstance(report, dict) or not isinstance(report.get("results"), list):
+        return CheckResult(False, (f"{REPORT_FILE} must be an object with a results list",))
+
+    run_dir = workspace / str(log.get("run_dir") or "sandbox/run")
+    doc = evaluate(plan, report, log, run_dir, minor_rel_tolerance=minor_rel_tolerance)
     (workspace / CHECK_FILE).write_text(json.dumps(doc, indent=2, default=str) + "\n", encoding="utf-8")
+    stats = doc["stats"]
     flat = {k: v for k, v in stats.items() if not isinstance(v, dict)}
     for tier in TARGET_LEVELS:
         flat[f"level_{tier}_numbers_checked"] = stats[f"level_{tier}"]["numbers_checked"]
-    return CheckResult(not reasons, tuple(reasons[:20]), stats=flat)
+    return CheckResult(doc["passed"], tuple(doc["reasons"][:20]), stats=flat)
 
 
 def check_report(workspace: Path) -> list[str]:

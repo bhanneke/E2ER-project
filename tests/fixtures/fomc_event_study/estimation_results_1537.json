@@ -1,0 +1,169 @@
+{
+  "h1_pooled_m1p1": {
+    "specification": "H1: Mean CAR test, pooled over all 31 events, window [-1,+1]",
+    "hypothesis": "H0: mean CAR = 0 (two-sided test)",
+    "n_events": 31,
+    "event_window": [
+      -1,
+      1
+    ],
+    "coefficients": {
+      "mean_car": {
+        "estimate": -0.7108317348501935,
+        "se": 0.45794616136614125,
+        "t_stat": -1.5522168211425684,
+        "p_value": 0.2006666666666667,
+        "ci_lower": -1.6459577963598537,
+        "ci_upper": 0.2242943266594669
+      }
+    },
+    "diagnostics": {
+      "n_events": 31,
+      "df": 30,
+      "sd_car": 2.5497363173492076
+    }
+  },
+  "h1_hikes_m1p1": {
+    "specification": "H1: Mean CAR test, rate hikes only (n=20), window [-1,+1]",
+    "hypothesis": "H0: mean CAR = 0 for hikes (two-sided test)",
+    "n_events": 20,
+    "event_window": [
+      -1,
+      1
+    ],
+    "coefficients": {
+      "mean_car": {
+        "estimate": -1.0588293600319225,
+        "se": 0.529988040628786,
+        "t_stat": -1.9978363262229673,
+        "p_value": 0.20800000000000002,
+        "ci_lower": -2.168094329067972,
+        "ci_upper": 0.05043560900412669
+      }
+    },
+    "diagnostics": {
+      "n_events": 20,
+      "df": 19,
+      "sd_car": 2.3701785722157718
+    }
+  },
+  "h1_cuts_m1p1": {
+    "specification": "H1: Mean CAR test, rate cuts only (n=11), window [-1,+1]",
+    "hypothesis": "H0: mean CAR = 0 for cuts (two-sided test)",
+    "n_events": 11,
+    "event_window": [
+      -1,
+      1
+    ],
+    "coefficients": {
+      "mean_car": {
+        "estimate": -0.07810877997432218,
+        "se": 0.8606113427733799,
+        "t_stat": -0.09075964502467654,
+        "p_value": 0.5700000000000001,
+        "ci_lower": -1.9955508516734126,
+        "ci_upper": 1.8393332917247684
+      }
+    },
+    "diagnostics": {
+      "n_events": 11,
+      "df": 10,
+      "sd_car": 2.8543249143032403
+    }
+  },
+  "h1_pooled_0p5": {
+    "specification": "H1: Mean CAR test, pooled over all 31 events, window [0,+5]",
+    "hypothesis": "H0: mean CAR = 0 (two-sided test)",
+    "n_events": 31,
+    "event_window": [
+      0,
+      5
+    ],
+    "coefficients": {
+      "mean_car": {
+        "estimate": -1.4739777633415672,
+        "se": 0.6110617799912468,
+        "t_stat": -2.4121583309672574,
+        "p_value": 0.04033333333333333,
+        "ci_lower": -2.721765918083693,
+        "ci_upper": -0.22618960859944126
+      }
+    },
+    "diagnostics": {
+      "n_events": 31,
+      "df": 30,
+      "sd_car": 3.402248002122743
+    }
+  },
+  "h1_hikes_0p5": {
+    "specification": "H1: Mean CAR test, rate hikes only (n=20), window [0,+5]",
+    "hypothesis": "H0: mean CAR = 0 for hikes (two-sided test)",
+    "n_events": 20,
+    "event_window": [
+      0,
+      5
+    ],
+    "coefficients": {
+      "mean_car": {
+        "estimate": -1.1085120535307482,
+        "se": 0.5513060056593789,
+        "t_stat": -2.0107019371300585,
+        "p_value": 0.044,
+        "ci_lower": -2.2623955233758286,
+        "ci_upper": 0.04537141631433195
+      }
+    },
+    "diagnostics": {
+      "n_events": 20,
+      "df": 19,
+      "sd_car": 2.46551541011651
+    }
+  },
+  "h1_cuts_0p5": {
+    "specification": "H1: Mean CAR test, rate cuts only (n=11), window [0,+5]",
+    "hypothesis": "H0: mean CAR = 0 for cuts (two-sided test)",
+    "n_events": 11,
+    "event_window": [
+      0,
+      5
+    ],
+    "coefficients": {
+      "mean_car": {
+        "estimate": -2.1384608720885114,
+        "se": 1.4277571922572945,
+        "t_stat": -1.497776291154653,
+        "p_value": 0.21400000000000002,
+        "ci_lower": -5.319503896437764,
+        "ci_upper": 1.0425821522607408
+      }
+    },
+    "diagnostics": {
+      "n_events": 11,
+      "df": 10,
+      "sd_car": 4.735334898448763
+    }
+  },
+  "_metadata": {
+    "analysis_note": "All 31 FOMC events from fomc_announcement_dates table were estimated successfully",
+    "sample_composition": {
+      "total_events": 31,
+      "rate_hikes": 20,
+      "rate_cuts": 11
+    },
+    "h1_specification": "Market model abnormal returns, cross-sectional t-test of mean CARs",
+    "h1_windows": [
+      "[-1, +1]",
+      "[0, +5]"
+    ],
+    "h1_results_available": true,
+    "h2_specification": "OLS regression of CAR[-1,+1] on day-0 DGS2 change (basis points), HC1 SEs",
+    "h2_results_available": false,
+    "h2_limitation": "H2 could not be estimated. DGS2 data (2-year Treasury yield) has 0 non-null values for the 31 event dates. All yield data in the database are NULL, making H2 estimation impossible.",
+    "estimation_results_included": {
+      "h1_all_events": true,
+      "h1_by_direction": true,
+      "h2_pooled": false,
+      "h2_by_direction": false
+    }
+  }
+}

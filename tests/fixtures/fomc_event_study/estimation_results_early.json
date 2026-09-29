@@ -1,0 +1,58 @@
+{
+  "main": {
+    "specification": "H1: Mean CAR test (pooled), Event study with market model",
+    "method": "Cross-sectional t-test on CARs",
+    "n_observations": 30,
+    "n_clusters": 1,
+    "cluster_level": "event",
+    "event_windows": [
+      "[-1, +1]",
+      "[0, +5]"
+    ],
+    "coefficients": {
+      "mean_car": {
+        "estimate": -0.007565,
+        "se": 0.004711,
+        "t_stat": -1.6058,
+        "p_value": 0.32,
+        "ci_lower": -0.017199,
+        "ci_upper": 0.002069
+      }
+    },
+    "diagnostics": {
+      "mean_car_pct": -0.7565,
+      "std_car_pct": 2.5804,
+      "mean_std_error_pct": 0.4711
+    }
+  },
+  "main_hikes": {
+    "specification": "H1: Mean CAR test (rate hikes only), Event study with market model",
+    "method": "Cross-sectional t-test on CARs",
+    "n_observations": 20,
+    "coefficients": {
+      "mean_car": {
+        "estimate": -0.010588,
+        "se": 0.0053,
+        "t_stat": -1.9978,
+        "p_value": 0.32,
+        "ci_lower": -0.021681,
+        "ci_upper": 0.000504
+      }
+    }
+  },
+  "main_cuts": {
+    "specification": "H1: Mean CAR test (rate cuts only), Event study with market model",
+    "method": "Cross-sectional t-test on CARs",
+    "n_observations": 10,
+    "coefficients": {
+      "mean_car": {
+        "estimate": -0.0015179999999999998,
+        "se": 0.009479,
+        "t_stat": -0.1602,
+        "p_value": 0.9386,
+        "ci_lower": -0.022961,
+        "ci_upper": 0.019924
+      }
+    }
+  }
+}

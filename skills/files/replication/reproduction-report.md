@@ -66,6 +66,7 @@ For every exhibit with targets:
           "published": -0.012,
           "reproduced": -0.01214,
           "abs_diff": -0.00014,
+          "label": "reproduced",
           "source": {
             "file": "study_package/output/tables/did_main.csv",
             "locator": {"row": {"outcome": "y1", "estimator": "cs"}, "column": "att"}
@@ -93,6 +94,14 @@ broken):
   the file that rounds to your value. Report the value with the decimals the
   file has.
 - `abs_diff`, when given, is reproduced − published.
+- `label`, when given, is that one number's level: `reproduced` (equal at
+  the published precision), `reproduced_minor` (within the tolerance, no sign
+  change) or `not_reproduced`. The check recomputes it with the same
+  thresholds and fails on a different label.
+- `summary` counts, per target level, the compared numbers by their label
+  (a `could_not_run` result counts each of its numbers as `could_not_run`).
+  The check recomputes the counts; a summary that counts results by their
+  level is accepted too, and any other count fails.
 - `reproduced` requires every number of the result to equal the published one
   at the published precision; `reproduced_minor` requires every relative
   difference within the tolerance and no sign change; `could_not_run` has

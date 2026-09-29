@@ -1,0 +1,599 @@
+{
+  "schema_version": 1,
+  "study": {
+    "title": "Political Rupture and Selective Damage to Local Service Delivery: Evidence from Brazil",
+    "authors": [
+      "Vitor de Moraes Peixoto",
+      "Davi Athaydes Leite"
+    ],
+    "zenodo_doi": "10.5281/zenodo.22179151",
+    "publication": {
+      "identifier": "10.2139/ssrn.7079720",
+      "reference": "Peixoto & Leite (2026), SSRN preprint 7079720"
+    }
+  },
+  "language": "R",
+  "environment": {
+    "image": "rocker/r-ver:4.6.1",
+    "version_source": "AMBIENTE.md: R 4.6.1",
+    "packages": [
+      {
+        "name": "data.table",
+        "version": "1.18.4"
+      },
+      {
+        "name": "dplyr",
+        "version": null
+      },
+      {
+        "name": "tidyr",
+        "version": null
+      },
+      {
+        "name": "stringr",
+        "version": null
+      },
+      {
+        "name": "readr",
+        "version": null
+      },
+      {
+        "name": "purrr",
+        "version": null
+      },
+      {
+        "name": "janitor",
+        "version": null
+      },
+      {
+        "name": "lubridate",
+        "version": null
+      },
+      {
+        "name": "ggplot2",
+        "version": "4.0.3"
+      },
+      {
+        "name": "fixest",
+        "version": "0.14.2"
+      },
+      {
+        "name": "did",
+        "version": "2.5.1"
+      },
+      {
+        "name": "here",
+        "version": "1.0.2"
+      },
+      {
+        "name": "knitr",
+        "version": "1.51"
+      },
+      {
+        "name": "HonestDiD",
+        "version": "0.2.8"
+      },
+      {
+        "name": "MatchIt",
+        "version": "4.7.2"
+      },
+      {
+        "name": "broom",
+        "version": "1.0.13"
+      }
+    ],
+    "system_packages": [],
+    "notes": "16 required packages. Optional packages (didimputation, etwfe, bigrquery) conditionally installed. Seed fixed to 20250627 in 00_setup.R."
+  },
+  "entry_points": [
+    {
+      "id": "did_main",
+      "command": [
+        "Rscript",
+        "assistencia_social/R/07_did.R"
+      ],
+      "cwd": "supplementary_elections_social_assistance",
+      "timeout_minutes": 30,
+      "needs_network": false,
+      "produces": [
+        "assistencia_social/output/data/resultados_did.csv"
+      ],
+      "notes": "Main DiD: 4 estimators × 6 outcomes × 2 specs"
+    },
+    {
+      "id": "robustez_especificacoes",
+      "command": [
+        "Rscript",
+        "assistencia_social/R/08_robustez.R"
+      ],
+      "cwd": "supplementary_elections_social_assistance",
+      "timeout_minutes": 30,
+      "needs_network": false,
+      "produces": [
+        "assistencia_social/output/data/robustez_especificacoes.csv",
+        "assistencia_social/output/data/robustez_placebo.csv",
+        "assistencia_social/output/data/robustez_coorte.csv",
+        "assistencia_social/output/data/robustez_subamostras.csv",
+        "assistencia_social/output/data/robustez_transformacoes.csv"
+      ],
+      "notes": "Robustness checks: specifications, placebo, cohorts, subsamples, transformations"
+    },
+    {
+      "id": "robustez_multidesfecho",
+      "command": [
+        "Rscript",
+        "assistencia_social/R/10_robustez_completa.R"
+      ],
+      "cwd": "supplementary_elections_social_assistance",
+      "timeout_minutes": 60,
+      "needs_network": false,
+      "produces": [
+        "assistencia_social/output/data/robustez_multidesfecho_fdr.csv"
+      ],
+      "notes": "Multi-outcome FDR correction"
+    },
+    {
+      "id": "pretrends_honestdid",
+      "command": [
+        "Rscript",
+        "assistencia_social/R/11_honestdid.R"
+      ],
+      "cwd": "supplementary_elections_social_assistance",
+      "timeout_minutes": 30,
+      "needs_network": false,
+      "produces": [
+        "assistencia_social/output/data/robustez_pretendencias.csv",
+        "assistencia_social/output/data/honestdid_cs.csv"
+      ],
+      "notes": "Pre-trends Wald tests and HonestDiD sensitivity"
+    },
+    {
+      "id": "poder_balanco",
+      "command": [
+        "Rscript",
+        "assistencia_social/R/13_poder_balanco.R"
+      ],
+      "cwd": "supplementary_elections_social_assistance",
+      "timeout_minutes": 15,
+      "needs_network": false,
+      "produces": [
+        "assistencia_social/output/data/poder_mde.csv",
+        "assistencia_social/output/data/balanco_tratado_naotratado.csv"
+      ],
+      "notes": "MDE at 80% power; baseline balance"
+    },
+    {
+      "id": "incentivo_gradient",
+      "command": [
+        "Rscript",
+        "assistencia_social/R/30_proxy_incentivo_norma.R"
+      ],
+      "cwd": "supplementary_elections_social_assistance",
+      "timeout_minutes": 20,
+      "needs_network": false,
+      "produces": [
+        "assistencia_social/output/data/proxy_incentivo_norma.csv",
+        "assistencia_social/output/data/proxy_incentivo_norma_gradiente.csv",
+        "assistencia_social/output/data/proxy_incentivo_norma_permutacao.csv",
+        "assistencia_social/output/data/proxy_incentivo_norma_residual.csv"
+      ],
+      "notes": "Heterogeneity by incentive intensity terciles"
+    }
+  ],
+  "exhibits": [
+    {
+      "id": "main_did",
+      "label": "Main DiD Results",
+      "kind": "table",
+      "description": "ATT and SE by outcome, estimator, and specification",
+      "scripts": [
+        "did_main"
+      ],
+      "outputs": [
+        "assistencia_social/output/data/resultados_did.csv"
+      ],
+      "source": {
+        "document": "paper/paper.pdf",
+        "page": null
+      },
+      "mapping_basis": "MAPA_REPRODUCAO.md"
+    },
+    {
+      "id": "power_mde",
+      "label": "Power and MDE Analysis",
+      "kind": "table",
+      "description": "Minimum detectable effects at 80% power",
+      "scripts": [
+        "poder_balanco"
+      ],
+      "outputs": [
+        "assistencia_social/output/data/poder_mde.csv"
+      ],
+      "source": {
+        "document": "paper/paper.pdf",
+        "page": null
+      },
+      "mapping_basis": "MAPA_REPRODUCAO.md"
+    },
+    {
+      "id": "pretrends",
+      "label": "Pre-Trends Test",
+      "kind": "table",
+      "description": "Wald p-values for joint significance of leads",
+      "scripts": [
+        "pretrends_honestdid"
+      ],
+      "outputs": [
+        "assistencia_social/output/data/robustez_pretendencias.csv"
+      ],
+      "source": {
+        "document": "paper/paper.pdf",
+        "page": null
+      },
+      "mapping_basis": "MAPA_REPRODUCAO.md"
+    },
+    {
+      "id": "incentive_heterogeneity",
+      "label": "Incentive Heterogeneity",
+      "kind": "table",
+      "description": "Effect heterogeneity by incentive intensity terciles",
+      "scripts": [
+        "incentivo_gradient"
+      ],
+      "outputs": [
+        "assistencia_social/output/data/proxy_incentivo_norma.csv",
+        "assistencia_social/output/data/proxy_incentivo_norma_gradiente.csv"
+      ],
+      "source": {
+        "document": "paper/paper.pdf",
+        "page": null
+      },
+      "mapping_basis": "MAPA_REPRODUCAO.md"
+    }
+  ],
+  "targets": [
+    {
+      "id": "l1_tac_att_twfe_sem",
+      "level": 1,
+      "exhibit": "main_did",
+      "label": "TAC ATT, TWFE, sem controles",
+      "value": -0.00135097481805838,
+      "reported": "-0.00135097481805838",
+      "source": {
+        "kind": "package_file",
+        "file": "supplementary_elections_social_assistance/assistencia_social/output/data/resultados_did.csv",
+        "locator": {
+          "row": {
+            "desfecho": "Atualizacao cadastral (TAC)",
+            "estimador": "TWFE",
+            "spec": "sem controles"
+          },
+          "column": "att"
+        }
+      }
+    },
+    {
+      "id": "l1_tac_ep_twfe_sem",
+      "level": 1,
+      "exhibit": "main_did",
+      "label": "TAC SE, TWFE, sem controles",
+      "value": 0.0056299208890215,
+      "reported": "0.0056299208890215",
+      "source": {
+        "kind": "package_file",
+        "file": "supplementary_elections_social_assistance/assistencia_social/output/data/resultados_did.csv",
+        "locator": {
+          "row": {
+            "desfecho": "Atualizacao cadastral (TAC)",
+            "estimador": "TWFE",
+            "spec": "sem controles"
+          },
+          "column": "ep"
+        }
+      }
+    },
+    {
+      "id": "l1_tac_att_cs_sem",
+      "level": 1,
+      "exhibit": "main_did",
+      "label": "TAC ATT, Callaway-SantAnna, sem controles",
+      "value": -0.00364909844619658,
+      "reported": "-0.00364909844619658",
+      "source": {
+        "kind": "package_file",
+        "file": "supplementary_elections_social_assistance/assistencia_social/output/data/resultados_did.csv",
+        "locator": {
+          "row": {
+            "desfecho": "Atualizacao cadastral (TAC)",
+            "estimador": "Callaway-SantAnna",
+            "spec": "sem controles"
+          },
+          "column": "att"
+        }
+      }
+    },
+    {
+      "id": "l1_tac_ep_cs_sem",
+      "level": 1,
+      "exhibit": "main_did",
+      "label": "TAC SE, Callaway-SantAnna, sem controles",
+      "value": 0.00665562333947428,
+      "reported": "0.00665562333947428",
+      "source": {
+        "kind": "package_file",
+        "file": "supplementary_elections_social_assistance/assistencia_social/output/data/resultados_did.csv",
+        "locator": {
+          "row": {
+            "desfecho": "Atualizacao cadastral (TAC)",
+            "estimador": "Callaway-SantAnna",
+            "spec": "sem controles"
+          },
+          "column": "ep"
+        }
+      }
+    },
+    {
+      "id": "l1_cadunico_att_twfe_com",
+      "level": 1,
+      "exhibit": "main_did",
+      "label": "CadUnico familias ATT, TWFE, com controles",
+      "value": 0.0179974464388493,
+      "reported": "0.0179974464388493",
+      "source": {
+        "kind": "package_file",
+        "file": "supplementary_elections_social_assistance/assistencia_social/output/data/resultados_did.csv",
+        "locator": {
+          "row": {
+            "desfecho": "CadUnico: familias cadastradas (log)",
+            "estimador": "TWFE",
+            "spec": "com controles"
+          },
+          "column": "att"
+        }
+      }
+    },
+    {
+      "id": "l1_pbf_familias_att_cs_sem",
+      "level": 1,
+      "exhibit": "main_did",
+      "label": "PBF familias ATT, Callaway-SantAnna, sem controles",
+      "value": -0.0193985235407047,
+      "reported": "-0.0193985235407047",
+      "source": {
+        "kind": "package_file",
+        "file": "supplementary_elections_social_assistance/assistencia_social/output/data/resultados_did.csv",
+        "locator": {
+          "row": {
+            "desfecho": "PBF: familias beneficiarias (log)",
+            "estimador": "Callaway-SantAnna",
+            "spec": "sem controles"
+          },
+          "column": "att"
+        }
+      }
+    },
+    {
+      "id": "l1_cras_trabalhadores_att_twfe_com",
+      "level": 1,
+      "exhibit": "main_did",
+      "label": "CRAS trabalhadores ATT, TWFE, com controles",
+      "value": -0.0610859393782066,
+      "reported": "-0.0610859393782066",
+      "source": {
+        "kind": "package_file",
+        "file": "supplementary_elections_social_assistance/assistencia_social/output/data/resultados_did.csv",
+        "locator": {
+          "row": {
+            "desfecho": "CRAS: trabalhadores (log)",
+            "estimador": "TWFE",
+            "spec": "com controles"
+          },
+          "column": "att"
+        }
+      }
+    },
+    {
+      "id": "l1_mde_tac_cs",
+      "level": 1,
+      "exhibit": "power_mde",
+      "label": "TAC MDE at 80%, Callaway-SantAnna",
+      "value": 0.0194053054480327,
+      "reported": "0.0194053054480327",
+      "source": {
+        "kind": "package_file",
+        "file": "supplementary_elections_social_assistance/assistencia_social/output/data/poder_mde.csv",
+        "locator": {
+          "row": {
+            "desfecho": "TAC (ancora)"
+          },
+          "column": "mde80_cs"
+        }
+      }
+    },
+    {
+      "id": "l1_mde_pbf_cs",
+      "level": 1,
+      "exhibit": "power_mde",
+      "label": "PBF familias MDE at 80%, Callaway-SantAnna",
+      "value": 0.0538889825075466,
+      "reported": "0.0538889825075466",
+      "source": {
+        "kind": "package_file",
+        "file": "supplementary_elections_social_assistance/assistencia_social/output/data/poder_mde.csv",
+        "locator": {
+          "row": {
+            "desfecho": "PBF: familias (log)"
+          },
+          "column": "mde80_cs"
+        }
+      }
+    },
+    {
+      "id": "l1_att_sa_cras_trabalhadores",
+      "level": 1,
+      "exhibit": "power_mde",
+      "label": "CRAS trabalhadores ATT Sun-Abraham",
+      "value": -0.0533543859800926,
+      "reported": "-0.0533543859800926",
+      "source": {
+        "kind": "package_file",
+        "file": "supplementary_elections_social_assistance/assistencia_social/output/data/poder_mde.csv",
+        "locator": {
+          "row": {
+            "desfecho": "CRAS: trabalhadores (log)"
+          },
+          "column": "att_sa"
+        }
+      }
+    },
+    {
+      "id": "l1_pretrend_tac_p",
+      "level": 1,
+      "exhibit": "pretrends",
+      "label": "TAC pre-trends Wald p-value",
+      "value": 0.341,
+      "reported": "0.341",
+      "source": {
+        "kind": "package_file",
+        "file": "supplementary_elections_social_assistance/assistencia_social/output/data/robustez_pretendencias.csv",
+        "locator": {
+          "row": {
+            "desfecho": "Atualizacao cadastral (TAC)"
+          },
+          "column": "wald_p_pretend"
+        }
+      }
+    },
+    {
+      "id": "l1_pretrend_pbf_fam_leads",
+      "level": 1,
+      "exhibit": "pretrends",
+      "label": "PBF familias number of leads",
+      "value": 6,
+      "reported": "6",
+      "source": {
+        "kind": "package_file",
+        "file": "supplementary_elections_social_assistance/assistencia_social/output/data/robustez_pretendencias.csv",
+        "locator": {
+          "row": {
+            "desfecho": "PBF: familias beneficiarias (log)"
+          },
+          "column": "n_leads"
+        }
+      }
+    },
+    {
+      "id": "l1_incentivo_pbf_weak_att",
+      "level": 1,
+      "exhibit": "incentive_heterogeneity",
+      "label": "Incentive heterogeneity: PBF, weak tercile ATT",
+      "value": -0.0261514772302848,
+      "reported": "-0.0261514772302848",
+      "source": {
+        "kind": "package_file",
+        "file": "supplementary_elections_social_assistance/assistencia_social/output/data/proxy_incentivo_norma.csv",
+        "locator": {
+          "row": {
+            "proxy": "P1 -- familias PBF pc 2014 (norma revogada)",
+            "grupo": "1o tercil (incentivo fraco) -- PBF pc 2014"
+          },
+          "column": "att"
+        }
+      }
+    },
+    {
+      "id": "l1_incentivo_pbf_strong_att",
+      "level": 1,
+      "exhibit": "incentive_heterogeneity",
+      "label": "Incentive heterogeneity: PBF, strong tercile ATT",
+      "value": 0.00527505816451872,
+      "reported": "0.00527505816451872",
+      "source": {
+        "kind": "package_file",
+        "file": "supplementary_elections_social_assistance/assistencia_social/output/data/proxy_incentivo_norma.csv",
+        "locator": {
+          "row": {
+            "proxy": "P1 -- familias PBF pc 2014 (norma revogada)",
+            "grupo": "3o tercil (forte) -- PBF pc 2014"
+          },
+          "column": "att"
+        }
+      }
+    },
+    {
+      "id": "l1_incentivo_cadunico_weak_att",
+      "level": 1,
+      "exhibit": "incentive_heterogeneity",
+      "label": "Incentive heterogeneity: CadUnico, weak tercile ATT",
+      "value": -0.0195521494316181,
+      "reported": "-0.0195521494316181",
+      "source": {
+        "kind": "package_file",
+        "file": "supplementary_elections_social_assistance/assistencia_social/output/data/proxy_incentivo_norma.csv",
+        "locator": {
+          "row": {
+            "proxy": "P2 -- cadastros CadUnico pc 2014",
+            "grupo": "1o tercil (incentivo fraco) -- cadastros CU pc 2014"
+          },
+          "column": "att"
+        }
+      }
+    },
+    {
+      "id": "l1_gradient_pbf",
+      "level": 1,
+      "exhibit": "incentive_heterogeneity",
+      "label": "Incentive gradient: PBF",
+      "value": -0.0314265353948035,
+      "reported": "-0.0314265353948035",
+      "source": {
+        "kind": "package_file",
+        "file": "supplementary_elections_social_assistance/assistencia_social/output/data/proxy_incentivo_norma_gradiente.csv",
+        "locator": {
+          "row": {
+            "proxy": "P1 -- familias PBF pc 2014 (norma revogada)"
+          },
+          "column": "gradiente"
+        }
+      }
+    },
+    {
+      "id": "l1_gradient_cadunico",
+      "level": 1,
+      "exhibit": "incentive_heterogeneity",
+      "label": "Incentive gradient: CadUnico",
+      "value": -0.0240958094313375,
+      "reported": "-0.0240958094313375",
+      "source": {
+        "kind": "package_file",
+        "file": "supplementary_elections_social_assistance/assistencia_social/output/data/proxy_incentivo_norma_gradiente.csv",
+        "locator": {
+          "row": {
+            "proxy": "P2 -- cadastros CadUnico pc 2014"
+          },
+          "column": "gradiente"
+        }
+      }
+    }
+  ],
+  "missing_targets": [
+    {
+      "level": 2,
+      "why": "Published paper not assessed: linked publication (SSRN 10.2139/ssrn.7079720) has different title than replication package and may represent different version"
+    }
+  ],
+  "not_reproducible": [
+    {
+      "what": "01-06_panel_construction.R",
+      "why": "Scripts 01-06 rebuild panel from raw administrative microdata (TSE, SUAS Census, Base dos Dados BigQuery, VIS DATA 3) not included in this package. Processed panel shipped ready-to-use in output/data/"
+    },
+    {
+      "what": "22_tac_fluxo_mensal.R",
+      "why": "Requires cache of 5,570 VIS DATA 3 JSON responses (bulky). Output pre-computed and shipped."
+    },
+    {
+      "what": "26_selecao_quase_tratados.R",
+      "why": "Reads spreadsheets from Crespo (2024) doctoral thesis (authorized use, not authorized redistribution). Output pre-computed and shipped."
+    }
+  ]
+}

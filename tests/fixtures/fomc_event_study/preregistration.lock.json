@@ -1,0 +1,9 @@
+{
+  "file": "preregistration.md",
+  "sha256": "5615cb04ba2e3d9ce05f7f87e663e227b5cf1eb31e7779eb874caac0bd4ad198",
+  "frozen_at": "2026-09-29T12:49:29Z",
+  "plan_files": {
+    "identification_spec.json": "3900f8795b1ca04eb20801f050b57f7c273c9a96e6244372c51fcc8e7c15e04c",
+    "event_design.json": "da30259ba6c5658dd43d974d19f7cdd51d160f33fc5ea3be309d9a198e51e0b0"
+  }
+}

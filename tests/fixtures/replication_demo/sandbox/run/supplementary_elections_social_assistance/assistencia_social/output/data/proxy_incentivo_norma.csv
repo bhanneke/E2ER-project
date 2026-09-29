@@ -1,0 +1,10 @@
+proxy,grupo,att,ep,p,n_trat
+P1 -- familias PBF pc 2014 (norma revogada),1o tercil (incentivo fraco) -- PBF pc 2014,-0.0261514772302848,0.0129072043130646,0.0428958094698421,68
+P1 -- familias PBF pc 2014 (norma revogada),2o tercil (medio) -- PBF pc 2014,0.0023040481016425,0.0083833214495505,0.783471967598459,81
+P1 -- familias PBF pc 2014 (norma revogada),3o tercil (forte) -- PBF pc 2014,0.00527505816451871,0.00676884137010371,0.435893662228772,49
+P2 -- cadastros CadUnico pc 2014,1o tercil (incentivo fraco) -- cadastros CU pc 2014,-0.0195521494316181,0.0126978993163136,0.123781032754476,73
+P2 -- cadastros CadUnico pc 2014,2o tercil (medio) -- cadastros CU pc 2014,-0.000539452609672486,0.00801314873046963,0.946333471439518,74
+P2 -- cadastros CadUnico pc 2014,3o tercil (forte) -- cadastros CU pc 2014,0.00454365999971945,0.00602487035642899,0.450854475290977,51
+P3 -- familias <=1/2 SM pc 2015 (base de pagamento),1o tercil (incentivo fraco) -- familias <=1/2 SM pc 2015,-0.0235934678899641,0.0138357834495884,0.0883151678952846,67
+P3 -- familias <=1/2 SM pc 2015 (base de pagamento),2o tercil (medio) -- familias <=1/2 SM pc 2015,0.00177167882922951,0.00845791632245977,0.834104436881176,79
+P3 -- familias <=1/2 SM pc 2015 (base de pagamento),3o tercil (forte) -- familias <=1/2 SM pc 2015,0.00657710011951077,0.00564270663565953,0.243928754335892,52

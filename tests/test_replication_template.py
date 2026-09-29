@@ -939,7 +939,12 @@ def test_a_report_with_levels_separately_passes_and_counts_each_level(workspace:
     _write(workspace, _report())
     assert check_reproduction(workspace).passed
     stats = json.loads((workspace / CHECK_FILE).read_text())["stats"]
-    assert stats["level_1"] == {"targets": 1, "numbers_checked": 1, "results": {"reproduced_minor": 1}}
+    assert stats["level_1"] == {
+        "targets": 1,
+        "numbers_checked": 1,
+        "results": {"reproduced_minor": 1},
+        "numbers": {"reproduced_minor": 1},
+    }
     assert stats["level_2"]["numbers_checked"] == 1
 
 

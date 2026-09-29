@@ -64,6 +64,9 @@ EXPORT_MAP: dict[str, list[tuple[str, str | None]]] = {
         # design docs, not the misc/ catch-all. It is what `e2er verify`
         # re-checks the estimation against.
         ("identification_spec.json", None),
+        # An event study's design is a pre-registered plan file too: the lock
+        # fingerprints it, so `e2er verify` looks for it here.
+        ("event_design.json", None),
         ("econometric_spec.md", None),
         ("model_spec.md", None),
         # The frozen pre-registration and its fingerprints (researcher step),
@@ -125,6 +128,51 @@ def _copy_matches(workspace: Path, dest_dir: Path, pattern: str, rename: str | N
             already.add(src.name)
         except OSError as e:  # noqa: PERF203 — per-file tolerance
             logger.warning("export: could not copy %s: %s", src.name, e)
+
+
+#: A rebuilt output larger than this is left out of the bundle (and logged).
+MAX_OUTPUT_BYTES = 200 * 1024 * 1024
+
+
+def _copy_reproduction_outputs(workspace: Path, out: Path) -> None:
+    """Copy the sandbox's logs and the output files its run wrote into the bundle.
+
+    ``sandbox/logs/`` goes in whole. From the run folder (``sandbox_log.json``
+    → ``run_dir``) go the files the entry points wrote (``outputs`` with
+    ``written_by_run``) and every file ``reproduction_report.json`` reads a
+    number from, at the same relative paths, so the bundle has the workspace's
+    layout and ``e2er verify`` re-reads each compared number from its file.
+    Nothing from the package itself is copied: those files are not results of
+    the run. ``reproduction_check.json`` and the report go to misc/ with the
+    other top-level files; provenance.json hashes all of it.
+    """
+    logs = workspace / "sandbox" / "logs"
+    if logs.is_dir():
+        shutil.copytree(logs, out / "sandbox" / "logs", dirs_exist_ok=True)
+    log = _read_json(workspace / "sandbox_log.json")
+    log = log if isinstance(log, dict) else {}
+    run_rel = str(log.get("run_dir") or "sandbox/run")
+    run_dir = (workspace / run_rel).resolve()
+    if not run_dir.is_relative_to(workspace.resolve()) or not run_dir.is_dir():
+        return
+    dest_run = out / run_dir.relative_to(workspace.resolve())
+    wanted = {str(o.get("path")) for o in log.get("outputs") or [] if isinstance(o, dict) and o.get("written_by_run")}
+    report = _read_json(workspace / "reproduction_report.json")
+    for res in (report.get("results") if isinstance(report, dict) else None) or []:
+        for comp in (res.get("comparisons") or []) if isinstance(res, dict) else []:
+            src = comp.get("source") if isinstance(comp, dict) else None
+            if isinstance(src, dict) and isinstance(src.get("file"), str):
+                wanted.add(src["file"])
+    for rel in sorted(wanted):
+        src_path = (run_dir / rel).resolve()
+        if not rel or not src_path.is_relative_to(run_dir) or not src_path.is_file():
+            continue
+        if src_path.stat().st_size > MAX_OUTPUT_BYTES:
+            logger.warning("export: %s is larger than %d bytes; left out of the bundle", rel, MAX_OUTPUT_BYTES)
+            continue
+        dest = dest_run / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src_path, dest)
 
 
 def _read_json(path: Path) -> dict:
@@ -260,6 +308,11 @@ def export_paper(workspace: Path, dest_root: Path, *, date_str: str, slug: str |
     repl_src = workspace / "replication"
     if repl_src.is_dir():
         shutil.copytree(repl_src, out / "replication", dirs_exist_ok=True)
+
+    # A reproduction: what the sandbox run wrote, so `e2er verify` can re-read
+    # every compared number offline (see _copy_reproduction_outputs).
+    if (workspace / "reproduction_report.json").is_file():
+        _copy_reproduction_outputs(workspace, out)
 
     # misc/ — top-level files we didn't map (no silent loss), minus internal ones.
     for src in sorted(workspace.iterdir()):

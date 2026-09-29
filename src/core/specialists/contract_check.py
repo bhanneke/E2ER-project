@@ -325,6 +325,61 @@ def check_matches_declared_spec(workspace: Path, results_relative: str) -> Contr
     )
 
 
+# ── p-values follow from t; every pre-registered hypothesis has a result ────
+
+
+def check_statistics_consistent(workspace: Path, results_relative: str) -> ContractCheck:
+    """t = estimate / se and p follows from t, for every coefficient (src/core/pipeline/statistics.py).
+
+    Covers the results file and robustness_results.json when it exists.
+    """
+    from ..pipeline.statistics import check_statistics
+
+    docs: list[tuple[str, Any]] = []
+    for name in (results_relative, "robustness_results.json"):
+        try:
+            docs.append((name, json.loads((workspace / name).read_text(encoding="utf-8"))))
+        except (OSError, json.JSONDecodeError):
+            continue
+    report = check_statistics(docs)
+    if report.ok:
+        return ContractCheck(results_relative, True, "", kind=KIND_VERIFICATION)
+    more = f"; and {len(report.problems) - 8} more" if len(report.problems) > 8 else ""
+    shown = "; ".join(report.problems[:8]) + more
+    return ContractCheck(
+        results_relative,
+        False,
+        f"statistics do not agree: {shown}. Compute the p-value from t with the test's degrees of freedom "
+        "(scipy.stats.t.sf or statsmodels), write the df you used as 'df', and name any p-value that does not "
+        "come from t in 'p_value_method' (see the estimation-results-schema skill).",
+        kind=KIND_VERIFICATION,
+    )
+
+
+def check_preregistered_results(workspace: Path, results_relative: str) -> ContractCheck | None:
+    """Every hypothesis of the frozen pre-registration has a result, on the registered sample.
+
+    None when the study has no frozen pre-registration.
+    """
+    from ..pipeline.preregistration import check_results_against_preregistration
+
+    found = check_results_against_preregistration(workspace)
+    if found is None:
+        return None
+    problems, _notes = found
+    if not problems:
+        return ContractCheck(results_relative, True, "", kind=KIND_VERIFICATION)
+    return ContractCheck(
+        results_relative,
+        False,
+        "pre-registration: "
+        + "; ".join(problems)
+        + ". The hypotheses and sample size are frozen in preregistration.lock.json (and in the "
+        "machine-readable block of preregistration.md).",
+        kind=KIND_VERIFICATION,
+    )
+
+
 # ── Contract-violation feedback (self-correction across attempts) ───────────
 #
 # A contract violation flips the specialist result to failure, but before
@@ -581,6 +636,10 @@ def check_specialist_artifacts(workspace: Path, specialist: str) -> list[Contrac
             # retry feedback.
             if regression_check.ok:
                 checks.append(replace(check_matches_declared_spec(workspace, regression_file), kind=KIND_VERIFICATION))
+                checks.append(check_statistics_consistent(workspace, regression_file))
+                prereg = check_preregistered_results(workspace, regression_file)
+                if prereg is not None:
+                    checks.append(prereg)
 
     # The replication template's JSON files are contracts other code executes
     # (the plan) or verifies (the report): a file that parses but breaks its

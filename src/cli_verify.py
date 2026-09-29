@@ -11,6 +11,17 @@ network at all:
   4. citations   — every \\cite resolves in refs.bib (registry status is read
                    from the bundled snapshot; ``--online`` re-queries live)
 
+The numbers check also recomputes, for every coefficient in the result files,
+t from estimate / se and the p-value from t (``pipeline/statistics.py``).
+Two checks run only when the bundle has what they check:
+
+  * preregistration — the plan files match the frozen fingerprints, every
+                      pre-registered hypothesis has a result, and the headline
+                      sample is the registered one or its exclusions are declared
+  * reproduction    — a replication bundle: every compared number is re-read
+                      from the exported run outputs (``sandbox/run/``) and
+                      relabelled with the pipeline's own reproduction check
+
 Checks 1–4 never touch the network. ``--online`` adds a live registry
 re-verification of the citations. Recomputation is authoritative: the bundled
 reports are compared against a fresh computation, so an edited report or an
@@ -137,10 +148,25 @@ def _reconstruct_workspace(bundle: Path, ws: Path) -> None:
 # ── check 2: numbers ─────────────────────────────────────────────────────────
 
 
+def _check_statistics(ws: Path) -> tuple[list[str], str]:
+    """t = estimate / se and p follows from t, in the bundle's result files."""
+    from .core.pipeline.statistics import check_statistics
+
+    docs = [(n, _load_json(ws / n)) for n in ("estimation_results.json", "robustness_results.json")]
+    report = check_statistics([(n, d) for n, d in docs if d is not None])
+    return report.problems, report.summary() if report.checked or report.not_analytic else ""
+
+
 def _check_numbers(bundle: Path, ws: Path) -> Check:
+    stats_problems, stats_note = _check_statistics(ws)
+    if stats_problems:
+        more = f"; and {len(stats_problems) - 3} more" if len(stats_problems) > 3 else ""
+        shown = "; ".join(stats_problems[:3]) + more
+        return Check("numbers", FAIL, f"{len(stats_problems)} p-value/t inconsistenc(ies): {shown}")
+    note = f"; {stats_note}" if stats_note else ""
     tex = bundle / "paper" / "paper.tex"
     if not tex.is_file():
-        return Check("numbers", SKIP, "no paper/paper.tex")
+        return Check("numbers", SKIP, f"no paper/paper.tex{note}")
     from .core.pipeline.verify_numbers import verify as verify_numbers
 
     report = verify_numbers(tex, ws)
@@ -160,7 +186,7 @@ def _check_numbers(bundle: Path, ws: Path) -> Check:
             FAIL,
             "0 table cell(s) traced although the paper ships rendered tables — the numbers check did not run on them",
         )
-    return Check("numbers", PASS, f"{report.matched} table cell(s) trace, 0 critical mismatches")
+    return Check("numbers", PASS, f"{report.matched} table cell(s) trace, 0 critical mismatches{note}")
 
 
 def _bundle_has_rendered_tables(bundle: Path) -> bool:
@@ -366,7 +392,92 @@ def _check_preregistration(bundle: Path) -> Check | None:
         return Check(
             "preregistration", FAIL, f"deviates from the pre-registered plan (frozen {when}): " + "; ".join(found)
         )
-    return Check("preregistration", PASS, f"estimation follows the pre-registered plan (frozen {when})")
+    problems, notes = _preregistered_results(bundle, lock)
+    if problems:
+        return Check("preregistration", FAIL, f"pre-registered plan (frozen {when}): " + "; ".join(problems + notes))
+    extra = ("; " + "; ".join(notes)) if notes else ""
+    return Check("preregistration", PASS, f"estimation follows the pre-registered plan (frozen {when}){extra}")
+
+
+def _preregistered_results(bundle: Path, lock: dict[str, Any]) -> tuple[list[str], list[str]]:
+    """Every pre-registered hypothesis has a result, on the registered sample (the bundle's results/)."""
+    from .core.pipeline.preregistration import headline_entry, preregistered, result_coverage
+
+    design = bundle / "design"
+    folder = design if (design / "event_design.json").is_file() else bundle / "misc"
+    prereg = preregistered(folder, lock, prereg_dir=design)
+    docs = [_load_json(bundle / "results" / n) for n in ("estimation_results.json", "robustness_results.json")]
+    docs = [d for d in docs if isinstance(d, dict)]
+    if not docs:
+        wanted = [h["id"] for h in prereg.get("hypotheses") or []]
+        return ([f"no results/estimation_results.json, so no result for {', '.join(wanted)}"] if wanted else []), []
+    return result_coverage(docs, prereg, headline_entry(docs[0], prereg))
+
+
+# ── reproduction (replication bundles) ────────────────────────────────────────
+
+
+def _reproduction_file(bundle: Path, name: str) -> Path | None:
+    for p in (bundle / "misc" / name, bundle / name):
+        if p.is_file():
+            return p
+    return None
+
+
+def _check_reproduction(bundle: Path) -> Check | None:
+    """Re-read every compared number from the exported run outputs and recompute the labels.
+
+    Uses the pipeline's own reproduction check (``reproduction.evaluate``) with
+    the tolerance the run used, as recorded in reproduction_check.json. None
+    for a bundle without a reproduction report, so paper bundles are unchanged.
+    """
+    from .core.pipeline.reproduction import CHECK_FILE, DEFAULT_MINOR_REL_TOLERANCE, REPORT_FILE, evaluate
+
+    report_path = _reproduction_file(bundle, REPORT_FILE)
+    if report_path is None:
+        return None
+    plan = _load_json(_reproduction_file(bundle, "replication_plan.json") or bundle / "-")
+    log = _load_json(_reproduction_file(bundle, "sandbox_log.json") or bundle / "-")
+    report = _load_json(report_path)
+    if not isinstance(plan, dict) or not isinstance(log, dict):
+        return Check("reproduction", FAIL, "a reproduction report without replication_plan.json or sandbox_log.json")
+    bundled = _load_json(_reproduction_file(bundle, CHECK_FILE) or bundle / "-")
+    tol = bundled.get("minor_rel_tolerance") if isinstance(bundled, dict) else None
+    if isinstance(tol, bool) or not isinstance(tol, int | float) or not 0 <= tol < 1:
+        tol = DEFAULT_MINOR_REL_TOLERANCE
+    run_rel = str(log.get("run_dir") or "sandbox/run")
+    run_dir = (bundle / run_rel).resolve()
+    if run_rel.startswith("/") or not run_dir.is_relative_to(bundle.resolve()):
+        return Check("reproduction", FAIL, f"sandbox_log.json names a run folder outside the bundle ({run_rel})")
+    if not run_dir.is_dir():
+        return Check(
+            "reproduction",
+            FAIL,
+            f"the bundle has no {run_rel}/: the run's output files were not exported, so no compared number "
+            "can be re-read (export again with this version of e2er)",
+        )
+    doc = evaluate(plan, report, log, run_dir, minor_rel_tolerance=float(tol))
+    if not doc["passed"]:
+        reasons = doc["reasons"]
+        shown = "; ".join(reasons[:3]) + (f"; and {len(reasons) - 3} more" if len(reasons) > 3 else "")
+        return Check("reproduction", FAIL, f"{len(reasons)} problem(s) on recompute: {shown}")
+    stats = doc["stats"]
+    parts = []
+    for key in ("level_1", "level_2"):
+        tier = stats.get(key) or {}
+        if not tier.get("targets"):
+            continue
+        counts = tier.get("numbers") or {}
+        shown = ", ".join(f"{counts[lv]} {lv.replace('_', ' ')}" for lv in counts if counts[lv])
+        parts.append(f"{key.replace('_', ' ')}: {shown or 'nothing compared'}")
+    return Check(
+        "reproduction",
+        PASS,
+        f"{stats.get('numbers_checked', 0)} compared number(s) re-read from the run's outputs and relabelled "
+        f"(minor tolerance {float(tol):.0%}); "
+        + "; ".join(parts)
+        + ("; the report's summary counts agree" if doc.get("summary") else "; the report states no summary counts"),
+    )
 
 
 def _run_checks(bundle: Path, online: bool) -> list[Check]:
@@ -381,6 +492,9 @@ def _run_checks(bundle: Path, online: bool) -> list[Check]:
     prereg = _check_preregistration(bundle)
     if prereg is not None:
         checks.append(prereg)
+    reproduction = _check_reproduction(bundle)
+    if reproduction is not None:
+        checks.append(reproduction)
     if online:
         checks.append(asyncio.run(_check_citations_online(bundle)))
     return checks
@@ -389,7 +503,7 @@ def _run_checks(bundle: Path, online: bool) -> list[Check]:
 # The checks that actually verify CONTENT. Integrity (hashing files against
 # provenance.json) proves only that the bundle is unchanged since export — a
 # bundle can be perfectly self-consistent and still have had nothing checked.
-_CONTENT_CHECKS = frozenset({"numbers", "spec", "citations"})
+_CONTENT_CHECKS = frozenset({"numbers", "spec", "citations", "reproduction"})
 
 
 def _verdict(checks: list[Check]) -> tuple[str, int]:

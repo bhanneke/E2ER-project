@@ -16,7 +16,7 @@
     },
     "summary": {
       "type": "object",
-      "description": "Counts of result levels, reported separately for level_1 and level_2.",
+      "description": "Counts per level, reported separately for level_1 and level_2: of the compared numbers, each by its label (a could_not_run result's numbers count as could_not_run), or, as some reports do, of results by their level. The reproduction check and `e2er verify` recompute the counts and accept either basis.",
       "properties": {
         "level_1": {
           "type": "object"
@@ -110,6 +110,14 @@
                       }
                     }
                   }
+                },
+                "label": {
+                  "enum": [
+                    "reproduced",
+                    "reproduced_minor",
+                    "not_reproduced"
+                  ],
+                  "description": "This number's level; recomputed by the check with the same thresholds."
                 }
               }
             }
