@@ -262,6 +262,12 @@ POLISH_SPECIALISTS = [
 ]
 
 
+#: Specialists that write their output files whole on every attempt. Before an
+#: attempt their earlier files are moved to `<name>.previous` (see
+#: specialists/base.py), so a retry or a send-back never trips over, or passes
+#: with, a file from before.
+SPECIALIST_REWRITES_OUTPUTS: frozenset[str] = frozenset({"replication_planner", "reproduction_comparer"})
+
 #: The work order a fixed `specialists` step of a template gives a specialist
 #: when the runner has no phase of its own for that step (the strategist writes
 #: the focus everywhere else). Paths are workspace-relative.

@@ -1294,3 +1294,66 @@ def test_the_comparer_contract_catches_labels_causes_and_environment(workspace: 
     assert any("states a cause as established" in e for e in errs)
     assert any("label must be one of" in e for e in errs)
     assert any("no environment block" in e for e in errs)
+
+
+# ── retries start from fresh files ──────────────────────────────────────────
+
+
+def test_a_rewriting_specialists_earlier_output_is_set_aside(tmp_path: Path):
+    from src.core.specialists.base import set_aside_previous_outputs
+    from src.core.specialists.contracts import WorkOrder
+
+    (tmp_path / "reproduction_report.md").write_text("old")
+    (tmp_path / "reproduction_report.json").write_text("{}")
+    order = WorkOrder(
+        paper_id=PID,
+        specialist="reproduction_comparer",
+        focus="x",
+        output_file="reproduction_report.md",
+        sidecar_artifacts=["reproduction_report.json"],
+    )
+    moved = set_aside_previous_outputs(tmp_path, order)
+    assert moved == [
+        ("reproduction_report.md", "reproduction_report.md.previous"),
+        ("reproduction_report.json", "reproduction_report.json.previous"),
+    ]
+    assert not (tmp_path / "reproduction_report.json").exists()
+    assert (tmp_path / "reproduction_report.json.previous").read_text() == "{}"
+
+
+def test_other_specialists_keep_their_files_and_are_told_to_read_them_first(tmp_path: Path):
+    from src.core.specialists.base import set_aside_previous_outputs
+    from src.core.specialists.contracts import WorkOrder
+
+    (tmp_path / "paper_draft.tex").write_text("draft")
+    order = WorkOrder(paper_id=PID, specialist="section_writer", focus="x", output_file="paper_draft.tex")
+    assert set_aside_previous_outputs(tmp_path, order) == []
+    assert (tmp_path / "paper_draft.tex").read_text() == "draft"
+
+
+async def test_the_retry_prompt_names_the_set_aside_or_existing_files(tmp_path: Path, monkeypatch):
+    from src.core.specialists import base
+    from src.core.specialists.contracts import WorkOrder
+    from src.modules.llm.base import TokenUsage, ToolLoopResult
+
+    seen: list[str] = []
+
+    class _Backend:
+        async def tool_loop(self, *, system, messages, tools, tool_handler, max_turns, **kw):
+            seen.append(messages[0]["content"])
+            return ToolLoopResult(output="", success=False, error="x", usage=TokenUsage(), tool_calls_made=0)
+
+    async def _noop(*a, **k):
+        return None
+
+    monkeypatch.setattr(base, "save_usage", _noop)
+    (tmp_path / "reproduction_report.json").write_text("{}")
+    (tmp_path / "paper_draft.tex").write_text("draft")
+    for spec, out, side in (
+        ("reproduction_comparer", "reproduction_report.md", ["reproduction_report.json"]),
+        ("section_writer", "paper_draft.tex", []),
+    ):
+        order = WorkOrder(paper_id=PID, specialist=spec, focus="x", output_file=out, sidecar_artifacts=side)
+        await base.run_specialist(order, _Backend(), tmp_path, "m", backend_name="claude_code")
+    assert "moved aside" in seen[0] and "reproduction_report.json.previous" in seen[0]
+    assert "Read each one before you write it" in seen[1] and "`paper_draft.tex`" in seen[1]

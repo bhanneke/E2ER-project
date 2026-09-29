@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Replication: packages as of the package date, strict labels
 
+- A specialist that writes its files whole (the planner, the comparer) starts
+  each attempt with its earlier files moved to `<name>.previous`; any other
+  specialist is told which of its files exist and to read them before writing.
+  The CLI's write tool refuses to overwrite an unread file, which made every
+  retry of the comparer fail in the live rerun.
+
 - The sandbox installs packages as of the Zenodo record's publication date by
   default (`snapshot = "package-date" | "latest" | "YYYY-MM-DD"`): R from Posit
   Package Manager's dated CRAN snapshot, Python with pip's
