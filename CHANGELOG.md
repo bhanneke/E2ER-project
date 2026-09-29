@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] — 2026-09-29
+
+### Fixed: templates missing from the 0.11.0 package
+
+- The 0.11.0 package on PyPI did not contain the templates (`pipelines/`).
+  After `pip install e2er` no study could start: every template name failed
+  with "no pipeline named 'empirical'". 0.12.0 ships all four templates
+  (empirical, empirical-preregistered, event-study-finance, replication).
+  Upgrade with `pip install -U e2er`.
+- CI now builds the wheel, installs it into a fresh virtualenv outside the
+  checkout, and checks that `e2er --help` runs, that the four templates and the
+  skill files resolve, and that `e2er verify` passes on a copy of
+  `examples/showcase` (`scripts/check_wheel.sh`, job `package` in
+  `.github/workflows/tests.yml`). Run against the 0.11.0 wheel, the check fails.
+
 ### e2er in the browser
 
 - **`e2er` alone opens the browser.** It starts the dashboard on 127.0.0.1 and
@@ -23,14 +38,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   owner-only (mode 600), keeps settings it does not manage, shows stored keys
   only as their last four characters, optionally creates `data/` and
   `literature/`, then runs the doctor checks.
-- **Folder browser** for literature and data, served by the local server: folders
-  plus .bib and .pdf (or data) files, hidden files left out. A .bib file, a
-  Zotero export (a .bib with a `files/` folder), a Zotero library or a folder of
-  PDFs is recognised and its references and PDFs counted. It needs the session
-  token from the launch URL (traded for an HttpOnly, SameSite=Strict cookie),
-  answers only to loopback clients with a local Host header and no foreign
-  Origin, never adds CORS headers, stays inside the home folder (extra roots only
-  via `E2ER_BROWSE_ROOTS`) and does not follow symlinks out of it.
+- **Folder browser** for literature and data, served by the local server:
+  folders plus .bib and .pdf (or data) files, hidden files left out. A .bib
+  file, a Zotero export (a .bib with a `files/` folder), a Zotero library or a
+  folder of PDFs is recognised and its references and PDFs counted. It needs the
+  session token from the launch URL (traded for an HttpOnly, SameSite=Strict
+  cookie), answers only to loopback clients with a local Host header and no
+  foreign Origin, never adds CORS headers, stays inside the home folder (extra
+  roots only via `E2ER_BROWSE_ROOTS`) and does not follow symlinks out of it.
 - **New study page:** the research question, template cards read from
   `pipelines/*.toml` (description and the steps where each one stops for you),
   a demonstration box (recorded for that one study) and the rest under More
@@ -44,24 +59,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `e2er publish`: a dry-run preview of the request first, sign-in through the
   device flow, then publish.
 
-### Fixed
+### Command line
 
-- **The templates were missing from the installed package.** 0.11.0's wheel had
-  no `pipelines/`, so after `pip install e2er` every study failed with "no
-  pipeline named 'empirical'". They now ship.
 - **Forgiving paths.** One helper cleans every path typed at a prompt or given
   as a flag: a leading prompt glyph (❯ › $ % > #), surrounding quotes,
   drag-and-drop backslash escapes, `file://` and `~`. `e2er init` accepts a
   folder holding one .bib ("That is a folder. It contains My Library.bib — use
   it? [Y/n]"), a Zotero export or a folder of PDFs, and says what it expected
   and what it found.
+- `e2er doctor` checks the Python version and reports Docker (optional), and
+  points to the install instructions when Python is too old or the claude CLI
+  is missing. The `.env` from `e2er init` is written owner-only.
+- README: install with uv (Python 3.12 pinned), or pip in a virtualenv.
+
+### Other fixes
+
 - `e2er review` without a terminal exited with an EOFError traceback; it now
   names the flags and the dashboard page to use instead.
 - `e2er status` showed "single_pass / empirical" for every study; it now shows
   the study's template.
-- `e2er doctor` checks the Python version and reports Docker (optional), and
-  points to the install instructions when Python is too old or the claude CLI
-  is missing. The `.env` from `e2er init` is written owner-only.
+- The `empirical` template's description says "e2er's default" (was "E2ER's").
 
 ## [0.11.0] — 2026-09-29
 
