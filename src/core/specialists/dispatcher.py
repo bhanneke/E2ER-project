@@ -80,6 +80,9 @@ def _inject_context(work_order: WorkOrder, workspace: Path) -> WorkOrder:
         # The registry's sidecars plus any the active template adds
         # (`[sidecars]`; see core/pipeline/components.py).
         sidecars = sidecars_for(work_order.specialist)
+        # Files the researcher edited are not requested again (a send-back).
+        keep = set(work_order.extra.get("keep_files") or [])
+        sidecars = [f for f in sidecars if f not in keep]
         if sidecars:
             updates["sidecar_artifacts"] = list(sidecars)
 
