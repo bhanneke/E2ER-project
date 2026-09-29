@@ -7,49 +7,78 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Studies, versions and archiving
+## [0.12.1] — 2026-09-29
 
-- **A study is now a group of attempts.** Attempts with the same research
-  question (spacing, case and trailing punctuation ignored) and the same
-  template form one study; each attempt is a version (v1, v2, … by start time)
-  and the study takes the latest attempt's title. The landing page lists one
-  row per study with the template, the number of attempts, a status summary
-  ("3 completed · 4 rejected · 13 failed") and the latest status and date,
-  sorted by last activity, with a search box. A study's page lists its
-  attempts with status, dates, model and a link to each paper page; the paper
-  page says which study and version it is ("v3 of 9").
-- **Move to study…** on an attempt puts it into another study or splits it off
-  into one of its own.
-- **Archiving.** An attempt or a whole study can be archived: it is hidden from
-  the lists and nothing else changes (no record, file or workspace is deleted).
-  Running and paused attempts are refused, with the reason. "Archive failed and
-  cancelled attempts" shows the count and the list in the page before it
-  archives, and archives only what was shown. "Show archived (n)" brings them
-  back with an Unarchive button.
-- **New commands:** `e2er list` (`--attempts`, `--archived`, `--search`),
+### Studies and versions
+
+- **A study is a group of attempts.** Running a question again adds an
+  attempt to its study instead of a new row in the list. Attempts with the
+  same research question (spacing, case and trailing punctuation ignored) and
+  the same template belong to one study; each attempt is a version (v1, v2, …
+  by start time), and the study takes the latest attempt's title.
+- **The studies list** shows one row per study: title, template, the number
+  of attempts, a status summary ("3 completed · 4 rejected · 13 failed") and
+  the latest attempt's status and date. It is sorted by last activity and has
+  a search box.
+- **The attempts page** (`/studies/<key>`) lists a study's attempts with
+  version, status, start and update dates, model and backend, and a link to
+  each paper page. The paper page says which study and version it is
+  ("v3 of 9").
+- **Move to study…** on an attempt puts it into another study, or splits it
+  off into one of its own, for questions that were grouped wrongly.
+
+### Archiving
+
+- An attempt, or a whole study, can be archived: it is hidden from the lists
+  and nothing else changes. No record, file or workspace is deleted, and
+  running and paused attempts are refused, with the reason.
+- **Archive failed and cancelled attempts** shows the count and the list in
+  the page before it archives, and archives only what was shown.
+- **Show archived (n)** brings archived attempts back into view, with an
+  Unarchive button per study and per attempt.
+- On the command line: `e2er list` (`--attempts`, `--archived`, `--search`),
   `e2er archive <paper_id>`, `e2er archive --study <key|id>`,
-  `e2er archive --failed` (a dry run unless `--yes`), `e2er unarchive`.
-- New columns `papers.study_key`, `study_override`, `archived_at`. SQLite
-  databases gain them on start-up and existing rows are backfilled; Postgres
-  gets `sql/015_papers_study_versions.sql`. Both are safe to run again. The new
-  endpoints need the dashboard session, like the setup and finish pages.
+  `e2er archive --failed` (a dry run unless `--yes`) and
+  `e2er unarchive <paper_id>` (or `--study`). The first 8 characters of an id
+  are enough.
+- New columns `papers.study_key`, `study_override` and `archived_at`. SQLite
+  databases gain them on start-up and existing attempts are grouped
+  automatically; Postgres gets `sql/015_papers_study_versions.sql`. Both are
+  safe to run again. The new endpoints need the dashboard session, like the
+  setup and finish pages.
 - The list no longer shows a cost column; the cost is on each paper page.
 
-### Fixed: a second server paused another server's running paper
+### Cancel a paused attempt
+
+- A paused attempt (stopped by the budget or the circuit breaker, or waiting
+  at a researcher step) can be ended with **Cancel attempt** on the attempts
+  page and on the paper page, or with `e2er cancel <paper_id>`. Before, a
+  paused attempt could only be resumed, so it could never be archived.
+- Its status becomes cancelled and the cancellation is recorded as a
+  researcher step ("cancelled by the researcher", with the time and whether it
+  came from the dashboard or the command line), so the dossier of a later
+  export shows it. The workspace is kept, and the attempt can then be archived
+  like any cancelled one.
+- Refused when another running e2er process owns the attempt, and for
+  attempts that are running or already over.
+
+### Fixed: a second e2er process paused a study another process was running
 
 - Two e2er servers on one database: when the second one started, its start-up
   recovery paused every paper that looked "running", including a paper the
   first server was still running (recorded as "interrupted — the server
-  stopped while this paper was running"). A run now records its owner (host,
-  PID, process start time, port, an instance id) when it starts or resumes,
-  and refreshes a heartbeat every minute. Start-up recovery pauses a paper only
-  when the owner process is gone, or when its PID now belongs to a different
-  process. A paper owned by a live server is left alone and logged ("running on
-  another e2er process (PID …, port …)"). For rows from an older e2er, which
-  have no owner recorded, recovery waits until there has been no activity for
-  10 minutes.
+  stopped while this paper was running").
+- A run now records its owner (host, PID, process start time, port and an
+  instance id) when it starts or resumes, and refreshes a heartbeat every
+  minute. Start-up recovery pauses a paper only when the owner process is
+  gone, or when its PID now belongs to a different process. A paper owned by a
+  live process is left alone and logged ("running on another e2er process
+  (PID …, port …)"). For attempts started by an older e2er, which have no
+  owner recorded, recovery waits until there has been no activity for 10
+  minutes.
 - The paper page shows such a paper as "Running in another e2er process",
-  without Resume or Cancel; the resume and cancel endpoints refuse it (409).
+  with a link to that one and without Resume or Cancel; the resume and cancel
+  endpoints refuse it (409).
 - New columns `papers.run_owner` and `heartbeat_at`
   (`sql/016_papers_run_owner.sql` for Postgres). Changes to these columns and
   to the study columns no longer move `updated_at`, so archiving or a
