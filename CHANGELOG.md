@@ -28,7 +28,14 @@ template; each verdict is recorded and appears in the dossier. See
 - Nothing is estimated before a pre-registration is frozen (every template with a
   `preregister` step): estimation output found at that point stops the run with the
   list; sending back the specialist that produced it moves the output to `set_aside/`
-  with a manifest, recorded in the dossier.
+  with a manifest, recorded in the dossier. Result files count too: csv, tsv,
+  parquet, json or xlsx outside `data/` and the declared data tables, named as results
+  or with result columns (car_*, abnormal*, ar_*, coef*, estimate*, t_stat, p_value,
+  alpha_*, beta_*). After such a send-back the check runs again and, once clean, the
+  researcher sees the pre-registration.
+- A send-back no longer overwrites a file the researcher edited: the specialist is not
+  asked for it, and if it rewrites it anyway the researcher's version is put back and
+  the specialist's kept in `set_aside/`, recorded as `researcher_edit_restored`.
 - The data analyst loads, cleans and describes data and never estimates. It loads
   the tables `data_dictionary.json` declares under `tables` into data.db
   (`e2er-data ... --table <name>`), and its contract fails when one is missing or
