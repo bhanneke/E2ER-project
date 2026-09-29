@@ -550,3 +550,10 @@ def test_dashboard_cancel_attempt(db: Path, monkeypatch):
     again = c.post(f"/api/papers/{pid}/cancel-attempt")
     assert again.status_code == 409 and "already cancelled" in again.json()["detail"]
     assert "cancel-attempt" not in c.get(f"/htmx/papers/{pid}/live").text
+
+
+def test_cli_list_on_an_empty_database_ends_its_line(db: Path, capsys):
+    from src import cli_studies
+
+    assert cli_studies.list_studies() == 0
+    assert capsys.readouterr().out == "No studies yet.\n"

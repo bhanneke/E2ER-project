@@ -34,7 +34,9 @@ def _plural(n: int, word: str) -> str:
 def format_list(studies: list[st.Study], n_archived: int, *, attempts: bool, archived: bool) -> str:
     """The text `e2er list` prints. Pure, for tests."""
     if not studies:
-        return "No studies yet." if not n_archived else f"No studies to show ({n_archived} archived; --archived)."
+        if n_archived:
+            return f"No studies to show ({n_archived} archived; --archived shows them).\n"
+        return "No studies yet.\n"
     n_attempts = sum(len(s.shown(archived)) for s in studies)
     head = f"{len(studies)} stud{'y' if len(studies) == 1 else 'ies'} · {_plural(n_attempts, 'attempt')}"
     if n_archived and not archived:
