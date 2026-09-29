@@ -242,7 +242,7 @@ async def test_the_preregistration_halts_on_estimates_and_lists_them(tmp_path: P
     r._execute_orders = _exec
     st.metadata["rerun"] = [{"target": "data_analyst", "remark": "Data only."}]
     st.metadata["sent_back"] = True
-    with pytest.raises(HumanReviewRequestedError):
+    with pytest.raises(HumanReviewRequestedError) as stop:
         await r._settle_researcher_decisions(st)
     assert ran == ["data_analyst"] and prereg.estimation_outputs(tmp_path) == []
     aside = [p for k, _s, p in events if k == "estimation_set_aside"]
@@ -250,13 +250,10 @@ async def test_the_preregistration_halts_on_estimates_and_lists_them(tmp_path: P
         "run_estimation.py",
         "event_study_results",
     }
-
-    # Now clean: approving shows the pre-registration itself first, then freezes.
-    st.approve("preregister")
-    with pytest.raises(HumanReviewRequestedError) as stop:
-        await r._settle_researcher_decisions(st)
-    assert not isinstance(stop.value, GateHaltError) and (tmp_path / prereg.PREREG_FILE).is_file()
-    assert not (tmp_path / prereg.LOCK_FILE).exists()
+    # Clean now: the run is back at the step, showing the pre-registration itself.
+    assert not isinstance(stop.value, GateHaltError) and stop.value.stage == "preregister"
+    assert (tmp_path / prereg.PREREG_FILE).is_file() and not (tmp_path / prereg.LOCK_FILE).exists()
+    assert st.metadata["review"]["kind"] == "preregister" and "preregistration_blocked" not in st.metadata
     st.approve("preregister")
     await r._settle_researcher_decisions(st)
     assert (tmp_path / prereg.LOCK_FILE).is_file() and st.is_complete("preregister")
@@ -330,3 +327,125 @@ def test_the_calendar_must_be_a_declared_loaded_table_and_the_failure_names_the_
     (tmp_path / "event_design.json").write_text(json.dumps(design))
     r = check_event_window(tmp_path)
     assert any("is not one of the tables data_dictionary.json declares" in x for x in r.reasons)
+
+
+# ── result files, and a send-back that leaves the researcher's edits alone ──
+
+HEADER = (
+    "event_id,announcement_date,trading_day_t0,direction,dfedtaru_change_bps,window,window_start,window_end,"
+    "n_obs_window,car_spy,car_xlf,mean_ar_spy,se_ar_spy,alpha_spy,beta_spy,r2_spy,n_obs_est"
+)
+
+
+def test_the_9a623c39_results_csv_is_found(tmp_path: Path):
+    (tmp_path / "event_study_results.csv").write_text(HEADER + "\n1,2015-12-16,2015-12-16,increase,0.25\n")
+    (tmp_path / "bank_returns.csv").write_text(HEADER + "\n")  # found by its columns alone
+    assert prereg.estimation_outputs(tmp_path) == ["bank_returns.csv", "event_study_results.csv"]
+
+
+@pytest.mark.parametrize(
+    ("name", "content"),
+    [
+        ("abnormal_returns.parquet", b"not really parquet"),
+        ("regression_table.xlsx", b"not really xlsx"),
+        ("coefs.json", b"{}"),
+        ("out/ar_daily.tsv", b"date\tvalue\n"),
+        ("panel.json", b'[{"date": "2020-01-02", "t_stat": 2.1}]'),
+        ("panel.tsv", b"date\tp_value\n"),
+        ("window.csv", b"event,car\n"),
+    ],
+)
+def test_result_files_by_name_or_columns(tmp_path: Path, name: str, content: bytes):
+    path = tmp_path / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(content)
+    assert prereg.estimation_outputs(tmp_path) == [name]
+
+
+def test_data_and_plan_files_are_not_results(tmp_path: Path):
+    _dictionary(tmp_path, ["kbe_prices", "car_registrations"])
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data" / "event_study_results.csv").write_text(HEADER)  # inputs live in data/
+    (tmp_path / "kbe_prices.csv").write_text("date,close\n")
+    (tmp_path / "car_registrations.csv").write_text("date,car\n")  # a declared data table
+    (tmp_path / "year_summary.csv").write_text("year,n\n")
+    for name, body in {
+        "summary_statistics.json": '{"car_mean": 1}',
+        "figure_spec.json": '{"figures": [{"y": "car"}]}',
+        "identification_spec.json": '{"primary": {"outcome": "car"}}',
+        "event_design.json": '{"estimation_window": {"start": -250, "end": -12}}',
+    }.items():
+        (tmp_path / name).write_text(body)
+    assert prereg.estimation_outputs(tmp_path) == []
+
+
+async def test_a_send_back_from_a_blocked_preregistration_sets_result_files_aside(tmp_path: Path, events, monkeypatch):
+    import hashlib
+
+    (tmp_path / "paper_plan.md").write_text("H1\n")
+    csv = tmp_path / "event_study_results.csv"
+    csv.write_text(HEADER + "\n")
+    digest = hashlib.sha256(csv.read_bytes()).hexdigest()
+    design = tmp_path / "event_design.json"
+    design.write_bytes(b'{"researcher": "edit"}\n')
+    edit_sha = hashlib.sha256(design.read_bytes()).hexdigest()
+
+    async def _fetch(paper_id, since=None):
+        return [
+            {
+                "event_type": "researcher_action",
+                "payload": json.dumps({"action": "edit", "file": "event_design.json", "sha256_after": edit_sha}),
+            }
+        ]
+
+    monkeypatch.setattr("src.db.events.fetch_events", _fetch)
+    r = _runner(tmp_path)
+    with pytest.raises(GateHaltError):
+        await r._between_groups({"data_analyst"}, [])
+    st = r._state
+    sent: list = []
+
+    async def _exec(orders):
+        sent.extend(orders)
+        design.write_bytes(b'{"specialist": "rewrote it"}\n')  # ignores the remark
+        (tmp_path / "identification_spec.json").write_text('{"primary": {"treatment": "dgs2_change"}}')
+        return [Contribution(paper_id=PID, specialist=o.specialist, output="") for o in orders]
+
+    r._execute_orders = _exec
+    st.metadata["rerun"] = [{"target": "identification_strategist", "remark": "Use DGS2."}]
+    st.metadata["sent_back"] = True
+    with pytest.raises(HumanReviewRequestedError) as stop:
+        await r._settle_researcher_decisions(st)
+
+    # The CSV is set aside with its fingerprint, and the run is back at the pre-registration.
+    [aside] = [p for k, _s, p in events if k == "estimation_set_aside"]
+    assert aside["items"][0]["file"] == "event_study_results.csv" and aside["items"][0]["sha256"] == digest
+    assert not csv.exists() and prereg.estimation_outputs(tmp_path) == []
+    assert stop.value.stage == "preregister" and (tmp_path / prereg.PREREG_FILE).is_file()
+
+    # The researcher's edit was not requested and is back byte for byte; the specialist's version is kept.
+    assert sent[0].extra["keep_files"] == ["event_design.json"] and "event_design.json" in sent[0].focus
+    assert design.read_bytes() == b'{"researcher": "edit"}\n'
+    [restored] = [p for k, _s, p in events if k == "researcher_edit_restored"]
+    assert restored["sha256_researcher"] == edit_sha
+    assert (tmp_path / restored["specialist_version"]).read_bytes() == b'{"specialist": "rewrote it"}\n'
+
+
+def test_kept_files_are_not_requested_as_sidecars(tmp_path: Path):
+    from src.core.pipeline import components
+    from src.core.pipeline.spec import find_spec
+    from src.core.specialists.contracts import WorkOrder
+    from src.core.specialists.dispatcher import _inject_context
+
+    token = components.activate(find_spec("event-study-finance"))
+    try:
+        order = WorkOrder(
+            paper_id=PID,
+            specialist="identification_strategist",
+            focus="x",
+            context="c",
+            extra={"keep_files": ["event_design.json"]},
+        )
+        assert _inject_context(order, tmp_path).sidecar_artifacts == ["identification_spec.json"]
+    finally:
+        components.deactivate(token)

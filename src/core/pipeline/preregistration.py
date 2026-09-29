@@ -183,6 +183,80 @@ _ESTIMATION_CODE = (
 _FIGURE_SUFFIXES = (".pdf", ".png", ".svg", ".jpg", ".jpeg")
 SET_ASIDE_DIR = "set_aside"
 
+#: Data-shaped files that can hold results.
+_RESULT_FILE_SUFFIXES = (".csv", ".tsv", ".parquet", ".json", ".xlsx")
+#: Name fragments that mark such a file as a result.
+_RESULT_NAME = re.compile(r"(result|estimat|(^|[^a-z])car([^a-z]|$)|abnormal|(^|[^a-z])ar_|regress|coef)")
+#: Column names that mark such a file as a result.
+_RESULT_COLUMN = re.compile(
+    r"^(car|car_.*|caar.*|abnormal.*|ar_.*|coef.*|estimate.*|t_?stat.*|p_?value.*|alpha_.*|beta_.*)$"
+)
+#: Machine-readable plan and description files that are never results.
+_NOT_RESULTS = frozenset(
+    {
+        "summary_statistics.json",
+        "data_dictionary.json",
+        "figure_spec.json",
+        "identification_spec.json",
+        "event_design.json",
+        "table_spec.json",
+        "manifest.json",
+        "figure_render_report.json",
+        "literature_survey.json",
+        "preregistration.lock.json",
+    }
+)
+#: Folders that hold inputs, bookkeeping or what was already set aside.
+_SKIP_DIRS = frozenset({"data", SET_ASIDE_DIR, "literature", "replication", ".contract_feedback"})
+
+
+def _columns(path: Path) -> list[str]:
+    """The column names of a data file, lower case; [] when they cannot be read."""
+    suffix = path.suffix.lower()
+    try:
+        if suffix in (".csv", ".tsv"):
+            with path.open(encoding="utf-8", errors="replace") as f:
+                first = f.readline()
+            sep = "\t" if suffix == ".tsv" or ("\t" in first and "," not in first) else ","
+            return [c.strip().strip('"').lower() for c in first.rstrip("\r\n").split(sep)]
+        if suffix == ".json":
+            data = json.loads(path.read_text(encoding="utf-8"))
+            row = data[0] if isinstance(data, list) and data else data
+            return [str(k).lower() for k in row] if isinstance(row, dict) else []
+        if suffix == ".parquet":
+            import pyarrow.parquet as pq
+
+            return [n.lower() for n in pq.read_schema(path).names]
+        if suffix == ".xlsx":
+            import openpyxl
+
+            wb = openpyxl.load_workbook(path, read_only=True)
+            first_row = next(wb.worksheets[0].iter_rows(max_row=1, values_only=True), ())
+            return [str(v).lower() for v in first_row if v is not None]
+    except Exception:  # noqa: BLE001 — an unreadable file is judged by its name alone
+        return []
+    return []
+
+
+def _result_files(ws: Path) -> set[str]:
+    """Data-shaped files outside data/ that are results by name or by their columns."""
+    from ..specialists.contract_check import declared_tables
+
+    declared = {t.lower() for t in (declared_tables(ws) or [])}
+    found: set[str] = set()
+    for p in ws.rglob("*"):
+        rel = p.relative_to(ws)
+        if not p.is_file() or p.suffix.lower() not in _RESULT_FILE_SUFFIXES:
+            continue
+        if rel.parts[0] in _SKIP_DIRS or any(part.startswith(".") for part in rel.parts):
+            continue
+        if p.name in _NOT_RESULTS or p.stem.lower() in declared:
+            continue
+        name_hit = bool(_RESULT_NAME.search(p.stem.lower()))
+        if name_hit or any(_RESULT_COLUMN.match(c) for c in _columns(p)):
+            found.add(str(rel))
+    return found
+
 
 def _tokens(name: str) -> set[str]:
     return {t for t in re.split(r"[^a-z0-9]+", name.lower()) if t}
@@ -194,7 +268,10 @@ def estimation_outputs(workspace: Path) -> list[str]:
     Called before a pre-registration is frozen, when none of it may exist yet:
     the estimation specialist's files (results JSON, its scripts and logs),
     result tables (``tables/*.tex``), figures named as results, any Python
-    script that estimates, and data.db tables named as results. Returns
+    script that estimates, data.db tables named as results, and result files
+    (csv/tsv/parquet/json/xlsx outside ``data/`` and the declared data tables,
+    named as results or with result columns such as car_*, abnormal*, ar_*,
+    coef*, estimate*, t_stat, p_value, alpha_*, beta_*). Returns
     workspace-relative paths, and ``data.db:<table>`` for tables.
     """
     from ..specialists.post_execution import EXECUTION_CONVENTIONS
@@ -211,6 +288,7 @@ def estimation_outputs(workspace: Path) -> list[str]:
         if any(frag in src for frag in _ESTIMATION_CODE):
             found.add(py.name)
     found.update(str(p.relative_to(ws)) for p in (ws / "tables").glob("*.tex"))
+    found.update(_result_files(ws))
     for folder in (ws, ws / "figures"):
         for p in folder.glob("*"):
             if p.suffix.lower() in _FIGURE_SUFFIXES and _tokens(p.stem) & _RESULT_TOKENS:

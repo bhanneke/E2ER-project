@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The pre-registration check now recognises result files as estimation output:
+  csv, tsv, parquet, json or xlsx outside `data/` and the declared data tables,
+  named as results (result, estimat, car, abnormal, ar_, regression, coef) or
+  with result columns (car, car_*, abnormal*, ar_*, coef*, estimate*, t_stat,
+  p_value, alpha_*, beta_*). Plan and description files are never results.
+  After a send-back from a blocked pre-registration the check runs again and,
+  once clean, the researcher sees the pre-registration.
+- A send-back no longer overwrites a file the researcher edited: the specialist
+  is not asked for it, and if it rewrites it anyway the researcher's version is
+  put back and the specialist's kept in `set_aside/`, recorded as
+  `researcher_edit_restored`.
+
 ## [0.12.1] — 2026-09-29
 
 ### Studies and versions
