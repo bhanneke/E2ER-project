@@ -5,7 +5,8 @@
   "description": "reproduction_report.json, written by the reproduction comparer in the `replication` template. The reproduction check (src/core/pipeline/reproduction.py) re-reads every reproduced number from the file it names and verifies the levels against the recomputed differences. See skills/files/replication/reproduction-report.md and reproduction-protocol.md. Levels 1 and 2 are reported separately: every result carries target_level, and all of its comparisons are targets of that level.",
   "type": "object",
   "required": [
-    "results"
+    "results",
+    "environment"
   ],
   "properties": {
     "schema_version": {
@@ -68,7 +69,8 @@
               "required": [
                 "target_id",
                 "published",
-                "reproduced"
+                "reproduced",
+                "label"
               ],
               "properties": {
                 "target_id": {
@@ -110,6 +112,23 @@
                       }
                     }
                   }
+                },
+                "label": {
+                  "enum": [
+                    "reproduced",
+                    "reproduced_minor",
+                    "not_reproduced",
+                    "could_not_run"
+                  ]
+                },
+                "rel_diff": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "reason": {
+                  "type": "string"
                 }
               }
             }
@@ -138,6 +157,43 @@
       "type": "array",
       "items": {
         "type": "string"
+      }
+    },
+    "environment": {
+      "type": "object",
+      "required": [
+        "snapshot",
+        "installed"
+      ],
+      "properties": {
+        "snapshot": {
+          "type": "object",
+          "required": [
+            "date",
+            "url"
+          ],
+          "properties": {
+            "date": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "url": {
+              "type": "string"
+            }
+          }
+        },
+        "platform": {
+          "type": "string"
+        },
+        "installed": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Every installed package and version, from sandbox_log.json (install.installed)."
+        }
       }
     }
   }

@@ -4,31 +4,46 @@
   "title": "E2ER pipeline",
   "description": "A research process as data: an ordered list of steps, plus teardown that runs however the run ended. Authored in TOML and validated as the parsed object, so the file stays readable and the contract stays checked. See docs/PIPELINES.md.",
   "type": "object",
-  "required": ["name", "steps"],
+  "required": [
+    "name",
+    "steps"
+  ],
   "additionalProperties": false,
-
   "properties": {
     "name": {
       "type": "string",
       "pattern": "^[a-z0-9][a-z0-9_-]*$",
       "description": "Filename stem and the identifier passed to `e2er run --pipeline`."
     },
-    "description": { "type": "string" },
+    "description": {
+      "type": "string"
+    },
     "methodologies": {
       "type": "array",
-      "items": { "type": "string" },
+      "items": {
+        "type": "string"
+      },
       "description": "Methodologies this pipeline is appropriate for. Advisory; does not gate execution."
     },
     "steps": {
       "type": "array",
       "minItems": 1,
       "description": "Executed in order. An empty pipeline is a mistake, not a no-op.",
-      "items": { "$ref": "#/$defs/step" }
+      "items": {
+        "$ref": "#/$defs/step"
+      }
     },
     "finalize": {
       "type": "array",
-      "items": { "enum": ["compile", "audit_export", "github_push", "structured_export"] },
-      "description": "Teardown actions, run regardless of how the run ended — completed, rejected, cancelled, circuit-broken, out of budget. Not steps: each swallows its own errors and none can halt the run, because their whole purpose is to leave the partial artifacts usable when something has already gone wrong."
+      "items": {
+        "enum": [
+          "compile",
+          "audit_export",
+          "github_push",
+          "structured_export"
+        ]
+      },
+      "description": "Teardown actions, run regardless of how the run ended \u2014 completed, rejected, cancelled, circuit-broken, out of budget. Not steps: each swallows its own errors and none can halt the run, because their whole purpose is to leave the partial artifacts usable when something has already gone wrong."
     },
     "skills": {
       "$ref": "#/$defs/components",
@@ -39,40 +54,68 @@
       "description": "Machine-readable files this template asks a specialist to write next to its main output, as specialist = [\"file.json\", ...]. Merged after the specialist's own sidecars; a check of the template reads them (e.g. event_design.json for the event_window check)."
     }
   },
-
   "$defs": {
     "components": {
       "type": "object",
       "additionalProperties": {
         "type": "array",
-        "items": { "type": "string", "minLength": 1 }
+        "items": {
+          "type": "string",
+          "minLength": 1
+        }
       }
     },
     "step": {
       "type": "object",
-      "required": ["kind", "name"],
+      "required": [
+        "kind",
+        "name"
+      ],
       "additionalProperties": false,
       "properties": {
         "kind": {
-          "enum": ["strategist", "specialists", "gate", "aggregate", "researcher", "preregister"],
+          "enum": [
+            "strategist",
+            "specialists",
+            "gate",
+            "aggregate",
+            "researcher",
+            "preregister"
+          ],
           "description": "strategist: hand control to the strategist engine. specialists: dispatch a fixed set. gate: run a deterministic check. aggregate: dispatch reviewers and combine their verdicts. researcher: the run stops for the researcher, who can approve, edit the named files, give an instruction for the following steps, or send a step back. preregister: assembles the pre-registration from the design files, stops for the researcher, and freezes it on approval."
         },
         "name": {
           "type": "string",
           "pattern": "^[a-z0-9][a-z0-9_]*$",
-          "description": "The stage name. Logged as phase_start/phase_end, shown in progress, and used as the resume key — so renaming one invalidates in-flight resumes."
+          "description": "The stage name. Logged as phase_start/phase_end, shown in progress, and used as the resume key \u2014 so renaming one invalidates in-flight resumes."
         },
         "run": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "description": "Specialists to dispatch. Required for `specialists` and `aggregate`; meaningless for `gate` and `strategist`."
         },
         "check": {
-          "enum": ["contracts", "estimation", "numbers", "citations", "claims", "event_window", "package_integrity", "sandbox", "reproduction"],
+          "enum": [
+            "contracts",
+            "estimation",
+            "numbers",
+            "citations",
+            "claims",
+            "event_window",
+            "package_integrity",
+            "sandbox",
+            "reproduction"
+          ],
           "description": "Which deterministic check to run. Required for `gate`. event_window verifies an event study's design (event_design.json) before estimation: estimation window length and gap, overlapping events, event dates in the data calendar. package_integrity, sandbox and reproduction run as steps of their own in the replication template (no `after`): package_integrity downloads the Zenodo record the question names and verifies every file against Zenodo's checksum (SHA-256 recorded); sandbox runs the plan's entry points in Docker (pinned image, --network none, read-only package, limits); reproduction re-reads every number of reproduction_report.json from the run's output files. package_integrity and sandbox block in every governance regime."
         },
         "on_fail": {
-          "enum": ["halt", "retry", "shadow"],
+          "enum": [
+            "halt",
+            "retry",
+            "shadow"
+          ],
           "default": "halt",
           "description": "halt stops the run; retry re-runs the preceding step once; shadow records the verdict without blocking. A pipeline may escalate a check beyond the floor but never below it."
         },
@@ -83,8 +126,13 @@
         },
         "modes": {
           "type": "array",
-          "items": { "enum": ["single_pass", "iterative"] },
-          "description": "Run modes this step applies to. Absent means every mode — which is why omitting it on an iterative-only step silently changes single-pass behaviour."
+          "items": {
+            "enum": [
+              "single_pass",
+              "iterative"
+            ]
+          },
+          "description": "Run modes this step applies to. Absent means every mode \u2014 which is why omitting it on an iterative-only step silently changes single-pass behaviour."
         },
         "resumable": {
           "type": "boolean",
@@ -93,27 +141,65 @@
         },
         "files": {
           "type": "array",
-          "items": { "type": "string", "pattern": "^[^/.][^/]*$" },
+          "items": {
+            "type": "string",
+            "pattern": "^[^/.][^/]*$"
+          },
           "description": "researcher and preregister steps: workspace files the researcher sees and may edit (top-level names only)."
         },
         "after": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "description": "researcher, preregister and gate steps: act inside the strategist's dispatch, right after these specialists have written their output, instead of at this position in the list. A gate with `after` also runs before any group that contains the econometrics specialist, so the estimation cannot pass it by."
         },
         "settings": {
           "type": "object",
-          "description": "gate steps: parameters of the check. event_window takes min_estimation_days (default 120), min_gap_days (default 10) and max_overlap_share (0 to 1, default 0). package_integrity takes max_mb (default 1000). sandbox takes cpus (default 2), memory_gb (default 4), timeout_minutes per entry point (default 60) and install_timeout_minutes (default 45). reproduction takes minor_rel_tolerance (0 to 1, default 0.10).",
+          "description": "gate steps: parameters of the check. event_window takes min_estimation_days (default 120), min_gap_days (default 10) and max_overlap_share (0 to 1, default 0). package_integrity takes max_mb (default 1000). sandbox takes cpus (default 2), memory_gb (default 4), timeout_minutes per entry point (default 60) install_timeout_minutes (default 45) and snapshot (package-date, latest or YYYY-MM-DD; default package-date). reproduction takes minor_rel_tolerance (0 to 1, default 0.10).",
           "properties": {
-            "min_estimation_days": { "type": "integer", "minimum": 0 },
-            "min_gap_days": { "type": "integer", "minimum": 0 },
-            "max_overlap_share": { "type": "number", "minimum": 0, "maximum": 1 },
-            "max_mb": { "type": "integer", "minimum": 0 },
-            "cpus": { "type": "integer", "minimum": 0 },
-            "memory_gb": { "type": "integer", "minimum": 0 },
-            "timeout_minutes": { "type": "integer", "minimum": 0 },
-            "install_timeout_minutes": { "type": "integer", "minimum": 0 },
-            "minor_rel_tolerance": { "type": "number", "minimum": 0, "maximum": 1 }
+            "min_estimation_days": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "min_gap_days": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "max_overlap_share": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "max_mb": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "cpus": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "memory_gb": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "timeout_minutes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "install_timeout_minutes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "minor_rel_tolerance": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "snapshot": {
+              "type": "string",
+              "pattern": "^(package-date|latest|\\d{4}-\\d{2}-\\d{2})$"
+            }
           },
           "additionalProperties": false
         }

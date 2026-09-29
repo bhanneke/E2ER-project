@@ -203,6 +203,8 @@ def check_reproduction(workspace: Path, *, minor_rel_tolerance: float = DEFAULT_
             continue
         by_level[tier][level] += 1
         comps = res.get("comparisons") or []
+        result_expected: list[str] = []
+        result_equal: list[bool] = []
         if level != "could_not_run" and not comps:
             reasons.append(f"{where}: level {level} compares no number")
         for comp in comps:
@@ -265,8 +267,15 @@ def check_reproduction(workspace: Path, *, minor_rel_tolerance: float = DEFAULT_
             dp = _decimals(str(target.get("reported") or ""))
             diff = value - published
             rel_diff = abs(diff) / abs(published) if published else (0.0 if diff == 0 else math.inf)
-            same = _equal_at(value, published, dp)
+            same = equal_to_target(value, published, tier, dp)
             sign_flip = (value > 0) != (published > 0) and not same and value != 0 and published != 0
+            expected = label_for(same, rel_diff, sign_flip, minor_rel_tolerance)
+            result_expected.append(expected)
+            result_equal.append(same)
+            own = comp.get("label")
+            if own is not None and own != expected:
+                why = _why(expected, rel_diff, sign_flip, minor_rel_tolerance)
+                reasons.append(f"{cw}: labelled {own!r}, but the numbers make it {expected!r} ({why})")
             claimed_diff = comp.get("abs_diff")
             if isinstance(claimed_diff, int | float) and not isinstance(claimed_diff, bool):
                 if not math.isclose(
@@ -281,8 +290,9 @@ def check_reproduction(workspace: Path, *, minor_rel_tolerance: float = DEFAULT_
                     "file": rel,
                     "abs_diff": diff,
                     "rel_diff": rel_diff,
-                    "equal_at_published_precision": same,
+                    "equal_to_target": same,
                     "sign_change": sign_flip,
+                    "label": expected,
                     "ok": True,
                 }
             )
@@ -294,6 +304,15 @@ def check_reproduction(workspace: Path, *, minor_rel_tolerance: float = DEFAULT_
                     f"{', sign change' if sign_flip else ''}) exceeds the minor tolerance of {minor_rel_tolerance:.0%}"
                 )
 
+        # The result's label is its worst number's, by the protocol's thresholds.
+        if result_expected and level != "could_not_run":
+            worst = max(result_expected, key=LEVELS.index)
+            if level != worst:
+                reasons.append(f"{where}: labelled {level!r}, but its worst number makes it {worst!r}")
+        for text in [res.get("reason"), *[c.get("reason") for c in comps if isinstance(c, dict)]]:
+            reasons += [f"{where}: {p}" for p in reason_text_problems(text, result_equal)]
+
+    reasons += check_environment(report, log)
     unassessed = {u.get("target_id") for u in report.get("unassessed") or [] if isinstance(u, dict) and u.get("reason")}
     for tier in TARGET_LEVELS:
         tier_ids = {t for t, v in targets.items() if v.get("level") == tier}
@@ -329,6 +348,107 @@ def check_reproduction(workspace: Path, *, minor_rel_tolerance: float = DEFAULT_
     return CheckResult(not reasons, tuple(reasons[:20]), stats=flat)
 
 
+#: A full-precision cell of a package's result file (level 1) is reproduced when
+#: the rerun value is within this relative distance of it; a printed number
+#: (level 2) when it rounds to the printed value. Stated the same way in
+#: skills/files/replication/reproduction-protocol.md.
+LEVEL_1_REL_TOLERANCE = 1e-9
+LEVEL_1_ABS_FLOOR = 1e-12
+
+
+def equal_to_target(value: float, published: float, target_level: int, printed_decimals: int) -> bool:
+    """Reproduced exactly: at full precision for a package cell, at the printed precision for the paper."""
+    if target_level == 1:
+        return math.isclose(value, published, rel_tol=LEVEL_1_REL_TOLERANCE, abs_tol=LEVEL_1_ABS_FLOOR)
+    return _equal_at(value, published, printed_decimals)
+
+
+def label_for(equal: bool, rel_diff: float, sign_change: bool, minor_rel_tolerance: float) -> str:
+    """The protocol's label for one number that the rerun produced."""
+    if equal:
+        return "reproduced"
+    if sign_change or rel_diff > minor_rel_tolerance:
+        return "not_reproduced"
+    return "reproduced_minor"
+
+
+def _why(label: str, rel_diff: float, sign_change: bool, tol: float) -> str:
+    if label == "reproduced":
+        return "equal to the target"
+    if sign_change:
+        return "the sign changes"
+    return f"relative difference {rel_diff:.3%}, minor tolerance {tol:.0%}"
+
+
+_NEG = r"(?<!not )(?<!n't )(?<!no longer )(?<!no )"
+_ASSERTS_EQUAL = re.compile(
+    _NEG + r"\b(equals?|equal to|identical|exactly|at full precision|no difference|matches the (shipped|published))\b",
+    re.I,
+)
+_ASSERTS_DIFF = re.compile(
+    _NEG + r"\b(differs?|differences? of|deviates?|diverges?|reverses? sign|sign (flip|change))\b", re.I
+)
+_CAUSAL = re.compile(
+    r"\b(because|caused by|due to|the cause|results? from|stems? from|attributable to|is explained by|explains|"
+    r"owing to|the reason|bug|mistake|fault|erroneous)\b",
+    re.I,
+)
+_HEDGE = re.compile(
+    r"\b(possibl[ey]|may|might|could|perhaps|potential(ly)?|candidate|not established|unverified|one explanation)\b",
+    re.I,
+)
+
+
+def reason_text_problems(text: Any, equal_flags: list[bool]) -> list[str]:
+    """What a reason text says that the numbers or the protocol do not allow.
+
+    It may not assert equality when no compared number is equal, nor a
+    difference when every number is; and it may name causes only as possible
+    ones (no "because", "due to", "caused by", "bug" without "possibly",
+    "may", "could" …), since a reproduction does not establish why a number
+    differs.
+    """
+    if not isinstance(text, str) or not text.strip():
+        return []
+    out: list[str] = []
+    says_equal, says_diff = _ASSERTS_EQUAL.search(text), _ASSERTS_DIFF.search(text)
+    if equal_flags and not any(equal_flags) and says_equal:
+        out.append(f"the reason says {says_equal.group(0)!r}, but no compared number equals its target")
+    if equal_flags and all(equal_flags) and says_diff:
+        out.append(f"the reason says {says_diff.group(0)!r}, but every compared number equals its target")
+    for sentence in re.split(r"(?<=[.;!?])\s+", text):
+        m = _CAUSAL.search(sentence)
+        if m and not _HEDGE.search(sentence):
+            out.append(f"the reason states a cause as established ({m.group(0)!r}); name possible causes only")
+    return out
+
+
+def check_environment(report: dict[str, Any], log: dict[str, Any]) -> list[str]:
+    """The report's environment block must be the sandbox log's: snapshot, platform, every installed version."""
+    env = report.get("environment")
+    if not isinstance(env, dict):
+        return ["the report has no environment block (snapshot, platform, installed versions from sandbox_log.json)"]
+    out: list[str] = []
+    snap = log.get("snapshot") or {}
+    raw = env.get("snapshot")
+    rsnap: dict[str, Any] = raw if isinstance(raw, dict) else {}
+    for key in ("date", "url"):
+        if rsnap.get(key) != snap.get(key):
+            out.append(f"environment.snapshot.{key} is {rsnap.get(key)!r}; the sandbox used {snap.get(key)!r}")
+    installed = (log.get("install") or {}).get("installed") or {}
+    raw_inst = env.get("installed")
+    claimed: dict[str, Any] = raw_inst if isinstance(raw_inst, dict) else {}
+    wrong = sorted(k for k in installed if claimed.get(k) != installed[k])
+    extra = sorted(set(claimed) - set(installed))
+    if wrong:
+        out.append(
+            f"environment.installed differs from sandbox_log.json for {len(wrong)} package(s): {', '.join(wrong[:8])}"
+        )
+    if extra:
+        out.append(f"environment.installed lists package(s) the sandbox did not install: {', '.join(extra[:8])}")
+    return out
+
+
 def check_report(workspace: Path) -> list[str]:
     """Contract check for the comparer: the report parses and uses the protocol's levels."""
     path = Path(workspace) / REPORT_FILE
@@ -346,4 +466,20 @@ def check_report(workspace: Path) -> list[str]:
             errs.append(f"results[{i}].target_level must be 1 (package result files) or 2 (the paper)")
         elif not res.get("reason"):
             errs.append(f"results[{i}] needs a reason for its level")
+        else:
+            for c in res.get("comparisons") or []:
+                if isinstance(c, dict) and c.get("label") not in LEVELS:
+                    errs.append(
+                        f"results[{i}] comparison {c.get('target_id')}: label must be one of {', '.join(LEVELS)}"
+                    )
+            texts = [res.get("reason"), *[c.get("reason") for c in res.get("comparisons") or [] if isinstance(c, dict)]]
+            for text in texts:
+                # causal wording only here; the numbers are compared by the check
+                errs += [f"results[{i}]: {p}" for p in reason_text_problems(text, [])]
+    log_path = Path(workspace) / LOG_FILE
+    if log_path.is_file():
+        try:
+            errs += check_environment(report, json.loads(log_path.read_text(encoding="utf-8")))
+        except ValueError:
+            pass
     return errs

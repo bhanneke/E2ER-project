@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Replication: packages as of the package date, strict labels
+
+- The sandbox installs packages as of the Zenodo record's publication date by
+  default (`snapshot = "package-date" | "latest" | "YYYY-MM-DD"`): R from Posit
+  Package Manager's dated CRAN snapshot, Python with pip's
+  `--uploaded-prior-to`; declared versions still win (`remotes::install_version`,
+  `==`). The snapshot date and URL, the platform and every installed version,
+  dependencies included, are read from the committed image and recorded in
+  `sandbox_log.json`, also when the environment is reused.
+- Labels follow the protocol's thresholds exactly, stated in
+  `reproduction-protocol.md` and enforced by the check: `reproduced` only when
+  equal at the target's own precision (1e-9 relative for package cells),
+  `reproduced_minor` up to 10 % with the same sign, `not_reproduced` beyond; a
+  result takes its worst number's label. The check and the comparer's
+  contract refuse reason texts that contradict the numbers or state a cause as
+  established, and require the report's environment block to match the log.
+
 ### Replication: two levels of targets, and the paper as researcher input
 
 - Targets in `replication_plan.json` carry `level`: 1 = a cell of a result file

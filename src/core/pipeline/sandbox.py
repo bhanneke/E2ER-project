@@ -37,6 +37,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -102,8 +103,18 @@ def _tail(text: str | bytes | None) -> str:
 # ── command construction (pure; pinned by tests without Docker) ─────────────
 
 
-def install_script(plan: dict[str, Any]) -> str:
-    """The shell script of the install phase, from validated names only."""
+def install_script(plan: dict[str, Any], snapshot_date: str | None = None) -> str:
+    """The shell script of the install phase, from validated names only.
+
+    ``snapshot_date`` (YYYY-MM-DD) installs the packages as they were on that
+    day: for R from Posit Package Manager's dated CRAN snapshot (the image's
+    own p3m URL with ``/latest`` replaced by the date, written to
+    ``Rprofile.site`` so it is also the repository inside the run), for Python
+    with pip's ``--uploaded-prior-to``. None installs the newest. Versions the
+    plan declares win either way: R installs them with
+    ``remotes::install_version`` when the snapshot holds another, Python pins
+    them with ``==``.
+    """
     env = plan.get("environment") or {}
     lines = ["set -e"]
     system = [str(s) for s in env.get("system_packages") or []]
@@ -114,7 +125,18 @@ def install_script(plan: dict[str, Any]) -> str:
             "rm -rf /var/lib/apt/lists/*"
         )
     pkgs = [p for p in env.get("packages") or [] if isinstance(p, dict) and p.get("name")]
+    declared = [p for p in pkgs if p.get("version")]
     if plan.get("language") == "R":
+        if snapshot_date:
+            lines.append(
+                'Rscript -e \'r <- getOption("repos")[["CRAN"]]; '
+                'pat <- "/(latest|[0-9]{4}-[0-9]{2}-[0-9]{2})/?$"; '
+                f'url <- if (grepl("p3m.dev|packagemanager", r) && grepl(pat, r)) sub(pat, "/{snapshot_date}", r) '
+                f'else "https://p3m.dev/cran/{snapshot_date}"; '
+                'cat(sprintf("options(repos = c(CRAN = \\"%s\\"))\\n", url), '
+                'file = file.path(R.home("etc"), "Rprofile.site"), append = TRUE); '
+                'cat("E2ER-SNAPSHOT-URL ", url, "\\n", sep = "")\''
+            )
         if pkgs:
             names = ", ".join(f'"{p["name"]}"' for p in pkgs)
             lines.append(
@@ -124,26 +146,75 @@ def install_script(plan: dict[str, Any]) -> str:
                 + "miss <- setdiff(pk, rownames(installed.packages())); "
                 + 'if (length(miss)) { message("NOT INSTALLED: ", paste(miss, collapse = " ")); quit(status = 1) }\''
             )
-        lines.append(
-            'Rscript -e \'cat("E2ER-INSTALLED-BEGIN\\n"); ip <- installed.packages()[, c("Package", "Version")]; '
-            'cat(paste(ip[, 1], ip[, 2], sep = "=="), sep = "\\n"); cat("\\nE2ER-INSTALLED-END\\n"); '
-            'cat("R ", R.version$major, ".", R.version$minor, "\\n", sep = "")\''
-        )
+        if declared:
+            want = ", ".join(f'"{p["name"]}" = "{p["version"]}"' for p in declared)
+            lines.append(
+                "Rscript -e 'want <- c("
+                + want
+                + '); have <- installed.packages()[, "Version"]; '
+                + "off <- names(want)[!(names(want) %in% names(have)) | have[names(want)] != want]; "
+                + 'if (length(off)) { if (!requireNamespace("remotes", quietly = TRUE)) install.packages("remotes"); '
+                + 'for (p in off) tryCatch(remotes::install_version(p, version = want[[p]], upgrade = "never", '
+                + 'repos = c(getOption("repos"), ARCHIVE = "https://cloud.r-project.org")), '
+                + 'error = function(e) message("E2ER-VERSION-FAILED ", p, " ", conditionMessage(e))) }\''
+            )
     else:
         if pkgs:
             specs = " ".join(
                 shlex.quote(f"{p['name']}=={p['version']}" if p.get("version") else str(p["name"])) for p in pkgs
             )
-            lines.append(f"pip install --no-cache-dir {specs}")
-        lines.append("echo E2ER-INSTALLED-BEGIN && pip freeze && echo E2ER-INSTALLED-END && python --version")
+            if snapshot_date:
+                cutoff = f"{snapshot_date}T23:59:59Z"
+                lines.append('pip install --no-cache-dir --upgrade "pip>=26"')
+                lines.append(f"echo E2ER-SNAPSHOT-URL pypi --uploaded-prior-to {cutoff}")
+                lines.append(f"pip install --no-cache-dir --uploaded-prior-to {cutoff} {specs}")
+            else:
+                lines.append(f"pip install --no-cache-dir {specs}")
     return "\n".join(lines)
 
 
-def env_tag(plan: dict[str, Any]) -> str:
+def environment_script(language: str) -> str:
+    """Printed by a no-network container of the committed image: repository, platform, every installed version."""
+    if language == "R":
+        return (
+            'Rscript -e \'cat("E2ER-REPOS ", getOption("repos")[["CRAN"]], "\\n", sep = ""); '
+            'cat("E2ER-PLATFORM ", R.version$platform, "\\n", sep = ""); '
+            'cat("E2ER-INSTALLED-BEGIN\\n"); ip <- installed.packages()[, c("Package", "Version")]; '
+            "ip <- ip[!duplicated(ip[, 1]), , drop = FALSE]; "
+            'cat(paste(ip[, 1], ip[, 2], sep = "=="), sep = "\\n"); cat("\\nE2ER-INSTALLED-END\\n")\''
+        )
+    return (
+        "python -c 'import platform, sys; print(\"E2ER-PLATFORM\", platform.machine(), sys.version.split()[0])' && "
+        "echo E2ER-INSTALLED-BEGIN && pip list --format=freeze && echo E2ER-INSTALLED-END"
+    )
+
+
+def env_tag(plan: dict[str, Any], snapshot_date: str | None = None) -> str:
     """Local tag of the committed environment: a hash of the image and the install script."""
     image = str((plan.get("environment") or {}).get("image"))
-    h = hashlib.sha256(f"{image}\n{install_script(plan)}".encode()).hexdigest()[:16]
+    h = hashlib.sha256(f"{image}\n{install_script(plan, snapshot_date)}".encode()).hexdigest()[:16]
     return f"e2er-sandbox:{h}"
+
+
+def resolve_snapshot(setting: str, manifest: dict[str, Any]) -> tuple[str | None, str]:
+    """(date or None for newest, how it was chosen) from the template's `snapshot` setting."""
+    if setting == "latest":
+        return None, "latest (the image's default repository)"
+    if setting == "package-date":
+        date = str(manifest.get("publication_date") or "")[:10]
+        if not re.match(r"^\d{4}-\d{2}-\d{2}$", date):
+            raise ValueError("snapshot = 'package-date', but the record has no publication date")
+        return date, f"the Zenodo record's publication date ({date})"
+    if re.match(r"^\d{4}-\d{2}-\d{2}$", setting):
+        return setting, f"the date set in the template ({setting})"
+    raise ValueError(f"unknown snapshot setting {setting!r}")
+
+
+def _marker(stdout: str, name: str) -> str:
+    for line in stdout.splitlines():
+        if line.startswith(f"{name} "):
+            return line[len(name) + 1 :].strip()
+    return ""
 
 
 def install_argv(docker: str, image: str, name: str, script: str, limits: Limits) -> list[str]:
@@ -294,6 +365,7 @@ def run_sandbox(
     memory_gb: int = Limits.memory_gb,
     timeout_minutes: int = Limits.timeout_minutes,
     install_timeout_minutes: int = Limits.install_timeout_minutes,
+    snapshot: str = "package-date",
     runner: Runner = subprocess.run,
     docker: str | None = None,
 ) -> CheckResult:
@@ -322,6 +394,10 @@ def run_sandbox(
 
     manifest = json.loads((workspace / MANIFEST_FILE).read_text(encoding="utf-8"))
     recorded = {f["path"]: f["sha256"] for f in manifest.get("package_files") or []}
+    try:
+        snapshot_date, snapshot_basis = resolve_snapshot(snapshot, manifest)
+    except ValueError as e:
+        return CheckResult(False, (str(e),))
     image = plan["environment"]["image"]
     box = workspace / SANDBOX_DIR
     logs = box / "logs"
@@ -344,8 +420,9 @@ def run_sandbox(
     log["image_digest"] = _digest(runner, docker, image)
 
     # phase 1: install into a committed environment image
-    tag = env_tag(plan)
-    script = install_script(plan)
+    tag = env_tag(plan, snapshot_date)
+    script = install_script(plan, snapshot_date)
+    install_out = ""
     if _image_present(runner, docker, tag):
         log["install"] = {"reused": tag, "script": script}
     else:
@@ -365,7 +442,46 @@ def run_sandbox(
         if commit.returncode != 0:
             _write_log(workspace, log)
             return CheckResult(False, ("the installed environment could not be committed as an image",))
-        log["install"]["installed"] = _installed(open(res["stdout_log"], encoding="utf-8").read())
+        install_out = Path(res["stdout_log"]).read_text(encoding="utf-8") + Path(res["stderr_log"]).read_text(
+            encoding="utf-8"
+        )
+
+    # what the committed environment actually holds, read from the image itself
+    # (no network), whether it was just built or reused
+    probe = _exec(
+        runner,
+        [docker, "run", "--rm", "--network", "none", tag, "sh", "-c", environment_script(plan["language"])],
+        300,
+        logs / "environment",
+    )
+    probe_out = Path(probe["stdout_log"]).read_text(encoding="utf-8")
+    installed = _installed(probe_out)
+    log["install"]["installed"] = installed
+    log["install"]["platform"] = _marker(probe_out, "E2ER-PLATFORM")
+    url = _marker(install_out, "E2ER-SNAPSHOT-URL") or (
+        _marker(probe_out, "E2ER-REPOS") if plan["language"] == "R" else ""
+    )
+    log["snapshot"] = {
+        "setting": snapshot,
+        "date": snapshot_date,
+        "basis": snapshot_basis,
+        "url": url or ("https://pypi.org/simple" if snapshot_date is None else ""),
+    }
+    log["declared_versions"] = [
+        {
+            "name": p["name"],
+            "declared": str(p["version"]),
+            "installed": installed.get(p["name"]),
+            "matches": installed.get(p["name"]) == str(p["version"]),
+        }
+        for p in plan["environment"].get("packages") or []
+        if isinstance(p, dict) and p.get("version")
+    ]
+    failed_pins = [
+        line.split(" ", 2)[1] for line in install_out.splitlines() if line.startswith("E2ER-VERSION-FAILED ")
+    ]
+    if failed_pins:
+        log["install"]["declared_versions_not_installable"] = failed_pins
 
     # phase 2: run each entry point on a fresh copy of the package
     if run_dir.exists():
