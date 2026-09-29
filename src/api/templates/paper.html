@@ -2,6 +2,12 @@
 {% block title %}{{ paper.title[:70] }} — e2er{% endblock %}
 
 {% block content %}
+{% if study %}
+<p class="crumb">
+  <a href="/studies/{{ study.key }}">{{ study.title }}</a> · v{{ study.version }} of {{ study.of }}
+  {% if study.archived %} · <span class="muted">archived</span>{% endif %}
+</p>
+{% endif %}
 <h1>{{ paper.title }}</h1>
 <p class="sub">{{ paper.research_question }}</p>
 <p class="muted">

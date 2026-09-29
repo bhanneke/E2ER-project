@@ -35,6 +35,11 @@ CREATE TABLE IF NOT EXISTS papers (
                       CHECK (governance IN ('off', 'contracts', 'full')),
     review_stages     TEXT,
     pipeline          TEXT NOT NULL DEFAULT 'empirical',
+    study_key         TEXT,
+    study_override    TEXT,
+    archived_at       TEXT,
+    run_owner         TEXT,
+    heartbeat_at      TEXT,
     created_at        TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at        TEXT NOT NULL DEFAULT (datetime('now'))
 );

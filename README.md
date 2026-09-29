@@ -106,6 +106,7 @@ start one. Every line in that recording is the program's own output — see
 - [Methodologies](#methodologies)
 - [Costs](#costs)
 - [Check, tail, cancel, resume](#check-tail-cancel-resume)
+- [Studies, versions and archiving](#studies-versions-and-archiving)
 - [Data sources](#data-sources)
 - [Literature](#literature)
 - [Going deeper](#going-deeper)
@@ -421,6 +422,29 @@ e2er resume <paper_id> --max-cost 15 --tail  # raise cap + watch to terminal
 `status` shows the current phase, cost meter, last error if any, and the workspace + dashboard URLs. `cancel` preserves the workspace + completed-phase artifacts so the run is resumable. `resume` works for budget-paused papers (use `--max-cost` to give it more budget), circuit-breaker pauses (POST with no extra cap; fix the underlying issue first), and zombie revision/in_progress rows left behind by a server restart. The resume-from-disk logic skips any phase that already produced its canonical artifact, so completed work isn't re-paid.
 
 The dashboard's "Resume" button does the same thing through the UI.
+
+Two e2er servers can share one database (say a study server on 8280 and the everyday dashboard on 8300). Each run records which server process owns it, and a server that starts up pauses only the runs whose owner has stopped. A run that another live server owns shows as "Running in another e2er process" with its PID and port, and has no Resume or Cancel button here.
+
+---
+
+## Studies, versions and archiving
+
+Running the same question again gives a new attempt, not a new study. The dashboard and `e2er list` show one row per study, where a study is every attempt with the same research question (ignoring spacing, case and trailing punctuation) and the same template. The attempts are numbered v1, v2, … by start time, and the study takes the title of its latest attempt. On a study's page, "Move to study…" puts an attempt into another study or splits it off into one of its own.
+
+Archiving hides attempts from the lists. It never deletes a record, a file or a workspace, and it refuses attempts that are running or paused.
+
+```bash
+e2er list                      # one entry per study
+e2er list --attempts           # with each study's attempts
+e2er list --archived           # including archived attempts
+e2er archive <paper_id>        # one attempt (the first 8 characters of the id are enough)
+e2er archive --study <key|id>  # every attempt of a study
+e2er archive --failed          # shows the failed and cancelled attempts it would archive
+e2er archive --failed --yes    # archives them
+e2er unarchive <paper_id>      # brings one back (or --study <key|id>)
+```
+
+In the dashboard, "Archive failed and cancelled attempts" shows the count and the list before anything happens, and "Show archived (n)" brings archived attempts back into view with an Unarchive button.
 
 ---
 

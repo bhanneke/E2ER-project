@@ -23,7 +23,12 @@
   {% endif %}
 </div>
 
-{% if awaiting_review %}
+{% if elsewhere %}
+  <div class="waiting-box elsewhere">
+    <span><strong>Running in another e2er process.</strong> {{ elsewhere_text }}</span>
+    {% if elsewhere.port and not elsewhere.legacy %}<a class="btn" href="http://127.0.0.1:{{ elsewhere.port }}/papers/{{ paper.id }}" target="_blank" rel="noopener">Open it there</a>{% endif %}
+  </div>
+{% elif awaiting_review %}
   <div class="waiting-box">
     <span><strong>The study is waiting for you.</strong> Read what the specialists wrote, change it if you want, and let it continue.</span>
     <a class="btn-primary" href="/papers/{{ paper.id }}/review">Review now</a>
