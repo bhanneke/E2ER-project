@@ -168,6 +168,44 @@ def status(paper_id: str, tail: bool = False, monitor_seconds: float = 1800.0) -
 # ---------------------------------------------------------------------------
 
 
+def _cancel_paused(paper_id: str, yes: bool) -> int | None:
+    """Cancel a paused attempt straight in the database; None when it is not paused.
+
+    A paused attempt has no run to stop, so no server is needed: the status
+    becomes cancelled and a "cancelled by the researcher" event is recorded.
+    Refused when another live e2er process owns it. The workspace is kept.
+    """
+    import asyncio
+
+    from .db import studies as st
+
+    try:
+        _study, attempt = asyncio.run(st.find_attempt(paper_id))
+    except Exception:  # noqa: BLE001 — unknown here (or no database): the server path decides
+        return None
+    if attempt["status"] not in st.CANCELLABLE:
+        return None
+    print(f"About to cancel: {attempt['title'][:80]}")
+    print(f"  Attempt: v{attempt['version']} ({attempt['id']})")
+    print("  Current status: paused")
+    print("  It stops for good and cannot be resumed. Its files are kept.")
+    if not yes:
+        try:
+            answer = input("Cancel this attempt? [y/N]: ").strip().lower()
+        except EOFError:
+            answer = "n"
+        if answer not in {"y", "yes"}:
+            print("Nothing was cancelled.")
+            return 0
+    try:
+        asyncio.run(st.cancel_attempt(attempt["id"], via="command line"))
+    except st.StudyError as e:
+        print(f"e2er cancel: {e}", file=sys.stderr)
+        return 1
+    print(f"  ✓ Cancelled v{attempt['version']}. `e2er archive {attempt['short_id']}` hides it from the lists.")
+    return 0
+
+
 def cancel(paper_id: str, yes: bool = False) -> int:
     """Cancel an in-flight paper via POST /api/papers/{id}/cancel.
 
@@ -182,6 +220,10 @@ def cancel(paper_id: str, yes: bool = False) -> int:
     user doesn't usually want to discard the run by accident.
     """
     import httpx
+
+    paused = _cancel_paused(paper_id, yes)
+    if paused is not None:
+        return paused
 
     if not _api_reachable():
         print(_format_unreachable_error(), file=sys.stderr)

@@ -51,7 +51,7 @@ def main() -> None:
         help="Do not open a browser (for servers, containers and CI).",
     )
 
-    subparsers.add_parser("migrate", help="Run Postgres migrations (sql/001–010); SQLite auto-initializes")
+    subparsers.add_parser("migrate", help="Run the Postgres migrations in sql/; SQLite auto-initializes")
 
     init_p = subparsers.add_parser(
         "init",
@@ -205,9 +205,33 @@ def main() -> None:
         help="With --tail, max time to poll before detaching. Default 30 min.",
     )
 
+    list_p = subparsers.add_parser(
+        "list",
+        help="List studies: repeated runs of one question are grouped as attempts (v1, v2, …).",
+    )
+    list_p.add_argument("--attempts", action="store_true", help="Show each study's attempts.")
+    list_p.add_argument("--archived", action="store_true", help="Include archived attempts.")
+    list_p.add_argument("--search", "-q", default="", help="Only studies whose question or title contains this.")
+
+    archive_p = subparsers.add_parser(
+        "archive",
+        help="Hide attempts from the lists. Nothing is deleted; running and paused attempts are refused.",
+    )
+    archive_p.add_argument("paper_id", nargs="?", help="The attempt (paper id, or its first 8 characters).")
+    archive_target = archive_p.add_mutually_exclusive_group()
+    archive_target.add_argument("--study", metavar="KEY_OR_ID", help="Archive every attempt of this study.")
+    archive_target.add_argument(
+        "--failed", action="store_true", help="Archive all failed and cancelled attempts (a dry run without --yes)."
+    )
+    archive_p.add_argument("--yes", "-y", action="store_true", help="With --failed: archive, not just show.")
+
+    unarchive_p = subparsers.add_parser("unarchive", help="Bring archived attempts back into the lists.")
+    unarchive_p.add_argument("paper_id", nargs="?", help="The attempt (paper id, or its first 8 characters).")
+    unarchive_p.add_argument("--study", metavar="KEY_OR_ID", help="Unarchive every attempt of this study.")
+
     cancel_p = subparsers.add_parser(
         "cancel",
-        help="Cancel an in-flight paper. Workspace + completed phases are preserved.",
+        help="Cancel a running or paused paper. Workspace + completed phases are preserved.",
     )
     cancel_p.add_argument("paper_id", help="The paper UUID returned by `e2er run`.")
     cancel_p.add_argument(
@@ -733,6 +757,20 @@ def main() -> None:
                 monitor_seconds=args.monitor_seconds,
             )
         )
+    elif args.command == "list":
+        from .cli_studies import list_studies as _list
+
+        sys.exit(_list(attempts=args.attempts, archived=args.archived, q=args.search))
+    elif args.command == "archive":
+        from .cli_studies import archive as _archive
+
+        if args.paper_id and (args.study or args.failed):
+            archive_p.error("give a paper id, --study or --failed, not more than one")
+        sys.exit(_archive(args.paper_id, study=args.study, failed=args.failed, yes=args.yes))
+    elif args.command == "unarchive":
+        from .cli_studies import unarchive as _unarchive
+
+        sys.exit(_unarchive(args.paper_id, study=args.study))
     elif args.command == "cancel":
         from .cli_status import cancel as _cancel
 

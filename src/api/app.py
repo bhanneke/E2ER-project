@@ -7,7 +7,7 @@ import io
 import json
 import mimetypes
 import tarfile
-from datetime import UTC
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote_plus
@@ -20,6 +20,8 @@ from fastapi.templating import Jinja2Templates
 from pydantic import AliasChoices, BaseModel, Field
 
 from ..config import get_settings
+from ..core.run_owner import IN_FLIGHT
+from ..db.studies import study_key
 from ..logging_config import get_logger
 
 
@@ -98,8 +100,11 @@ async def _session_from_launch_url(request: Request, call_next):
     the dashboard that touch this computer (see local_session.py). The redirect
     drops the token from the address bar and the history.
     """
+    from ..core import run_owner
     from . import local_session as ls
 
+    if run_owner.PORT is None and request.url.port:
+        run_owner.PORT = request.url.port  # recorded with each run this process owns
     token = request.query_params.get(ls.QUERY)
     if request.method == "GET" and token is not None:
         import secrets
@@ -117,13 +122,39 @@ async def _session_from_launch_url(request: Request, call_next):
 
 from .finish import router as _finish_router  # noqa: E402 — needs `templates` above
 from .setup import router as _setup_router  # noqa: E402
+from .studies import router as _studies_router  # noqa: E402
 
 app.include_router(_setup_router)
 app.include_router(_finish_router)
+app.include_router(_studies_router)
 
 # Registry of running pipeline tasks, keyed by paper_id.
 # Used by POST /api/papers/{id}/cancel to cancel an in-flight run.
 _RUNNING: dict[str, asyncio.Task] = {}
+_HEARTBEAT: list[asyncio.Task] = []
+
+
+async def _track_run(paper_id: str, task: asyncio.Task) -> None:
+    """Register a run task and record this process as its owner in the database.
+
+    The owner record is what lets another e2er server on the same database
+    tell that this paper is running here (src/core/run_owner.py).
+    """
+    from ..core import run_owner
+
+    _RUNNING[paper_id] = task
+
+    def _done(_t: asyncio.Task) -> None:
+        _RUNNING.pop(paper_id, None)
+        try:
+            asyncio.get_running_loop().create_task(run_owner.release(paper_id))
+        except RuntimeError:  # loop already closed at shutdown
+            pass
+
+    task.add_done_callback(_done)
+    await run_owner.claim(paper_id)
+    if not _HEARTBEAT or _HEARTBEAT[0].done():
+        _HEARTBEAT[:] = [asyncio.get_running_loop().create_task(run_owner.heartbeat_loop(_RUNNING))]
 
 
 # First-run guardrail: until a paper at the same (model, methodology, mode)
@@ -294,36 +325,34 @@ async def _tuple_is_proven(model: str, methodology: str, mode: str) -> bool:
     return row is not None
 
 
-#: Statuses that mean "work is in flight". After a restart none of them can be
-#: true, because the process that was doing the work is gone.
-_ORPHANABLE = (
-    "idea",
-    "designing",
-    "data_collection",
-    "in_progress",
-    "ceiling_check",
-    "self_attack",
-    "polish",
-    "review",
-    "revision",
-)
+#: Statuses that mean "work is in flight". After a restart a paper in one of
+#: them is stranded, unless another live e2er process owns its run.
+_ORPHANABLE = IN_FLIGHT
 
 
 @app.on_event("startup")
 async def _reconcile_orphans() -> None:
     """Mark papers stranded by a stopped server as paused rather than running.
 
+    Only papers whose owner is gone: another e2er process on the same database
+    may be running a paper right now, and pausing it under that process would
+    be wrong (the other server keeps running it, and a resume here would run it
+    twice). See src/core/run_owner.py.
+
     Best-effort: a database that is not reachable at boot must not stop the
     server from starting, and a paper wrongly left alone is a smaller problem
     than a dashboard that will not load.
     """
+    from ..core import run_owner
     from ..db.client import execute, fetch_all
     from ..db.events import log_event
 
     try:
         placeholders = ", ".join(f"%(s{i})s" for i in range(len(_ORPHANABLE)))
         params = {f"s{i}": s for i, s in enumerate(_ORPHANABLE)}
-        rows = await fetch_all(f"SELECT id, status FROM papers WHERE status IN ({placeholders})", params)
+        rows = await fetch_all(
+            f"SELECT id, status, run_owner, heartbeat_at FROM papers WHERE status IN ({placeholders})", params
+        )
     except Exception as e:  # noqa: BLE001
         logger.debug("orphan reconciliation skipped (%s)", e)
         return
@@ -331,16 +360,35 @@ async def _reconcile_orphans() -> None:
     if not rows:
         return
 
+    paused = 0
     for row in rows:
         paper_id = str(row.get("id") or "")
         was = str(row.get("status") or "")
         if not paper_id:
+            continue
+        owner = run_owner.parse_owner(row.get("run_owner"))
+        seen = await run_owner.last_seen(paper_id, row.get("heartbeat_at"))
+        state = run_owner.owner_state(owner, seen)
+        if state in ("alive", "mine") and owner is not None:
+            logger.info(
+                "Left paper %s alone: running on another e2er process (%s)", paper_id, run_owner.describe(owner)
+            )
+            continue
+        if state == "unknown" and seen is not None and datetime.now(UTC) - seen < run_owner.STALE_AFTER:
+            minutes = int((datetime.now(UTC) - seen).total_seconds() // 60)
+            logger.info(
+                "Left paper %s alone: its last activity was %d min ago, so another e2er process may be "
+                "running it (it was started by an older e2er that did not record its owner)",
+                paper_id,
+                minutes,
+            )
             continue
         try:
             await execute(
                 "UPDATE papers SET status = %(new)s WHERE id = %(id)s",
                 {"new": "paused", "id": paper_id},
             )
+            await execute("UPDATE papers SET run_owner = NULL WHERE id = %(id)s", {"id": paper_id})
             await log_event(
                 paper_id,
                 "paper_paused",
@@ -350,13 +398,15 @@ async def _reconcile_orphans() -> None:
                     "previous_status": was,
                 },
             )
+            paused += 1
         except Exception as e:  # noqa: BLE001
             logger.debug("could not reconcile paper %s: %s", paper_id, e)
 
-    logger.info(
-        "Reconciled %d interrupted paper(s) to paused — resume from the dashboard or `e2er resume <id>`",
-        len(rows),
-    )
+    if paused:
+        logger.info(
+            "Reconciled %d interrupted paper(s) to paused — resume from the dashboard or `e2er resume <id>`",
+            paused,
+        )
 
 
 @app.on_event("startup")
@@ -400,6 +450,8 @@ async def _graceful_shutdown_runners() -> None:
     leaves a zombie row that requires manual UPDATE before /resume will
     accept it (pre-v0.4 behaviour; #7 also softens the resume gate).
     """
+    for hb in _HEARTBEAT:
+        hb.cancel()
     if not _RUNNING:
         return
     logger.info("Shutting down — cancelling %d in-flight paper task(s)", len(_RUNNING))
@@ -445,6 +497,9 @@ async def _graceful_shutdown_runners() -> None:
                 "WHERE id = %(id)s AND status NOT IN ('completed','cancelled')",
                 {"id": paper_id},
             )
+            from ..core import run_owner
+
+            await run_owner.release(paper_id)
         except Exception as e:
             logger.warning("Could not transition paper %s to paused on shutdown: %s", paper_id, e)
 
@@ -685,10 +740,10 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
             """
             INSERT INTO papers (id, title, research_question, status, workspace,
                                 mode, methodology, model, backend, governance,
-                                review_stages, max_cost_usd, pipeline)
+                                review_stages, max_cost_usd, pipeline, study_key)
             VALUES (%(id)s, %(title)s, %(rq)s, 'idea', %(ws)s,
                     %(mode)s, %(methodology)s, %(model)s, %(backend)s, %(governance)s,
-                    %(review_stages)s, %(cap)s, %(pipeline)s)
+                    %(review_stages)s, %(cap)s, %(pipeline)s, %(study_key)s)
             """,
             {
                 "id": paper_id,
@@ -703,6 +758,7 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
                 "review_stages": json.dumps(req.review_stages),
                 "cap": cap,
                 "pipeline": req.pipeline,
+                "study_key": study_key(req.research_question, req.pipeline, req.title),
             },
         )
     except Exception as e:
@@ -731,8 +787,7 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
             pipeline=req.pipeline,
         )
     )
-    _RUNNING[paper_id] = task
-    task.add_done_callback(lambda _t: _RUNNING.pop(paper_id, None))
+    await _track_run(paper_id, task)
 
     return PaperResponse(
         paper_id=paper_id,
@@ -796,12 +851,45 @@ async def list_artifacts(paper_id: str) -> dict[str, Any]:
     return {"paper_id": paper_id, "files": files}
 
 
+async def _running_elsewhere(paper: dict[str, Any]) -> dict[str, Any] | None:
+    """The owner, when another live e2er process is running this paper."""
+    from ..core import run_owner
+
+    task = _RUNNING.get(str(paper.get("id")))
+    try:
+        return await run_owner.running_elsewhere(paper, running_here=task is not None and not task.done())
+    except Exception as e:  # noqa: BLE001 — never block the page on this check
+        logger.debug("running-elsewhere check failed: %s", e)
+        return None
+
+
+def _elsewhere_text(owner: dict[str, Any]) -> str:
+    from ..core import run_owner
+
+    if owner.get("legacy"):
+        return (
+            f"This paper was active {owner.get('minutes', 0)} min ago and may be running in another e2er "
+            "process. Follow or stop it there; if that process is gone, it can be resumed here after "
+            f"{int(run_owner.STALE_AFTER.total_seconds() // 60)} min without activity."
+        )
+    return f"This paper is running in another e2er process ({run_owner.describe(owner)}). Follow or stop it there."
+
+
 @app.post("/api/papers/{paper_id}/cancel", dependencies=[Depends(require_auth)])
 async def cancel_paper(paper_id: str) -> dict[str, Any]:
     """Cancel an in-flight pipeline run. The runner's CancelledError handler
     will save state and mark the paper as cancelled in the DB."""
     task = _RUNNING.get(paper_id)
     if not task or task.done():
+        from ..db.client import fetch_one
+
+        try:
+            row = await fetch_one("SELECT * FROM papers WHERE id = %(id)s", {"id": paper_id})
+        except Exception:  # noqa: BLE001
+            row = None
+        elsewhere = await _running_elsewhere(dict(row)) if isinstance(row, dict) else None
+        if elsewhere:
+            raise HTTPException(status_code=409, detail=_elsewhere_text(elsewhere))
         raise HTTPException(status_code=404, detail="No running task for this paper")
     task.cancel()
     return {"status": "cancelling", "paper_id": paper_id}
@@ -950,7 +1038,7 @@ async def resume_paper(paper_id: str, req: ResumeRequest | None = None) -> dict[
     try:
         row = await fetch_one(
             "SELECT id, status, workspace, mode, max_cost_usd, methodology, backend, model, governance, "
-            "review_stages, pipeline FROM papers WHERE id = %(id)s",
+            "review_stages, pipeline, run_owner, heartbeat_at FROM papers WHERE id = %(id)s",
             {"id": paper_id},
         )
     except Exception as e:
@@ -973,6 +1061,10 @@ async def resume_paper(paper_id: str, req: ResumeRequest | None = None) -> dict[
                 "Resume only handles in-flight or failed/paused papers."
             ),
         )
+
+    elsewhere = await _running_elsewhere({**row, "id": paper_id})
+    if elsewhere:
+        raise HTTPException(status_code=409, detail=_elsewhere_text(elsewhere))
 
     workspace = Path(row["workspace"])
     mode = row.get("mode") or "single_pass"
@@ -1044,8 +1136,7 @@ async def resume_paper(paper_id: str, req: ResumeRequest | None = None) -> dict[
             pipeline=pipeline,
         )
     )
-    _RUNNING[paper_id] = task
-    task.add_done_callback(lambda _t: _RUNNING.pop(paper_id, None))
+    await _track_run(paper_id, task)
 
     return {"status": "resuming", "paper_id": paper_id, "from_status": current}
 
@@ -1402,36 +1493,14 @@ _TERMINAL_STATUSES = {"completed", "failed", "cancelled"}
 
 
 @app.get("/", response_class=HTMLResponse)
-async def dashboard_index(request: Request) -> Any:
-    """Papers list — landing page. The first time, the setup page instead."""
-    from ..db.client import fetch_all
+async def dashboard_index(request: Request, q: str = "", archived: str | None = None) -> Any:
+    """Studies list — landing page. The first time, the setup page instead."""
     from .setup import needs_setup
+    from .studies import studies_page
 
     if needs_setup():
         return RedirectResponse(url="/setup", status_code=303)
-
-    try:
-        rows = await fetch_all(
-            """
-            SELECT p.id, p.title, p.status, p.max_cost_usd, p.updated_at,
-                   COALESCE((SELECT SUM(cost_usd) FROM llm_usage WHERE paper_id = p.id), 0) AS cost
-            FROM papers p
-            ORDER BY p.updated_at DESC
-            LIMIT 100
-            """
-        )
-    except Exception as e:
-        logger.warning("dashboard_index: DB unavailable (%s) — rendering empty list", e)
-        rows = []
-    # Stringify timestamps for templating.
-    for r in rows or []:
-        if r.get("updated_at") is not None:
-            r["updated_at"] = str(r["updated_at"])[:19]
-    return templates.TemplateResponse(
-        request,
-        "index.html",
-        {"papers": rows or []},
-    )
+    return await studies_page(request, q=q, archived=archived)
 
 
 def _workflow_inventory() -> dict[str, Any]:
@@ -1809,11 +1878,14 @@ async def paper_detail(request: Request, paper_id: str = Depends(_validate_uuid)
     else:
         artifacts = []
 
+    from ..db.studies import attempt_context
+
     return templates.TemplateResponse(
         request,
         "paper.html",
         {
             "paper": paper,
+            "study": await attempt_context(paper_id),
             "artifacts": artifacts,
             "reading": _reading_list(artifacts),
             "groups": _artifact_groups(
@@ -2383,6 +2455,7 @@ async def paper_live_fragment(request: Request, paper_id: str = Depends(_validat
     for ev in events or []:
         if ev.get("created_at") is not None:
             ev["created_at_short"] = str(ev["created_at"])[11:19]
+    elsewhere = await _running_elsewhere(dict(paper))
 
     return templates.TemplateResponse(
         request,
@@ -2396,8 +2469,11 @@ async def paper_live_fragment(request: Request, paper_id: str = Depends(_validat
             "cost_pct": cost_pct,
             "events": (events or [])[:50],
             "can_cancel": (paper.get("status") not in _TERMINAL_STATUSES) and (paper_id in _RUNNING),
-            "can_resume": (paper.get("status") == "paused") and (paper_id not in _RUNNING),
-            "awaiting_review": _awaiting_review(paper),
+            "can_resume": (paper.get("status") == "paused") and (paper_id not in _RUNNING) and not elsewhere,
+            "awaiting_review": None if elsewhere else _awaiting_review(paper),
+            "can_cancel_attempt": (paper.get("status") == "paused") and (paper_id not in _RUNNING) and not elsewhere,
+            "elsewhere": elsewhere,
+            "elsewhere_text": _elsewhere_text(elsewhere) if elsewhere else "",
         },
     )
 

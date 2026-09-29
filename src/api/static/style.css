@@ -543,3 +543,50 @@ h3.h3 { font-size: 14px; margin: 0 0 4px; }
 code.tick { font-size: 12.5px; background: var(--bg); padding: 1px 4px; border-radius: 3px; }
 .radio-row label { display: inline-flex; align-items: center; gap: 6px; font-weight: normal; }
 .field .radio-row input, .field .check input, .check input { width: auto; max-width: none; }
+
+/* studies list and a study's attempts */
+.list-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.list-head h1 { margin-bottom: 8px; }
+.search input { padding: 6px 10px; border: 1px solid var(--border); border-radius: 4px; font: inherit; width: 280px; max-width: 100%; }
+.list-tools { display: flex; align-items: center; justify-content: space-between; gap: 8px 16px; flex-wrap: wrap; margin: 4px 0 10px; }
+.tools-right { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.btn-small { padding: 4px 10px; font-size: 13px; }
+.msg { min-height: 0; margin: 0 0 8px; font-size: 14px; }
+.msg:empty { display: none; }
+.crumb { margin: 0 0 6px; font-size: 14px; }
+.confirm-panel { background: var(--bg-card); border: 1px solid var(--warn); border-radius: 6px; padding: 12px 14px; margin: 0 0 12px; }
+.confirm-text { margin: 0 0 8px; }
+.confirm-list { margin: 0 0 10px; padding-left: 18px; font-size: 14px; max-height: 220px; overflow: auto; }
+.confirm-actions { display: flex; gap: 8px; }
+.studies .study-tpl { display: block; font-size: 12px; color: var(--muted); }
+.studies .c-attempts .n { display: block; white-space: nowrap; }
+.studies .summary { display: block; }
+.studies .c-latest { white-space: nowrap; }
+.studies .c-latest .muted, .attempts .c-status .muted { display: block; }
+.papers tr.is-archived td { background: #f6f6f6; }
+.papers tr.is-archived a { color: var(--muted); }
+.attempts .attempt-title { display: block; font-size: 13px; }
+.attempts .d { display: block; white-space: nowrap; }
+.attempts .c-action { white-space: nowrap; }
+details.move { display: inline-block; margin-left: 6px; font-size: 13px; }
+details.move > summary { cursor: pointer; color: var(--accent); list-style: none; display: inline; }
+details.move > summary::-webkit-details-marker { display: none; }
+.move-body { display: flex; gap: 6px; margin-top: 6px; white-space: normal; }
+.move-body select { max-width: 260px; font: inherit; font-size: 13px; padding: 3px 6px; }
+.status-rejected { background: #fff3e0; color: var(--warn); }
+.status-paused { background: #f0eefc; color: #5b4bb5; }
+.waiting-box.elsewhere { border-color: var(--accent); }
+
+@media (max-width: 720px) {
+  .search input { width: 100%; }
+  .list-head form { width: 100%; }
+  table.studies, table.attempts { border: 0; background: none; }
+  table.studies thead, table.attempts thead { display: none; }
+  table.studies tr, table.attempts tr { display: block; background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; margin-bottom: 10px; padding: 8px 10px; }
+  table.studies td, table.attempts td { display: block; border: 0; padding: 3px 0; }
+  .studies .c-latest .muted, .attempts .c-status .muted { display: inline; margin-left: 6px; }
+  .attempts .d { display: inline; }
+  .attempts .c-model .d + .d::before { content: "· "; }
+  .move-body { flex-wrap: wrap; }
+  .move-body select { max-width: 100%; }
+}

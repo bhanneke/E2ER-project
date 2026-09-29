@@ -211,9 +211,43 @@ async def _ensure_sqlite_schema() -> None:
                 "governance": "TEXT NOT NULL DEFAULT 'full'",
                 "review_stages": "TEXT",
                 "pipeline": "TEXT NOT NULL DEFAULT 'empirical'",
+                "study_key": "TEXT",
+                "study_override": "TEXT",
+                "archived_at": "TEXT",
+                "run_owner": "TEXT",
+                "heartbeat_at": "TEXT",
             },
         )
+        await conn.execute("CREATE INDEX IF NOT EXISTS idx_papers_study ON papers(study_key)")
+        await conn.execute("CREATE INDEX IF NOT EXISTS idx_papers_archived ON papers(archived_at)")
+        await _ensure_papers_trigger(conn)
         await conn.commit()
+
+
+#: Columns whose changes are bookkeeping, not activity on the paper: writing
+#: them must not move ``updated_at``, which the dashboard sorts by.
+_BOOKKEEPING_COLUMNS = ("study_key", "study_override", "archived_at", "run_owner", "heartbeat_at")
+
+_PAPERS_TRIGGER = (
+    "CREATE TRIGGER papers_updated_at AFTER UPDATE ON papers FOR EACH ROW "
+    "WHEN NEW.updated_at = OLD.updated_at AND "
+    + " AND ".join(f"NEW.{c} IS OLD.{c}" for c in _BOOKKEEPING_COLUMNS)
+    + " BEGIN UPDATE papers SET updated_at = datetime('now') WHERE id = NEW.id; END"
+)
+
+
+async def _ensure_papers_trigger(conn) -> None:
+    """Replace the schema's updated_at trigger with one that skips bookkeeping columns.
+
+    Only rewritten when it differs, so a second server starting on the same
+    file does not drop a trigger the first one is relying on.
+    """
+    cur = await conn.execute("SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = 'papers_updated_at'")
+    row = await cur.fetchone()
+    if row and row[0] == _PAPERS_TRIGGER:
+        return
+    await conn.execute("DROP TRIGGER IF EXISTS papers_updated_at")
+    await conn.execute(_PAPERS_TRIGGER)
 
 
 async def _ensure_sqlite_columns(conn, table: str, columns: dict[str, str]) -> None:

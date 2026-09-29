@@ -1445,7 +1445,7 @@ def _api_client():
 
 
 def test_dashboard_index_renders(monkeypatch):
-    """GET / returns HTML listing papers from the DB."""
+    """GET / returns HTML listing studies (groups of attempts) from the DB."""
     rows = [
         {
             "id": "abc",
@@ -1468,7 +1468,7 @@ def test_dashboard_index_renders(monkeypatch):
     body = resp.text
     assert "Test paper" in body
     assert "completed" in body
-    assert "$1.23" in body
+    assert "1 attempt" in body  # one row per study; the cost is on the paper page
     # htmx + style sheet referenced
     assert "/static/htmx.min.js" in body
     assert "/static/style.css" in body
