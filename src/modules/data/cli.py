@@ -27,8 +27,10 @@ Subcommands:
 
 stdout contains the same text `AlliumToolHandler.handle()` returns to the
 LLM in API mode — guardrail rejections, query_ids, sample rows, status.
-The CLI subprocess sees this as bash command output. Exit code is always
-0 (the model reads the output regardless); fatal errors print to stderr.
+The CLI subprocess sees this as bash command output. Exit code is 0 (the
+model reads the output regardless) except when a `--table` load fails
+(connector error, no rows, no values: exit 4, data.db untouched); fatal
+errors print to stderr.
 """
 
 from __future__ import annotations
@@ -316,18 +318,45 @@ async def _run_distinct_values(args: argparse.Namespace) -> str:
 # ---------------------------------------------------------------------------
 
 
+#: Why a `--table` load failed in this invocation; `main` exits non-zero when it is set.
+_TABLE_FAILURES: list[str] = []
+
+_DATE_KEYS = frozenset({"date", "datetime", "timestamp", "time", "period", "realtime_start", "realtime_end"})
+
+
+def _no_values(items: list) -> bool:
+    """True when every row's non-date fields are empty: a load that returned dates only."""
+    keys = {k for row in items if isinstance(row, dict) for k in row} - _DATE_KEYS
+    return bool(keys) and all(
+        row.get(k) is None or row.get(k) == "" for row in items if isinstance(row, dict) for k in keys
+    )
+
+
 def _maybe_save_table(result: dict, args: argparse.Namespace) -> None:
     """If `--table <name>` was passed, write result['items'] into the paper's
     data.db as that table (replacing it), so later specialists and the checks
     read the exact rows that were loaded. Reports ``saved_table`` and
     ``saved_table_rows`` (the real count) in the result envelope.
+
+    A connector error, no rows, or rows without a single value leave data.db
+    untouched: no table is created or replaced, ``table_error`` says why, and
+    the command exits non-zero (see ``main``).
     """
     table = getattr(args, "table", None)
     if not table:
         return
     items = (result or {}).get("items") or []
-    if not items:
-        result["table_skipped"] = "no items to persist"
+    error = (result or {}).get("error")
+    why = ""
+    if error:
+        why = f"the connector reported an error: {error}"
+    elif not items:
+        why = "the connector returned no rows"
+    elif _no_values(items):
+        why = "every row the connector returned has empty values"
+    if why:
+        result["table_error"] = f"{why}; table {table!r} was not created or changed"
+        _TABLE_FAILURES.append(result["table_error"])
         return
     from ...db.paper_data_db import _materialize_dataframe_sync, data_db_path, sanitize_table_name
 
@@ -340,6 +369,7 @@ def _maybe_save_table(result: dict, args: argparse.Namespace) -> None:
         )
     except Exception as e:  # noqa: BLE001 — reported to the model, never raised into its loop
         result["table_error"] = f"{type(e).__name__}: {e}"
+        _TABLE_FAILURES.append(result["table_error"])
         return
     result["saved_table"] = name
     result["saved_table_rows"] = rows
@@ -1048,6 +1078,7 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
+    _TABLE_FAILURES.clear()
     try:
         result = asyncio.run(runner(args))
     except Exception as e:
@@ -1057,6 +1088,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"e2er-data {args.source} {args.command} failed: {type(e).__name__}: {e}", file=sys.stderr)
         return 3
     print(result)
+    if _TABLE_FAILURES:
+        # A declared table that could not be loaded is not an empty table: the
+        # model sees the error above, and the exit code stops a script chain.
+        print(f"e2er-data {args.source} {args.command}: {_TABLE_FAILURES[0]}", file=sys.stderr)
+        return 4
     return 0
 
 

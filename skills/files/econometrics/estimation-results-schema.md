@@ -87,8 +87,10 @@ mismatch is visible rather than laundered.
 
 Compute every p-value, critical value and confidence bound with
 `scipy.stats` (`scipy.stats.t.sf`, `scipy.stats.norm.sf`, `t.ppf`) or
-from the fitted `statsmodels`/`linearmodels` result. Never write your own
-distribution function, lookup table or approximation of a tail probability:
+from the fitted `statsmodels`/`linearmodels` result; `scipy` and
+`statsmodels` are installed in the interpreter that runs `run_estimation.py`.
+Never write your own distribution function, lookup table or approximation of
+a tail probability:
 a hand-written `t_sf()` in a demonstration study gave p = 0.208 for
 t = -2.00 with 19 df (the correct value is 0.060).
 

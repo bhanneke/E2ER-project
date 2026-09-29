@@ -201,7 +201,7 @@ def deposit(target: str, *, zenodo: bool = False, osf: bool = False, sandbox: bo
     if not zenodo:
         print("e2er preregister: choose --zenodo (or --osf)", file=sys.stderr)
         return 1
-    token = os.environ.get("ZENODO_SANDBOX_TOKEN" if sandbox else "ZENODO_TOKEN")
+    token = (os.environ.get("ZENODO_SANDBOX_TOKEN" if sandbox else "ZENODO_TOKEN") or "").strip()
     if not token:
         print(
             f"e2er preregister: set {'ZENODO_SANDBOX_TOKEN' if sandbox else 'ZENODO_TOKEN'} to your own Zenodo token",

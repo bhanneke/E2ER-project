@@ -6,10 +6,35 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
+from pydantic import ValidationInfo, field_validator
 from pydantic_settings import BaseSettings
+
+#: Setting names that hold a key or secret: their values are stripped of surrounding whitespace.
+_SECRET_SUFFIXES = ("_key", "_token", "_secret", "_password")
+
+
+def is_secret_setting(name: str) -> bool:
+    return name.lower().endswith(_SECRET_SUFFIXES)
+
+
+def strip_secret(value: str | None) -> str | None:
+    """A key as pasted, without the spaces, tabs or line breaks around it."""
+    return value.strip() if isinstance(value, str) else value
 
 
 class Settings(BaseSettings):
+    @field_validator("*", mode="before")
+    @classmethod
+    def _strip_secrets(cls, value: object, info: ValidationInfo) -> object:
+        """Keys and secrets lose surrounding whitespace, from `.env` and the environment alike.
+
+        A key pasted as ``FRED_API_KEY=" e5f…"`` (or exported with a space) was
+        sent to FRED with the space, which FRED rejects as not a 32-character key.
+        """
+        if isinstance(value, str) and info.field_name and is_secret_setting(info.field_name):
+            return value.strip()
+        return value
+
     # ── LLM ───────────────────────────────────────────────────────────────────
     llm_backend: Literal["anthropic", "openrouter", "claude_code", "codex", "gemini"] = "anthropic"
     anthropic_api_key: str | None = None

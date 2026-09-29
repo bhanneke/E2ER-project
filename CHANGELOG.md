@@ -47,9 +47,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The reproduction check (pipeline and verify) recomputes a label per
   compared number, fails on a stated `label` that differs, and checks the
   report's `summary` counts (numbers by label, or results by level).
-- The econometrics skill requires `scipy.stats` or the fitted
+- **Declared tables hold values, not only rows.** The data contract now
+  fails when a value column of a declared table is less than 90% non-null
+  (or the `min_non_null` share the data dictionary declares for the table or
+  column), e.g. `dgs2.value: 0 of 2765 non-null (needs 90%)`. It checks the
+  columns a table's entry declares, else every column that is not a date;
+  tables the researcher supplied only where columns are declared.
+- **Statistics come from a library.** scipy and statsmodels are now
+  dependencies: the estimation runner executes `run_estimation.py` with
+  e2er's own interpreter, which had neither, and the FOMC study's specialist
+  wrote its own t distribution (p = 0.208 for t = -2.00 with 19 df). The
+  econometrics skills require `scipy.stats` or the fitted
   `statsmodels`/`linearmodels` result for every distribution function and
-  forbids hand-written approximations; entries carry `hypothesis` and `df`.
+  forbid hand-written approximations; entries carry `hypothesis` and `df`.
+
+### Keys and connectors
+
+- Settings strip surrounding whitespace from every key, token, secret and
+  password, whether read from `.env` or the environment; the FRED connector
+  and the Zenodo token do the same, and the setup page strips a key it keeps
+  from the previous file. A FRED key pasted with a leading space was sent as
+  " <key>", which FRED rejects with HTTP 400.
+- `e2er-data … --table` fails with exit code 4 and leaves `data.db`
+  untouched when the connector reports an error, returns no rows, or returns
+  rows without a single value. Before, a failed load was reported only in the
+  JSON the model reads.
+- `e2er doctor` checks the FRED key's format (32 lower-case letters and
+  digits) before requesting anything, and says when the key had whitespace
+  around it.
 
 ### Fixed
 

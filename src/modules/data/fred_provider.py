@@ -64,6 +64,7 @@ class FredProvider:
     """
 
     def __init__(self, api_key: str, base_url: str = _BASE_URL) -> None:
+        api_key = (api_key or "").strip()
         if not api_key:
             raise ValueError("FRED_API_KEY required — get one at https://fredaccount.stlouisfed.org/apikey")
         self._api_key = api_key

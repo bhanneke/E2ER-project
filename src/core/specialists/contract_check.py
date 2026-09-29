@@ -532,6 +532,98 @@ def table_row_counts(workspace: Path) -> dict[str, int]:
     return counts
 
 
+#: Share of non-null values a loaded column needs unless the dictionary declares its own.
+DEFAULT_MIN_NON_NULL = 0.9
+_DATE_NAMES = frozenset({"date", "datetime", "timestamp", "time", "period", "day", "month", "year", "index"})
+_DATE_TYPES = ("DATE", "TIME")
+#: Sources whose tables the researcher supplied: their columns are checked only when declared.
+_RESEARCHER_SOURCES = ("researcher", "data folder", "byod", "user")
+
+
+def _is_date_column(name: str, sql_type: str) -> bool:
+    n = name.lower()
+    return (
+        n in _DATE_NAMES
+        or n.endswith(("_date", "_time", "_at", "_timestamp"))
+        or any(t in (sql_type or "").upper() for t in _DATE_TYPES)
+    )
+
+
+def _declared_entries(workspace: Path) -> dict[str, dict[str, Any]]:
+    path = Path(workspace) / DATA_DICTIONARY_FILE
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    raw = data.get("tables") if isinstance(data, dict) else None
+    out: dict[str, dict[str, Any]] = {}
+    for t in raw if isinstance(raw, list) else []:
+        if isinstance(t, dict) and isinstance(t.get("name"), str):
+            out[t["name"]] = t
+        elif isinstance(t, str):
+            out[t] = {"name": t}
+    return out
+
+
+def _share(value: Any) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return None
+    return float(value) if 0.0 <= float(value) <= 1.0 else None
+
+
+def empty_columns(workspace: Path, names: list[str]) -> list[str]:
+    """Declared tables' value columns that are (nearly) all NULL: "dgs2.value: 0 of 2765 non-null".
+
+    Checks the columns a table's dictionary entry declares under ``columns``
+    (names, or objects with a ``name`` and optionally ``min_non_null``); for a
+    table without declared columns, every column in data.db that is not a
+    date — except in tables the researcher supplied, which are checked only
+    where the dictionary declares columns. A column needs the declared share
+    (``min_non_null`` on the column or the table) or 90% non-null values.
+    """
+    import sqlite3
+
+    db = Path(workspace) / "data.db"
+    if not db.is_file():
+        return []
+    entries = _declared_entries(workspace)
+    problems: list[str] = []
+    con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+    try:
+        for name in names:
+            entry = entries.get(name, {})
+            info = con.execute(f'PRAGMA table_info("{name}")').fetchall()  # noqa: S608 — declared names, quoted
+            types = {row[1]: row[2] for row in info}
+            if not types:
+                continue
+            table_share = _share(entry.get("min_non_null"))
+            declared = entry.get("columns")
+            wanted: list[tuple[str, float]] = []
+            if isinstance(declared, list) and declared:
+                for c in declared:
+                    cname = c.get("name") if isinstance(c, dict) else c
+                    if not isinstance(cname, str) or _is_date_column(cname, types.get(cname, "")):
+                        continue
+                    col_share = _share(c.get("min_non_null")) if isinstance(c, dict) else None
+                    wanted.append((cname, col_share if col_share is not None else table_share or DEFAULT_MIN_NON_NULL))
+            elif not any(r in str(entry.get("source") or "").lower() for r in _RESEARCHER_SOURCES):
+                share = table_share if table_share is not None else DEFAULT_MIN_NON_NULL
+                wanted = [(c, share) for c, t in types.items() if not _is_date_column(c, t)]
+            total = int(con.execute(f'SELECT COUNT(*) FROM "{name}"').fetchone()[0])  # noqa: S608
+            if not total:
+                continue
+            for cname, share in wanted:
+                if cname not in types:
+                    problems.append(f"{name}.{cname}: declared in the data dictionary but not a column of the table")
+                    continue
+                filled = int(con.execute(f'SELECT COUNT("{cname}") FROM "{name}"').fetchone()[0])  # noqa: S608
+                if filled < share * total:
+                    problems.append(f"{name}.{cname}: {filled} of {total} non-null (needs {share:.0%})")
+    finally:
+        con.close()
+    return problems
+
+
 def _count_forms(n: int) -> tuple[str, ...]:
     return (str(n), f"{n:,}", f"{n:,}".replace(",", " "), f"{n:,}".replace(",", "\u202f"))
 
@@ -540,7 +632,8 @@ def check_declared_tables(workspace: Path) -> list[ContractCheck]:
     """The data analyst loaded what the data dictionary declares, and reports it truthfully.
 
     1. Every table named in ``data_dictionary.json`` ``tables`` exists in
-       data.db and has rows (reliability: the data were not loaded).
+       data.db, has rows, and its value columns hold values (see
+       ``empty_columns``; reliability: the data were not loaded).
     2. ``data_summary.md`` names each table with its actual row count
        (verification: a written "expected ~2,520 rows" is not a count).
     """
@@ -555,6 +648,9 @@ def check_declared_tables(workspace: Path) -> list[ContractCheck]:
         problems.append(f"missing from data.db: {', '.join(absent)}")
     if empty:
         problems.append(f"empty in data.db: {', '.join(empty)}")
+    hollow = empty_columns(workspace, [n for n in names if counts.get(n)])
+    if hollow:
+        problems.append("loaded without values: " + "; ".join(hollow))
     available = ", ".join(f"{k} ({v} rows)" for k, v in sorted(counts.items())) or "none"
     checks = [
         ContractCheck(
@@ -563,7 +659,8 @@ def check_declared_tables(workspace: Path) -> list[ContractCheck]:
             reason=(
                 "data_dictionary.json declares tables that were not loaded — "
                 + "; ".join(problems)
-                + f". Tables in data.db: {available}. Load each series with `e2er-data ... --table <name>`."
+                + f". Tables in data.db: {available}. Load each series with `e2er-data ... --table <name>`; "
+                "a table whose values are NULL was not loaded (check the connector's error, e.g. an API key)."
             )
             if problems
             else "",

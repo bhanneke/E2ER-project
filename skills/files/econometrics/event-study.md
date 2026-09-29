@@ -156,6 +156,13 @@ CAAR(t1, t2) = (1/N) * Sum(CAR_i(t1, t2)) for i = 1 to N
 
 ## Test Statistics
 
+Compute every p-value from the test statistic with `scipy.stats` (e.g.
+`2 * scipy.stats.t.sf(abs(t), df)` for a two-sided t test with `df = N - 1`,
+`scipy.stats.norm.sf` for a statistic that is N(0,1) under H0, `binomtest`
+for the sign test). Never write a distribution function or an approximation
+of one; the estimation check recomputes each p-value from t and fails on a
+mismatch (see the estimation-results-schema skill).
+
 ### Parametric Tests
 
 **Patell (1976) test** (standardized residual test):

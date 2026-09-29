@@ -47,7 +47,7 @@ def base_url(sandbox: bool = False) -> str:
 
 def load_token(sandbox: bool = False) -> str | None:
     """The researcher's Zenodo token: environment first, then the system keychain."""
-    env = os.environ.get("ZENODO_SANDBOX_TOKEN" if sandbox else "ZENODO_TOKEN")
+    env = (os.environ.get("ZENODO_SANDBOX_TOKEN" if sandbox else "ZENODO_TOKEN") or "").strip()
     if env:
         return env
     try:
