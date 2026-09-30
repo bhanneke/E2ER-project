@@ -622,6 +622,9 @@ def _write(ws: Path, report: dict) -> None:
     if "environment" not in report and (ws / LOG_FILE).is_file():
         report = {**report, "environment": _env(ws)}
     (ws / "reproduction_report.json").write_text(json.dumps(report))
+    if not (ws / "reproduction_report.md").is_file():
+        # the written report, stating nothing the check could contradict
+        (ws / "reproduction_report.md").write_text("# Reproduction report\n\n## Level 1\n\nSee the tables below.\n")
 
 
 def test_a_truthful_report_passes_and_every_number_is_recomputed(workspace: Path):

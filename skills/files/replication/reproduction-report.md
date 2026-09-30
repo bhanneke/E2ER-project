@@ -140,9 +140,29 @@ broken):
 
 For the researcher, level 1 and level 2 in separate sections: one line per
 exhibit with its level; then per exhibit the
-compared numbers (published, reproduced, difference, file); what could not
-run and why (from the logs); the environment actually used (image, digest,
-platform, package snapshot date and URL, installed versions against the
-documented ones, including dependencies the package does not declare); the
-possible causes of each difference, named as possible; and notes for a robustness
-study, kept separate from the levels.
+compared numbers (published, reproduced, difference, file) with each number's
+label; what could not run and why (from the logs); the image and the versions
+the documentation asks for, next to the installed ones; the possible causes of
+each difference, named as possible; and notes for a robustness study, kept
+separate from the levels.
+
+e2er writes the counts and the environment itself. After the check has
+recomputed the JSON, it puts a section "Counts and environment" (between
+`<!-- e2er:summary begin … -->` and `<!-- e2er:summary end -->`) before your
+first `##` heading: the compared numbers and results per level and label, the
+snapshot, platform, image and the installed versions, all taken from
+`reproduction_report.json` and `sandbox_log.json`. Do not write that section,
+and do not restate its counts or the installed versions in your own summary.
+
+Everything else you write is compared with `reproduction_report.json`, and the
+run stops at the check (or your attempt is returned to you) on a contradiction:
+
+- a count that names its level ("17 level-1 numbers", "3 targets were not
+  reproduced at level 1", "14 of 17 level-1 targets") must be the JSON's; a
+  table of counts per label must give the JSON's counts;
+- the label you state for a number (a table row, or a list item with the
+  published and reproduced values or the target id) must be that number's
+  `label` in the JSON;
+- a version written after a package name must be the installed one; a
+  documented version goes on the same line as the installed one
+  ("fixest: documented 0.12.0, installed 0.14.2").

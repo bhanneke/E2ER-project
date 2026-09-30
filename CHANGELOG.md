@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### The written reproduction report agrees with its JSON
+
+- The replication demonstration's `reproduction_report.md` said "16 targets"
+  and "not_reproduced 2" while `reproduction_report.json` and the check had 17
+  numbers, 12 reproduced, 2 reproduced_minor and 3 not reproduced, and it
+  listed package versions the run did not install. Nothing compared the two.
+- e2er now writes the counts and the environment into the Markdown itself:
+  once the JSON checks out, the reproduction check puts a section "Counts and
+  environment" (delimited by `<!-- e2er:summary … -->` comments) before the
+  report's first `##` heading, rendered from `reproduction_report.json` and
+  `sandbox_log.json`.
+- The reproduction check (the pipeline's `reproduction_gate` and `e2er
+  verify`) and the comparer's contract fail when the prose contradicts the
+  JSON, and name the contradiction ("reproduction_report.md says 16 level-1
+  numbers (…), reproduction_report.json has 17"): counts that name their level,
+  tables of counts per label, the label stated for a number that can be
+  matched to one compared number (by target id, or published and reproduced
+  value), and a package version stated after its name. A missing Markdown
+  report, or an edited summary section, fails too. New module
+  `src/core/pipeline/reproduction_md.py`.
+
 ### Replication: packages as of the package date, strict labels
 
 - A specialist that writes its files whole (the planner, the comparer) starts

@@ -307,6 +307,8 @@ SPECIALIST_DEFAULT_FOCUS: dict[str, str] = {
         "and copy the environment (snapshot date and URL, platform, and the versions of the packages you "
         "discuss) from `sandbox_log.json` into the report's `environment` block. A deterministic check "
         "re-reads every number, recomputes every label, compares the reason texts and the environment with "
-        "the numbers and the log, and fails the run on any disagreement."
+        "the numbers and the log, and fails the run on any disagreement. e2er writes the counts and the "
+        "environment into `reproduction_report.md` itself; do not restate them. Every count, label and version "
+        "your Markdown states is compared with `reproduction_report.json`."
     ),
 }

@@ -431,7 +431,14 @@ def _check_reproduction(bundle: Path) -> Check | None:
     the tolerance the run used, as recorded in reproduction_check.json. None
     for a bundle without a reproduction report, so paper bundles are unchanged.
     """
-    from .core.pipeline.reproduction import CHECK_FILE, DEFAULT_MINOR_REL_TOLERANCE, REPORT_FILE, evaluate
+    from .core.pipeline.reproduction import (
+        CHECK_FILE,
+        DEFAULT_MINOR_REL_TOLERANCE,
+        MD_FILE,
+        REPORT_FILE,
+        evaluate,
+        report_text_reasons,
+    )
 
     report_path = _reproduction_file(bundle, REPORT_FILE)
     if report_path is None:
@@ -457,10 +464,12 @@ def _check_reproduction(bundle: Path) -> Check | None:
             "can be re-read (export again with this version of e2er)",
         )
     doc = evaluate(plan, report, log, run_dir, minor_rel_tolerance=float(tol))
-    if not doc["passed"]:
-        reasons = doc["reasons"]
+    md_path = _reproduction_file(bundle, MD_FILE)
+    md_text = md_path.read_text(encoding="utf-8") if md_path is not None else None
+    reasons = [*doc["reasons"], *report_text_reasons(md_text, report if isinstance(report, dict) else {}, log)]
+    if reasons:
         shown = "; ".join(reasons[:3]) + (f"; and {len(reasons) - 3} more" if len(reasons) > 3 else "")
-        return Check("reproduction", FAIL, f"{len(reasons)} problem(s) on recompute: {shown}")
+        return Check("reproduction", FAIL, f"{len(reasons)} problem(s): {shown}")
     stats = doc["stats"]
     parts = []
     for key in ("level_1", "level_2"):
@@ -476,7 +485,8 @@ def _check_reproduction(bundle: Path) -> Check | None:
         f"{stats.get('numbers_checked', 0)} compared number(s) re-read from the run's outputs and relabelled "
         f"(minor tolerance {float(tol):.0%}); "
         + "; ".join(parts)
-        + ("; the report's summary counts agree" if doc.get("summary") else "; the report states no summary counts"),
+        + ("; the report's summary counts agree" if doc.get("summary") else "; the report states no summary counts")
+        + f"; {MD_FILE} agrees with {REPORT_FILE}",
     )
 
 

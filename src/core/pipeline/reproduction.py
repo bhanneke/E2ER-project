@@ -18,7 +18,11 @@ report says something the files do not:
       "reproduced_minor" needs every relative difference within the tolerance
       and no change of sign, "could_not_run" carries no reproduced numbers;
   (d) every target of the plan is accounted for, compared or listed as
-      unassessed with a reason.
+      unassessed with a reason;
+  (e) ``reproduction_report.md``, the report the researcher reads, agrees
+      with the JSON: e2er writes its counts and environment section from the
+      JSON, and the prose's counts, labels and package versions are compared
+      with it (``reproduction_md``).
 
 It is the same idea as the numbers check for drafts: a model may describe and
 judge, but every number it states is traced to a file by code. The verdict and
@@ -37,6 +41,7 @@ from pathlib import Path
 from typing import Any
 
 from .replication import LEVELS, PLAN_FILE, TARGET_LEVELS, CheckResult, load_plan
+from .reproduction_md import MD_FILE, markdown_problems, render_summary, with_summary
 from .sandbox import LOG_FILE
 
 REPORT_FILE = "reproduction_report.json"
@@ -446,6 +451,20 @@ def check_reproduction(workspace: Path, *, minor_rel_tolerance: float = DEFAULT_
 
     run_dir = workspace / str(log.get("run_dir") or "sandbox/run")
     doc = evaluate(plan, report, log, run_dir, minor_rel_tolerance=minor_rel_tolerance)
+    # The written report: e2er writes its counts and environment from the JSON
+    # (only once the JSON itself checks out), then compares the prose with it.
+    md_path = workspace / MD_FILE
+    text = md_path.read_text(encoding="utf-8") if md_path.is_file() else None
+    written = False
+    if text is not None and doc["passed"]:
+        new = with_summary(text, render_summary(report, log))
+        if new != text:
+            md_path.write_text(new, encoding="utf-8")
+            text, written = new, True
+    md_reasons = report_text_reasons(text, report, log)
+    doc["reasons"] = [*doc["reasons"], *md_reasons]
+    doc["passed"] = not doc["reasons"]
+    doc["report_text"] = {"file": MD_FILE, "agrees": not md_reasons, "summary_written": written}
     (workspace / CHECK_FILE).write_text(json.dumps(doc, indent=2, default=str) + "\n", encoding="utf-8")
     stats = doc["stats"]
     flat = {k: v for k, v in stats.items() if not isinstance(v, dict)}
@@ -564,6 +583,17 @@ def check_environment(report: dict[str, Any], log: dict[str, Any]) -> list[str]:
     return out
 
 
+def report_text_reasons(text: str | None, report: dict[str, Any], log: dict[str, Any] | None) -> list[str]:
+    """Where reproduction_report.md contradicts reproduction_report.json (see ``reproduction_md``).
+
+    The pipeline's check and ``e2er verify`` both call this; a missing
+    Markdown report is a failure, since it is what the researcher reads.
+    """
+    if text is None:
+        return [f"{MD_FILE} is missing: the reproduction comparer must write it"]
+    return markdown_problems(text, report, log)
+
+
 def check_report(workspace: Path) -> list[str]:
     """Contract check for the comparer: the report parses and uses the protocol's levels."""
     path = Path(workspace) / REPORT_FILE
@@ -592,9 +622,19 @@ def check_report(workspace: Path) -> list[str]:
                 # causal wording only here; the numbers are compared by the check
                 errs += [f"results[{i}]: {p}" for p in reason_text_problems(text, [])]
     log_path = Path(workspace) / LOG_FILE
+    log: dict[str, Any] | None = None
     if log_path.is_file():
         try:
-            errs += check_environment(report, json.loads(log_path.read_text(encoding="utf-8")))
+            log = json.loads(log_path.read_text(encoding="utf-8"))
         except ValueError:
-            pass
+            log = None
+        if isinstance(log, dict):
+            errs += check_environment(report, log)
+    # The prose of the Markdown report must not contradict the JSON; e2er writes
+    # its summary section later (the reproduction check), so that is not compared here.
+    md_path = Path(workspace) / MD_FILE
+    if md_path.is_file():
+        errs += markdown_problems(
+            md_path.read_text(encoding="utf-8"), report, log if isinstance(log, dict) else None, check_summary=False
+        )
     return errs
