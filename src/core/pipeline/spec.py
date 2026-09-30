@@ -22,6 +22,7 @@ See docs/PIPELINES.md.
 
 from __future__ import annotations
 
+import re
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -62,8 +63,21 @@ RUN_MODES: frozenset[str] = frozenset({"single_pass", "iterative"})
 CHECK_SETTINGS: dict[str, dict[str, type | tuple[type, ...]]] = {
     "event_window": {"min_estimation_days": int, "min_gap_days": int, "max_overlap_share": (int, float)},
     "package_integrity": {"max_mb": int},
-    "sandbox": {"cpus": int, "memory_gb": int, "timeout_minutes": int, "install_timeout_minutes": int},
+    "sandbox": {
+        "cpus": int,
+        "memory_gb": int,
+        "timeout_minutes": int,
+        "install_timeout_minutes": int,
+        "snapshot": str,
+    },
     "reproduction": {"minor_rel_tolerance": (int, float)},
+}
+
+#: Text settings and the form each must take.
+TEXT_SETTINGS: dict[str, re.Pattern[str]] = {
+    # Which package versions the sandbox installs: those current at the
+    # replication package's publication date, the newest, or a given date.
+    "snapshot": re.compile(r"^(package-date|latest|\d{4}-\d{2}-\d{2})$"),
 }
 
 #: Checks that run as a step of their own, in sequence, rather than inside the
@@ -241,12 +255,17 @@ def _step_from(raw: Any, source: Path | str, index: int) -> StepSpec:
                 + (f" (known: {', '.join(sorted(allowed))})" if allowed else ""),
             )
         for key, value in settings.items():
+            if allowed[key] is str:
+                pattern = TEXT_SETTINGS[key]
+                if not isinstance(value, str) or not pattern.match(value):
+                    _fail(source, f"{where} ({name}): setting {key} must match {pattern.pattern}, not {value!r}")
+                continue
             if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
                 _fail(source, f"{where} ({name}): setting {key} must be a non-negative number, not {value!r}")
             if not isinstance(value, allowed[key]):
                 _fail(source, f"{where} ({name}): setting {key} must be a whole number, not {value!r}")
         for share in ("max_overlap_share", "minor_rel_tolerance"):
-            if float(settings.get(share, 0)) > 1:
+            if share in settings and float(settings[share]) > 1:
                 _fail(source, f"{where} ({name}): {share} is a share between 0 and 1")
 
     on_fail = raw.get("on_fail", "halt")

@@ -94,6 +94,37 @@ e2er run "Computational reproduction of <paper title> (10.5281/zenodo.<id>)" --t
 
 The protocol both specialists follow is `skills/files/replication/reproduction-protocol.md`.
 
+### Package versions: as of the package date
+
+By default (`snapshot = "package-date"` in the sandbox step's settings) the
+install phase installs packages as they were on the Zenodo record's
+publication date: R packages from Posit Package Manager's dated CRAN snapshot
+(the image's p3m URL with `/latest` replaced by the date, e.g.
+`https://p3m.dev/cran/__linux__/noble/2026-08-30`, also written to
+`Rprofile.site` so it is the repository inside the run), Python packages with
+pip's `--uploaded-prior-to <date>T23:59:59Z`. `"latest"` installs the newest
+and `"YYYY-MM-DD"` a given day. Versions the plan declares win: R installs them
+with `remotes::install_version`, Python pins them with `==`. After the install a
+no-network container of the committed image reports the repository, the
+platform and every installed version, dependencies included; `sandbox_log.json`
+records them under `snapshot`, `install.installed`, `install.platform` and
+`declared_versions`, and the reproduction check copies them into
+`reproduction_check.json`. The comparer's report states the snapshot and the
+versions of the packages it discusses; the check compares each with the log.
+
+### Strict labels
+
+Each compared number is labelled by the protocol's thresholds, which the
+reproduction check applies too: `reproduced` when equal at the target's own
+precision (the printed decimals for the paper; within 1e-9 relative for a
+full-precision package cell), `reproduced_minor` when at most
+`minor_rel_tolerance` (10 %) off with the same sign, `not_reproduced`
+otherwise; a result takes its worst number's label. The check also refuses a
+reason text that says "equals" or "at full precision" when no compared number
+is equal (or "differs" when all are), and one that states a cause as
+established ("because", "due to", "caused by", "bug") instead of naming
+possible causes.
+
 ### Two levels of targets
 
 Every target in `replication_plan.json` has `level: 1` or `level: 2`, and the

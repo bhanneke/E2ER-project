@@ -57,23 +57,48 @@ level-2 target, and a printed number is never a level-1 target.
 - Never estimate, round up or fill in a target you could not find. List it as
   missing, with where you looked.
 
-## Levels, per result
+## Labels, per number and per result
 
-Each table or figure (or each headline number, when a table is large) gets one
-level, per target level: a table can be `reproduced` at level 1 and
-`not_reproduced` at level 2. "Published precision" is the printed decimals for
-level 2 and the decimals of the cell text in the shipped file for level 1.
+Every compared number gets a label by these rules, and nothing else decides
+it. The reproduction check applies the same thresholds to the numbers it
+re-reads and stops the run when a label disagrees with them.
 
-| Level | Rule |
+Let *t* be the target, *r* the rerun value, and the relative difference
+|r − t| / |t|.
+
+| Label | Rule for one number |
 |---|---|
-| `reproduced` | The code ran and every compared number equals the published one at the published precision (rounding to the printed decimals gives the printed value). |
-| `reproduced_minor` | The code ran; some numbers differ beyond rounding, but every difference is small (relative difference at most the template's tolerance, 10 % by default), no sign changes, and no conclusion the paper draws from the number changes (conventional significance level, direction, which estimate is larger). |
-| `not_reproduced` | The code ran and produced the numbers, but at least one differs beyond the minor tolerance, changes sign, or changes a conclusion. |
-| `could_not_run` | The code that produces the result failed, timed out, needed network access or data the package does not include, or wrote no output that holds the number. |
+| `reproduced` | Level 2 (a printed number): *r* rounded to the printed decimals is the printed value. Level 1 (a full-precision cell of a shipped file): relative difference at most 1e-9 (absolute 1e-12 when *t* is zero). |
+| `reproduced_minor` | Not `reproduced`, same sign, and relative difference at most 10 % (the template's `minor_rel_tolerance`). |
+| `not_reproduced` | Relative difference above 10 %, or the sign changes, or *t* is zero and *r* is not. |
+| `could_not_run` | No number: the code that produces it failed, timed out, needed network access or data the package does not include, or wrote no output that holds it. |
 
-A result's level is its worst number. Name the reason in one sentence: which
-number, how far off, and the likely cause if the logs show one (a package
-version, a random seed, a missing file).
+A result (a table or figure at one target level) takes the label of its worst
+number, in the order `reproduced` < `reproduced_minor` < `not_reproduced` <
+`could_not_run`. A table can be `reproduced` at level 1 and `not_reproduced` at
+level 2.
+
+A 0.09 % difference is not `reproduced`, however small: at level 1 the rerun
+must equal the shipped cell to nine significant digits. Whether a minor
+difference changes a conclusion of the paper (significance, direction, which
+estimate is larger) is a note, not a label.
+
+## Reason texts
+
+- Say what the numbers show: which number, the target, the rerun value, the
+  relative difference. Never say "equals", "identical" or "at full precision"
+  about a number that differs, and never say "differs" about one that is
+  equal; the check compares the wording with the numbers.
+- Causes are never established by a reproduction. Name them as possible
+  causes only, with what points to them: "possible causes: DRDID is not
+  pinned (1.3.0 installed); 07_did.R sets no seed before its bootstrap". Do
+  not write "because", "due to", "caused by", "the reason is", "bug" or
+  "mistake" as a finding; the check refuses a reason text that states a cause
+  without "possible", "may", "might" or "could".
+- Record the environment the rerun used from `sandbox_log.json`: the package
+  snapshot date and repository, the platform, and the versions of the packages
+  you discuss. Code records every installed version, dependencies included.
+  Differences in it are among the possible causes.
 
 ## Practical rules for running
 
@@ -83,13 +108,18 @@ version, a random seed, a missing file).
   as the working directory), fix the environment, never the code, and record
   what you did.
 - Use the software versions the package documents. Where it names none, use the
-  version current at the package's publication date and say so.
+  versions current at the package's publication date: by default the sandbox
+  installs R packages from the dated CRAN snapshot of the Zenodo record's
+  publication date and Python packages uploaded before it, and a declared
+  version always wins. Dependencies the package does not declare (e.g. a
+  package's own dependencies) come from the same snapshot; all installed
+  versions are recorded.
 - Scripts that download data at run time cannot run in the sandbox (no network).
   Mark them `needs_network`, run everything that works from the included data,
   and level the results that depended on the download `could_not_run`.
 - Randomness: if the code sets a seed, a difference is a finding. If it does
-  not, say so; small differences in bootstrap or simulation results are then
-  expected and belong in `reproduced_minor` when within the tolerance.
+  not (e.g. a bootstrap without `set.seed`), say so as a possible cause; the
+  label still follows the thresholds above.
 - Keep every log. A level without the log that supports it is an opinion.
 
 ## Reporting

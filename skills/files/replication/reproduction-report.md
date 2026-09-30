@@ -36,10 +36,26 @@ For every exhibit with targets:
    file holds it; do not round it. For a level-1 target the file is the
    rebuilt copy of the target's own file (same path) and the locator is the
    plan's, so the same cell is compared.
-3. Compute `abs_diff` = reproduced − published, and level the result by the
-   protocol: `reproduced`, `reproduced_minor`, `not_reproduced`,
-   `could_not_run`.
-4. A target you cannot assess (the output does not contain it, the value is
+3. Compute `abs_diff` = reproduced − published and the relative difference,
+   and label each number strictly by the protocol's thresholds (`label` on the
+   comparison): `reproduced` only when equal at the target's own precision
+   (level 2: the printed decimals; level 1: within 1e-9 relative),
+   `reproduced_minor` when at most 10 % off with the same sign,
+   `not_reproduced` otherwise. The result's `level` is its worst number's
+   label. The check recomputes all of it and stops the run on any
+   disagreement.
+4. Write the reason from the numbers (which number, how far off). Name causes
+   only as possible ones, with what points to them (an unpinned dependency, no
+   seed before a bootstrap, a different platform); never "because", "due to",
+   "caused by". Never write "equals" or "at full precision" about a number that
+   differs.
+5. Copy the environment from `sandbox_log.json` into the report's
+   `environment` block: `snapshot` (`date`, `url`), `platform`, and
+   `installed` with the versions of the declared packages and of every package
+   you name (e.g. as a possible cause). The check compares each entry with the
+   log; the full list of installed versions, dependencies included, is recorded
+   by code in `sandbox_log.json` and `reproduction_check.json`.
+6. A target you cannot assess (the output does not contain it, the value is
    only graphical) goes in `unassessed` with the reason.
 
 ## `reproduction_report.json`
@@ -66,6 +82,7 @@ For every exhibit with targets:
           "published": -0.012,
           "reproduced": -0.01214,
           "abs_diff": -0.00014,
+          "rel_diff": 0.0117,
           "label": "reproduced",
           "source": {
             "file": "study_package/output/tables/did_main.csv",
@@ -76,8 +93,13 @@ For every exhibit with targets:
     },
     {"id": "figure_3_l2", "exhibit": "figure_3", "target_level": 2, "level": "could_not_run",
      "reason": "03_figures.R failed: package 'sf' not available.", "entry_points": ["figures"],
-     "comparisons": [{"target_id": "f3_peak", "published": 0.04, "reproduced": null}]}
+     "comparisons": [{"target_id": "f3_peak", "published": 0.04, "reproduced": null, "label": "could_not_run"}]}
   ],
+  "environment": {
+    "snapshot": {"date": "2026-08-30", "url": "https://p3m.dev/cran/__linux__/noble/2026-08-30"},
+    "platform": "aarch64-unknown-linux-gnu",
+    "installed": {"did": "2.5.1", "DRDID": "1.3.0", "fixest": "0.14.2"}
+  },
   "unassessed": [{"target_id": "t5_power", "reason": "the output does not report the power figure"}],
   "notes_for_robustness": ["…"]
 }
@@ -88,6 +110,11 @@ broken):
 
 - Every result has `target_level` (1 or 2) and compares only targets of that level.
 - `published` is the plan's value for that target, unchanged.
+- Each comparison's `label` and each result's `level` follow the protocol's
+  thresholds exactly; the reason text does not contradict the numbers and
+  names causes only as possible ones.
+- `environment` matches `sandbox_log.json`: the snapshot date and URL, and the
+  version of every package it lists.
 - A level-1 number is read from the rebuilt copy of the target's own file.
 - `reproduced` is a number read from `source.file`, a file the run wrote. With
   a `locator` the check reads that exact cell; without one it needs a number in
@@ -115,5 +142,7 @@ For the researcher, level 1 and level 2 in separate sections: one line per
 exhibit with its level; then per exhibit the
 compared numbers (published, reproduced, difference, file); what could not
 run and why (from the logs); the environment actually used (image, digest,
-installed versions against the documented ones); and notes for a robustness
+platform, package snapshot date and URL, installed versions against the
+documented ones, including dependencies the package does not declare); the
+possible causes of each difference, named as possible; and notes for a robustness
 study, kept separate from the levels.

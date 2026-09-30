@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Replication: packages as of the package date, strict labels
+
+- A specialist that writes its files whole (the planner, the comparer) starts
+  each attempt with its earlier files moved to `<name>.previous`; any other
+  specialist is told which of its files exist and to read them before writing.
+  The CLI's write tool refuses to overwrite an unread file, which made every
+  retry of the comparer fail in the live rerun.
+
+- The sandbox installs packages as of the Zenodo record's publication date by
+  default (`snapshot = "package-date" | "latest" | "YYYY-MM-DD"`): R from Posit
+  Package Manager's dated CRAN snapshot, Python with pip's
+  `--uploaded-prior-to`; declared versions still win (`remotes::install_version`,
+  `==`). The snapshot date and URL, the platform and every installed version,
+  dependencies included, are read from the committed image and recorded in
+  `sandbox_log.json`, also when the environment is reused.
+- Labels follow the protocol's thresholds exactly, stated in
+  `reproduction-protocol.md` and enforced by the check: `reproduced` only when
+  equal at the target's own precision (1e-9 relative for package cells),
+  `reproduced_minor` up to 10 % with the same sign, `not_reproduced` beyond; a
+  result takes its worst number's label. The check and the comparer's
+  contract refuse reason texts that contradict the numbers or state a cause as
+  established, and require the report's environment block (snapshot, and the versions it
+  names) to match the log; the full list of installed versions is written by
+  code into `reproduction_check.json`, not transcribed by the model.
+
 ### Checks
 
 - **Every pre-registered hypothesis has a result.** The preregister step now
