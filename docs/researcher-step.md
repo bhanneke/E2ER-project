@@ -50,6 +50,14 @@ e2er review <paper_id> --approve
 
 An instruction is kept in `researcher_instructions.md`; every later specialist and the strategist receive it. Sending back re-runs that template step (and the steps after it) or that specialist with the remark, then the run stops at the same researcher step again.
 
+A study that is no longer stopped at a researcher step (a completed one, say) can be sent back too:
+
+```
+e2er rerun <paper_id> --from compare --remark "Write the report again from the comparison."
+```
+
+The step and every step after it run again with the remark (a researcher step cannot be the start); their approvals are withdrawn, so the run stops at the next researcher step, where the new result needs approving.
+
 ## In the dossier
 
 Each action is a workflow step of type `researcher`: `edit` (file, SHA-256 before and after), `instruction` (the text), `send_back` and `rerun` (target and remark), `approve`, `preregistration_frozen` (SHA-256), and `supplied_input` (a file the researcher supplied, such as the paper in the replication template: file, SHA-256, and the SHA-256 it replaces when it was changed). A frozen pre-registration also appears as its own block: file, SHA-256, time of freezing and, after a deposit, the DOI. Dossiers with either use the format `e2er-dossier/0.4`; a study without them keeps `0.3`, so existing dossier addresses stay valid.

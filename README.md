@@ -158,6 +158,7 @@ is measured rather than hidden.
 | `e2er rq --draft "…"` | Sharpen a draft RQ against your data + library (advisory) |
 | `e2er run "…" [--template …] [--governance …] [--review-at …]` | Run the pipeline for one RQ, following a template (default `empirical`) |
 | `e2er review <paper_id> [--approve] [--edit …] [--send-back …]` | Act on a paused run: approve, edit a file, add an instruction, send a step back |
+| `e2er rerun <paper_id> --from STEP --remark "…"` | Send a finished study back to one of its steps; it and the later steps run again |
 | `e2er run-matrix "…" --backends a,b,c` | Same RQ across k backends × n repeats |
 | `e2er compare matrix.json` | Diff the design choices across the matrix |
 | `e2er export <paper_id>` | Assemble a clean bundle (+ `provenance.json`) |

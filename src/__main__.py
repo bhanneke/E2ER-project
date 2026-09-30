@@ -278,6 +278,14 @@ def main() -> None:
     review_p.add_argument("--send-back", default=None, metavar="STEP", help="Send a template step or specialist back.")
     review_p.add_argument("--remark", default=None, help="What should change (with --send-back).")
 
+    rerun_p = subparsers.add_parser(
+        "rerun",
+        help="Send a finished study back to one of its steps: it and every later step run again with your remark.",
+    )
+    rerun_p.add_argument("paper_id", help="The paper UUID.")
+    rerun_p.add_argument("--from", dest="from_step", required=True, metavar="STEP", help="The template step to rerun.")
+    rerun_p.add_argument("--remark", required=True, help="What should change; recorded for the dossier.")
+
     prereg_p = subparsers.add_parser("preregister", help="Pre-registration commands (`e2er preregister deposit`).")
     prereg_sub = prereg_p.add_subparsers(dest="prereg_command")
     dep_p = prereg_sub.add_parser("deposit", help="Deposit the frozen pre-registration with your own account (DOI).")
@@ -804,6 +812,10 @@ def main() -> None:
                 remark=args.remark,
             )
         )
+    elif args.command == "rerun":
+        from .cli_review import rerun as _rerun
+
+        sys.exit(_rerun(args.paper_id, step=args.from_step, remark=args.remark))
     elif args.command == "preregister":
         from .cli_review import deposit as _deposit
 

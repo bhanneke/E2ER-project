@@ -5,6 +5,7 @@
     e2er review <paper_id> --instruction "TEXT"    an instruction for the following steps
     e2er review <paper_id> --edit FILE             edit one of the step's files in $EDITOR
     e2er review <paper_id> --send-back STEP --remark "TEXT"
+    e2er rerun <paper_id> --from STEP --remark "TEXT"   a finished study
     e2er preregister deposit <paper_id|folder> --zenodo [--sandbox]
 
 Every action is recorded and appears in the study's dossier.
@@ -169,6 +170,24 @@ def _interactive_loop(http: Any, paper_id: str, data: dict[str, Any], files: dic
             step = input(f"step ({', '.join(data.get('sendable', []))}): ").strip()
             text = input("remark: ").strip()
             return _post(http, paper_id, {"action": "send_back", "step": step, "remark": text})
+
+
+def rerun(paper_id: str, *, step: str, remark: str) -> int:
+    """`e2er rerun`: send a finished study back to ``step``; it and every later step run again.
+
+    The remark is the researcher's, recorded for the dossier like a send-back;
+    the run stops again at the next researcher step.
+    """
+    http = _client()
+    r = http.post(f"/api/papers/{paper_id}/rerun", json={"step": step, "remark": remark})
+    if r.status_code >= 400:
+        detail = r.json().get("detail") if r.headers.get("content-type", "").startswith("application/json") else r.text
+        print(f"e2er rerun: {detail}", file=sys.stderr)
+        return 1
+    rec = r.json().get("recorded", {})
+    print(f"✓ rerun from {rec.get('step')}: {', '.join(rec.get('reruns') or [])} (recorded for the dossier)")
+    print("✓ the run continues; it stops at the next researcher step")
+    return 0
 
 
 def deposit(target: str, *, zenodo: bool = False, osf: bool = False, sandbox: bool = False) -> int:

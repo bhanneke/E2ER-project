@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### `e2er rerun`: send a finished study back to one of its steps
+
+- `e2er rerun <id> --from STEP --remark "…"` (and `POST
+  /api/papers/{id}/rerun`) reruns a template step and every step after it in
+  a study that is not stopped at a researcher step, a completed one included.
+  The approvals from that step on are withdrawn, the remark goes to
+  `researcher_instructions.md` and is recorded as the researcher's action
+  (`researcher_action`, action `rerun`, in the dossier), and the run stops at
+  the next researcher step for approval. A researcher step cannot be the
+  start, nor a step that has not run; at a pending researcher step the
+  send-back does this. Nothing in the workspace is deleted.
+
 ### `e2er publish` takes the template from the export
 
 - The export records the template the study was run with in

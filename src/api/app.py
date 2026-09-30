@@ -1005,6 +1005,57 @@ async def post_review(req: ReviewAction, paper_id: str = Depends(_validate_uuid)
     return out
 
 
+class RerunRequest(BaseModel):
+    """Body for POST /api/papers/{id}/rerun: the step to run again from, and the researcher's remark."""
+
+    step: str
+    remark: str
+
+
+@app.post("/api/papers/{paper_id}/rerun", dependencies=[Depends(require_auth)])
+async def rerun_paper(req: RerunRequest, paper_id: str = Depends(_validate_uuid)) -> dict[str, Any]:
+    """Send a finished study back to one of its steps: that step and every later one run again.
+
+    For a study not stopped at a researcher step (completed, rejected, failed,
+    cancelled, or paused by an error); at a researcher step the send-back does
+    this. The action is recorded (``researcher_action``, action ``rerun``) for
+    the dossier, and the run stops again at the next researcher step.
+    """
+    from ..core.pipeline.researcher import ResearcherActionError, apply_rerun
+    from ..core.pipeline.spec import find_spec
+    from ..core.pipeline.state import PipelineState
+    from ..db.client import execute, fetch_one
+    from ..db.events import log_event
+
+    existing = _RUNNING.get(paper_id)
+    if existing and not existing.done():
+        raise HTTPException(status_code=409, detail="the study is running; stop it or wait for it to stop")
+    row = await fetch_one("SELECT * FROM papers WHERE id = %(id)s", {"id": paper_id})
+    if row is None:
+        raise HTTPException(status_code=404, detail="paper not found")
+    elsewhere = await _running_elsewhere(dict(row))
+    if elsewhere:
+        raise HTTPException(status_code=409, detail=_elsewhere_text(elsewhere))
+    workspace = Path(row["workspace"])
+    try:
+        spec = find_spec(row.get("pipeline") or "empirical")
+    except Exception as e:  # noqa: BLE001 — without its template the steps are unknown
+        raise HTTPException(status_code=409, detail=f"the study's template cannot be loaded: {e}") from e
+    state = PipelineState.load(workspace, paper_id, row.get("mode") or "single_pass")
+    try:
+        payload = apply_rerun(workspace, state, spec, req.step, req.remark)
+    except ResearcherActionError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    state.save(workspace)
+    await log_event(paper_id, "researcher_action", stage=req.step, payload=payload)
+    # A completed study is terminal for resume; the rerun makes it resumable.
+    await execute(
+        "UPDATE papers SET status = 'paused', last_error = NULL, updated_at = NOW() WHERE id = %(id)s",
+        {"id": paper_id},
+    )
+    return {"recorded": payload, "resumed": await resume_paper(paper_id)}
+
+
 @app.post("/api/papers/{paper_id}/resume", dependencies=[Depends(require_auth)])
 async def resume_paper(paper_id: str, req: ResumeRequest | None = None) -> dict[str, Any]:
     """Resume a paper whose runner is not actively running.
