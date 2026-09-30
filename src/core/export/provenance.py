@@ -156,6 +156,8 @@ def build_provenance(bundle: Path, manifest: dict[str, Any], *, exported_at: str
             "backend": manifest.get("backend"),
             "model": manifest.get("model"),
             "governance": manifest.get("governance") or "full",
+            # the template the study was run with; `e2er publish` reads it from here
+            "template": manifest.get("pipeline") or None,
             "e2er_version": _e2er_version(),
             "exported_at": exported_at,
         },

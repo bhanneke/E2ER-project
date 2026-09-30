@@ -66,7 +66,7 @@ def whoami(url: str | None = None) -> int:
         return 1
     code, body = pc.request(base, "GET", "/api/v1/me", token=token)
     if code != 200:
-        print(f"error: {body.get('error', code)}")
+        print(f"error: {pc.error_text(code, body)}")
         return 1
     handles = ", ".join(body.get("handles") or []) or "none yet (your first publication creates one)"
     print(f"{body['name']} <{body['email']}> on {base}\nHandles: {handles}")
@@ -82,7 +82,7 @@ def logout(url: str | None = None) -> int:
         except Exception as e:  # noqa: BLE001 - offline: forget locally, say so
             code, body = 0, {"error": str(e)}
         if code not in (200, 401, 404):
-            print(f"warning: the platform did not confirm the token was ended ({body.get('error', code)});")
+            print(f"warning: the platform did not confirm the token was ended ({pc.error_text(code, body)});")
             print(f"  remove it on {base}/account")
     pc.forget_token(base)
     print(f"✓ Signed out of {base}.")
@@ -103,7 +103,7 @@ def status(bundle: str = ".", url: str | None = None) -> int:
     base = pc.base_url(url or link.get("platform_url"))
     code, body = pc.request(base, "GET", f"/api/v1/studies/{link['owner_project']}", token=pc.load_token(base))
     if code != 200:
-        print(f"error: {body.get('error', code)}")
+        print(f"error: {pc.error_text(code, body)}")
         return 1
     latest = body.get("latest") or {}
     local = _content_id(b)
@@ -146,7 +146,7 @@ def dossier_push(bundle: str = ".", url: str | None = None) -> int:
         return 1
     code, body = pc.request(base, "POST", "/api/v1/dossiers", token=token, body={"id": d["id"], "doc": d["doc"]})
     if code not in (200, 201):
-        print(f"error: {body.get('error', code)}")
+        print(f"error: {pc.error_text(code, body)}")
         return 1
     print(f"✓ Dossier registered: {body['url']}" if code == 201 else f"✓ Dossier already registered: {body['url']}")
     return 0

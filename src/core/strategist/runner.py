@@ -569,7 +569,9 @@ class PipelineRunner:
             return
         date_str = datetime.now().strftime("%Y%m%d")
         dest_root = settings.resolved_output_root()
-        out = await asyncio.to_thread(export_paper, self._workspace, dest_root, date_str=date_str)
+        out = await asyncio.to_thread(
+            export_paper, self._workspace, dest_root, date_str=date_str, template=self._spec.name
+        )
         logger.info("Structured export for paper %s → %s", self._paper_id, out)
 
     async def _export_audit_log_only(self) -> None:

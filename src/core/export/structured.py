@@ -256,16 +256,23 @@ def _render_readme(workspace: Path, manifest: dict, slug: str) -> str:
     return "\n".join(lines) + "\n"
 
 
-def export_paper(workspace: Path, dest_root: Path, *, date_str: str, slug: str | None = None) -> Path:
+def export_paper(
+    workspace: Path, dest_root: Path, *, date_str: str, slug: str | None = None, template: str | None = None
+) -> Path:
     """Assemble the structured project folder. Returns the created directory.
 
     Best-effort: copies whatever artifacts exist; missing ones are skipped.
+    ``template`` is the template the study was run with (the papers row's
+    ``pipeline``); without it, the one manifest.json records. It is written to
+    provenance.json (``run.template``), where ``e2er publish`` reads it.
     """
     workspace = Path(workspace)
     dest_root = Path(dest_root)
     dest_root.mkdir(parents=True, exist_ok=True)
 
     manifest = _read_json(workspace / "manifest.json")
+    if template:
+        manifest = {**manifest, "pipeline": template}
     title = manifest.get("title") or workspace.name
     slug = slug or resolve_versioned_slug(dest_root, title, date_str)
     out = dest_root / slug

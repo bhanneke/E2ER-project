@@ -61,7 +61,7 @@ def _describe(
     commit: str | None = None,
     path: str | None = None,
     db: str | None = None,
-    template: str = "empirical",
+    template: str | None = None,
     license_id: str | None = None,
     derived_from: list[str] | None = None,
     out: str | None = None,
@@ -83,6 +83,12 @@ def _describe(
     if not (b / "provenance.json").is_file():
         print(f"error: {b} is not an exported bundle (no provenance.json); run `e2er export` first")
         return 1, None
+    template, why = resolve_template(b, template)
+    if template is None:
+        print(f"error: {why}")
+        return 1, None
+    if why:
+        print(f"note: {why}")
 
     # Data and code: public or private (private unless stated). Private material
     # stays here; only its fingerprints are published, as for every file.
@@ -280,6 +286,43 @@ def _describe(
     return 0, manifest
 
 
+DEFAULT_TEMPLATE = "empirical"
+
+
+def recorded_template(bundle: Path) -> str | None:
+    """The template the export recorded (provenance.json → run.template), or None for an older export."""
+    try:
+        prov = json.loads((bundle / "provenance.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    run = prov.get("run") if isinstance(prov, dict) else None
+    value = run.get("template") if isinstance(run, dict) else None
+    return value if isinstance(value, str) and value else None
+
+
+def resolve_template(bundle: Path, given: str | None) -> tuple[str | None, str]:
+    """The template to publish under, and a note (or, with None, the reason to refuse).
+
+    The export records the template the study ran with; ``--template`` may only
+    repeat it. A bundle exported before the template was recorded takes
+    ``--template``, else the default, and says so.
+    """
+    recorded = recorded_template(bundle)
+    if recorded and given and given != recorded:
+        return None, (
+            f"--template {given} does not match the template this study was run with, {recorded} "
+            "(recorded in provenance.json at export); leave out --template"
+        )
+    if recorded:
+        return recorded, ""
+    if given:
+        return given, ""
+    return DEFAULT_TEMPLATE, (
+        f"the export records no template (exported before e2er recorded it); publishing as {DEFAULT_TEMPLATE}. "
+        "Pass --template, or export again"
+    )
+
+
 def _declare(manifest: dict[str, Any], purpose: str | None, kind: str | None) -> None:
     """Record the study's purpose (and kind) in the manifest; nothing when it has none."""
     if purpose:
@@ -405,7 +448,7 @@ def _send(b: Path, manifest: dict[str, Any], to_url: str) -> int:
         print(f"error: could not reach {base}: {e}")
         return 1
     if code not in (200, 201):
-        print(f"error: {resp.get('error', code)}")
+        print(f"error: {pc.error_text(code, resp)}")
         for p in resp.get("problems") or []:
             print(f"  {p}")
         if resp.get("claim"):

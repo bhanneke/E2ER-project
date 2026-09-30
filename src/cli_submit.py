@@ -227,7 +227,7 @@ def submit(
         return 1
     code, answer = pc.request(base, method, where, token=token, body=body)
     if code not in (200, 201):
-        print(f"error: {answer.get('error', code)}")
+        print(f"error: {pc.error_text(code, answer)}")
         return 1
     checks = answer.get("conformance") or []
     if answer.get("state") == "returned":

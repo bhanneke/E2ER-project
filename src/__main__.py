@@ -406,7 +406,12 @@ def main() -> None:
     publish_p.add_argument(
         "--db", default=None, help="Run database, to record which agents actually ran and their model usage."
     )
-    publish_p.add_argument("--template", default="empirical", help="Template the run followed (default: empirical).")
+    publish_p.add_argument(
+        "--template",
+        default=None,
+        help="Template the run followed. Default: the one the export records (provenance.json), else empirical. "
+        "A template other than the recorded one is refused.",
+    )
     publish_p.add_argument(
         "--license", default=None, dest="license_id", help="Licence of the research object, e.g. CC-BY-4.0."
     )

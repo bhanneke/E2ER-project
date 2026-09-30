@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### `e2er publish` takes the template from the export
+
+- The export records the template the study was run with in
+  `provenance.json` (`run.template`): the runner passes its template, `e2er
+  export` and the browser's export the papers row's `pipeline`, otherwise
+  `manifest.json`'s. `e2er publish` uses it; `--template` (no longer defaulting
+  to `empirical`) may only repeat it, and a different one is refused with the
+  recorded name. An export made before this records nothing: publish then takes
+  `--template`, else `empirical`, and says so. The FOMC study had been
+  published as `empirical`; a replication now gets the replication disclaimer.
+- A server answer without an error text (a proxy page, Cloudflare D1 over its
+  daily read limit, an empty body) printed an empty `error:`. `e2er publish`,
+  `login`, `whoami`, `status`, `dossier push` and `submit` now print the HTTP
+  status and the first 200 characters of the body (`pc.error_text`).
+
 ### The written reproduction report agrees with its JSON
 
 - The replication demonstration's `reproduction_report.md` said "16 targets"
