@@ -385,3 +385,23 @@ def test_long_text_is_clipped_to_the_sites_limit_in_utf16_units():
 
     clipped = _clip("😀" * 15000)
     assert len(clipped.encode("utf-16-le")) // 2 <= 20000
+
+
+def test_a_recompile_with_non_fatal_errors_is_kept_as_the_run_compiled_it(bundle: Path, tmp_path: Path, monkeypatch):
+    """The FOMC paper loads inputenc, which xetex rejects; the run compiled it with -Z continue-on-errors."""
+    import subprocess
+
+    make_run_db(tmp_path / "study", paper_id_of(bundle))
+    seen: list[list[str]] = []
+
+    def tectonic(cmd, cwd, **kw):
+        seen.append(cmd)
+        (Path(cwd) / "paper.pdf").write_bytes(b"%PDF with a non-fatal error")
+        return subprocess.CompletedProcess(cmd, 1, "", "inputenc is not designed for xetex")
+
+    monkeypatch.setattr("src.cli_publish.shutil.which", lambda _: "/usr/bin/tectonic")
+    monkeypatch.setattr("src.cli_publish.subprocess.run", tectonic)
+    monkeypatch.setattr("src.cli_publish.unresolved_citations", lambda work: [])
+    assert publish(str(bundle), **ARGS, out=str(tmp_path / "e")) == 0
+    assert "continue-on-errors" in seen[0]
+    assert (bundle / "paper" / "paper.pdf").read_bytes() == b"%PDF with a non-fatal error"

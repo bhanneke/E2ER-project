@@ -802,11 +802,18 @@ def _stamp_and_compile(
             figs = bundle / "results" / "figures"
             if not (work / "figures").exists() and figs.is_dir():
                 shutil.copytree(figs, work / "figures")
-            res = subprocess.run(
-                ["tectonic", "--keep-intermediates", "paper.tex"], cwd=work, capture_output=True, text=True
+            (work / "paper.pdf").unlink(missing_ok=True)  # only a PDF this compile writes counts
+            # As the run compiled it (renderer/compiler.py): tectonic continues past
+            # non-fatal errors (a package option xetex ignores, a missing figure).
+            subprocess.run(
+                ["tectonic", "--keep-intermediates", "-Z", "continue-on-errors", "paper.tex"],
+                cwd=work,
+                capture_output=True,
+                text=True,
             )
-            missing = unresolved_citations(work) if res.returncode == 0 else []
-            if res.returncode != 0 or missing:
+            produced = (work / "paper.pdf").is_file()
+            missing = unresolved_citations(work) if produced else []
+            if not produced or missing:
                 tex.write_text(old, encoding="utf-8")
                 why = (
                     f"{len(missing)} citation(s) unresolved: {', '.join(missing[:5])}" if missing else "tectonic failed"
