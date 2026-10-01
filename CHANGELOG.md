@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Integrity of published studies (review of 2026-10-01)
+
+- **Publish needs the run.** `e2er publish` finds the study's run database
+  (`--db`, the study folder's `DATABASE_URL`, e2er's default) and refuses one
+  that does not hold the exported paper's run, or none. Both studies published
+  on 2026-10-01 had dossiers without steps. `--no-db` publishes anyway and the
+  dossier and footnote say the steps are not recorded.
+- **Nothing changes in an edited folder.** Publish checks the folder against
+  `provenance.json` before it changes anything; each change it then makes is an
+  amendment (path, fingerprint before and after, reason), so the exported hash
+  is never lost. A PDF publish compiles is fingerprinted.
+- **Zenodo.** The dossier is built from a copy of the final availability and
+  its id from the final document; deposits are published after everything that
+  can fail; reserved deposits are kept in `.e2er/zenodo.json` and reused, so a
+  retry makes no new deposits and gives the same dossier.
+- **The dossier says what the run recorded**: every segment of the run with its
+  commit and version, components pinned at each commit they ran on (unresolved
+  ones say so), the specialists and skills that ran, one researcher step per
+  researcher action with every field, the runner's reruns on the steps they
+  caused, the outcome, halts, pauses, failures and set-asides, UTC times, and
+  bundle-relative paths only. The runner now records what each step wrote and
+  the skills it read. Dossiers built from a run are `e2er-dossier/0.6`.
+- **Canonical JSON** is RFC 8785, as e2er.org computes it (floats, large
+  integers, NaN, key order); the four published dossiers keep their addresses.
+- **`e2er verify`** never follows a link, reads `provenance.json` strictly,
+  checks every file but the root `provenance.json`, `e2er.json` and `.e2er/`
+  records (report.html included), compares sizes, recomputes the derivation
+  edges, ignores `.DS_Store`/`Thumbs.db`/`._*` (and says so), checks
+  `e2er.json` and `.e2er/link.json` against the folder, and with `--against`
+  against what e2er.org published. Checks the study's record requires fail
+  when their input is missing; checks over nothing are skipped, never passed;
+  every table cell must be a source value at the precision shown.
+- **The reproduction report** must keep e2er's summary section, and its
+  sections, "N of M" counts and overall verdicts must agree with the JSON.
+- **Export** creates its folder atomically, never copies dotfiles, key files or
+  links that leave the workspace, never lets one file overwrite another's
+  target (and says which PDF is `paper/paper.pdf`), and fingerprints
+  `report.html`.
+- The demonstration disclaimer is a delimited block: a new wording replaces it,
+  a study without a purpose loses it, and a purpose recorded on the study is
+  honoured. The paper gets the dossier link without `--name` too.
+
 ### `e2er rerun`: send a finished study back to one of its steps
 
 - `e2er rerun <id> --from STEP --remark "…"` (and `POST

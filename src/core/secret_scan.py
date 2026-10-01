@@ -26,6 +26,15 @@ PATTERNS: list[tuple[str, re.Pattern[str]]] = [
 ]
 _ENV_LINE = re.compile(r"^([A-Z][A-Z0-9_]{2,})\s*=\s*[\"']?([^\s\"']{20,})[\"']?\s*$", re.M)
 _HOME_PATH = re.compile(r"(?:/Users|/home)/[^/\s\"']+|[A-Za-z]:\\Users\\[^\\\s\"']+")
+#: A path on this machine: a home directory, an absolute path under a system root
+#: (/private, /var, /tmp, /Volumes, …), a Windows drive path or a network share.
+#: A URL's path ("https://e2er.org/d/…") is not one: it follows a host name.
+_LOCAL_PATH = re.compile(
+    r"(?:/Users|/home)/[^/\s\"']+"
+    r"|(?<![\w:/.~\\-])/(?:root|private|var|tmp|opt|mnt|Volumes|media|srv|etc|usr|nix|run|workspaces?)/[^\s\"']*"
+    r"|(?<![\w])[A-Za-z]:[\\/][^\s\"']+"
+    r"|\\\\[A-Za-z0-9._-]+\\[^\s\"']+"
+)
 
 
 def _entropy(s: str) -> float:
@@ -47,9 +56,10 @@ def find_secrets(value: Any, path: str = "$") -> list[tuple[str, str]]:
 
 
 def find_local_paths(value: Any, path: str = "$") -> list[str]:
-    """JSON paths of strings that name a home directory (/Users/…, /home/…, C:\\Users\\…)."""
+    """JSON paths of strings that name a path on this machine: a home directory (/Users/…,
+    /home/…, C:\\Users\\…) or any other absolute local path (/private/var/…, /tmp/…, D:\\…, \\\\host\\share)."""
     if isinstance(value, str):
-        return [path] if _HOME_PATH.search(value) else []
+        return [path] if _LOCAL_PATH.search(value) else []
     if isinstance(value, list):
         return [h for i, v in enumerate(value) for h in find_local_paths(v, f"{path}[{i}]")]
     if isinstance(value, dict):

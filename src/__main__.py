@@ -426,7 +426,16 @@ def main() -> None:
     )
     publish_p.add_argument("--path", default=None, help="Path of the bundle inside the repository.")
     publish_p.add_argument(
-        "--db", default=None, help="Run database, to record which agents actually ran and their model usage."
+        "--db",
+        default=None,
+        help="The study's run database (default: the one the study folder's settings name, as the server finds "
+        "it). It must hold the run of the paper the folder was exported from.",
+    )
+    publish_p.add_argument(
+        "--no-db",
+        action="store_true",
+        help="Publish without the run's database: the dossier then lists no steps, no commit and no researcher "
+        "actions, and says so. Only for a folder whose database is gone.",
     )
     publish_p.add_argument(
         "--template",
@@ -603,6 +612,7 @@ def main() -> None:
                 commit=args.commit,
                 path=args.path,
                 db=args.db,
+                no_db=args.no_db,
                 template=args.template,
                 license_id=args.license_id,
                 derived_from=args.derived_from,

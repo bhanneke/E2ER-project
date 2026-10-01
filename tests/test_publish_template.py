@@ -22,6 +22,7 @@ from src.core import platform_client as pc
 from src.core.demonstration import DISCLAIMERS
 from src.core.export.structured import export_paper
 from src.core.pipeline.reproduction import check_reproduction
+from tests.run_db import make_run_db, paper_id_of
 
 FIXTURES = Path(__file__).parent / "fixtures"
 REPL = FIXTURES / "replication_demo"
@@ -43,6 +44,8 @@ def _workspace(tmp_path: Path) -> Path:
     ws = tmp_path / "ws"
     shutil.copytree(REPL, ws)
     assert check_reproduction(ws).passed  # writes the summary into reproduction_report.md
+    pid = json.loads((ws / "manifest.json").read_text()).get("paper_id") or ws.name
+    make_run_db(tmp_path, pid)  # the study folder's run database, named in its .env
     return ws
 
 
@@ -108,7 +111,8 @@ def test_publish_uses_the_recorded_template_and_its_disclaimer(tmp_path: Path, c
     assert "template:replication" in json.dumps(manifest)
     assert "template:empirical" not in json.dumps(manifest)
     md = (bundle / "misc" / "reproduction_report.md").read_text()
-    assert md.startswith(f"> {DISCLAIMERS['replication']}")
+    assert DISCLAIMERS["replication"] in md.split("\n#", 1)[0]  # above the title, once
+    assert md.count(DISCLAIMERS["replication"]) == 1
 
 
 def test_publish_refuses_a_template_other_than_the_recorded_one(tmp_path: Path, capsys):
@@ -136,6 +140,7 @@ def test_publish_refuses_a_template_other_than_the_recorded_one(tmp_path: Path, 
 def test_a_refused_publish_names_the_status_and_the_body(tmp_path: Path, monkeypatch, capsys, response, shown):
     bundle = tmp_path / "showcase"
     shutil.copytree(SHOWCASE, bundle)
+    make_run_db(bundle.parent, paper_id_of(bundle))
 
     def fake(req: httpx.Request) -> httpx.Response:
         return response

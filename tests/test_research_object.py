@@ -77,13 +77,13 @@ def test_literature_comes_from_the_citation_edges(bundle: Path):
     assert m["literature"] and all(x["cite_key"] for x in m["literature"])
 
 
-def test_publish_writes_a_manifest_that_does_not_break_verify(bundle: Path, run_db: Path, tmp_path: Path):
+def test_publish_writes_a_manifest_that_does_not_break_verify(bundle: Path, workflow_db: Path, tmp_path: Path):
     code = publish(
         str(bundle),
         owner="bhanneke",
         project="demo",
         github="bhanneke",
-        db=str(run_db),
+        db=str(workflow_db),
         commit="abc1234",
         out=str(tmp_path / "entry"),
     )

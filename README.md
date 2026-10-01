@@ -162,7 +162,7 @@ is measured rather than hidden.
 | `e2er run-matrix "…" --backends a,b,c` | Same RQ across k backends × n repeats |
 | `e2er compare matrix.json` | Diff the design choices across the matrix |
 | `e2er export <paper_id>` | Assemble a clean bundle (+ `provenance.json`) |
-| `e2er verify <bundle> [--online]` | Offline re-check: hashes, numbers (and p from t), spec, citations; the pre-registration and a reproduction when the bundle has one |
+| `e2er verify <bundle> [--online] [--against URL]` | Offline re-check: hashes, numbers (and p from t), spec, citations; the pre-registration and a reproduction when the bundle has one; with `--against`, the folder against what e2er.org published |
 
 **Going deeper.** [`docs/WORKFLOW.md`](docs/WORKFLOW.md) is the technical
 account: the phase sequence, what each of the four gates actually checks, what
