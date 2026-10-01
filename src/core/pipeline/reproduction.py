@@ -591,7 +591,8 @@ def report_text_reasons(text: str | None, report: dict[str, Any], log: dict[str,
     """
     if text is None:
         return [f"{MD_FILE} is missing: the reproduction comparer must write it"]
-    return markdown_problems(text, report, log)
+    # By now e2er has written its summary section: it must be there.
+    return markdown_problems(text, report, log, require_summary=True)
 
 
 def check_report(workspace: Path) -> list[str]:

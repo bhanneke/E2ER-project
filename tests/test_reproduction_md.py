@@ -227,3 +227,87 @@ def test_with_summary_replaces_an_earlier_section():
     first = with_summary("# T\n\nintro\n\n## A\n", f"{BEGIN}\nold\n{END}")
     again = with_summary(first, f"{BEGIN}\nnew\n{END}")
     assert "old" not in again and again.count(BEGIN) == 1 and again.index("new") < again.index("## A")
+
+
+# ── 2026-10-01 review: contradictions the check missed ───────────────────────
+# The report on e2er.org (published.md, 2026-10-01) writes one section per
+# exhibit ("**Table 5: …**") with list items ("- Published A, reproduced B",
+# "- Label: not_reproduced ✗"). Each edit below contradicts the JSON.
+
+PUBLISHED = (FIXTURES / "replication_demo_md" / "published.md").read_text(encoding="utf-8")
+TABLE5 = (
+    "- Published –0.0193985235407047, reproduced +0.0347239490711656\n"
+    "- Sign reversal: negative published, positive reproduced\n"
+    "- Relative difference: 2.79 (far exceeds tolerance)\n"
+    "- Label: not_reproduced ✗"
+)
+
+
+def _problems(md: str) -> list[str]:
+    return markdown_problems(md, REPORT, LOG, require_summary=True)
+
+
+def test_the_published_report_agrees():
+    assert _problems(PUBLISHED) == []
+
+
+def test_a_relabelled_label_line_is_caught():
+    md = PUBLISHED.replace(TABLE5, TABLE5.replace("- Label: not_reproduced ✗", "- Label: reproduced ✓"), 1)
+    [p] = _problems(md)
+    assert "l1_pbf_familias_att_cs_sem" in p and "'reproduced'" in p and "labels it 'not_reproduced'" in p
+
+
+def test_a_changed_reproduced_number_is_caught():
+    md = PUBLISHED.replace(
+        "- Published –0.00364909844619658, reproduced –0.00365238597730994",
+        "- Published –0.00364909844619658, reproduced –0.00364909844619658",
+        1,
+    )
+    [p] = _problems(md)
+    assert "l1_tac_att_cs_sem" in p and "has -0.00365238597730994" in p
+
+
+def test_a_section_rewritten_as_reproduced_is_caught():
+    md = PUBLISHED.replace(TABLE5, "- Published –0.0193985235407047, reproduced –0.0193985235407047 (reproduced ✓)", 1)
+    problems = _problems(md)
+    assert any("reproduced -0.0193985235407047" in p and "has 0.0347239490711656" in p for p in problems)
+    assert any("labels it 'not_reproduced'" in p for p in problems)
+
+
+def test_a_count_without_the_word_level_is_checked_against_its_sections_level():
+    [p] = _problems(PUBLISHED.replace("12 of 17 numbers", "17 of 17 numbers", 1))
+    assert "says 17 reproduced level-1 numbers" in p and "has 12 reproduced" in p
+    [p] = _problems(PUBLISHED.replace("12 of 17 numbers", "12 of 18 numbers", 1))
+    assert "18 level-1 numbers" in p
+
+
+def test_n_of_m_must_be_one_of_the_counts_whatever_it_is_called():
+    md = PUBLISHED.replace(
+        "## Unassessed Targets", "## Tally\n\nWe looked at 9 of 17 numbers closely.\n\n## Unassessed Targets"
+    )
+    [p] = _problems(md)
+    assert "9 of 17" in p and "none of the counts" in p
+
+
+def test_an_appended_verdict_that_everything_reproduced_is_caught():
+    md = (
+        PUBLISHED.rstrip()
+        + "\n\n## Verdict\n\nAll results of the paper reproduce exactly; the package is fully reproducible.\n"
+    )
+    problems = _problems(md)
+    assert problems and all("says everything reproduced" in p for p in problems)
+    # true when it is true
+    ok = PUBLISHED.rstrip() + "\n\nNot all results reproduce: three diverge.\n"
+    assert _problems(ok) == []
+
+
+def test_the_summary_section_is_required_and_the_report_must_say_more_than_it():
+    import re
+
+    stripped = re.sub(r"<!-- e2er:summary begin.*?<!-- e2er:summary end -->\n", "", PUBLISHED, flags=re.S)
+    assert any("no summary section" in p for p in _problems(stripped))
+    assert _problems("") == ["reproduction_report.md is empty"]
+    only = PUBLISHED[PUBLISHED.index(BEGIN) : PUBLISHED.index(END) + len(END)] + "\n"
+    assert any("says nothing beyond the counts" in p for p in _problems(only))
+    # the comparer's own contract check runs before e2er writes the section
+    assert markdown_problems(stripped, REPORT, LOG, check_summary=False) == []

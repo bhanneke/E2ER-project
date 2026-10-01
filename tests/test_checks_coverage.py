@@ -413,7 +413,10 @@ def test_the_export_carries_the_run_outputs_and_logs(tmp_path: Path):
 
 
 def test_a_replication_bundle_is_verified(tmp_path: Path, capsys: pytest.CaptureFixture[str]):
-    bundle = _export(_replication_workspace(tmp_path), tmp_path)
+    ws = _replication_workspace(tmp_path)
+    # As in a run: the reproduction check (which writes the report's summary section) precedes the export.
+    assert check_reproduction(ws).passed
+    bundle = _export(ws, tmp_path)
     checks = {c.name: c for c in _run_checks(bundle, online=False)}
     assert checks["integrity"].status == PASS
     rep = checks["reproduction"]

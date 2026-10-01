@@ -56,6 +56,8 @@ class Entry:
     published: float | None
     reproduced: float | None
     label: str
+    result_id: str = ""
+    result_level: str = ""
 
 
 @dataclass
@@ -100,6 +102,8 @@ def facts(report: dict[str, Any], log: dict[str, Any] | None = None) -> Facts:
                     _num(comp.get("published")),
                     _num(comp.get("reproduced")),
                     label,
+                    str(res.get("id") or ""),
+                    str(level or ""),
                 )
             )
     env = report.get("environment")
@@ -295,6 +299,7 @@ class Record:
     tier: int | None
     heading_label: str | None
     line: str
+    block: int = -1  # the section (heading or bold title line) the record belongs to
 
 
 @dataclass
@@ -318,15 +323,34 @@ def _is_rule(line: str) -> bool:
     return bool(re.fullmatch(r"\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?", line.strip()))
 
 
-def _parse(text: str, only_tier: int | None) -> tuple[list[Table], list[Record], list[str]]:
-    """Tables, records (rows and list items) and prose sentences, each with its level where known."""
+@dataclass
+class Block:
+    """A section of the prose: a heading or a line that is bold as a whole ("**Table 5: …**")."""
+
+    title: str
+    tier: int | None
+
+
+_BOLD_TITLE = re.compile(r"^\*\*([^*]+)\*\*\s*$")
+
+
+def _parse(
+    text: str, only_tier: int | None
+) -> tuple[list[Table], list[Record], list[tuple[str, int | None]], list[Block]]:
+    """Tables, records (rows and list items), prose sentences with their level, and the sections."""
     lines = _DASH_MINUS.sub("-", text).splitlines()
     tables: list[Table] = []
     records: list[Record] = []
-    prose: list[str] = []
+    prose: list[tuple[str, int | None]] = []
+    blocks: list[Block] = []
     heads: list[tuple[int, int | None, str | None]] = []  # (depth, tier, label)
     last_text = ""
     i = 0
+
+    def open_block(title: str) -> None:
+        tier, _ = ctx()
+        own = _tiers_in(title)
+        blocks.append(Block(title, next(iter(own)) if len(own) == 1 else (tier or only_tier)))
 
     def ctx() -> tuple[int | None, str | None]:
         tier = next((t for _, t, _ in reversed(heads) if t is not None), None)
@@ -343,8 +367,15 @@ def _parse(text: str, only_tier: int | None) -> tuple[list[Table], list[Record],
                 heads.pop()
             tiers = _tiers_in(h.group(2))
             heads.append((depth, tiers.pop() if len(tiers) == 1 else None, _heading_label(h.group(2))))
-            prose.append(h.group(2))
+            prose.append((h.group(2), ctx()[0] or only_tier))
+            open_block(h.group(2))
             last_text = h.group(2)
+            i += 1
+            continue
+        if _BOLD_TITLE.match(s):
+            open_block(_BOLD_TITLE.match(s).group(1))  # type: ignore[union-attr]
+            prose.append((_BOLD_TITLE.match(s).group(1), ctx()[0] or only_tier))  # type: ignore[union-attr]
+            last_text = s
             i += 1
             continue
         if s.startswith("|"):
@@ -370,6 +401,7 @@ def _parse(text: str, only_tier: int | None) -> tuple[list[Table], list[Record],
                         (next(iter(row_tiers)) if len(row_tiers) == 1 else tier) or only_tier,
                         label,
                         raw.strip(),
+                        len(blocks) - 1,
                     )
                 )
             continue
@@ -389,14 +421,15 @@ def _parse(text: str, only_tier: int | None) -> tuple[list[Table], list[Record],
                     (next(iter(own)) if len(own) == 1 else tier) or only_tier,
                     label,
                     s,
+                    len(blocks) - 1,
                 )
             )
         if s:
-            prose.append(re.sub(r"^(?:[-*+>]|\d+[.)])\s+", "", s))
+            prose.append((re.sub(r"^(?:[-*+>]|\d+[.)])\s+", "", s), ctx()[0] or only_tier))
             last_text = s
         i += 1
-    sentences = [x for p in prose for x in re.split(r"(?<=[.;!?])\s+", p) if x.strip()]
-    return tables, records, sentences
+    sentences = [(x, t) for p, t in prose for x in re.split(r"(?<=[.;!?])\s+", p) if x.strip()]
+    return tables, records, sentences, blocks
 
 
 # ── the checks ────────────────────────────────────────────────────────────────
@@ -519,27 +552,51 @@ def _classify(*texts: str) -> str | None:
     return None
 
 
-def _sentence_problems(sentences: list[str], f: Facts) -> list[str]:
+def _plausible(c: dict[str, int]) -> set[int]:
+    """Every count a sentence can truthfully state about these numbers, whatever it calls them."""
+    rep, minor, notr, cnr, tot = (
+        c["reproduced"],
+        c["reproduced_minor"],
+        c["not_reproduced"],
+        c["could_not_run"],
+        c["total"],
+    )
+    return {rep, minor, notr, cnr, rep + minor, notr + cnr, minor + notr, minor + notr + cnr, tot}
+
+
+def _sentence_problems(sentences: list[tuple[str, int | None]], f: Facts) -> list[str]:
     out: list[str] = []
-    for sent in sentences:
+    for sent, context in sentences:
         tiers = _tiers_in(sent)
         for m in _COUNT.finditer(sent):
             if _EXCLUDE_BEFORE.search(sent[: m.start()]):
                 continue
             own = _tiers_in(m.group("mid"))
             scope = own or tiers
-            if len(scope) != 1:
+            if len(scope) > 1:
                 continue
-            tier = next(iter(scope))
+            # A sentence that names no level is about the level of its section
+            # (or the only level with numbers): "12 of 17 numbers" under
+            # "## Level 1" is a level-1 count.
+            tier = next(iter(scope)) if scope else context
+            if tier is None and not m.group("m"):
+                continue
             c = _counts(f, tier, "numbers")
             after = re.split(r"[,;:()—]", sent[m.end() :], maxsplit=1)[0]
             before = sent[: m.start()]
             claims: list[tuple[int, str]] = []
             if m.group("m"):
+                # "N of M numbers": M is a total, and N one of the counts there are.
                 claims.append((_int(m.group("m")), "total"))
                 cls = _classify(m.group("mid") + after, before)
+                n = _int(m.group("n"))
                 if cls and cls != "total":
-                    claims.append((_int(m.group("n")), cls))
+                    claims.append((n, cls))
+                elif n not in _plausible(c) or n > c["total"]:
+                    out.append(
+                        f"{MD_FILE} says {n} of {_int(m.group('m'))} {_where(tier)}numbers ({_quote(sent)}), "
+                        f"which is none of the counts in {JSON_FILE}"
+                    )
             else:
                 total_cue = before.rstrip().endswith("(") or re.search(
                     r"\b(?:all|total of|compares|compared|comprises)\s*$", before, re.I
@@ -551,9 +608,11 @@ def _sentence_problems(sentences: list[str], f: Facts) -> list[str]:
                 if value not in _allowed(cls, c):
                     out.append(_count_message(value, cls, tier, c, sent))
         for m in _LABEL_COUNT.finditer(sent):
-            if len(tiers) != 1 or _EXCLUDE_BEFORE.search(sent[: m.start()]):
+            if len(tiers) > 1 or _EXCLUDE_BEFORE.search(sent[: m.start()]):
                 continue
-            tier = next(iter(tiers))
+            tier = next(iter(tiers)) if tiers else context
+            if tier is None:
+                continue
             c = _counts(f, tier, "numbers")
             lab = m.group("lab").lower()
             cls = (
@@ -573,9 +632,9 @@ def _sentence_problems(sentences: list[str], f: Facts) -> list[str]:
     return out
 
 
-def _count_message(value: int, cls: str, tier: int, c: dict[str, int], sent: str) -> str:
+def _count_message(value: int, cls: str, tier: int | None, c: dict[str, int], sent: str) -> str:
     if cls == "total":
-        return f"{MD_FILE} says {value} level-{tier} numbers ({_quote(sent)}), {JSON_FILE} has {c['total']}"
+        return f"{MD_FILE} says {value} {_where(tier)}numbers ({_quote(sent)}), {JSON_FILE} has {c['total']}"
     names = {
         "exact": "reproduced",
         "matched": "reproduced (exactly or with a minor difference)",
@@ -590,7 +649,9 @@ def _count_message(value: int, cls: str, tier: int, c: dict[str, int], sent: str
         + (f" and {c['could_not_run']} could_not_run" if c["could_not_run"] else ""),
         "could_not_run": f"{c['could_not_run']} could_not_run",
     }[cls]
-    return f"{MD_FILE} says {value} {names.get(cls, cls)} level-{tier} numbers ({_quote(sent)}), {JSON_FILE} has {want}"
+    return (
+        f"{MD_FILE} says {value} {names.get(cls, cls)} {_where(tier)}numbers ({_quote(sent)}), {JSON_FILE} has {want}"
+    )
 
 
 def _tokens(text: str) -> list[tuple[float, int, str]]:
@@ -618,6 +679,20 @@ def _same(tok: tuple[float, int, str], value: float | None) -> bool:
     return d >= 2 and abs(x - value) <= 0.5 * 10 ** (-d) + 1e-12 * max(1.0, abs(value))
 
 
+_LABEL_WORDS = (
+    r"reproduced with (?:a )?minor differences?|reproduced_minor|not_reproduced|not reproduced|"
+    r"could_not_run|could not (?:be )?run|reproduced(?: exactly)?"
+)
+# A label as a verdict: followed by a mark ("reproduced ✓", "not_reproduced ✗") or,
+# in parentheses, written as the protocol's own label ("(not_reproduced)").
+# "+0.0347 (reproduced)" names the reproduced value, not a label.
+_MARKED_LABEL = re.compile(
+    r"(?:\(\s*(?:[^()]*?,\s*)?(?P<lab>reproduced_minor|not_reproduced|could_not_run)\s*\))"
+    r"|(?:(?<![\w])(?P<lab2>" + _LABEL_WORDS + r")\s*[✓✗⚠])",
+    re.I,
+)
+
+
 def _record_label(rec: Record) -> str | None:
     found: set[str] = set()
     if rec.cells is not None:
@@ -635,6 +710,11 @@ def _record_label(rec: Record) -> str | None:
                 if lab:
                     found.add(lab)
                     break
+        # "(reproduced ✓)", "(relative diff 1.9e-18, reproduced ✓)", "not_reproduced ✗"
+        for m in _MARKED_LABEL.finditer(rec.text):
+            lab = _cell_label(m.group("lab") or m.group("lab2"))
+            if lab:
+                found.add(lab)
     if len(found) == 1:
         return found.pop()
     if not found:
@@ -682,6 +762,131 @@ def _label_problems(records: list[Record], f: Facts) -> list[str]:
     return out
 
 
+_SIGNED = r"([-+]?(?:\d+\.\d+|\.\d+|\d+)(?:[eE][-+]?\d+)?)"
+_PUBLISHED = re.compile(r"\bpublished\b\s*(?:value\s*)?[:=]?\s*\**\s*" + _SIGNED, re.I)
+_REPRODUCED = re.compile(r"\breproduced\b\s*(?:value\s*)?[:=]?\s*\**\s*" + _SIGNED, re.I)
+
+
+def _block_entries(block: Block, recs: list[Record], f: Facts) -> list[Entry]:
+    """The compared numbers a section is about: by result or target id, by "Table N", or by published values."""
+    pool = [e for e in f.entries if block.tier is None or e.tier == block.tier]
+    text = block.title + "\n" + "\n".join(r.text for r in recs)
+    by_id = [
+        e
+        for e in pool
+        if any(i and re.search(r"(?<![\w])" + re.escape(i) + r"(?![\w])", text) for i in (e.result_id, e.target_id))
+    ]
+    if by_id:
+        return by_id
+    m = re.search(r"\b(?:table|exhibit|figure)\s+(\d+)\b", block.title, re.I)
+    if m:
+        hits = sorted(
+            {e.result_id for e in pool if re.match(rf"(?:table|exhibit|figure)_?{m.group(1)}(?:_|$)", e.result_id)}
+        )
+        if len(hits) == 1:
+            return [e for e in pool if e.result_id == hits[0]]
+    published = [
+        e for e in pool for r in recs for t in _PUBLISHED.finditer(r.text) if _same(_tokens(t.group(1))[0], e.published)
+    ]
+    results = {e.result_id for e in published}
+    if len(results) == 1:
+        return [e for e in pool if e.result_id in results]
+    return []
+
+
+def _block_problems(records: list[Record], blocks: list[Block], f: Facts) -> list[str]:
+    """Per section: the published and reproduced numbers it states, and the labels next to them, are the JSON's.
+
+    A section is matched to a result of the JSON by a result or target id, by
+    its "Table N" title (``table_N_…``), or by the published values it states.
+    A list item that states a published value names that compared number; its
+    reproduced value and any label next to it must be the JSON's. A list item
+    with a label and no published value ("- Label: not_reproduced ✗") speaks
+    for the section: for its only compared number, or for its result.
+    """
+    out: list[str] = []
+    for b, block in enumerate(blocks):
+        recs = [r for r in records if r.block == b and r.cells is None]
+        if not recs:
+            continue
+        entries = _block_entries(block, recs, f)
+        if not entries:
+            continue
+        for rec in recs:
+            # A label the item states itself (not one it inherits from its heading); one
+            # the per-record check already compared (by target id or values) is not repeated.
+            label = _record_label(rec)
+            if label == rec.heading_label or _match(rec, f) is not None:
+                label = None
+            pubs = [_tokens(m.group(1))[0] for m in _PUBLISHED.finditer(rec.text)]
+            reps = [_tokens(m.group(1))[0] for m in _REPRODUCED.finditer(rec.text)]
+            if pubs:
+                hits = [e for e in entries if any(_same(t, e.published) for t in pubs)]
+                if len({id(e) for e in hits}) != 1:
+                    if not hits and len(entries) == 1:
+                        e = entries[0]
+                        out.append(
+                            f"{MD_FILE} gives {_quote(block.title, 40)} the published value {pubs[0][2]}, "
+                            f"{JSON_FILE} has {e.published:.15g} ({e.target_id})"
+                        )
+                    continue
+                e = hits[0]
+                for t in reps:
+                    if not _same(t, e.reproduced):
+                        rep = "none" if e.reproduced is None else f"{e.reproduced:.15g}"
+                        out.append(
+                            f"{MD_FILE} says {e.target_id} (published {e.published:.15g}) reproduced {t[2]}, "
+                            f"{JSON_FILE} has {rep}"
+                        )
+                if label and label != e.label:
+                    out.append(f"{MD_FILE} labels {e.target_id} {label!r}, {JSON_FILE} labels it {e.label!r}")
+            elif label:
+                results = {e.result_id for e in entries}
+                if len(entries) == 1 and label != entries[0].label:
+                    e = entries[0]
+                    out.append(
+                        f"{MD_FILE} labels {e.target_id} ({_quote(block.title, 40)}) {label!r}, "
+                        f"{JSON_FILE} labels it {e.label!r}"
+                    )
+                elif len(entries) > 1 and len(results) == 1 and label != entries[0].result_level:
+                    out.append(
+                        f"{MD_FILE} labels the result {entries[0].result_id} ({_quote(block.title, 40)}) {label!r}, "
+                        f"{JSON_FILE} labels it {entries[0].result_level!r}"
+                    )
+    return out
+
+
+_ALL_CLAIM = re.compile(
+    r"\b(?:all|every|each)\b[^.;:]*?\b(?:reproduc\w*|replicat\w*|match\w*|agree\w*|equal\w*)\b"
+    r"|\bfully reproducible\b|\breproduc\w* (?:exactly|fully|completely|in full)\b",
+    re.I,
+)
+_ALL_EXCEPT = re.compile(
+    r"\b(?:not|n't|no|none|never|except|but|apart from|other than|unless|fail\w*|diverg\w*|differ\w*|"
+    r"mixed|most|some|partly|partially)\b",
+    re.I,
+)
+
+
+def _overall_problems(sentences: list[tuple[str, int | None]], f: Facts) -> list[str]:
+    """A sentence claiming that everything reproduced, while the JSON has numbers that did not."""
+    out: list[str] = []
+    for sent, context in sentences:
+        if not _ALL_CLAIM.search(sent) or _ALL_EXCEPT.search(sent):
+            continue
+        tiers = _tiers_in(sent) or ({context} if context else set())
+        c = _counts(f, next(iter(tiers)) if len(tiers) == 1 else None, "numbers")
+        bad = c["not_reproduced"] + c["could_not_run"]
+        exact = re.search(r"\bexact|\bfull precision|\bidentical", sent, re.I)
+        if bad or (exact and c["reproduced_minor"]):
+            out.append(
+                f"{MD_FILE} says everything reproduced ({_quote(sent)}), {JSON_FILE} has "
+                f"{c['not_reproduced']} not_reproduced, {c['could_not_run']} could_not_run and "
+                f"{c['reproduced_minor']} reproduced_minor"
+            )
+    return out
+
+
 _VERSION = r"v?(\d+(?:\.\d+)+(?:[-.]\w+)*)"
 
 
@@ -720,17 +925,45 @@ def _version_problems(text: str, f: Facts) -> list[str]:
     return out
 
 
+def _says_nothing(rest: str) -> bool:
+    """No account of the results beyond the summary e2er writes: only headings, the disclaimer, blank lines."""
+    for line in rest.splitlines():
+        s = line.strip()
+        if not s or s.startswith("#") or s.startswith(">") or re.fullmatch(r"[-*_]{3,}", s):
+            continue
+        if re.search(r"[A-Za-z]{3}", s):
+            return False
+    return True
+
+
 def markdown_problems(
-    text: str, report: dict[str, Any], log: dict[str, Any] | None = None, *, check_summary: bool = True
+    text: str,
+    report: dict[str, Any],
+    log: dict[str, Any] | None = None,
+    *,
+    check_summary: bool = True,
+    require_summary: bool = False,
 ) -> list[str]:
     """Every statement of reproduction_report.md that contradicts reproduction_report.json.
 
     ``check_summary``: the e2er summary section, when present, must be exactly
     what :func:`render_summary` writes from these files (off for the
     comparer's contract check, which runs before e2er writes the section).
+    ``require_summary``: the section must be there, and the report must say
+    more than it (the reproduction check and ``e2er verify``, which run after
+    e2er wrote it).
     """
     out: list[str] = []
+    if not text.strip():
+        return [f"{MD_FILE} is empty"]
     block, rest = split_summary(text)
+    if require_summary and block is None:
+        out.append(
+            f"{MD_FILE} has no summary section written by e2er (it was removed, or the report was replaced after "
+            "the reproduction check)"
+        )
+    if require_summary and _says_nothing(rest):
+        out.append(f"{MD_FILE} says nothing beyond the counts e2er writes: the account of the results is missing")
     if check_summary and block is not None and block != render_summary(report, log):
         out.append(
             f"the summary section of {MD_FILE} is not what e2er writes from {JSON_FILE}: it was edited, or the "
@@ -739,10 +972,12 @@ def markdown_problems(
     f = facts(report, log)
     with_numbers = [t for t in TARGET_LEVELS if f.numbers[t]]
     only = with_numbers[0] if len(with_numbers) == 1 else None
-    tables, records, sentences = _parse(rest, only)
+    tables, records, sentences, blocks = _parse(rest, only)
     out += _table_problems(tables, f)
     out += _sentence_problems(sentences, f)
     out += _label_problems(records, f)
+    out += _block_problems(records, blocks, f)
+    out += _overall_problems(sentences, f)
     out += _version_problems(rest, f)
     # one statement can surface through two routes (a list item is also a sentence)
     return list(dict.fromkeys(out))
