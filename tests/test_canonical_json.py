@@ -76,6 +76,8 @@ TRICKY: dict[str, object] = {
     "u2028": {"t": "x y z"},
     "key_sort_bmp_vs_astral": {"\uff01": 1, "\U0001f600": 2, "\ue000": 3},
     "key_sort_case": {"B": 1, "a": 2, "_": 3, "é": 4, "": 5},
+    # raw keys are sorted, not their escaped form ('a"' is written a\\" but sorts as a")
+    "key_sort_escaped": {'a"': 1, "a": 2, "a\u0001": 3, "a!": 4, "a\\": 5, "a\n": 6},
     "float_1.0": {"temperature": 1.0},
     "float_1e-05": {"x": 1e-05},
     "float_1e-07": {"x": 1e-7},

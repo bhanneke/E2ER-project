@@ -135,7 +135,7 @@ def _canon(obj: Any, at: str) -> str:
             if not isinstance(k, str):
                 raise CanonicalError(f"{at} has the key {k!r}, which is not a string")
         # RFC 8785: keys in the order of their UTF-16 code units (JavaScript's Array#sort).
-        keys = sorted(obj, key=lambda k: _string(k, at).encode("utf-16-be"))
+        keys = sorted(obj, key=lambda k: k.encode("utf-16-be", "surrogatepass"))
         return "{" + ",".join(_string(k, at) + ":" + _canon(obj[k], f"{at}.{k}") for k in keys) + "}"
     raise CanonicalError(f"{at} is a {type(obj).__name__}, which has no JSON form")
 
