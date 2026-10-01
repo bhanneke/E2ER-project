@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 import sqlite3
 import subprocess
@@ -50,8 +51,106 @@ BACKEND_CONNECTOR = {
 }
 
 
+class CanonicalError(ValueError):
+    """A value has no canonical form: NaN, Infinity, an integer beyond ±(2^53 − 1), a non-JSON type."""
+
+
+#: The largest integer every JSON reader (JavaScript included) reads back exactly.
+MAX_SAFE_INTEGER = 2**53 - 1
+
+
+def _es_number(x: float) -> str:
+    """ECMAScript's Number::toString for a finite float (what ``JSON.stringify`` writes).
+
+    Python's ``repr`` gives the same shortest round-tripping digits as JavaScript;
+    only the layout differs (``1.0`` vs ``1``, ``1e-05`` vs ``0.00001``,
+    ``1e+16`` vs ``10000000000000000``), so the digits are laid out by the rules
+    of ECMA-262 §6.1.6.1.20.
+    """
+    if x == 0:
+        return "0"  # -0 included
+    sign = "-" if x < 0 else ""
+    r = repr(abs(x))
+    mant, _, exp = r.partition("e")
+    whole, _, frac = mant.partition(".")
+    digits = (whole + frac).lstrip("0")
+    # n: position of the decimal point relative to the first significant digit
+    n = len(whole.lstrip("0")) if whole.strip("0") else -(len(frac) - len(frac.lstrip("0")))
+    n += int(exp or 0)
+    digits = digits.rstrip("0") or "0"
+    k = len(digits)
+    if k <= n <= 21:
+        out = digits + "0" * (n - k)
+    elif 0 < n <= 21:
+        out = digits[:n] + "." + digits[n:]
+    elif -6 < n <= 0:
+        out = "0." + "0" * (-n) + digits
+    else:
+        e = n - 1
+        es = ("+" if e >= 0 else "-") + str(abs(e))
+        out = digits[0] + ("." + digits[1:] if k > 1 else "") + "e" + es
+    return sign + out
+
+
+def _string(s: str, at: str) -> str:
+    try:
+        s.encode("utf-8")
+    except UnicodeEncodeError as e:
+        raise CanonicalError(f"{at} contains a lone surrogate, which has no UTF-8 form") from e
+    return json.dumps(s, ensure_ascii=False)
+
+
+def _canon(obj: Any, at: str) -> str:
+    if obj is None:
+        return "null"
+    if obj is True:
+        return "true"
+    if obj is False:
+        return "false"
+    if isinstance(obj, int):
+        if abs(obj) > MAX_SAFE_INTEGER:
+            raise CanonicalError(
+                f"{at} is {obj}, beyond ±(2^53 − 1). Such a number is not read back exactly everywhere "
+                "(RFC 8785), so its hash would differ; write it as a string."
+            )
+        return str(int(obj))
+    if isinstance(obj, float):
+        if math.isnan(obj) or math.isinf(obj):
+            raise CanonicalError(
+                f"{at} is {obj}. NaN and Infinity are not JSON, so the document has no canonical form; "
+                "write the value as a string or leave it out."
+            )
+        if obj.is_integer() and abs(obj) > MAX_SAFE_INTEGER:
+            raise CanonicalError(
+                f"{at} is {obj!r}, beyond ±(2^53 − 1). Such a number is not read back exactly everywhere "
+                "(RFC 8785), so its hash would differ; write it as a string."
+            )
+        return _es_number(obj)
+    if isinstance(obj, str):
+        return _string(obj, at)
+    if isinstance(obj, list | tuple):
+        return "[" + ",".join(_canon(v, f"{at}[{i}]") for i, v in enumerate(obj)) + "]"
+    if isinstance(obj, dict):
+        for k in obj:
+            if not isinstance(k, str):
+                raise CanonicalError(f"{at} has the key {k!r}, which is not a string")
+        # RFC 8785: keys in the order of their UTF-16 code units (JavaScript's Array#sort).
+        keys = sorted(obj, key=lambda k: _string(k, at).encode("utf-16-be"))
+        return "{" + ",".join(_string(k, at) + ":" + _canon(obj[k], f"{at}.{k}") for k in keys) + "}"
+    raise CanonicalError(f"{at} is a {type(obj).__name__}, which has no JSON form")
+
+
 def canonical(obj: Any) -> str:
-    return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    """The canonical JSON of ``obj``, exactly as e2er.org writes it (RFC 8785, JCS).
+
+    Object keys sorted by their UTF-16 code units at every level, no
+    whitespace, numbers as ECMAScript writes them, strings as ``JSON.stringify``
+    writes them. NaN, Infinity and integers beyond ±(2^53 − 1) have no canonical
+    form and raise :class:`CanonicalError`. The site's function is
+    ``canonical`` in e2er-site ``src/lib/integrity-core.mjs``;
+    tests/test_canonical_json.py runs both on the same documents.
+    """
+    return _canon(obj, "$")
 
 
 def dossier_id(doc: dict[str, Any]) -> str:
