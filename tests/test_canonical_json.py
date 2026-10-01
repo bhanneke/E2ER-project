@@ -1,3 +1,4 @@
+# ruff: noqa: E501  (the site's JavaScript is copied verbatim)
 """The dossier's canonical JSON is byte for byte what e2er.org computes.
 
 A dossier's address is the SHA-256 of its canonical JSON, and the site checks
@@ -132,7 +133,9 @@ def test_numbers_and_keys_are_written_as_javascript_writes_them(value, text):
     assert canonical(value) == text
 
 
-@pytest.mark.parametrize("value", [float("nan"), float("inf"), 2**53 + 1, 1e16, 1e21, -(2**60), {1: "x"}, {"x": {1, 2}}])
+@pytest.mark.parametrize(
+    "value", [float("nan"), float("inf"), 2**53 + 1, 1e16, 1e21, -(2**60), {1: "x"}, {"x": {1, 2}}]
+)
 def test_values_without_a_canonical_form_are_refused_with_a_clear_error(value):
     with pytest.raises(CanonicalError) as e:
         canonical({"run": {"value": value}})
