@@ -324,10 +324,23 @@ def _bundle_file(name: str, files: dict[str, Any]) -> str | None:
     return None
 
 
+def _utf16_len(s: str) -> int:
+    return len(s.encode("utf-16-le", "surrogatepass")) // 2
+
+
 def _clip(value: Any, limit: int = 20000) -> Any:
-    """Strings within the site's limit; lists and objects clipped inside."""
+    """Strings within the site's limit (counted as JavaScript counts: UTF-16 code units); lists and objects inside."""
     if isinstance(value, str):
-        return value if len(value) <= limit else value[: limit - 1] + "…"
+        if _utf16_len(value) <= limit:
+            return value
+        out, n = [], 0
+        for ch in value:
+            w = 2 if ord(ch) > 0xFFFF else 1
+            if n + w > limit - 1:
+                break
+            out.append(ch)
+            n += w
+        return "".join(out) + "…"
     if isinstance(value, list):
         return [_clip(v, limit) for v in value]
     if isinstance(value, dict):

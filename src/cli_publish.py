@@ -831,16 +831,29 @@ def _ask(question: str) -> str:
     return "public" if answer in ("public", "p", "pub") else "private"
 
 
+def _listed(bundle: Path, folder: str) -> list[str]:
+    """The files under ``folder`` that provenance.json fingerprints: what a deposit may contain.
+
+    Never a file the folder merely holds (an operating system's .DS_Store, a
+    file added later): only the ones the bundle vouches for.
+    """
+    try:
+        files = json.loads((bundle / "provenance.json").read_text(encoding="utf-8")).get("files") or {}
+    except (OSError, ValueError):
+        return []
+    return sorted(rel for rel in files if rel.startswith(f"{folder}/") and (bundle / rel).is_file())
+
+
 def _code_zip(bundle: Path, folders: tuple[str, ...] = ("code", "replication")) -> bytes:
     """The public code as one zip with fixed timestamps, so the same code gives the same file."""
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         for folder in folders:
-            root = bundle / folder
-            if not root.is_dir():
-                continue
-            for f in sorted(p for p in root.rglob("*") if p.is_file() and "__pycache__" not in p.parts):
-                info = zipfile.ZipInfo(f.relative_to(bundle).as_posix(), date_time=(1980, 1, 1, 0, 0, 0))
+            for rel in _listed(bundle, folder):
+                if "__pycache__" in rel.split("/"):
+                    continue
+                f = bundle / rel
+                info = zipfile.ZipInfo(rel, date_time=(1980, 1, 1, 0, 0, 0))
                 info.compress_type = zipfile.ZIP_DEFLATED
                 zf.writestr(info, f.read_bytes())
     return buf.getvalue()
@@ -851,9 +864,8 @@ def _deposit_plan(bundle: Path, availability: dict[str, Any], project: str) -> d
     plan: dict[str, Any] = {}
     if availability["data"]["access"] == "public" and (bundle / "data").is_dir():
         files = [
-            (f.relative_to(bundle / "data").as_posix().replace("/", "_"), f.read_bytes())
-            for f in sorted((bundle / "data").rglob("*"))
-            if f.is_file()
+            (rel.removeprefix("data/").replace("/", "_"), (bundle / rel).read_bytes())
+            for rel in _listed(bundle, "data")
         ]
         if files:
             plan["data"] = {"files": files, "upload_type": "dataset"}

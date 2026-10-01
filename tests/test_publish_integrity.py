@@ -364,3 +364,24 @@ def test_without_a_name_the_paper_still_carries_the_dossier_link_and_keeps_its_a
     assert "where E2ER's repository holds them" in text
     assert publish(str(bundle), **ARGS, demonstration=True, out=str(tmp_path / "e")) == 0
     assert tex.read_text() == text  # stamping again changes nothing
+
+
+def test_deposits_hold_only_the_files_the_bundle_fingerprints(bundle: Path, tmp_path: Path, fake_zenodo):
+    from src.cli_publish import _code_zip, _deposit_plan
+
+    (bundle / "data" / ".DS_Store").write_bytes(b"\0\0\0\1Bud1")
+    (bundle / "code" / "Thumbs.db").write_bytes(b"x")
+    plan = _deposit_plan(bundle, {"data": {"access": "public"}, "code": {"access": "public"}}, "demo")
+    assert ".DS_Store" not in [n for n, _ in plan["data"]["files"]]
+    import io
+    import zipfile
+
+    names = zipfile.ZipFile(io.BytesIO(_code_zip(bundle))).namelist()
+    assert names and "code/Thumbs.db" not in names
+
+
+def test_long_text_is_clipped_to_the_sites_limit_in_utf16_units():
+    from src.core.dossier import _clip
+
+    clipped = _clip("😀" * 15000)
+    assert len(clipped.encode("utf-16-le")) // 2 <= 20000
