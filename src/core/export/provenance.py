@@ -216,6 +216,27 @@ def write_provenance(bundle: Path, manifest: dict[str, Any], *, exported_at: str
     return out
 
 
+def files_at_export(prov: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """provenance.json's ``files`` as they were at export: every amendment rolled back.
+
+    A file publish changed gets its exported fingerprint back (the first
+    amendment's ``sha256_before``); a file publish added (``sha256_before``
+    None) is left out. The size of a changed file is not kept, so it is None.
+    """
+    files = {k: dict(v) for k, v in (prov.get("files") or {}).items()}
+    first: dict[str, Any] = {}
+    for a in prov.get("amendments") or []:
+        path = a.get("path") if isinstance(a, dict) else None
+        if isinstance(path, str) and path not in first:
+            first[path] = a.get("sha256_before")
+    for path, before in first.items():
+        if before is None:
+            files.pop(path, None)
+        elif path in files:
+            files[path] = {"sha256": before, "bytes": None}
+    return files
+
+
 def amend(bundle: Path, rel: str, reason: str, *, at: str) -> dict[str, Any] | None:
     """Record that ``rel`` changed after export: its new fingerprint, and an amendment.
 

@@ -55,6 +55,7 @@ from .core.availability import resolve
 from .core.bibliography import escape_bib, point_bibliography, unresolved_citations
 from .core.demonstration import PURPOSES, disclaimer, kind_for, mark_report, resolve_purpose
 from .core.dossier import build_dossier, dossier_id, dossier_url, read_run, stamp_paper
+from .core.export.provenance import files_at_export
 from .core.research_object import MANIFEST_NAME, PublishError, build_manifest, write_manifest
 from .core.secret_scan import find_local_paths, find_secrets, sanitize
 
@@ -318,7 +319,7 @@ def _describe(
             print(f"error: {why}")
             return 1, None
         assert paper_id is not None
-        run_record = read_run(run_db, paper_id, prov.get("files") or {})
+        run_record = read_run(run_db, paper_id, files_at_export(prov))
         if not run_record.recorded:
             print(f"error: the database {run_db} holds no recorded steps for paper {paper_id}")
             return 1, None

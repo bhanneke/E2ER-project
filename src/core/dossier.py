@@ -691,9 +691,12 @@ def recorded_workflow(db: Path, paper_id: str, bundle: Path | None = None) -> li
 
 
 def _bundle_files(bundle: Path | None) -> dict[str, Any]:
+    """The bundle's files as exported (publish's later changes rolled back): what "at export" means."""
     if bundle is not None and (bundle / "provenance.json").is_file():
-        files = json.loads((bundle / "provenance.json").read_text(encoding="utf-8")).get("files", {})
-        return files if isinstance(files, dict) else {}
+        from .export.provenance import files_at_export
+
+        prov = json.loads((bundle / "provenance.json").read_text(encoding="utf-8"))
+        return files_at_export(prov) if isinstance(prov, dict) else {}
     return {}
 
 

@@ -60,10 +60,16 @@ def make_run_db(
             "INSERT INTO pipeline_events VALUES (?,?,?,?,?,?,?)",
             (f"{paper_id}-{i}", paper_id, etype, stage, sp, json.dumps(payload), f"2026-09-11 10:{i:02d}:00"),
         )
-    for i, sp in ((3, "idea_developer"), (5, "paper_drafter")):
+    ws = f"/Users/someone/e2er-studies/s/workspaces/{paper_id}/"
+    for i, sp, out in ((3, "idea_developer", "paper_plan.md"), (5, "paper_drafter", "paper_draft.tex")):
         con.execute(
             "INSERT INTO llm_usage VALUES (?,?,?,'claude_code','claude-sonnet-4-5',10,20,0,0,0.0,?)",
             (f"{paper_id}-u{i}", paper_id, sp, f"2026-09-11 10:{i:02d}:00"),
+        )
+        # the file each step wrote, as the runner records it (an absolute workspace path)
+        con.execute(
+            "INSERT INTO contributions VALUES (?,?,?,NULL,?,1,NULL,0,0.0,1.0,?)",
+            (f"{paper_id}-c{i}", paper_id, sp, ws + out, f"2026-09-11 10:{i:02d}:00"),
         )
     con.commit()
     con.close()
