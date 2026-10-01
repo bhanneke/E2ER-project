@@ -365,6 +365,20 @@ def main() -> None:
         action="store_true",
         help="Emit a machine-readable JSON report instead of the human-readable summary.",
     )
+    verify_p.add_argument(
+        "--against",
+        default=None,
+        metavar="URL",
+        help="Compare the folder with what e2er.org published: a study address (https://e2er.org/<owner>/<project>) "
+        "or a dossier address (https://e2er.org/d/<id>). Read with GET only. Without it, the folder is verified "
+        "against itself only.",
+    )
+    verify_p.add_argument(
+        "--against-file",
+        default=None,
+        metavar="FILE",
+        help="Like --against, from a saved copy of the study record, the dossier or e2er.json.",
+    )
 
     # `question` says what it does; `rq` is the abbreviation researchers type.
     rq_p = subparsers.add_parser(
@@ -654,7 +668,15 @@ def main() -> None:
     if args.command == "verify":
         from .cli_verify import verify as _verify
 
-        sys.exit(_verify(bundle=args.bundle, online=args.online, json_output=args.json))
+        sys.exit(
+            _verify(
+                bundle=args.bundle,
+                online=args.online,
+                json_output=args.json,
+                against=args.against,
+                against_file=args.against_file,
+            )
+        )
 
     if args.command == "compare":
         from .core.compare import compare as _compare

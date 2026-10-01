@@ -194,6 +194,9 @@ _DATE_PATTERNS: tuple[re.Pattern[str], ...] = (
 )
 
 
+_SCRIPT_RE = re.compile(r"[\^_](?:\{[^{}]*\}|[A-Za-z0-9])")
+
+
 def _normalize_cell(cell: str) -> str:
     """Pre-process a tabular cell before running ``_NUMBER_RE``.
 
@@ -214,6 +217,9 @@ def _normalize_cell(cell: str) -> str:
     cell = cell.replace("{,}", ",")
     for pattern in _DATE_PATTERNS:
         cell = pattern.sub("", cell)
+    # Superscripts and subscripts are notation, not values: the 2 of $R^2$, the
+    # 1 of $\beta_1$ (read as table values, they "mismatched" a nearby estimate).
+    cell = _SCRIPT_RE.sub("", cell)
     return cell
 
 
@@ -262,10 +268,31 @@ def _values_match(draft_val: float, source_val: float, tolerance: float = 0.005)
     return abs(draft_val - source_val) <= tolerance * scale
 
 
-def _extract_table_numbers(tex_content: str) -> list[tuple[str, str]]:
+def _decimals(num_str: str) -> int:
+    """Digits after the decimal point as the draft shows the number (``1,234.50`` → 2)."""
+    s = num_str.replace(",", "")
+    return len(s.split(".", 1)[1]) if "." in s else 0
+
+
+def _matches_rounded(num_str: str, source_val: float) -> bool:
+    """The draft's number is the source value rounded to the decimals it shows.
+
+    ``-1.059`` matches -1.05912 (3 decimals: ±0.0005); ``0.017`` does not match
+    0.0123, although the relative tolerance (±0.005 for any value below 1)
+    let it through. Ties and binary representation get a hair of slack.
+    """
+    draft_val = _parse_number(num_str)
+    if draft_val is None:
+        return False
+    half = 0.5 * 10 ** (-_decimals(num_str))
+    return abs(draft_val - source_val) <= half * (1 + 1e-9) + 1e-12 * max(1.0, abs(source_val))
+
+
+def _extract_table_numbers(tex_content: str, *, zeros: bool = False) -> list[tuple[str, str]]:
     """Extract all numbers from LaTeX tabular environments.
 
-    Returns list of (number_string, table_context) tuples.
+    Returns list of (number_string, table_context) tuples. ``zeros`` keeps
+    cells such as ``0.000`` (a value with decimals), which the run's gate skips.
     """
     results: list[tuple[str, str]] = []
 
@@ -314,7 +341,7 @@ def _extract_table_numbers(tex_content: str) -> list[tuple[str, str]]:
                 for num_match in _NUMBER_RE.finditer(cell):
                     num_str = num_match.group(1)
                     parsed = _parse_number(num_str)
-                    if parsed is not None and parsed != 0:
+                    if parsed is not None and (parsed != 0 or (zeros and "." in num_str)):
                         context = f"{table_label}, row {row_idx + 1}, col {cell_idx + 1}"
                         results.append((num_str, context))
 
@@ -729,6 +756,8 @@ def verify(
     draft_path: Path,
     workspace: Path,
     tolerance: float = 0.005,
+    *,
+    rounding: bool = False,
 ) -> VerificationReport:
     """Run programmatic verification of draft table values against source JSON.
 
@@ -736,6 +765,10 @@ def verify(
         draft_path: Path to paper_draft.tex
         workspace: Paper workspace dir (contains source JSON files)
         tolerance: Relative numeric tolerance for matching (default 0.5%)
+        rounding: ``e2er verify``'s rule: a table cell matches only a source
+            value that, rounded to the decimals the cell shows, is the cell
+            (zeros with decimals included). Every other cell is a critical
+            mismatch, whatever its distance; the caller fails on any.
 
     Returns:
         VerificationReport. `passed=True` iff no critical or major
@@ -785,7 +818,7 @@ def verify(
         logger.warning("verify_numbers: %s", report.skipped_reason)
         return report
 
-    table_numbers = _extract_table_numbers(tex_content)
+    table_numbers = _extract_table_numbers(tex_content, zeros=rounding)
     report.total_values_in_tables = len(table_numbers)
 
     if not table_numbers:
@@ -799,7 +832,8 @@ def verify(
 
         best_match: str | None = None
         for key, source_val in all_source_values.items():
-            if _values_match(draft_val, source_val, tolerance):
+            ok = _matches_rounded(num_str, source_val) if rounding else _values_match(draft_val, source_val, tolerance)
+            if ok:
                 best_match = key
                 break
 
@@ -817,7 +851,18 @@ def verify(
                 closest_dist = dist
                 closest_key = key
 
-        if closest_dist < abs(draft_val) * 0.5 and closest_key:
+        if rounding and closest_key:
+            report.mismatched += 1
+            report.mismatches.append(
+                Mismatch(
+                    draft_value=num_str,
+                    source_key=closest_key,
+                    source_value=str(all_source_values[closest_key]),
+                    table_context=context,
+                    severity="critical",
+                )
+            )
+        elif closest_dist < abs(draft_val) * 0.5 and closest_key:
             # Close but not matching — likely transcription error.
             source_val = all_source_values[closest_key]
             rel_err = abs(draft_val - source_val) / max(1, abs(source_val))

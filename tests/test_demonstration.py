@@ -141,22 +141,28 @@ def test_a_bad_env_value_stops_publish(bundle: Path, tmp_path: Path, monkeypatch
     assert not (bundle / "e2er.json").exists()
 
 
-def test_a_replication_study_gets_kind_and_the_replication_wording(bundle: Path, tmp_path: Path):
-    report = bundle / "misc" / "reproduction_report.md"
-    report.write_text("# Reproduction report\n\nLevel 1: reproduced.\n")
-    prov = json.loads((bundle / "provenance.json").read_text())
-    import hashlib
+def _replication_bundle(tmp_path: Path) -> Path:
+    """The replication demonstration as a run exports it: checked (summary written), then exported."""
+    from src.core.export.structured import export_paper
+    from src.core.pipeline.reproduction import check_reproduction
 
-    data = report.read_bytes()
-    prov["files"]["misc/reproduction_report.md"] = {"sha256": hashlib.sha256(data).hexdigest(), "bytes": len(data)}
-    (bundle / "provenance.json").write_text(json.dumps(prov, indent=2))
-    assert _publish(bundle, tmp_path, demonstration=True, template="replication") == 0
+    ws = tmp_path / "ws"
+    shutil.copytree(ROOT / "tests" / "fixtures" / "replication_demo", ws)
+    (ws / "paper_draft.tex").write_text("\\documentclass{article}\\author{X}\\begin{document}R\\end{document}\n")
+    assert check_reproduction(ws).passed
+    return export_paper(ws, tmp_path / "out", date_str="20260930", template="replication")
+
+
+def test_a_replication_study_gets_kind_and_the_replication_wording(tmp_path: Path):
+    bundle = _replication_bundle(tmp_path)
+    report = bundle / "misc" / "reproduction_report.md"
+    assert _publish(bundle, tmp_path, demonstration=True) == 0
     m = json.loads((bundle / "e2er.json").read_text())
     assert m["purpose"] == "demonstration" and m["kind"] == "replication"
     assert m["dossier"]["doc"]["kind"] == "replication"
-    assert report.read_text().startswith(f"> {disclaimer('replication')}\n\n# Reproduction report")
+    assert disclaimer("replication") in report.read_text().split("\n# ", 1)[0]  # above the title
     assert disclaimer("replication") in (bundle / "paper" / "paper.tex").read_text()
-    assert all(c.status == "PASS" for c in _run_checks(bundle, online=False))
+    assert not any(c.status == "FAIL" for c in _run_checks(bundle, online=False))
 
 
 def test_dry_run_request_carries_the_purpose(bundle: Path, capsys):

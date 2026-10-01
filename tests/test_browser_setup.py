@@ -629,7 +629,7 @@ def test_the_finish_page_verifies_the_export(live_db, session, monkeypatch):
     assert c.post(f"/api/papers/{pid}/verify").status_code == 403, "needs the session"
     c.cookies.set("e2er_session_8290", TOKEN)
     d = c.post(f"/api/papers/{pid}/verify").json()
-    assert [x["name"] for x in d["checks"]][:5] == ["integrity", "numbers", "tables", "spec", "citations"]
+    assert [x["name"] for x in d["checks"]][:6] == ["integrity", "anchor", "numbers", "tables", "spec", "citations"]
     assert d["verified"] is True, d
     assert d["bundle"] == str(bundle)
 
