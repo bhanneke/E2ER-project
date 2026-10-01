@@ -1,22 +1,26 @@
-"""Study dossiers: the settings a study was produced with, addressed by a hash.
+"""Study dossiers: what a study was produced with and how, addressed by a hash.
 
-A dossier lists the E2ER version, the run settings (template, mode, governance,
-backend, models), every template, specialist, skill and connector the study
-used with a content hash of the file that defines it, and the SHA-256 of the
-input data files, and the workflow: every step of the run in order, the
-specialist and model that did it, the checks at each gate, steps a check
-stopped, and the intermediate file each step wrote with its SHA-256 when the
-file is in the exported folder. It deliberately leaves out the paper: the paper carries the
+A dossier lists the E2ER version and commit of every part of the run
+(``e2er.segments``: one per process that ran steps), the run settings
+(template, mode, governance, backend, models), every template, specialist,
+skill and connector the run used, pinned at each commit it ran on by the git
+blob of the file that defines it, the SHA-256 of the input data files, and
+the workflow: every step of the run in order (each specialist with its model,
+each check, each of the researcher's actions), the file each step wrote with
+its SHA-256 where the run recorded it, the run's other events and its
+outcome. It deliberately leaves out the paper: the paper carries the
 dossier's address in a footnote, so the dossier cannot depend on the paper.
 
-The dossier's id is ``sha256:`` plus the SHA-256 of its canonical JSON (object
-keys sorted, no whitespace, UTF-8). The E2ER site computes and checks ids the
-same way, so ``https://e2er.org/d/<first 16 hex characters>`` resolves to
-exactly this document.
+The dossier's id is ``sha256:`` plus the SHA-256 of its canonical JSON (RFC
+8785: object keys sorted by UTF-16 code units, no whitespace, numbers as
+ECMAScript writes them, UTF-8). The E2ER site computes and checks ids the same
+way, so ``https://e2er.org/d/<first 16 hex characters>`` resolves to exactly
+this document.
 
 Files are pinned by their git blob SHA (sha1 of ``blob <size>\\0`` + content),
 which equals ``git rev-parse <commit>:<path>`` for the same file, so anyone can
-compare a pin with the repository.
+compare a pin with the repository. A blob this checkout cannot resolve is
+recorded as unresolved, never replaced by the file as it is today.
 """
 
 from __future__ import annotations
@@ -377,7 +381,7 @@ def read_run(db: Path, paper_id: str, files: dict[str, Any] | None = None) -> Ru
       failures, cancellations, set-asides, the pre-registration's freezing,
       reruns of whole steps.
     * **Outputs.** A step records the SHA-256 of each file it wrote
-      (``specialist_end`` → ``outputs``, recorded since e2er 0.13). For steps
+      (``specialist_end`` → ``outputs``, recorded by runs started after e2er 0.12.1). For steps
       of older runs only the exported file's hash is known: it is given as
       ``sha256_at_export`` on the last accepted step that wrote the file, with
       ``recorded: false``; earlier steps that wrote it carry no hash.
@@ -441,7 +445,7 @@ def read_run(db: Path, paper_id: str, files: dict[str, Any] | None = None) -> Ru
     started: dict[str, tuple[str | None, dict[str, Any]]] = {}
     pending_rerun: dict[str, dict[str, Any]] = {}
     template_skills: dict[int, dict[str, list[str]]] = {}
-    step_skills: dict[int, dict[str, list[str]]] = {}  # recorded at dispatch (e2er ≥ 0.13)
+    step_skills: dict[int, dict[str, list[str]]] = {}  # recorded at dispatch (runs after e2er 0.12.1)
 
     for etype, stage, sp, payload, created in events:
         data = json.loads(payload) if payload else {}
