@@ -17,6 +17,7 @@ Design points (see docs/STRUCTURED_EXPORT_SPEC.md):
 
 from __future__ import annotations
 
+import glob
 import json
 import re
 import shutil
@@ -114,17 +115,102 @@ def resolve_versioned_slug(dest_root: Path, title: str, date_str: str) -> str:
     return f"{base}-{n:02d}"
 
 
-def _copy_matches(workspace: Path, dest_dir: Path, pattern: str, rename: str | None, already: set[str]) -> None:
+def create_versioned_folder(dest_root: Path, title: str, date_str: str) -> Path:
+    """Create ``<slug>-<YYYYMMDD>-<NN>`` with the smallest free ``NN``, atomically.
+
+    ``mkdir`` without ``exist_ok`` either creates the folder or fails because
+    it exists; two exports started at the same moment therefore never share
+    one folder (the second takes the next number).
+    """
+    base = f"{slugify(title)}-{date_str}"
+    n = 1
+    while True:
+        out = dest_root / f"{base}-{n:02d}"
+        try:
+            out.mkdir()
+            return out
+        except FileExistsError:
+            n += 1
+
+
+def _leaves_workspace(path: Path, workspace: Path) -> bool:
+    """A symbolic link (at ``path`` or above it) that resolves outside the workspace."""
+    try:
+        return not path.resolve().is_relative_to(workspace.resolve())
+    except OSError:
+        return True
+
+
+def _skip(src: Path, workspace: Path) -> str | None:
+    """Why ``src`` is not exported, or None. Never exported: OS clutter, dotfiles
+    (``.env`` holds keys), key files, and links that lead out of the workspace."""
+    from .bundle_files import never_exported
+
+    if never_exported(src.name):
+        return "a dotfile, key file or operating-system file"
+    if _leaves_workspace(src, workspace):
+        return "a link to something outside the workspace"
+    return None
+
+
+def _copytree(src: Path, dst: Path, workspace: Path) -> None:
+    """``shutil.copytree`` minus what export never copies (see :func:`_skip`)."""
+
+    def ignore(folder: str, names: list[str]) -> set[str]:
+        out = set()
+        for name in names:
+            why = _skip(Path(folder) / name, workspace)
+            if why:
+                logger.warning("export: left out %s: %s", Path(folder, name), why)
+                out.add(name)
+        return out
+
+    why = _skip(src, workspace)
+    if why:
+        logger.warning("export: left out %s: %s", src.name, why)
+        return
+    shutil.copytree(src, dst, dirs_exist_ok=True, ignore=ignore)
+
+
+def _copy_matches(
+    workspace: Path,
+    dest_dir: Path,
+    pattern: str,
+    rename: str | None,
+    already: set[str],
+    notes: list[str] | None = None,
+) -> None:
     """Copy top-level files matching ``pattern`` into ``dest_dir``, skipping any
-    basename already claimed by an earlier (more specific) mapping entry."""
+    basename already claimed by an earlier (more specific) mapping entry.
+
+    A file whose target is already taken (``paper_draft.pdf`` and ``paper.pdf``
+    both map to ``paper/paper.pdf``) never overwrites it: the earlier entry
+    wins, the later file stays unclaimed and lands in ``misc/``, and ``notes``
+    says so (the README lists it).
+    """
     for src in sorted(workspace.glob(pattern)):
         if not src.is_file() or src.name in already:
             continue
+        why = _skip(src, workspace)
+        if why:
+            logger.warning("export: left out %s: %s", src.name, why)
+            already.add(src.name)
+            continue
         # Rename only when the pattern is an exact (glob-free) single file.
         out_name = rename if (rename and not any(c in pattern for c in "*?[")) else src.name
+        target = dest_dir / out_name
+        if target.exists():
+            msg = (
+                f"`{dest_dir.name}/{out_name}` is the workspace file listed first for it; "
+                f"the workspace's `{src.name}` is in `misc/{src.name}`"
+            )
+            logger.warning("export: %s", msg)
+            if notes is not None:
+                notes.append(msg)
+            continue
         dest_dir.mkdir(parents=True, exist_ok=True)
         try:
-            shutil.copy2(src, dest_dir / out_name)
+            shutil.copy2(src, target)
             already.add(src.name)
         except OSError as e:  # noqa: PERF203 — per-file tolerance
             logger.warning("export: could not copy %s: %s", src.name, e)
@@ -148,7 +234,7 @@ def _copy_reproduction_outputs(workspace: Path, out: Path) -> None:
     """
     logs = workspace / "sandbox" / "logs"
     if logs.is_dir():
-        shutil.copytree(logs, out / "sandbox" / "logs", dirs_exist_ok=True)
+        _copytree(logs, out / "sandbox" / "logs", workspace)
     log = _read_json(workspace / "sandbox_log.json")
     log = log if isinstance(log, dict) else {}
     run_rel = str(log.get("run_dir") or "sandbox/run")
@@ -167,6 +253,8 @@ def _copy_reproduction_outputs(workspace: Path, out: Path) -> None:
         src_path = (run_dir / rel).resolve()
         if not rel or not src_path.is_relative_to(run_dir) or not src_path.is_file():
             continue
+        if _skip(run_dir / rel, workspace):
+            continue
         if src_path.stat().st_size > MAX_OUTPUT_BYTES:
             logger.warning("export: %s is larger than %d bytes; left out of the bundle", rel, MAX_OUTPUT_BYTES)
             continue
@@ -182,7 +270,7 @@ def _read_json(path: Path) -> dict:
         return {}
 
 
-def _render_readme(workspace: Path, manifest: dict, slug: str) -> str:
+def _render_readme(workspace: Path, manifest: dict, slug: str, notes: list[str] | None = None) -> str:
     title = manifest.get("title") or "Untitled"
     rq = manifest.get("research_question") or "—"
     agg = _read_json(workspace / "review_aggregation.json")
@@ -245,6 +333,10 @@ def _render_readme(workspace: Path, manifest: dict, slug: str) -> str:
         "- `design/` — research plan, identification strategy, econometric spec",
         "- `reviews/` — referee reports + the aggregated verdict",
         "",
+    ]
+    if notes:
+        lines += ["## Export notes", ""] + [f"- {n}" for n in notes] + [""]
+    lines += [
         "## Reproduce",
         "",
         "```bash",
@@ -274,15 +366,19 @@ def export_paper(
     if template:
         manifest = {**manifest, "pipeline": template}
     title = manifest.get("title") or workspace.name
-    slug = slug or resolve_versioned_slug(dest_root, title, date_str)
-    out = dest_root / slug
-    out.mkdir(parents=True, exist_ok=True)
+    if slug:
+        out = dest_root / slug
+        out.mkdir()  # an explicit folder must be new: export never writes into an earlier one
+    else:
+        out = create_versioned_folder(dest_root, title, date_str)
+        slug = out.name
 
     copied_names: set[str] = set()
+    notes: list[str] = []
     for subdir, patterns in EXPORT_MAP.items():
         dest_dir = out / subdir
         for pattern, rename in patterns:
-            _copy_matches(workspace, dest_dir, pattern, rename, copied_names)
+            _copy_matches(workspace, dest_dir, pattern, rename, copied_names, notes)
     # literature.bib is shipped as refs.bib; point the paper at it so the
     # bundle compiles on its own (otherwise every citation becomes "?").
     paper_tex = out / "paper" / "paper.tex"
@@ -297,7 +393,7 @@ def export_paper(
     # Figures: copy a figures/ dir if the renderer produced one.
     fig_src = workspace / "figures"
     if fig_src.is_dir():
-        shutil.copytree(fig_src, out / "results" / "figures", dirs_exist_ok=True)
+        _copytree(fig_src, out / "results" / "figures", workspace)
 
     # Tables: the deterministic renderer writes one .tex per table into
     # tables/, and paper.tex includes each with \input{tables/<name>.tex}.
@@ -307,14 +403,14 @@ def export_paper(
     # it only scans the main .tex for inline tabulars.
     tbl_src = workspace / "tables"
     if tbl_src.is_dir():
-        shutil.copytree(tbl_src, out / "paper" / "tables", dirs_exist_ok=True)
+        _copytree(tbl_src, out / "paper" / "tables", workspace)
 
     # Replication: the audit log + query SQL + replication estimation script
     # (audit_log.csv, data_queries.sql, estimation.py). Previously dropped
     # entirely — it is the backbone of a reproducible bundle.
     repl_src = workspace / "replication"
     if repl_src.is_dir():
-        shutil.copytree(repl_src, out / "replication", dirs_exist_ok=True)
+        _copytree(repl_src, out / "replication", workspace)
 
     # A reproduction: what the sandbox run wrote, so `e2er verify` can re-read
     # every compared number offline (see _copy_reproduction_outputs).
@@ -325,23 +421,18 @@ def export_paper(
     for src in sorted(workspace.iterdir()):
         if not src.is_file() or src.name in copied_names or src.name in _MISC_EXCLUDE or src.name.startswith("."):
             continue
-        _copy_matches(workspace, out / "misc", src.name, None, copied_names)
+        _copy_matches(workspace, out / "misc", glob.escape(src.name), None, copied_names, notes)
 
-    (out / "README.md").write_text(_render_readme(workspace, manifest, slug), encoding="utf-8")
+    (out / "README.md").write_text(_render_readme(workspace, manifest, slug, notes), encoding="utf-8")
 
-    # Provenance manifest LAST — it inventories (SHA-256) every other bundle
-    # file, so it must run after the README + all copies exist.
-    from .provenance import write_provenance
-
-    write_provenance(out, manifest, exported_at=date_str)
-
-    # The shareable view, written last because it summarises the provenance
-    # graph. Deliberately not inventoried: it asserts nothing of its own, every
-    # figure in it is read from a hashed file beside it, and `e2er verify`
-    # exempts it for that reason.
+    # The shareable view, rendered from the provenance about to be written, so
+    # that provenance.json (written LAST, after every other file exists)
+    # fingerprints it like every other file: an edited report.html fails verify.
+    from .provenance import build_provenance, write_provenance
     from .report import write_report
 
-    write_report(out, manifest)
+    write_report(out, manifest, build_provenance(out, manifest, exported_at=date_str))
+    write_provenance(out, manifest, exported_at=date_str)
 
     logger.info("Exported paper %s → %s", workspace.name, out)
     return out
