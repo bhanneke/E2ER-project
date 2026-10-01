@@ -131,16 +131,17 @@ def workflow_db(run_db: Path) -> Path:
             "INSERT INTO pipeline_events VALUES (?,?,?,?,?,?,?)",
             (str(i), PAPER_ID, etype, stage, sp, json.dumps(payload), f"2026-09-11 10:{i:02d}:00"),
         )
-    for i, (sp, out, ok, err) in enumerate(
+    # A contribution row is written as its specialist finishes (just before specialist_end).
+    for i, (sp, out, ok, err, at) in enumerate(
         [
-            ("idea_developer", "paper_plan.md", 1, None),
-            ("paper_drafter", "paper_draft.tex", 0, "contract violation"),
-            ("paper_drafter", "paper_draft.tex", 1, None),
+            ("idea_developer", "paper_plan.md", 1, None, "10:03:00"),
+            ("paper_drafter", "paper_draft.tex", 0, "contract violation", "10:06:00"),
+            ("paper_drafter", "paper_draft.tex", 1, None, "10:08:00"),
         ]
     ):
         con.execute(
             "INSERT INTO contributions VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-            (str(i), PAPER_ID, sp, None, ws + out, ok, err, 0, 0.0, 1.0, f"2026-09-11 10:{i:02d}:30"),
+            (str(i), PAPER_ID, sp, None, "/Users/someone/e2er/" + ws + out, ok, err, 0, 0.0, 1.0, f"2026-09-11 {at}"),
         )
     con.commit()
     con.close()
@@ -158,10 +159,20 @@ def test_workflow_lists_steps_checks_and_intermediate_files(bundle: Path, workfl
     ]
     plan = steps[0]["output"]
     prov = json.loads((bundle / "provenance.json").read_text())["files"]
-    assert plan == {"file": "design/paper_plan.md", "sha256": prov["design/paper_plan.md"]["sha256"]}
+    # This run predates per-step hashes: the export's hash, said to be the export's.
+    assert plan == {
+        "file": "design/paper_plan.md",
+        "recorded": False,
+        "exported": True,
+        "sha256_at_export": prov["design/paper_plan.md"]["sha256"],
+    }
     assert steps[1]["passed"] is False and steps[1]["detail"] == "inline tabular"
     assert steps[2]["accepted"] is False and steps[2]["stopped_by"] == "contract violation"
-    assert steps[3]["output"] == {"file": "paper_draft.tex", "exported": False}
+    # paper_draft.tex is exported as paper/paper.tex; the bundle path, never the machine's
+    assert steps[3]["output"]["file"] == "paper/paper.tex"
+    assert steps[3]["output"]["sha256_at_export"] == prov["paper/paper.tex"]["sha256"]
+    assert "/Users/" not in json.dumps(steps)
+    assert all(s["started"].endswith("Z") for s in steps if s["type"] == "specialist")
 
 
 def test_dossier_id_is_the_hash_of_its_canonical_json_and_ignores_the_paper(bundle: Path, workflow_db: Path):

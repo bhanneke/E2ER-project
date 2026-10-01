@@ -300,8 +300,13 @@ def test_the_dossier_lists_what_was_set_aside(tmp_path: Path):
     )
     con.commit()
     con.close()
-    [step] = recorded_workflow(db, PID)
-    assert step["type"] == "set_aside" and step["items"] == payload["items"]
+    from src.core.dossier import read_run
+
+    # The runner's set-aside is an event of the run, not a step (the dossier's steps are
+    # specialists, checks and the researcher's actions).
+    assert recorded_workflow(db, PID) == []
+    [ev] = read_run(db, PID).events
+    assert ev["event"] == "estimation_set_aside" and ev["items"] == payload["items"] and ev["step"] == "preregister"
 
 
 # ── 3. the calendar is a table the analyst wrote ────────────────────────────

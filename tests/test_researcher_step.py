@@ -408,13 +408,16 @@ def test_the_dossier_lists_the_researchers_steps_in_order(tmp_path: Path):
             ("preregistration", "preregister", None, {"sha256": "c" * 64}),
         ],
     )
+    from src.core.dossier import read_run
+
     steps = recorded_workflow(db, PID, None)
+    # Only the researcher's own actions are researcher steps; the freezing is the runner's (an event).
     assert [(s["type"], s["action"]) for s in steps] == [
         ("researcher", "edit"),
         ("researcher", "instruction"),
         ("researcher", "approve"),
-        ("researcher", "preregistration_frozen"),
     ]
+    assert [e["event"] for e in read_run(db, PID).events] == ["preregistration_frozen"]
     assert (
         steps[0]["sha256_after"] == "b" and steps[1]["text"] == "Use monthly data." and steps[0]["phase"] == "initial"
     )
@@ -430,7 +433,6 @@ def test_dossier_format_rises_only_with_researcher_steps(tmp_path: Path, monkeyp
         "dependencies": {"uses": []},
         "data": [],
     }
-    monkeypatch.setattr(d, "_e2er_commit", lambda: None)
     assert d.build_dossier(manifest)["schema"] == "e2er-dossier/0.3"  # unchanged documents keep their address
     b = _bundle_with_prereg(tmp_path)
     doc = d.build_dossier(manifest, bundle=b)
