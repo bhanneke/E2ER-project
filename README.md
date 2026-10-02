@@ -265,10 +265,10 @@ make smoke-paid   # one real study on Claude Haiku 4.5 (needs ANTHROPIC_API_KEY,
 ```bibtex
 @software{hanneke2026e2er,
   author       = {Hanneke, Bj{\"o}rn},
-  title        = {{e2er (End-to-End Research): An Open-Source Pipeline
-                   for Automated Empirical Research}},
+  title        = {{e2er (End-to-End Research): The Open Infrastructure for
+                   Publishing, Verifying, Reproducing and Reusing AI-Enabled Research}},
   year         = {2026},
-  version      = {0.13.0},
+  version      = {0.13.1},
   url          = {https://github.com/bhanneke/E2ER-project},
   doi          = {10.5281/zenodo.20187238},
   license      = {MIT},
@@ -284,4 +284,4 @@ MIT. See [LICENSE](https://github.com/bhanneke/E2ER-project/blob/main/LICENSE).
 
 ## Contact
 
-Björn Hanneke, Chair of Information Systems and Information Management (Prof. Dr. Oliver Hinz), Goethe University Frankfurt. [bjornhanneke.com](https://www.bjornhanneke.com) · <hanneke@wiwi.uni-frankfurt.de> · [ORCID](https://orcid.org/0009-0000-7466-9581) · [Google Scholar](https://scholar.google.com/citations?user=N5fbuZIAAAAJ)
+Björn Hanneke, information systems researcher at the Chair of Information Systems and Information Management (Prof. Dr. Oliver Hinz), Goethe University Frankfurt. [bjornhanneke.com](https://www.bjornhanneke.com) · <hanneke@wiwi.uni-frankfurt.de> · [ORCID](https://orcid.org/0009-0000-7466-9581) · [Google Scholar](https://scholar.google.com/citations?user=N5fbuZIAAAAJ) · [LinkedIn](https://www.linkedin.com/in/bhanneke/)

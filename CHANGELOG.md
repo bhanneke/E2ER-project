@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.1] — 2026-10-02
+
+- **README rewritten in plain language.** It opens with the description and the texts of the
+  e2er.org About page, and every command and option it names exists. Wrong statements were
+  removed: a $25 cost default (it is $5), `python -m e2er`, `.txt` as a data format, outdated
+  counts of skills and specialists, an example folder that does not exist.
+- **Description:** "e2er is the open infrastructure for publishing, verifying, reproducing and
+  reusing AI-enabled research." in the package metadata, the CLI help and the citation metadata.
+
 ## [0.13.0] — 2026-10-02
 
 ### Name and publishing format
