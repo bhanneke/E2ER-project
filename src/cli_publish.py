@@ -497,9 +497,8 @@ def _describe(
         print("note: --no-stamp: the paper does not carry the dossier link")
     manifest = manifest_now([{"check": c.name, "status": c.status, "detail": c.detail} for c in checks])
     manifest["availability"] = copy.deepcopy(availability)
-    amendments = json.loads((b / "provenance.json").read_text(encoding="utf-8")).get("amendments") or []
-    if amendments:
-        manifest["amendments"] = amendments
+    # The amendments stay in provenance.json (fixed by content_id) and in the dossier;
+    # e2er.org's research-object format has no field for them.
     manifest["dossier"] = {"id": did, "url": dossier_url(did), "doc": doc}
     leaks = problems(request_body(manifest, b))
     if leaks:

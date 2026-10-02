@@ -83,11 +83,7 @@ def test_publish_finds_the_studys_database_and_the_dossier_lists_the_run(bundle:
     make_run_db(tmp_path / "study", paper_id_of(bundle), researcher_actions=3)
     assert publish(str(bundle), **ARGS, out=str(tmp_path / "e")) == 0
     out = capsys.readouterr().out
-    assert (
-        "the run's steps are read from" in out
-        and "(4 steps, 3 researcher actions)" in out.replace("5 steps", "4 steps")
-        or True
-    )
+    assert "3 researcher actions" in out
     doc = _manifest(bundle)["dossier"]["doc"]
     assert [s["type"] for s in doc["workflow"]].count("researcher") == 3
     assert [s.get("specialist") for s in doc["workflow"] if s["type"] == "specialist"] == [
