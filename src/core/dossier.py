@@ -40,6 +40,7 @@ from typing import Any
 
 from .availability import any_public
 from .demonstration import DEMONSTRATION, disclaimer
+from .run_outcome import effective_status, internal_review, read_aggregation
 
 SCHEMA = "e2er-dossier/0.3"
 #: Used only when a dossier records researcher steps or a pre-registration, so a
@@ -356,6 +357,8 @@ class RunRecord:
     workflow: list[dict[str, Any]] = field(default_factory=list)
     events: list[dict[str, Any]] = field(default_factory=list)
     outcome: dict[str, Any] = field(default_factory=dict)
+    #: e2er's internal quality review score (run_outcome.internal_review), when the run had one
+    internal_review: dict[str, Any] | None = None
     #: specialists that ran, in order of first appearance; skill per agent; segments per component
     agents: list[str] = field(default_factory=list)
     skills: dict[str, list[str]] = field(default_factory=dict)
@@ -376,8 +379,16 @@ _RUN_EVENTS = {
 }
 
 
-def read_run(db: Path, paper_id: str, files: dict[str, Any] | None = None) -> RunRecord:
+def read_run(db: Path, paper_id: str, files: dict[str, Any] | None = None, bundle: Path | None = None) -> RunRecord:
     """The run as its database recorded it: steps, system events, segments and outcome.
+
+    * **Outcome** is whether the run finished (``completed``, ``failed``,
+      ``cancelled``, ``paused``, ``stopped`` by a check, or the phase it is in),
+      never a review result: a stored review word (``rejected`` from runs
+      up to 0.13.1) becomes ``completed`` when the run reached its internal
+      quality review (see run_outcome.py). The review's score is
+      ``internal_review``, read from ``review_aggregation.json`` in the bundle
+      (``reviews/``) or else in the run's workspace.
 
     * **Segments.** Each ``run_identity`` event starts a segment: the E2ER
       commit, version and tree state of the process that ran the steps after
@@ -401,6 +412,7 @@ def read_run(db: Path, paper_id: str, files: dict[str, Any] | None = None) -> Ru
     """
     files = files or {}
     rec = RunRecord()
+    workspace: str | None = None
     con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
     try:
         tables = _tables(con)
@@ -432,13 +444,17 @@ def read_run(db: Path, paper_id: str, files: dict[str, Any] | None = None) -> Ru
         paper: tuple[Any, ...] | None = None
         if "papers" in tables:
             cols = {r[1] for r in con.execute("PRAGMA table_info(papers)")}
-            want = [c for c in ("status", "last_error", "updated_at") if c in cols]
+            want = [c for c in ("status", "last_error", "updated_at", "workspace") if c in cols]
             if want:
                 paper = con.execute(f"SELECT {', '.join(want)} FROM papers WHERE id = ?", (paper_id,)).fetchone()
                 if paper is not None:
                     rec.outcome = {
-                        k: v for k, v in zip(want, paper, strict=True) if v not in (None, "") and k != "updated_at"
+                        k: v
+                        for k, v in zip(want, paper, strict=True)
+                        if v not in (None, "") and k not in ("updated_at", "workspace")
                     }
+                    if "workspace" in want:
+                        workspace = paper[want.index("workspace")]
                     if "updated_at" in want and paper[want.index("updated_at")]:
                         rec.outcome["at"] = _utc(paper[want.index("updated_at")])
     finally:
@@ -446,6 +462,15 @@ def read_run(db: Path, paper_id: str, files: dict[str, Any] | None = None) -> Ru
     rec.recorded = bool(events)
     if "last_error" in rec.outcome:
         rec.outcome["error"] = _clip(str(rec.outcome.pop("last_error")), 2000)
+    agg = read_aggregation(bundle, workspace)
+    if "status" in rec.outcome:
+        stored = str(rec.outcome["status"])
+        rec.outcome["status"] = effective_status(stored, reviewed=agg is not None)
+        if rec.outcome["status"] == "completed" and stored != "completed":
+            # The error of an old review-word status is the review's own text.
+            rec.outcome.pop("error", None)
+    reviews = sum(1 for e in events if e[0] == "phase_end" and e[1] == "review")
+    rec.internal_review = internal_review(agg, rounds=reviews or None)
 
     used_contribs: set[int] = set()
     used_calls: set[int] = set()
@@ -753,7 +778,7 @@ def build_dossier(
     if paper_id is None and bundle is not None and (bundle / "provenance.json").is_file():
         paper_id = json.loads((bundle / "provenance.json").read_text(encoding="utf-8")).get("run", {}).get("paper_id")
     if run is None and db is not None and paper_id:
-        run = read_run(db, paper_id, _bundle_files(bundle))
+        run = read_run(db, paper_id, _bundle_files(bundle), bundle)
     ai, proc = manifest["ai"], manifest["process"]
     models = sorted({(u["backend"], u["model"]) for u in ai.get("usage", [])})
     prereg = _preregistration(bundle)
@@ -804,6 +829,8 @@ def build_dossier(
     if recorded:
         assert run is not None
         doc["run"]["outcome"] = run.outcome
+        if run.internal_review:
+            doc["run"]["internal_review"] = run.internal_review
         doc["run"]["events"] = run.events
     else:
         doc["run"]["workflow_recorded"] = False

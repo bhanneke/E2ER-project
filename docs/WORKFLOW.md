@@ -41,8 +41,8 @@ From `PipelineRunner.run` (`src/core/strategist/runner.py`). Phases marked
 | `estimation_gate` | Deterministic. Never skipped on resume. |
 | `self_attack` *(iterative only)* | The strategist attacks its own paper; findings are dispatched to a patch revisor. |
 | `polish` *(iterative only)* | Prose and presentation pass. |
-| `review` | Internal referee panel. The numbers and citation gates run here, after the table specification is resolved. |
-| `revision` | Reviewer findings are addressed. |
+| `review` | e2er's internal quality review: six reviewer specialists each score the draft from one angle (data, identification, literature, mechanism, technical, writing) on a scale of 0 to 10, and the score is their weighted average (technical and identification 1.5, data 1.25, mechanism and literature 1, writing 0.75). The numbers and citation checks run first, after the table specification is resolved. |
+| `revision` | The score decides whether a revision round runs: a mechanism score below 5 has the analysis redone and the draft scored again (at most once; the rules then apply to the new score); a combined score from 5 to below 6.5 runs one round that edits the text; a combined score of 6.5 or more, a combined score below 5, or any reviewer below 4 runs none. Whatever the score, a run that finishes its steps is completed, and the score is reported next to it. |
 | `replication` | The runnable replication package is assembled. |
 | *finalize* | Compile, optional GitHub push, export. Runs best-effort even on a failed paper, so a broken run still leaves an auditable trail. |
 
@@ -90,7 +90,7 @@ carries whether it was conclusive, so "skipped" can never read as "verified".
 An unknown regime resolves to `full`, so a typo fails closed.
 
 The part that makes this an instrument rather than a convenience: **a gate that
-is not enforcing still runs.** It computes its verdict and logs a `gate_shadow`
+is not enforcing still runs.** It computes its result and logs a `gate_shadow`
 event recording what it would have caught. An ungoverned run is therefore
 *measured*, not merely unblocked — which is what makes governance assignable as
 a treatment rather than merely describable.

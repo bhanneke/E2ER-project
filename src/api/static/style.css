@@ -377,6 +377,8 @@ ol.phases {
 
 .fail { border: 1px solid var(--danger); border-left: 3px solid var(--danger);
         background: var(--bg-card); padding: 14px 16px; margin: 14px 0; }
+.fail-stopped { border-color: var(--warn); border-left-color: var(--warn); }
+.fail-stopped h3 { color: var(--warn); }
 .fail-paused { border-color: var(--warn); border-left-color: var(--warn); }
 .fail h3 { margin: 0 0 6px; font-size: 14px; color: var(--danger); }
 .fail-paused h3 { color: var(--warn); }
@@ -573,7 +575,7 @@ details.move > summary { cursor: pointer; color: var(--accent); list-style: none
 details.move > summary::-webkit-details-marker { display: none; }
 .move-body { display: flex; gap: 6px; margin-top: 6px; white-space: normal; }
 .move-body select { max-width: 260px; font: inherit; font-size: 13px; padding: 3px 6px; }
-.status-rejected { background: #fff3e0; color: var(--warn); }
+.status-stopped { background: #fff3e0; color: var(--warn); }
 .status-paused { background: #f0eefc; color: #5b4bb5; }
 .waiting-box.elsewhere { border-color: var(--accent); }
 

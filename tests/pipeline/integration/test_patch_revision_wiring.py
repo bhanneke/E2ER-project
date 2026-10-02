@@ -228,15 +228,17 @@ async def test_findings_serialised_into_patch_revisor_focus(tmp_path, mock_llm):
 
 
 # ---------------------------------------------------------------------------
-# Failure modes → REJECTED
+# Failure modes: no patch file → FAILED; no edit applied → COMPLETED + event.
+# The internal quality review gives a score and never stops a run (after 0.13.1).
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_missing_patch_file_yields_rejected(tmp_path, mock_llm):
+async def test_missing_patch_file_yields_failed(tmp_path, mock_llm):
     """patch_revisor succeeds (the LLM call returns) but doesn't write
-    the patch file. Merger raises FileNotFoundError; runner transitions
-    to REJECTED with a clear error rather than crashing as FAILED."""
+    the patch file. Merger raises FileNotFoundError; the revision step did
+    not produce its output, so the runner records FAILED (resumable) with a
+    clear error rather than crashing. It is a failed step, not a score."""
     runner = _runner(tmp_path, mock_llm)
     ws = runner._workspace
 
@@ -263,15 +265,16 @@ async def test_missing_patch_file_yields_rejected(tmp_path, mock_llm):
     ):
         result = await runner._run_revision_phase(PaperStatus.REVIEW)
 
-    assert result == PaperStatus.REJECTED
+    assert result == PaperStatus.FAILED
 
 
 @pytest.mark.asyncio
-async def test_failed_edits_yield_rejected_with_structured_error(tmp_path, mock_llm, monkeypatch):
+async def test_failed_edits_complete_the_run_and_record_why(tmp_path, mock_llm, monkeypatch):
     """When the patch_revisor emits edits that fail to apply (target
-    not found, find ambiguous, etc.), the runner transitions to
-    REJECTED with the first failures named in last_error so the
-    operator can fix them without parsing the events log."""
+    not found, find ambiguous, etc.), the revision round ran and changed
+    nothing: the run is COMPLETED (never `rejected`), and a
+    `revision_not_applied` event names the first failures so the dossier
+    and the operator see why."""
     runner = _runner(tmp_path, mock_llm)
     ws = runner._workspace
 
@@ -279,10 +282,13 @@ async def test_failed_edits_yield_rejected_with_structured_error(tmp_path, mock_
 
     # Capture status updates so we can read what was written
     seen: list[tuple[str, str | None]] = []
+    events: list[tuple[str, str]] = []
 
     async def _capture_status(sql: str, params: dict | None = None):
         if params and "s" in params and "papers" in sql.lower():
             seen.append((params["s"], params.get("e")))
+        if params and "pipeline_events" in sql:
+            events.append((params["t"], params["pl"]))
 
     async def _bad_patch(work_order, *args, **kwargs):
         # Patch references a phantom section
@@ -319,15 +325,13 @@ async def test_failed_edits_yield_rejected_with_structured_error(tmp_path, mock_
     ):
         result = await runner._run_revision_phase(PaperStatus.REVIEW)
 
-    assert result == PaperStatus.REJECTED
-    # Error message names the failure
-    rejected_rows = [(s, e) for s, e in seen if s == "rejected"]
-    assert rejected_rows, f"no rejected status written; saw {seen}"
-    _, error = rejected_rows[-1]
-    assert error is not None
-    assert "patch_revisor" in error
-    assert "[section:identification]" in error
-    assert "not found" in error.lower()
+    assert result == PaperStatus.COMPLETED
+    assert not [s for s, _e in seen if s == "rejected"]
+    assert seen[-1][0] == "completed"
+    # The event names the failure
+    [(_, payload)] = [e for e in events if e[0] == "revision_not_applied"]
+    assert "[section:identification]" in payload
+    assert "not found" in payload.lower()
 
 
 # ---------------------------------------------------------------------------
@@ -349,10 +353,13 @@ async def test_partial_application_with_out_of_scope_edit_completes(tmp_path, mo
     _review_file(ws, "identification_reviewer", 3.0, "Major Revision")
 
     seen: list[tuple[str, str | None]] = []
+    events: list[tuple[str, str]] = []
 
     async def _capture_status(sql: str, params: dict | None = None):
         if params and "s" in params and "papers" in sql.lower():
             seen.append((params["s"], params.get("e")))
+        if params and "pipeline_events" in sql:
+            events.append((params["t"], params["pl"]))
 
     async def _mixed_patch(work_order, *args, **kwargs):
         if work_order.specialist == "patch_revisor":
@@ -574,10 +581,10 @@ async def test_mechanism_fail_triggers_deep_revision_then_completes(tmp_path, mo
 
 
 @pytest.mark.asyncio
-async def test_mechanism_fail_deep_revision_is_bounded_then_rejected(tmp_path, mock_llm):
-    """If the deep round doesn't lift the verdict (still MECHANISM_FAIL on
+async def test_mechanism_fail_deep_revision_is_bounded_then_completed(tmp_path, mock_llm):
+    """If the deep round doesn't lift the score (still MECHANISM_FAIL on
     re-review), the loop does NOT recurse forever — exactly one deep round, then
-    REJECTED. Termination guarantee."""
+    COMPLETED with the score recorded. Termination guarantee."""
     runner = _runner(tmp_path, mock_llm)
     ws = runner._workspace
     _review_file(ws, "mechanism_reviewer", 3.0, "Reject")
@@ -604,6 +611,6 @@ async def test_mechanism_fail_deep_revision_is_bounded_then_rejected(tmp_path, m
     ):
         result = await runner._run_revision_phase(PaperStatus.REVIEW)
 
-    assert result == PaperStatus.REJECTED
+    assert result == PaperStatus.COMPLETED
     assert runner._deep_revision_count == 1  # exactly one deep round — bounded
     assert deep_dispatches == 3  # data_analyst + econometrics + section_writer, once

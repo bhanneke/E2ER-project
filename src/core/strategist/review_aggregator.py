@@ -1,4 +1,20 @@
-"""Mechanical review aggregation — 3-rule system for publication decisions."""
+"""e2er's internal quality review: six reviewer scores combined into one score.
+
+Each reviewer specialist scores the draft from one angle (data,
+identification, literature, mechanism, technical, writing) on a scale of 0 to
+10. The combined score is their weighted average (``_WEIGHTS``). The result's
+``verdict`` is an internal code that picks the revision round the runner runs
+(runner._run_revision_phase); it is never shown. Readers see the score:
+
+* mechanism score below 5 → the analysis is redone and the draft scored once
+  more (``MECHANISM_FAIL``, at most one such round; the rules then apply to the new score);
+* mechanism score missing → one revision round that edits the text;
+* any reviewer below 4, or a combined score below 5 → no revision round;
+* combined score from 5 to below 6.5 → one revision round that edits the text;
+* combined score 6.5 or more → no revision round.
+
+Whatever the score, a run that finishes its steps is completed.
+"""
 
 from __future__ import annotations
 
@@ -10,7 +26,7 @@ from dataclasses import dataclass
 class ReviewScore:
     reviewer: str
     score: float  # 1-10
-    recommendation: str  # accept, major_revision, minor_revision, reject
+    recommendation: str  # the reviewer's closing line, as an internal code; never shown
     comments: str = ""
     weight: float = 1.0
     # Where the score was read from: "file" (the reviewer wrote its artifact) or
@@ -25,7 +41,10 @@ class ReviewScore:
 
 @dataclass
 class AggregationResult:
-    verdict: str  # "ACCEPT", "MAJOR_REVISION", "MINOR_REVISION", "MECHANISM_FAIL", "HARD_REJECT"
+    # Internal code for the revision path, never shown: "ACCEPT" and
+    # "MINOR_REVISION" (no round), "MAJOR_REVISION" (text revision round),
+    # "MECHANISM_FAIL" (analysis redone), "HARD_REJECT" (no round).
+    verdict: str
     weighted_avg: float
     rule_triggered: str  # which rule determined the outcome
     scores: list[ReviewScore]
@@ -63,7 +82,7 @@ def aggregate_reviews(scores: list[ReviewScore]) -> AggregationResult:
     if len(scores) < expected:
         get_logger(__name__).warning(
             "Partial review aggregation: only %d/%d reviewer scores present "
-            "(missing: %s). Verdict computed on partial data — treat with caution.",
+            "(missing: %s). Combined score computed on partial data — treat with caution.",
             len(scores),
             expected,
             sorted(set(REVIEWER_SPECIALISTS) - {s.reviewer for s in scores}),
@@ -81,9 +100,8 @@ def aggregate_reviews(scores: list[ReviewScore]) -> AggregationResult:
             rule_triggered="Rule 1: mechanism_reviewer < 5",
             scores=scores,
             rationale=(
-                f"Mechanism reviewer scored {mech_scores[0].score:.1f}/10. "
-                "The paper's core mechanism is not sufficiently convincing. "
-                "Fundamental revision required before review can continue."
+                f"Mechanism reviewer scored {mech_scores[0].score:.1f} of 10 (below 5): "
+                "the analysis is redone and the draft scored again."
             ),
         )
     # Rule 1b — the mechanism gate must actually run. If mechanism_reviewer is
@@ -99,9 +117,9 @@ def aggregate_reviews(scores: list[ReviewScore]) -> AggregationResult:
             rule_triggered="Rule 1: mechanism review missing",
             scores=scores,
             rationale=(
-                "No parseable mechanism_reviewer score — the mechanism gate could "
-                "not run. The paper cannot be accepted without it; re-running the "
-                "review/revision round."
+                "No mechanism_reviewer score could be read, so the mechanism score "
+                f"is missing. Combined score of the other reviewers: {avg:.2f} of 10; "
+                "one revision round runs."
             ),
         )
 
@@ -115,8 +133,8 @@ def aggregate_reviews(scores: list[ReviewScore]) -> AggregationResult:
             rule_triggered=f"Rule 2: {worst.reviewer} scored {worst.score:.1f} (< 4)",
             scores=scores,
             rationale=(
-                f"{worst.reviewer} gave a score of {worst.score:.1f}/10. "
-                "A score below 4 from any reviewer triggers immediate rejection. "
+                f"{worst.reviewer} scored {worst.score:.1f} of 10 (below 4); "
+                "no revision round runs. "
                 f"Issue: {worst.comments[:200]}"
             ),
         )
@@ -132,8 +150,7 @@ def aggregate_reviews(scores: list[ReviewScore]) -> AggregationResult:
         rule_triggered="Rule 3: weighted average",
         scores=scores,
         rationale=(
-            f"Weighted average score: {weighted_avg:.2f}/10. "
-            f"Verdict: {verdict}. "
+            f"Weighted average score: {weighted_avg:.2f} of 10. "
             f"Breakdown: {', '.join(f'{s.reviewer}={s.score:.1f}' for s in scores)}"
         ),
     )

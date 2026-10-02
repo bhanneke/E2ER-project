@@ -1,5 +1,6 @@
 <div class="status-row">
-  <span class="status status-{{ paper.status }}">{{ paper.status }}</span>
+  <span class="status status-{{ paper.shown_status }}">{{ paper.shown_status | status_words }}</span>
+  {% if paper.internal_review %}<span class="muted review-score">e2er's internal quality review: {{ "%.1f" | format(paper.internal_review.score) }} of 10</span>{% endif %}
   <div class="cost-meter">
     <div class="cost-label">
       ${{ "%.2f"|format(cost_spent) }}
@@ -40,7 +41,7 @@
     <span><strong>The study is waiting for you.</strong> Read what the specialists wrote, change it if you want, and let it continue.</span>
     <a class="btn-primary" href="/papers/{{ paper.id }}/review">Review now</a>
   </div>
-{% elif paper.status == "completed" %}
+{% elif paper.shown_status == "completed" %}
   <div class="done-box">
     <span><strong>The study is finished.</strong> Check it and publish it.</span>
     <a class="btn-primary" href="/papers/{{ paper.id }}/finish">Verify and publish</a>
@@ -114,7 +115,7 @@
 
 {% if failure and failure.failed and not awaiting_review %}
   <section class="fail fail-{{ failure.status }}">
-    <h3>{{ failure.status | capitalize }}</h3>
+    <h3>{{ failure.status | status_words | capitalize }}</h3>
     <p class="fail-head">{{ failure.headline }}</p>
 
     {% if failure.specialists %}

@@ -37,7 +37,7 @@ These are recorded automatically for every run and stored in the `pipeline_runs`
 | Metric | Source | Notes |
 |--------|--------|-------|
 | `review_weighted_avg` | `review_aggregation.json` | Weighted average from 6 internal reviewers |
-| `review_verdict` | `review_aggregation.json` | ACCEPT / MINOR_REVISION / MAJOR_REVISION / HARD_REJECT / MECHANISM_FAIL |
+| `review_verdict` | `review_aggregation.json` | Internal code for the revision round the score called for (never shown to readers; e2er reports the score only) |
 | `mechanism_score` | `review_mechanism.md` | Mechanism reviewer score (hard gate at < 5) |
 | `self_attack_max_severity` | `self_attack_report.json` | Max severity finding from adversarial phase (1–10) |
 | `self_attack_critical_count` | `self_attack_report.json` | Number of findings with severity ≥ 7 |
@@ -119,7 +119,7 @@ These are the quality targets for v3 to be considered ready for the companion pa
 | Metric | Target |
 |--------|--------|
 | Human overall score (mean across runs) | ≥ 6.5 / 10 |
-| Fraction reaching ACCEPT or MINOR_REVISION verdict | ≥ 60% |
+| Fraction with an internal quality review score of 6.5 or more | ≥ 60% |
 | Fraction desk-rejected by human evaluator | ≤ 20% |
 | Replication integrity score (mean) | ≥ 7.0 / 10 |
 | Mechanism score (mean) | ≥ 6.0 / 10 |

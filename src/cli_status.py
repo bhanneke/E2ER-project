@@ -30,6 +30,7 @@ import time
 # helpers are also used by tests; importing here keeps the module
 # graph flat.
 from .cli_run import _api_reachable, _api_root, _poll_status
+from .core.run_outcome import score_words, status_words
 
 
 def _truncate(text: str, max_len: int) -> str:
@@ -60,10 +61,12 @@ def _format_status_summary(d: dict) -> str:
     Compact (≤ 12 lines) so it fits in a terminal window. The
     most important field — `status` — is on its own line at top.
     `last_error` is printed verbatim when present so the user can
-    diagnose REJECTED / PAUSED / FAILED without parsing the events
-    log.
+    diagnose a stopped / paused / failed run without parsing the events
+    log. The status is whether the run finished (``shown_status``, see
+    core/run_outcome.py); e2er's internal quality review score is a line of
+    its own.
     """
-    status = d.get("status", "?")
+    status = status_words(d.get("shown_status") or d.get("status") or "?")
     title = d.get("title") or "(untitled)"
     rq = d.get("research_question") or ""
     methodology = d.get("methodology") or "empirical"
@@ -77,9 +80,15 @@ def _format_status_summary(d: dict) -> str:
     calls = usage.get("specialist_calls") or 0
     tokens = usage.get("total_tokens") or 0
     cost_is_estimate = usage.get("cost_is_estimate")
+    review = d.get("internal_review")
 
     lines = [
         f"Status:     {status}",
+        *(
+            [f"Review:     {score_words(review['score'])}"]
+            if isinstance(review, dict) and review.get("score") is not None
+            else []
+        ),
         f"Title:      {_truncate(title, 90)}",
         f"RQ:         {_truncate(rq, 90)}",
         f"Template:   {template} ({mode.replace('_', ' ')}, {methodology})",
@@ -146,11 +155,14 @@ def status(paper_id: str, tail: bool = False, monitor_seconds: float = 1800.0) -
     print(_format_status_summary(payload))
 
     if tail:
-        current_status = payload.get("status", "")
-        terminal = {"completed", "failed", "cancelled", "paused", "rejected"}
+        current_status = payload.get("shown_status") or payload.get("status", "")
+        terminal = {"completed", "failed", "cancelled", "paused", "stopped", "rejected"}
         if current_status in terminal:
             # Already done — no point polling. Print a hint and exit clean.
-            print(f"\n(Paper is already at terminal status {current_status!r}; --tail has nothing to wait for.)")
+            print(
+                f"\n(Paper is already at terminal status {status_words(current_status)!r}; "
+                "--tail has nothing to wait for.)"
+            )
             return 0
         print()
         print(f"Polling status (max {monitor_seconds:.0f}s, ^C is safe):")
@@ -159,7 +171,7 @@ def status(paper_id: str, tail: bool = False, monitor_seconds: float = 1800.0) -
         except KeyboardInterrupt:
             print("\n  ^C — paper continues in the background.", file=sys.stderr)
             return 0
-        print(f"\n  Final status: {final}")
+        print(f"\n  Final status: {status_words(final)}")
     return 0
 
 
@@ -240,16 +252,16 @@ def cancel(paper_id: str, yes: bool = False) -> int:
         return 4
 
     payload = r.json()
-    current_status = payload.get("status", "?")
-    terminal = {"completed", "failed", "cancelled", "rejected"}
+    current_status = payload.get("shown_status") or payload.get("status", "?")
+    terminal = {"completed", "failed", "cancelled", "stopped", "rejected"}
     if current_status in terminal:
-        print(f"e2er cancel: paper is already at terminal status {current_status!r}; nothing to cancel.")
+        print(f"e2er cancel: paper is already at terminal status {status_words(current_status)!r}; nothing to cancel.")
         return 0
 
     title = payload.get("title") or "(untitled)"
     print(f"About to cancel: {title[:80]}")
     print(f"  Paper ID: {paper_id}")
-    print(f"  Current status: {current_status}")
+    print(f"  Current status: {status_words(current_status)}")
     usage = payload.get("usage") or {}
     if usage:
         print(
@@ -295,9 +307,10 @@ def cancel(paper_id: str, yes: bool = False) -> int:
         time.sleep(1.0)
         try:
             r = httpx.get(f"{_api_root()}/api/papers/{paper_id}", timeout=5.0)
-            new_status = r.json().get("status", "?")
-            if new_status in {"cancelled", "completed", "failed", "rejected"}:
-                print(f"  ✓ Final status: {new_status}")
+            body = r.json()
+            new_status = body.get("shown_status") or body.get("status", "?")
+            if new_status in {"cancelled", "completed", "failed", "stopped", "rejected"}:
+                print(f"  ✓ Final status: {status_words(new_status)}")
                 return 0
         except Exception:
             continue
@@ -355,6 +368,7 @@ def resume(
 
     payload = r.json()
     current_status = payload.get("status", "?")
+    shown = payload.get("shown_status") or current_status
     if current_status == "completed":
         # Genuinely done — no point resuming. Different from cancelled
         # (which IS resumable per the v0.4 state-machine softening).
@@ -365,7 +379,7 @@ def resume(
     current_cap = payload.get("max_cost_usd")
     print(f"Resuming: {_truncate(title, 80)}")
     print(f"  Paper ID: {paper_id}")
-    print(f"  Current status: {current_status}")
+    print(f"  Current status: {status_words(shown)}")
     if max_cost is not None:
         print(f"  Cap: ${_format_money(current_cap)} → ${_format_money(max_cost)}")
     else:
@@ -432,5 +446,5 @@ def resume(
         except KeyboardInterrupt:
             print("\n  ^C — paper continues in the background.", file=sys.stderr)
             return 0
-        print(f"\n  Final status: {final}")
+        print(f"\n  Final status: {status_words(final)}")
     return 0

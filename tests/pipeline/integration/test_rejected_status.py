@@ -1,9 +1,10 @@
 """v0.5: REJECTED is distinct from FAILED.
 
 FAILED means the pipeline crashed (uncaught exception).
-REJECTED means the pipeline ran successfully and the quality gate
-returned a negative verdict (verify_numbers critical mismatch,
-HARD_REJECT, MECHANISM_FAIL).
+REJECTED (an internal code, shown as "stopped by a check") means a check
+stopped the run (verify_numbers critical mismatch, verify_citations).
+After 0.13.1 the internal quality review never sets it: a low score
+(HARD_REJECT, MECHANISM_FAIL) leaves the run COMPLETED with its score.
 
 The distinction matters because:
 - The dashboard renders them differently
@@ -235,15 +236,16 @@ async def test_verify_numbers_no_draft_runs_reviewers_anyway(tmp_path, mock_llm)
 
 
 # ===========================================================================
-# Aggregator HARD_REJECT → REJECTED (not FAILED)
+# Aggregator HARD_REJECT → COMPLETED (a score never stops the run)
 # ===========================================================================
 
 
 @pytest.mark.asyncio
-async def test_hard_reject_verdict_yields_rejected_not_failed(tmp_path, mock_llm):
-    """When the review aggregator emits HARD_REJECT, the revision phase
-    must transition to REJECTED. Pre-v0.5 this was FAILED, which masked
-    the distinction between 'reviewers rejected it' and 'pipeline crashed'."""
+async def test_hard_reject_code_completes_the_run(tmp_path, mock_llm):
+    """When the review aggregator emits HARD_REJECT (a reviewer below 4, or a
+    combined score below 5), no revision round runs and the run is COMPLETED:
+    the internal quality review gives a score, it never stops a run. Up to
+    0.13.1 this was REJECTED, which read as a peer-review decision."""
     runner = _runner(tmp_path, mock_llm)
     ws = runner._workspace
 
@@ -290,4 +292,4 @@ async def test_hard_reject_verdict_yields_rejected_not_failed(tmp_path, mock_llm
     ):
         result = await runner._run_revision_phase(PaperStatus.REVIEW)
 
-    assert result == PaperStatus.REJECTED, f"HARD_REJECT must yield REJECTED (not FAILED), got {result}"
+    assert result == PaperStatus.COMPLETED, f"HARD_REJECT must yield COMPLETED, got {result}"

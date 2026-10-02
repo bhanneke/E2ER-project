@@ -54,7 +54,7 @@
         {% if a.moved %}<span class="muted">moved here</span>{% endif %}
       </td>
       <td class="c-status">
-        <span class="status status-{{ a.status }}">{{ a.status | replace("_", " ") }}</span>
+        <span class="status status-{{ a.status }}">{{ a.status | status_words }}</span>
         {% if a.archived %}<span class="muted">archived</span>{% endif %}
       </td>
       <td class="c-dates muted"><span class="d">started {{ a.created_at[:16] }}</span> <span class="d">updated {{ a.updated_at[:16] }}</span></td>

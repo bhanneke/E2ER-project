@@ -17,7 +17,7 @@ untouched.
 
 ```
 <OUTPUT_DIR>/<slug>/
-├── README.md            generated: research question, verdict, key result, how to reproduce
+├── README.md            generated: research question, internal quality review score, key result, how to reproduce
 ├── paper/
 │   ├── paper.pdf        compiled (if the LaTeX compile succeeded)
 │   ├── paper.tex        ← paper_draft.tex
@@ -41,7 +41,7 @@ untouched.
 │   ├── identification_strategy.md
 │   └── econometric_spec.md
 └── reviews/
-    ├── review_aggregation.json     the verdict
+    ├── review_aggregation.json     the six scores and the combined score
     ├── review_mechanism.md
     ├── review_literature.md
     ├── review_*.md                 (technical / writing / data / identification, when present)
@@ -59,7 +59,7 @@ untouched.
 | `estimation_results.json`, `robustness_results.json`, `summary_statistics.json`, `number_verification.json`, `figure_spec.json`, `table_spec.json` | `results/` |
 | `paper_plan.md`, `identification_strategy.md`, `econometric_spec.md`, `model_spec.md` | `design/` |
 | `review_*.md`, `review_aggregation.json`, `self_attack_report.json`, `polish_*.md`, `citation_integrity.json` | `reviews/` |
-| `manifest.json` + verdict + key coef | synthesized into `README.md` |
+| `manifest.json` + internal quality review score + key coef | synthesized into `README.md` |
 
 Mapping lives in one dict so it's trivial to re-shape; anything unmatched falls into a
 `misc/` folder rather than being dropped (no silent loss).
@@ -74,13 +74,13 @@ Mapping lives in one dict so it's trivial to re-shape; anything unmatched falls 
   folder and **subsumes D5** (no overwrite — re-running just bumps `NN`).
 - **D3 — `data.db` handling.** **Copy** (portable deliverable; ~1 GB is fine). Never symlink — the
   folder must survive being moved/shared and the workspace being cleaned up.
-- **D4 — When it runs.** Both: **auto** at terminal status (completed *and* rejected/failed), plus a
+- **D4 — When it runs.** Both: **auto** at terminal status (completed, stopped by a check, or failed), plus a
   manual CLI `e2er export <paper_id> [--to DIR]` for on-demand / re-export.
 - **D5 — Re-export.** Handled by D2's `NN` version counter — each export is a fresh `-NN` folder; nothing
   is overwritten.
 - **D6 — Folder names.** As proposed: `paper/ code/ (+code/scratch/) data/ results/ design/ reviews/`.
   Probe scripts kept under `code/scratch/` for reproducibility.
-- **D7 — Partial runs.** Yes — best-effort over whatever artifacts exist, so a rejected/failed run still
+- **D7 — Partial runs.** Yes — best-effort over whatever artifacts exist, so a stopped/failed run still
   yields its reviews + draft.
 
 ## Implementation sketch (once the layout is fixed)

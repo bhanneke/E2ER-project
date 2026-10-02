@@ -28,14 +28,18 @@ from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any
 
-#: Statuses an attempt can be archived in: the run is over.
-ARCHIVABLE = ("completed", "failed", "cancelled", "rejected")
+from ..core.run_outcome import status_words, workspace_status
+
+#: Statuses an attempt can be archived in: the run is over. An attempt's status
+#: is its effective one (core/run_outcome.py): ``stopped`` is a check that
+#: stopped the run (stored as ``rejected``).
+ARCHIVABLE = ("completed", "failed", "cancelled", "stopped")
 
 #: What the bulk action archives.
 BULK_STATUSES = ("failed", "cancelled")
 
-#: Order of the status summary ("2 completed · 5 failed · 2 rejected").
-_SUMMARY_ORDER = ("completed", "rejected", "failed", "cancelled", "paused")
+#: Order of the status summary ("2 completed · 5 failed · 2 stopped by a check").
+_SUMMARY_ORDER = ("completed", "stopped", "failed", "cancelled", "paused")
 
 _TRAILING = re.compile(r"[\s.?!,;:…。？！、]+$")
 _SPACE = re.compile(r"\s+")
@@ -117,10 +121,10 @@ class Study:
         return max((a["updated_at"] for a in self.shown(show_archived)), default="")
 
     def summary(self, show_archived: bool = False) -> str:
-        """``2 completed · 5 failed · 2 rejected`` over the shown attempts."""
+        """``2 completed · 5 failed · 2 stopped by a check`` over the shown attempts."""
         counts = Counter(a["status"] for a in self.shown(show_archived))
         order = [s for s in _SUMMARY_ORDER if s in counts] + sorted(s for s in counts if s not in _SUMMARY_ORDER)
-        return " · ".join(f"{counts[s]} {s.replace('_', ' ')}" for s in order)
+        return " · ".join(f"{counts[s]} {status_words(s)}" for s in order)
 
     def as_dict(self, show_archived: bool = False) -> dict[str, Any]:
         latest = self.latest(show_archived)
@@ -161,7 +165,8 @@ def group(rows: list[dict[str, Any]]) -> dict[str, Study]:
             "short_id": str(r["id"])[:8],
             "title": r.get("title") or "",
             "research_question": r.get("research_question") or "",
-            "status": r.get("status") or "",
+            # Whether the run finished, never a review result (run_outcome.py).
+            "status": workspace_status(r.get("status"), r.get("workspace")),
             "template": r.get("pipeline") or "empirical",
             "backend": r.get("backend") or "",
             "model": r.get("model") or "",
@@ -182,7 +187,7 @@ def group(rows: list[dict[str, Any]]) -> dict[str, Study]:
 
 _ATTEMPT_COLUMNS = (
     "id, title, research_question, status, pipeline, backend, model, created_at, updated_at, "
-    "archived_at, study_key, study_override"
+    "archived_at, study_key, study_override, workspace"
 )
 
 
@@ -400,9 +405,9 @@ async def cancel_attempt(ref: str, via: str = "dashboard") -> dict[str, Any]:
     row = await client.fetch_one(
         "SELECT status, run_owner, heartbeat_at, workspace, mode FROM papers WHERE id = %(id)s", {"id": attempt["id"]}
     )
-    status = str((row or {}).get("status") or "")
+    status = workspace_status((row or {}).get("status"), (row or {}).get("workspace"))
     if status in ARCHIVABLE:
-        raise StudyError(f"{label} is already {status}; there is nothing to cancel.")
+        raise StudyError(f"{label} is already {status_words(status)}; there is nothing to cancel.")
     if status not in CANCELLABLE:
         raise StudyError(
             f"{label} is still running ({status.replace('_', ' ')}). Stop it with Cancel on its page, "

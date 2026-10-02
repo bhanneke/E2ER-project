@@ -63,7 +63,7 @@
         <span class="muted summary">{{ s.summary }}{% if not show_archived and s.archived %} · {{ s.archived }} archived{% endif %}</span>
       </td>
       <td class="c-latest">
-        {% if s.latest_status %}<span class="status status-{{ s.latest_status }}">{{ s.latest_status | replace("_", " ") }}</span>{% endif %}
+        {% if s.latest_status %}<span class="status status-{{ s.latest_status }}">{{ s.latest_status | status_words }}</span>{% endif %}
         <span class="muted">{{ (s.latest_date or "")[:16] }}</span>
       </td>
       {% if show_archived %}

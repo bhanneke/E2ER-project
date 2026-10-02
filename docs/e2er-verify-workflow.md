@@ -18,10 +18,10 @@ the result, and e2er.org checks its signature against GitHub's published keys.
 2. On e2er.org, open your account, section **GitHub Actions**, and add the
    study, the repository (`owner/name`) and the workflow file
    (`.github/workflows/e2er-verify.yml`). Optionally name a GitHub environment;
-   then only jobs running in that environment are accepted.
+   then e2er.org records only jobs running in that environment.
 3. Push. The study page lists the run under "Checked in GitHub Actions".
 
-A result is accepted only for the commit the published version pins, and only
+e2er.org records a result only for the commit the published version pins, and only
 when the checked folder's content id (the SHA-256 of `provenance.json`) is the
 published one. A run reports once per attempt.
 

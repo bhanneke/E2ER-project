@@ -400,9 +400,11 @@ def test_the_outcome_halts_pauses_failures_and_checks_are_recorded(tmp_path: Pat
     assert prereg["check"] == "preregistration" and prereg["passed"] is False and prereg["deviations"] == ["H2 changed"]
     assert [e["event"] for e in run.events] == ["paper_paused", "failed", "cancelled"]
     assert run.events[0]["previous_status"] == "designing"
-    assert run.outcome == {"status": "rejected", "error": "halted", "at": "2026-09-29T15:59:32Z"}
+    # Stored `rejected` without an internal quality review: a check stopped the run.
+    assert run.outcome == {"status": "stopped", "error": "halted", "at": "2026-09-29T15:59:32Z"}
     doc = build_dossier(_manifest(run), run=run)
-    assert doc["run"]["outcome"]["status"] == "rejected" and doc["run"]["events"] == run.events
+    assert doc["run"]["outcome"]["status"] == "stopped" and doc["run"]["events"] == run.events
+    assert "internal_review" not in doc["run"]
 
 
 # ── 26: one time format, every field, models by time ─────────────────────────

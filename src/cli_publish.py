@@ -319,7 +319,7 @@ def _describe(
             print(f"error: {why}")
             return 1, None
         assert paper_id is not None
-        run_record = read_run(run_db, paper_id, files_at_export(prov))
+        run_record = read_run(run_db, paper_id, files_at_export(prov), b)
         if not run_record.recorded:
             print(f"error: the database {run_db} holds no recorded steps for paper {paper_id}")
             return 1, None

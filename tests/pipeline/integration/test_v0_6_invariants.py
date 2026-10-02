@@ -416,9 +416,9 @@ async def test_merger_refuses_out_of_scope_edit_from_major_revision_site(tmp_pat
     ):
         result = await runner._run_revision_phase(PaperStatus.REVIEW)
 
-    # The merger rejected the out-of-scope edit → 0 applied + 1
-    # failed → REJECTED.
-    assert result == PaperStatus.REJECTED
+    # The merger refused the out-of-scope edit → 0 applied + 1 failed: the
+    # revision round changed nothing and the run completes (after 0.13.1).
+    assert result == PaperStatus.COMPLETED
     # The draft was NOT modified
     assert (ws / "paper_draft.tex").read_text() == _DRAFT
 

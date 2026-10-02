@@ -106,7 +106,7 @@ def _signed_in(base: str) -> bool:
 async def finish_page(request: Request, paper_id: str) -> Any:
     from ..config import get_settings
     from ..core.demonstration import study_purpose
-    from .app import templates
+    from .app import _with_outcome, templates
 
     paper = await _paper(paper_id)
     export = find_export(paper_id)
@@ -121,7 +121,7 @@ async def finish_page(request: Request, paper_id: str) -> Any:
         request,
         "finish.html",
         {
-            "paper": paper,
+            "paper": _with_outcome(dict(paper)),
             "export": str(export) if export else "",
             "output_root": str(settings.resolved_output_root()),
             "platform": base,
