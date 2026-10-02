@@ -258,7 +258,7 @@ make smoke-paid   # one real study on Claude Haiku 4.5 (needs ANTHROPIC_API_KEY,
 ### Related projects
 
 - [Project APE](https://ape.socialcatalystlab.org/) (Social Catalyst Lab, University of Zurich).
-- [ZeroPaper](https://github.com/alejandroll10/zeropaper) (Institute for Automated Research). e2er's ceiling check, self-attack, parallel polish and mechanical aggregation of reviews follow ZeroPaper.
+- [ZeroPaper](https://github.com/alejandroll10/zeropaper) (Institute for Automated Research). Several of e2er's review steps follow ZeroPaper.
 
 ## Citing
 
