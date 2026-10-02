@@ -9,8 +9,8 @@
 {% if not session_ok %}
   <div class="pf-banner bad">{{ session_problem | ticks }}</div>
 {% endif %}
-{% if paper.status != "completed" %}
-  <div class="pf-banner bad">This study has not finished (status: {{ paper.status }}). You can still check what it has produced.</div>
+{% if paper.shown_status != "completed" %}
+  <div class="pf-banner bad">This study has not finished (status: {{ paper.shown_status | status_words }}). You can still check what it has produced.</div>
 {% endif %}
 
 <section class="card" id="card-folder" data-state="{{ 'ok' if export else 'none' }}">

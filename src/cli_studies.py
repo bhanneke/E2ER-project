@@ -20,6 +20,7 @@ import asyncio
 import sys
 from typing import Any
 
+from .core.run_outcome import status_words
 from .db import studies as st
 
 
@@ -45,7 +46,7 @@ def format_list(studies: list[st.Study], n_archived: int, *, attempts: bool, arc
     for s in studies:
         d = s.as_dict(archived)
         lines.append(s.title)
-        latest = f"{d['latest_status']} {str(d['latest_date'] or '')[:16]}" if d["latest_status"] else "—"
+        latest = f"{status_words(d['latest_status'])} {str(d['latest_date'] or '')[:16]}" if d["latest_status"] else "—"
         extra = f" · {d['archived']} archived" if d["archived"] and not archived else ""
         lines.append(f"  {s.key} · {s.template} · {_plural(d['attempts'], 'attempt')}{extra} · latest: {latest}")
         lines.append(f"  {d['summary']}")
@@ -53,8 +54,9 @@ def format_list(studies: list[st.Study], n_archived: int, *, attempts: bool, arc
             for a in reversed(s.shown(archived)):
                 model = "/".join(x for x in (a["backend"], a["model"]) if x) or "default"
                 flag = "  [archived]" if a["archived"] else ""
+                shown = status_words(a["status"])
                 lines.append(
-                    f"    v{a['version']:<3} {a['short_id']}  {a['status']:<10} {a['created_at'][:16]}  {model}{flag}"
+                    f"    v{a['version']:<3} {a['short_id']}  {shown:<10} {a['created_at'][:16]}  {model}{flag}"
                 )
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"

@@ -60,7 +60,7 @@ A pipeline is an ordered list of **steps**. A step is one of four kinds.
 | `specialists` | dispatch a set of specialists, optionally in parallel | `_run_initial_phase`, `_run_polish_phase` |
 | `gate` | run a check; halt, retry or shadow on failure | `_enforce_estimation_gate` |
 | `iterate` | strategist loop until a stopping condition | `_run_iterative_phase` |
-| `aggregate` | combine reviewer output into a verdict | `_run_review_phase` |
+| `aggregate` | combine the reviewers' scores into one score (the internal quality review) | `_run_review_phase` |
 
 Making gates *steps* rather than a global setting is the point. The pipeline
 file then records what was actually checked, in order, and a check can run twice

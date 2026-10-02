@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.2] — 2026-10-02
+
+- **The internal quality review gives a score, nothing else.** Six reviewer specialists each
+  score the draft from one angle (data, identification, literature, mechanism, technical,
+  writing); the score is their weighted average and decides whether the draft is revised. A run
+  that finishes its steps is now `completed` whatever its score; up to 0.13.1 a low score stored
+  `rejected`, which read as a peer-review decision (the FOMC demonstration study's dossier said
+  "Outcome: Rejected" for a run that finished every step).
+- **Dossier:** `run.outcome.status` says whether the run finished (`completed`, `failed`,
+  `cancelled`, `paused`, `stopped` by a check). The new `run.internal_review` records the score
+  (`score`, `scale`, `combined`, each reviewer's score in `reviewers`, their `weights`, `rounds`).
+  A run stored as `rejected` reads as `completed` when it reached its review, else `stopped`.
+- **Visible wording:** the dashboard, `e2er status`/`list`/`run`, the export's README and
+  report.html show the status in plain words ("stopped by a check" for a check that stopped the
+  run) and "e2er's internal quality review: 6.1 of 10", never a review verdict.
+- **Revision round that applies no edit** completes the run and records a
+  `revision_not_applied` event; a revision round that writes no patch file fails the run
+  (resumable). Before, both stored `rejected`.
+
 ## [0.13.1] — 2026-10-02
 
 - **README rewritten in plain language.** It opens with the description and the texts of the

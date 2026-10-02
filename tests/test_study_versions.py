@@ -199,7 +199,7 @@ def test_list_groups_attempts_and_counts_them(db: Path):
     assert pilot.title == "Pilot 4"  # the latest attempt names the study
     d = pilot.as_dict()
     assert d["attempts"] == 4
-    assert d["summary"] == "1 completed · 1 rejected · 1 failed · 1 cancelled"
+    assert d["summary"] == "1 completed · 1 stopped by a check · 1 failed · 1 cancelled"
     assert d["latest_status"] == "cancelled"
     # Most recent activity first.
     assert [len(s.attempts) for s in studies] == [1, 4, 1]
@@ -497,7 +497,9 @@ def test_cancel_refuses_attempts_that_are_not_paused(db: Path, status: str):
     pid = _run(_add(status=status))
     with pytest.raises(st.StudyError) as e:
         _run(st.cancel_attempt(pid))
-    assert ("already" in str(e.value)) if status in st.ARCHIVABLE else ("still running" in str(e.value))
+    # A stored `rejected` (no internal quality review in a workspace) is a run a check stopped.
+    shown = "stopped" if status == "rejected" else status
+    assert ("already" in str(e.value)) if shown in st.ARCHIVABLE else ("still running" in str(e.value))
     with sqlite3.connect(db) as c:
         assert c.execute("SELECT status FROM papers WHERE id = ?", (pid,)).fetchone()[0] == status
     assert _events(db, pid) == []

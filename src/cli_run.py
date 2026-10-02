@@ -25,6 +25,8 @@ import sys
 import time
 from pathlib import Path
 
+from .core.run_outcome import status_words
+
 
 class RQInputError(Exception):
     """The RQ source was given but could not be read — reported as a one-line
@@ -222,11 +224,12 @@ def _poll_status(paper_id: str, total_seconds: float, poll_interval: float = 15.
     """Tail status until terminal. Returns the final status."""
     import httpx
 
-    # `rejected` is a v0.5+ terminal status (review-gate or verify_numbers
-    # quality reject, distinct from `failed` which means crash). Pre-fix
-    # the tailer kept polling forever on REJECTED papers because they
-    # weren't in this set — observed during fresh-install testing.
-    terminal = {"completed", "failed", "cancelled", "paused", "rejected"}
+    # The API's `shown_status` says whether the run finished (run_outcome.py):
+    # `stopped` is a check that stopped the run (stored as `rejected`, a
+    # v0.5+ terminal status distinct from `failed`, which means crash). Pre-fix
+    # the tailer kept polling forever on such papers because they weren't in
+    # this set — observed during fresh-install testing.
+    terminal = {"completed", "failed", "cancelled", "paused", "stopped", "rejected"}
     start = time.monotonic()
     last_state = ""
     while time.monotonic() - start < total_seconds:
@@ -236,7 +239,7 @@ def _poll_status(paper_id: str, total_seconds: float, poll_interval: float = 15.
         except Exception:
             time.sleep(poll_interval)
             continue
-        status = d.get("status") or "?"
+        status = d.get("shown_status") or d.get("status") or "?"
         u = d.get("usage") or {}
         line = (
             f"  [{status:12s}] specialists={u.get('specialist_calls') or 0:>3}  "
@@ -327,15 +330,15 @@ def run(
         print(f"  Watch progress at: {dashboard_url}", file=sys.stderr)
         return 0
 
-    print(f"\n  Final status: {final}", file=sys.stderr)
+    print(f"\n  Final status: {status_words(final)}", file=sys.stderr)
     print(f"  Dashboard:    {dashboard_url}", file=sys.stderr)
     if final == "completed":
         print("\n✓ Paper completed. Open the dashboard or read directly from:", file=sys.stderr)
         print(f"  {workspace}/paper_draft.tex", file=sys.stderr)
         print(f"  {workspace}/abstract.tex", file=sys.stderr)
         return 0
-    if final in {"failed", "paused"}:
-        print(f"\n⚠ Paper {final}. Diagnose with:", file=sys.stderr)
+    if final in {"failed", "paused", "stopped"}:
+        print(f"\n⚠ Paper {status_words(final)}. Diagnose with:", file=sys.stderr)
         print(f"  curl -s {_api_root()}/api/papers/{paper_id}/failure-bundle | jq", file=sys.stderr)
         return 1
     return 0

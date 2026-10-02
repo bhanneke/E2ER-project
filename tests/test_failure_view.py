@@ -100,11 +100,20 @@ def test_one_specialist_failing_does_not_blame_the_environment(tmp_path: Path):
     assert not any("environment" in h.lower() for h in detail["hints"])
 
 
-def test_rejected_is_explained_as_a_gate_not_a_crash(tmp_path: Path):
-    """Rejected and failed look identical to a newcomer and are not the same."""
+def test_stopped_is_explained_as_a_check_not_a_crash(tmp_path: Path):
+    """Stopped by a check and failed look identical to a newcomer and are not the same."""
     detail = _failure_detail(tmp_path, {"status": "rejected", "last_error": ""}, [])
     assert detail["failed"] is True
-    assert any("gate" in h.lower() for h in detail["hints"])
+    assert detail["status"] == "stopped"
+    assert any("check" in h.lower() for h in detail["hints"])
+
+
+def test_an_old_run_rejected_after_its_review_is_not_a_failure(tmp_path: Path):
+    """Up to 0.13.1 a low internal quality review score stored `rejected` on a
+    run that finished. With the review's file present, it is completed."""
+    (tmp_path / "review_aggregation.json").write_text('{"verdict": "MAJOR_REVISION", "weighted_avg": 6.1}')
+    detail = _failure_detail(tmp_path, {"status": "rejected", "last_error": ""}, [])
+    assert detail == {"failed": False}
 
 
 def test_paused_says_the_workspace_survived(tmp_path: Path):

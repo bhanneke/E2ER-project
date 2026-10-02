@@ -19,10 +19,12 @@ class PaperStatus(StrEnum):
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
-    # Distinct from FAILED so the operator can tell at a glance whether
-    # the paper crashed (FAILED) or was rejected by the review gate
-    # (REJECTED). v0.4.5 live tests conflated both as FAILED. Resumable
-    # via /api/papers/{id}/resume — operator revises and re-runs.
+    # A check stopped the run (verify_numbers / verify_citations before the
+    # internal quality review). Distinct from FAILED (a crash). Resumable via
+    # /api/papers/{id}/resume — the operator fixes what the check names and
+    # re-runs. The value is an internal code: it is shown as "stopped by a
+    # check" (core/run_outcome.py). The internal quality review never sets it
+    # after 0.13.1: a run that finishes its steps is COMPLETED whatever its score.
     REJECTED = "rejected"
     # Circuit-breaker halt + budget-exhausted halt. Set when a non-tolerant
     # specialist has failed too many times in a row, OR when the per-paper
@@ -188,9 +190,10 @@ VALID_TRANSITIONS: dict[PaperStatus, set[PaperStatus]] = {
     PaperStatus.COMPLETED: set(),
     PaperStatus.FAILED: {PaperStatus.IDEA},
     PaperStatus.CANCELLED: {PaperStatus.IDEA},
-    # REJECTED is reachable from REVIEW/REVISION (HARD_REJECT, MECHANISM_FAIL)
-    # and can transition back to IDEA (restart) or any non-terminal phase
-    # when the operator resumes after revising the source artifacts.
+    # REJECTED (stopped by a check) is reachable from REVIEW/REVISION (a check
+    # on the re-reviewed draft of a deep revision round) and can transition
+    # back to IDEA (restart) or any non-terminal phase when the operator
+    # resumes after revising the source artifacts.
     PaperStatus.REJECTED: {
         PaperStatus.IDEA,
         PaperStatus.CANCELLED,

@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from ...logging_config import get_logger
+from ..run_outcome import review_detail
 
 logger = get_logger(__name__)
 
@@ -61,7 +62,7 @@ def _fmt_size(n: int) -> str:
 
 
 def _verdicts(bundle: Path) -> list[dict[str, Any]]:
-    """The run's own gate verdicts, read from the reports it wrote."""
+    """The results of the run's own checks, read from the reports it wrote, and its internal quality review score."""
     out: list[dict[str, Any]] = []
 
     if (d := _load(bundle, "results/table_render_report.json")) is not None:
@@ -96,16 +97,9 @@ def _verdicts(bundle: Path) -> list[dict[str, Any]]:
             }
         )
 
-    if (d := _load(bundle, "reviews/review_aggregation.json")) is not None:
-        verdict = str(d.get("verdict", "")).upper() or "—"
-        avg = d.get("weighted_avg")
-        out.append(
-            {
-                "name": "Internal review",
-                "ok": verdict not in {"REJECT", "MECHANISM_FAIL"},
-                "detail": verdict + (f" · {avg:.2f}/10" if isinstance(avg, (int, float)) else ""),
-            }
-        )
+    if (d := _load(bundle, "reviews/review_aggregation.json")) is not None and (detail := review_detail(d)):
+        # A score, not a check: no pass or fail mark.
+        out.append({"name": "e2er's internal quality review", "ok": None, "detail": detail})
 
     return out
 
@@ -250,8 +244,8 @@ def render_report(bundle: Path, manifest: dict[str, Any], prov_doc: dict[str, An
     if verdicts:
         P.append("<div class='vs'>")
         for v in verdicts:
-            mark = "✓" if v["ok"] else "✗"
-            cls = "ok" if v["ok"] else "bad"
+            mark = "·" if v["ok"] is None else "✓" if v["ok"] else "✗"
+            cls = "muted" if v["ok"] is None else "ok" if v["ok"] else "bad"
             P.append(
                 f"<div class='v'><div class='mark {cls}'>{mark}</div>"
                 f"<div><strong>{_esc(v['name'])}</strong></div>"
@@ -262,9 +256,11 @@ def render_report(bundle: Path, manifest: dict[str, Any], prov_doc: dict[str, An
         P.append("<p class='muted'>This bundle carries no gate reports.</p>")
 
     P.append(
-        "<p class='muted' style='margin-top:14px'>These are the verdicts the run recorded, not a "
-        "re-check. To verify the bundle independently — re-hash every file, recompute the numbers, "
-        "re-render the tables and resolve every citation — run "
+        "<p class='muted' style='margin-top:14px'>These are the results the run recorded, not a "
+        "re-check. The internal quality review is a score: six reviewer specialists each score the "
+        "draft from one angle, and the score is their weighted average. To verify the bundle "
+        "independently — re-hash every file, recompute the numbers, re-render the tables and "
+        "resolve every citation — run "
         "<span class='mono'>e2er verify</span> on this folder.</p>"
     )
 

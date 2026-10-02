@@ -162,12 +162,14 @@ def test_readme_full_regime_no_shadow_warning(tmp_path: Path):
     assert "ran in shadow" not in readme.lower()
 
 
-def test_readme_has_verdict_and_coef(tmp_path: Path):
+def test_readme_has_the_review_score_and_coef(tmp_path: Path):
     ws = _workspace(tmp_path)
     out = export_paper(ws, tmp_path / "out", date_str="20260627")
     readme = (out / "README.md").read_text()
     assert "Routing Around Royalties" in readme
-    assert "MECHANISM_FAIL" in readme
+    # A score, never the internal code that picked the revision path.
+    assert "e2er's internal quality review:** " in readme
+    assert "MECHANISM_FAIL" not in readme and "Verdict" not in readme
     assert "aggregator_routed" in readme  # headline estimate table
 
 

@@ -92,6 +92,37 @@ def _ticks(text: object) -> Any:
 templates.env.filters["ticks"] = _ticks
 
 
+def _status_words(value: object) -> str:
+    """The status as shown: ``stopped`` → ``stopped by a check`` (core/run_outcome.py)."""
+    from ..core.run_outcome import status_words
+
+    return status_words(str(value or ""))
+
+
+templates.env.filters["status_words"] = _status_words
+
+
+def _paper_workspace(paper: dict[str, Any]) -> Path:
+    return Path(str(paper.get("workspace") or Path(get_settings().workspace_root) / str(paper.get("id") or "")))
+
+
+def _with_outcome(paper: dict[str, Any]) -> dict[str, Any]:
+    """The paper row plus ``shown_status`` (whether the run finished, never a review result)
+    and ``internal_review`` (e2er's internal quality review score, when the run has one).
+
+    ``status`` stays the stored internal code: the resume, cancel and archive
+    rules read it. Pages show ``shown_status``.
+    """
+    from ..core.run_outcome import internal_review, read_aggregation, workspace_status
+
+    ws = _paper_workspace(paper)
+    return {
+        **paper,
+        "shown_status": workspace_status(paper.get("status"), ws),
+        "internal_review": internal_review(read_aggregation(ws)),
+    }
+
+
 @app.middleware("http")
 async def _session_from_launch_url(request: Request, call_next):
     """Trade the token in the launch URL (`/?t=…`) for a session cookie.
@@ -832,10 +863,10 @@ async def get_paper(paper_id: str = Depends(_validate_uuid)) -> dict[str, Any]:
         backend_used = (row.get("backend") if isinstance(row, dict) else None) or get_settings().llm_backend
         if usage:
             usage["cost_is_estimate"] = backend_used in {"claude_code", "codex", "gemini"}
-        return {**row, "usage": usage or {}}
+        return {**_with_outcome(dict(row)), "usage": usage or {}}
     except Exception as e:
         logger.warning("get_paper usage fetch failed for paper_id=%s: %s", paper_id, e)
-        return {**row, "usage": {}}
+        return {**_with_outcome(dict(row)), "usage": {}}
 
 
 @app.get("/api/papers/{paper_id}/artifacts")
@@ -1935,7 +1966,7 @@ async def paper_detail(request: Request, paper_id: str = Depends(_validate_uuid)
         request,
         "paper.html",
         {
-            "paper": paper,
+            "paper": _with_outcome(dict(paper)),
             "study": await attempt_context(paper_id),
             "artifacts": artifacts,
             "reading": _reading_list(artifacts),
@@ -2041,16 +2072,18 @@ def _gate_verdicts(workspace: Path) -> list[dict[str, Any]]:
         )
 
     if (d := _load("review_aggregation.json")) is not None:
-        verdict = str(d.get("verdict", "")).upper()
-        avg = d.get("weighted_avg")
-        out.append(
-            {
-                "name": "review_aggregation.json",
-                "label": "Review panel",
-                "ok": verdict not in {"REJECT", "MECHANISM_FAIL"},
-                "note": f"{verdict}" + (f" · {avg:.2f}/10" if isinstance(avg, (int, float)) else ""),
-            }
-        )
+        from ..core.run_outcome import review_detail
+
+        if detail := review_detail(d):
+            # A score, not a check: neither passed nor failed.
+            out.append(
+                {
+                    "name": "review_aggregation.json",
+                    "label": "Internal quality review",
+                    "ok": None,
+                    "note": detail,
+                }
+            )
 
     return out
 
@@ -2062,7 +2095,7 @@ _READABLE: tuple[tuple[str, str, bool], ...] = (
     ("abstract.tex", "Abstract", False),
     ("data_summary.md", "Data summary", False),
     ("identification_strategy.md", "Identification strategy", False),
-    ("review_aggregation.json", "Review verdict", False),
+    ("review_aggregation.json", "Internal quality review score", False),
 )
 
 
@@ -2165,15 +2198,16 @@ def _artifact_groups(
                 {
                     "p": g["name"],
                     "b": sizes.get(g["name"], 0),
-                    "status": "pass" if g["ok"] else "fail",
+                    "status": "none" if g["ok"] is None else "pass" if g["ok"] else "fail",
                     "note": f"{g['label']}: {g['note']}",
                 }
             )
+        checked = [r for r in rows if r["status"] != "none"]
         groups.append(
             {
                 "name": "Gates",
-                "status": "fail" if any(r["status"] != "pass" for r in rows) else "pass",
-                "note": f"{sum(1 for r in rows if r['status'] == 'pass')}/{len(rows)} passed",
+                "status": "fail" if any(r["status"] == "fail" for r in rows) else "pass",
+                "note": f"{sum(1 for r in checked if r['status'] == 'pass')}/{len(checked)} passed",
                 "files": rows,
             }
         )
@@ -2400,8 +2434,13 @@ def _failure_detail(workspace: Path, paper: dict[str, Any], events: list[dict[st
     per-specialist contract feedback, and the event log. Nothing is inferred
     about what the model was thinking, only about what it did not produce.
     """
-    status = str(paper.get("status") or "")
-    if status not in {"failed", "rejected", "paused"}:
+    from ..core.run_outcome import workspace_status
+
+    # "stopped" (stored as `rejected`) is a check that stopped the run; an older
+    # run stored `rejected` after its internal quality review, and that run
+    # completed (run_outcome.effective_status).
+    status = workspace_status(paper.get("status"), workspace)
+    if status not in {"failed", "stopped", "paused"}:
         return {"failed": False}
 
     raw = str(paper.get("last_error") or "").strip()
@@ -2441,11 +2480,11 @@ def _failure_detail(workspace: Path, paper: dict[str, Any], events: list[dict[st
             "refuses to write to, or a backend that is installed but not logged in. "
             "Check Preflight."
         )
-    if status == "rejected":
+    if status == "stopped":
         hints.append(
-            "Rejected means a gate blocked the paper rather than the pipeline breaking. "
-            "The gate reports in the workspace say which, and resuming without addressing "
-            "it will reach the same verdict."
+            "Stopped means a check stopped the run rather than the pipeline breaking. "
+            "The check reports in the workspace say which, and resuming without fixing "
+            "what it names will stop the run at the same check."
         )
     if status == "paused":
         hints.append(
@@ -2512,7 +2551,7 @@ async def paper_live_fragment(request: Request, paper_id: str = Depends(_validat
         request,
         "_live.html",
         {
-            "paper": paper,
+            "paper": _with_outcome(dict(paper)),
             "progress": _progress(list(events or []), dict(paper)),
             "tp": _template_progress(dict(paper), list(events or [])),
             "failure": _failure_detail(Path(get_settings().workspace_root) / paper_id, dict(paper), list(events or [])),

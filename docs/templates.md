@@ -50,7 +50,7 @@ check fails, and the run stops before estimation, when
   a window runs past the data.
 - the design names the researcher's own event table (`events_source`) and its
   event dates are not exactly that table's dates; a date without trading maps
-  to the next trading day, and the verdict lists each such mapping. Without
+  to the next trading day, and the check's result lists each such mapping. Without
   `events_source`, a table in the data that looks like an event list only
   produces a warning.
 
@@ -62,9 +62,9 @@ The three settings are in the template, under the gate's `[steps.settings]`.
 A failed check stops the run at the check with its reasons (`e2er review`
 shows them): edit `event_design.json` or send the identification strategist
 back, and the check runs again on resume. Approving does not pass it. Each
-verdict is recorded like the other checks and appears in the dossier. With
+result is recorded like the other checks and appears in the dossier. With
 `on_fail = "retry"` the identification strategist is sent back once with the
-reasons before the run stops; with `"shadow"` the verdict is only recorded.
+reasons before the run stops; with `"shadow"` the result is only recorded.
 
 A gate step with `after = [...]` is how any check can sit inside the initial
 phase; it also runs before a group that contains the econometrics specialist,
@@ -85,7 +85,7 @@ e2er run "Computational reproduction of <paper title> (10.5281/zenodo.<id>)" --t
 | Step | Kind | What happens |
 |---|---|---|
 | `fetch` | check `package_integrity` | The record is read from the public Zenodo API (no key). Every file is downloaded, verified against the checksum Zenodo publishes (MD5) and hashed with SHA-256; a mismatch fails the step. Archives are unpacked into `package/`, every unpacked file is hashed, and the tree is made read-only. PDF text goes to `package_text/`, page by page. All of it is in `package_manifest.json`. The step runs at every start: the package is re-hashed (one changed byte fails the step), and the paper the researcher supplies is staged (below). |
-| `plan` | specialist `replication_planner` | Reads the README, the documentation and the code; lists the entry points in run order, the pinned image and the packages, maps every table and figure to its script and output, and records the targets at two levels (below). Writes `replication_plan.json` (schema `docs/schemas/replication_plan.schema.json`) and `replication_plan.md`. The plan is validated before it is accepted: pinned official image, interpreter plus package-relative script, no inline code, no shell. |
+| `plan` | specialist `replication_planner` | Reads the README, the documentation and the code; lists the entry points in run order, the pinned image and the packages, maps every table and figure to its script and output, and records the targets at two levels (below). Writes `replication_plan.json` (schema `docs/schemas/replication_plan.schema.json`) and `replication_plan.md`. The plan is validated before the run uses it: pinned official image, interpreter plus package-relative script, no inline code, no shell. |
 | `review_plan` | researcher | The run stops. Approve, edit the plan, or send the planner back. |
 | `sandbox_run` | check `sandbox` | Runs the plan in Docker (below). Fails only when the sandbox cannot work (no Docker, invalid plan, image unavailable, package modified); a script that fails is a result. |
 | `compare` | specialist `reproduction_comparer` | Levels each result by the protocol: reproduced, reproduced with minor differences, not reproduced, could not be run. Writes `reproduction_report.json` (schema `docs/schemas/reproduction_report.schema.json`) and `reproduction_report.md`. |

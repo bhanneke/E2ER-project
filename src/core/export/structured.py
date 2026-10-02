@@ -11,7 +11,7 @@ navigable tree the human actually wants — without touching the workspace:
 Design points (see docs/STRUCTURED_EXPORT_SPEC.md):
   - **Copy, never symlink** — the folder must survive being moved/shared.
   - **Versioned slug** — ``NN`` auto-increments, so re-export never overwrites.
-  - **Best-effort** — exports whatever artifacts exist, so a rejected/failed run
+  - **Best-effort** — exports whatever artifacts exist, so a stopped/failed run
     still yields its reviews + draft. Missing files are simply skipped.
 """
 
@@ -24,6 +24,7 @@ import shutil
 from pathlib import Path
 
 from ...logging_config import get_logger
+from ..run_outcome import review_detail
 
 logger = get_logger(__name__)
 
@@ -273,18 +274,17 @@ def _read_json(path: Path) -> dict:
 def _render_readme(workspace: Path, manifest: dict, slug: str, notes: list[str] | None = None) -> str:
     title = manifest.get("title") or "Untitled"
     rq = manifest.get("research_question") or "—"
-    agg = _read_json(workspace / "review_aggregation.json")
-    verdict = agg.get("verdict") or "—"
-    avg = agg.get("weighted_avg")
-    rationale = agg.get("rationale") or ""
+    review = review_detail(_read_json(workspace / "review_aggregation.json"))
 
     lines = [
         f"# {title}",
         "",
         f"**Research question:** {rq}",
-        "",
-        f"**Verdict:** `{verdict}`" + (f" (weighted avg {avg}/10)" if isinstance(avg, (int, float)) else ""),
     ]
+    if review:
+        # A score, nothing else: six reviewer specialists each score the draft
+        # from one angle; the score is their weighted average.
+        lines += ["", f"**e2er's internal quality review:** {review}"]
 
     # Run provenance disclosure — the governance regime this paper ran under
     # is load-bearing: under `contracts`/`off` the deterministic gates ran in
@@ -307,9 +307,6 @@ def _render_readme(workspace: Path, manifest: dict, slug: str, notes: list[str] 
             "`gate_shadow` events for what a full-governance run would have caught.",
         ]
 
-    if rationale:
-        lines += ["", f"> {rationale}"]
-
     # Headline coefficients, if an estimation ran.
     est = _read_json(workspace / "estimation_results.json")
     coefs = (est.get("main") or {}).get("coefficients") or {}
@@ -331,7 +328,7 @@ def _render_readme(workspace: Path, manifest: dict, slug: str, notes: list[str] 
         "- `data/` — the SQLite data warehouse (`data.db`) + data summary & dictionary",
         "- `results/` — estimation/robustness JSON + figures",
         "- `design/` — research plan, identification strategy, econometric spec",
-        "- `reviews/` — referee reports + the aggregated verdict",
+        "- `reviews/` — the six reviewer reports and the combined score (`review_aggregation.json`)",
         "",
     ]
     if notes:

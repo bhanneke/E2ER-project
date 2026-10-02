@@ -684,7 +684,7 @@ class PipelineRunner:
                     continue
                 # Any other verdict is unrecognised — log and proceed defensively.
                 logger.warning(
-                    "Unrecognised ceiling verdict '%s' at iter=%d; treating as proceed_to_review",
+                    "Unrecognised ceiling decision '%s' at iter=%d; treating as proceed_to_review",
                     ceiling.verdict,
                     iteration,
                 )
@@ -1504,7 +1504,7 @@ class PipelineRunner:
         return PaperStatus.REVIEW
 
     async def _run_revision_phase(self, current_status: PaperStatus) -> PaperStatus:
-        """Aggregate reviews and decide: accept, revise, or reject.
+        """Score the draft (internal quality review) and run the revision round the score calls for.
 
         Scores are parsed from the review file on disk per reviewer, NOT from
         the LLM's chat-side summary (`c.output`). Discovered run #8: under
@@ -1530,7 +1530,7 @@ class PipelineRunner:
             return PaperStatus.FAILED
 
         result = aggregate_reviews(scores)
-        logger.info("Review aggregation: %s (avg=%.2f)", result.verdict, result.weighted_avg)
+        logger.info("Internal quality review: %.2f of 10 (%s)", result.weighted_avg, result.rule_triggered)
         self._write_review_aggregation(result)
 
         if result.verdict in {"ACCEPT", "MINOR_REVISION"}:
@@ -1566,14 +1566,20 @@ class PipelineRunner:
         if result.verdict == "MAJOR_REVISION":
             return await self._run_patch_revision(scores)
 
-        # HARD_REJECT, or MECHANISM_FAIL the deep round couldn't lift — distinct
-        # from FAILED (crash). The operator can revise + POST /resume.
-        logger.warning("Paper %s received %s", self._paper_id, result.verdict)
-        await self._update_status(
-            PaperStatus.REJECTED,
-            error=f"{result.verdict}: {result.rationale}",
+        # A score with no revision round left to run (HARD_REJECT, or a
+        # MECHANISM_FAIL the deep round could not lift). The internal quality
+        # review gives a score and nothing else: the run has done its steps,
+        # so it is COMPLETED, and the score stays in review_aggregation.json.
+        # (Up to 0.13.1 this was REJECTED, which read as a peer-review
+        # decision; run_outcome.effective_status reads those runs as completed.)
+        logger.warning(
+            "Paper %s: internal quality review %.2f of 10 (%s); no revision round left",
+            self._paper_id,
+            result.weighted_avg,
+            result.rule_triggered,
         )
-        return PaperStatus.REJECTED
+        await self._update_status(PaperStatus.COMPLETED)
+        return PaperStatus.COMPLETED
 
     def _read_review_scores(self) -> list:
         """Parse each reviewer's score from its file on disk (canonical), with
@@ -1609,10 +1615,15 @@ class PipelineRunner:
         # this file — the shortfall existed only as a log warning, which no
         # reader of the artifact (or of the export bundle) ever sees.
         doc: dict[str, Any] = {
+            # `verdict` is the internal code that picks the revision path
+            # (review_aggregator.py). It is never shown; readers get the score.
             "verdict": result.verdict,
             "weighted_avg": result.weighted_avg,
             "rule_triggered": result.rule_triggered,
             "rationale": result.rationale,
+            # Which time the reviewers scored this run's draft: 1, or 2 after a
+            # deep revision round re-reviewed it.
+            "round": self._deep_revision_count + 1,
         }
         # Omitted, not zeroed, when the scores aren't available: an absent panel
         # block means "not recorded", where `reported: 0` would assert that no
@@ -1677,7 +1688,7 @@ class PipelineRunner:
 
         feedback = self._referee_feedback_text()
         research_focus = (
-            "The reviewers rejected this paper's RESEARCH, not its wording. "
+            "The reviewers' findings concern this paper's RESEARCH, not its wording. "
             "Address their findings by RE-DOING your work: recompute every "
             "required quantity and leave nothing null (e.g. out-of-sample R^2, "
             "test statistics), fix the data and specification problems they "
@@ -1752,7 +1763,7 @@ class PipelineRunner:
 
         budget = _VERIFY_NUMBERS_AUTO_PATCH_BUDGET
         if budget <= 0:
-            logger.debug("verify_numbers auto-patch disabled by budget; falling through to REJECTED")
+            logger.debug("verify_numbers auto-patch disabled by budget; the run stops at the check")
             return report
 
         logger.info(
@@ -1771,7 +1782,7 @@ class PipelineRunner:
             # dispatching a useless patch_revisor.
             logger.warning(
                 "verify_numbers has critical mismatches but no Findings emitted "
-                "— skipping auto-patch and falling through to REJECTED"
+                "— skipping auto-patch and the run stops at the check"
             )
             return report
 
@@ -1779,14 +1790,14 @@ class PipelineRunner:
             merge_result = await self._dispatch_patch_revisor(findings)
         except FileNotFoundError as e:
             logger.warning(
-                "verify_numbers auto-patch: patch_revisor produced no patch file (%s) — falling through to REJECTED",
+                "verify_numbers auto-patch: patch_revisor produced no patch file (%s) — the run stops at the check",
                 e,
             )
             return report
 
         if not merge_result.fully_applied:
             logger.warning(
-                "verify_numbers auto-patch: %d edits applied, %d failed — falling through to REJECTED",
+                "verify_numbers auto-patch: %d edits applied, %d failed — the run stops at the check",
                 merge_result.n_applied,
                 merge_result.n_failed,
             )
@@ -2106,10 +2117,10 @@ class PipelineRunner:
                        no actionable findings (skipped dispatch), OR
                        patch_revisor (legitimately) emitted an empty
                        patch because findings were unactionable.
-            REJECTED  — patch_revisor produced no patch file at all,
-                       or one or more edits failed. The error message
-                       names the first failures so the operator can
-                       revise + resume.
+                       Also when no edit could be applied: the
+                       revision round ran and changed nothing.
+            FAILED    — patch_revisor produced no patch file at all
+                       (resumable).
         """
         await self._update_status(PaperStatus.REVISION)
 
@@ -2121,8 +2132,7 @@ class PipelineRunner:
             # wouldn't have anything to act on; transition straight
             # to COMPLETED with a warning so the operator can review.
             logger.warning(
-                "Paper %s: MAJOR_REVISION verdict with no actionable findings "
-                "— skipping patch_revisor and marking COMPLETED",
+                "Paper %s: revision round with no actionable findings — skipping patch_revisor and marking COMPLETED",
                 self._paper_id,
             )
             await self._update_status(PaperStatus.COMPLETED)
@@ -2131,10 +2141,12 @@ class PipelineRunner:
         try:
             merge_result = await self._dispatch_patch_revisor(findings)
         except FileNotFoundError as e:
+            # The revision step did not produce its output: a failed step, not
+            # a score. FAILED is resumable.
             error_msg = f"patch_revisor did not produce a patch file: {e}"
             logger.error("Paper %s: %s", self._paper_id, error_msg)
-            await self._update_status(PaperStatus.REJECTED, error=error_msg)
-            return PaperStatus.REJECTED
+            await self._update_status(PaperStatus.FAILED, error=error_msg)
+            return PaperStatus.FAILED
 
         # Partial application is progress, not failure. Edits the merger
         # dropped — out-of-scope (its scope-enforcement job, e.g. an
@@ -2162,13 +2174,28 @@ class PipelineRunner:
             await self._update_status(PaperStatus.COMPLETED)
             return PaperStatus.COMPLETED
 
-        # Nothing applied — the revision didn't happen (every edit was
-        # out-of-scope or unmatchable). Surface for operator revise + resume.
+        # Nothing applied (every edit was out-of-scope or unmatchable, or the
+        # revisor proposed none). The revision round ran and changed nothing:
+        # the draft stays as the reviewers scored it, and the run is COMPLETED.
+        # The merge report (paper_draft.tex.edits.json and the log) says why.
         first_failures = "; ".join(f"[{r.edit.target}] {r.error}" for r in merge_result.failed[:3])
-        error_msg = f"patch_revisor: 0 edits applied, {merge_result.n_failed} failed. First failures: {first_failures}"
-        logger.warning("Paper %s: %s", self._paper_id, error_msg)
-        await self._update_status(PaperStatus.REJECTED, error=error_msg)
-        return PaperStatus.REJECTED
+        logger.warning(
+            "Paper %s: revision round applied no edits (%d failed)%s",
+            self._paper_id,
+            merge_result.n_failed,
+            f". First failures: {first_failures}" if first_failures else "",
+        )
+        from ...db.events import log_event
+
+        # Recorded as an event, so the dossier says the revision changed nothing and why.
+        await log_event(
+            self._paper_id,
+            "revision_not_applied",
+            stage="revision",
+            payload={"edits_failed": merge_result.n_failed, "first_failures": first_failures},
+        )
+        await self._update_status(PaperStatus.COMPLETED)
+        return PaperStatus.COMPLETED
 
     async def _dispatch(self, decision: StrategistDecision) -> list[Contribution]:
         if not decision.work_orders:
