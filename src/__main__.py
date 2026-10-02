@@ -26,7 +26,8 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(
         prog="e2er",
-        description="e2er (End-to-End Research). Run `e2er` alone to open it in your browser.",
+        description="e2er is the open infrastructure for publishing, verifying, reproducing and reusing "
+        "AI-enabled research. Run `e2er` alone to open it in your browser.",
     )
     # For bare `e2er` (which serves the dashboard). Own dests, so that the serve
     # subcommand's defaults cannot overwrite them.

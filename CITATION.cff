@@ -3,12 +3,16 @@ message: "If you use e2er in your research, please cite it as below."
 type: software
 title: "e2er (End-to-End Research)"
 abstract: >
-  e2er is an open-source pipeline for producing empirical research papers in
-  information systems, economics, and finance. Given a research question and
-  data access, the pipeline autonomously handles study design, data acquisition
-  (with human-in-the-loop approval), econometric estimation, writing, adversarial
-  self-review, parallel peer review, and replication packaging.
-version: "0.13.0"
+  e2er is the open infrastructure for publishing, verifying, reproducing and
+  reusing AI-enabled research. Templates describe research processes as a
+  sequence of steps. Each template organizes specialists, i.e., AI agents with
+  defined roles, and each specialist draws on skills, i.e., written descriptions
+  of methods. Researchers can adjust any template, specialist, or skill and
+  publish their version for fellow researchers. Researchers decide at which
+  steps the process pauses for their review. A study produced with e2er comes
+  with a dossier that helps others verify and reproduce the work and attributes
+  everyone whose templates, specialists, and skills it used.
+version: "0.13.1"
 date-released: "2026-10-02"
 license: MIT
 repository-code: "https://github.com/bhanneke/E2ER-project"
@@ -33,12 +37,12 @@ keywords:
   - research pipeline
 preferred-citation:
   type: software
-  title: "E2ER: End-to-End Researcher — An Open-Source Pipeline for Automated Empirical Research"
+  title: "e2er (End-to-End Research): The Open Infrastructure for Publishing, Verifying, Reproducing and Reusing AI-Enabled Research"
   authors:
     - family-names: Hanneke
       given-names: Björn
       orcid: "https://orcid.org/0009-0000-7466-9581"
   year: 2026
-  version: "0.13.0"
+  version: "0.13.1"
   url: "https://github.com/bhanneke/E2ER-project"
   doi: "10.5281/zenodo.20187238"
