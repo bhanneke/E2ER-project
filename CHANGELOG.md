@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] — 2026-10-02
+
+### Name and publishing format
+
+- **Name.** The package, the CLI and the citation metadata say "e2er (End-to-End Research)".
+- **Publish matches e2er.org's format.** The study description no longer carries an
+  `amendments` field, which e2er.org refused; the amendments stay in provenance.json and in
+  the dossier. `docs/schemas/research-object.schema.json` is synced with the site's copy, and
+  a test validates a real publish against it.
+
 ### Integrity of published studies (review of 2026-10-01)
 
 - **Publish needs the run.** `e2er publish` finds the study's run database
