@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.2] — 2026-10-02
+
 - **The internal quality review gives a score, nothing else.** Six reviewer specialists each
   score the draft from one angle (data, identification, literature, mechanism, technical,
   writing); the score is their weighted average and decides whether the draft is revised. A run
