@@ -1,9 +1,9 @@
 """The README's factual claims, checked against the code.
 
-The layering diagram cites counts: how many skill files, how many specialist
-roles. Those are the first thing a reader uses to judge whether the project
-knows itself, and they rot silently — nobody updates a number in a README when
-they add a file.
+The README cites counts: how many skill files, how many specialist roles.
+Those are the first thing a reader uses to judge whether the project knows
+itself, and they rot silently — nobody updates a number in a README when they
+add a file.
 
 Written after nearly shipping "133 skill files" into the opening paragraph. The
 figure came from a different repository's CLAUDE.md; the real count is 58. A
@@ -28,7 +28,7 @@ def _readme() -> str:
 
 
 def test_the_skill_count_is_not_an_overstatement():
-    claimed = int(re.search(r"\((\d+) files\)", _readme()).group(1))
+    claimed = int(re.search(r"(\d+) skill files", _readme()).group(1))
     actual = len(list((ROOT / "skills" / "files").rglob("*.md")))
 
     assert claimed <= actual, f"README claims {claimed} skill files; there are {actual}"
@@ -37,7 +37,7 @@ def test_the_skill_count_is_not_an_overstatement():
 def test_the_specialist_count_is_not_an_overstatement():
     from src.core.specialists.registry import SPECIALIST_ARTIFACTS
 
-    claimed = int(re.search(r"\((\d+) roles\)", _readme()).group(1))
+    claimed = int(re.search(r"(\d+) specialist roles", _readme()).group(1))
 
     assert claimed <= len(SPECIALIST_ARTIFACTS), (
         f"README claims {claimed} specialist roles; the registry has {len(SPECIALIST_ARTIFACTS)}"
@@ -45,7 +45,7 @@ def test_the_specialist_count_is_not_an_overstatement():
 
 
 def test_the_layering_the_readme_describes_exists():
-    """Each layer named in the diagram should be locatable, not aspirational."""
+    """Each layer the README names (skills, specialists, templates, checks) exists in the repository."""
     assert (ROOT / "skills" / "files").is_dir(), "skills layer"
     assert (ROOT / "src" / "core" / "specialists" / "registry.py").is_file(), "specialists layer"
     assert (ROOT / "pipelines").is_dir(), "pipelines layer"
@@ -53,7 +53,7 @@ def test_the_layering_the_readme_describes_exists():
 
 
 def test_the_shipped_pipeline_is_real():
-    """The README says a pipeline is a .toml file. It has to actually load."""
+    """The README says a template is a .toml file. The shipped one has to load."""
     from src.core.pipeline.spec import available, find_spec
 
     assert "empirical" in available()
@@ -61,7 +61,7 @@ def test_the_shipped_pipeline_is_real():
 
 
 def test_the_floor_claim_is_true():
-    """ "The pipeline is yours; these are not" is a promise about the code."""
+    """A template that declares no checks still carries the mandatory ones."""
     from src.core.pipeline.spec import MANDATORY_CHECKS, spec_from_dict
 
     bare = spec_from_dict({"name": "bare", "steps": [{"kind": "strategist", "name": "initial"}]})

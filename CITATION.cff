@@ -3,11 +3,15 @@ message: "If you use e2er in your research, please cite it as below."
 type: software
 title: "e2er (End-to-End Research)"
 abstract: >
-  e2er is an open-source pipeline for producing empirical research papers in
-  information systems, economics, and finance. Given a research question and
-  data access, the pipeline autonomously handles study design, data acquisition
-  (with human-in-the-loop approval), econometric estimation, writing, adversarial
-  self-review, parallel peer review, and replication packaging.
+  e2er is the open infrastructure for publishing, verifying, reproducing and
+  reusing AI-enabled research. Templates describe research processes as a
+  sequence of steps. Each template organizes specialists, i.e., AI agents with
+  defined roles, and each specialist draws on skills, i.e., written descriptions
+  of methods. Researchers can adjust any template, specialist, or skill and
+  publish their version for fellow researchers. Researchers decide at which
+  steps the process pauses for their review. A study produced with e2er comes
+  with a dossier that helps others verify and reproduce the work and attributes
+  everyone whose templates, specialists, and skills it used.
 version: "0.13.0"
 date-released: "2026-10-02"
 license: MIT
