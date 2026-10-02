@@ -55,14 +55,21 @@ def _load_json(path: Path) -> Any:
 
 
 def inventory(bundle: Path) -> dict[str, dict[str, Any]]:
-    """SHA-256 + byte size for every file in the bundle (excluding the manifest
-    itself). Keys are POSIX bundle-relative paths, sorted for determinism."""
-    files: dict[str, dict[str, Any]] = {}
-    for p in sorted(bundle.rglob("*")):
-        if p.is_file() and p.name != PROVENANCE_FILE:
-            rel = p.relative_to(bundle).as_posix()
-            files[rel] = {"sha256": _sha256(p), "bytes": p.stat().st_size}
-    return files
+    """SHA-256 + byte size for every file in the bundle, read as verify reads it.
+
+    Keys are NFC, POSIX, bundle-relative paths, sorted for determinism. Left
+    out: the root-level files that are not evidence (provenance.json itself;
+    e2er.json and .e2er/ written by publish) and operating-system clutter; see
+    bundle_files.py. Symbolic links are never followed (export writes none).
+    """
+    from .bundle_files import NOT_EVIDENCE, walk
+
+    listing = walk(bundle)
+    return {
+        rel: {"sha256": _sha256(p), "bytes": p.stat().st_size}
+        for rel, p in sorted(listing.files.items())
+        if rel not in NOT_EVIDENCE
+    }
 
 
 def _source_key_file(bundle: Path, source_key: str) -> str | None:
@@ -148,28 +155,114 @@ def _edges(bundle: Path) -> list[dict[str, Any]]:
     return edges
 
 
+def _preregistration(bundle: Path) -> dict[str, Any] | None:
+    """The frozen pre-registration the bundle carries (file, fingerprint, time), if any.
+
+    Recorded in ``run`` so that ``e2er verify`` knows the study had one: a
+    bundle whose lock file later disappears then fails instead of losing the
+    check.
+    """
+    try:
+        from ..pipeline.preregistration import load_lock
+
+        lock = load_lock(bundle / "design")
+    except Exception:  # noqa: BLE001 — an unreadable lock is reported by verify itself
+        lock = None
+    if not isinstance(lock, dict):
+        return None
+    return {
+        "file": f"design/{lock.get('file', 'preregistration.md')}",
+        "sha256": lock.get("sha256"),
+        "frozen_at": lock.get("frozen_at"),
+    }
+
+
 def build_provenance(bundle: Path, manifest: dict[str, Any], *, exported_at: str) -> dict[str, Any]:
+    run: dict[str, Any] = {
+        "paper_id": manifest.get("paper_id"),
+        "backend": manifest.get("backend"),
+        "model": manifest.get("model"),
+        "governance": manifest.get("governance") or "full",
+        # the template the study was run with; `e2er publish` reads it from here
+        "template": manifest.get("pipeline") or None,
+        "e2er_version": _e2er_version(),
+        "exported_at": exported_at,
+    }
+    # The study's purpose as chosen when it started (publish honours it), and
+    # the frozen pre-registration (verify then requires its check).
+    if manifest.get("purpose"):
+        run["purpose"] = manifest["purpose"]
+    prereg = _preregistration(bundle)
+    if prereg is not None:
+        run["preregistration"] = prereg
     return {
         "schema": SCHEMA_ID,
-        "run": {
-            "paper_id": manifest.get("paper_id"),
-            "backend": manifest.get("backend"),
-            "model": manifest.get("model"),
-            "governance": manifest.get("governance") or "full",
-            "e2er_version": _e2er_version(),
-            "exported_at": exported_at,
-        },
+        "run": run,
         "files": inventory(bundle),
         "edges": _edges(bundle),
     }
 
 
+def dump(prov: dict[str, Any]) -> str:
+    """provenance.json's text: the same layout every time it is written."""
+    return json.dumps(prov, indent=2, ensure_ascii=False) + "\n"
+
+
 def write_provenance(bundle: Path, manifest: dict[str, Any], *, exported_at: str) -> Path:
     """Write ``<bundle>/provenance.json`` and return its path. Call AFTER every
-    other bundle file exists (incl. README) so the inventory is complete."""
+    other bundle file exists (README and report.html included) so the inventory is complete."""
     out = bundle / PROVENANCE_FILE
-    out.write_text(
-        json.dumps(build_provenance(bundle, manifest, exported_at=exported_at), indent=2),
-        encoding="utf-8",
-    )
+    out.write_text(dump(build_provenance(bundle, manifest, exported_at=exported_at)), encoding="utf-8")
     return out
+
+
+def files_at_export(prov: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """provenance.json's ``files`` as they were at export: every amendment rolled back.
+
+    A file publish changed gets its exported fingerprint back (the first
+    amendment's ``sha256_before``); a file publish added (``sha256_before``
+    None) is left out. The size of a changed file is not kept, so it is None.
+    """
+    files = {k: dict(v) for k, v in (prov.get("files") or {}).items()}
+    first: dict[str, Any] = {}
+    for a in prov.get("amendments") or []:
+        path = a.get("path") if isinstance(a, dict) else None
+        if isinstance(path, str) and path not in first:
+            first[path] = a.get("sha256_before")
+    for path, before in first.items():
+        if before is None:
+            files.pop(path, None)
+        elif path in files:
+            files[path] = {"sha256": before, "bytes": None}
+    return files
+
+
+def amend(bundle: Path, rel: str, reason: str, *, at: str) -> dict[str, Any] | None:
+    """Record that ``rel`` changed after export: its new fingerprint, and an amendment.
+
+    The amendment keeps the fingerprint the file had (``sha256_before``; None
+    for a file the bundle did not have), the new one and why it changed, so
+    the exported hash is never lost. Returns the amendment, or None when the
+    file is unchanged. The caller must have checked the bundle against
+    provenance.json first: the "before" is the listed fingerprint.
+    """
+    path = bundle / PROVENANCE_FILE
+    prov = json.loads(path.read_text(encoding="utf-8"))
+    f = bundle / rel
+    data = f.read_bytes()
+    after = hashlib.sha256(data).hexdigest()
+    meta = prov["files"].get(rel)
+    if meta is not None and meta.get("sha256") == after:
+        return None
+    entry = {
+        "path": rel,
+        "sha256_before": meta.get("sha256") if meta else None,
+        "sha256_after": after,
+        "reason": reason,
+        "at": at,
+    }
+    prov["files"][rel] = {"sha256": after, "bytes": len(data)}
+    prov["files"] = dict(sorted(prov["files"].items()))
+    prov.setdefault("amendments", []).append(entry)
+    path.write_text(dump(prov), encoding="utf-8")
+    return entry

@@ -26,6 +26,17 @@ _SKILLS_DIRS = [
 ]
 
 
+def loaded_skill_names(specialist: str) -> list[str]:
+    """The skills a specialist dispatched now reads: those of :func:`load_skills_for_specialist` that resolve to a file.
+
+    Recorded with each dispatch (``specialist_start``), so the dossier lists
+    the skills that ran, not the ones a later checkout would give.
+    """
+    from ..core.pipeline.components import skills_for
+
+    return [p for p in skills_for(specialist) if _load_skill(p)]
+
+
 def load_skills_for_specialist(specialist: str) -> str:
     """Load and concatenate skill files for a specialist.
 

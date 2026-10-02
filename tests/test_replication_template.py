@@ -22,13 +22,21 @@ import jsonschema
 import pytest
 
 from src.core.pipeline import replication as repl
-from src.core.pipeline.reproduction import CHECK_FILE, check_report, check_reproduction
+from src.core.pipeline.reproduction import (
+    CHECK_FILE,
+    check_report,
+    check_reproduction,
+    equal_to_target,
+    label_from,
+    reason_text_problems,
+)
 from src.core.pipeline.sandbox import (
     LOG_FILE,
     Limits,
     env_tag,
     install_argv,
     install_script,
+    resolve_snapshot,
     run_argv,
     run_sandbox,
 )
@@ -455,6 +463,14 @@ class FakeDocker:
             return subprocess.CompletedProcess(
                 argv, 0, b"E2ER-INSTALLED-BEGIN\nfixest==0.12.1\nE2ER-INSTALLED-END\n", b""
             )
+        if sub == "run" and "E2ER-INSTALLED-BEGIN" in argv[-1]:  # the environment probe (no network)
+            assert argv[argv.index("--network") + 1] == "none"
+            probe = (
+                b"E2ER-REPOS https://p3m.dev/cran/__linux__/noble/2026-08-30\n"
+                b"E2ER-PLATFORM aarch64-unknown-linux-gnu\n"
+                b"E2ER-INSTALLED-BEGIN\nfixest==0.12.1\nDRDID==1.3.0\nE2ER-INSTALLED-END\n"
+            )
+            return subprocess.CompletedProcess(argv, 0, probe, b"")
         if sub == "run":
             script = argv[-1]
             if script in self.hang:
@@ -489,7 +505,10 @@ def test_the_sandbox_runs_logs_and_hashes_through_docker_only(workspace: Path):
     log = json.loads((workspace / LOG_FILE).read_text())
     run = log["runs"][0]
     assert run["status"] == "ok" and run["exit_code"] == 0 and "--network" in run["argv"]
-    assert log["image_digest"] == "rocker/r-ver@sha256:abc" and log["install"]["installed"] == {"fixest": "0.12.1"}
+    assert log["image_digest"] == "rocker/r-ver@sha256:abc" and log["install"]["installed"] == {
+        "fixest": "0.12.1",
+        "DRDID": "1.3.0",
+    }
     written = {o["path"]: o for o in log["outputs"]}
     assert written["study/output/table1.csv"]["state"] == "new"
     assert (
@@ -528,7 +547,7 @@ def test_network_scripts_are_skipped_not_run(workspace: Path):
     _ready(workspace, plan)
     fake = FakeDocker(workspace)
     assert run_sandbox(workspace, runner=fake, docker="docker").passed
-    assert not any(c[1] == "run" and "--rm" in c for c in fake.calls)
+    assert not any(c[1] == "run" and "--rm" in c and "E2ER-INSTALLED-BEGIN" not in c[-1] for c in fake.calls)
 
 
 @pytest.mark.parametrize(
@@ -565,18 +584,20 @@ def _l1(level: str = "reproduced_minor", reproduced: Any = -0.0131, **comp: Any)
         "target_id": "l1_att",
         "published": -0.012,
         "reproduced": reproduced,
+        "label": level,
         "source": {"file": "study/output/shipped.csv"},
     }
     c.update(comp)
     return {"id": "table_1_l1", "target_level": 1, "level": level, "reason": "r", "comparisons": [c]}
 
 
-def _report(level: str = "reproduced_minor", reproduced: Any = -0.01214, l1: dict | None = None, **comp: Any) -> dict:
+def _report(level: str = "reproduced", reproduced: Any = -0.01214, l1: dict | None = None, **comp: Any) -> dict:
     c = {
         "target_id": "t1_att",
         "published": -0.012,
         "reproduced": reproduced,
         "abs_diff": None if reproduced is None else round(reproduced + 0.012, 10),
+        "label": level,
         "source": {"file": "study/output/table1.csv", "locator": {"row": {"term": "att"}, "column": "estimate"}},
     }
     c.update(comp)
@@ -588,8 +609,22 @@ def _report(level: str = "reproduced_minor", reproduced: Any = -0.01214, l1: dic
     }
 
 
+def _env(ws: Path) -> dict:
+    log = json.loads((ws / LOG_FILE).read_text())
+    return {
+        "snapshot": {"date": log["snapshot"]["date"], "url": log["snapshot"]["url"]},
+        "platform": log["install"]["platform"],
+        "installed": dict(log["install"]["installed"]),
+    }
+
+
 def _write(ws: Path, report: dict) -> None:
+    if "environment" not in report and (ws / LOG_FILE).is_file():
+        report = {**report, "environment": _env(ws)}
     (ws / "reproduction_report.json").write_text(json.dumps(report))
+    if not (ws / "reproduction_report.md").is_file():
+        # the written report, stating nothing the check could contradict
+        (ws / "reproduction_report.md").write_text("# Reproduction report\n\n## Level 1\n\nSee the tables below.\n")
 
 
 def test_a_truthful_report_passes_and_every_number_is_recomputed(workspace: Path):
@@ -598,7 +633,7 @@ def test_a_truthful_report_passes_and_every_number_is_recomputed(workspace: Path
     r = check_reproduction(workspace)
     assert r.passed, r.reasons
     checked = json.loads((workspace / CHECK_FILE).read_text())["checked"][0]
-    assert checked["recomputed"] == -0.01214 and checked["equal_at_published_precision"] is True
+    assert checked["recomputed"] == -0.01214 and checked["equal_to_target"] is True
 
 
 def test_equal_at_the_published_precision_may_be_called_reproduced(workspace: Path):
@@ -642,7 +677,7 @@ def test_a_level_that_contradicts_the_numbers_fails(workspace: Path):
     table.write_text("term,estimate,se\natt,-0.0150,0.004\n")
     _write(workspace, _report(level="reproduced_minor", reproduced=-0.015))
     r = check_reproduction(workspace)
-    assert not r.passed and "exceeds the minor tolerance" in r.reasons[0]
+    assert not r.passed and any("exceeds the minor tolerance" in x for x in r.reasons)
     _write(workspace, _report(level="not_reproduced", reproduced=-0.015))
     assert check_reproduction(workspace).passed
     _write(workspace, _report(level="reproduced_minor", reproduced=-0.015))
@@ -660,7 +695,8 @@ def test_an_unassessed_target_with_a_reason_is_accounted_for(workspace: Path):
 
 def test_the_report_schema_accepts_what_the_check_accepts():
     schema = json.loads((ROOT / "docs" / "schemas" / "reproduction_report.schema.json").read_text())
-    jsonschema.validators.validator_for(schema)(schema).validate(_report())
+    env = {"snapshot": {"date": "2026-08-30", "url": "https://p3m.dev/cran/2026-08-30"}, "installed": {"did": "2.5.1"}}
+    jsonschema.validators.validator_for(schema)(schema).validate({**_report(), "environment": env})
 
 
 def test_the_comparer_contract_needs_levels_and_reasons(tmp_path: Path):
@@ -939,7 +975,12 @@ def test_a_report_with_levels_separately_passes_and_counts_each_level(workspace:
     _write(workspace, _report())
     assert check_reproduction(workspace).passed
     stats = json.loads((workspace / CHECK_FILE).read_text())["stats"]
-    assert stats["level_1"] == {"targets": 1, "numbers_checked": 1, "results": {"reproduced_minor": 1}}
+    assert stats["level_1"] == {
+        "targets": 1,
+        "numbers_checked": 1,
+        "results": {"reproduced_minor": 1},
+        "numbers": {"reproduced_minor": 1},
+    }
     assert stats["level_2"]["numbers_checked"] == 1
 
 
@@ -1067,3 +1108,260 @@ async def test_a_send_back_first_refreshes_the_fetch_so_the_planner_sees_the_pap
         await r._settle_researcher_decisions(r._state)
     assert order == ["planner:True"]
     assert [k for k, _s, _p in events][:2] == ["researcher_input", "gate_enforced"]
+
+
+# ── packages as of the package date ─────────────────────────────────────────
+
+
+def _rplan(**env: Any) -> dict:
+    return _plan(
+        environment={
+            "image": "rocker/r-ver:4.6.1",
+            "packages": [{"name": "did", "version": "2.5.1"}, {"name": "here"}],
+            **env,
+        }
+    )
+
+
+def test_r_packages_come_from_the_dated_p3m_snapshot_and_declared_versions_win():
+    script = install_script(_rplan(), "2026-08-30")
+    # the image's own p3m URL with /latest replaced by the date, written to Rprofile.site for the run too
+    assert 'sub(pat, "/2026-08-30", r)' in script and '"https://p3m.dev/cran/2026-08-30"' in script
+    assert 'file.path(R.home("etc"), "Rprofile.site"), append = TRUE' in script
+    assert script.index("Rprofile.site") < script.index("install.packages(pk")
+    assert 'want <- c("did" = "2.5.1")' in script and "remotes::install_version" in script
+    latest = install_script(_rplan(), None)
+    assert "Rprofile.site" not in latest and "E2ER-SNAPSHOT-URL" not in latest
+    assert env_tag(_rplan(), "2026-08-30") != env_tag(_rplan(), None) != env_tag(_rplan(), "2025-01-01")
+
+
+def test_python_packages_are_those_uploaded_before_the_date():
+    plan = _plan(
+        language="Python",
+        environment={
+            "image": "python:3.12-slim",
+            "packages": [{"name": "pandas", "version": "2.2.2"}, {"name": "six"}],
+        },
+    )
+    script = install_script(plan, "2026-08-30")
+    assert "pip install --no-cache-dir --uploaded-prior-to 2026-08-30T23:59:59Z pandas==2.2.2 six" in script
+    assert 'pip install --no-cache-dir --upgrade "pip>=26"' in script
+    assert "--uploaded-prior-to" not in install_script(plan, None)
+
+
+@pytest.mark.parametrize(
+    ("setting", "manifest", "date"),
+    [
+        ("package-date", {"publication_date": "2026-08-30"}, "2026-08-30"),
+        ("latest", {"publication_date": "2026-08-30"}, None),
+        ("2025-01-15", {}, "2025-01-15"),
+    ],
+)
+def test_the_snapshot_setting_resolves(setting, manifest, date):
+    assert resolve_snapshot(setting, manifest)[0] == date
+
+
+def test_package_date_without_a_publication_date_is_refused():
+    with pytest.raises(ValueError, match="no publication date"):
+        resolve_snapshot("package-date", {})
+
+
+@pytest.mark.parametrize("bad", ["yesterday", "2026-8-30", 5])
+def test_the_snapshot_setting_is_validated_at_load(bad):
+    with pytest.raises(PipelineError, match="snapshot"):
+        spec_from_dict(
+            {"name": "t", "steps": [{"kind": "gate", "name": "g", "check": "sandbox", "settings": {"snapshot": bad}}]}
+        )
+
+
+def test_the_template_installs_as_of_the_package_date():
+    assert find_spec("replication").step("sandbox_run").settings["snapshot"] == "package-date"
+
+
+def test_the_sandbox_log_records_snapshot_platform_all_versions_and_declared_pins(workspace: Path):
+    plan = _plan()
+    plan["environment"]["packages"] = [{"name": "fixest", "version": "0.12.1"}, {"name": "did", "version": "2.5.1"}]
+    _ready(workspace, plan)
+    fake = FakeDocker(workspace)
+    assert run_sandbox(workspace, runner=fake, docker="docker").passed
+    log = json.loads((workspace / LOG_FILE).read_text())
+    assert log["snapshot"]["date"] == "2026-08-30" and log["snapshot"]["setting"] == "package-date"
+    assert log["snapshot"]["url"] == "https://p3m.dev/cran/__linux__/noble/2026-08-30"
+    assert "publication date" in log["snapshot"]["basis"]
+    assert log["install"]["installed"]["DRDID"] == "1.3.0"  # a dependency nobody declared, recorded
+    assert log["install"]["platform"] == "aarch64-unknown-linux-gnu"
+    assert {d["name"]: d["matches"] for d in log["declared_versions"]} == {"fixest": True, "did": False}
+    install = next(c for c in fake.calls if c[1] == "run" and "--rm" not in c)
+    assert "2026-08-30" in install[-1]
+    # a reused environment is still probed, so the versions are always recorded
+    assert run_sandbox(workspace, runner=fake, docker="docker").passed
+    again = json.loads((workspace / LOG_FILE).read_text())
+    assert "reused" in again["install"] and again["install"]["installed"]["DRDID"] == "1.3.0"
+
+
+# ── strict labels and honest reasons ────────────────────────────────────────
+
+
+def test_labels_follow_the_protocol_thresholds():
+    assert equal_to_target(-0.00364909844619658 * (1 + 5e-10), -0.00364909844619658, 1, 17)
+    assert not equal_to_target(-0.00365238597730994, -0.00364909844619658, 1, 17)  # 0.09 %: not reproduced
+    assert equal_to_target(-0.01214, -0.012, 2, 3) and not equal_to_target(-0.0126, -0.012, 2, 3)
+    assert label_from(True, 0.0, False, 0.10) == "reproduced"
+    assert label_from(False, 0.0009, False, 0.10) == "reproduced_minor"
+    assert label_from(False, 0.10, False, 0.10) == "reproduced_minor"
+    assert label_from(False, 0.1043, False, 0.10) == "not_reproduced"
+    assert label_from(False, 0.05, True, 0.10) == "not_reproduced"
+
+
+def test_the_protocol_states_the_thresholds_the_check_enforces():
+    text = (ROOT / "skills/files/replication/reproduction-protocol.md").read_text()
+    assert "1e-9" in text and "10 %" in text and "minor_rel_tolerance" in text
+    assert find_spec("replication").step("reproduction_gate").settings["minor_rel_tolerance"] == 0.10
+
+
+def test_the_case_that_stopped_the_first_run_is_caught(workspace: Path):
+    """A 0.09 % level-1 difference labelled 'reproduced', with 'equals at full precision' in its reason."""
+    _ran(workspace)
+    (workspace / "sandbox/run/study/output/shipped.csv").write_text("term,estimate\natt,-0.0120108\n")
+    l1 = _l1(level="reproduced", reproduced=-0.0120108)
+    l1["reason"] = "ATT equals at full precision; SE differs by 0.09%."
+    _write(workspace, _report(l1=l1))
+    r = check_reproduction(workspace)
+    assert not r.passed
+    assert any("labelled 'reproduced', but the numbers make it 'reproduced_minor'" in x for x in r.reasons)
+    assert any("the reason says 'equals'" in x for x in r.reasons)
+
+
+def test_a_result_takes_its_worst_numbers_label(workspace: Path):
+    _ran(workspace)
+    rep = _report()
+    both = rep["results"][1]
+    both["level"] = "reproduced_minor"
+    _write(workspace, rep)
+    assert check_reproduction(workspace).passed
+    both["level"] = "reproduced"
+    _write(workspace, rep)
+    r = check_reproduction(workspace)
+    assert any("its worst number makes it 'reproduced_minor'" in x for x in r.reasons)
+
+
+@pytest.mark.parametrize(
+    ("text", "flags", "problem"),
+    [
+        ("ATT equals at full precision.", [False], "no compared number equals"),
+        ("The rerun is identical to the shipped value.", [False], "no compared number equals"),
+        ("The ATT does not equal the shipped value; it differs by 0.09%.", [False], None),
+        ("All values equal the shipped file.", [True], None),
+        ("The SE differs by 6.8%.", [True], "every compared number equals"),
+        ("The sign flips due to DRDID 1.3.0.", [False], "states a cause as established"),
+        ("The SE differs because 07_did.R sets no seed.", [False], "states a cause as established"),
+        ("A bug in the authors' code.", [False], "states a cause as established"),
+        ("Possible causes: DRDID is not pinned; 07_did.R sets no seed before its bootstrap.", [False], None),
+        ("The difference may be due to the unpinned DRDID.", [False], None),
+        ("Within the 10% tolerance; no sign change.", [False], None),
+    ],
+)
+def test_reason_texts_may_not_contradict_the_numbers_or_assert_causes(text, flags, problem):
+    found = reason_text_problems(text, flags)
+    if problem is None:
+        assert found == []
+    else:
+        assert any(problem in f for f in found), found
+
+
+def test_the_report_must_carry_the_sandbox_environment(workspace: Path):
+    _ran(workspace)
+    # a partial list is fine: the versions the report names must be the log's
+    rep = {**_report(), "environment": {**_env(workspace), "installed": {"DRDID": "1.3.0"}}}
+    _write(workspace, rep)
+    assert check_reproduction(workspace).passed
+    full = json.loads((workspace / CHECK_FILE).read_text())["environment"]
+    assert full["installed"] == {"fixest": "0.12.1", "DRDID": "1.3.0"} and full["snapshot"]["date"] == "2026-08-30"
+    rep = {**_report(), "environment": {**_env(workspace), "installed": {"fixest": "0.12.1", "DRDID": "1.2.0"}}}
+    _write(workspace, rep)
+    r = check_reproduction(workspace)
+    assert any("environment.installed differs from sandbox_log.json for 1 package(s): DRDID" in x for x in r.reasons)
+    rep["environment"]["installed"] = {"lme4": "1.1"}
+    _write(workspace, rep)
+    assert any("did not install: lme4" in x for x in check_reproduction(workspace).reasons)
+    rep["environment"] = {**_env(workspace), "snapshot": {"date": None, "url": "latest"}}
+    _write(workspace, rep)
+    assert any("environment.snapshot.date" in x for x in check_reproduction(workspace).reasons)
+    bare = _report()
+    (workspace / "reproduction_report.json").write_text(json.dumps(bare))
+    assert any("no environment block" in x for x in check_reproduction(workspace).reasons)
+
+
+def test_the_comparer_contract_catches_labels_causes_and_environment(workspace: Path):
+    _ran(workspace)
+    rep = _report()
+    rep["results"][0]["reason"] = "Differs due to DRDID."
+    del rep["results"][1]["comparisons"][0]["label"]
+    (workspace / "reproduction_report.json").write_text(json.dumps(rep))
+    errs = check_report(workspace)
+    assert any("states a cause as established" in e for e in errs)
+    assert any("label must be one of" in e for e in errs)
+    assert any("no environment block" in e for e in errs)
+
+
+# ── retries start from fresh files ──────────────────────────────────────────
+
+
+def test_a_rewriting_specialists_earlier_output_is_set_aside(tmp_path: Path):
+    from src.core.specialists.base import set_aside_previous_outputs
+    from src.core.specialists.contracts import WorkOrder
+
+    (tmp_path / "reproduction_report.md").write_text("old")
+    (tmp_path / "reproduction_report.json").write_text("{}")
+    order = WorkOrder(
+        paper_id=PID,
+        specialist="reproduction_comparer",
+        focus="x",
+        output_file="reproduction_report.md",
+        sidecar_artifacts=["reproduction_report.json"],
+    )
+    moved = set_aside_previous_outputs(tmp_path, order)
+    assert moved == [
+        ("reproduction_report.md", "reproduction_report.md.previous"),
+        ("reproduction_report.json", "reproduction_report.json.previous"),
+    ]
+    assert not (tmp_path / "reproduction_report.json").exists()
+    assert (tmp_path / "reproduction_report.json.previous").read_text() == "{}"
+
+
+def test_other_specialists_keep_their_files_and_are_told_to_read_them_first(tmp_path: Path):
+    from src.core.specialists.base import set_aside_previous_outputs
+    from src.core.specialists.contracts import WorkOrder
+
+    (tmp_path / "paper_draft.tex").write_text("draft")
+    order = WorkOrder(paper_id=PID, specialist="section_writer", focus="x", output_file="paper_draft.tex")
+    assert set_aside_previous_outputs(tmp_path, order) == []
+    assert (tmp_path / "paper_draft.tex").read_text() == "draft"
+
+
+async def test_the_retry_prompt_names_the_set_aside_or_existing_files(tmp_path: Path, monkeypatch):
+    from src.core.specialists import base
+    from src.core.specialists.contracts import WorkOrder
+    from src.modules.llm.base import TokenUsage, ToolLoopResult
+
+    seen: list[str] = []
+
+    class _Backend:
+        async def tool_loop(self, *, system, messages, tools, tool_handler, max_turns, **kw):
+            seen.append(messages[0]["content"])
+            return ToolLoopResult(output="", success=False, error="x", usage=TokenUsage(), tool_calls_made=0)
+
+    async def _noop(*a, **k):
+        return None
+
+    monkeypatch.setattr(base, "save_usage", _noop)
+    (tmp_path / "reproduction_report.json").write_text("{}")
+    (tmp_path / "paper_draft.tex").write_text("draft")
+    for spec, out, side in (
+        ("reproduction_comparer", "reproduction_report.md", ["reproduction_report.json"]),
+        ("section_writer", "paper_draft.tex", []),
+    ):
+        order = WorkOrder(paper_id=PID, specialist=spec, focus="x", output_file=out, sidecar_artifacts=side)
+        await base.run_specialist(order, _Backend(), tmp_path, "m", backend_name="claude_code")
+    assert "moved aside" in seen[0] and "reproduction_report.json.previous" in seen[0]
+    assert "Read each one before you write it" in seen[1] and "`paper_draft.tex`" in seen[1]

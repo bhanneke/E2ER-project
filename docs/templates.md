@@ -89,10 +89,41 @@ e2er run "Computational reproduction of <paper title> (10.5281/zenodo.<id>)" --t
 | `review_plan` | researcher | The run stops. Approve, edit the plan, or send the planner back. |
 | `sandbox_run` | check `sandbox` | Runs the plan in Docker (below). Fails only when the sandbox cannot work (no Docker, invalid plan, image unavailable, package modified); a script that fails is a result. |
 | `compare` | specialist `reproduction_comparer` | Levels each result by the protocol: reproduced, reproduced with minor differences, not reproduced, could not be run. Writes `reproduction_report.json` (schema `docs/schemas/reproduction_report.schema.json`) and `reproduction_report.md`. |
-| `reproduction_gate` | check `reproduction` | Re-reads every reproduced number from the output file the report names (a CSV cell when a locator is given), requires that file to be one the run wrote, not one the package shipped, recomputes the differences, checks each level against them, and checks that every target is compared or listed as unassessed with a reason. Writes `reproduction_check.json`. |
+| `reproduction_gate` | check `reproduction` | Re-reads every reproduced number from the output file the report names (a CSV cell when a locator is given), requires that file to be one the run wrote, not one the package shipped, recomputes the differences, checks each level against them, and checks that every target is compared or listed as unassessed with a reason. Then it writes the counts and the environment into `reproduction_report.md` from the JSON (section "Counts and environment") and fails when the report's prose contradicts the JSON: a count that names its level, a table of counts, the label stated for a number, a package version. Writes `reproduction_check.json`. |
 | `review_report` | researcher | The run stops for the researcher to read the report. |
 
 The protocol both specialists follow is `skills/files/replication/reproduction-protocol.md`.
+
+### Package versions: as of the package date
+
+By default (`snapshot = "package-date"` in the sandbox step's settings) the
+install phase installs packages as they were on the Zenodo record's
+publication date: R packages from Posit Package Manager's dated CRAN snapshot
+(the image's p3m URL with `/latest` replaced by the date, e.g.
+`https://p3m.dev/cran/__linux__/noble/2026-08-30`, also written to
+`Rprofile.site` so it is the repository inside the run), Python packages with
+pip's `--uploaded-prior-to <date>T23:59:59Z`. `"latest"` installs the newest
+and `"YYYY-MM-DD"` a given day. Versions the plan declares win: R installs them
+with `remotes::install_version`, Python pins them with `==`. After the install a
+no-network container of the committed image reports the repository, the
+platform and every installed version, dependencies included; `sandbox_log.json`
+records them under `snapshot`, `install.installed`, `install.platform` and
+`declared_versions`, and the reproduction check copies them into
+`reproduction_check.json`. The comparer's report states the snapshot and the
+versions of the packages it discusses; the check compares each with the log.
+
+### Strict labels
+
+Each compared number is labelled by the protocol's thresholds, which the
+reproduction check applies too: `reproduced` when equal at the target's own
+precision (the printed decimals for the paper; within 1e-9 relative for a
+full-precision package cell), `reproduced_minor` when at most
+`minor_rel_tolerance` (10 %) off with the same sign, `not_reproduced`
+otherwise; a result takes its worst number's label. The check also refuses a
+reason text that says "equals" or "at full precision" when no compared number
+is equal (or "differs" when all are), and one that states a cause as
+established ("because", "due to", "caused by", "bug") instead of naming
+possible causes.
 
 ### Two levels of targets
 

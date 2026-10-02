@@ -16,6 +16,7 @@ from src.cli_verify import _run_checks
 from src.core import platform_client as pc
 from src.core.dossier import dossier_id
 from src.core.secret_scan import find_local_paths, find_secrets
+from tests.run_db import make_run_db, paper_id_of
 
 ROOT = Path(__file__).resolve().parents[1]
 SHOWCASE = ROOT / "examples" / "showcase"
@@ -27,6 +28,7 @@ ARGS = dict(owner="ada-lab", project="showcase", github="ada-lab", name="Ada Lov
 def bundle(tmp_path: Path) -> Path:
     dst = tmp_path / "showcase"
     shutil.copytree(SHOWCASE, dst)
+    make_run_db(tmp_path, paper_id_of(dst))  # the study folder's run database, named in its .env
     return dst
 
 

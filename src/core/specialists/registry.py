@@ -268,6 +268,12 @@ POLISH_SPECIALISTS = [
 ]
 
 
+#: Specialists that write their output files whole on every attempt. Before an
+#: attempt their earlier files are moved to `<name>.previous` (see
+#: specialists/base.py), so a retry or a send-back never trips over, or passes
+#: with, a file from before.
+SPECIALIST_REWRITES_OUTPUTS: frozenset[str] = frozenset({"replication_planner", "reproduction_comparer"})
+
 #: The work order a fixed `specialists` step of a template gives a specialist
 #: when the runner has no phase of its own for that step (the strategist writes
 #: the focus everywhere else). Paths are workspace-relative.
@@ -295,7 +301,14 @@ SPECIALIST_DEFAULT_FOCUS: dict[str, str] = {
         "`sandbox_log.json`; the output files are under `sandbox/run/`. Read each reproduced number from an "
         "output file the run wrote (never from a file the package shipped), and write "
         "`reproduction_report.json` exactly as your reproduction-report skill specifies, plus "
-        "`reproduction_report.md`. A deterministic check re-reads every number you report from the files and "
-        "fails the run if one is not there."
+        "`reproduction_report.md`. Label every number strictly by the protocol's thresholds (`reproduced` only "
+        "when equal at the target's own precision: printed decimals for the paper, 1e-9 relative for a package "
+        "cell); a result takes its worst number's label. Name causes of a difference only as possible causes, "
+        "and copy the environment (snapshot date and URL, platform, and the versions of the packages you "
+        "discuss) from `sandbox_log.json` into the report's `environment` block. A deterministic check "
+        "re-reads every number, recomputes every label, compares the reason texts and the environment with "
+        "the numbers and the log, and fails the run on any disagreement. e2er writes the counts and the "
+        "environment into `reproduction_report.md` itself; do not restate them. Every count, label and version "
+        "your Markdown states is compared with `reproduction_report.json`."
     ),
 }

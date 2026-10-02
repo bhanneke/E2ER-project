@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/bhanneke/E2ER-project/docs/schemas/research-object.schema.json",
-  "title": "E2ER research object",
+  "title": "e2er research object",
   "description": "The manifest `e2er publish` writes into an exported bundle (e2er.json) and submits to the registry. Every field is derived from the bundle, the run database or the publish arguments. content_id is the SHA-256 of provenance.json, which fixes the hash of every other file.",
   "type": "object",
   "required": [
@@ -34,14 +34,6 @@
     },
     "question": {
       "type": "string"
-    },
-    "purpose": {
-      "enum": ["demonstration"],
-      "description": "Why the study is published. demonstration: published as is, only to demonstrate e2er; the paper, the dossier and the study page carry a disclaimer. Absent for an ordinary study."
-    },
-    "kind": {
-      "enum": ["study", "replication"],
-      "description": "What the study is. replication: a computational reproduction of someone else's study (the replication template), whose demonstration disclaimer uses the replication wording. Absent means study."
     },
     "contributors": {
       "type": "array",
@@ -326,6 +318,35 @@
     "published": {
       "type": "string"
     },
+    "access": {
+      "type": "object",
+      "description": "Whether the study's files can be read, and where. public: the PDF link; private: the files are not shared, the publisher's version may be behind a paywall.",
+      "required": [
+        "status"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "public",
+            "private"
+          ]
+        },
+        "pdf": {
+          "type": "string"
+        },
+        "publisher": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
     "dossier": {
       "description": "The study's dossier: run settings, the workflow with the intermediate files each step wrote, and every template, specialist, skill and connector used, pinned to its version. The id is sha256 of the document's canonical JSON (keys sorted, no whitespace, UTF-8); the paper's first-page footnote links to url.",
       "type": "object",
@@ -341,8 +362,7 @@
           "pattern": "^sha256:[0-9a-f]{64}$"
         },
         "url": {
-          "type": "string",
-          "format": "uri"
+          "type": "string"
         },
         "doc": {
           "type": "object"
@@ -411,6 +431,19 @@
           }
         }
       }
+    },
+    "purpose": {
+      "enum": [
+        "demonstration"
+      ],
+      "description": "Why the study is published. demonstration: published as is to demonstrate e2er (`e2er publish --demonstration`); e2er.org shows a notice on the study and its dossier."
+    },
+    "kind": {
+      "enum": [
+        "study",
+        "replication"
+      ],
+      "description": "study (the default when absent) or replication: a reproduction of someone else's published study, made with the replication template."
     }
   }
 }

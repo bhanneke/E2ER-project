@@ -26,7 +26,7 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(
         prog="e2er",
-        description="e2er — End-to-End Researcher. Run `e2er` alone to open it in your browser.",
+        description="e2er (End-to-End Research). Run `e2er` alone to open it in your browser.",
     )
     # For bare `e2er` (which serves the dashboard). Own dests, so that the serve
     # subcommand's defaults cannot overwrite them.
@@ -278,6 +278,14 @@ def main() -> None:
     review_p.add_argument("--send-back", default=None, metavar="STEP", help="Send a template step or specialist back.")
     review_p.add_argument("--remark", default=None, help="What should change (with --send-back).")
 
+    rerun_p = subparsers.add_parser(
+        "rerun",
+        help="Send a finished study back to one of its steps: it and every later step run again with your remark.",
+    )
+    rerun_p.add_argument("paper_id", help="The paper UUID.")
+    rerun_p.add_argument("--from", dest="from_step", required=True, metavar="STEP", help="The template step to rerun.")
+    rerun_p.add_argument("--remark", required=True, help="What should change; recorded for the dossier.")
+
     prereg_p = subparsers.add_parser("preregister", help="Pre-registration commands (`e2er preregister deposit`).")
     prereg_sub = prereg_p.add_subparsers(dest="prereg_command")
     dep_p = prereg_sub.add_parser("deposit", help="Deposit the frozen pre-registration with your own account (DOI).")
@@ -357,6 +365,20 @@ def main() -> None:
         action="store_true",
         help="Emit a machine-readable JSON report instead of the human-readable summary.",
     )
+    verify_p.add_argument(
+        "--against",
+        default=None,
+        metavar="URL",
+        help="Compare the folder with what e2er.org published: a study address (https://e2er.org/<owner>/<project>) "
+        "or a dossier address (https://e2er.org/d/<id>). Read with GET only. Without it, the folder is verified "
+        "against itself only.",
+    )
+    verify_p.add_argument(
+        "--against-file",
+        default=None,
+        metavar="FILE",
+        help="Like --against, from a saved copy of the study record, the dossier or e2er.json.",
+    )
 
     # `question` says what it does; `rq` is the abbreviation researchers type.
     rq_p = subparsers.add_parser(
@@ -404,9 +426,23 @@ def main() -> None:
     )
     publish_p.add_argument("--path", default=None, help="Path of the bundle inside the repository.")
     publish_p.add_argument(
-        "--db", default=None, help="Run database, to record which agents actually ran and their model usage."
+        "--db",
+        default=None,
+        help="The study's run database (default: the one the study folder's settings name, as the server finds "
+        "it). It must hold the run of the paper the folder was exported from.",
     )
-    publish_p.add_argument("--template", default="empirical", help="Template the run followed (default: empirical).")
+    publish_p.add_argument(
+        "--no-db",
+        action="store_true",
+        help="Publish without the run's database: the dossier then lists no steps, no commit and no researcher "
+        "actions, and says so. Only for a folder whose database is gone.",
+    )
+    publish_p.add_argument(
+        "--template",
+        default=None,
+        help="Template the run followed. Default: the one the export records (provenance.json), else empirical. "
+        "A template other than the recorded one is refused.",
+    )
     publish_p.add_argument(
         "--license", default=None, dest="license_id", help="Licence of the research object, e.g. CC-BY-4.0."
     )
@@ -576,6 +612,7 @@ def main() -> None:
                 commit=args.commit,
                 path=args.path,
                 db=args.db,
+                no_db=args.no_db,
                 template=args.template,
                 license_id=args.license_id,
                 derived_from=args.derived_from,
@@ -641,7 +678,15 @@ def main() -> None:
     if args.command == "verify":
         from .cli_verify import verify as _verify
 
-        sys.exit(_verify(bundle=args.bundle, online=args.online, json_output=args.json))
+        sys.exit(
+            _verify(
+                bundle=args.bundle,
+                online=args.online,
+                json_output=args.json,
+                against=args.against,
+                against_file=args.against_file,
+            )
+        )
 
     if args.command == "compare":
         from .core.compare import compare as _compare
@@ -799,6 +844,10 @@ def main() -> None:
                 remark=args.remark,
             )
         )
+    elif args.command == "rerun":
+        from .cli_review import rerun as _rerun
+
+        sys.exit(_rerun(args.paper_id, step=args.from_step, remark=args.remark))
     elif args.command == "preregister":
         from .cli_review import deposit as _deposit
 

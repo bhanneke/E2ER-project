@@ -1,0 +1,502 @@
+{
+  "schema_version": 1,
+  "study": {
+    "title": "Political Rupture and Selective Damage to Local Service Delivery: Evidence from Brazil",
+    "authors": [
+      "Vitor de Moraes Peixoto",
+      "Davi Athaydes Leite"
+    ],
+    "zenodo_doi": "10.5281/zenodo.22179151",
+    "publication": {
+      "identifier": "10.2139/ssrn.7079720",
+      "reference": "Peixoto & Leite (2026), SSRN preprint 7079720"
+    }
+  },
+  "summary": {
+    "level_1": {
+      "reproduced": 12,
+      "reproduced_minor": 2,
+      "not_reproduced": 3,
+      "could_not_run": 0
+    }
+  },
+  "results": [
+    {
+      "id": "table_1_l1",
+      "exhibit": "main_did",
+      "target_level": 1,
+      "level": "reproduced",
+      "reason": "TAC ATT (TWFE, sem controles) and SE equal the shipped file values at full precision.",
+      "entry_points": [
+        "did_main"
+      ],
+      "comparisons": [
+        {
+          "target_id": "l1_tac_att_twfe_sem",
+          "published": -0.00135097481805838,
+          "reproduced": -0.00135097481805838,
+          "abs_diff": 0,
+          "rel_diff": 0,
+          "label": "reproduced",
+          "source": {
+            "file": "supplementary_elections_social_assistance/assistencia_social/output/data/resultados_did.csv",
+            "locator": {
+              "row": {
+                "desfecho": "Atualizacao cadastral (TAC)",
+                "estimador": "TWFE",
+                "spec": "sem controles"
+              },
+              "column": "att"
+            }
+          }
+        },
+        {
+          "target_id": "l1_tac_ep_twfe_sem",
+          "published": 0.0056299208890215,
+          "reproduced": 0.0056299208890215,
+          "abs_diff": 0,
+          "rel_diff": 0,
+          "label": "reproduced",
+          "source": {
+            "file": "supplementary_elections_social_assistance/assistencia_social/output/data/resultados_did.csv",
+            "locator": {
+              "row": {
+                "desfecho": "Atualizacao cadastral (TAC)",
+                "estimador": "TWFE",
+                "spec": "sem controles"
+              },
+              "column": "ep"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "table_2_l1",
+      "exhibit": "main_did",
+      "target_level": 1,
+      "level": "reproduced_minor",
+      "reason": "TAC ATT (Callaway-SantAnna, sem controles) differs by 0.09% (within 10% tolerance); SE differs by 6.79% also within tolerance.",
+      "entry_points": [
+        "did_main"
+      ],
+      "comparisons": [
+        {
+          "target_id": "l1_tac_att_cs_sem",
+          "published": -0.00364909844619658,
+          "reproduced": -0.00365238597730994,
+          "abs_diff": -0.00000328753111336,
+          "rel_diff": 0.000901,
+          "label": "reproduced_minor",
+          "source": {
+            "file": "supplementary_elections_social_assistance/assistencia_social/output/data/resultados_did.csv",
+            "locator": {
+              "row": {
+                "desfecho": "Atualizacao cadastral (TAC)",
+                "estimador": "Callaway-SantAnna",
+                "spec": "sem controles"
+              },
+              "column": "att"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "table_3_l1",
+      "exhibit": "main_did",
+      "target_level": 1,
+      "level": "reproduced_minor",
+      "reason": "TAC SE (Callaway-SantAnna, sem controles) differs by 6.78% (within 10% tolerance); no sign change.",
+      "entry_points": [
+        "did_main"
+      ],
+      "comparisons": [
+        {
+          "target_id": "l1_tac_ep_cs_sem",
+          "published": 0.00665562333947428,
+          "reproduced": 0.00620405787661537,
+          "abs_diff": -0.00045156546285891,
+          "rel_diff": 0.0679,
+          "label": "reproduced_minor",
+          "source": {
+            "file": "supplementary_elections_social_assistance/assistencia_social/output/data/resultados_did.csv",
+            "locator": {
+              "row": {
+                "desfecho": "Atualizacao cadastral (TAC)",
+                "estimador": "Callaway-SantAnna",
+                "spec": "sem controles"
+              },
+              "column": "ep"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "table_4_l1",
+      "exhibit": "main_did",
+      "target_level": 1,
+      "level": "reproduced",
+      "reason": "CadUnico families ATT (TWFE, com controles) equals at full precision.",
+      "entry_points": [
+        "did_main"
+      ],
+      "comparisons": [
+        {
+          "target_id": "l1_cadunico_att_twfe_com",
+          "published": 0.0179974464388493,
+          "reproduced": 0.0179974464388492,
+          "abs_diff": -0.0000000000000001,
+          "rel_diff": 5.56e-18,
+          "label": "reproduced",
+          "source": {
+            "file": "supplementary_elections_social_assistance/assistencia_social/output/data/resultados_did.csv",
+            "locator": {
+              "row": {
+                "desfecho": "CadUnico: familias cadastradas (log)",
+                "estimador": "TWFE",
+                "spec": "com controles"
+              },
+              "column": "att"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "table_5_l1",
+      "exhibit": "main_did",
+      "target_level": 1,
+      "level": "not_reproduced",
+      "reason": "PBF families ATT (Callaway-SantAnna, sem controles) reverses sign: published –0.0194, reproduced +0.0347. Magnitude difference 0.054.",
+      "entry_points": [
+        "did_main"
+      ],
+      "comparisons": [
+        {
+          "target_id": "l1_pbf_familias_att_cs_sem",
+          "published": -0.0193985235407047,
+          "reproduced": 0.0347239490711656,
+          "abs_diff": 0.0541224726114703,
+          "rel_diff": 2.79,
+          "label": "not_reproduced",
+          "source": {
+            "file": "supplementary_elections_social_assistance/assistencia_social/output/data/resultados_did.csv",
+            "locator": {
+              "row": {
+                "desfecho": "PBF: familias beneficiarias (log)",
+                "estimador": "Callaway-SantAnna",
+                "spec": "sem controles"
+              },
+              "column": "att"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "table_6_l1",
+      "exhibit": "main_did",
+      "target_level": 1,
+      "level": "reproduced",
+      "reason": "CRAS workers ATT (TWFE, com controles) equals at full precision.",
+      "entry_points": [
+        "did_main"
+      ],
+      "comparisons": [
+        {
+          "target_id": "l1_cras_trabalhadores_att_twfe_com",
+          "published": -0.0610859393782066,
+          "reproduced": -0.0610859393782066,
+          "abs_diff": 0,
+          "rel_diff": 0,
+          "label": "reproduced",
+          "source": {
+            "file": "supplementary_elections_social_assistance/assistencia_social/output/data/resultados_did.csv",
+            "locator": {
+              "row": {
+                "desfecho": "CRAS: trabalhadores (log)",
+                "estimador": "TWFE",
+                "spec": "com controles"
+              },
+              "column": "att"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "table_7_l1",
+      "exhibit": "power_mde",
+      "target_level": 1,
+      "level": "not_reproduced",
+      "reason": "TAC MDE at 80% (Callaway-SantAnna) differs by 10.43% (exceeds 10% tolerance). Published 0.0194, reproduced 0.0174.",
+      "entry_points": [
+        "poder_balanco"
+      ],
+      "comparisons": [
+        {
+          "target_id": "l1_mde_tac_cs",
+          "published": 0.0194053054480327,
+          "reproduced": 0.0173811968394429,
+          "abs_diff": -0.0020241086085898,
+          "rel_diff": 0.1043,
+          "label": "not_reproduced",
+          "source": {
+            "file": "supplementary_elections_social_assistance/assistencia_social/output/data/poder_mde.csv",
+            "locator": {
+              "row": {
+                "desfecho": "TAC (ancora)"
+              },
+              "column": "mde80_cs"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "table_8_l1",
+      "exhibit": "power_mde",
+      "target_level": 1,
+      "level": "not_reproduced",
+      "reason": "PBF families MDE at 80% (Callaway-SantAnna) differs by 34.77% (far exceeds tolerance). Published 0.0539, reproduced 0.0352.",
+      "entry_points": [
+        "poder_balanco"
+      ],
+      "comparisons": [
+        {
+          "target_id": "l1_mde_pbf_cs",
+          "published": 0.0538889825075466,
+          "reproduced": 0.0351535174887705,
+          "abs_diff": -0.0187354650187761,
+          "rel_diff": 0.3477,
+          "label": "not_reproduced",
+          "source": {
+            "file": "supplementary_elections_social_assistance/assistencia_social/output/data/poder_mde.csv",
+            "locator": {
+              "row": {
+                "desfecho": "PBF: familias (log)"
+              },
+              "column": "mde80_cs"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "table_9_l1",
+      "exhibit": "power_mde",
+      "target_level": 1,
+      "level": "reproduced",
+      "reason": "CRAS workers ATT (Sun-Abraham) equals at full precision.",
+      "entry_points": [
+        "poder_balanco"
+      ],
+      "comparisons": [
+        {
+          "target_id": "l1_att_sa_cras_trabalhadores",
+          "published": -0.0533543859800926,
+          "reproduced": -0.0533543859800926,
+          "abs_diff": 0,
+          "rel_diff": 0,
+          "label": "reproduced",
+          "source": {
+            "file": "supplementary_elections_social_assistance/assistencia_social/output/data/poder_mde.csv",
+            "locator": {
+              "row": {
+                "desfecho": "CRAS: trabalhadores (log)"
+              },
+              "column": "att_sa"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "table_10_l1",
+      "exhibit": "pretrends",
+      "target_level": 1,
+      "level": "reproduced",
+      "reason": "TAC pre-trends Wald p-value and PBF families number of leads equal shipped values.",
+      "entry_points": [
+        "pretrends_honestdid"
+      ],
+      "comparisons": [
+        {
+          "target_id": "l1_pretrend_tac_p",
+          "published": 0.341,
+          "reproduced": 0.341,
+          "abs_diff": 0,
+          "rel_diff": 0,
+          "label": "reproduced",
+          "source": {
+            "file": "supplementary_elections_social_assistance/assistencia_social/output/data/robustez_pretendencias.csv",
+            "locator": {
+              "row": {
+                "desfecho": "Atualizacao cadastral (TAC)"
+              },
+              "column": "wald_p_pretend"
+            }
+          }
+        },
+        {
+          "target_id": "l1_pretrend_pbf_fam_leads",
+          "published": 6,
+          "reproduced": 6,
+          "abs_diff": 0,
+          "rel_diff": 0,
+          "label": "reproduced",
+          "source": {
+            "file": "supplementary_elections_social_assistance/assistencia_social/output/data/robustez_pretendencias.csv",
+            "locator": {
+              "row": {
+                "desfecho": "PBF: familias beneficiarias (log)"
+              },
+              "column": "n_leads"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "table_11_l1",
+      "exhibit": "incentive_heterogeneity",
+      "target_level": 1,
+      "level": "reproduced",
+      "reason": "PBF and CadUnico heterogeneity by incentive terciles and gradient all equal at full precision.",
+      "entry_points": [
+        "incentivo_gradient"
+      ],
+      "comparisons": [
+        {
+          "target_id": "l1_incentivo_pbf_weak_att",
+          "published": -0.0261514772302848,
+          "reproduced": -0.0261514772302848,
+          "abs_diff": 0,
+          "rel_diff": 0,
+          "label": "reproduced",
+          "source": {
+            "file": "supplementary_elections_social_assistance/assistencia_social/output/data/proxy_incentivo_norma.csv",
+            "locator": {
+              "row": {
+                "proxy": "P1 -- familias PBF pc 2014 (norma revogada)",
+                "grupo": "1o tercil (incentivo fraco) -- PBF pc 2014"
+              },
+              "column": "att"
+            }
+          }
+        },
+        {
+          "target_id": "l1_incentivo_pbf_strong_att",
+          "published": 0.00527505816451872,
+          "reproduced": 0.00527505816451871,
+          "abs_diff": -0.00000000000000001,
+          "rel_diff": 1.9e-18,
+          "label": "reproduced",
+          "source": {
+            "file": "supplementary_elections_social_assistance/assistencia_social/output/data/proxy_incentivo_norma.csv",
+            "locator": {
+              "row": {
+                "proxy": "P1 -- familias PBF pc 2014 (norma revogada)",
+                "grupo": "3o tercil (forte) -- PBF pc 2014"
+              },
+              "column": "att"
+            }
+          }
+        },
+        {
+          "target_id": "l1_incentivo_cadunico_weak_att",
+          "published": -0.0195521494316181,
+          "reproduced": -0.0195521494316181,
+          "abs_diff": 0,
+          "rel_diff": 0,
+          "label": "reproduced",
+          "source": {
+            "file": "supplementary_elections_social_assistance/assistencia_social/output/data/proxy_incentivo_norma.csv",
+            "locator": {
+              "row": {
+                "proxy": "P2 -- cadastros CadUnico pc 2014",
+                "grupo": "1o tercil (incentivo fraco) -- cadastros CU pc 2014"
+              },
+              "column": "att"
+            }
+          }
+        },
+        {
+          "target_id": "l1_gradient_pbf",
+          "published": -0.0314265353948035,
+          "reproduced": -0.0314265353948035,
+          "abs_diff": 0,
+          "rel_diff": 0,
+          "label": "reproduced",
+          "source": {
+            "file": "supplementary_elections_social_assistance/assistencia_social/output/data/proxy_incentivo_norma_gradiente.csv",
+            "locator": {
+              "row": {
+                "proxy": "P1 -- familias PBF pc 2014 (norma revogada)"
+              },
+              "column": "gradiente"
+            }
+          }
+        },
+        {
+          "target_id": "l1_gradient_cadunico",
+          "published": -0.0240958094313375,
+          "reproduced": -0.0240958094313375,
+          "abs_diff": 0,
+          "rel_diff": 0,
+          "label": "reproduced",
+          "source": {
+            "file": "supplementary_elections_social_assistance/assistencia_social/output/data/proxy_incentivo_norma_gradiente.csv",
+            "locator": {
+              "row": {
+                "proxy": "P2 -- cadastros CadUnico pc 2014"
+              },
+              "column": "gradiente"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "environment": {
+    "snapshot": {
+      "date": "2026-08-30",
+      "url": "https://p3m.dev/cran/__linux__/noble/2026-08-30"
+    },
+    "platform": "aarch64-unknown-linux-gnu",
+    "installed": {
+      "data.table": "1.18.4",
+      "dplyr": "1.2.1",
+      "tidyr": "1.3.2",
+      "stringr": "1.6.0",
+      "readr": "2.2.0",
+      "purrr": "1.2.2",
+      "janitor": "2.2.1",
+      "lubridate": "1.9.5",
+      "ggplot2": "4.0.3",
+      "fixest": "0.14.2",
+      "did": "2.5.1",
+      "here": "1.0.2",
+      "knitr": "1.51",
+      "HonestDiD": "0.2.8",
+      "MatchIt": "4.7.2",
+      "broom": "1.0.13",
+      "DRDID": "1.3.0"
+    }
+  },
+  "unassessed": [
+    {
+      "target_id": "level_2_targets",
+      "reason": "Published paper source (SSRN 10.2139/ssrn.7079720) carries title 'Political Instability and Bureaucratic Resilience: The Protective Role of Performance-based Transfers in Brazilian Social Assistance', differing from package title 'Political Rupture and Selective Damage to Local Service Delivery: Evidence from Brazil', and may represent a different version. Level 2 comparison deferred to avoid misstatement of reproduction."
+    }
+  ],
+  "notes_for_robustness": [
+    "PBF coefficient sign reversal (Callaway-SantAnna, sem controles): ATT changed from –0.019 to +0.035. This is the most critical finding; determine whether sample, time-conditioning, or specification matrix differs.",
+    "Power calculation divergence: TAC and PBF MDE estimates at 80% power (10–35% underestimation in reproduced version) suggest changes in sample size, baseline effect magnitude, or power methodology. Request rebuild log and convergence diagnostics.",
+    "Callaway-SantAnna estimator stability: Produces largest divergences (sign flip, large SE difference) relative to TWFE and Sun-Abraham. Test whether time-invariant unobservables or non-parallel trends assumptions drive sensitivity.",
+    "File versioning: sandbox_log records resultados_did.csv and poder_mde.csv rewritten by run and different from shipped package (same_as_package: false). Obtain original file SHA-256 to pinpoint which coefficients changed and at which decision point.",
+    "Numerical precision: Most reproduced targets match at full 15+ decimal precision, suggesting reproducible RNG and convergence. Three divergences may reflect code updates (e.g., package version pins, algorithm refinements) or environment-dependent behavior (e.g., BLAS/LAPACK numerical libraries)."
+  ]
+}

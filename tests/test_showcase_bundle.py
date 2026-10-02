@@ -188,9 +188,11 @@ def test_an_edited_table_cell_fails_the_tables_check(tmp_path: Path):
 
     assert tables.status == "FAIL"
     assert "main.tex" in tables.detail
-    # Documents the gap this check closes: the nearest-value heuristic still
-    # grades the edited cell non-critical and lets it through.
-    assert numbers.status == "PASS"
+    # The numbers check no longer lets it through either: -9.9999 is no source
+    # value at four decimals (the run's nearest-value heuristic graded it
+    # non-critical and passed it).
+    assert numbers.status == "FAIL"
+    assert "-9.9999" in numbers.detail
 
 
 def test_provenance_records_a_cell_edge_for_every_traced_number():
@@ -227,7 +229,8 @@ def test_empty_derivation_graph_fails_integrity(tmp_path: Path):
 
     check = _check_integrity(bundle)
     assert check.status == "FAIL"
-    assert "derivation graph is empty" in check.detail
+    # The edges are recomputed from the bundle's own reports, so stripping them is caught as an edit.
+    assert "derivation edges in provenance.json are not the ones" in check.detail
 
 
 def test_rendered_tables_with_no_traced_cells_is_not_a_pass(tmp_path: Path):

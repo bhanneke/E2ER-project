@@ -11,7 +11,8 @@ import pytest
 
 from src.cli_publish import publish, request_body
 from src.core import zenodo as zen
-from src.core.dossier import SCHEMA_AVAILABILITY, build_dossier, dossier_id
+from src.core.dossier import dossier_id
+from tests.run_db import make_run_db, paper_id_of
 
 ROOT = Path(__file__).resolve().parents[1]
 SHOWCASE = ROOT / "examples" / "showcase"
@@ -23,6 +24,7 @@ REPO = dict(repo="https://github.com/bhanneke/E2ER-project", commit="abc1234", p
 def bundle(tmp_path: Path) -> Path:
     dst = tmp_path / "showcase"
     shutil.copytree(SHOWCASE, dst, ignore=shutil.ignore_patterns(".e2er", "e2er.json"))
+    make_run_db(tmp_path, paper_id_of(dst))  # the study folder's run database, named in its .env
     return dst
 
 
@@ -34,13 +36,10 @@ def test_data_and_code_are_private_unless_stated(bundle: Path, tmp_path: Path):
     assert publish(str(bundle), **BASE, **REPO, out=str(tmp_path / "e")) == 0
     m = _manifest(bundle)
     assert m["availability"] == {"data": {"access": "private"}, "code": {"access": "private"}}
-    # A private study's dossier omits availability, so its address is unchanged.
+    # A private study's dossier omits availability.
     doc = m["dossier"]["doc"]
     assert "availability" not in doc
-    assert (
-        dossier_id(build_dossier({k: v for k, v in m.items() if k != "availability"}, bundle=bundle))
-        == m["dossier"]["id"]
-    )
+    assert dossier_id(doc) == m["dossier"]["id"]
 
 
 def test_public_code_points_at_the_repository_commit(bundle: Path, tmp_path: Path):
@@ -50,7 +49,7 @@ def test_public_code_points_at_the_repository_commit(bundle: Path, tmp_path: Pat
         "access": "public",
         "url": "https://github.com/bhanneke/E2ER-project/tree/abc1234/examples/showcase",
     }
-    assert m["dossier"]["doc"]["schema"] == SCHEMA_AVAILABILITY
+    assert m["dossier"]["doc"]["schema"] == "e2er-dossier/0.6"  # built from the run database
     assert m["dossier"]["doc"]["availability"] == m["availability"]
 
 

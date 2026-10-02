@@ -158,10 +158,11 @@ is measured rather than hidden.
 | `e2er rq --draft "…"` | Sharpen a draft RQ against your data + library (advisory) |
 | `e2er run "…" [--template …] [--governance …] [--review-at …]` | Run the pipeline for one RQ, following a template (default `empirical`) |
 | `e2er review <paper_id> [--approve] [--edit …] [--send-back …]` | Act on a paused run: approve, edit a file, add an instruction, send a step back |
+| `e2er rerun <paper_id> --from STEP --remark "…"` | Send a finished study back to one of its steps; it and the later steps run again |
 | `e2er run-matrix "…" --backends a,b,c` | Same RQ across k backends × n repeats |
 | `e2er compare matrix.json` | Diff the design choices across the matrix |
 | `e2er export <paper_id>` | Assemble a clean bundle (+ `provenance.json`) |
-| `e2er verify <bundle> [--online]` | Offline re-check: hashes, numbers, spec, citations |
+| `e2er verify <bundle> [--online] [--against URL]` | Offline re-check: hashes, numbers (and p from t), spec, citations; the pre-registration and a reproduction when the bundle has one; with `--against`, the folder against what e2er.org published |
 
 **Going deeper.** [`docs/WORKFLOW.md`](docs/WORKFLOW.md) is the technical
 account: the phase sequence, what each of the four gates actually checks, what
@@ -720,10 +721,10 @@ The automated research space is developing quickly. Two projects most relevant t
 ```bibtex
 @software{hanneke2026e2er,
   author       = {Hanneke, Bj{\"o}rn},
-  title        = {{e2er: End-to-End Researcher, An Open-Source Pipeline
+  title        = {{e2er (End-to-End Research): An Open-Source Pipeline
                    for Automated Empirical Research}},
   year         = {2026},
-  version      = {0.12.1},
+  version      = {0.13.0},
   url          = {https://github.com/bhanneke/E2ER-project},
   doi          = {10.5281/zenodo.20187238},
   license      = {MIT},

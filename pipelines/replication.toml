@@ -73,6 +73,11 @@ cpus                    = 2
 memory_gb               = 6
 timeout_minutes         = 60
 install_timeout_minutes = 60
+# Package versions: "package-date" installs them as of the Zenodo record's
+# publication date (R: Posit Package Manager's dated CRAN snapshot; Python:
+# pip --uploaded-prior-to), "latest" the newest, "YYYY-MM-DD" as of that day.
+# Versions the plan declares win in every case.
+snapshot                = "package-date"
 
 [[steps]]
 kind = "specialists"

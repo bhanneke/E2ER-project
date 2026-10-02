@@ -271,8 +271,9 @@ def build_env(req: SaveSetup, current: dict[str, str], root: Path) -> tuple[str,
             raise HTTPException(status_code=422, detail=f"{k} contains a line break.")
         if new:
             keys[k] = new
-        elif current.get(k):
-            keys[k] = current[k]
+        elif (current.get(k) or "").strip():
+            # A key kept from the previous file loses the whitespace it was pasted with.
+            keys[k] = current[k].strip()
 
     bib, lit_dir, data_dir = "", "", ""
     if req.literature.strip():
@@ -317,7 +318,9 @@ def build_env(req: SaveSetup, current: dict[str, str], root: Path) -> tuple[str,
         *_KNOWN_KEYS,
         *_MODEL_SETTINGS,
     }
-    kept = {k: v for k, v in current.items() if k not in managed}
+    from ..config import is_secret_setting
+
+    kept = {k: (v.strip() if is_secret_setting(k) else v) for k, v in current.items() if k not in managed}
     if kept:
         from ..cli_init import _env_quote
 

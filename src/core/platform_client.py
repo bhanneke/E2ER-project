@@ -109,16 +109,37 @@ def forget_token(url: str) -> None:
 
 
 def _json(r: httpx.Response) -> dict[str, Any]:
+    """The answer as a dict; a body that is not a JSON object is kept (shortened) under ``_body``."""
     try:
-        return r.json()
+        data = r.json()
     except ValueError:
-        return {"error": r.text[:200]}
+        return {"_body": r.text[:500]}
+    return data if isinstance(data, dict) else {"_body": r.text[:500]}
+
+
+def error_text(status: int, body: Any) -> str:
+    """What the server said went wrong: its ``error`` (or ``message``), else the HTTP status and the body's start.
+
+    An answer without an error text (a proxy's page, a database over its daily
+    limit, an empty body) is shown as ``HTTP <status>: <first 200 characters>``
+    rather than as an empty line.
+    """
+    if isinstance(body, dict):
+        for key in ("error", "message", "detail"):
+            value = body.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        raw = body["_body"] if "_body" in body else json.dumps(body, ensure_ascii=False) if body else ""
+    else:
+        raw = "" if body is None else str(body)
+    excerpt = " ".join(str(raw).split())
+    excerpt = (excerpt[:200] + "…") if len(excerpt) > 200 else excerpt
+    return f"HTTP {status}: {excerpt or '(empty body)'}"
 
 
 def _raise(r: httpx.Response, what: str) -> None:
     if r.status_code >= 400:
-        body = _json(r)
-        raise PlatformError(f"{what}: {body.get('error') or body.get('message') or r.status_code}")
+        raise PlatformError(f"{what}: {error_text(r.status_code, _json(r))}")
 
 
 def login(

@@ -421,9 +421,49 @@ async def yfinance_check(settings) -> Check:
         return Check("data.yfinance.history", FAIL, repr(e)[:200])
 
 
+#: A FRED API key: 32 lower-case letters and digits.
+FRED_KEY_FORMAT = re.compile(r"[a-z0-9]{32}")
+
+
+def _raw_setting(name: str) -> str | None:
+    """A setting as written, before Settings strips it: the environment, else `.env` here."""
+    if name in os.environ:
+        return os.environ[name]
+    env = Path.cwd() / ".env"
+    if not env.is_file():
+        return None
+    try:
+        from dotenv import dotenv_values
+
+        return dotenv_values(env).get(name)
+    except Exception:  # noqa: BLE001 — an unreadable .env is reported by other checks
+        return None
+
+
+def fred_key_check(settings) -> Check:
+    """The FRED key's format, before any request: FRED rejects anything but 32 lower-case alphanumerics."""
+    key = settings.fred_api_key
+    if not key:
+        return Check("data.fred.key", SKIP, "FRED_API_KEY not set")
+    raw = _raw_setting("FRED_API_KEY")
+    padded = raw is not None and raw != raw.strip()
+    note = " (it had spaces or line breaks around it in the settings; e2er strips them)" if padded else ""
+    if not FRED_KEY_FORMAT.fullmatch(key):
+        problem = f"{len(key)} characters" if len(key) != 32 else "not only lower-case letters and digits"
+        return Check(
+            "data.fred.key",
+            FAIL,
+            f"FRED_API_KEY is not a FRED key: FRED keys are 32 lower-case letters and digits, this one is {problem}"
+            f"{note}. Copy it again from https://fredaccount.stlouisfed.org/apikey",
+        )
+    return Check("data.fred.key", PASS, f"FRED_API_KEY has the format of a FRED key (…{key[-4:]}){note}")
+
+
 async def fred_check(settings) -> Check:
     if not settings.fred_api_key:
         return Check("data.fred.observations", SKIP, "FRED_API_KEY not set")
+    if not FRED_KEY_FORMAT.fullmatch(settings.fred_api_key):
+        return Check("data.fred.observations", SKIP, "not requested: the key has the wrong format (data.fred.key)")
     from .modules.data.registry import series_fetchers
 
     fetchers = {f.name: f for f in series_fetchers(settings)}
@@ -514,6 +554,7 @@ async def run_provider_checks(settings) -> list[Check]:
     return [
         await data_catalog_check(settings),
         await yfinance_check(settings),
+        fred_key_check(settings),
         await fred_check(settings),
         await allium_check(settings),
         await openalex_check(settings),

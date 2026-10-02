@@ -7,6 +7,218 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] — 2026-10-02
+
+### Name and publishing format
+
+- **Name.** The package, the CLI and the citation metadata say "e2er (End-to-End Research)".
+- **Publish matches e2er.org's format.** The study description no longer carries an
+  `amendments` field, which e2er.org refused; the amendments stay in provenance.json and in
+  the dossier. `docs/schemas/research-object.schema.json` is synced with the site's copy, and
+  a test validates a real publish against it.
+
+### Integrity of published studies (review of 2026-10-01)
+
+- **Publish needs the run.** `e2er publish` finds the study's run database
+  (`--db`, the study folder's `DATABASE_URL`, e2er's default) and refuses one
+  that does not hold the exported paper's run, or none. Both studies published
+  on 2026-10-01 had dossiers without steps. `--no-db` publishes anyway and the
+  dossier and footnote say the steps are not recorded.
+- **Nothing changes in an edited folder.** Publish checks the folder against
+  `provenance.json` before it changes anything; each change it then makes is an
+  amendment (path, fingerprint before and after, reason), so the exported hash
+  is never lost. A PDF publish compiles is fingerprinted.
+- **Zenodo.** The dossier is built from a copy of the final availability and
+  its id from the final document; deposits are published after everything that
+  can fail; reserved deposits are kept in `.e2er/zenodo.json` and reused, so a
+  retry makes no new deposits and gives the same dossier.
+- **The dossier says what the run recorded**: every segment of the run with its
+  commit and version, components pinned at each commit they ran on (unresolved
+  ones say so), the specialists and skills that ran, one researcher step per
+  researcher action with every field, the runner's reruns on the steps they
+  caused, the outcome, halts, pauses, failures and set-asides, UTC times, and
+  bundle-relative paths only. The runner now records what each step wrote and
+  the skills it read. Dossiers built from a run are `e2er-dossier/0.6`.
+- **Canonical JSON** is RFC 8785, as e2er.org computes it (floats, large
+  integers, NaN, key order); the four published dossiers keep their addresses.
+- **`e2er verify`** never follows a link, reads `provenance.json` strictly,
+  checks every file but the root `provenance.json`, `e2er.json` and `.e2er/`
+  records (report.html included), compares sizes, recomputes the derivation
+  edges, ignores `.DS_Store`/`Thumbs.db`/`._*` (and says so), checks
+  `e2er.json` and `.e2er/link.json` against the folder, and with `--against`
+  against what e2er.org published. Checks the study's record requires fail
+  when their input is missing; checks over nothing are skipped, never passed;
+  every table cell must be a source value at the precision shown.
+- **The reproduction report** must keep e2er's summary section, and its
+  sections, "N of M" counts and overall verdicts must agree with the JSON.
+- **Export** creates its folder atomically, never copies dotfiles, key files or
+  links that leave the workspace, never lets one file overwrite another's
+  target (and says which PDF is `paper/paper.pdf`), and fingerprints
+  `report.html`.
+- The demonstration disclaimer is a delimited block: a new wording replaces it,
+  a study without a purpose loses it, and a purpose recorded on the study is
+  honoured. The paper gets the dossier link without `--name` too.
+
+### `e2er rerun`: send a finished study back to one of its steps
+
+- `e2er rerun <id> --from STEP --remark "…"` (and `POST
+  /api/papers/{id}/rerun`) reruns a template step and every step after it in
+  a study that is not stopped at a researcher step, a completed one included.
+  The approvals from that step on are withdrawn, the remark goes to
+  `researcher_instructions.md` and is recorded as the researcher's action
+  (`researcher_action`, action `rerun`, in the dossier), and the run stops at
+  the next researcher step for approval. A researcher step cannot be the
+  start, nor a step that has not run; at a pending researcher step the
+  send-back does this. Nothing in the workspace is deleted.
+
+### `e2er publish` takes the template from the export
+
+- The export records the template the study was run with in
+  `provenance.json` (`run.template`): the runner passes its template, `e2er
+  export` and the browser's export the papers row's `pipeline`, otherwise
+  `manifest.json`'s. `e2er publish` uses it; `--template` (no longer defaulting
+  to `empirical`) may only repeat it, and a different one is refused with the
+  recorded name. An export made before this records nothing: publish then takes
+  `--template`, else `empirical`, and says so. The FOMC study had been
+  published as `empirical`; a replication now gets the replication disclaimer.
+- A server answer without an error text (a proxy page, Cloudflare D1 over its
+  daily read limit, an empty body) printed an empty `error:`. `e2er publish`,
+  `login`, `whoami`, `status`, `dossier push` and `submit` now print the HTTP
+  status and the first 200 characters of the body (`pc.error_text`).
+
+### The written reproduction report agrees with its JSON
+
+- The replication demonstration's `reproduction_report.md` said "16 targets"
+  and "not_reproduced 2" while `reproduction_report.json` and the check had 17
+  numbers, 12 reproduced, 2 reproduced_minor and 3 not reproduced, and it
+  listed package versions the run did not install. Nothing compared the two.
+- e2er now writes the counts and the environment into the Markdown itself:
+  once the JSON checks out, the reproduction check puts a section "Counts and
+  environment" (delimited by `<!-- e2er:summary … -->` comments) before the
+  report's first `##` heading, rendered from `reproduction_report.json` and
+  `sandbox_log.json`.
+- The reproduction check (the pipeline's `reproduction_gate` and `e2er
+  verify`) and the comparer's contract fail when the prose contradicts the
+  JSON, and name the contradiction ("reproduction_report.md says 16 level-1
+  numbers (…), reproduction_report.json has 17"): counts that name their level,
+  tables of counts per label, the label stated for a number that can be
+  matched to one compared number (by target id, or published and reproduced
+  value), and a package version stated after its name. A missing Markdown
+  report, or an edited summary section, fails too. New module
+  `src/core/pipeline/reproduction_md.py`.
+
+### Replication: packages as of the package date, strict labels
+
+- A specialist that writes its files whole (the planner, the comparer) starts
+  each attempt with its earlier files moved to `<name>.previous`; any other
+  specialist is told which of its files exist and to read them before writing.
+  The CLI's write tool refuses to overwrite an unread file, which made every
+  retry of the comparer fail in the live rerun.
+
+- The sandbox installs packages as of the Zenodo record's publication date by
+  default (`snapshot = "package-date" | "latest" | "YYYY-MM-DD"`): R from Posit
+  Package Manager's dated CRAN snapshot, Python with pip's
+  `--uploaded-prior-to`; declared versions still win (`remotes::install_version`,
+  `==`). The snapshot date and URL, the platform and every installed version,
+  dependencies included, are read from the committed image and recorded in
+  `sandbox_log.json`, also when the environment is reused.
+- Labels follow the protocol's thresholds exactly, stated in
+  `reproduction-protocol.md` and enforced by the check: `reproduced` only when
+  equal at the target's own precision (1e-9 relative for package cells),
+  `reproduced_minor` up to 10 % with the same sign, `not_reproduced` beyond; a
+  result takes its worst number's label. The check and the comparer's
+  contract refuse reason texts that contradict the numbers or state a cause as
+  established, and require the report's environment block (snapshot, and the versions it
+  names) to match the log; the full list of installed versions is written by
+  code into `reproduction_check.json`, not transcribed by the model.
+
+### Checks
+
+- **Every pre-registered hypothesis has a result.** The preregister step now
+  ends `preregistration.md` with a machine-readable block: the hypotheses the
+  plan declares (`[{"id": "H1", "statement": …, "parts": ["H1a", "H1b"]}]`)
+  and the sample size the design fixes (the events of `event_design.json`, or
+  a `sample_size` in `identification_spec.json`). The researcher may correct
+  it; on approval it is frozen into `preregistration.lock.json`. The
+  estimation check and `e2er verify`'s `preregistration` check then require at
+  least one result entry per hypothesis (entries name it in a `hypothesis`
+  field; a part such as H1a counts for H1) and fail with the list of missing
+  ones. The headline estimate's `n_observations` must equal the registered
+  sample size unless `exclusions`, each with a reason, account for the
+  difference; the declared exclusions are reported. A lock frozen before this
+  release falls back to the hypotheses its frozen text declares.
+- **p-values follow from the test statistic.** The estimation check and
+  `e2er verify`'s numbers check recompute, for every coefficient with an
+  estimate, standard error, t and p: t = estimate / se (allowing for
+  rounding), and the p-value from t with the stated `df`, G − 1 to the normal
+  for clustered errors, `df_residual`, n − k, or n − 1 for a one-sample mean
+  test, within 0.005 (more when `rounding` is declared). When df is unknown the
+  p-value must lie between the normal and the t with the fewest df the entry
+  allows, and the check says df was unknown. One-sided tests
+  (`alternative`) are checked one-sided; p-values from bootstrap or
+  permutation (`p_value_method`) are left out and listed. A mismatch fails and
+  names the coefficient. The t distribution is computed from the regularized
+  incomplete beta function (no scipy dependency) and tested against closed
+  forms and published critical values.
+- **Replications verify offline.** A replication export now carries
+  `sandbox/logs/` and, under `sandbox/run/`, the output files the entry points
+  wrote and every file `reproduction_report.json` reads a number from, all
+  hashed in `provenance.json`. `e2er verify` has a `reproduction` check for
+  bundles with a reproduction report: it re-reads every compared number from
+  those files at its locator, recomputes each number's label with the
+  pipeline's own reproduction code and the tolerance the run used, and
+  confirms the report's summary counts. A replication bundle can now be
+  verified. Paper bundles are unchanged.
+- The reproduction check (pipeline and verify) recomputes a label per
+  compared number, fails on a stated `label` that differs, and checks the
+  report's `summary` counts (numbers by label, or results by level).
+- **Declared tables hold values, not only rows.** The data contract now
+  fails when a value column of a declared table is less than 90% non-null
+  (or the `min_non_null` share the data dictionary declares for the table or
+  column), e.g. `dgs2.value: 0 of 2765 non-null (needs 90%)`. It checks the
+  columns a table's entry declares, else every column that is not a date;
+  tables the researcher supplied only where columns are declared.
+- **Statistics come from a library.** scipy and statsmodels are now
+  dependencies: the estimation runner executes `run_estimation.py` with
+  e2er's own interpreter, which had neither, and the FOMC study's specialist
+  wrote its own t distribution (p = 0.208 for t = -2.00 with 19 df). The
+  econometrics skills require `scipy.stats` or the fitted
+  `statsmodels`/`linearmodels` result for every distribution function and
+  forbid hand-written approximations; entries carry `hypothesis` and `df`.
+
+### Keys and connectors
+
+- Settings strip surrounding whitespace from every key, token, secret and
+  password, whether read from `.env` or the environment; the FRED connector
+  and the Zenodo token do the same, and the setup page strips a key it keeps
+  from the previous file. A FRED key pasted with a leading space was sent as
+  " <key>", which FRED rejects with HTTP 400.
+- `e2er-data … --table` fails with exit code 4 and leaves `data.db`
+  untouched when the connector reports an error, returns no rows, or returns
+  rows without a single value. Before, a failed load was reported only in the
+  JSON the model reads.
+- `e2er doctor` checks the FRED key's format (32 lower-case letters and
+  digits) before requesting anything, and says when the key had whitespace
+  around it.
+
+### Fixed
+
+- `event_design.json` is exported to `design/` with the other plan files. It
+  went to `misc/`, so `e2er verify` reported a pre-registered event study's
+  design as missing.
+
+- The pre-registration check now recognises result files as estimation output:
+  csv, tsv, parquet, json or xlsx outside `data/` and the declared data tables,
+  named as results (result, estimat, car, abnormal, ar_, regression, coef) or
+  with result columns (car, car_*, abnormal*, ar_*, coef*, estimate*, t_stat,
+  p_value, alpha_*, beta_*). Plan and description files are never results.
+  After a send-back from a blocked pre-registration the check runs again and,
+  once clean, the researcher sees the pre-registration.
+- A send-back no longer overwrites a file the researcher edited: the specialist
+  is not asked for it, and if it rewrites it anyway the researcher's version is
+  put back and the specialist's kept in `set_aside/`, recorded as
+  `researcher_edit_restored`.
+
 ## [0.12.1] — 2026-09-29
 
 ### Studies and versions

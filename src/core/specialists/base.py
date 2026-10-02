@@ -65,7 +65,26 @@ async def run_specialist(
         max_turns=_MAX_TURNS,
         sidecars=work_order.sidecar_artifacts,
     )
+    set_aside = set_aside_previous_outputs(workspace, work_order)
     user_prompt = _build_user_prompt(work_order)
+    already_there = [
+        f for f in [work_order.output_file, *work_order.sidecar_artifacts] if f and (workspace / f).is_file()
+    ]
+    if set_aside:
+        user_prompt += (
+            "\n\n## Earlier output\nYour earlier output was moved aside so you write fresh files: "
+            + ", ".join(f"`{new}` (was `{old}`)" for old, new in set_aside)
+            + ". Read them if useful; write the required files anew."
+        )
+    elif already_there:
+        # The Claude Code CLI's Write tool refuses to overwrite a file that was
+        # not read in the same session; a retry that tries to rewrite its own
+        # earlier output then fails every attempt (seen live, 2026-09-29).
+        user_prompt += (
+            "\n\n## Existing files\nThese files already exist from an earlier attempt: "
+            + ", ".join(f"`{f}`" for f in already_there)
+            + ". Read each one before you write it (the write tool refuses to overwrite a file you have not read)."
+        )
 
     # Cross-attempt half of the self-correction loop: if a PRIOR attempt's
     # script crashed when the runner executed it, feed the captured traceback
@@ -272,6 +291,28 @@ async def run_specialist(
         success=result.success,
         error=result.error or "",
     )
+
+
+def set_aside_previous_outputs(workspace: Path, work_order: WorkOrder) -> list[tuple[str, str]]:
+    """Move a rewriting specialist's earlier output files to ``<name>.previous``.
+
+    For specialists that write their files whole each time
+    (``SPECIALIST_REWRITES_OUTPUTS``), so a retry or a send-back starts from no
+    file: the CLI backend's write tool cannot overwrite a file it has not read,
+    and a stale file must never pass a contract check it did not earn.
+    """
+    from .registry import SPECIALIST_REWRITES_OUTPUTS
+
+    if work_order.specialist not in SPECIALIST_REWRITES_OUTPUTS:
+        return []
+    moved: list[tuple[str, str]] = []
+    for name in [work_order.output_file, *work_order.sidecar_artifacts]:
+        path = workspace / name if name else None
+        if path is not None and path.is_file():
+            target = path.with_name(path.name + ".previous")
+            path.replace(target)
+            moved.append((name, target.name))
+    return moved
 
 
 async def _log_contract_gate(

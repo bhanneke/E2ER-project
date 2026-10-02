@@ -400,10 +400,14 @@ class PipelineRunner:
             # row would stay at `designing` (the state run() set on entry).
             # Mirror state.last_status — typically `completed` — back to
             # the DB so the dashboard reflects reality.
-            if not state.last_status and self._spec.step("revision") is None:
+            if state.last_status in ("", PaperStatus.IN_PROGRESS.value) and self._spec.step("revision") is None:
                 # A template without a revision step (e.g. `replication`, whose
                 # product is a report and a dossier, not a reviewed paper) is
-                # complete when its last step is done.
+                # complete when its last step is done. The loop only gets here
+                # when no step stopped the run. `in_progress` is the state
+                # file's default, not a status any step set: testing for an
+                # empty value instead left a run whose last step was an
+                # approved researcher step at `in_progress` for good.
                 state.last_status = PaperStatus.COMPLETED.value
                 state.save(self._workspace)
             if state.last_status:
@@ -565,7 +569,9 @@ class PipelineRunner:
             return
         date_str = datetime.now().strftime("%Y%m%d")
         dest_root = settings.resolved_output_root()
-        out = await asyncio.to_thread(export_paper, self._workspace, dest_root, date_str=date_str)
+        out = await asyncio.to_thread(
+            export_paper, self._workspace, dest_root, date_str=date_str, template=self._spec.name
+        )
         logger.info("Structured export for paper %s → %s", self._paper_id, out)
 
     async def _export_audit_log_only(self) -> None:
@@ -978,7 +984,8 @@ class PipelineRunner:
         # researcher supplied) run before a specialist is sent back to work, so
         # it works on what they provide.
         pending_at = state.pending_review_stage
-        for s in self._spec.steps:
+        # (A rerun of a finished study stops nowhere yet: the loop runs them in order.)
+        for s in self._spec.steps if pending_at else []:
             if s.name == pending_at:
                 break
             if s.kind == "gate" and not s.resumable and s.check in SEQUENCE_CHECKS and s.applies_to(self._mode):
@@ -1006,17 +1013,102 @@ class PipelineRunner:
                 state.completed_stages = [c for c in state.completed_stages if c not in later]
                 rerun_steps = True
             else:
-                order = WorkOrder(
-                    paper_id=self._paper_id,
-                    specialist=target,
-                    focus=f"Revise your output. The researcher sent it back with this remark: {remark}",
-                )
+                protected = await self._researcher_edited_files()
+                focus = f"Revise your output. The researcher sent it back with this remark: {remark}"
+                extra: dict[str, Any] = {}
+                if protected:
+                    # A send-back revises the specialist's work, not the
+                    # researcher's: files the researcher edited are neither
+                    # requested again nor left overwritten.
+                    focus += (
+                        " Do not change these files; the researcher edited them and they stand as they are: "
+                        + ", ".join(sorted(protected))
+                        + "."
+                    )
+                    extra["keep_files"] = sorted(protected)
+                order = WorkOrder(paper_id=self._paper_id, specialist=target, focus=focus, extra=extra)
+                before = {f: (self._workspace / f).read_bytes() for f in protected}
                 contributions = await self._execute_orders([order])
                 self._contributions.extend(contributions)
+                await self._restore_researcher_edits(before, target)
         state.save(self._workspace)
         pending = state.pending_review_stage
         if pending and not state.is_approved(pending) and not rerun_steps:
+            step = self._spec.step(pending)
+            if step is not None and step.kind == "preregister" and state.metadata.get("preregistration_blocked"):
+                # Back at a pre-registration that estimation output blocked: the
+                # check runs again now (halting if anything is still there), and
+                # when the workspace is clean the researcher sees the
+                # pre-registration itself.
+                await self._guard_preregistration(pending, state)
+                await self._stop_for_researcher(step, state)
             raise HumanReviewRequestedError(pending)
+
+    async def _researcher_edited_files(self) -> dict[str, str]:
+        """Workspace files the researcher edited that still hold the researcher's version.
+
+        From the ``researcher_action`` edit events: file -> SHA-256 after the
+        researcher's latest edit, kept only while the file still has it.
+        """
+        import hashlib
+
+        from ...db.events import fetch_events
+
+        latest: dict[str, str] = {}
+        try:
+            events = await fetch_events(self._paper_id)
+        except Exception:  # noqa: BLE001 — without the log there is nothing to protect
+            return {}
+        for e in events:
+            if e.get("event_type") != "researcher_action":
+                continue
+            payload = e.get("payload") or {}
+            if isinstance(payload, str):
+                try:
+                    payload = json.loads(payload)
+                except ValueError:
+                    continue
+            if payload.get("action") == "edit" and payload.get("file") and payload.get("sha256_after"):
+                latest[str(payload["file"])] = str(payload["sha256_after"])
+        out: dict[str, str] = {}
+        for name, digest in latest.items():
+            path = self._workspace / name
+            if "/" not in name and path.is_file() and hashlib.sha256(path.read_bytes()).hexdigest() == digest:
+                out[name] = digest
+        return out
+
+    async def _restore_researcher_edits(self, before: dict[str, bytes], specialist: str) -> None:
+        """Put back a researcher-edited file a sent-back specialist overwrote; keep and record its version."""
+        import hashlib
+        from datetime import UTC, datetime
+
+        from ...db.events import log_event
+        from ..pipeline.preregistration import SET_ASIDE_DIR
+
+        for name, original in before.items():
+            path = self._workspace / name
+            now = path.read_bytes() if path.is_file() else None
+            if now == original:
+                continue
+            stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+            kept = None
+            if now is not None:
+                dest = self._workspace / SET_ASIDE_DIR / stamp / "overwritten"
+                dest.mkdir(parents=True, exist_ok=True)
+                (dest / name).write_bytes(now)
+                kept = str((dest / name).relative_to(self._workspace))
+            path.write_bytes(original)
+            await log_event(
+                self._paper_id,
+                "researcher_edit_restored",
+                specialist=specialist,
+                payload={
+                    "file": name,
+                    "sha256_researcher": hashlib.sha256(original).hexdigest(),
+                    "sha256_specialist": hashlib.sha256(now).hexdigest() if now is not None else None,
+                    "specialist_version": kept,
+                },
+            )
 
     async def _record_gate(self, gate: str, *, passed: bool, detail: str = "", enforce: bool = True) -> bool:
         """Log a gate verdict and return whether it should BLOCK this run.

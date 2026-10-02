@@ -485,7 +485,7 @@ def test_a_check_verdict_appears_in_the_dossier(tmp_path: Path):
             "check": "event_window",
             "passed": False,
             "enforced": True,
-            "at": "2026-09-28 10:01:00",
+            "at": "2026-09-28T10:01:00Z",
             "detail": "(b) 2 of 3 events overlap",
         }
     ]

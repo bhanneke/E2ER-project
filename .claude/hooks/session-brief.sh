@@ -16,7 +16,7 @@ set -euo pipefail
 cat <<'BRIEF'
 # Session brief — E2ER v3
 
-This repo is `E2ER` — End-to-End Researcher, an open-source pipeline for
+This repo is `e2er` (End-to-End Research), an open-source pipeline for
 producing peer-review-quality empirical research papers in IS, economics,
 and finance. BYOK + three optional LLM backends (Anthropic SDK,
 OpenRouter, Claude Code CLI subprocess; Codex/Gemini headless backends

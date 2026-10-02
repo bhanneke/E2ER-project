@@ -11,6 +11,11 @@ stage named with `--review-at`) the run pauses. The researcher can
   * send a step back — a template step or a specialist runs again with the
     researcher's remark, and the run stops at the same researcher step again.
 
+A study that has finished (no researcher step pending) can still be sent back:
+``apply_rerun`` reruns one template step and every step after it with the
+researcher's remark, and the run stops at the next researcher step, which needs
+approving again (``e2er rerun <id> --from STEP --remark "…"``).
+
 Every action is written to the event log as ``researcher_action``; the dossier
 lists them as steps of type ``researcher``, so a reader sees where the
 researcher decided and where the AI worked.
@@ -157,3 +162,51 @@ def apply_action(
         payload.update(target=target, remark=remark)
 
     return payload
+
+
+#: Step kinds a rerun cannot start from: a researcher's own step is not work to redo.
+_NOT_RERUNNABLE = ("researcher", "preregister")
+
+
+def apply_rerun(workspace: Path, state: PipelineState, spec: Any, step: str, remark: str) -> dict[str, Any]:
+    """Send a finished study back to ``step``: it and every later step run again with ``remark``.
+
+    For a study that is not stopped at a researcher step (a completed one, say);
+    at a researcher step, a send-back does this. The step must be a template
+    step that ran, and not a researcher step. The approvals of it and of every
+    later step are withdrawn, so the run stops at the next researcher step
+    again. The remark goes to ``researcher_instructions.md`` for the specialists
+    and into the event returned for the dossier; the runner reruns the steps
+    (``_settle_researcher_decisions``). Nothing in the workspace is deleted.
+    """
+    if state.pending_review_stage:
+        raise ResearcherActionError(
+            f"the run is stopped at the researcher step {state.pending_review_stage}; send a step back from there "
+            "(e2er review --send-back)"
+        )
+    step = str(step or "").strip()
+    remark = str(remark or "").strip()
+    if not step or not remark:
+        raise ResearcherActionError("a rerun needs the step to start from and a remark")
+    names = [s.name for s in spec.steps]
+    if step not in names:
+        raise ResearcherActionError(f"{step!r} is not a step of the template {spec.name} (one of {', '.join(names)})")
+    target = spec.step(step)
+    if target.kind in _NOT_RERUNNABLE:
+        raise ResearcherActionError(f"{step!r} is a researcher step; rerun the step before it")
+    if step not in state.completed_stages:
+        raise ResearcherActionError(f"{step!r} has not run yet; resume the study instead")
+    later = names[names.index(step) :]
+    state.approved_stages = [a for a in state.approved_stages if a not in later]
+    state.metadata.setdefault("rerun", []).append({"target": step, "remark": remark})
+    state.metadata.pop("sent_back", None)
+    state.metadata.pop("review", None)
+    state.last_status = "in_progress"
+    at = _now()
+    p = workspace / INSTRUCTIONS_FILE
+    prior = p.read_text(encoding="utf-8") if p.is_file() else ""
+    p.write_text(
+        prior + ("\n\n" if prior else "") + f"(for {step}, rerun of the finished study, {at}) {remark}\n",
+        encoding="utf-8",
+    )
+    return {"action": "rerun", "step": step, "target": step, "remark": remark, "at": at, "reruns": later}

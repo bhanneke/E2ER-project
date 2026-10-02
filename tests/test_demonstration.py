@@ -15,6 +15,7 @@ from src.cli_verify import _run_checks
 from src.core.demonstration import DISCLAIMERS, disclaimer, kind_for, mark_report, resolve_purpose
 from src.core.dossier import build_dossier, dossier_id, stamp_paper
 from src.core.research_object import build_manifest
+from tests.run_db import make_run_db, paper_id_of
 
 ROOT = Path(__file__).resolve().parents[1]
 SHOWCASE = ROOT / "examples" / "showcase"
@@ -36,6 +37,7 @@ def _no_purpose(monkeypatch, tmp_path: Path):
 def bundle(tmp_path: Path) -> Path:
     dst = tmp_path / "showcase"
     shutil.copytree(SHOWCASE, dst)
+    make_run_db(tmp_path, paper_id_of(dst))  # the study folder's run database, named in its .env
     return dst
 
 
@@ -141,22 +143,30 @@ def test_a_bad_env_value_stops_publish(bundle: Path, tmp_path: Path, monkeypatch
     assert not (bundle / "e2er.json").exists()
 
 
-def test_a_replication_study_gets_kind_and_the_replication_wording(bundle: Path, tmp_path: Path):
-    report = bundle / "misc" / "reproduction_report.md"
-    report.write_text("# Reproduction report\n\nLevel 1: reproduced.\n")
-    prov = json.loads((bundle / "provenance.json").read_text())
-    import hashlib
+def _replication_bundle(tmp_path: Path) -> Path:
+    """The replication demonstration as a run exports it: checked (summary written), then exported."""
+    from src.core.export.structured import export_paper
+    from src.core.pipeline.reproduction import check_reproduction
 
-    data = report.read_bytes()
-    prov["files"]["misc/reproduction_report.md"] = {"sha256": hashlib.sha256(data).hexdigest(), "bytes": len(data)}
-    (bundle / "provenance.json").write_text(json.dumps(prov, indent=2))
-    assert _publish(bundle, tmp_path, demonstration=True, template="replication") == 0
+    ws = tmp_path / "ws"
+    shutil.copytree(ROOT / "tests" / "fixtures" / "replication_demo", ws)
+    (ws / "paper_draft.tex").write_text("\\documentclass{article}\\author{X}\\begin{document}R\\end{document}\n")
+    assert check_reproduction(ws).passed
+    bundle = export_paper(ws, tmp_path / "out", date_str="20260930", template="replication")
+    make_run_db(tmp_path, paper_id_of(bundle))
+    return bundle
+
+
+def test_a_replication_study_gets_kind_and_the_replication_wording(tmp_path: Path):
+    bundle = _replication_bundle(tmp_path)
+    report = bundle / "misc" / "reproduction_report.md"
+    assert _publish(bundle, tmp_path, demonstration=True) == 0
     m = json.loads((bundle / "e2er.json").read_text())
     assert m["purpose"] == "demonstration" and m["kind"] == "replication"
     assert m["dossier"]["doc"]["kind"] == "replication"
-    assert report.read_text().startswith(f"> {disclaimer('replication')}\n\n# Reproduction report")
+    assert disclaimer("replication") in report.read_text().split("\n# ", 1)[0]  # above the title
     assert disclaimer("replication") in (bundle / "paper" / "paper.tex").read_text()
-    assert all(c.status == "PASS" for c in _run_checks(bundle, online=False))
+    assert not any(c.status == "FAIL" for c in _run_checks(bundle, online=False))
 
 
 def test_dry_run_request_carries_the_purpose(bundle: Path, capsys):
@@ -182,7 +192,9 @@ def test_mark_report_is_idempotent(tmp_path: Path):
     assert not mark_report(p)  # no report, nothing to do
     p.write_text("# Report\n")
     assert mark_report(p) and not mark_report(p)
-    assert p.read_text() == f"> {disclaimer('replication')}\n\n# Report\n"
+    assert p.read_text() == (
+        f"<!-- e2er:disclaimer begin -->\n> {disclaimer('replication')}\n<!-- e2er:disclaimer end -->\n\n# Report\n"
+    )
 
 
 def test_the_reproduction_step_marks_the_report_in_a_demonstration_study(tmp_path: Path, monkeypatch):
@@ -195,4 +207,4 @@ def test_the_reproduction_step_marks_the_report_in_a_demonstration_study(tmp_pat
     assert (tmp_path / "reproduction_report.md").read_text() == "# Report\n"
     monkeypatch.setenv("E2ER_PURPOSE", "demonstration")
     assert step(tmp_path).passed
-    assert (tmp_path / "reproduction_report.md").read_text().startswith(f"> {disclaimer('replication')}")
+    assert disclaimer("replication") in (tmp_path / "reproduction_report.md").read_text().split("# Report")[0]

@@ -83,6 +83,64 @@ spec's `fallback` if one is declared, or state the problem explicitly in
 `econometric_spec.md` and put the honest spec under a non-`main` key so the
 mismatch is visible rather than laundered.
 
+## Statistics: computed by a library, and consistent with each other
+
+Compute every p-value, critical value and confidence bound with
+`scipy.stats` (`scipy.stats.t.sf`, `scipy.stats.norm.sf`, `t.ppf`) or
+from the fitted `statsmodels`/`linearmodels` result; `scipy` and
+`statsmodels` are installed in the interpreter that runs `run_estimation.py`.
+Never write your own distribution function, lookup table or approximation of
+a tail probability:
+a hand-written `t_sf()` in a demonstration study gave p = 0.208 for
+t = -2.00 with 19 df (the correct value is 0.060).
+
+The estimation check recomputes, for every coefficient that states
+`estimate`, `se`, `t_stat` and `p_value`:
+
+- `t_stat` must equal `estimate / se` (allowing for rounding);
+- `p_value` must equal the two-sided tail probability of `t_stat` with the
+  test's degrees of freedom, within 0.005.
+
+State the degrees of freedom you used as `df` on the entry or the
+coefficient (a one-sample test of a mean over n events has n - 1; a
+regression has n - k, or G - 1 with SEs clustered on G groups). Without
+`df` the check infers it from `diagnostics.df_residual`, `n_clusters` or
+`n_observations` and a one-sample mean test, or else accepts a band and says
+df was unknown. A one-sided test declares `"alternative": "greater"` or
+`"less"`. A p-value that does not come from t (bootstrap, permutation,
+randomization inference) declares `"p_value_method": "permutation"` (or
+`"bootstrap"`, …) and is left out of the check. If you round p-values,
+declare it: `"rounding": {"p_value": 2}` at the top of the file.
+
+## Pre-registered hypotheses and the registered sample
+
+When the study has a frozen pre-registration (`preregistration.lock.json`,
+and the machine-readable block at the end of `preregistration.md`), the
+estimation check requires:
+
+- **every pre-registered hypothesis has at least one result entry.** Each
+  entry names the hypothesis it tests in a `hypothesis` field, by its id
+  from the pre-registration: `"hypothesis": "H1"`, a part such as `"H1a"`
+  (which counts for H1), or a list `["H1", "H2"]`. Put the id there, not the
+  text of the null hypothesis. A hypothesis you could not estimate still has
+  no result: the check fails and names it, and the researcher decides.
+- **the headline entry (`main`) uses the registered sample.** Its
+  `n_observations` must equal the pre-registered sample size (for an event
+  study, the number of events in `event_design.json`). If you dropped
+  observations, declare each exclusion with a reason:
+
+```json
+{
+  "exclusions": [
+    {"id": "fomc-2020-03-15", "reason": "emergency cut outside the scheduled calendar"}
+  ],
+  "main": {"hypothesis": "H1", "n_observations": 30, "...": "..."}
+}
+```
+
+  An exclusion entry takes `id`, a list `ids`, or a count `n`, and always a
+  `reason`; together they must account for the difference.
+
 ## Required shape
 
 A JSON object with one entry per estimated specification. Each entry
@@ -94,6 +152,7 @@ contains coefficients and diagnostics.
 {
   "main": {
     "specification": "OLS with two-way fixed effects",
+    "hypothesis": "H1",
     "n_observations": 24890,
     "n_clusters": 6225,
     "cluster_level": "unit",
@@ -139,6 +198,11 @@ contains coefficients and diagnostics.
   documents the clustering choice when it's not obvious.
 
 **Per-specification optional fields:**
+
+- `hypothesis`: the pre-registered hypothesis id(s) the entry tests
+  (required for the entries that test one when the study is pre-registered).
+- `df`: the degrees of freedom of the tests in this entry.
+- `p_value_method`, `alternative`: see "Statistics" above.
 
 - `cluster_level`: `"unit"`, `"time"`, `"unit_and_time"`, `"none"`,
   or a specific variable name.

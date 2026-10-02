@@ -1,7 +1,7 @@
 [project]
 name = "e2er"
-version = "0.12.1"
-description = "End-to-End Researcher — scaffolding that organises skills and specialists into verifiable research pipelines"
+version = "0.13.0"
+description = "e2er (End-to-End Research): scaffolding that organises skills and specialists into verifiable research pipelines"
 requires-python = ">=3.11"
 readme = "README.md"
 license = { text = "MIT" }
@@ -27,6 +27,13 @@ dependencies = [
     # targets. See docs/M4_RERUN_FINDINGS.md.
     "pandas>=2.0,<3.0",
     "numpy>=1.26",
+    # The estimation runner executes a specialist's run_estimation.py with
+    # e2er's own interpreter. Without these, a script cannot import a t
+    # distribution and writes its own: the FOMC demonstration study's
+    # hand-rolled t_sf gave p = 0.208 for t = -2.00 with 19 df (true 0.060).
+    # The econometrics skill requires them for every distribution function.
+    "scipy>=1.11",
+    "statsmodels>=0.14",
     "matplotlib>=3.8",
     "yfinance>=0.2.40",
     "aiosqlite>=0.20.0",

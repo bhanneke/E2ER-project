@@ -1,0 +1,25 @@
+desfecho,estimador,spec,att,ep
+Atualizacao cadastral (TAC),TWFE,sem controles,-0.00135097481805838,0.0056299208890215
+Atualizacao cadastral (TAC),TWFE,com controles,-0.00214228385196322,0.00562824218360827
+Atualizacao cadastral (TAC),Callaway-SantAnna,sem controles,-0.00365238597730994,0.00620405787661537
+Atualizacao cadastral (TAC),Callaway-SantAnna,com controles,-0.00953651133757845,0.00641044318424497
+CadUnico: familias cadastradas (log),TWFE,sem controles,0.0250726908814797,0.0136749908132679
+CadUnico: familias cadastradas (log),TWFE,com controles,0.0179974464388492,0.0131285340671005
+CadUnico: familias cadastradas (log),Callaway-SantAnna,sem controles,0.0112316651100287,0.010024018460553
+CadUnico: familias cadastradas (log),Callaway-SantAnna,com controles,0.0124515238744054,0.0107362787992066
+PBF: familias beneficiarias (log),TWFE,sem controles,0.0531344960975008,0.0164471350027428
+PBF: familias beneficiarias (log),TWFE,com controles,0.0426079760061615,0.0155058380111755
+PBF: familias beneficiarias (log),Callaway-SantAnna,sem controles,0.0347239490711656,0.0119993204085191
+PBF: familias beneficiarias (log),Callaway-SantAnna,com controles,0.0381053033894711,0.0128876204483182
+PBF: valor pago (log),TWFE,sem controles,0.0499810491192614,0.0199838708966005
+PBF: valor pago (log),TWFE,com controles,0.0400198180017114,0.0192636032264212
+PBF: valor pago (log),Callaway-SantAnna,sem controles,0.0301582232137615,0.0171493305977731
+PBF: valor pago (log),Callaway-SantAnna,com controles,0.0344971588978202,0.0190994054757907
+CRAS: numero de unidades (log),TWFE,sem controles,0.00415533107412046,0.00526516995608543
+CRAS: numero de unidades (log),TWFE,com controles,0.00299032431260677,0.00522043798747716
+CRAS: numero de unidades (log),Callaway-SantAnna,sem controles,-0.0141690121576273,0.00971572310833545
+CRAS: numero de unidades (log),Callaway-SantAnna,com controles,-0.0142862639004843,0.0083547679192545
+CRAS: trabalhadores (log),TWFE,sem controles,-0.0598473734155576,0.0275346722511149
+CRAS: trabalhadores (log),TWFE,com controles,-0.0610859393782066,0.0273865409769647
+CRAS: trabalhadores (log),Callaway-SantAnna,sem controles,-0.0544634749534218,0.0347106412810374
+CRAS: trabalhadores (log),Callaway-SantAnna,com controles,-0.045044342437442,0.0320109564261026

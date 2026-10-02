@@ -1,0 +1,13 @@
+{
+  "paper_id": "08af321d-1a9c-47fe-93ac-b1629bbd9afc",
+  "title": "Computational reproduction of Political Rupture and Selective Damage to Local...",
+  "research_question": "Computational reproduction of Political Rupture and Selective Damage to Local Service Delivery: Evidence from Brazil (10.5281/zenodo.22179151)",
+  "datasets": [],
+  "mode": "single_pass",
+  "methodology": "empirical",
+  "model": "claude-haiku-4-5-20251001",
+  "backend": "claude_code",
+  "governance": "full",
+  "review_stages": [],
+  "current_stage": "idea"
+}

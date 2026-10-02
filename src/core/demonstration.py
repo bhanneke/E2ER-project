@@ -12,6 +12,7 @@ The wording lives here and nowhere else.
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 #: The purposes a study can declare. Only one exists.
@@ -95,21 +96,46 @@ def study_purpose(workspace: Path | None = None) -> str | None:
     return resolve_purpose()
 
 
-def mark_report(path: Path, kind: str | None = "replication") -> bool:
-    """Put the disclaimer at the top of a Markdown report. Idempotent; returns True when the file changed."""
+BEGIN = "<!-- e2er:disclaimer begin -->"
+END = "<!-- e2er:disclaimer end -->"
+_BLOCK = re.compile(re.escape(BEGIN) + r".*?" + re.escape(END) + r"\n*", re.S)
+#: A disclaimer written before the block was delimited: a quote line at the top
+#: in any wording e2er used ("> Demonstration. …").
+_LEGACY = re.compile(r"\A> Demonstration\.[^\n]*\n+")
+
+
+def _block(kind: str | None) -> str:
+    return f"{BEGIN}\n> {disclaimer(kind)}\n{END}\n\n"
+
+
+def mark_report(path: Path, kind: str | None = "replication", *, purpose: str | None = DEMONSTRATION) -> bool:
+    """Make the disclaimer at the top of a Markdown report match the study's purpose.
+
+    The disclaimer sits in a delimited block, so a changed wording replaces
+    it instead of adding a second one, and a study published without a
+    purpose loses it. An undelimited disclaimer of an earlier e2er is
+    replaced the same way. A byte-order mark stays first. Idempotent; returns
+    True when the file changed.
+    """
     if not path.is_file():
         return False
-    text = path.read_text(encoding="utf-8")
-    line = f"> {disclaimer(kind)}"
-    if text.startswith(line):
+    raw = path.read_text(encoding="utf-8")
+    bom = "\ufeff" if raw.startswith("\ufeff") else ""
+    text = raw[len(bom) :]
+    body = _BLOCK.sub("", text, count=1) if text.startswith(BEGIN) else text
+    body = _LEGACY.sub("", body, count=1)
+    new = bom + (_block(kind) if purpose == DEMONSTRATION else "") + body
+    if new == raw:
         return False
-    path.write_text(f"{line}\n\n{text}", encoding="utf-8")
+    path.write_text(new, encoding="utf-8")
     return True
 
 
 __all__ = [
+    "BEGIN",
     "DEMONSTRATION",
     "DISCLAIMERS",
+    "END",
     "ENV",
     "PURPOSES",
     "disclaimer",

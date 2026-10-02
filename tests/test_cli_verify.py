@@ -148,7 +148,7 @@ def test_partial_verdict_names_the_skipped_checks(tmp_path: Path, capsys):
     assert verify(str(b), online=False) == 0
     out = capsys.readouterr().out
     assert "1 content check(s) passed (citations)" in out
-    assert "2 skipped (numbers, spec)" in out
+    assert "3 skipped (numbers, tables, spec)" in out
 
 
 # ── offline path never touches the network ───────────────────────────────────

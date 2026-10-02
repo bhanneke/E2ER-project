@@ -49,8 +49,21 @@ exists before that.
   as `data.db` holds it (e.g. "spy_prices: 3,018 rows, 2014-01-02 to
   2025-12-31"). Never write expected or approximate counts ("~2,520").
 
+- A table must hold values, not only dates. If the connector fails (for
+  instance FRED rejects the API key), `e2er-data … --table` exits non-zero
+  and leaves `data.db` untouched: report the error, do not build the table
+  some other way with empty values.
+
 The contract fails when a declared table is missing from `data.db` or empty,
-or when `data_summary.md` does not give a table's actual row count.
+when a value column of a declared table is less than 90% non-null (the
+message says e.g. `dgs2.value: 0 of 2765 non-null`), or when
+`data_summary.md` does not give a table's actual row count. A series that is
+legitimately sparse declares its share in the data dictionary:
+`{"name": "dgs2", …, "min_non_null": 0.5}`, or per column under `columns`
+(`[{"name": "value", "min_non_null": 0.5}]`). When a table's entry lists
+`columns`, those columns are checked; otherwise every column that is not a
+date. Tables the researcher supplied are checked only where their columns
+are declared.
 
 ## Everyone else reads them by name
 

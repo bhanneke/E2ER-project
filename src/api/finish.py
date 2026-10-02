@@ -145,7 +145,11 @@ async def export_study(paper_id: str) -> dict[str, Any]:
     if not workspace.is_dir():
         raise HTTPException(status_code=404, detail=f"The study's working folder is gone: {workspace}")
     out = await asyncio.to_thread(
-        export_paper, workspace, get_settings().resolved_output_root(), date_str=datetime.now().strftime("%Y%m%d")
+        export_paper,
+        workspace,
+        get_settings().resolved_output_root(),
+        date_str=datetime.now().strftime("%Y%m%d"),
+        template=paper.get("pipeline") or None,
     )
     return {"path": str(out)}
 
@@ -169,6 +173,20 @@ async def verify_study(paper_id: str) -> dict[str, Any]:
     checks = await asyncio.to_thread(_run_checks, bundle, False)
     verdict, code = _verdict(checks)
     return {"bundle": str(bundle), "checks": [asdict(c) for c in checks], "verdict": verdict, "verified": code == 0}
+
+
+def _server_db() -> str | None:
+    """This server's own run database (SQLite), where the study's steps are recorded."""
+    from ..config import get_settings
+    from ..db.client import _sqlite_path
+
+    url = get_settings().resolved_database_url
+    if url and not url.startswith("sqlite"):
+        return None
+    try:
+        return _sqlite_path(url)
+    except ValueError:
+        return None
 
 
 class PublishRequest(BaseModel):
@@ -204,12 +222,13 @@ async def publish_study(paper_id: str, req: PublishRequest) -> dict[str, Any]:
         owner=owner,
         project=project,
         github=owner,
-        template=str(paper.get("pipeline") or "empirical"),
+        template=paper.get("pipeline") or None,
         data=req.data,
         code=req.code,
         demonstration=req.demonstration,
         out=str(bundle.parent / f"{bundle.name}-registry-entry"),
         site=base,
+        db=_server_db(),
     )
     request_body = None
     if req.dry_run:

@@ -80,10 +80,31 @@ def _inject_context(work_order: WorkOrder, workspace: Path) -> WorkOrder:
         # The registry's sidecars plus any the active template adds
         # (`[sidecars]`; see core/pipeline/components.py).
         sidecars = sidecars_for(work_order.specialist)
+        # Files the researcher edited are not requested again (a send-back).
+        keep = set(work_order.extra.get("keep_files") or [])
+        sidecars = [f for f in sidecars if f not in keep]
         if sidecars:
             updates["sidecar_artifacts"] = list(sidecars)
 
     return work_order.model_copy(update=updates) if updates else work_order
+
+
+def _file_sha256(path: Path) -> str | None:
+    import hashlib
+
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None
+    except OSError:
+        return None
+
+
+def _skills(specialist: str) -> list[str]:
+    try:
+        from ...skills.loader import loaded_skill_names
+
+        return loaded_skill_names(specialist)
+    except Exception:  # noqa: BLE001 — a record of skills must never stop a dispatch
+        return []
 
 
 async def execute_work_order(
@@ -101,10 +122,16 @@ async def execute_work_order(
 
     work_order = _inject_context(work_order, workspace)
     logger.info("Dispatching %s for paper %s", work_order.specialist, work_order.paper_id)
+    # What this step reads and writes, recorded with the step so the dossier can
+    # say which skills ran and what each step wrote (not what a later step or a
+    # later checkout left behind).
+    declared = list(dict.fromkeys(n for n in [work_order.output_file, *work_order.sidecar_artifacts] if n))
+    before = {n: _file_sha256(workspace / n) for n in declared}
     await log_event(
         work_order.paper_id,
         "specialist_start",
         specialist=work_order.specialist,
+        payload={"skills": _skills(work_order.specialist), "outputs": declared},
     )
     try:
         contribution = await run_specialist(
@@ -117,11 +144,16 @@ async def execute_work_order(
             backend_name=backend_name,
             governance=governance,
         )
+        outputs = []
+        for n in declared:
+            after = _file_sha256(workspace / n)
+            if after is not None:
+                outputs.append({"file": n, "sha256": after, "changed": after != before.get(n)})
         await log_event(
             work_order.paper_id,
             "specialist_end",
             specialist=work_order.specialist,
-            payload={"success": contribution.success},
+            payload={"success": contribution.success, "outputs": outputs},
         )
         return contribution
     except asyncio.CancelledError:

@@ -144,7 +144,14 @@ def build_manifest(
     license_id: str | None = None,
     derived_from: list[str] | None = None,
     verification: list[dict[str, str]] | None = None,
+    run_record: Any = None,
 ) -> dict[str, Any]:
+    """The manifest. With ``run_record`` (the dossier's :class:`~src.core.dossier.RunRecord`
+    of the run database), the agents and their skills are the ones the run
+    recorded: the specialists that ran, with the skills of the registry and
+    template at the commit each ran on (or as recorded at dispatch). Without
+    it, the template file declares them (``agents_source: declared``).
+    """
     bundle = Path(bundle)
     prov_path = bundle / "provenance.json"
     prov = _json(prov_path)
@@ -167,15 +174,25 @@ def build_manifest(
         usage = _recorded_usage(db, run["paper_id"])
         recorded = _recorded_run(db, run["paper_id"])
     mode = recorded.get("mode", "single_pass")
-    if usage:
-        agents = [u["agent"] for u in usage if not u["agent"].startswith("strategist")]
-        agents_source = "recorded"
-    elif template_file is not None and template_file.is_file():
-        agents = _template_agents(template_file, mode)
-        agents_source = "declared"
+    skills_source = "declared"
+    if run_record is not None and getattr(run_record, "recorded", False):
+        agents = list(run_record.agents)
+        for u in usage:  # a specialist with LLM calls but no recorded step (older runs)
+            if not u["agent"].startswith("strategist") and u["agent"] not in agents:
+                agents.append(u["agent"])
+        agents_source = skills_source = "recorded"
+        skills = {a: list(run_record.skills.get(a, [])) for a in agents}
     else:
-        agents, agents_source = [], "unknown"
-    skills = _skills_for(agents, template_file)
+        if usage:
+            agents = [u["agent"] for u in usage if not u["agent"].startswith("strategist")]
+            agents_source = "recorded"
+        elif template_file is not None and template_file.is_file():
+            agents = _template_agents(template_file, mode)
+            agents_source = "declared"
+        else:
+            agents, agents_source = [], "unknown"
+        # No run record: the skills today's registry and template file give these agents.
+        skills = _skills_for(agents, template_file)
 
     citations = [e for e in prov.get("edges", []) if e.get("type") == "citation"]
     files = prov["files"]
@@ -207,7 +224,7 @@ def build_manifest(
             "e2er_version": run.get("e2er_version"),
             "exported": run.get("exported_at"),
         },
-        "components": {"skills": skills},
+        "components": {"skills": skills, "skills_source": skills_source},
         "literature": [
             {
                 "cite_key": e.get("key"),
