@@ -1,7 +1,7 @@
 cff-version: 1.2.0
 message: "If you use e2er in your research, please cite it as below."
 type: software
-title: "e2er: End-to-End Researcher"
+title: "e2er (End-to-End Research)"
 abstract: >
   e2er is an open-source pipeline for producing empirical research papers in
   information systems, economics, and finance. Given a research question and

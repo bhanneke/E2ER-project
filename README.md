@@ -721,7 +721,7 @@ The automated research space is developing quickly. Two projects most relevant t
 ```bibtex
 @software{hanneke2026e2er,
   author       = {Hanneke, Bj{\"o}rn},
-  title        = {{e2er: End-to-End Researcher, An Open-Source Pipeline
+  title        = {{e2er (End-to-End Research): An Open-Source Pipeline
                    for Automated Empirical Research}},
   year         = {2026},
   version      = {0.12.1},

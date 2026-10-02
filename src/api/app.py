@@ -64,7 +64,7 @@ _STATIC_DIR = _API_DIR / "static"
 _TEMPLATES_DIR = _API_DIR / "templates"
 
 logger = get_logger(__name__)
-app = FastAPI(title="e2er v3", version="3.0.0", description="End-to-End Researcher pipeline API")
+app = FastAPI(title="e2er v3", version="3.0.0", description="e2er (End-to-End Research) API")
 
 _cors_origins = [o.strip() for o in get_settings().cors_origins.split(",") if o.strip()]
 app.add_middleware(
