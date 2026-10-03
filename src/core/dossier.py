@@ -4,7 +4,8 @@ A dossier lists the E2ER version and commit of every part of the run
 (``e2er.segments``: one per process that ran steps), the run settings
 (template, mode, governance, backend, models), every template, specialist,
 skill and connector the run used, pinned at each commit it ran on by the git
-blob of the file that defines it, the SHA-256 of the input data files, and
+blob of the file that defines it, the SHA-256 of the input data files, the
+release and file hashes of each versioned external-source load (the GMD), and
 the workflow: every step of the run in order (each specialist with its model,
 each check, each of the researcher's actions), the file each step wrote with
 its SHA-256 where the run recorded it, the run's other events and its
@@ -840,6 +841,9 @@ def build_dossier(
         )
     doc["components"] = components
     doc["data"] = [{"path": d["path"], "sha256": d["sha256"]} for d in manifest.get("data", [])]
+    sources = _data_sources(bundle)
+    if sources:
+        doc["data_sources"] = sources
     doc["workflow"] = workflow
     if not recorded and (prereg is not None or any(w.get("type") == "researcher" for w in workflow)):
         doc["schema"] = SCHEMA_RESEARCHER
@@ -856,6 +860,37 @@ def build_dossier(
     if manifest.get("amendments"):
         doc["amendments"] = copy.deepcopy(manifest["amendments"])
     return doc
+
+
+def _data_sources(bundle: Path | None) -> list[dict[str, Any]]:
+    """The external-source loads ``data/data_sources.json`` records: source, release, files with SHA-256.
+
+    Written by ``e2er-data`` when a connector that publishes versioned files
+    (the GMD) loads a table. A study without the file has no ``data_sources``
+    in its dossier, so its dossier (and address) is unchanged.
+    """
+    if bundle is None:
+        return []
+    path = Path(bundle) / "data" / "data_sources.json"
+    try:
+        loads = json.loads(path.read_text(encoding="utf-8")).get("loads") if path.is_file() else None
+    except (OSError, ValueError, AttributeError):
+        return []
+    out: list[dict[str, Any]] = []
+    for load in loads if isinstance(loads, list) else []:
+        if not isinstance(load, dict) or not load.get("connector"):
+            continue
+        entry: dict[str, Any] = {"connector": str(load["connector"])}
+        for key in ("dataset", "version", "table", "saved_to", "licence", "terms", "citation", "cite_key"):
+            if isinstance(load.get(key), str) and load[key]:
+                entry[key] = load[key]
+        entry["files"] = [
+            {"url": str(f["url"]), "sha256": str(f["sha256"])}
+            for f in load.get("files") or []
+            if isinstance(f, dict) and f.get("url") and f.get("sha256")
+        ]
+        out.append(entry)
+    return out
 
 
 def _preregistration(bundle: Path | None) -> dict[str, Any] | None:

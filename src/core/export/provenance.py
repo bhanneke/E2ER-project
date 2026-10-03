@@ -150,6 +150,8 @@ def _edges(bundle: Path) -> list[dict[str, Any]]:
         edge = {"type": "data", "output": "data/data.db"}
         if (bundle / "replication" / "data_queries.sql").is_file():
             edge["queries"] = "replication/data_queries.sql"
+        if (bundle / "data" / "data_sources.json").is_file():
+            edge["sources"] = "data/data_sources.json"
         edges.append(edge)
 
     return edges

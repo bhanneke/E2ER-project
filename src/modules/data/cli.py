@@ -603,6 +603,117 @@ async def _run_fred_releases(args: argparse.Namespace) -> str:
     return _json.dumps(result, indent=2, default=str)
 
 
+# ---------------------------------------------------------------------------
+# GMD handlers — Global Macro Database, versioned releases, no key.
+# ---------------------------------------------------------------------------
+
+
+def _gmd_failed(result: dict) -> None:
+    """A GMD command that returned an error exits non-zero (the error is printed with the result)."""
+    if result.get("error"):
+        _TABLE_FAILURES.append(f"GMD: {result['error']}")
+
+
+async def _run_gmd_versions(args: argparse.Namespace) -> str:
+    """List GMD releases, newest first."""
+    from .gmd_provider import GMDProvider
+
+    result = await GMDProvider().versions()
+    _gmd_failed(result)
+    return json.dumps(result, indent=2, default=str)
+
+
+async def _run_gmd_variables(args: argparse.Namespace) -> str:
+    """List GMD variables with units and definitions."""
+    from .gmd_provider import GMDProvider
+
+    result = await GMDProvider().variables()
+    _gmd_failed(result)
+    return json.dumps(result, indent=2, default=str)
+
+
+async def _run_gmd_countries(args: argparse.Namespace) -> str:
+    """List GMD countries (ISO3 code and name)."""
+    from .gmd_provider import GMDProvider
+
+    result = await GMDProvider().countries()
+    _gmd_failed(result)
+    return json.dumps(result, indent=2, default=str)
+
+
+def _split(value: str | None) -> list[str]:
+    return [x.strip() for x in (value or "").replace(";", ",").replace(" ", ",").split(",") if x.strip()]
+
+
+async def _run_gmd_series(args: argparse.Namespace) -> str:
+    """A country-year panel from one GMD release; records version, URLs and SHA-256 of every load."""
+    from .gmd_provider import GMDError, GMDProvider, add_citation, record_in_dictionary, record_load
+
+    workspace = _resolve_workspace(args.paper_id)
+    table = getattr(args, "table", None)
+    dict_path = workspace / "data_dictionary.json"
+    if table and dict_path.is_file():
+        # The load is recorded in the dictionary; check it can be before data.db changes.
+        try:
+            json.loads(dict_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as e:
+            bad: dict[str, Any] = {
+                "source": "gmd",
+                "items": [],
+                "error": f"data_dictionary.json is not valid JSON ({e}); fix it before loading",
+            }
+            _maybe_save_table(bad, args)
+            return json.dumps(bad, indent=2, default=str)
+
+    result = await GMDProvider().series(
+        variables=_split(args.variables),
+        countries=_split(args.countries),
+        start=args.start,
+        end=args.end,
+        version=args.version,
+    )
+    if result.get("error") and not table:
+        _TABLE_FAILURES.append(f"GMD: {result['error']}")
+    _maybe_save_csv(result, args)
+    _maybe_save_table(result, args)
+
+    record = result.pop("gmd_record", None)
+    saved = result.get("saved_table") or result.get("saved_to")
+    if record and not result.get("error") and not result.get("table_error"):
+        try:
+            result["citation_added"] = add_citation(workspace)
+            result["cite_key"] = record["cite_key"]
+            if saved:
+                record = {
+                    **record,
+                    "table": result.get("saved_table"),
+                    "table_rows": result.get("saved_table_rows"),
+                    "saved_to": result.get("saved_to"),
+                    "loaded_at": _utc_now(),
+                    "specialist": args.specialist,
+                }
+                record = {k: v for k, v in record.items() if v is not None}
+                result["recorded_in"] = [str(record_load(workspace, record).name)]
+                if result.get("saved_table"):
+                    record_in_dictionary(workspace, result["saved_table"], record)
+                    result["recorded_in"].append("data_dictionary.json")
+        except (GMDError, OSError) as e:
+            result["record_error"] = f"{type(e).__name__}: {e}"
+            _TABLE_FAILURES.append(f"GMD: the load could not be recorded: {e}")
+        result["provenance"] = {
+            "version": record["version"],
+            "files": record["files"],
+            "licence": record["licence"],
+        }
+    return json.dumps(result, indent=2, default=str)
+
+
+def _utc_now() -> str:
+    from datetime import UTC, datetime
+
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def _add_save_to(p: argparse.ArgumentParser) -> None:
     """Add the `--save-to <rel/path.csv>` flag to a data-pulling subcommand.
 
@@ -991,6 +1102,32 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--limit", type=int, default=100, help="Max releases returned (default 100).")
 
+    # ── GMD source — Global Macro Database (annual cross-country macro). ────
+    gmd_parser = sources.add_parser(
+        "gmd",
+        help="Global Macro Database: annual macro panels for 239 economies, versioned releases. No key.",
+    )
+    gmd_sub = gmd_parser.add_subparsers(dest="command", required=True)
+    gmd_sub.add_parser("versions", help="List GMD releases, newest first (the newest is the default).")
+    gmd_sub.add_parser("variables", help="List GMD variables with units and definitions.")
+    gmd_sub.add_parser("countries", help="List GMD countries: ISO3 code and name.")
+    p = gmd_sub.add_parser(
+        "series",
+        help="Load a country-year panel, e.g. --variables rGDP,infl --countries USA,DEU --start 2000 --end 2024.",
+    )
+    p.add_argument("--variables", required=True, help="Comma-separated GMD variable codes, e.g. rGDP,infl.")
+    p.add_argument(
+        "--countries", default=None, help="Comma-separated ISO3 codes, e.g. USA,DEU. Omit for all countries."
+    )
+    p.add_argument("--start", type=int, default=None, help="First year (e.g. 2000).")
+    p.add_argument("--end", type=int, default=None, help="Last year (e.g. 2024).")
+    p.add_argument(
+        "--version",
+        default=None,
+        help="GMD release, e.g. 2026_09. Default: the newest release. The release used is always recorded.",
+    )
+    _add_save_to(p)
+
     # ── query — read-only SQL over the paper's local data.db warehouse ──────
     # The CLI-backend path to the in-process `query_data` tool. Allow-listed as
     # Bash(e2er-data:*), so the Claude Code CLI model can actually reach it.
@@ -1035,6 +1172,12 @@ _DISPATCH: dict[str, dict[str, Any]] = {
         "series-info": _run_fred_series_info,
         "search": _run_fred_search,
         "releases": _run_fred_releases,
+    },
+    "gmd": {
+        "versions": _run_gmd_versions,
+        "variables": _run_gmd_variables,
+        "countries": _run_gmd_countries,
+        "series": _run_gmd_series,
     },
     "query": {
         "sql": _run_query_sql,

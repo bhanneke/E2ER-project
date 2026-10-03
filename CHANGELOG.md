@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.3] — 2026-10-03
+
+- **Global Macro Database (GMD) connector.** `e2er-data gmd versions | variables | countries |
+  series` reads the GMD's release files over HTTPS (no key). `series --variables rGDP,infl
+  --countries USA,DEU --start 2000 --end 2024 --table gmd_macro` loads a country-year panel with a
+  `forecast_<variable>` flag per variable; the newest release is the default and `--version` pins
+  one. Each load records the release, the URL and the SHA-256 of the file read in
+  `data_sources.json` and in the table's `data_dictionary.json` entry (with the GMD's terms of
+  use), and adds the GMD citation (`GMD2025`) to `literature.bib`. Release files are cached in
+  `~/.e2er/cache/gmd/<release>/` and hashed again on every use. An unknown variable, country or
+  release, or a failed download, exits non-zero and leaves data.db unchanged.
+- **Export and dossier:** `data_sources.json` ships as `data/data_sources.json`; the dossier of a
+  study that has it lists each load under `data_sources` (connector, release, table, file URLs and
+  SHA-256). Dossiers of studies without it are unchanged.
+- `e2er doctor` checks that the GMD release list is reachable (`data.gmd.versions`).
+
 ## [0.13.2] — 2026-10-02
 
 - **The internal quality review gives a score, nothing else.** Six reviewer specialists each

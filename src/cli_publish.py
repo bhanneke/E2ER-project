@@ -49,6 +49,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from .core import data_terms
 from .core import zenodo as zen
 from .core.availability import describe as describe_availability
 from .core.availability import resolve
@@ -286,6 +287,7 @@ def _describe(
     site: str | None = None,
     demonstration: bool = False,
     study_folder: Path | None = None,
+    accept_data_terms: list[str] | None = None,
 ) -> tuple[int, dict[str, Any] | None]:
     from .cli_verify import _verdict
 
@@ -344,6 +346,23 @@ def _describe(
         return 1, None
     for n in notes:
         print(f"note: {n}")
+    # Data loaded under a source's own terms (the GMD): public only after the researcher confirms them.
+    unknown = data_terms.unknown_names(accept_data_terms)
+    if unknown:
+        names = ", ".join(sorted(data_terms.known()))
+        print(f"error: --accept-data-terms {', '.join(unknown)}: e2er knows the terms of {names} only")
+        return 1, None
+    licensed = data_terms.uses(b)
+    if availability["data"]["access"] == "public":
+        missing = data_terms.missing_confirmation(licensed, accept_data_terms)
+        if missing:
+            print(data_terms.refusal(missing))
+            return 1, None
+    for use in licensed:
+        shared = "published with the study" if availability["data"]["access"] == "public" else "kept private"
+        print(f"note: the study uses {use.label} data ({shared}); the description states its terms and citation")
+    for use in data_terms.bibliography_lacks(b, licensed):
+        print(f"warning: paper/refs.bib has no entry {use.terms.cite_key}; the paper must cite the {use.terms.short}")
     # A demonstration study (--demonstration, the purpose recorded on the study, or
     # E2ER_PURPOSE in the environment or the study folder's .env) says so in
     # e2er.json, the dossier, the paper's first page and the reproduction report.
@@ -427,6 +446,7 @@ def _describe(
             run_record=run_record,
         )
         _declare(m, purpose, kind)
+        data_terms.annotate(m, licensed)
         return m
 
     try:
@@ -443,7 +463,7 @@ def _describe(
         zrec = {}
     z = zen.Zenodo(token, base=zen.base_url(zenodo_sandbox)) if deposits and token else None
     if deposits and zenodo_plan_only:
-        _print_deposit_plan(deposits, manifest, availability, zenodo_sandbox)
+        _print_deposit_plan(deposits, manifest, availability, zenodo_sandbox, licensed)
     if deposits:
         zrec.setdefault("sandbox", bool(zenodo_sandbox))
         reserved = zrec.setdefault("deposits", {})
@@ -519,7 +539,14 @@ def _describe(
                     z.upload(dep, fname, data_bytes)
                 z.describe(
                     dep,
-                    _deposit_metadata(item, manifest, availability, dossier_url(did), f"{site_url}/{owner}/{project}"),
+                    _deposit_metadata(
+                        item,
+                        manifest,
+                        availability,
+                        dossier_url(did),
+                        f"{site_url}/{owner}/{project}",
+                        licensed,
+                    ),
                 )
                 done = z.publish(dep)
                 rec.update(state="published", published_url=done.get("url"))
@@ -656,6 +683,14 @@ def publish(bundle: str, *, dry_run: bool = False, to_url: str | None = None, of
     if kw.get("data") is None and kw.get("code") is None and sys.stdin.isatty():
         kw["data"] = _ask("Are the study's data public or private?")
         kw["code"] = _ask("Is the study's code public or private?")
+    if kw.get("data") == "public" and sys.stdin.isatty() and (b / "provenance.json").is_file():
+        # Data loaded under a source's own terms: the researcher confirms them before they are published.
+        accepted = list(kw.get("accept_data_terms") or [])
+        for use in data_terms.missing_confirmation(data_terms.uses(b), accepted):
+            print(data_terms.terms_text(use))
+            if _confirm(f"Publish the {use.terms.short} data with the study under these terms?"):
+                accepted.append(use.terms.connector)
+        kw["accept_data_terms"] = accepted
     if kw.get("zenodo") and offline:
         print("error: --offline makes no network request; leave out --zenodo")
         return 2
@@ -838,6 +873,15 @@ def _ask(question: str) -> str:
     return "public" if answer in ("public", "p", "pub") else "private"
 
 
+def _confirm(question: str) -> bool:
+    """Yes only when the researcher types y or yes."""
+    try:
+        answer = input(f"{question} [y/N]: ").strip().lower()
+    except EOFError:
+        return False
+    return answer in ("y", "yes")
+
+
 def _listed(bundle: Path, folder: str) -> list[str]:
     """The files under ``folder`` that provenance.json fingerprints: what a deposit may contain.
 
@@ -883,22 +927,38 @@ def _deposit_plan(bundle: Path, availability: dict[str, Any], project: str) -> d
     return plan
 
 
+def _deposit_licence(item: str, manifest: dict[str, Any], licensed: list[data_terms.Use] | None = None) -> str:
+    """Zenodo's licence id for a deposit; data held under a source's terms take the licence that matches them."""
+    if item == "data" and licensed:
+        return licensed[0].terms.zenodo_licence
+    return zen.LICENCES.get(manifest.get("license") or "", "cc-by-4.0" if item == "data" else "mit")
+
+
 def _deposit_metadata(
-    item: str, manifest: dict[str, Any], availability: dict[str, Any], dossier: str, study: str
+    item: str,
+    manifest: dict[str, Any],
+    availability: dict[str, Any],
+    dossier: str,
+    study: str,
+    licensed: list[data_terms.Use] | None = None,
 ) -> dict[str, Any]:
     title = manifest["title"]
-    licence = zen.LICENCES.get(manifest.get("license") or "", "cc-by-4.0" if item == "data" else "mit")
+    description = (
+        f"The {item} of the study “{title}”, published with e2er. "
+        f"The study and how it was produced: {study}. Its dossier: {dossier}."
+    )
+    keywords = ["e2er"]
+    if item == "data" and licensed:
+        description += " " + data_terms.deposit_text(licensed)
+        keywords += [u.terms.name for u in licensed]
     meta: dict[str, Any] = {
         "title": f"{title} ({item})",
         "upload_type": "dataset" if item == "data" else "software",
-        "description": (
-            f"The {item} of the study “{title}”, published with e2er. "
-            f"The study and how it was produced: {study}. Its dossier: {dossier}."
-        ),
+        "description": description,
         "creators": zen.creators(manifest.get("contributors") or []),
         "access_right": "open",
-        "license": licence,
-        "keywords": ["e2er"],
+        "license": _deposit_licence(item, manifest, licensed),
+        "keywords": keywords,
         "related_identifiers": [
             {"identifier": dossier, "relation": "isSupplementTo", "resource_type": "other"},
             {"identifier": study, "relation": "isSupplementTo", "resource_type": "publication"},
@@ -908,18 +968,25 @@ def _deposit_metadata(
 
 
 def _print_deposit_plan(
-    deposits: dict[str, Any], manifest: dict[str, Any], availability: dict[str, Any], sandbox: bool
+    deposits: dict[str, Any],
+    manifest: dict[str, Any],
+    availability: dict[str, Any],
+    sandbox: bool,
+    licensed: list[data_terms.Use] | None = None,
 ) -> None:
     where = "sandbox.zenodo.org" if sandbox else "zenodo.org"
     for item, d in deposits.items():
         size = sum(len(b) for _, b in d["files"])
-        licence = zen.LICENCES.get(manifest.get("license") or "", "cc-by-4.0" if item == "data" else "mit")
+        licence = _deposit_licence(item, manifest, licensed)
         print(
             f"zenodo {item}: would deposit {len(d['files'])} file(s), {size:,} bytes, on {where} ({d['upload_type']})"
         )
         for name, b in d["files"]:
             print(f"zenodo   {name}  {len(b):,} bytes")
         print(f"zenodo   title: {manifest['title']} ({item}); licence: {licence}; creators and ORCID from the manifest")
+        if item == "data" and licensed:
+            names = ", ".join(u.label for u in licensed)
+            print(f"zenodo   the description states the terms and citation of the {names}")
 
 
 __all__ = ["MANIFEST_NAME", "publish"]

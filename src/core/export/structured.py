@@ -47,6 +47,8 @@ EXPORT_MAP: dict[str, list[tuple[str, str | None]]] = {
         ("data.db", None),
         ("data_summary.md", None),
         ("data_dictionary.json", None),
+        # what e2er-data recorded per external-source load (release, URLs, SHA-256)
+        ("data_sources.json", None),
     ],
     "results": [
         ("estimation_results.json", None),

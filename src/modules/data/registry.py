@@ -5,7 +5,7 @@ Mirrors the LLM and literature registries. Returns the available
 warehouse) that the ``list_data_sources`` discovery tool serves so agents
 can pick the right source for the research question.
 
-``settings`` gates availability: yfinance needs no key (always on); FRED
+``settings`` gates availability: yfinance and GMD need no key (always on); FRED
 needs ``FRED_API_KEY``; Allium needs ``ALLIUM_API_KEY``.
 """
 
@@ -14,7 +14,7 @@ from __future__ import annotations
 from typing import Any
 
 from ...config import Settings
-from .providers import AlliumWarehouse, FredFetcher, SeriesFetcher, Warehouse, YFinanceFetcher
+from .providers import AlliumWarehouse, FredFetcher, GMDFetcher, SeriesFetcher, Warehouse, YFinanceFetcher
 
 
 def series_fetchers(settings: Settings) -> list[SeriesFetcher]:
@@ -22,6 +22,7 @@ def series_fetchers(settings: Settings) -> list[SeriesFetcher]:
     fetchers: list[SeriesFetcher] = [YFinanceFetcher()]
     if settings.fred_api_key:
         fetchers.append(FredFetcher(settings.fred_api_key))
+    fetchers.append(GMDFetcher())
     return fetchers
 
 

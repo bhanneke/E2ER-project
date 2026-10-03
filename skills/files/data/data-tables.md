@@ -20,7 +20,7 @@ analyst will load, before any data are pulled.
 
 Naming: lower case, letters, digits and `_`. Daily price series of a ticker
 are `<ticker>_prices` (`spy_prices`, `xlf_prices`); a FRED series is its id in
-lower case (`dgs2`, `dfedtaru`). Tables the researcher supplied (from the data
+lower case (`dgs2`, `dfedtaru`); a GMD panel is `gmd_<what>` (`gmd_macro`). Tables the researcher supplied (from the data
 folder) keep the name they already have in `data.db`; do not redeclare them.
 
 ## The data analyst loads them, and only loads them
@@ -40,6 +40,8 @@ exists before that.
       --save-to spy_prices.csv --table spy_prices
   e2er-data fred series --series-id DGS2 --start 2014-01-01 --end 2025-12-31 \
       --save-to dgs2.csv --table dgs2
+  e2er-data gmd series --variables rGDP,infl --countries USA,DEU --start 2000 --end 2024 \
+      --save-to gmd_macro.csv --table gmd_macro
   ```
 
   The result reports `saved_table` and `saved_table_rows`: the real count.

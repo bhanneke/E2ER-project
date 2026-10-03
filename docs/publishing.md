@@ -27,6 +27,12 @@ Both are private unless you say otherwise; run in a terminal without the two fla
 
 The study page and the dossier show what you chose, for instance "data private · code public". A dossier lists availability only when something is public, so a private study's dossier address does not change.
 
+### Data with terms of use: the Global Macro Database
+
+Data loaded with `e2er-data gmd` come under the GMD's terms (version 1.1, https://www.globalmacrodata.com/license.html): free for academic use; a study's replication package may include the GMD data it used, labelled as GMD data; the data may not be republished anywhere else. Whatever you choose, the study's description (`e2er.json`) names the GMD, its terms and its citation on the data files that hold GMD data, and the dossier lists each GMD load with the same. The GMD citation is added to the paper's references when the data are loaded.
+
+Publishing the GMD data with the study (`--data public`, also with `--zenodo`) needs your confirmation. In a terminal, publish shows the terms and asks; otherwise add `--accept-data-terms gmd`. Without it, publish refuses and changes nothing. With `--data private` no confirmation is needed. A Zenodo deposit of GMD data takes Zenodo's licence "Other (Non-Commercial)" and states the GMD terms and citation in its description.
+
 ## A DOI for public data and code in one step
 
 `--zenodo` deposits the public data and code on Zenodo with your own account and records the DOIs:
