@@ -39,6 +39,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from ..skills.loader import skill_component
 from .availability import any_public
 from .demonstration import DEMONSTRATION, disclaimer
 from .run_outcome import effective_status, internal_review, read_aggregation
@@ -234,6 +235,8 @@ def _path_for(component: str) -> str | None:
         return "src/core/specialists/registry.py"
     if kind == "skill" and rest.startswith("e2er/"):
         return f"skills/files/{rest.removeprefix('e2er/')}.md"
+    if kind == "skill":
+        return None  # an installed pack's skill: not a file of E2ER (see _pin)
     if kind == "connector":
         backend = {v: k for k, v in BACKEND_CONNECTOR.items()}.get(rest)
         return f"src/modules/llm/{backend}.py" if backend else None
@@ -248,6 +251,8 @@ def _pin(component: str, repository: str | None, commit: str | None) -> dict[str
     replaced by the file as it is today.
     """
     rel = _path_for(component)
+    if rel is None and component.startswith("skill:"):
+        return {"note": "from an installed skill pack, not part of E2ER; listed on e2er.org under this id"}
     if rel is None:
         return {"note": "built into E2ER; no separate file"}
     if not commit:
@@ -693,7 +698,7 @@ def read_run(db: Path, paper_id: str, files: dict[str, Any] | None = None, bundl
                 got = list(dict.fromkeys([*base, *template_skills.get(i, {}).get(agent, [])]))
             merged = rec.skills.setdefault(agent, [])
             merged += [x for x in got if x not in merged]
-            for comp in [f"agent:{agent}", *(f"skill:e2er/{x}" for x in got)]:
+            for comp in [f"agent:{agent}", *(skill_component(x) for x in got)]:
                 segs = rec.component_segments.setdefault(comp, [])
                 if i not in segs:
                     segs.append(i)
