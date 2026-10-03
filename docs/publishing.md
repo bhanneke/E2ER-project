@@ -23,7 +23,7 @@ e2er publish ./my-study --owner you --project my-study --data private --code pub
   --repo https://github.com/you/my-study --commit 3b91f0e
 ```
 
-Both are private unless you say otherwise; run in a terminal without the two flags, `e2er publish` asks. For private material, only fingerprints are published, never contents or an address. For public material, give its address with `--data-url` or `--code-url`; public code defaults to your repository at the pinned commit.
+Both are private unless you say otherwise; run in a terminal without the two flags, `e2er publish` asks. For private material, only fingerprints are published, never contents or an address. For public material, give its address with `--data-url` or `--code-url`; public code defaults to your repository. The dossier names the repository, not the commit: the dossier's address is in the paper's footnote and the paper's fingerprint in provenance.json, so a commit-dependent dossier would change the very files the commit holds. The commit (`--commit`) is recorded beside the files, in e2er.json and in the publish request; e2er.org stores it with the study version, reads every file at it and compares it with provenance.json and the published fingerprints. So you can prepare the folder (`e2er publish --offline`), commit it, and publish with `--commit`: nothing the commit holds changes.
 
 The study page and the dossier show what you chose, for instance "data private · code public". A dossier lists availability only when something is public, so a private study's dossier address does not change.
 
