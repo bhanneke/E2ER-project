@@ -476,6 +476,19 @@ async def fred_check(settings) -> Check:
         return Check("data.fred.observations", FAIL, repr(e)[:200])
 
 
+async def gmd_check(_settings) -> Check:
+    """The GMD release list is reachable (a small CSV; no release panel is downloaded)."""
+    from .modules.data.gmd_provider import GMDProvider
+
+    try:
+        env = await GMDProvider().versions()
+    except Exception as e:  # noqa: BLE001 — reported as the check's result
+        return Check("data.gmd.versions", FAIL, repr(e)[:200])
+    if env.get("error"):
+        return Check("data.gmd.versions", FAIL, str(env["error"])[:300])
+    return Check("data.gmd.versions", PASS, f"newest release {env['latest']} ({env['row_count']} releases)")
+
+
 async def allium_check(settings) -> Check:
     if not settings.allium_api_key:
         return Check("data.allium.list_tables", SKIP, "ALLIUM_API_KEY not set")
@@ -556,6 +569,7 @@ async def run_provider_checks(settings) -> list[Check]:
         await yfinance_check(settings),
         fred_key_check(settings),
         await fred_check(settings),
+        await gmd_check(settings),
         await allium_check(settings),
         await openalex_check(settings),
         await read_reference_check(settings),

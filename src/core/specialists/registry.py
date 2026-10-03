@@ -67,6 +67,7 @@ SPECIALIST_SKILLS: dict[str, list[str]] = {
         "data/allium-developer-api",
         "data/yfinance",
         "data/fred",
+        "data/gmd",
     ],
     "identification_strategist": [
         # Names data by the tables the data dictionary declares.
@@ -103,6 +104,7 @@ SPECIALIST_SKILLS: dict[str, list[str]] = {
         "data/allium-developer-api",
         "data/yfinance",
         "data/fred",
+        "data/gmd",
         # v0.5: machine-readable sidecar contract. Teaches the analyst
         # the summary_statistics.json shape that verify_numbers gates
         # against and the drafter cites by key.

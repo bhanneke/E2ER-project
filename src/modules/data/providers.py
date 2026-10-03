@@ -4,7 +4,7 @@ M3 of docs/MODULARIZATION_PLAN.md, series side. The data lane has two
 capability sub-types (locked decision #2):
 
 - ``SeriesFetcher`` — parameterized reads of public series data (FRED macro,
-  yfinance markets). Exposed in the agent loop via the unified ``fetch_data``
+  GMD cross-country macro, yfinance markets). Exposed in the agent loop via the unified ``fetch_data``
   tool, discovered through ``list_data_sources``.
 - ``Warehouse`` — Allium's SQL + 5-rule guardrails + approval flow. Stays
   its own ``query_allium`` tool (M3b folds it behind this interface); for
@@ -92,6 +92,57 @@ class FredFetcher(SeriesFetcher):
         if method == "releases":
             return await self._provider.get_releases(limit=int(params.get("limit", 100)))
         return _unknown_method("fred", method, ["observations", "info", "search", "releases"])
+
+
+class GMDFetcher(SeriesFetcher):
+    """Global Macro Database — annual cross-country macro panels from versioned releases (no key)."""
+
+    name = "gmd"
+
+    def __init__(self) -> None:
+        from .gmd_provider import GMDProvider
+
+        self._provider = GMDProvider()
+
+    def card(self) -> dict[str, Any]:
+        return {
+            "name": "gmd",
+            "kind": "series",
+            "use": "Annual macroeconomic panels for 239 economies (GDP, inflation, rates, exchange rates, "
+            "government finances, trade, money, house prices, crises), 1086 to today plus forecasts, "
+            "in versioned quarterly releases. Free for academic use; cite the GMD.",
+            "requires": "(none)",
+            "methods": {
+                "versions": "list releases, newest first",
+                "variables": "list variable codes with units and definitions",
+                "countries": "list ISO3 codes and country names",
+                "series": "variables (list, e.g. ['rGDP','infl']); optional countries (ISO3 list), "
+                "start, end (years), version (default: newest release)",
+            },
+        }
+
+    async def fetch(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
+        if method == "versions":
+            return await self._provider.versions()
+        if method == "variables":
+            return await self._provider.variables()
+        if method == "countries":
+            return await self._provider.countries()
+        if method == "series":
+
+            def _list(v: Any) -> list[str]:
+                return [x.strip() for x in v.split(",")] if isinstance(v, str) else list(v or [])
+
+            env = await self._provider.series(
+                _list(params.get("variables")),
+                countries=_list(params.get("countries")),
+                start=int(params["start"]) if params.get("start") is not None else None,
+                end=int(params["end"]) if params.get("end") is not None else None,
+                version=params.get("version"),
+            )
+            env.pop("gmd_record", None)
+            return env
+        return _unknown_method("gmd", method, ["versions", "variables", "countries", "series"])
 
 
 class YFinanceFetcher(SeriesFetcher):
