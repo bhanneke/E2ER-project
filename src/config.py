@@ -186,7 +186,8 @@ class Settings(BaseSettings):
     # How many hits per query the always-on acquisition stage records when no
     # bibliography exists yet. Two queries (research question + title) run, so
     # the ceiling is roughly twice this before de-duplication. Sized for a
-    # normal reference list, not a survey.
+    # normal reference list, not a survey. 0 turns the web search off (no
+    # request to OpenAlex or arXiv; the offline corpus still seeds literature.bib).
     literature_acquire_limit: int = 30
 
     # Email used to identify this client to the OpenAlex / Crossref / Unpaywall
