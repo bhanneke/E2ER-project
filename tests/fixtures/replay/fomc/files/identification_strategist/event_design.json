@@ -1,0 +1,317 @@
+{
+  "event_day": "FOMC announcement date (typically 2pm ET); if the announcement falls on a non-trading day, event day is the next trading day in the spy_prices calendar. See fomc_announcement_dates.announcement_date column.",
+  "estimation_window": {
+    "start": -250,
+    "end": -12,
+    "description": "Trading days [-250,-12] before the event day, leaving out days inside other events' windows. Market model (KBE on SPY) estimated over this window for each event."
+  },
+  "event_windows": [
+    {
+      "name": "car_m1_p1",
+      "start": -1,
+      "end": 1,
+      "description": "3-day window centered on announcement (trading day before, announcement day, trading day after). Primary window for testing immediate market reaction."
+    },
+    {
+      "name": "car_0_p5",
+      "start": 0,
+      "end": 5,
+      "description": "6-day window from announcement through 5 days after. Tests for multi-day adjustment; higher risk of confounding by subsequent news."
+    }
+  ],
+  "calendar": {
+    "table": "spy_prices",
+    "date_column": "date",
+    "description": "Trading dates from S&P 500 ETF (SPY). Used to map calendar dates to trading day sequences."
+  },
+  "events_source": {
+    "table": "fomc_announcement_dates",
+    "date_column": "announcement_date",
+    "description": "FOMC announcement dates from the fomc_announcement_dates table in data.db. Every date in this table is treated as an event. Non-trading dates are shifted to the next trading day per the calendar."
+  },
+  "overlap_treatment": "none",
+  "confounding_risk": "Check for concurrent earnings announcements by major banks (JPM, BAC, C, WFC, GS, MS) and macroeconomic releases (CPI, jobs, ISM, PMI) within \u00b11 trading day of each FOMC announcement. Document in results; exclude if more than ~10% of events are confounded.",
+  "events": [
+    {
+      "id": "fomc-2015-12-16",
+      "date": "2015-12-16",
+      "asset": "KBE",
+      "direction": "increase",
+      "rate_before": 0.25,
+      "rate_after": 0.5,
+      "magnitude_bps": 25
+    },
+    {
+      "id": "fomc-2016-12-14",
+      "date": "2016-12-14",
+      "asset": "KBE",
+      "direction": "increase",
+      "rate_before": 0.5,
+      "rate_after": 0.75,
+      "magnitude_bps": 25
+    },
+    {
+      "id": "fomc-2017-03-15",
+      "date": "2017-03-15",
+      "asset": "KBE",
+      "direction": "increase",
+      "rate_before": 0.75,
+      "rate_after": 1.0,
+      "magnitude_bps": 25
+    },
+    {
+      "id": "fomc-2017-06-14",
+      "date": "2017-06-14",
+      "asset": "KBE",
+      "direction": "increase",
+      "rate_before": 1.0,
+      "rate_after": 1.25,
+      "magnitude_bps": 25
+    },
+    {
+      "id": "fomc-2017-12-13",
+      "date": "2017-12-13",
+      "asset": "KBE",
+      "direction": "increase",
+      "rate_before": 1.25,
+      "rate_after": 1.5,
+      "magnitude_bps": 25
+    },
+    {
+      "id": "fomc-2018-03-21",
+      "date": "2018-03-21",
+      "asset": "KBE",
+      "direction": "increase",
+      "rate_before": 1.5,
+      "rate_after": 1.75,
+      "magnitude_bps": 25
+    },
+    {
+      "id": "fomc-2018-06-13",
+      "date": "2018-06-13",
+      "asset": "KBE",
+      "direction": "increase",
+      "rate_before": 1.75,
+      "rate_after": 2.0,
+      "magnitude_bps": 25
+    },
+    {
+      "id": "fomc-2018-09-26",
+      "date": "2018-09-26",
+      "asset": "KBE",
+      "direction": "increase",
+      "rate_before": 2.0,
+      "rate_after": 2.25,
+      "magnitude_bps": 25
+    },
+    {
+      "id": "fomc-2018-12-19",
+      "date": "2018-12-19",
+      "asset": "KBE",
+      "direction": "increase",
+      "rate_before": 2.25,
+      "rate_after": 2.5,
+      "magnitude_bps": 25
+    },
+    {
+      "id": "fomc-2019-07-31",
+      "date": "2019-07-31",
+      "asset": "KBE",
+      "direction": "cut",
+      "rate_before": 2.5,
+      "rate_after": 2.25,
+      "magnitude_bps": -25
+    },
+    {
+      "id": "fomc-2019-09-18",
+      "date": "2019-09-18",
+      "asset": "KBE",
+      "direction": "cut",
+      "rate_before": 2.25,
+      "rate_after": 2.0,
+      "magnitude_bps": -25
+    },
+    {
+      "id": "fomc-2019-10-30",
+      "date": "2019-10-30",
+      "asset": "KBE",
+      "direction": "cut",
+      "rate_before": 2.0,
+      "rate_after": 1.75,
+      "magnitude_bps": -25
+    },
+    {
+      "id": "fomc-2020-03-03",
+      "date": "2020-03-03",
+      "asset": "KBE",
+      "direction": "cut",
+      "rate_before": 1.75,
+      "rate_after": 1.25,
+      "magnitude_bps": -50
+    },
+    {
+      "id": "fomc-2020-03-16",
+      "date": "2020-03-16",
+      "asset": "KBE",
+      "direction": "cut",
+      "rate_before": 1.25,
+      "rate_after": 0.25,
+      "magnitude_bps": -100,
+      "note": "Announced Sunday 15 March 2020; day 0 is the next trading day."
+    },
+    {
+      "id": "fomc-2022-03-16",
+      "date": "2022-03-16",
+      "asset": "KBE",
+      "direction": "increase",
+      "rate_before": 0.25,
+      "rate_after": 0.5,
+      "magnitude_bps": 25
+    },
+    {
+      "id": "fomc-2022-05-04",
+      "date": "2022-05-04",
+      "asset": "KBE",
+      "direction": "increase",
+      "rate_before": 0.5,
+      "rate_after": 1.0,
+      "magnitude_bps": 50
+    },
+    {
+      "id": "fomc-2022-06-15",
+      "date": "2022-06-15",
+      "asset": "KBE",
+      "direction": "increase",
+      "rate_before": 1.0,
+      "rate_after": 1.75,
+      "magnitude_bps": 75
+    },
+    {
+      "id": "fomc-2022-07-27",
+      "date": "2022-07-27",
+      "asset": "KBE",
+      "direction": "increase",
+      "rate_before": 1.75,
+      "rate_after": 2.5,
+      "magnitude_bps": 75
+    },
+    {
+      "id": "fomc-2022-09-21",
+      "date": "2022-09-21",
+      "asset": "KBE",
+      "direction": "increase",
+      "rate_before": 2.5,
+      "rate_after": 3.25,
+      "magnitude_bps": 75
+    },
+    {
+      "id": "fomc-2022-11-02",
+      "date": "2022-11-02",
+      "asset": "KBE",
+      "direction": "increase",
+      "rate_before": 3.25,
+      "rate_after": 4.0,
+      "magnitude_bps": 75
+    },
+    {
+      "id": "fomc-2022-12-14",
+      "date": "2022-12-14",
+      "asset": "KBE",
+      "direction": "increase",
+      "rate_before": 4.0,
+      "rate_after": 4.5,
+      "magnitude_bps": 50
+    },
+    {
+      "id": "fomc-2023-02-01",
+      "date": "2023-02-01",
+      "asset": "KBE",
+      "direction": "increase",
+      "rate_before": 4.5,
+      "rate_after": 4.75,
+      "magnitude_bps": 25
+    },
+    {
+      "id": "fomc-2023-03-22",
+      "date": "2023-03-22",
+      "asset": "KBE",
+      "direction": "increase",
+      "rate_before": 4.75,
+      "rate_after": 5.0,
+      "magnitude_bps": 25
+    },
+    {
+      "id": "fomc-2023-05-03",
+      "date": "2023-05-03",
+      "asset": "KBE",
+      "direction": "increase",
+      "rate_before": 5.0,
+      "rate_after": 5.25,
+      "magnitude_bps": 25
+    },
+    {
+      "id": "fomc-2023-07-26",
+      "date": "2023-07-26",
+      "asset": "KBE",
+      "direction": "increase",
+      "rate_before": 5.25,
+      "rate_after": 5.5,
+      "magnitude_bps": 25
+    },
+    {
+      "id": "fomc-2024-09-18",
+      "date": "2024-09-18",
+      "asset": "KBE",
+      "direction": "cut",
+      "rate_before": 5.5,
+      "rate_after": 5.0,
+      "magnitude_bps": -50
+    },
+    {
+      "id": "fomc-2024-11-07",
+      "date": "2024-11-07",
+      "asset": "KBE",
+      "direction": "cut",
+      "rate_before": 5.0,
+      "rate_after": 4.75,
+      "magnitude_bps": -25
+    },
+    {
+      "id": "fomc-2024-12-18",
+      "date": "2024-12-18",
+      "asset": "KBE",
+      "direction": "cut",
+      "rate_before": 4.75,
+      "rate_after": 4.5,
+      "magnitude_bps": -25
+    },
+    {
+      "id": "fomc-2025-09-17",
+      "date": "2025-09-17",
+      "asset": "KBE",
+      "direction": "cut",
+      "rate_before": 4.5,
+      "rate_after": 4.25,
+      "magnitude_bps": -25
+    },
+    {
+      "id": "fomc-2025-10-29",
+      "date": "2025-10-29",
+      "asset": "KBE",
+      "direction": "cut",
+      "rate_before": 4.25,
+      "rate_after": 4.0,
+      "magnitude_bps": -25
+    },
+    {
+      "id": "fomc-2025-12-10",
+      "date": "2025-12-10",
+      "asset": "KBE",
+      "direction": "cut",
+      "rate_before": 4.0,
+      "rate_after": 3.75,
+      "magnitude_bps": -25
+    }
+  ],
+  "events_note": "The 31 events are the researcher's announcement dates from fomc_announcement_dates, set at review_design."
+}

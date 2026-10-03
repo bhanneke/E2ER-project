@@ -1,0 +1,231 @@
+{
+  "name": "fomc",
+  "source": "FOMC bank event study, e2er demonstration run 9a623c39 (2026-09-28/29), Claude Haiku 4.5 through Claude Code",
+  "template": "event-study-finance",
+  "research_question": "How do US bank stocks respond to changes in the Federal Reserve's target rate? An event study of FOMC target-rate changes, 2015–2025",
+  "title": "How do US bank stocks respond to changes in the Federal Reserve's target rate",
+  "model": "claude-haiku-4-5-20251001",
+  "initial_groups": [
+    [
+      "idea_developer",
+      "literature_scanner",
+      "identification_strategist"
+    ],
+    [
+      "data_architect"
+    ],
+    [
+      "data_analyst"
+    ],
+    [
+      "econometrics_specialist"
+    ],
+    [
+      "paper_drafter",
+      "abstract_writer"
+    ]
+  ],
+  "specialists": {
+    "idea_developer": {
+      "files": [
+        "paper_plan.md"
+      ],
+      "output": "Wrote paper_plan.md.",
+      "usage": {
+        "input_tokens": 34,
+        "output_tokens": 6509,
+        "cache_read_tokens": 118156,
+        "cache_write_tokens": 28467
+      }
+    },
+    "literature_scanner": {
+      "files": [
+        "literature_review.md"
+      ],
+      "output": "Wrote literature_review.md.",
+      "usage": {
+        "input_tokens": 10,
+        "output_tokens": 645,
+        "cache_read_tokens": 54542,
+        "cache_write_tokens": 2313
+      }
+    },
+    "identification_strategist": {
+      "files": [
+        "identification_strategy.md",
+        "identification_spec.json",
+        "event_design.json"
+      ],
+      "output": "Wrote identification_strategy.md, identification_spec.json, event_design.json.",
+      "usage": {
+        "input_tokens": 60,
+        "output_tokens": 12333,
+        "cache_read_tokens": 302529,
+        "cache_write_tokens": 40600
+      }
+    },
+    "data_architect": {
+      "files": [
+        "data_dictionary.json"
+      ],
+      "output": "Wrote data_dictionary.json.",
+      "usage": {
+        "input_tokens": 44,
+        "output_tokens": 4667,
+        "cache_read_tokens": 180757,
+        "cache_write_tokens": 24047
+      }
+    },
+    "data_analyst": {
+      "files": [
+        "data_summary.md",
+        "summary_statistics.json",
+        "figure_spec.json",
+        "data.db"
+      ],
+      "output": "Wrote data_summary.md, summary_statistics.json, figure_spec.json, data.db.",
+      "usage": {
+        "input_tokens": 194,
+        "output_tokens": 8370,
+        "cache_read_tokens": 1300600,
+        "cache_write_tokens": 43181
+      }
+    },
+    "econometrics_specialist": {
+      "files": [
+        "econometric_spec.md",
+        "run_estimation.py",
+        "estimation_results.json"
+      ],
+      "output": "Wrote econometric_spec.md, run_estimation.py, estimation_results.json.",
+      "usage": {
+        "input_tokens": 388,
+        "output_tokens": 33543,
+        "cache_read_tokens": 3626465,
+        "cache_write_tokens": 77802
+      }
+    },
+    "paper_drafter": {
+      "files": [
+        "paper_draft.tex",
+        "table_spec.json"
+      ],
+      "output": "Wrote paper_draft.tex, table_spec.json.",
+      "usage": {
+        "input_tokens": 90,
+        "output_tokens": 12864,
+        "cache_read_tokens": 590941,
+        "cache_write_tokens": 46512
+      }
+    },
+    "abstract_writer": {
+      "files": [
+        "abstract.tex"
+      ],
+      "output": "Wrote abstract.tex.",
+      "usage": {
+        "input_tokens": 42,
+        "output_tokens": 9743,
+        "cache_read_tokens": 233212,
+        "cache_write_tokens": 45097
+      }
+    },
+    "mechanism_reviewer": {
+      "files": [
+        "review_mechanism.md"
+      ],
+      "output": "Wrote review_mechanism.md.",
+      "usage": {
+        "input_tokens": 28,
+        "output_tokens": 8704,
+        "cache_read_tokens": 196550,
+        "cache_write_tokens": 8043
+      }
+    },
+    "technical_reviewer": {
+      "files": [
+        "review_technical.md"
+      ],
+      "output": "Wrote review_technical.md.",
+      "usage": {
+        "input_tokens": 28,
+        "output_tokens": 10557,
+        "cache_read_tokens": 153207,
+        "cache_write_tokens": 53237
+      }
+    },
+    "literature_reviewer": {
+      "files": [
+        "review_literature.md"
+      ],
+      "output": "Wrote review_literature.md.",
+      "usage": {
+        "input_tokens": 18,
+        "output_tokens": 11031,
+        "cache_read_tokens": 79095,
+        "cache_write_tokens": 52013
+      }
+    },
+    "writing_reviewer": {
+      "files": [
+        "review_writing.md"
+      ],
+      "output": "Wrote review_writing.md.",
+      "usage": {
+        "input_tokens": 18,
+        "output_tokens": 9181,
+        "cache_read_tokens": 81246,
+        "cache_write_tokens": 52199
+      }
+    },
+    "data_reviewer": {
+      "files": [
+        "review_data.md"
+      ],
+      "output": "Wrote review_data.md.",
+      "usage": {
+        "input_tokens": 18,
+        "output_tokens": 10228,
+        "cache_read_tokens": 83464,
+        "cache_write_tokens": 55485
+      }
+    },
+    "identification_reviewer": {
+      "files": [
+        "review_identification.md"
+      ],
+      "output": "Wrote review_identification.md.",
+      "usage": {
+        "input_tokens": 18,
+        "output_tokens": 15046,
+        "cache_read_tokens": 82562,
+        "cache_write_tokens": 59179
+      }
+    },
+    "patch_revisor": {
+      "files": [
+        "paper_draft.tex.edits.json"
+      ],
+      "output": "Wrote paper_draft.tex.edits.json.",
+      "usage": {
+        "input_tokens": 106,
+        "output_tokens": 9744,
+        "cache_read_tokens": 731276,
+        "cache_write_tokens": 48973
+      }
+    },
+    "replication_packager": {
+      "files": [
+        "replication/estimation.py",
+        "replication/README.md"
+      ],
+      "output": "Wrote replication/estimation.py, replication/README.md.",
+      "usage": {
+        "input_tokens": 34,
+        "output_tokens": 13984,
+        "cache_read_tokens": 167801,
+        "cache_write_tokens": 48520
+      }
+    }
+  }
+}

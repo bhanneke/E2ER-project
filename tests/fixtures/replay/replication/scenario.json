@@ -1,0 +1,233 @@
+{
+  "name": "replication",
+  "source": "Replication demonstration, e2er run 08af321d (2026-09-28 to 2026-10-01), Claude Haiku 4.5 through Claude Code",
+  "template": "replication",
+  "research_question": "Computational reproduction of Political Rupture and Selective Damage to Local Service Delivery: Evidence from Brazil (10.5281/zenodo.22179151)",
+  "title": "Computational reproduction of Political Rupture and Selective Damage to Local...",
+  "model": "claude-haiku-4-5-20251001",
+  "initial_groups": [],
+  "specialists": {
+    "replication_planner": {
+      "files": [
+        "replication_plan.json",
+        "replication_plan.md"
+      ],
+      "output": "Wrote replication_plan.json, replication_plan.md.",
+      "usage": {
+        "input_tokens": 282,
+        "output_tokens": 24216,
+        "cache_read_tokens": 2208716,
+        "cache_write_tokens": 74229
+      }
+    },
+    "reproduction_comparer": {
+      "files": [
+        "reproduction_report.json",
+        "reproduction_report.md"
+      ],
+      "output": "Wrote reproduction_report.json, reproduction_report.md.",
+      "usage": {
+        "input_tokens": 52,
+        "output_tokens": 10042,
+        "cache_read_tokens": 258670,
+        "cache_write_tokens": 45777
+      }
+    }
+  },
+  "sandbox": {
+    "image_digest": "rocker/r-ver@sha256:4e6e6696ff54a86625c7f80046478e67014a2184e942b85eeff43db7b992d93e",
+    "platform": "aarch64-unknown-linux-gnu",
+    "repos": "https://p3m.dev/cran/__linux__/noble/2026-08-30",
+    "installed": {
+      "alabama": "2025.1.0",
+      "backports": "1.5.1",
+      "BH": "1.90.0-1",
+      "bigmemory": "4.6.6",
+      "bigmemory.sri": "0.1.8",
+      "bit": "4.6.0",
+      "bit64": "4.8.4",
+      "BMisc": "1.4.10",
+      "broom": "1.0.13",
+      "checkmate": "2.3.4",
+      "chk": "0.10.0",
+      "clarabel": "0.11.3",
+      "cli": "3.6.6",
+      "clipr": "0.8.1",
+      "cpp11": "0.5.5",
+      "crayon": "1.5.3",
+      "CVXR": "1.9.2",
+      "data.table": "1.18.4",
+      "did": "2.5.1",
+      "docopt": "0.7.2",
+      "dplyr": "1.2.1",
+      "DRDID": "1.3.0",
+      "dreamerr": "1.5.0",
+      "ECOSolveR": "0.6.1",
+      "evaluate": "1.0.5",
+      "farver": "2.1.2",
+      "fastglm": "0.1.2",
+      "fixest": "0.14.2",
+      "foreach": "1.5.2",
+      "Formula": "1.2-6",
+      "generics": "0.1.4",
+      "ggplot2": "4.0.3",
+      "glue": "1.8.1",
+      "gmp": "0.7-5.1",
+      "gtable": "0.3.6",
+      "here": "1.0.2",
+      "highr": "0.12",
+      "highs": "1.14.0-2",
+      "hms": "1.1.4",
+      "HonestDiD": "0.2.8",
+      "isoband": "0.3.0",
+      "iterators": "1.0.14",
+      "janitor": "2.2.1",
+      "knitr": "1.51",
+      "labeling": "0.4.3",
+      "latex2exp": "0.9.8",
+      "lifecycle": "1.0.5",
+      "littler": "0.3.23",
+      "lpSolveAPI": "5.5.2.0-17.15",
+      "lubridate": "1.9.5",
+      "magrittr": "2.0.5",
+      "MatchIt": "4.7.2",
+      "matrixStats": "1.5.0",
+      "mvtnorm": "1.4-2",
+      "nleqslv": "3.3.7",
+      "numDeriv": "2016.8-1.1",
+      "osqp": "1.0.0",
+      "pbapply": "1.7-4",
+      "pillar": "1.11.1",
+      "pkgconfig": "2.0.3",
+      "pracma": "2.4.6",
+      "prettyunits": "1.2.0",
+      "progress": "1.2.3",
+      "purrr": "1.2.2",
+      "qrng": "0.0-11",
+      "R6": "2.6.1",
+      "RColorBrewer": "1.1-3",
+      "Rcpp": "1.1.2",
+      "RcppArmadillo": "15.4.2-1",
+      "RcppEigen": "0.3.4.0.2",
+      "RcppProgress": "0.4.2",
+      "readr": "2.2.0",
+      "remotes": "2.5.0",
+      "Rglpk": "0.6-5.1",
+      "rlang": "1.3.0",
+      "rprojroot": "2.1.1",
+      "S7": "0.2.2",
+      "sandwich": "3.1-3",
+      "scales": "1.4.0",
+      "scs": "3.2.7",
+      "slam": "0.1-56",
+      "snakecase": "0.11.1",
+      "spacefillr": "0.4.0",
+      "stringi": "1.8.9",
+      "stringmagic": "1.3.0",
+      "stringr": "1.6.0",
+      "tibble": "3.3.1",
+      "tidyr": "1.3.2",
+      "tidyselect": "1.2.1",
+      "timechange": "0.4.0",
+      "TruncatedNormal": "2.3",
+      "trust": "0.1-9",
+      "tzdb": "0.5.0",
+      "utf8": "1.2.6",
+      "uuid": "1.2-2",
+      "vctrs": "0.7.3",
+      "viridisLite": "0.4.3",
+      "vroom": "1.7.1",
+      "withr": "3.0.3",
+      "xfun": "0.60",
+      "yaml": "2.3.12",
+      "zoo": "1.9-0",
+      "base": "4.6.1",
+      "boot": "1.3-32",
+      "class": "7.3-23",
+      "cluster": "2.1.8.2",
+      "codetools": "0.2-20",
+      "compiler": "4.6.1",
+      "datasets": "4.6.1",
+      "foreign": "0.8-91",
+      "graphics": "4.6.1",
+      "grDevices": "4.6.1",
+      "grid": "4.6.1",
+      "KernSmooth": "2.23-26",
+      "lattice": "0.22-9",
+      "MASS": "7.3-65",
+      "Matrix": "1.7-5",
+      "methods": "4.6.1",
+      "mgcv": "1.9-4",
+      "nlme": "3.1-169",
+      "nnet": "7.3-20",
+      "parallel": "4.6.1",
+      "rpart": "4.1.27",
+      "spatial": "7.3-18",
+      "splines": "4.6.1",
+      "stats": "4.6.1",
+      "stats4": "4.6.1",
+      "survival": "3.8-6",
+      "tcltk": "4.6.1",
+      "tools": "4.6.1",
+      "utils": "4.6.1"
+    },
+    "entry_points": [
+      {
+        "id": "did_main",
+        "script": "assistencia_social/R/07_did.R",
+        "produces": [
+          "supplementary_elections_social_assistance/assistencia_social/output/data/resultados_did.csv"
+        ]
+      },
+      {
+        "id": "robustez_especificacoes",
+        "script": "assistencia_social/R/08_robustez.R",
+        "produces": [
+          "supplementary_elections_social_assistance/assistencia_social/output/data/robustez_especificacoes.csv",
+          "supplementary_elections_social_assistance/assistencia_social/output/data/robustez_placebo.csv",
+          "supplementary_elections_social_assistance/assistencia_social/output/data/robustez_coorte.csv",
+          "supplementary_elections_social_assistance/assistencia_social/output/data/robustez_subamostras.csv",
+          "supplementary_elections_social_assistance/assistencia_social/output/data/robustez_transformacoes.csv"
+        ]
+      },
+      {
+        "id": "robustez_multidesfecho",
+        "script": "assistencia_social/R/10_robustez_completa.R",
+        "produces": [
+          "supplementary_elections_social_assistance/assistencia_social/output/data/robustez_multidesfecho_fdr.csv"
+        ]
+      },
+      {
+        "id": "pretrends_honestdid",
+        "script": "assistencia_social/R/11_honestdid.R",
+        "produces": [
+          "supplementary_elections_social_assistance/assistencia_social/output/data/robustez_pretendencias.csv",
+          "supplementary_elections_social_assistance/assistencia_social/output/data/honestdid_cs.csv"
+        ]
+      },
+      {
+        "id": "poder_balanco",
+        "script": "assistencia_social/R/13_poder_balanco.R",
+        "produces": [
+          "supplementary_elections_social_assistance/assistencia_social/output/data/poder_mde.csv",
+          "supplementary_elections_social_assistance/assistencia_social/output/data/balanco_tratado_naotratado.csv"
+        ]
+      },
+      {
+        "id": "incentivo_gradient",
+        "script": "assistencia_social/R/30_proxy_incentivo_norma.R",
+        "produces": [
+          "supplementary_elections_social_assistance/assistencia_social/output/data/proxy_incentivo_norma.csv",
+          "supplementary_elections_social_assistance/assistencia_social/output/data/proxy_incentivo_norma_gradiente.csv",
+          "supplementary_elections_social_assistance/assistencia_social/output/data/proxy_incentivo_norma_permutacao.csv",
+          "supplementary_elections_social_assistance/assistencia_social/output/data/proxy_incentivo_norma_residual.csv"
+        ]
+      }
+    ]
+  },
+  "zenodo": {
+    "record_id": "22179151",
+    "doi": "10.5281/zenodo.22179151",
+    "files": 24
+  }
+}

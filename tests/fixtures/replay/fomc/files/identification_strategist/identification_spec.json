@@ -1,0 +1,32 @@
+{
+  "primary": {
+    "estimator": "ols",
+    "unit_of_analysis": "event",
+    "outcome": "car",
+    "treatment": "dgs2_change_day0",
+    "fixed_effects": [],
+    "controls": [],
+    "cluster_level": "none",
+    "identifying_assumption": "FOMC announcement dates are determined by the Fed's calendar (fixed ex-ante), making timing of rate decisions exogenous to bank stock performance. The day-0 change in the 2-year Treasury yield (ΔDGS2) proxies for the market's surprise about the Fed's policy action, guidance, and growth expectations. Conditional on the announcement direction (hike vs. cut), ΔDGS2 variation is plausibly exogenous.",
+    "stratification": "Results reported separately for rate hikes and rate cuts.",
+    "notes": "H2: cross-sectional regression of CAR on ΔDGS2. CAR computed from market model (estimated over [-250, -12] trading days). ΔDGS2 = DGS2(t=0) - DGS2(t=-1), in basis points. Regression run separately for hikes (n≈17) and cuts (n≈10). Heteroskedasticity-robust standard errors."
+  },
+  "event_study_specification": {
+    "market_model": {
+      "dependent_variable": "kbe_return",
+      "independent_variable": "spy_return",
+      "estimation_window_days": 238,
+      "estimation_window_range": [-250, -12],
+      "benchmark": "spy_prices",
+      "notes": "Estimated separately for each event. Abnormal return on day t = actual return - (alpha_hat + beta_hat * market_return). CAR = sum of daily ARs over event window. Event windows: [-1,+1] and [0,+5]."
+    }
+  },
+  "fallback": {
+    "estimator": "market_adjusted",
+    "fixed_effects": [],
+    "controls": [],
+    "cluster_level": "none",
+    "when": "If sufficient historical data to estimate market model is unavailable for any event. Sets beta=1 and alpha=0 (AR = KBE return - SPY return).",
+    "notes": "Simpler but less efficient than market model."
+  }
+}

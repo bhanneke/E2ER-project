@@ -1,0 +1,45 @@
+{
+  "tables": [
+    {
+      "name": "spy_prices",
+      "source": "yfinance",
+      "ticker": "SPY",
+      "frequency": "daily",
+      "role": "market benchmark for abnormal return calculation; S&P 500 ETF"
+    },
+    {
+      "name": "kbe_prices",
+      "source": "yfinance",
+      "ticker": "KBE",
+      "frequency": "daily",
+      "role": "event-study asset; Invesco KBE Bank ETF covering broad US bank stocks"
+    },
+    {
+      "name": "xlf_prices",
+      "source": "yfinance",
+      "ticker": "XLF",
+      "frequency": "daily",
+      "role": "robustness check; Financials sector ETF including banking and non-bank financial institutions"
+    },
+    {
+      "name": "dgs2",
+      "source": "fred",
+      "series": "DGS2",
+      "frequency": "daily",
+      "role": "Treasury yield surprise measure; 2-year Treasury constant maturity yield for H2 regression"
+    },
+    {
+      "name": "dfedtaru",
+      "source": "fred",
+      "series": "DFEDTARU",
+      "frequency": "daily",
+      "role": "Federal funds effective rate; context variable for policy regime"
+    },
+    {
+      "name": "fomc_announcement_dates",
+      "source": "researcher-supplied",
+      "frequency": "event",
+      "role": "31 FOMC target-rate announcements (December 2015 – December 2025); defines event dates, announcement times, policy directions, and Fed rate changes"
+    }
+  ]
+}

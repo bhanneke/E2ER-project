@@ -1,0 +1,7 @@
+desfecho,att,ep,p,p_pre,n_trat,spec
+TAC (atualizacao cadastral),0.0180044324519078,0.0108151628804628,0.0960215072865565,,141,"Placebo (tratamento -3 anos, so pre-periodo)"
+CadUnico: familias (log),0.031431037637315,0.014505986329915,0.030295393323614,,198,"Placebo (tratamento -3 anos, so pre-periodo)"
+CRAS: trabalhadores (log),0.0152245193544807,0.03037036111562,0.616183337334073,,196,"Placebo (tratamento -3 anos, so pre-periodo)"
+CRAS: unidades (log),0.000675764885771179,0.00433800187816434,0.876213786214881,,196,"Placebo (tratamento -3 anos, so pre-periodo)"
+PBF: familias (log),0.0343344377701556,0.0120049849042932,0.0042520464848843,,198,"Placebo (tratamento -3 anos, so pre-periodo)"
+PBF: valor pago (log),0.0299057002274853,0.0143545590775869,0.0372642378859683,,198,"Placebo (tratamento -3 anos, so pre-periodo)"
