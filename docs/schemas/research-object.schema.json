@@ -390,7 +390,7 @@
             },
             "url": {
               "type": "string",
-              "description": "Where the public material lives: a repository (its address, never the commit: the commit is repository.commit), or https://doi.org/<doi>. Absent when private."
+              "description": "Where the public material lives: a repository at a commit, or https://doi.org/<doi>. Absent when private."
             },
             "doi": {
               "type": "string",
@@ -418,7 +418,7 @@
             },
             "url": {
               "type": "string",
-              "description": "Where the public material lives: a repository (its address, never the commit: the commit is repository.commit), or https://doi.org/<doi>. Absent when private."
+              "description": "Where the public material lives: a repository at a commit, or https://doi.org/<doi>. Absent when private."
             },
             "doi": {
               "type": "string",

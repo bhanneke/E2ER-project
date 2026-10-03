@@ -1,6 +1,6 @@
 # Publishing a study
 
-`e2er publish <folder>` describes an exported study, writes its dossier and, with `--to https://e2er.org`, publishes the description. The files stay on your computer or in your repository; e2er.org receives the description, the dossier and a fingerprint (SHA-256) of every file.
+`e2er publish <folder>` describes an exported study, writes its dossier and, with `--to https://e2er.org`, publishes the description. The files stay on your computer or in your repository; e2er.org receives the description, the dossier and a fingerprint (SHA-256) of every file. The dossier's address (in the paper's footnote, e2er.json and the output) is on the platform you publish to: `--to`, else `E2ER_URL`, else https://e2er.org. Prepare with `--offline` under the same `E2ER_URL` you publish to, or the footnote changes when you publish.
 
 ## The run's database
 

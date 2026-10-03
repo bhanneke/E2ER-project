@@ -499,7 +499,7 @@ def _describe(
     # 6. The paper's first page: the dossier link (and the disclaimer); the author line with --name.
     if stamp and tex.is_file():
         try:
-            changed = _stamp_and_compile(b, name, did, purpose=purpose, kind=kind, doc=doc)
+            changed = _stamp_and_compile(b, name, did, purpose=purpose, kind=kind, doc=doc, site=site_url)
         except PublishError as e:
             print(f"error: {e}")
             return 1, None
@@ -519,7 +519,7 @@ def _describe(
     manifest["availability"] = copy.deepcopy(availability)
     # The amendments stay in provenance.json (fixed by content_id) and in the dossier;
     # e2er.org's research-object format has no field for them.
-    manifest["dossier"] = {"id": did, "url": dossier_url(did), "doc": doc}
+    manifest["dossier"] = {"id": did, "url": dossier_url(did, site_url), "doc": doc}
     leaks = problems(request_body(manifest, b))
     if leaks:
         print("error: the description would carry something that must not leave this machine; nothing was written:")
@@ -543,7 +543,7 @@ def _describe(
                         item,
                         manifest,
                         availability,
-                        dossier_url(did),
+                        dossier_url(did, site_url),
                         f"{site_url}/{owner}/{project}",
                         licensed,
                     ),
@@ -581,7 +581,7 @@ def _describe(
     )
     steps = len(doc.get("workflow") or [])
     researcher = sum(1 for s in doc.get("workflow") or [] if s.get("type") == "researcher")
-    print(f"✓ Dossier {did[:23]}…  {dossier_url(did)}  ({steps} steps, {researcher} researcher actions)")
+    print(f"✓ Dossier {did[:23]}…  {dossier_url(did, site_url)}  ({steps} steps, {researcher} researcher actions)")
     print(f"  availability: {describe_availability(availability)}")
     if purpose:
         print(f"  purpose: {purpose}{f' ({kind})' if kind else ''}: {disclaimer(kind)}")
@@ -812,6 +812,7 @@ def _stamp_and_compile(
     purpose: str | None = None,
     kind: str | None = None,
     doc: dict[str, Any] | None = None,
+    site: str | None = None,
 ) -> bool:
     """Stamp paper.tex and recompile paper.pdf with tectonic when it is installed.
 
@@ -823,7 +824,7 @@ def _stamp_and_compile(
     """
     tex = bundle / "paper" / "paper.tex"
     old = tex.read_text(encoding="utf-8")
-    new = stamp_paper(point_bibliography(old, tex.parent), author, did, purpose=purpose, kind=kind, doc=doc)
+    new = stamp_paper(point_bibliography(old, tex.parent), author, did, purpose=purpose, kind=kind, doc=doc, site=site)
     if new == old:
         return False
     tex.write_text(new, encoding="utf-8")

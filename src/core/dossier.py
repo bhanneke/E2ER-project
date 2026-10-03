@@ -175,8 +175,9 @@ def short_id(did: str) -> str:
     return did.removeprefix("sha256:")[:16]
 
 
-def dossier_url(did: str) -> str:
-    return f"{SITE}/d/{short_id(did)}"
+def dossier_url(did: str, site: str | None = None) -> str:
+    """The dossier's address on the platform it is published to (``site``; e2er.org by default)."""
+    return f"{(site or SITE).rstrip('/')}/d/{short_id(did)}"
 
 
 def git_blob_sha(path: Path) -> str:
@@ -928,9 +929,9 @@ _E2ER_THANKS = re.compile(r"\\thanks\{(?:This paper was produced with e2er|Demon
 _WITH_E2ER = re.compile(r"\s*with e2er\s*$")
 
 
-def footnote(doc: dict[str, Any] | None, did: str) -> str:
-    """The first-page footnote: what the dossier at ``did`` lists, and only what it lists."""
-    url = f"\\url{{{dossier_url(did)}}}"
+def footnote(doc: dict[str, Any] | None, did: str, site: str | None = None) -> str:
+    """The first-page footnote: what the dossier at ``did`` lists, and only what it lists (its address on ``site``)."""
+    url = f"\\url{{{dossier_url(did, site)}}}"
     if doc is not None and doc.get("run", {}).get("workflow_recorded") is False:
         return (
             "This paper was produced with e2er. Its dossier records the template, specialists, skills, connectors "
@@ -960,6 +961,7 @@ def stamp_paper(
     purpose: str | None = None,
     kind: str | None = None,
     doc: dict[str, Any] | None = None,
+    site: str | None = None,
 ) -> str:
     """Write the dossier footnote (and the disclaimer) into a paper's first page; the author line with ``author``.
 
@@ -971,7 +973,7 @@ def stamp_paper(
     the replication wording when ``kind="replication"``; without a purpose an
     earlier disclaimer is removed.
     """
-    notes = f"\\thanks{{{footnote(doc, did)}}}"
+    notes = f"\\thanks{{{footnote(doc, did, site)}}}"
     if purpose == DEMONSTRATION:
         notes += f"\\thanks{{{disclaimer(kind)}}}"
     m = _AUTHOR.search(tex)
