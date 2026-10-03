@@ -26,6 +26,37 @@ _SKILLS_DIRS = [
 ]
 
 
+#: The directories of e2er's own skills (the first two of _SKILLS_DIRS).
+_BUNDLED_DIRS = _SKILLS_DIRS[:2]
+
+
+def is_bundled_skill(path: str) -> bool:
+    """True iff ``path`` (``"econometrics/event-study"``) is one of e2er's own skills.
+
+    Its own when the file is bundled with e2er, or when the path is in one of
+    e2er's skill categories (a skill e2er has since removed is still its own).
+    A path whose first part is not such a category is an installed pack's
+    (``~/.e2er/skills/<pack>/<skill>.md``, from ``e2er skills install`` or
+    copied there).
+    """
+    if "/" not in path:
+        return True
+    head = path.split("/", 1)[0]
+    return any((d / f"{path}.md").is_file() or (d / head).is_dir() for d in _BUNDLED_DIRS)
+
+
+def skill_component(path: str) -> str:
+    """The component id of a skill a specialist read, named by its origin.
+
+    e2er's own skills are ``skill:e2er/<category>/<name>`` (unchanged, so
+    existing dossiers keep their ids); a skill from an installed pack is
+    ``skill:<pack>/<skill>``, the id under which e2er.org lists contributed
+    parts and catalogue packs, so the dossier links the listed part and the
+    study credits its author.
+    """
+    return f"skill:e2er/{path}" if is_bundled_skill(path) else f"skill:{path}"
+
+
 def loaded_skill_names(specialist: str) -> list[str]:
     """The skills a specialist dispatched now reads: those of :func:`load_skills_for_specialist` that resolve to a file.
 

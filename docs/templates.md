@@ -56,7 +56,9 @@ check fails, and the run stops before estimation, when
 
 The calendar is a table `data_dictionary.json` declares under `tables` and the data analyst
 loaded; when it is not, the failure lists the tables in `data.db`. Before the pre-registration
-freezes, the run also stops if anything has already been estimated (see `researcher-step.md`).
+freezes, the run also stops if anything has already been estimated, and after it freezes, a change to
+the plan stops the run before the estimation until the researcher approves it as a deviation or puts the
+plan back (see `researcher-step.md`).
 
 The three settings are in the template, under the gate's `[steps.settings]`.
 A failed check stops the run at the check with its reasons (`e2er review`

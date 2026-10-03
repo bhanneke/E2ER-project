@@ -13,11 +13,18 @@
     {% if pending.kind == "preregister" %}
       The pre-registration below was assembled from the study's design files. Edit it if needed;
       approving it freezes it with its fingerprint before any analysis runs.
+    {% elif pending.kind == "deviation" %}
+      The pre-registered plan changed after it was frozen, so the estimation does not run yet. Approve to keep
+      the change as a deviation from the plan (your decision is recorded in the dossier and the deviation is
+      disclosed), edit the file back to the frozen version, or send back the step that changed it.
     {% else %}
       The run stopped here for you. Edit a file, give an instruction for the following steps,
       send a step back, or approve to continue. Everything you do here appears in the study's dossier.
     {% endif %}
   </p>
+  {% if pending.reasons %}
+    <ul>{% for r in pending.reasons %}<li class="small">{{ r }}</li>{% endfor %}</ul>
+  {% endif %}
 
   {% for f in files %}
     <section class="rv-file">

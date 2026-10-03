@@ -39,6 +39,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from ..skills.loader import skill_component
 from .availability import any_public
 from .demonstration import DEMONSTRATION, disclaimer
 from .run_outcome import effective_status, internal_review, read_aggregation
@@ -174,8 +175,9 @@ def short_id(did: str) -> str:
     return did.removeprefix("sha256:")[:16]
 
 
-def dossier_url(did: str) -> str:
-    return f"{SITE}/d/{short_id(did)}"
+def dossier_url(did: str, site: str | None = None) -> str:
+    """The dossier's address on the platform it is published to (``site``; e2er.org by default)."""
+    return f"{(site or SITE).rstrip('/')}/d/{short_id(did)}"
 
 
 def git_blob_sha(path: Path) -> str:
@@ -234,6 +236,8 @@ def _path_for(component: str) -> str | None:
         return "src/core/specialists/registry.py"
     if kind == "skill" and rest.startswith("e2er/"):
         return f"skills/files/{rest.removeprefix('e2er/')}.md"
+    if kind == "skill":
+        return None  # an installed pack's skill: not a file of E2ER (see _pin)
     if kind == "connector":
         backend = {v: k for k, v in BACKEND_CONNECTOR.items()}.get(rest)
         return f"src/modules/llm/{backend}.py" if backend else None
@@ -248,6 +252,8 @@ def _pin(component: str, repository: str | None, commit: str | None) -> dict[str
     replaced by the file as it is today.
     """
     rel = _path_for(component)
+    if rel is None and component.startswith("skill:"):
+        return {"note": "from an installed skill pack, not part of E2ER; listed on e2er.org under this id"}
     if rel is None:
         return {"note": "built into E2ER; no separate file"}
     if not commit:
@@ -619,6 +625,7 @@ def read_run(db: Path, paper_id: str, files: dict[str, Any] | None = None, bundl
                     "enforced": True,
                     "at": at,
                     "deviations": _clip(list(data.get("deviations") or [])),
+                    **({"approved": _clip(list(data["approved"]))} if data.get("approved") else {}),
                     **({"frozen_at": _utc(data["frozen_at"])} if data.get("frozen_at") else {}),
                 }
             )
@@ -692,7 +699,7 @@ def read_run(db: Path, paper_id: str, files: dict[str, Any] | None = None, bundl
                 got = list(dict.fromkeys([*base, *template_skills.get(i, {}).get(agent, [])]))
             merged = rec.skills.setdefault(agent, [])
             merged += [x for x in got if x not in merged]
-            for comp in [f"agent:{agent}", *(f"skill:e2er/{x}" for x in got)]:
+            for comp in [f"agent:{agent}", *(skill_component(x) for x in got)]:
                 segs = rec.component_segments.setdefault(comp, [])
                 if i not in segs:
                     segs.append(i)
@@ -911,6 +918,9 @@ def _preregistration(bundle: Path | None) -> dict[str, Any] | None:
         out["plan_files"] = dict(lock["plan_files"])
     if lock.get("deposit"):
         out["deposit"] = lock["deposit"]
+    if lock.get("approved_deviations"):
+        # Changes to the plan after the freeze that the researcher approved at the estimation check.
+        out["approved_deviations"] = list(lock["approved_deviations"])
     return out
 
 
@@ -919,9 +929,9 @@ _E2ER_THANKS = re.compile(r"\\thanks\{(?:This paper was produced with e2er|Demon
 _WITH_E2ER = re.compile(r"\s*with e2er\s*$")
 
 
-def footnote(doc: dict[str, Any] | None, did: str) -> str:
-    """The first-page footnote: what the dossier at ``did`` lists, and only what it lists."""
-    url = f"\\url{{{dossier_url(did)}}}"
+def footnote(doc: dict[str, Any] | None, did: str, site: str | None = None) -> str:
+    """The first-page footnote: what the dossier at ``did`` lists, and only what it lists (its address on ``site``)."""
+    url = f"\\url{{{dossier_url(did, site)}}}"
     if doc is not None and doc.get("run", {}).get("workflow_recorded") is False:
         return (
             "This paper was produced with e2er. Its dossier records the template, specialists, skills, connectors "
@@ -951,6 +961,7 @@ def stamp_paper(
     purpose: str | None = None,
     kind: str | None = None,
     doc: dict[str, Any] | None = None,
+    site: str | None = None,
 ) -> str:
     """Write the dossier footnote (and the disclaimer) into a paper's first page; the author line with ``author``.
 
@@ -962,7 +973,7 @@ def stamp_paper(
     the replication wording when ``kind="replication"``; without a purpose an
     earlier disclaimer is removed.
     """
-    notes = f"\\thanks{{{footnote(doc, did)}}}"
+    notes = f"\\thanks{{{footnote(doc, did, site)}}}"
     if purpose == DEMONSTRATION:
         notes += f"\\thanks{{{disclaimer(kind)}}}"
     m = _AUTHOR.search(tex)

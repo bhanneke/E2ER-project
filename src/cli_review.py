@@ -105,7 +105,11 @@ def review(
         return _post(http, paper_id, {"action": "approve"})
 
     # Interactive.
-    label = {"preregister": " (pre-registration)", "gate": " (a check failed; it runs again on resume)"}
+    label = {
+        "preregister": " (pre-registration)",
+        "gate": " (a check failed; it runs again on resume)",
+        "deviation": " (the pre-registered plan changed; approve the deviation, edit it back or send back)",
+    }
     print(f"Researcher step: {pending['stage']}" + label.get(pending["kind"], ""))
     for reason in pending.get("reasons") or []:
         print(f"  - {reason}")

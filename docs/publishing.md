@@ -1,6 +1,6 @@
 # Publishing a study
 
-`e2er publish <folder>` describes an exported study, writes its dossier and, with `--to https://e2er.org`, publishes the description. The files stay on your computer or in your repository; e2er.org receives the description, the dossier and a fingerprint (SHA-256) of every file.
+`e2er publish <folder>` describes an exported study, writes its dossier and, with `--to https://e2er.org`, publishes the description. The files stay on your computer or in your repository; e2er.org receives the description, the dossier and a fingerprint (SHA-256) of every file. The dossier's address (in the paper's footnote, e2er.json and the output) is on the platform you publish to: `--to`, else `E2ER_URL`, else https://e2er.org. Prepare with `--offline` under the same `E2ER_URL` you publish to, or the footnote changes when you publish.
 
 ## The run's database
 
@@ -8,7 +8,7 @@ The dossier lists the steps of the run: each specialist with its model, each che
 
 `--no-db` publishes a folder whose database is gone. The dossier then records the template, components and data but no steps, no commit and no researcher actions, says so (`run.workflow_recorded: false`), and the paper's footnote says so too.
 
-Each part of a run that a process ran (every start and resume) is a segment with the e2er commit and version it ran on (`e2er.segments`); every step names its segment, and every template, specialist, skill and connector is pinned at each commit it ran on. A file git cannot find at that commit is recorded as unresolved. In runs started after e2er 0.12.1 the runner records, with each step, the SHA-256 of every file the step wrote and the skills it read; for runs before that, the dossier gives the exported file's hash, as `sha256_at_export`, to the last step that wrote it.
+Each part of a run that a process ran (every start and resume) is a segment with the e2er commit and version it ran on (`e2er.segments`); every step names its segment, and every template, specialist, skill and connector is pinned at each commit it ran on. A file git cannot find at that commit is recorded as unresolved. A skill is named by where it comes from: e2er's own as `skill:e2er/<category>/<name>`, a skill from an installed pack (`~/.e2er/skills/<pack>/<skill>.md`) as `skill:<pack>/<skill>`, the id e2er.org lists it under, so the dossier links the listed part and its author is credited. A pack's skill is not part of e2er and has no pin at an e2er commit. In runs started after e2er 0.12.1 the runner records, with each step, the SHA-256 of every file the step wrote and the skills it read; for runs before that, the dossier gives the exported file's hash, as `sha256_at_export`, to the last step that wrote it.
 
 ## What publish changes in the folder
 
@@ -23,7 +23,7 @@ e2er publish ./my-study --owner you --project my-study --data private --code pub
   --repo https://github.com/you/my-study --commit 3b91f0e
 ```
 
-Both are private unless you say otherwise; run in a terminal without the two flags, `e2er publish` asks. For private material, only fingerprints are published, never contents or an address. For public material, give its address with `--data-url` or `--code-url`; public code defaults to your repository at the pinned commit.
+Both are private unless you say otherwise; run in a terminal without the two flags, `e2er publish` asks. For private material, only fingerprints are published, never contents or an address. For public material, give its address with `--data-url` or `--code-url`; public code defaults to your repository. The dossier names the repository, not the commit: the dossier's address is in the paper's footnote and the paper's fingerprint in provenance.json, so a commit-dependent dossier would change the very files the commit holds. The commit (`--commit`) is recorded beside the files, in e2er.json and in the publish request; e2er.org stores it with the study version, reads every file at it and compares it with provenance.json and the published fingerprints. So you can prepare the folder (`e2er publish --offline`), commit it, and publish with `--commit`: nothing the commit holds changes.
 
 The study page and the dossier show what you chose, for instance "data private · code public". A dossier lists availability only when something is public, so a private study's dossier address does not change.
 

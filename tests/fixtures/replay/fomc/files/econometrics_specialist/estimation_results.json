@@ -1,0 +1,262 @@
+{
+  "h1_pooled_m1p1": {
+    "specification": "H1: Mean CAR test, pooled over all 31 events, window [-1,+1]",
+    "hypothesis": "H1",
+    "n_events": 31,
+    "event_window": [
+      -1,
+      1
+    ],
+    "coefficients": {
+      "mean_car": {
+        "estimate": -0.7108317348501935,
+        "se": 0.45794616136614125,
+        "t_stat": -1.5522168211425684,
+        "p_value": 0.13109727222617007,
+        "ci_lower": -1.6460825666771457,
+        "ci_upper": 0.22441909697675877
+      }
+    },
+    "diagnostics": {
+      "n_events": 31,
+      "df": 30,
+      "sd_car": 2.5497363173492076
+    },
+    "df": 30
+  },
+  "h1_hikes_m1p1": {
+    "specification": "H1: Mean CAR test, rate hikes only (n=20), window [-1,+1]",
+    "hypothesis": "H1a",
+    "n_events": 20,
+    "event_window": [
+      -1,
+      1
+    ],
+    "coefficients": {
+      "mean_car": {
+        "estimate": -1.0588293600319225,
+        "se": 0.529988040628786,
+        "t_stat": -1.9978363262229673,
+        "p_value": 0.060254672184782886,
+        "ci_lower": -2.1681070776166997,
+        "ci_upper": 0.050448357552854706
+      }
+    },
+    "diagnostics": {
+      "n_events": 20,
+      "df": 19,
+      "sd_car": 2.3701785722157718
+    },
+    "df": 19
+  },
+  "h1_cuts_m1p1": {
+    "specification": "H1: Mean CAR test, rate cuts only (n=11), window [-1,+1]",
+    "hypothesis": "H1b",
+    "n_events": 11,
+    "event_window": [
+      -1,
+      1
+    ],
+    "coefficients": {
+      "mean_car": {
+        "estimate": -0.07810877997432218,
+        "se": 0.8606113427733799,
+        "t_stat": -0.09075964502467654,
+        "p_value": 0.9294758159276869,
+        "ci_lower": -1.9956703492677665,
+        "ci_upper": 1.8394527893191224
+      }
+    },
+    "diagnostics": {
+      "n_events": 11,
+      "df": 10,
+      "sd_car": 2.8543249143032403
+    },
+    "df": 10
+  },
+  "h1_pooled_0p5": {
+    "specification": "H1: Mean CAR test, pooled over all 31 events, window [0,+5]",
+    "hypothesis": "H1",
+    "n_events": 31,
+    "event_window": [
+      0,
+      5
+    ],
+    "coefficients": {
+      "mean_car": {
+        "estimate": -1.4739777633415672,
+        "se": 0.6110617799912468,
+        "t_stat": -2.4121583309672574,
+        "p_value": 0.022182090027257136,
+        "ci_lower": -2.721932405716097,
+        "ci_upper": -0.22602312096703714
+      }
+    },
+    "diagnostics": {
+      "n_events": 31,
+      "df": 30,
+      "sd_car": 3.402248002122743
+    },
+    "df": 30
+  },
+  "h1_hikes_0p5": {
+    "specification": "H1: Mean CAR test, rate hikes only (n=20), window [0,+5]",
+    "hypothesis": "H1a",
+    "n_events": 20,
+    "event_window": [
+      0,
+      5
+    ],
+    "coefficients": {
+      "mean_car": {
+        "estimate": -1.1085120535307482,
+        "se": 0.5513060056593789,
+        "t_stat": -2.0107019371300585,
+        "p_value": 0.058766349684589304,
+        "ci_lower": -2.262408784715592,
+        "ci_upper": 0.04538467765409515
+      }
+    },
+    "diagnostics": {
+      "n_events": 20,
+      "df": 19,
+      "sd_car": 2.46551541011651
+    },
+    "df": 19
+  },
+  "h1_cuts_0p5": {
+    "specification": "H1: Mean CAR test, rate cuts only (n=11), window [0,+5]",
+    "hypothesis": "H1b",
+    "n_events": 11,
+    "event_window": [
+      0,
+      5
+    ],
+    "coefficients": {
+      "mean_car": {
+        "estimate": -2.1384608720885114,
+        "se": 1.4277571922572945,
+        "t_stat": -1.497776291154653,
+        "p_value": 0.16507497610009142,
+        "ci_lower": -5.319702143359825,
+        "ci_upper": 1.0427803991828024
+      }
+    },
+    "diagnostics": {
+      "n_events": 11,
+      "df": 10,
+      "sd_car": 4.735334898448763
+    },
+    "df": 10
+  },
+  "H2": {
+    "specification": "H2: CAR_i[-1,+1] = alpha + beta * dDGS2_0,i, pooled over all 31 events",
+    "hypothesis": "H2",
+    "estimator": "OLS",
+    "standard_errors": "HC1 (heteroskedasticity-robust via statsmodels)",
+    "event_window": [
+      -1,
+      1
+    ],
+    "n_observations": 31,
+    "df": 29,
+    "coefficients": {
+      "beta": {
+        "estimate": -0.0208372989042048,
+        "se": 0.043672009547247044,
+        "t_stat": -0.47713167129764744,
+        "p_value": 0.636844547700604,
+        "ci_lower": -0.11015658736173689,
+        "ci_upper": 0.0684819895533273
+      }
+    },
+    "diagnostics": {
+      "n_obs": 31,
+      "df": 29,
+      "r_squared": 0.0053083937831365224,
+      "adj_r_squared": -0.028991316776065812
+    }
+  },
+  "H2_hikes": {
+    "specification": "H2: CAR_i[-1,+1] = alpha + beta * dDGS2_0,i, rate hikes only (n=20)",
+    "hypothesis": "H2a",
+    "estimator": "OLS",
+    "standard_errors": "HC1 (heteroskedasticity-robust via statsmodels)",
+    "event_window": [
+      -1,
+      1
+    ],
+    "n_observations": 20,
+    "df": 18,
+    "coefficients": {
+      "beta": {
+        "estimate": -0.0007805860181076263,
+        "se": 0.04559977205995561,
+        "t_stat": -0.017118200000677507,
+        "p_value": 0.9865306389934435,
+        "ci_lower": -0.09658215216883585,
+        "ci_upper": 0.0950209801326206
+      }
+    },
+    "diagnostics": {
+      "n_obs": 20,
+      "df": 18,
+      "r_squared": 9.969716863955647e-06,
+      "adj_r_squared": -0.05554503196553262
+    }
+  },
+  "H2_cuts": {
+    "specification": "H2: CAR_i[-1,+1] = alpha + beta * dDGS2_0,i, rate cuts only (n=11)",
+    "hypothesis": "H2b",
+    "estimator": "OLS",
+    "standard_errors": "HC1 (heteroskedasticity-robust via statsmodels)",
+    "event_window": [
+      -1,
+      1
+    ],
+    "n_observations": 11,
+    "df": 9,
+    "coefficients": {
+      "beta": {
+        "estimate": -0.09438849604116883,
+        "se": 0.12191603518240608,
+        "t_stat": -0.7742090357511086,
+        "p_value": 0.45866154845411095,
+        "ci_lower": -0.3701817282890067,
+        "ci_upper": 0.18140473620666903
+      }
+    },
+    "diagnostics": {
+      "n_obs": 11,
+      "df": 9,
+      "r_squared": 0.0718595023991847,
+      "adj_r_squared": -0.03126721955646139
+    }
+  },
+  "_metadata": {
+    "analysis_note": "All 31 FOMC events from fomc_announcement_dates table were estimated successfully; DGS2 data loaded from FRED",
+    "sample_composition": {
+      "total_events": 31,
+      "rate_hikes": 20,
+      "rate_cuts": 11,
+      "events_with_dgs2_data": 31
+    },
+    "h1_specification": "Market model abnormal returns (SPY benchmark), cross-sectional t-test of mean CARs",
+    "h1_windows": [
+      "[-1, +1]",
+      "[0, +5]"
+    ],
+    "h1_results_available": true,
+    "h2_specification": "OLS regression of CAR[-1,+1] on day-0 DGS2 change (basis points), HC1 standard errors",
+    "h2_results_available": true,
+    "h2_primary_sample": 31,
+    "h2_hikes_sample": 20,
+    "h2_cuts_sample": 11,
+    "estimation_results_included": {
+      "h1_all_events": true,
+      "h1_by_direction": true,
+      "h2_pooled": true,
+      "h2_by_direction": true
+    }
+  }
+}

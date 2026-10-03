@@ -49,3 +49,30 @@ def test_the_published_description_matches_the_sites_format(bundle: Path, tmp_pa
     )
     prov = json.loads((bundle / "provenance.json").read_text())
     assert "amendments" not in manifest and isinstance(prov.get("amendments", []), list)
+
+
+def test_publishing_to_another_platform_names_its_dossier_address(
+    bundle: Path,  # noqa: F811
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+):
+    """`--to https://e2er.example`: the dossier address in e2er.json, the request, the output and the paper is there."""
+    make_run_db(tmp_path / "study", paper_id_of(bundle))
+    sent: list[dict] = []
+
+    def server(base, method, path, token=None, body=None):
+        sent.append(body)
+        oid = body["manifest"]["id"]
+        return 201, {"id": oid, "owner_project": oid, "version": 1, "study_url": f"{base}/{oid}", "dossier_url": "x"}
+
+    monkeypatch.setattr(pc, "request", server)
+    monkeypatch.setattr(pc, "load_token", lambda base: "tok")
+    monkeypatch.delenv("E2ER_URL", raising=False)
+    assert publish(str(bundle), **ARGS, to_url="https://e2er.example", site="https://e2er.example") == 0
+    url = sent[0]["manifest"]["dossier"]["url"]
+    assert url.startswith("https://e2er.example/d/")
+    assert json.loads((bundle / "e2er.json").read_text())["dossier"]["url"] == url
+    assert f"\\url{{{url}}}" in (bundle / "paper" / "paper.tex").read_text()
+    out = capsys.readouterr().out
+    assert "https://e2er.org/d/" not in out and url in out

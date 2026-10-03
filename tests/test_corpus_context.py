@@ -380,3 +380,20 @@ async def test_a_corpus_failure_does_not_stop_acquisition(tmp_path, monkeypatch)
 
     written = await acquire_literature(workspace, "paper-1", ["q"], get_settings())
     assert written == 0
+
+
+async def test_a_limit_of_zero_sends_no_literature_request(tmp_path, monkeypatch):
+    """LITERATURE_ACQUIRE_LIMIT=0: no search source is even built, so nothing reaches OpenAlex or arXiv."""
+    from src.config import get_settings
+    from src.modules.literature.discovery import acquire_literature
+
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+
+    def _no_sources(settings):
+        raise AssertionError("a literature search source was built with the limit 0")
+
+    monkeypatch.setattr("src.modules.literature.registry.search_sources", _no_sources)
+    monkeypatch.setattr("src.modules.literature.corpus_context.gather", lambda *a, **k: corpus_context.CorpusEvidence())
+    written = await acquire_literature(workspace, "paper-1", ["equity loading bitcoin"], get_settings(), limit=0)
+    assert written == 0 and not (workspace / "literature.bib").exists()

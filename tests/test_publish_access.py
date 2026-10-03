@@ -42,15 +42,42 @@ def test_data_and_code_are_private_unless_stated(bundle: Path, tmp_path: Path):
     assert dossier_id(doc) == m["dossier"]["id"]
 
 
-def test_public_code_points_at_the_repository_commit(bundle: Path, tmp_path: Path):
+def test_public_code_points_at_the_repository_not_the_commit(bundle: Path, tmp_path: Path):
     assert publish(str(bundle), **BASE, **REPO, code="public", out=str(tmp_path / "e")) == 0
     m = _manifest(bundle)
     assert m["availability"]["code"] == {
         "access": "public",
-        "url": "https://github.com/bhanneke/E2ER-project/tree/abc1234/examples/showcase",
+        "url": "https://github.com/bhanneke/E2ER-project",
     }
     assert m["dossier"]["doc"]["schema"] == "e2er-dossier/0.6"  # built from the run database
     assert m["dossier"]["doc"]["availability"] == m["availability"]
+    # The commit is recorded beside the files: in e2er.json and the publish request.
+    assert m["repository"]["commit"] == "abc1234"
+    assert request_body(m, bundle)["repository"]["commit"] == "abc1234"
+
+
+def test_public_data_and_code_at_a_commit_leave_the_committed_files_as_they_are(bundle: Path, tmp_path: Path):
+    """Prepare (no commit), commit the folder, publish with the commit: no file the commit holds changes."""
+    import hashlib
+
+    public = dict(data="public", code="public", data_url="https://github.com/bhanneke/E2ER-project")
+    repo = dict(repo="https://github.com/bhanneke/E2ER-project", path="examples/showcase")
+    assert publish(str(bundle), **BASE, **repo, **public, out=str(tmp_path / "e")) == 0
+    first = _manifest(bundle)
+
+    def fingerprints() -> dict[str, str]:
+        prov = json.loads((bundle / "provenance.json").read_text())
+        out = {p: hashlib.sha256((bundle / p).read_bytes()).hexdigest() for p in prov["files"]}
+        out["provenance.json"] = hashlib.sha256((bundle / "provenance.json").read_bytes()).hexdigest()
+        return out
+
+    before = fingerprints()
+    sha = "0123456789abcdef0123456789abcdef01234567"
+    assert publish(str(bundle), **BASE, **repo, commit=sha, **public, out=str(tmp_path / "e")) == 0
+    second = _manifest(bundle)
+    assert fingerprints() == before
+    assert second["dossier"]["id"] == first["dossier"]["id"] and second["content_id"] == first["content_id"]
+    assert second["repository"]["commit"] == sha and sha not in json.dumps(second["dossier"]["doc"])
 
 
 def test_private_material_carries_no_address_and_no_contents(bundle: Path, tmp_path: Path, capsys):

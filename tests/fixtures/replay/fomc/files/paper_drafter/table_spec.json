@@ -1,0 +1,37 @@
+{
+  "tables": [
+    {
+      "filename": "main.tex",
+      "label": "tab:main",
+      "caption": "Hypothesis 1: Mean Cumulative Abnormal Returns for Bank Stocks (KBE) Around FOMC Announcements",
+      "columns": [
+        {"spec_key": "h1_hikes_m1p1", "header": "Rate Hikes (Pre-Reg)\\n$[-1, +1]$ ($n=20$)"},
+        {"spec_key": "h1_cuts_m1p1", "header": "Rate Cuts (Pre-Reg)\\n$[-1, +1]$ ($n=11$)"},
+        {"spec_key": "h1_hikes_0p5", "header": "Rate Hikes (Secondary)\\n$[0, +5]$ ($n=20$)"},
+        {"spec_key": "h1_cuts_0p5", "header": "Rate Cuts (Secondary)\\n$[0, +5]$ ($n=11$)"}
+      ],
+      "rows": [
+        {"type": "coefficient", "var": "mean_car", "label": "Mean CAR (\\%)"},
+        {"type": "stat", "field": "sd_car", "label": "SD (\\%)", "decimals": 2},
+        {"type": "stat", "field": "n_events", "label": "$N$", "decimals": 0}
+      ],
+      "notes": "Cumulative abnormal returns measured in percent. Market model: daily KBE returns regressed on SPY returns over estimation window $[-250, -12]$ trading days. Columns marked ``Pre-Reg'' are from the pre-registered specification; columns marked ``Secondary'' are additional analyses not pre-registered. Standard errors in parentheses. $t$-statistics and $p$-values computed with $n-1$ degrees of freedom. */**/*** denote significance at the 10/5/1\\% levels."
+    },
+    {
+      "filename": "h2_results.tex",
+      "label": "tab:h2",
+      "caption": "Hypothesis 2: Sensitivity of Abnormal Returns to Treasury Yield Surprise, Event Window $[-1, +1]$",
+      "columns": [
+        {"spec_key": "H2", "header": "All Events\\n($n=31$)"},
+        {"spec_key": "H2_hikes", "header": "Rate Hikes\\n($n=20$)"},
+        {"spec_key": "H2_cuts", "header": "Rate Cuts\\n($n=11$)"}
+      ],
+      "rows": [
+        {"type": "coefficient", "var": "beta", "label": "DGS2 Coefficient (bp)"},
+        {"type": "stat", "field": "r_squared", "label": "$R^2$", "decimals": 4},
+        {"type": "stat", "field": "n_obs", "label": "$N$", "decimals": 0}
+      ],
+      "notes": "Cumulative abnormal returns regressed on the same-day change in the 2-year Treasury yield (DGS2), measured in basis points. OLS estimation with heteroskedasticity-consistent (HC1) standard errors. Standard errors in parentheses. $t$-statistics and $p$-values computed with reported degrees of freedom. */**/*** denote significance at the 10/5/1\\% levels."
+    }
+  ]
+}

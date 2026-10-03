@@ -1,0 +1,46 @@
+{
+  "id": 22179151,
+  "doi": "10.5281/zenodo.22179151",
+  "links": {
+    "html": "https://zenodo.org/records/22179151"
+  },
+  "access": {
+    "files": "open"
+  },
+  "metadata": {
+    "title": "Replication package: Political Rupture and Selective Damage to Local Service Delivery — Evidence from Brazil",
+    "creators": [
+      {
+        "name": "Peixoto, Vitor de Moraes"
+      },
+      {
+        "name": "Leite, Davi Athaydes"
+      }
+    ],
+    "license": {
+      "id": "cc-by-4.0"
+    },
+    "publication_date": "2026-08-30",
+    "version": "v2",
+    "related_identifiers": [
+      {
+        "identifier": "10.2139/ssrn.7079720",
+        "relation": "isSupplementTo",
+        "resource_type": "publication-preprint"
+      },
+      {
+        "identifier": "10.2139/ssrn.7009639",
+        "relation": "references",
+        "resource_type": "publication-preprint"
+      }
+    ],
+    "description": "Trimmed copy for the e2er end-to-end tests: the entry-point scripts, the result files they write and the documentation of the published package."
+  },
+  "files": [
+    {
+      "key": "replication_package.zip",
+      "size": 34246,
+      "checksum": "md5:47d3bc6752e056a23af9af15838df7e9"
+    }
+  ]
+}

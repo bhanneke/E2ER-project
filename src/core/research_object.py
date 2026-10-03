@@ -26,6 +26,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from ..skills.loader import skill_component
+
 SCHEMA = "e2er-research-object/0.1"
 MANIFEST_NAME = "e2er.json"
 _ID = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,38})$")
@@ -200,7 +202,7 @@ def build_manifest(
     outputs = sorted(p for p in files if p.startswith(("paper/", "results/", "replication/")))
 
     uses = [f"template:{template}"] + [f"agent:{a}" for a in agents]
-    uses += sorted({f"skill:e2er/{s}" for ss in skills.values() for s in ss})
+    uses += sorted({skill_component(s) for ss in skills.values() for s in ss})
 
     manifest: dict[str, Any] = {
         "schema": SCHEMA,

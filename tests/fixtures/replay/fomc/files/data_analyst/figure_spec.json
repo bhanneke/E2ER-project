@@ -1,0 +1,65 @@
+{
+  "stage": "data_loading",
+  "note": "Descriptive figures of raw data only. No estimation figures (CARs, abnormal returns) at this stage.",
+  "figures": [
+    {
+      "filename": "fig_prices_timeseries.pdf",
+      "figure_type": "time_series",
+      "label": "fig:prices_ts",
+      "caption_hint": "Daily closing prices: S&P 500 (SPY), Bank Sector ETF (KBE), and Financial Sector ETF (XLF), 2014-2025",
+      "description": "Three-series line plot showing raw daily closing prices over the full data period (2014-01-02 to 2025-12-30). FOMC announcement dates marked on x-axis.",
+      "series": [
+        {
+          "label": "SPY (S&P 500)",
+          "x_label": "Date",
+          "y_label": "Price ($)",
+          "data_source": "spy_prices table, column close, n=3,017 trading days",
+          "note": "Market baseline; mean=320.34, range=[140.76, 685.03]"
+        },
+        {
+          "label": "KBE (Bank Sector ETF)",
+          "x_label": "Date",
+          "y_label": "Price ($)",
+          "data_source": "kbe_prices table, column close, n=3,017 trading days",
+          "note": "Treatment asset; mean=36.69, range=[19.34, 61.54]"
+        },
+        {
+          "label": "XLF (Financial Sector ETF)",
+          "x_label": "Date",
+          "y_label": "Price ($)",
+          "data_source": "xlf_prices table, column close, n=3,017 trading days",
+          "note": "Robustness check; mean=27.32, range=[13.10, 55.06]"
+        }
+      ],
+      "event_markers": "31 FOMC announcement dates (2015-12-16 to 2025-12-10)",
+      "status": "ready_for_rendering"
+    },
+    {
+      "filename": "fig_fed_target_timeseries.pdf",
+      "figure_type": "time_series",
+      "label": "fig:fed_target_ts",
+      "caption_hint": "Federal Funds Target Rate Upper Bound (DFEDTARU), 2015-2025, with FOMC announcement dates",
+      "description": "Single-series line plot showing the Federal Funds Target Rate Upper Bound over the study period (2015-01-02 to 2025-12-30). FOMC announcement dates marked to show policy changes.",
+      "series": [
+        {
+          "label": "DFEDTARU (Fed Funds Target Rate Upper Bound)",
+          "x_label": "Date",
+          "y_label": "Basis Points",
+          "data_source": "dfedtaru table, column value, n=2,765 trading days",
+          "note": "Fully populated; mean=213.98 bps, range=[25.0, 550.0] bps"
+        }
+      ],
+      "event_markers": "31 FOMC announcement dates (20 hikes, 11 cuts)",
+      "status": "ready_for_rendering"
+    },
+    {
+      "filename": "fig_dgs2_status.txt",
+      "figure_type": "data_quality_note",
+      "label": "data_quality:dgs2",
+      "caption_hint": "Data quality status: 2-year Treasury yield unavailable",
+      "description": "CRITICAL DATA ISSUE: The 2-year Treasury Constant Maturity Yield (DGS2) required for H2 hypothesis testing contains all NULL values (2,765 observations with 0 non-null). This blocks the planned surprise sensitivity analysis (CAR regressed on same-day change in DGS2). Action required: re-fetch DGS2 from FRED or substitute alternative surprise measure before proceeding with estimation.",
+      "impact": "H2 analysis cannot proceed until DGS2 is populated",
+      "status": "blocking_issue"
+    }
+  ]
+}

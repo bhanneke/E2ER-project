@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
+from contextvars import ContextVar
 from pathlib import Path
 
 from ...logging_config import get_logger
@@ -30,6 +31,11 @@ logger = get_logger(__name__)
 # wrong. That coaching machinery was built for this and, until now, only the
 # sequential path could reach it.
 MAX_SPECIALIST_ATTEMPTS = 3
+
+#: Called with each work order that succeeded, as it succeeds. The runner sets it
+#: in the initial phase, so a pause (the spending limit, say) in the middle of a
+#: dispatch keeps a record of what is done and the resume runs only the rest.
+specialist_done: ContextVar[Callable[[WorkOrder], None] | None] = ContextVar("specialist_done", default=None)
 
 
 def _inject_context(work_order: WorkOrder, workspace: Path) -> WorkOrder:
@@ -155,6 +161,9 @@ async def execute_work_order(
             specialist=work_order.specialist,
             payload={"success": contribution.success, "outputs": outputs},
         )
+        done = specialist_done.get()
+        if contribution.success and done is not None:
+            done(work_order)
         return contribution
     except asyncio.CancelledError:
         # Cancellation must propagate, not be swallowed as a specialist failure.

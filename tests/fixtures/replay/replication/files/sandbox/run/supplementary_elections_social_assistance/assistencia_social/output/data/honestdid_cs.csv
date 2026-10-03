@@ -1,0 +1,12 @@
+desfecho,horizonte_e,ic_orig,breakdown_Mbar
+TAC (ancora),0,"[-0.01, 0.016]",0
+TAC (ancora),1,"[-0.05, 0.015]",0
+CRAS: trabalhadores (mecanismo),0,"[-0.138, 0.01]",0
+CRAS: trabalhadores (mecanismo),1,"[-0.122, 0.101]",0
+CRAS: trabalhadores (mecanismo),2,"[-0.154, 0.116]",0
+CadUnico: familias,0,"[-0.029, 0]",0.3
+CadUnico: familias,1,"[-0.069, -0.011]",0.5
+CadUnico: familias,2,"[-0.085, 0.014]",0
+PBF: valor (contraste federal),0,"[-0.035, 0.016]",0
+PBF: valor (contraste federal),1,"[-0.079, 0.023]",0
+PBF: valor (contraste federal),2,"[-0.036, 0.075]",0

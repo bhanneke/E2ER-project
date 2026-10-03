@@ -5,8 +5,10 @@ specialists wrote (question and hypotheses, identification, analysis plan) and
 stops for the researcher, who may edit it. On approval e2er freezes it: the
 file's SHA-256, the SHA-256 of each plan file it was built from and the time go
 into ``preregistration.lock.json`` and the event log. The estimation gate and
-``e2er verify`` then compare the plan files with the frozen fingerprints, so a
-later change to the plan shows as a deviation. Depositing the frozen file on
+``e2er verify`` then compare the plan files with the frozen fingerprints. A
+later change to the plan stops the run at the estimation check until the
+researcher decides: approve the deviation (recorded in the lock and the
+dossier, and reported by ``e2er verify``), or put the plan back. Depositing the frozen file on
 Zenodo, with the researcher's own account, gives it a DOI.
 """
 
@@ -402,6 +404,78 @@ def deviations(folder: Path, lock: dict[str, Any], prereg_dir: Path | None = Non
         elif _sha256(p) != digest:
             out.append(f"{name} changed after the pre-registration")
     return out
+
+
+def deviation_details(folder: Path, lock: dict[str, Any], prereg_dir: Path | None = None) -> list[dict[str, Any]]:
+    """Each change since the freeze, with its fingerprints.
+
+    [{"file", "sha256_frozen", "sha256_now" (None when the file is missing),
+    "text" (as ``deviations`` words it), "approved" (the researcher approved
+    exactly this version of the file)}].
+    """
+    approvals = {
+        (a.get("file"), a.get("sha256_approved")) for a in lock.get("approved_deviations") or [] if isinstance(a, dict)
+    }
+    pairs: list[tuple[str, Path, str | None, str]] = []
+    name = lock.get("file", PREREG_FILE)
+    pairs.append((name, (prereg_dir or folder) / name, lock.get("sha256"), "was changed after it was frozen"))
+    for plan, digest in (lock.get("plan_files") or {}).items():
+        pairs.append((plan, folder / plan, digest, "changed after the pre-registration"))
+    out: list[dict[str, Any]] = []
+    for fname, path, frozen, verb in pairs:
+        now = _sha256(path) if path.is_file() else None
+        if now == frozen:
+            continue
+        out.append(
+            {
+                "file": fname,
+                "sha256_frozen": frozen,
+                "sha256_now": now,
+                "text": f"{fname} {verb}" if now is not None else f"{fname} is missing",
+                "approved": (fname, now) in approvals,
+            }
+        )
+    return out
+
+
+def unapproved_deviations(folder: Path, lock: dict[str, Any], prereg_dir: Path | None = None) -> list[str]:
+    """The changes since the freeze that the researcher has not approved (as ``deviations`` words them)."""
+    return [d["text"] for d in deviation_details(folder, lock, prereg_dir) if not d["approved"]]
+
+
+def describe_deviation(d: dict[str, Any]) -> str:
+    """'identification_spec.json changed after the pre-registration (SHA-256 1a2b3c4d5e6f → 9f8e7d6c5b4a)'."""
+    before = (d.get("sha256_frozen") or "")[:12] or "none"
+    after = (d.get("sha256_now") or "")[:12] or "missing"
+    return f"{d['text']} (SHA-256 {before} → {after})"
+
+
+def approve_deviations(workspace: Path) -> list[dict[str, Any]]:
+    """Record the researcher's approval of every change since the freeze, in preregistration.lock.json.
+
+    The frozen fingerprints stay as they were; the lock gains one entry per
+    approved file version under ``approved_deviations`` (file, SHA-256 frozen,
+    SHA-256 approved, time). A later change to the same file is a new deviation
+    and needs approving again. Returns the entries added.
+    """
+    lock_path = workspace / LOCK_FILE
+    lock = json.loads(lock_path.read_text(encoding="utf-8"))
+    at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    added = [
+        {
+            "file": d["file"],
+            "sha256_frozen": d["sha256_frozen"],
+            "sha256_approved": d["sha256_now"],
+            "deviation": d["text"],
+            "approved_at": at,
+        }
+        for d in deviation_details(workspace, lock)
+        if not d["approved"]
+    ]
+    if added:
+        lock.setdefault("approved_deviations", []).extend(added)
+        lock_path.write_text(json.dumps(lock, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    return added
 
 
 def record_deposit(workspace: Path, deposit: dict[str, Any]) -> dict[str, Any]:

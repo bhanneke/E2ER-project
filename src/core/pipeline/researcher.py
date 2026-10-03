@@ -66,7 +66,7 @@ def instructions_block(workspace: Path) -> str:
 @dataclass(frozen=True)
 class PendingReview:
     stage: str
-    kind: str  # researcher | preregister | review_at
+    kind: str  # researcher | preregister | review_at | gate | deviation
     files: tuple[str, ...]
 
 
@@ -116,6 +116,16 @@ def apply_action(
 
     if kind == "approve":
         state.metadata.pop("sent_back", None)
+        if pending.kind == "deviation":
+            # The researcher keeps a change to the pre-registered plan: the
+            # decision and each changed file (SHA-256 frozen and approved) go
+            # into the lock and, through this event, the dossier.
+            from .preregistration import approve_deviations
+
+            approved = approve_deviations(workspace)
+            payload.update(decision="deviation_approved", deviations=approved)
+            state.metadata.pop("preregistration_deviation", None)
+            state.metadata.pop("review", None)
         state.approve(pending.stage)
 
     elif kind == "edit":

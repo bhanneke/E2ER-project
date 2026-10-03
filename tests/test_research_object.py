@@ -267,3 +267,23 @@ def test_publish_refuses_a_recompile_that_loses_citations(bundle: Path, workflow
         before_tex,
         before_tex.replace(b"\\bibliography{literature}", b"\\bibliography{refs}"),
     )
+
+
+def test_skills_are_named_by_their_origin(tmp_path: Path, monkeypatch):
+    """e2er's own skills keep skill:e2er/…; an installed pack's skill is skill:<pack>/<skill>, as e2er.org lists it."""
+    from src.core.dossier import _pin
+    from src.skills import loader
+
+    pack = tmp_path / "skills" / "nora-skills"
+    pack.mkdir(parents=True)
+    (pack / "fomc-event-dates.md").write_text("# FOMC dates\n")
+    monkeypatch.setattr(loader, "_SKILLS_DIRS", [*loader._BUNDLED_DIRS, tmp_path / "skills"])
+    assert loader.skill_component("econometrics/event-study") == "skill:e2er/econometrics/event-study"
+    assert loader.skill_component("base/researcher") == "skill:e2er/base/researcher"
+    # A skill e2er has since removed is still its own (its category is e2er's).
+    assert loader.skill_component("econometrics/no-longer-here") == "skill:e2er/econometrics/no-longer-here"
+    assert loader.skill_component("nora-skills/fomc-event-dates") == "skill:nora-skills/fomc-event-dates"
+    assert loader.skill_exists("nora-skills/fomc-event-dates")
+    pin = _pin("skill:nora-skills/fomc-event-dates", "https://github.com/bhanneke/E2ER-project", "abc")
+    assert "path" not in pin and "installed skill pack" in pin["note"]
+    assert _pin("skill:e2er/base/researcher", None, None)["path"] == "skills/files/base/researcher.md"

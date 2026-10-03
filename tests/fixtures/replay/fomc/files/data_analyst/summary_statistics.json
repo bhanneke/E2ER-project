@@ -1,0 +1,92 @@
+{
+  "n_observations": 3017,
+  "n_events": 31,
+  "time_coverage": {
+    "start_iso": "2014-01-02",
+    "end_iso": "2025-12-30",
+    "n_periods": 3017,
+    "description": "Trading days with price data"
+  },
+  "price_series": {
+    "spy": {
+      "n": 3017,
+      "mean": 320.34,
+      "min": 140.76,
+      "max": 685.03,
+      "source": "Yahoo Finance"
+    },
+    "kbe": {
+      "n": 3017,
+      "mean": 36.69,
+      "min": 19.34,
+      "max": 61.54,
+      "source": "Yahoo Finance"
+    },
+    "xlf": {
+      "n": 3017,
+      "mean": 27.32,
+      "min": 13.10,
+      "max": 55.06,
+      "source": "Yahoo Finance"
+    }
+  },
+  "yield_series": {
+    "dfedtaru": {
+      "n": 2765,
+      "n_nonnull": 2765,
+      "mean": 213.98,
+      "min": 25.0,
+      "max": 550.0,
+      "source": "FRED",
+      "status": "complete"
+    },
+    "dgs2": {
+      "n": 2765,
+      "n_nonnull": 0,
+      "mean": null,
+      "min": null,
+      "max": null,
+      "source": "FRED",
+      "status": "all_null",
+      "critical_issue": true
+    }
+  },
+  "fomc_events": {
+    "total": 31,
+    "rate_increases": 20,
+    "rate_cuts": 11,
+    "date_range_start": "2015-12-16",
+    "date_range_end": "2025-12-10"
+  },
+  "sample_flow": [
+    {
+      "step": "FOMC announcements available",
+      "n": 31,
+      "dropped": 0
+    },
+    {
+      "step": "Price data (KBE, SPY, XLF) available for all events",
+      "n": 31,
+      "dropped": 0,
+      "note": "All price series fully populated 2014-01-02 to 2025-12-30"
+    },
+    {
+      "step": "Fed Funds Target Rate (DFEDTARU) available",
+      "n": 31,
+      "dropped": 0,
+      "note": "Fully populated 2,765 observations"
+    },
+    {
+      "step": "2-Year Treasury Yield (DGS2) with non-null values for H2 analysis",
+      "n": 0,
+      "dropped": 31,
+      "note": "CRITICAL: All 2,765 DGS2 observations are NULL; H2 analysis blocked"
+    }
+  ],
+  "data_quality": {
+    "price_data_completeness_pct": 100.0,
+    "dfedtaru_completeness_pct": 100.0,
+    "dgs2_completeness_pct": 0.0,
+    "blocking_issue": "DGS2 contains no data"
+  }
+}

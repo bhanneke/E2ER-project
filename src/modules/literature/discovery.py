@@ -264,7 +264,11 @@ async def acquire_literature(
         logger.warning("literature acquisition for %s got no query to search with", paper_id)
         return 0
 
-    sources = search_sources(settings)
+    # LITERATURE_ACQUIRE_LIMIT=0 turns the web search off: no request goes out
+    # (the offline corpus still seeds the bibliography).
+    sources = search_sources(settings) if limit > 0 else []
+    if limit <= 0:
+        logger.info("literature web search for %s is off (LITERATURE_ACQUIRE_LIMIT=0)", paper_id)
     # Corpus papers seed the bibliography so the drafter can cite what the
     # evidence file quotes. Seeded first, so a web hit for the same paper does
     # not displace the entry whose claims are already on disk.
