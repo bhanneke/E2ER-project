@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.4] — 2026-10-03
+
+Fixes found by the new end-to-end stories (e2er-site `npm run test:e2e`, 15 research processes
+replayed from two recorded runs).
+
+- **A plan change after the pre-registration is frozen stops the run.** The estimation check
+  pauses for the researcher and lists each changed plan file with its SHA-256 at the freeze and
+  now. Approving records the deviation as the researcher's decision in the dossier and in
+  `preregistration.lock.json` (`approved_deviations`); `e2er verify` passes an approved deviation
+  and reports it, and fails an unapproved one. Before, the deviation was only disclosed.
+- **Public data or code at a fixed commit can be published.** The availability address of public
+  code no longer contains the commit, so the paper footnote, `provenance.json` and the dossier
+  are the same with and without `--commit`, and e2er.org's check at the commit passes. The
+  commit is recorded in `e2er.json` and the publish request.
+- **A contributed skill keeps its pack id** (`skill:<pack>/<skill>`), so the dossier links the part
+  listed on e2er.org and its author is credited. e2er's own skills keep `skill:e2er/…`.
+- **Resume after a spending-limit pause skips completed work**, also in the initial phase.
+- **`LITERATURE_ACQUIRE_LIMIT=0` sends no literature request.**
+- **`e2er publish --to <platform>`** uses that platform's address for the dossier link, in the
+  paper footnote, `e2er.json`, the Zenodo description and the output.
+
 ## [0.13.3] — 2026-10-03
 
 - **Global Macro Database (GMD) connector.** `e2er-data gmd versions | variables | countries |
