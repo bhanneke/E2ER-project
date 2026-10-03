@@ -50,7 +50,7 @@ To try it first, use Zenodo's sandbox (`--zenodo-sandbox`, token in `ZENODO_SAND
 
 ## Demonstration studies
 
-`e2er publish --demonstration` (or `E2ER_PURPOSE=demonstration` in the study folder's `.env`) marks a study as published only to demonstrate e2er: e2er.json and the dossier record `purpose: "demonstration"`, and the paper's first page carries the disclaimer; with `--template replication` the study is recorded as `kind: "replication"`, and the paper and the reproduction report carry the replication wording (src/core/demonstration.py).
+`e2er run --demonstration` (or the box in the dashboard's new-study form) marks a demonstration or test run when it starts; the choice is recorded in the study's manifest.json, and `e2er resume`, `e2er rerun`, export and publish keep it. `e2er publish --demonstration` (or `E2ER_PURPOSE=demonstration` in the study folder's `.env`) sets it at publishing: e2er.json and the dossier record `purpose: "demonstration"`, and the paper's first page carries the disclaimer; with `--template replication` the study is recorded as `kind: "replication"`, and the paper and the reproduction report carry the replication wording (src/core/demonstration.py).
 
 The purpose recorded on the study when it started (the dashboard's "demonstration" box) counts as well; a study published again without a purpose loses the disclaimer in the report and on the paper.
 

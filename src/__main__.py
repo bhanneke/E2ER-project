@@ -156,6 +156,12 @@ def main() -> None:
         help="How long to tail the run before detaching. Default 30 min. ^C is safe — run continues in background.",
     )
     run_p.add_argument(
+        "--demonstration",
+        action="store_true",
+        help="A demonstration or test run: recorded with the study, and its paper, report and dossier say it is "
+        "published as is and not a research contribution. `e2er resume` and `e2er rerun` keep it.",
+    )
+    run_p.add_argument(
         "--acknowledge-unproven",
         action="store_true",
         help="Lift the $1 first-run floor for an unproven (model, methodology, mode) tuple "
@@ -462,8 +468,9 @@ def main() -> None:
     publish_p.add_argument(
         "--demonstration",
         action="store_true",
-        help="Mark the study as published only to demonstrate e2er: e2er.json and the dossier record it, and the "
-        "paper and the reproduction report carry a disclaimer (default: E2ER_PURPOSE from the environment or .env).",
+        help="Mark the study as a demonstration or test run, published as is: e2er.json and the dossier record it, "
+        "and the paper and the reproduction report carry a disclaimer (default: the choice made at `e2er run "
+        "--demonstration`, else E2ER_PURPOSE from the environment or .env).",
     )
     publish_p.add_argument(
         "--out", default=None, help="Where to write the registry entry (default: ./e2er-registry-entry)."
@@ -793,6 +800,7 @@ def main() -> None:
                 governance=args.governance,
                 review_stages=args.review_at,
                 template=args.template,
+                demonstration=args.demonstration,
             )
         )
     elif args.command == "init":
