@@ -605,11 +605,63 @@ class PipelineRunner:
             await write_data_queries_sql(self._paper_id, queries_sql)
 
     async def _run_initial_phase(self) -> None:
+        from ..specialists.dispatcher import specialist_done
+
         self._in_initial = True
+        token = specialist_done.set(self._record_initial_done)
         try:
             await self._initial_phase_body()
+            state = getattr(self, "_state", None)
+            if state is not None and isinstance(getattr(state, "metadata", None), dict):
+                # The phase is done: nothing of it is left to resume.
+                state.metadata.pop("initial_orders", None)
+                state.metadata.pop("initial_done", None)
         finally:
+            specialist_done.reset(token)
             self._in_initial = False
+
+    @staticmethod
+    def _order_key(wo: WorkOrder) -> str:
+        return f"{wo.specialist}\n{wo.focus}"
+
+    def _record_initial_done(self, wo: WorkOrder) -> None:
+        """A work order of the initial phase succeeded: record it, so a resume does not run it again."""
+        state = getattr(self, "_state", None)
+        if state is None or not isinstance(getattr(state, "metadata", None), dict):
+            return
+        done = state.metadata.setdefault("initial_done", [])
+        key = self._order_key(wo)
+        if key not in done:
+            done.append(key)
+            state.save(self._workspace)
+
+    def _save_initial_orders(self, orders: list[WorkOrder]) -> None:
+        """Keep the initial phase's work orders until it ends, for a resume after a pause."""
+        state = getattr(self, "_state", None)
+        if state is None or not isinstance(getattr(state, "metadata", None), dict):
+            return
+        state.metadata["initial_orders"] = [wo.model_dump() for wo in orders]
+        state.save(self._workspace)
+
+    def _initial_orders_left(self, state: Any) -> list[WorkOrder]:
+        """The saved initial-phase work orders whose output is not there yet.
+
+        A work order is done when it succeeded (recorded as it succeeded) and
+        its specialist's declared output exists and passes its contract
+        check; everything else runs again.
+        """
+        from ..specialists.contract_check import check_specialist_artifacts
+
+        orders = [WorkOrder(**d) for d in state.metadata.get("initial_orders") or []]
+        done = set(state.metadata.get("initial_done") or [])
+        left = []
+        for wo in orders:
+            complete = self._order_key(wo) in done and all(
+                c.ok for c in check_specialist_artifacts(self._workspace, wo.specialist)
+            )
+            if not complete:
+                left.append(wo)
+        return left
 
     async def _initial_phase_body(self) -> None:
         """Run the initial design + data collection specialists.
@@ -624,12 +676,29 @@ class PipelineRunner:
         state = getattr(self, "_state", None)
         if state is not None and "pending_orders" in (getattr(state, "metadata", None) or {}):
             pending = [WorkOrder(**d) for d in state.metadata.pop("pending_orders")]
-            state.save(self._workspace)
+            self._save_initial_orders(pending)
             # A second researcher step after the same specialists (e.g. the
             # pre-registration after the design review) stops before anything runs.
             await self._between_groups(set(), pending)
             if pending:
                 self._contributions.extend(await self._execute_orders(pending))
+            return
+        if state is not None and (getattr(state, "metadata", None) or {}).get("initial_orders"):
+            # Resuming after a pause inside this phase (the spending limit, a
+            # circuit breaker, a crash): the work orders already planned, minus
+            # those whose output is there and complete. Nothing is planned or
+            # paid for twice.
+            left = self._initial_orders_left(state)
+            logger.info(
+                "Resuming the initial phase of paper %s: %d of %d work orders left (%s)",
+                self._paper_id,
+                len(left),
+                len(state.metadata["initial_orders"]),
+                ", ".join(wo.specialist for wo in left) or "none",
+            )
+            if left:
+                await self._between_groups(set(), left)
+                self._contributions.extend(await self._execute_orders(left))
             return
 
         decision = await self._strategist.decide("designing", iteration=0)
@@ -640,6 +709,7 @@ class PipelineRunner:
                 "Strategist returned no work orders for the initial phase — cannot "
                 "proceed without specialist assignments."
             )
+        self._save_initial_orders(self._to_contract_orders(decision.work_orders))
         contributions = await self._dispatch(decision)
         if not contributions:
             raise RuntimeError("Initial phase produced no contributions.")

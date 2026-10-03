@@ -549,3 +549,73 @@ def test_review_endpoints_apply_actions_and_resume(client, tmp_path: Path):
     kinds = [c.args[1] for c in logged.call_args_list]
     assert kinds == ["researcher_action", "researcher_action"]
     assert PipelineState.load(ws, PID, "single_pass").is_approved("review_design")
+
+
+# ── a pause inside the initial phase ────────────────────────────────────────
+
+
+async def test_a_budget_pause_in_the_initial_phase_keeps_the_work_done(tmp_path: Path, events, monkeypatch):
+    """After a spending-limit pause the resume runs only the work orders whose output is not there yet."""
+    from types import SimpleNamespace
+
+    from src.core.specialists import contract_check
+    from src.core.specialists.dispatcher import specialist_done
+    from src.core.strategist.state import BudgetExceededError
+
+    r = _runner(tmp_path, [{"kind": "strategist", "name": "initial"}])
+    r._triggers = []
+    planned = [
+        SimpleNamespace(specialist="idea_developer", focus="plan", parallel_group=0, context_tier=1),
+        SimpleNamespace(specialist="literature_scanner", focus="lit", parallel_group=0, context_tier=1),
+        SimpleNamespace(specialist="data_analyst", focus="data", parallel_group=1, context_tier=1),
+    ]
+    decide = AsyncMock(return_value=SimpleNamespace(action="dispatch", work_orders=planned, rationale=""))
+    r._strategist = SimpleNamespace(decide=decide)
+    ran: list[list[str]] = []
+
+    async def first_dispatch(decision):
+        # The first group succeeds; the spending limit is reached before the second.
+        for wo in r._to_contract_orders(decision.work_orders)[:2]:
+            specialist_done.get()(wo)
+        raise BudgetExceededError(spent=0.7, cap=0.5)
+
+    r._dispatch = first_dispatch
+    with pytest.raises(BudgetExceededError):
+        await r._run_initial_phase()
+    assert len(r._state.metadata["initial_done"]) == 2 and len(r._state.metadata["initial_orders"]) == 3
+
+    # The output of the first two is there and complete (idea_developer's only after a check).
+    monkeypatch.setattr(
+        contract_check,
+        "check_specialist_artifacts",
+        lambda ws, sp: [SimpleNamespace(ok=sp != "data_analyst")],
+    )
+    resumed = _runner(tmp_path, [{"kind": "strategist", "name": "initial"}])
+    resumed._triggers = []
+    resumed._state = PipelineState.load(tmp_path, PID, "single_pass")
+    resumed._strategist = SimpleNamespace(decide=AsyncMock(side_effect=AssertionError("planned again")))
+
+    async def execute(orders):
+        ran.append([o.specialist for o in orders])
+        return [Contribution(paper_id=PID, specialist=o.specialist, output="", success=True) for o in orders]
+
+    resumed._execute_orders = execute
+    await resumed._run_initial_phase()
+    assert ran == [["data_analyst"]]
+    assert "initial_orders" not in resumed._state.metadata  # the phase is done
+
+
+async def test_a_resume_reruns_a_done_order_whose_output_is_incomplete(tmp_path: Path, events, monkeypatch):
+    from src.core.specialists import contract_check
+
+    r = _runner(tmp_path, [{"kind": "strategist", "name": "initial"}])
+    r._triggers = []
+    orders = [WorkOrder(paper_id=PID, specialist="idea_developer", focus="plan")]
+    r._save_initial_orders(orders)
+    r._record_initial_done(orders[0])
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(contract_check, "check_specialist_artifacts", lambda ws, sp: [SimpleNamespace(ok=False)])
+    assert [o.specialist for o in r._initial_orders_left(r._state)] == ["idea_developer"]
+    monkeypatch.setattr(contract_check, "check_specialist_artifacts", lambda ws, sp: [SimpleNamespace(ok=True)])
+    assert r._initial_orders_left(r._state) == []
