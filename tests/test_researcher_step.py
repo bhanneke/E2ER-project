@@ -322,6 +322,75 @@ def test_verify_reports_the_preregistration(tmp_path: Path):
     assert _check_preregistration(tmp_path) is None  # no pre-registration: no extra check
 
 
+def test_verify_passes_an_approved_deviation_and_reports_it(tmp_path: Path):
+    from src.cli_verify import _check_preregistration
+
+    b = _bundle_with_prereg(tmp_path)
+    design = b / "design"
+    (design / "identification_spec.json").write_text('{"design": "did", "estimator": "wls"}')
+    c = _check_preregistration(b)
+    assert c.status == "FAIL" and "without the researcher's approval" in c.detail
+    added = prereg.approve_deviations(design)
+    assert [a["file"] for a in added] == ["identification_spec.json"]
+    lock = json.loads((design / prereg.LOCK_FILE).read_text())
+    # The frozen fingerprints stay; the approval is an entry of its own.
+    assert lock["plan_files"]["identification_spec.json"] == added[0]["sha256_frozen"]
+    assert added[0]["sha256_approved"] == _sha((design / "identification_spec.json").read_bytes())
+    c = _check_preregistration(b)
+    assert c.status == "PASS" and "deviation approved by the researcher: identification_spec.json changed" in c.detail
+    # A later change to the approved file is a new deviation.
+    (design / "identification_spec.json").write_text('{"design": "rdd"}')
+    c = _check_preregistration(b)
+    assert c.status == "FAIL" and "identification_spec.json changed" in c.detail
+
+
+async def test_a_change_to_the_plan_after_the_freeze_stops_the_run(tmp_path: Path, events):
+    from src.core.strategist.state import GateHaltError
+
+    _design(tmp_path)
+    prereg.assemble(tmp_path)
+    lock = prereg.freeze(tmp_path)
+    r = _runner(tmp_path, [{"kind": "strategist", "name": "initial"}])
+    r._governance = "full"
+    await r._check_preregistered_plan(tmp_path)  # unchanged: passes
+    assert events[-1][0] == "preregistration_check" and events[-1][2]["passed"] is True
+    (tmp_path / "identification_spec.json").write_text('{"design": "did", "estimator": "wls"}')
+    with pytest.raises(GateHaltError) as gh:
+        await r._check_preregistered_plan(tmp_path)
+    st = r._state
+    assert st.pending_review_stage == "estimation_gate" and st.metadata["review"]["kind"] == "deviation"
+    assert st.metadata["review"]["files"] == ["identification_spec.json"]
+    before = lock["plan_files"]["identification_spec.json"][:12]
+    assert any("identification_spec.json changed" in x and before in x for x in gh.value.reasons)
+    # The researcher sees the step and approves the deviation: recorded, and the check passes.
+    p = pending_review(tmp_path, st)
+    assert p is not None and p.kind == "deviation"
+    ev = apply_action(tmp_path, st, {"action": "approve"})
+    assert ev["decision"] == "deviation_approved" and ev["deviations"][0]["file"] == "identification_spec.json"
+    assert st.pending_review_stage is None
+    await r._check_preregistered_plan(tmp_path)
+    chk = [e for e in events if e[0] == "preregistration_check"][-1][2]
+    assert chk["passed"] is False and chk["approved"] == ["identification_spec.json changed after the pre-registration"]
+
+
+async def test_editing_the_plan_back_passes_without_a_deviation(tmp_path: Path, events):
+    from src.core.strategist.state import GateHaltError
+
+    _design(tmp_path)
+    prereg.assemble(tmp_path)
+    prereg.freeze(tmp_path)
+    original = (tmp_path / "econometric_spec.md").read_text()
+    r = _runner(tmp_path, [{"kind": "strategist", "name": "initial"}])
+    r._governance = "full"
+    (tmp_path / "econometric_spec.md").write_text("Something else.\n")
+    with pytest.raises(GateHaltError):
+        await r._check_preregistered_plan(tmp_path)
+    apply_action(tmp_path, r._state, {"action": "edit", "file": "econometric_spec.md", "content": original})
+    await r._check_preregistered_plan(tmp_path)
+    assert [e for e in events if e[0] == "preregistration_check"][-1][2]["passed"] is True
+    assert "approved_deviations" not in json.loads((tmp_path / prereg.LOCK_FILE).read_text())
+
+
 def test_export_includes_the_preregistration_and_instructions(tmp_path: Path):
     from src.core.export.structured import EXPORT_MAP
 

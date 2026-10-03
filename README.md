@@ -132,7 +132,7 @@ e2er status <paper_id> --tail
 
 ### Reviewing, stopping and resuming
 
-A study pauses for you at a design review, at a pre-registration or after a failed check. `e2er review <paper_id>` then shows the step and its files.
+A study pauses for you at a design review, at a pre-registration or after a failed check. It also pauses when the plan changes after the pre-registration was frozen: you approve the change as a deviation (recorded in the dossier and reported by `e2er verify`), edit the plan back or send back the step that changed it, and only then does the estimation run. `e2er review <paper_id>` shows the step and its files.
 
 ```bash
 e2er review <paper_id> --approve

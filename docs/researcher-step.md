@@ -30,7 +30,13 @@ A `preregister` step assembles `preregistration.md` from the design files (quest
 
 Nothing may be estimated before the freeze. When the pre-registration comes up, e2er looks for estimation output in the workspace: the econometrics specialist's results and scripts, any script that estimates, result tables and figures, result files (csv, tsv, parquet, json, xlsx outside `data/` named as results or with columns such as `car_*`, `abnormal*`, `coef*`, `t_stat`, `p_value`), and data tables named as results. If there is any, the run stops at the step with the list (a `preregistration` check, recorded in the dossier) and approving does not pass it. Send back the specialist that produced it: the outputs are moved to `set_aside/<time>/` with a manifest of their fingerprints and row counts, the move appears in the dossier, and the check runs again. Nothing is deleted.
 
-From then on the estimation check compares the plan files with those fingerprints, and `e2er verify` reports either "estimation follows the pre-registered plan (frozen <date>)" or what changed. A change is a deviation that is disclosed, not a failure of the run.
+From then on the estimation check compares the plan files with those fingerprints. A change to the plan after the freeze stops the run there, before the estimation, at a researcher step that names each changed file with its SHA-256 at the freeze and now. The researcher then decides:
+
+- approve: the change stays as a deviation from the pre-registered plan. The decision and each changed file (SHA-256 at the freeze and the approved one) are recorded in `preregistration.lock.json` and in the dossier, and the deviation is disclosed. A later change to the same file needs approving again.
+- edit the file back to the frozen version (`e2er review --edit`), then approve; there is no deviation.
+- send back the step that changed it; the check runs again when it is done.
+
+Without one of these the estimation does not run. `e2er verify` reports "estimation follows the pre-registered plan (frozen <date>)", or the deviations the researcher approved (the check passes and lists them), or a change nobody approved (the check fails).
 
 `e2er preregister deposit <paper_id> --zenodo` deposits the frozen file on Zenodo with the researcher's own token (`ZENODO_TOKEN`; `--sandbox` uses Zenodo's sandbox and `ZENODO_SANDBOX_TOKEN`) and records the DOI. Nothing passes through e2er.org. A deposit on OSF Registries is not built yet.
 
@@ -60,6 +66,6 @@ The step and every step after it run again with the remark (a researcher step ca
 
 ## In the dossier
 
-Each action is a workflow step of type `researcher`: `edit` (file, SHA-256 before and after), `instruction` (the text), `send_back` and `rerun` (target and remark), `approve`, `preregistration_frozen` (SHA-256), and `supplied_input` (a file the researcher supplied, such as the paper in the replication template: file, SHA-256, and the SHA-256 it replaces when it was changed). A frozen pre-registration also appears as its own block: file, SHA-256, time of freezing and, after a deposit, the DOI. Dossiers with either use the format `e2er-dossier/0.4`; a study without them keeps `0.3`, so existing dossier addresses stay valid.
+Each action is a workflow step of type `researcher`: `edit` (file, SHA-256 before and after), `instruction` (the text), `send_back` and `rerun` (target and remark), `approve` (at a change to the pre-registered plan, with `decision: deviation_approved` and the changed files), `preregistration_frozen` (SHA-256), and `supplied_input` (a file the researcher supplied, such as the paper in the replication template: file, SHA-256, and the SHA-256 it replaces when it was changed). A frozen pre-registration also appears as its own block: file, SHA-256, time of freezing, the deviations the researcher approved and, after a deposit, the DOI. Dossiers with either use the format `e2er-dossier/0.4`; a study without them keeps `0.3`, so existing dossier addresses stay valid.
 
 A send-back revises the specialist's work, not the researcher's: files the researcher edited at a researcher step are not requested from the specialist again, and if it rewrites one anyway, e2er puts the researcher's version back, keeps the specialist's in `set_aside/`, and records both fingerprints.

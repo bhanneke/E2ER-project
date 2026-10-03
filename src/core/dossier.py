@@ -619,6 +619,7 @@ def read_run(db: Path, paper_id: str, files: dict[str, Any] | None = None, bundl
                     "enforced": True,
                     "at": at,
                     "deviations": _clip(list(data.get("deviations") or [])),
+                    **({"approved": _clip(list(data["approved"]))} if data.get("approved") else {}),
                     **({"frozen_at": _utc(data["frozen_at"])} if data.get("frozen_at") else {}),
                 }
             )
@@ -911,6 +912,9 @@ def _preregistration(bundle: Path | None) -> dict[str, Any] | None:
         out["plan_files"] = dict(lock["plan_files"])
     if lock.get("deposit"):
         out["deposit"] = lock["deposit"]
+    if lock.get("approved_deviations"):
+        # Changes to the plan after the freeze that the researcher approved at the estimation check.
+        out["approved_deviations"] = list(lock["approved_deviations"])
     return out
 
 

@@ -485,12 +485,22 @@ class PipelineRunner:
             state.save(self._workspace)
             logger.warning("Pipeline halted by %s for paper %s: %s", gh.stage, self._paper_id, "; ".join(gh.reasons))
             await log_event(self._paper_id, "gate_halted", stage=gh.stage, payload={"reasons": gh.reasons})
+            deviation = state.metadata.get("review", {}).get("kind") == "deviation"
             await self._update_status(
                 PaperStatus.PAUSED,
                 error=(
-                    f"Halted by the check '{gh.stage}': {'; '.join(gh.reasons)[:1500]}. "
-                    "Fix what it names (e2er review --edit) or send its specialist back, then resume; "
-                    "the check runs again."
+                    (
+                        "Halted: the pre-registered plan changed after the freeze: "
+                        f"{'; '.join(gh.reasons[:-1])[:1500]}. "
+                        "Approve the deviation (e2er review --approve; recorded in the dossier), edit the file back "
+                        "(e2er review --edit) or send back the step that changed it."
+                    )
+                    if deviation
+                    else (
+                        f"Halted by the check '{gh.stage}': {'; '.join(gh.reasons)[:1500]}. "
+                        "Fix what it names (e2er review --edit) or send its specialist back, then resume; "
+                        "the check runs again."
+                    )
                 ),
             )
             return {"status": "paused", "reason": "gate_halted", "stage": gh.stage, "reasons": gh.reasons}
@@ -1042,6 +1052,14 @@ class PipelineRunner:
                 # pre-registration itself.
                 await self._guard_preregistration(pending, state)
                 await self._stop_for_researcher(step, state)
+            if state.metadata.get("review", {}).get("kind") == "deviation":
+                # Sent back from a change to the pre-registered plan: the plan
+                # check runs again in the estimation gate (halting again, with
+                # the files as they are now, if the change is still there).
+                state.pending_review_stage = None
+                state.metadata.pop("review", None)
+                state.save(self._workspace)
+                return
             raise HumanReviewRequestedError(pending)
 
     async def _researcher_edited_files(self) -> dict[str, str]:
@@ -1137,6 +1155,48 @@ class PipelineRunner:
         )
         return enforced
 
+    async def _check_preregistered_plan(self, workspace: Path) -> None:
+        """The plan files against the frozen fingerprints; halt on a change nobody approved."""
+        from ...db.events import log_event
+        from ..pipeline.preregistration import PREREG_FILE, describe_deviation, deviation_details, load_lock
+
+        lock = load_lock(workspace)
+        if lock is None:
+            return
+        details = deviation_details(workspace, lock)
+        found = [d["text"] for d in details]
+        open_ = [d for d in details if not d["approved"]]
+        payload: dict[str, Any] = {"passed": not found, "deviations": found, "frozen_at": lock.get("frozen_at")}
+        approved = [d["text"] for d in details if d["approved"]]
+        if approved:
+            payload["approved"] = approved
+        await log_event(self._paper_id, "preregistration_check", stage="estimation_gate", payload=payload)
+        state = getattr(self, "_state", None)
+        if not open_:
+            if state is not None and isinstance(getattr(state, "metadata", None), dict):
+                state.metadata.pop("preregistration_deviation", None)
+            return
+        reasons = [describe_deviation(d) for d in open_]
+        detail = "the plan changed after the pre-registration: " + "; ".join(reasons)
+        blocking = await self._record_gate("preregistration", passed=False, detail=detail)
+        if not blocking or state is None or not isinstance(getattr(state, "metadata", None), dict):
+            return
+        reasons.append(
+            "Approve to keep the change as a deviation from the pre-registered plan (your decision is recorded "
+            "in the dossier and the deviation is disclosed), or edit the file back, or send back the step that "
+            "changed it; the estimation does not run until then."
+        )
+        if "estimation_gate" in state.approved_stages:
+            state.approved_stages.remove("estimation_gate")
+        state.metadata["preregistration_deviation"] = [
+            {k: d[k] for k in ("file", "sha256_frozen", "sha256_now")} for d in open_
+        ]
+        files = [d["file"] for d in open_ if d["file"] != PREREG_FILE and (workspace / d["file"]).is_file()]
+        state.pending_review_stage = "estimation_gate"
+        state.metadata["review"] = {"kind": "deviation", "files": files, "reasons": reasons}
+        state.save(workspace)
+        raise GateHaltError("estimation_gate", reasons)
+
     async def _enforce_estimation_gate(self) -> None:
         """Deterministic phase gate: an empirical paper with a populated data
         warehouse may not proceed past the analysis phase without a
@@ -1155,23 +1215,15 @@ class PipelineRunner:
         literature-only, design-without-estimates) are untouched.
 
         With a frozen pre-registration, the plan files are compared with their
-        fingerprints first; a change is recorded as a deviation (not a halt: a
-        deviation is disclosed, and `e2er verify` reports it).
+        fingerprints first. A change the researcher has not approved stops the
+        run here, at a researcher step that names each changed file with its
+        SHA-256 before and after: the researcher approves the deviation (it is
+        recorded in the lock and the dossier, and `e2er verify` reports it),
+        edits the file back, or sends back the step that changed it.
         """
-        from ..pipeline.preregistration import deviations, load_lock
-
         workspace: Path | None = getattr(self, "_workspace", None)
-        lock = load_lock(workspace) if workspace is not None else None
-        if workspace is not None and lock is not None:
-            from ...db.events import log_event
-
-            found = deviations(workspace, lock)
-            await log_event(
-                self._paper_id,
-                "preregistration_check",
-                stage="estimation_gate",
-                payload={"passed": not found, "deviations": found, "frozen_at": lock.get("frozen_at")},
-            )
+        if workspace is not None:
+            await self._check_preregistered_plan(workspace)
         if self._methodology != "empirical":
             return
         from ...db.paper_data_db import has_data_db

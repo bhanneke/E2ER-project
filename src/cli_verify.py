@@ -759,7 +759,7 @@ def _check_preregistration(bundle: Path, required: str | None = None) -> Check |
     checks as before, unless ``required`` says why the study had one: then a
     missing lock file FAILS (deleting it must not make the check disappear).
     """
-    from .core.pipeline.preregistration import deviations, load_lock
+    from .core.pipeline.preregistration import deviation_details, load_lock
 
     design = bundle / "design"
     lock = load_lock(design)
@@ -772,16 +772,28 @@ def _check_preregistration(bundle: Path, required: str | None = None) -> Check |
             )
         return None
     when = str(lock.get("frozen_at", ""))[:10]
-    found = deviations(design, lock)
-    if found:
+    details = deviation_details(design, lock)
+    unapproved = [d["text"] for d in details if not d["approved"]]
+    approved = [d["text"] for d in details if d["approved"]]
+    if unapproved:
         return Check(
-            "preregistration", FAIL, f"deviates from the pre-registered plan (frozen {when}): " + "; ".join(found)
+            "preregistration",
+            FAIL,
+            f"deviates from the pre-registered plan (frozen {when}) without the researcher's approval: "
+            + "; ".join(unapproved),
         )
+    # A deviation the researcher approved at the estimation check passes, and is reported.
+    approved_note = [f"deviation approved by the researcher: {d}" for d in approved]
     problems, notes = _preregistered_results(bundle, lock)
     if problems:
-        return Check("preregistration", FAIL, f"pre-registered plan (frozen {when}): " + "; ".join(problems + notes))
-    extra = ("; " + "; ".join(notes)) if notes else ""
-    return Check("preregistration", PASS, f"estimation follows the pre-registered plan (frozen {when}){extra}")
+        return Check(
+            "preregistration",
+            FAIL,
+            f"pre-registered plan (frozen {when}): " + "; ".join(problems + notes + approved_note),
+        )
+    extra = ("; " + "; ".join(approved_note + notes)) if approved_note or notes else ""
+    head = "estimation follows the pre-registered plan" if not approved else "the pre-registered plan"
+    return Check("preregistration", PASS, f"{head} (frozen {when}){extra}")
 
 
 def _preregistered_results(bundle: Path, lock: dict[str, Any]) -> tuple[list[str], list[str]]:
