@@ -309,7 +309,9 @@ def test_dossier_lists_the_release_and_file_hash(tmp_path: Path) -> None:
                         "version": "2026_09",
                         "table": "gmd_macro",
                         "cite_key": "GMD2025",
-                        "licence": "long text not copied",
+                        "licence": "the GMD terms",
+                        "citation": "Müller et al. (2025)",
+                        "rows": 3,
                         "files": [{"url": "https://x/GMD_2026_09.csv", "sha256": "a" * 64, "bytes": 3}],
                     }
                 ]
@@ -322,6 +324,8 @@ def test_dossier_lists_the_release_and_file_hash(tmp_path: Path) -> None:
             "dataset": "Global Macro Database",
             "version": "2026_09",
             "table": "gmd_macro",
+            "licence": "the GMD terms",  # the dossier names the terms and the citation
+            "citation": "Müller et al. (2025)",
             "cite_key": "GMD2025",
             "files": [{"url": "https://x/GMD_2026_09.csv", "sha256": "a" * 64}],
         }

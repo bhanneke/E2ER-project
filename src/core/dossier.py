@@ -881,7 +881,7 @@ def _data_sources(bundle: Path | None) -> list[dict[str, Any]]:
         if not isinstance(load, dict) or not load.get("connector"):
             continue
         entry: dict[str, Any] = {"connector": str(load["connector"])}
-        for key in ("dataset", "version", "table", "saved_to", "cite_key", "terms"):
+        for key in ("dataset", "version", "table", "saved_to", "licence", "terms", "citation", "cite_key"):
             if isinstance(load.get(key), str) and load[key]:
                 entry[key] = load[key]
         entry["files"] = [

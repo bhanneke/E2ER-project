@@ -506,6 +506,15 @@ def main() -> None:
         "--zenodo-sandbox", action="store_true", help="Use sandbox.zenodo.org (token in ZENODO_SANDBOX_TOKEN)."
     )
     publish_p.add_argument(
+        "--accept-data-terms",
+        action="append",
+        default=None,
+        dest="accept_data_terms",
+        metavar="CONNECTOR",
+        help="Confirm the terms of a data source the study used, so its data can be published with the study "
+        "(--data public), e.g. --accept-data-terms gmd for the Global Macro Database. In a terminal you are asked.",
+    )
+    publish_p.add_argument(
         "--offline",
         action="store_true",
         help="Prepare the folder for publishing in the browser (e2er.org/publish): write the dossier and "
@@ -630,6 +639,7 @@ def main() -> None:
                 zenodo_sandbox=args.zenodo_sandbox,
                 site=args.to_url,
                 demonstration=args.demonstration,
+                accept_data_terms=args.accept_data_terms,
             )
         )
 
