@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.3] — 2026-10-03
+
 - **Global Macro Database (GMD) connector.** `e2er-data gmd versions | variables | countries |
   series` reads the GMD's release files over HTTPS (no key). `series --variables rGDP,infl
   --countries USA,DEU --start 2000 --end 2024 --table gmd_macro` loads a country-year panel with a

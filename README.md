@@ -187,7 +187,7 @@ A template is a `.toml` file. e2er ships four in [`pipelines/`](https://github.c
 - `event-study-finance`: abnormal-return event studies around announcements, with the pauses of `empirical-preregistered`. A check before estimation tests the estimation window, the overlap between events and the event dates.
 - `replication`: reproduction of a published study from its replication package on Zenodo, executed in a Docker container. The result is a reproduction report.
 
-The three empirical templates end with e2er's internal quality review. Six reviewer specialists each score the draft from one angle (data, identification, literature, mechanism, technical, writing) on a scale of 0 to 10, and the score is their weighted average. The score decides whether the draft is revised before the study ends, and the study reports it, for example "e2er's internal quality review: 6.1 of 10". A study that finishes its steps is completed whatever its score.
+The three empirical templates end with e2er's internal quality review. Six reviewer specialists each score the draft from one angle on a scale of 0 to 10. The six angles are data, identification, literature, mechanism, technical quality and writing. The score is their weighted average. The score decides whether the draft is revised before the study ends, and the study reports it, for example "e2er's internal quality review: 6.1 of 10". A study that finishes its steps is completed whatever its score.
 
 e2er ships with 63 skill files and 28 specialist roles. `e2er run --template NAME` looks for a template in `./pipelines`, then in `~/.e2er/pipelines`, then among the four above. [docs/templates.md](https://github.com/bhanneke/E2ER-project/blob/main/docs/templates.md) describes the file format, and [docs/researcher-step.md](https://github.com/bhanneke/E2ER-project/blob/main/docs/researcher-step.md) describes the pauses. `e2er skills install` adds skill packs from a local copy of the RISE catalogue (`RISE_PATH`).
 
@@ -273,7 +273,7 @@ make smoke-paid   # one real study on Claude Haiku 4.5 (needs ANTHROPIC_API_KEY,
   title        = {{e2er (End-to-End Research): The Open Infrastructure for
                    Publishing, Verifying, Reproducing and Reusing AI-Enabled Research}},
   year         = {2026},
-  version      = {0.13.2},
+  version      = {0.13.3},
   url          = {https://github.com/bhanneke/E2ER-project},
   doi          = {10.5281/zenodo.20187238},
   license      = {MIT},
