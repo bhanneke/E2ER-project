@@ -113,13 +113,14 @@ def _with_outcome(paper: dict[str, Any]) -> dict[str, Any]:
     ``status`` stays the stored internal code: the resume, cancel and archive
     rules read it. Pages show ``shown_status``.
     """
-    from ..core.run_outcome import internal_review, read_aggregation, workspace_status
+    from ..core.run_outcome import internal_review, read_aggregation, run_notes, workspace_status
 
     ws = _paper_workspace(paper)
     return {
         **paper,
         "shown_status": workspace_status(paper.get("status"), ws),
         "internal_review": internal_review(read_aggregation(ws)),
+        "notes": run_notes(ws),
     }
 
 
@@ -962,13 +963,23 @@ def _sendable(workspace: Path, state: Any, pending: Any, spec: Any) -> list[str]
     from ..core.specialists.registry import SPECIALIST_ARTIFACTS
 
     steps: list[str] = []
+    # The number check runs inside the review step: what can go back is before it.
+    stop_at = "review" if pending.kind == "numbers" else pending.stage
     if spec is not None:
         for s in spec.steps:
-            if s.name == pending.stage:
+            if s.name == stop_at:
                 break
             if s.kind not in ("researcher", "preregister") and s.name in state.completed_stages:
                 steps.append(s.name)
     specialists = sorted(sp for sp, out in SPECIALIST_ARTIFACTS.items() if (workspace / out).is_file())
+    if pending.kind == "contract":
+        # The specialists whose output failed can always be sent back, written or not.
+        failed = [f.get("specialist") for f in (state.metadata.get("contract_pause") or {}).get("failed") or []]
+        specialists = sorted(set(specialists) | {f for f in failed if f})
+    if pending.kind == "numbers":
+        from ..core.pipeline.researcher import NUMBERS_SENDABLE
+
+        specialists = sorted(set(specialists) | set(NUMBERS_SENDABLE))
     return steps + specialists
 
 
@@ -998,9 +1009,30 @@ async def get_review(paper_id: str = Depends(_validate_uuid)) -> dict[str, Any]:
             }
         )
     reasons = list(state.metadata.get("review", {}).get("reasons") or [])
+    extra: dict[str, Any] = {}
+    if pending.kind == "numbers":
+        # Per mismatch: the table cell, the value in the table, in the results, and the source key.
+        check = state.metadata.get("number_check") or {}
+        extra["mismatches"] = [
+            {k: m.get(k) for k in ("cell", "in_table", "in_results", "source_key")}
+            for m in check.get("mismatches") or []
+        ]
+        if check.get("auto_patch"):
+            extra["auto_patch"] = check["auto_patch"]
+    if pending.kind == "contract":
+        # Per specialist: each attempt with its violations, and the files involved.
+        extra["failures"] = [
+            {"specialist": f.get("specialist"), "attempts": f.get("attempts") or [], "files": f.get("files") or []}
+            for f in (state.metadata.get("contract_pause") or {}).get("failed") or []
+        ]
     return {
         # A halted check says why, so the researcher knows what to fix.
-        "pending": {"stage": pending.stage, "kind": pending.kind, **({"reasons": reasons} if reasons else {})},
+        "pending": {
+            "stage": pending.stage,
+            "kind": pending.kind,
+            **({"reasons": reasons} if reasons else {}),
+            **extra,
+        },
         "files": files,
         "sendable": _sendable(workspace, state, pending, spec),
         "actions": past,
@@ -1045,12 +1077,14 @@ class RerunRequest(BaseModel):
 
 @app.post("/api/papers/{paper_id}/rerun", dependencies=[Depends(require_auth)])
 async def rerun_paper(req: RerunRequest, paper_id: str = Depends(_validate_uuid)) -> dict[str, Any]:
-    """Send a finished study back to one of its steps: that step and every later one run again.
+    """Send a study back to one of its steps: that step and every later one run again.
 
-    For a study not stopped at a researcher step (completed, rejected, failed,
-    cancelled, or paused by an error); at a researcher step the send-back does
-    this. The action is recorded (``researcher_action``, action ``rerun``) for
-    the dossier, and the run stops again at the next researcher step.
+    For a study that is not running: completed, stopped by a check, failed,
+    cancelled, or paused (by an error, the spending limit, or at a researcher
+    step, whose stop the rerun then replaces). The action is recorded
+    (``researcher_action``, action ``rerun``) for the dossier, and the run stops
+    again at the next researcher step. The dashboard's study page and
+    ``e2er rerun`` both come here.
     """
     from ..core.pipeline.researcher import ResearcherActionError, apply_rerun
     from ..core.pipeline.spec import find_spec
@@ -1172,7 +1206,19 @@ async def resume_paper(paper_id: str, req: ResumeRequest | None = None) -> dict[
         pstate = PipelineState.load(workspace, paper_id, mode)
         # After a send-back the researcher wants to see the redone step, so the
         # pending researcher step stays unapproved and the run stops there again.
-        if pstate.pending_review_stage and not pstate.metadata.get("sent_back"):
+        # A stop for output that failed its contract is never approved by a plain
+        # resume: approving it is the researcher's decision (e2er review --approve);
+        # a resume gives the failed specialists fresh attempts.
+        contract_stop = (pstate.metadata.get("review") or {}).get("kind") == "contract"
+        # Nor is the number check: continuing with mismatches is the researcher's
+        # decision too; a plain resume runs the check again.
+        numbers_stop = (pstate.metadata.get("review") or {}).get("kind") == "numbers"
+        if (
+            pstate.pending_review_stage
+            and not pstate.metadata.get("sent_back")
+            and not contract_stop
+            and not numbers_stop
+        ):
             pstate.approve(pstate.pending_review_stage)
             pstate.save(workspace)
     except Exception as e:  # noqa: BLE001 — approval is best-effort; resume proceeds
@@ -1829,9 +1875,13 @@ def _new_form_context(values: dict[str, Any] | None = None, error: str = "") -> 
         "methodology": "empirical",
         "max_cost_usd": settings.default_max_cost_usd,
         "demonstration": False,
+        "review_at": [],
         **(values or {}),
     }
+    from ..core.strategist.state import PIPELINE_STAGES
+
     return {
+        "review_choices": [{"name": n, "label": _STEP_NAMES.get(n) or _step_label(n)} for n in PIPELINE_STAGES],
         "default_cap": settings.default_max_cost_usd,
         "pipelines": _pipeline_choices(),
         "values": v,
@@ -1886,6 +1936,7 @@ async def submit_new_paper(
     pipeline: str = Form("empirical"),
     max_cost_usd: float | None = Form(None),
     demonstration: str = Form(""),
+    review_at: list[str] = Form([]),
 ) -> Any:
     """Form-encoded handler that mirrors POST /api/papers. Redirects to the progress page.
 
@@ -1910,6 +1961,7 @@ async def submit_new_paper(
         "methodology": methodology,
         "max_cost_usd": max_cost_usd,
         "demonstration": bool(demonstration),
+        "review_at": list(review_at),
     }
     if not rq:
         return templates.TemplateResponse(
@@ -1927,6 +1979,7 @@ async def submit_new_paper(
         # $1 first-run floor protects nothing there (as `e2er run` does).
         acknowledge_unproven_tuple=backend in {"claude_code", "codex", "gemini"},
         purpose=DEMONSTRATION if demonstration else None,
+        review_stages=list(dict.fromkeys(review_at)),
     )
     bg = BackgroundTasks()
     try:
@@ -1967,6 +2020,7 @@ async def paper_detail(request: Request, paper_id: str = Depends(_validate_uuid)
         "paper.html",
         {
             "paper": _with_outcome(dict(paper)),
+            **_study_actions(dict(paper), workspace),
             "study": await attempt_context(paper_id),
             "artifacts": artifacts,
             "reading": _reading_list(artifacts),
@@ -1980,6 +2034,38 @@ async def paper_detail(request: Request, paper_id: str = Depends(_validate_uuid)
             else [],
         },
     )
+
+
+def _study_actions(paper: dict[str, Any], workspace: Path) -> dict[str, Any]:
+    """What the study page offers beside the live panel: rerun steps, the purpose, the pre-registration."""
+    from ..core.demonstration import study_purpose
+    from ..core.pipeline.preregistration import load_lock
+    from ..core.pipeline.researcher import rerunnable_steps
+    from ..core.pipeline.spec import find_spec
+
+    mode = str(paper.get("mode") or "single_pass")
+    try:
+        names = rerunnable_steps(find_spec(str(paper.get("pipeline") or "empirical")), mode)
+    except Exception:  # noqa: BLE001 — without its template there is nothing to choose from
+        names = []
+    try:
+        demonstration = study_purpose(workspace if workspace.is_dir() else None) == "demonstration"
+    except ValueError:
+        demonstration = False
+    lock = None
+    if workspace.is_dir():
+        try:
+            lock = load_lock(workspace / "design") or load_lock(workspace)
+        except (OSError, ValueError):
+            lock = None
+    return {
+        "rerun_steps": [{"name": n, "label": _STEP_NAMES.get(n) or _step_label(n)} for n in names],
+        "demonstration": demonstration,
+        "prereg": lock,
+        "suggested_cap": round(float(paper.get("max_cost_usd") or 5.0) * 2, 2),
+        # The live panel corrects this every few seconds (a run that starts or stops).
+        "rerun_open": paper.get("status") in _RERUN_STATUSES and str(paper.get("id")) not in _RUNNING,
+    }
 
 
 #: Pipeline phases in execution order, and the specialists that belong to each.
@@ -2329,6 +2415,7 @@ _STEP_NAMES = {
     "compare": "Compare every number",
     "reproduction_gate": "Reproduction check",
     "event_window_gate": "Event-window check",
+    "output_contract": "Output that failed its check",
 }
 
 _STEP_KINDS = {
@@ -2385,6 +2472,10 @@ def _template_progress(paper: dict[str, Any], events: list[dict[str, Any]]) -> d
         elif et == "specialist_failed" and who and who not in failed_specialists and who not in done_specialists:
             failed_specialists.append(str(who))
 
+    if pending == "number_check":
+        # The number check runs inside the review step: show its stop on that row.
+        halted.add("review")
+        pending = "review"
     steps: list[dict[str, Any]] = []
     if spec is not None:
         inner = [st for st in spec.steps if st.after]
@@ -2546,6 +2637,8 @@ async def paper_live_fragment(request: Request, paper_id: str = Depends(_validat
         if ev.get("created_at") is not None:
             ev["created_at_short"] = str(ev["created_at"])[11:19]
     elsewhere = await _running_elsewhere(dict(paper))
+    task = _RUNNING.get(paper_id)
+    running_here = task is not None and not task.done()
 
     return templates.TemplateResponse(
         request,
@@ -2559,13 +2652,33 @@ async def paper_live_fragment(request: Request, paper_id: str = Depends(_validat
             "cost_pct": cost_pct,
             "events": (events or [])[:50],
             "can_cancel": (paper.get("status") not in _TERMINAL_STATUSES) and (paper_id in _RUNNING),
-            "can_resume": (paper.get("status") == "paused") and (paper_id not in _RUNNING) and not elsewhere,
+            # `e2er resume` takes a paused, failed or stopped study; so does the button.
+            "can_resume": (paper.get("status") in _RESUMABLE_STATUSES) and not running_here and not elsewhere,
+            "running": running_here or bool(elsewhere),
+            "rerun_open": paper.get("status") in _RERUN_STATUSES and not running_here and not elsewhere,
+            "budget_paused": paper.get("status") == "paused"
+            and str(paper.get("last_error") or "").startswith("BudgetExceededError"),
+            "pending_queries": await _pending_queries_or_none(paper_id),
             "awaiting_review": None if elsewhere else _awaiting_review(paper),
             "can_cancel_attempt": (paper.get("status") == "paused") and (paper_id not in _RUNNING) and not elsewhere,
             "elsewhere": elsewhere,
             "elsewhere_text": _elsewhere_text(elsewhere) if elsewhere else "",
         },
     )
+
+
+#: What `e2er resume` (and the Resume button) takes: a paused, failed or stopped study.
+_RESUMABLE_STATUSES = {"paused", "failed", "rejected"}
+#: What `e2er rerun` (and the study page's rerun) takes: a study that is not running.
+_RERUN_STATUSES = _RESUMABLE_STATUSES | {"completed", "cancelled"}
+
+
+async def _pending_queries_or_none(paper_id: str) -> list[dict[str, Any]]:
+    """Data queries waiting for the researcher's approval; none when the table cannot be read."""
+    try:
+        return list(await get_pending_queries(paper_id))
+    except Exception:  # noqa: BLE001 — the live panel must render regardless
+        return []
 
 
 def _awaiting_review(paper: Any) -> str | None:

@@ -100,6 +100,8 @@ def _format_status_summary(d: dict) -> str:
     ]
     if last_error:
         lines.append(f"Last error: {_truncate(str(last_error), 120)}")
+    for note in d.get("notes") or []:
+        lines.append(f"Note:       {note}")
     return "\n".join(lines)
 
 
@@ -153,6 +155,19 @@ def status(paper_id: str, tail: bool = False, monitor_seconds: float = 1800.0) -
 
     payload = r.json()
     print(_format_status_summary(payload))
+    if (payload.get("shown_status") or payload.get("status")) == "paused":
+        # Stopped at a researcher step: say which, and what it waits for.
+        try:
+            rv = httpx.get(f"{_api_root()}/api/papers/{paper_id}/review", timeout=10.0)
+            review = rv.json() if rv.status_code == 200 else {}
+        except Exception:  # noqa: BLE001 — the summary above stands without it
+            review = {}
+        if review.get("pending"):
+            from .cli_review import format_pending
+
+            print()
+            print(format_pending(review))
+            print(f"Act on it with: e2er review {paper_id}")
 
     if tail:
         current_status = payload.get("shown_status") or payload.get("status", "")

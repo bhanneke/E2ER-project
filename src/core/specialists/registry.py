@@ -270,6 +270,23 @@ POLISH_SPECIALISTS = [
 ]
 
 
+#: What each specialist reads that another specialist writes, by producer. When
+#: both are in one dispatch the dispatcher runs the producer's group first
+#: (``dispatcher.order_by_dependencies``), whatever groups the strategist chose.
+#: The 2026-10-03 live run had ``econometrics_specialist`` in the same parallel
+#: group as ``data_analyst`` (the strategist's own prompt example did that), so
+#: estimation ran against a data.db that was still being loaded and every
+#: attempt failed its contract.
+SPECIALIST_NEEDS: dict[str, tuple[str, ...]] = {
+    # data_dictionary.json: the tables to load.
+    "data_analyst": ("data_architect",),
+    # data.db and data_summary.md (the loaded data), data_dictionary.json, and
+    # identification_spec.json (the declared specification the results are checked against).
+    "econometrics_specialist": ("data_architect", "data_analyst", "identification_strategist"),
+    # estimation_results.json (the results table), data_summary.md, model_spec.md.
+    "paper_drafter": ("data_analyst", "econometrics_specialist", "theory_specialist"),
+}
+
 #: Specialists that write their output files whole on every attempt. Before an
 #: attempt their earlier files are moved to `<name>.previous` (see
 #: specialists/base.py), so a retry or a send-back never trips over, or passes

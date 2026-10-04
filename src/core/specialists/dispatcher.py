@@ -6,6 +6,7 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from contextvars import ContextVar
 from pathlib import Path
+from typing import Any
 
 from ...logging_config import get_logger
 from ...modules.llm.base import LLMBackend, ToolHandler
@@ -36,6 +37,122 @@ MAX_SPECIALIST_ATTEMPTS = 3
 #: in the initial phase, so a pause (the spending limit, say) in the middle of a
 #: dispatch keeps a record of what is done and the resume runs only the rest.
 specialist_done: ContextVar[Callable[[WorkOrder], None] | None] = ContextVar("specialist_done", default=None)
+
+_EDITABLE = (".md", ".tex", ".json", ".txt", ".bib")
+
+
+class ContractFailureError(RuntimeError):
+    """Specialists whose last attempt still failed its output contract: the run stops for the researcher.
+
+    Raised by the dispatcher instead of failing the run when every specialist
+    that failed did produce output, but output that does not meet its contract
+    (a crash, a timeout or an unavailable backend still fails the run as
+    before). ``failures`` holds, per specialist, its work order, every attempt
+    with its violations, and the files involved; ``contributions`` the whole
+    dispatch so far (the specialists that succeeded keep their output) and
+    ``remaining`` the work orders of later groups that did not run.
+    """
+
+    def __init__(
+        self,
+        failures: list[dict[str, Any]],
+        contributions: list[Contribution] | None = None,
+        remaining: list[WorkOrder] | None = None,
+    ) -> None:
+        self.failures = failures
+        self.contributions = list(contributions or [])
+        self.remaining = list(remaining or [])
+        names = ", ".join(f["specialist"] for f in failures)
+        super().__init__(f"output contract not met after {MAX_SPECIALIST_ATTEMPTS} attempts: {names}")
+
+
+def contract_failed(c: Contribution) -> bool:
+    """The specialist ran and wrote output, but the output failed its contract (not a crash)."""
+    return not c.success and bool(c.contract_violations)
+
+
+def _files_involved(specialist: str, violations: list[str]) -> list[str]:
+    """The specialist's own output files and the files its violations name, as the researcher can edit them."""
+    from ..pipeline.components import sidecars_for
+    from .registry import SPECIALIST_ARTIFACTS
+
+    names = [SPECIALIST_ARTIFACTS.get(specialist, ""), *sidecars_for(specialist)]
+    names += [v.split(":", 1)[0].strip() for v in violations if ":" in v]
+    return [n for n in dict.fromkeys(names) if n and "/" not in n and not n.startswith(".") and n.endswith(_EDITABLE)]
+
+
+def failure_record(wo: WorkOrder, c: Contribution) -> dict[str, Any]:
+    """What the researcher sees of one specialist that failed its contract (see ContractFailureError)."""
+    attempts = c.attempts or [{"attempt": 1, "error": c.error, "violations": list(c.contract_violations)}]
+    seen = [v for a in attempts for v in a.get("violations") or []]
+    return {
+        "specialist": wo.specialist,
+        "order": wo.model_dump(include={"paper_id", "specialist", "focus", "parallel_group", "context_tier", "extra"}),
+        "attempts": attempts,
+        "files": _files_involved(wo.specialist, seen),
+    }
+
+
+def _tolerant() -> set[str]:
+    from .registry import POLISH_SPECIALISTS, REVIEWER_SPECIALISTS
+
+    return set(REVIEWER_SPECIALISTS) | set(POLISH_SPECIALISTS)
+
+
+def order_by_dependencies(work_orders: list[WorkOrder]) -> tuple[list[WorkOrder], list[str]]:
+    """Regroup a dispatch so no specialist runs before, or beside, one whose output it reads.
+
+    ``registry.SPECIALIST_NEEDS`` names what each specialist reads. A work
+    order planned in the same group as a producer, or before it, moves to the
+    group after the producer's; every later group moves along, so the order of
+    the rest stays as planned. Returns the orders and a line per move for the
+    log. A dependency on a specialist that is not in this dispatch is not a
+    constraint (its output is there from earlier, or the contract check says so).
+    """
+    from .registry import SPECIALIST_NEEDS
+
+    if len(work_orders) < 2:
+        return work_orders, []
+    group = [w.parallel_group for w in work_orders]
+    names = [w.specialist for w in work_orders]
+
+    def producers(i: int) -> list[int]:
+        needs = set(SPECIALIST_NEEDS.get(names[i], ()))
+        return [j for j in range(len(work_orders)) if j != i and names[j] in needs and names[j] != names[i]]
+
+    # A consumer planned before its producer joins the producer's group first.
+    for _ in range(len(work_orders)):
+        changed = False
+        for i in range(len(work_orders)):
+            later = [group[j] for j in producers(i) if group[j] > group[i]]
+            if later:
+                group[i] = max(later)
+                changed = True
+        if not changed:
+            break
+    # Then each group splits into as many as its dependencies need.
+    new = [0] * len(work_orders)
+    level = 0
+    for g in sorted(set(group)):
+        pending = [i for i in range(len(work_orders)) if group[i] == g]
+        while pending:
+            here = set(pending)
+            ready = [i for i in pending if not any(j in here for j in producers(i))]
+            if not ready:  # a cycle: run them as planned
+                ready = pending
+            for i in ready:
+                new[i] = level
+            pending = [i for i in pending if i not in ready]
+            level += 1
+    order = sorted(range(len(work_orders)), key=lambda i: (new[i], i))
+    out = [work_orders[i].model_copy(update={"parallel_group": new[i]}) for i in order]
+    moves = []
+    for i in order:
+        planned = work_orders[i].parallel_group
+        early = sorted({names[j] for j in producers(i) if work_orders[j].parallel_group >= planned})
+        if early:
+            moves.append(f"{names[i]} waits for {', '.join(early)} (planned in the same or a later group)")
+    return out, moves
 
 
 def _inject_context(work_order: WorkOrder, workspace: Path) -> WorkOrder:
@@ -185,6 +302,96 @@ async def execute_work_order(
         )
 
 
+async def run_with_attempts(
+    wo: WorkOrder,
+    backend: LLMBackend,
+    workspace: Path,
+    model: str,
+    extra_tools: list[dict] | None = None,
+    extra_handlers: list[ToolHandler] | None = None,
+    backend_name: str = "anthropic",
+    governance: str = DEFAULT_REGIME,
+    *,
+    sem: asyncio.Semaphore | None = None,
+    retry_crashes: bool = True,
+) -> Contribution:
+    """One work order, retried until it succeeds or exhausts MAX_SPECIALIST_ATTEMPTS.
+
+    The semaphore is acquired per attempt rather than held across the whole
+    retry chain, so a specialist working through its retries doesn't also
+    squat a concurrency slot its peers could be using. Every attempt is kept
+    on the returned contribution (``attempts``). With ``retry_crashes=False``
+    only a contract violation is retried; a crash returns at once.
+    """
+    from ...modules.tracking.usage import check_budget_by_paper_id
+    from .contract_check import has_contract_feedback
+
+    contribution: Contribution | None = None
+    attempts: list[dict[str, Any]] = []
+    for attempt in range(1, MAX_SPECIALIST_ATTEMPTS + 1):
+        if contribution is not None:
+            # Retries cost real money, and a parallel batch runs entirely
+            # between the runner's phase-boundary budget checks — re-check
+            # rather than let a retrying batch spend past the cap.
+            await check_budget_by_paper_id(wo.paper_id)
+            logger.warning(
+                "%s: attempt %d/%d failed (%s) — retrying %s",
+                wo.specialist,
+                attempt - 1,
+                MAX_SPECIALIST_ATTEMPTS,
+                (contribution.error or "no error recorded")[:200],
+                (
+                    "with the contract violation fed back into the prompt"
+                    if has_contract_feedback(workspace, wo.specialist)
+                    else "(no contract feedback to feed back — blind retry)"
+                ),
+            )
+        if sem is not None:
+            async with sem:
+                contribution = await execute_work_order(
+                    wo, backend, workspace, model, extra_tools, extra_handlers, backend_name, governance
+                )
+        else:
+            contribution = await execute_work_order(
+                wo, backend, workspace, model, extra_tools, extra_handlers, backend_name, governance
+            )
+        attempts.append(
+            {
+                "attempt": attempt,
+                "error": (contribution.error or "")[:2000],
+                "violations": list(contribution.contract_violations),
+            }
+        )
+        if contribution.success:
+            if attempt > 1:
+                logger.info("%s: recovered on attempt %d/%d", wo.specialist, attempt, MAX_SPECIALIST_ATTEMPTS)
+            return contribution.model_copy(update={"attempts": attempts})
+        if not retry_crashes and not contract_failed(contribution):
+            return contribution.model_copy(update={"attempts": attempts})
+
+    assert contribution is not None  # the loop runs at least once
+    logger.error(
+        "%s: exhausted %d attempts — %s",
+        wo.specialist,
+        MAX_SPECIALIST_ATTEMPTS,
+        (contribution.error or "no error recorded")[:200],
+    )
+    return contribution.model_copy(update={"attempts": attempts})
+
+
+def raise_contract_failure(work_orders: list[WorkOrder], contributions: list[Contribution]) -> None:
+    """Raise ContractFailureError when every specialist that failed (reviewers, polish aside) failed its contract.
+
+    A failure of another kind among them (a crash, a timeout, an unavailable
+    backend) leaves the decision to the caller, which fails the run as before.
+    """
+    tolerant = _tolerant()
+    failed = [(wo, c) for wo, c in zip(work_orders, contributions, strict=True) if not c.success]
+    blocking = [(wo, c) for wo, c in failed if wo.specialist not in tolerant]
+    if blocking and all(contract_failed(c) for _wo, c in blocking):
+        raise ContractFailureError([failure_record(wo, c) for wo, c in blocking], contributions)
+
+
 async def execute_parallel(
     work_orders: list[WorkOrder],
     backend: LLMBackend,
@@ -202,9 +409,12 @@ async def execute_parallel(
     order that exhausts its budget counts as failed.
 
     Per-specialist failures are caught inside execute_work_order and surface as
-    Contribution(success=False). This wrapper logs an aggregate failure summary
-    and raises if every specialist in the batch failed (so callers fail fast
-    rather than silently advancing to the next phase with no artifacts).
+    Contribution(success=False). This wrapper logs an aggregate failure summary.
+    When the specialists that failed all failed their output contract on the
+    last attempt, it raises ContractFailureError: the run stops for the researcher,
+    and the specialists that succeeded keep their output. Otherwise it raises
+    if every specialist in the batch failed (so callers fail fast rather than
+    silently advancing to the next phase with no artifacts).
     """
     from ...config import get_settings
 
@@ -221,65 +431,14 @@ async def execute_parallel(
     logger.info("Parallel dispatch: %d specialists", len(work_orders))
     sem = asyncio.Semaphore(get_settings().max_concurrent_specialists)
 
-    async def _bounded(wo: WorkOrder) -> Contribution:
-        """One work order, retried until it succeeds or exhausts its budget.
-
-        The semaphore is acquired per attempt rather than held across the whole
-        retry chain, so a specialist working through its retries doesn't also
-        squat a concurrency slot its peers could be using.
-        """
-        from .contract_check import has_contract_feedback
-
-        contribution: Contribution | None = None
-        for attempt in range(1, MAX_SPECIALIST_ATTEMPTS + 1):
-            if contribution is not None:
-                # Retries cost real money, and a parallel batch runs entirely
-                # between the runner's phase-boundary budget checks — re-check
-                # rather than let a retrying batch spend past the cap.
-                await check_budget_by_paper_id(wo.paper_id)
-                logger.warning(
-                    "%s: attempt %d/%d failed (%s) — retrying %s",
-                    wo.specialist,
-                    attempt - 1,
-                    MAX_SPECIALIST_ATTEMPTS,
-                    (contribution.error or "no error recorded")[:200],
-                    (
-                        "with the contract violation fed back into the prompt"
-                        if has_contract_feedback(workspace, wo.specialist)
-                        else "(no contract feedback to feed back — blind retry)"
-                    ),
-                )
-            async with sem:
-                contribution = await execute_work_order(
-                    wo,
-                    backend,
-                    workspace,
-                    model,
-                    extra_tools,
-                    extra_handlers,
-                    backend_name,
-                    governance,
-                )
-            if contribution.success:
-                if attempt > 1:
-                    logger.info(
-                        "%s: recovered on attempt %d/%d",
-                        wo.specialist,
-                        attempt,
-                        MAX_SPECIALIST_ATTEMPTS,
-                    )
-                return contribution
-
-        assert contribution is not None  # the loop runs at least once
-        logger.error(
-            "%s: exhausted %d attempts — %s",
-            wo.specialist,
-            MAX_SPECIALIST_ATTEMPTS,
-            (contribution.error or "no error recorded")[:200],
+    contributions = await asyncio.gather(
+        *(
+            run_with_attempts(
+                wo, backend, workspace, model, extra_tools, extra_handlers, backend_name, governance, sem=sem
+            )
+            for wo in work_orders
         )
-        return contribution
-
-    contributions = await asyncio.gather(*(_bounded(wo) for wo in work_orders))
+    )
 
     failed = [c for c in contributions if not c.success]
     if failed:
@@ -290,6 +449,10 @@ async def execute_parallel(
             MAX_SPECIALIST_ATTEMPTS,
             ", ".join(f"{c.specialist}({(c.error or '?')[:60]})" for c in failed),
         )
+
+    # Output that keeps failing its contract stops the run for the researcher;
+    # the specialists that succeeded keep theirs. Crashes still fail the run.
+    raise_contract_failure(work_orders, list(contributions))
 
     if failed and len(failed) == len(contributions):
         details = "; ".join(f"{c.specialist}: {c.error}" for c in failed)
@@ -408,28 +571,40 @@ async def execute_with_dependencies(
     """Execute work orders grouped by parallel_group — groups run sequentially,
     within each group specialists run in parallel.
 
+    The groups are first checked against what each specialist reads
+    (:func:`order_by_dependencies`): a specialist never runs beside, or before,
+    one whose output it needs.
+
     ``between_groups(done, remaining)`` is awaited after each group with the
     specialists that have succeeded so far and the work orders still to run; a
     researcher step uses it to stop the run between two groups.
     """
     from itertools import groupby
 
-    sorted_orders = sorted(work_orders, key=lambda w: w.parallel_group)
+    ordered, moves = order_by_dependencies(work_orders)
+    for line in moves:
+        logger.warning("Dispatch reordered: %s", line)
+    sorted_orders = sorted(ordered, key=lambda w: w.parallel_group)
     all_contributions: list[Contribution] = []
 
     for group_id, group_iter in groupby(sorted_orders, key=lambda w: w.parallel_group):
         group = list(group_iter)
         logger.info("Executing parallel group %d (%d specialists)", group_id, len(group))
-        contributions = await execute_parallel(
-            group,
-            backend,
-            workspace,
-            model,
-            extra_tools,
-            extra_handlers,
-            backend_name,
-            governance,
-        )
+        try:
+            contributions = await execute_parallel(
+                group,
+                backend,
+                workspace,
+                model,
+                extra_tools,
+                extra_handlers,
+                backend_name,
+                governance,
+            )
+        except ContractFailureError as cf:
+            cf.contributions = all_contributions + cf.contributions
+            cf.remaining = [w for w in sorted_orders if w.parallel_group > group_id]
+            raise
         all_contributions.extend(contributions)
         if between_groups is not None:
             done = {c.specialist for c in all_contributions if c.success}

@@ -1,10 +1,12 @@
-"""Demonstration studies: the disclaimer a study carries when it is published only to demonstrate e2er.
+"""Demonstration studies: the disclaimer a demonstration or test run carries when it is published as is.
 
-A study published with ``e2er publish --demonstration`` (or with
-``E2ER_PURPOSE=demonstration`` in the environment or in the study folder's
-``.env``) records ``purpose: "demonstration"`` in e2er.json and in its dossier;
-a study made with the replication template also records ``kind: "replication"``.
-The paper's first page and the reproduction report then carry the disclaimer.
+A study started with ``e2er run --demonstration`` (or the dashboard's box)
+records the purpose in its manifest.json; ``e2er publish --demonstration`` or
+``E2ER_PURPOSE=demonstration`` in the environment or the study folder's
+``.env`` set it at publishing. A demonstration study records
+``purpose: "demonstration"`` in e2er.json and in its dossier; a study made
+with the replication template also records ``kind: "replication"``. The paper's first page and the
+reproduction report then carry the disclaimer.
 
 The wording lives here and nowhere else.
 """
@@ -22,7 +24,7 @@ PURPOSES = (DEMONSTRATION,)
 #: The disclaimer of a demonstration study, by kind.
 DISCLAIMERS: dict[str, str] = {
     "study": (
-        "Demonstration. This study was produced with e2er and published as is to demonstrate e2er.org. "
+        "Demonstration. This study was produced with e2er as a demonstration or test run and is published as is. "
         "It is not presented as a research contribution, and its author does not vouch for its findings."
     ),
     "replication": (

@@ -65,6 +65,14 @@ LICENCE = (
     "the data; a paper's replication package may include the data it used, labelled as coming from the "
     "GMD, with a pointer to https://www.globalmacrodata.com."
 )
+#: The terms in plain words, one line each (shown before the researcher confirms, and on a study page).
+TERMS_PLAIN = (
+    "Free for academic use: research meant for publication, teaching and theses at universities "
+    "and academic research institutes. Everyone else needs written permission.",
+    "A study's replication package may include the GMD data it used, labelled as GMD data.",
+    "The data may not be republished anywhere else.",
+)
+TERMS_SUMMARY = " ".join(TERMS_PLAIN)
 CITE_KEY = "GMD2025"
 CITATION = (
     "Müller, K., Xu, C., Lehbib, M., & Chen, Z. (2025). The Global Macro Database: A New International "
@@ -398,9 +406,12 @@ class GMDProvider:
             "end": end,
             "rows": len(items),
             "licence": LICENCE,
+            "terms_summary": TERMS_SUMMARY,
             "terms": TERMS_URL,
             "citation": CITATION,
+            "citation_by": "source",
             "cite_key": CITE_KEY,
+            "series": ",".join(variables),
         }
         if versions_file is not None:
             record["versions_file"] = versions_file
@@ -417,42 +428,9 @@ class GMDProvider:
 
 # ── study records: provenance, data dictionary, citation ─────────────────────
 
-DATA_SOURCES_FILE = "data_sources.json"
-
-
-def record_load(workspace: Path, record: dict[str, Any]) -> Path:
-    """Write ``record`` into the study's ``data_sources.json`` (one entry per table or saved file).
-
-    A later load into the same table (or the same saved file) replaces the
-    earlier entry; everything else is kept. Export ships the file as
-    ``data/data_sources.json`` and the dossier lists its entries.
-    """
-    path = Path(workspace) / DATA_SOURCES_FILE
-    loads: list[Any] = []
-    if path.is_file():
-        try:
-            loaded = json.loads(path.read_text(encoding="utf-8"))
-            if isinstance(loaded, dict) and isinstance(loaded.get("loads"), list):
-                loads = loaded["loads"]
-        except (OSError, ValueError):
-            logger.warning("%s is unreadable; starting it again", path)
-    doc: dict[str, Any] = {
-        "$comment": (
-            "Written by e2er-data: one entry per external-source load, with the source version, "
-            "the URL and SHA-256 of every file read."
-        ),
-        "loads": loads,
-    }
-
-    def same(a: dict[str, Any]) -> bool:
-        if record.get("table"):
-            return a.get("table") == record["table"]
-        return not a.get("table") and a.get("saved_to") == record.get("saved_to")
-
-    doc["loads"] = [a for a in doc["loads"] if not (isinstance(a, dict) and same(a))] + [record]
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(doc, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    return path
+# The record of every load is shared by all connectors (load_record.py); kept here for callers.
+from .load_record import DATA_SOURCES_FILE as DATA_SOURCES_FILE  # noqa: E402
+from .load_record import record_load as record_load  # noqa: E402
 
 
 def record_in_dictionary(workspace: Path, table: str, record: dict[str, Any]) -> Path:

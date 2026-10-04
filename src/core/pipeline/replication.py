@@ -437,6 +437,10 @@ def _fetch(workspace: Path, *, max_mb: int, client: Any) -> CheckResult:
         "notes": notes,
     }
     manifest_path.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
+    from ...modules.data.load_record import try_record, zenodo_load
+
+    # The package is the study's input data: its record, licence and citation go with the other loads.
+    try_record(workspace, {**zenodo_load(fetched.as_dict(), doc["fetched_at"]), "saved_to": PACKAGE_DIR})
     stats = {
         "record": record_id,
         "downloaded": len(fetched.files),

@@ -233,8 +233,10 @@ async def test_cascade_halts_when_canonical_artifact_missing(tmp_path, mock_llm)
         # canonical-artifact check ("canonical artifact"); v0.9 M4.3
         # catches it earlier inside run_specialist with the more
         # specific "contract violation: <path>: file not written"
-        # message. Either path satisfies the invariant — accept both.
-        with pytest.raises(RuntimeError, match="canonical artifact|contract violation"):
+        # message. Either path satisfies the invariant — accept both. Since
+        # 0.13.5 the batch stops for the researcher (ContractFailureError, a
+        # RuntimeError) instead of failing the run; it still halts here.
+        with pytest.raises(RuntimeError, match="canonical artifact|contract violation|output contract not met"):
             await execute_parallel(
                 work_orders=work_orders,
                 backend=fake_backend,  # type: ignore[arg-type]

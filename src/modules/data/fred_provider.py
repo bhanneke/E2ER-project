@@ -163,6 +163,31 @@ class FredProvider:
             units=units,
         )
 
+    async def citation_info(self, series_id: str) -> dict[str, str]:
+        """What FRED's suggested citation of a series names: its title, its source, its last update.
+
+        Three small requests (the series, its release, the release's sources);
+        any that fails leaves its part out. Never raises.
+        """
+        out: dict[str, str] = {}
+        try:
+            raw = await self._get("/series", {"series_id": series_id})
+            s = (raw.get("seriess") or [{}])[0] if "_error" not in raw else {}
+            if s.get("title"):
+                out["title"] = str(s["title"])
+            if s.get("last_updated"):
+                out["last_updated"] = str(s["last_updated"])
+            rel = await self._get("/series/release", {"series_id": series_id})
+            release_id = ((rel.get("releases") or [{}])[0] or {}).get("id") if "_error" not in rel else None
+            if release_id is not None:
+                src = await self._get("/release/sources", {"release_id": release_id})
+                names = [str(x.get("name")) for x in src.get("sources") or [] if x.get("name")]
+                if names and "_error" not in src:
+                    out["source"] = ", ".join(names)
+        except Exception as e:  # noqa: BLE001 — the citation is best-effort; the load stands
+            logger.warning("FRED citation details for %s: %s", series_id, e)
+        return out
+
     async def get_series_info(self, series_id: str) -> dict[str, Any]:
         """Metadata for a series: title, units, frequency, seasonal adjustment, etc.
 

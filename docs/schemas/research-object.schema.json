@@ -436,7 +436,7 @@
       "enum": [
         "demonstration"
       ],
-      "description": "Why the study is published. demonstration: published as is to demonstrate e2er (`e2er publish --demonstration`); e2er.org shows a notice on the study and its dossier."
+      "description": "Why the study is published. demonstration: a demonstration or test run, published as is and not presented as a research contribution (`e2er run --demonstration` or `e2er publish --demonstration`); e2er.org shows a notice on the study and its dossier."
     },
     "kind": {
       "enum": [

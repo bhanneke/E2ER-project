@@ -52,7 +52,7 @@ from src.core.specialists.contracts import Contribution
 from src.core.specialists.registry import SPECIALIST_ARTIFACTS
 from src.core.strategist.actions import SelfAttackFinding, SelfAttackReport
 from src.core.strategist.runner import PipelineRunner
-from src.core.strategist.state import PaperStatus
+from src.core.strategist.state import PaperStatus, StepFailedError
 
 _DRAFT = r"""\documentclass{article}
 \begin{document}
@@ -264,7 +264,8 @@ class TestLegacyRevisorNeverDispatched:
             "src.core.specialists.dispatcher.execute_work_order",
             side_effect=_capture,
         ):
-            await runner._run_review_phase()
+            with pytest.raises(StepFailedError):  # the mismatch remains: the check stops the step
+                await runner._run_review_phase()
 
         # patch_revisor IS expected (one auto-patch attempt); revisor
         # MUST NOT be.

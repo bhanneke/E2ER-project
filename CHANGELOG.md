@@ -7,6 +7,98 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.5] — 2026-10-04
+
+- **Every data connector records what it loaded, with the source's terms and citation.** Before,
+  only the Global Macro Database connector wrote `data_sources.json`. Now FRED, Yahoo Finance
+  (yfinance), Allium, a Zenodo record fetched by the replication template and the researcher's
+  data folder write an entry for every load too, through `e2er-data` and through `fetch_data`
+  (the API backends). Each entry names the source, what was loaded (series, ticker, variables,
+  query or file), where it went, the release or the date it was read, the source's terms in a
+  sentence or two and in full with their address, and the citation: FRED's own format from the
+  series' Cite tab (with the series title and source, read from FRED), Zenodo's format for a
+  record, and for Yahoo Finance and Allium, which publish no citation format, one that e2er
+  suggests (`citation_by: e2er`). A file from the data folder is recorded with its SHA-256.
+  The dossier keeps the new keys (`series`, `retrieved_at`, `terms_summary`, `citation_by`,
+  `link`, `doi`) and lists data-folder files by `path`; e2er.org shows them as the study's
+  "Data used". Studies published before this record no entries for these sources.
+
+- **Every researcher action is in the dashboard too.** The study page runs a study again from a
+  step of its template with a remark (`e2er rerun`), resumes a failed or stopped study as well as a
+  paused one (`e2er resume`), resumes with a higher spending limit after the limit was reached
+  (`e2er resume --max-cost`; the plain Resume, which would stop again at once, is not offered
+  then), deposits the frozen pre-registration on Zenodo (`e2er preregister deposit --zenodo`),
+  approves or refuses data queries waiting for approval, and shows "Demonstration or test run" on
+  a demonstration study. The new-study page has the stops after a step (`e2er run --review-at`)
+  and takes a spending limit in cents. Each stop page says what continuing means for its kind
+  ("Keep the output as it is and continue", "Continue with these mismatches", "Approve the
+  deviation and continue", "Continue: run the check again", "Approve and freeze"). The finish
+  page has where public data and code live, the Zenodo deposit, name, ORCID iD, roles, licence,
+  repository, commit and path, what the study builds on, `--online` citation checks, and the
+  terms of a data source the study used: publishing GMD data as public needs the box that
+  confirms them, as `--accept-data-terms gmd` does.
+- **`e2er rerun` works after a run failed or stopped.** Before, it refused a step that had not
+  been marked done (the step a run failed in) and a run stopped at a researcher step or a check.
+  Now any template step of the study's mode can be the start: a step the failed run never
+  reached is accepted, and the run picks up at its first unfinished step; at a stop the rerun
+  takes the place of the stop (recorded as `replaces`), and the checks run again on the way. A
+  step run again runs all of its specialists. `e2er resume` works as before.
+- **A dossier with an approved deviation from the pre-registration is accepted by e2er.org.**
+  The researcher step listed the approved changes as records under `deviations`, which the
+  dossier format keeps for text; the text stays there and the records (file, SHA-256 frozen and
+  approved) are under `approved_deviations`.
+
+- **A failed number check stops the run for the researcher.** When the numbers in the paper's
+  tables still differ from the results files after the automatic correction (governance `full`),
+  the run stops at the researcher step `number_check`. It names each mismatch: the table cell,
+  the value in the table, the value in the results and the source key, and offers the draft and
+  the results files. Edit them, give an instruction, or send back `paper_drafter`,
+  `section_writer` (table layout) or `econometrics_specialist`, and the check runs again; or
+  approve to continue with these mismatches, recorded in the dossier as your decision. The
+  reviewers run after that. Before, the check marked the run stopped, a `--review-at review`
+  pause hid it, and the review step was then counted as done without a single reviewer. Under
+  `contracts` and `off` the mismatches are recorded and the run continues, and `e2er status`
+  and the dossier say so (`number_check.json`). The export carries the record
+  (`reviews/number_check.json`); `e2er verify` passes a cell that differs only when the researcher
+  continued with exactly that cell, and names it.
+- **The number check no longer reads column headers and row labels as results.** All three
+  critical mismatches of the live run were header cells ("Scaled, day 15 or earlier",
+  "120-day window", a placebo shift of -20 days): the rows above the first `\midrule` and a row's
+  label ("Surprise (25 bp)") are skipped; a bare number in the first column is still checked.
+- **A dossier with output kept at a contract stop is accepted by e2er.org.** The researcher
+  step listed the kept outputs under `accepted`, which the dossier format reserves for a yes/no;
+  they are now under `kept`.
+- **A step that fails stops the run and says why.** A review step that ends without a reviewer
+  score, a revision step without its patch file, or the citation check now ends the run with the
+  reason in `last_error`; no later step runs (the live run went on to the replication step), and
+  the step is not counted as done, so `e2er resume` runs it again. No failed or stopped status is
+  written without a reason.
+- **patch_revisor's empty patch is an answer.** `[]` ("nothing I can fix by editing the draft")
+  no longer counts as a contract violation, as its skill already said; a missing or unreadable
+  patch file gets the usual attempts with the violation fed back. The automatic correction runs
+  once per set of mismatches: a resume after the researcher's decision does not pay for it again.
+- **Output that fails its check after the last attempt stops the run for the researcher.** Before,
+  the run ended `failed`. Now it stops at the researcher step `output_contract`, which lists each
+  attempt's violations and the files involved (`e2er status`, `e2er review`, the dashboard's
+  review page). The researcher keeps the output as it is (recorded in the dossier; the step that
+  wrote it is marked `approved_by_researcher` with `contract_failed`), edits a file, gives an
+  instruction, or sends the specialist back with a remark for new attempts. `e2er resume` alone
+  gives new attempts and never keeps failed output. Specialists in the same batch that passed
+  keep their output. Crashes and an unavailable backend still fail the run.
+- **A specialist no longer runs beside the one whose output it reads.** The live run had the
+  econometrics specialist in the data analyst's batch, estimating before any data were loaded.
+  The dispatcher now moves such an order behind its producer (`SPECIALIST_NEEDS`), and the
+  strategist's example plan no longer shows it.
+- **The data architect plans only tables an available source can load**: yfinance and GMD, FRED
+  with `FRED_API_KEY`, Allium with `ALLIUM_API_KEY`, or a file in the study's data folder. Its
+  prompt lists exactly these; any other table is a contract violation that names the table, its
+  source and why it is unavailable.
+- **`e2er run --demonstration`** marks a demonstration or test run from the start (manifest.json
+  `purpose`); export, publish, the paper footnote, the reproduction report and the dossier take
+  it from there. New disclaimer wording: "Demonstration. This study was produced with e2er as a
+  demonstration or test run and is published as is. It is not presented as a research
+  contribution, and its author does not vouch for its findings."
+
 ## [0.13.4] — 2026-10-03
 
 Fixes found by the new end-to-end stories (e2er-site `npm run test:e2e`, 15 research processes

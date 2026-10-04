@@ -161,6 +161,7 @@ def _submit_paper(
     review_stages: list[str] | None = None,
     title_suffix: str = "",
     template: str | None = None,
+    demonstration: bool = False,
 ) -> dict | None:
     """POST /api/papers and return the response body."""
     import httpx
@@ -206,6 +207,10 @@ def _submit_paper(
         body["review_stages"] = review_stages
     if template:
         body["pipeline"] = template
+    if demonstration:
+        # Recorded in the study's manifest.json at start: export, publish, the
+        # paper's footnote, the reproduction report and the dossier take it from there.
+        body["purpose"] = "demonstration"
     headers = {}
     if token := os.environ.get("E2ER_API_TOKEN"):
         headers["Authorization"] = f"Bearer {token}"
@@ -267,6 +272,7 @@ def run(
     governance: str | None = None,
     review_stages: list[str] | None = None,
     template: str = "empirical",
+    demonstration: bool = False,
 ) -> int:
     """Submit a paper and tail it. Entry point for `e2er run "<RQ>"`."""
     # The template must be a file e2er can load, checked before the server is
@@ -289,9 +295,10 @@ def run(
     model_note = f", model={model}" if model else ""
     gov_note = f", governance={governance}" if governance else ""
     review_note = f", review-at={','.join(review_stages)}" if review_stages else ""
+    demo_note = ", demonstration or test run" if demonstration else ""
     print(
         f"  template={template}, methodology={methodology}, mode={mode}, max_cost=${max_cost}"
-        f"{backend_note}{model_note}{gov_note}{review_note}",
+        f"{backend_note}{model_note}{gov_note}{review_note}{demo_note}",
         file=sys.stderr,
     )
     resp = _submit_paper(
@@ -305,6 +312,7 @@ def run(
         governance=governance,
         review_stages=review_stages,
         template=template,
+        demonstration=demonstration,
     )
     if not resp:
         return 5

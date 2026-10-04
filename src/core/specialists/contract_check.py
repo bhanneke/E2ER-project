@@ -116,6 +116,13 @@ class ContractCheck:
     kind: str = KIND_RELIABILITY
 
 
+#: Outputs for which an empty list is a valid answer, not an empty file: the
+#: patch file of patch_revisor (``[]`` = nothing in the findings it can fix by
+#: editing the draft, as its skill writing/scoped-revision says). Treating it
+#: as a violation made the revisor's honest "no edit" read as a broken step.
+EMPTY_LIST_IS_AN_ANSWER = frozenset({"paper_draft.tex.edits.json"})
+
+
 def check_artifact_nonempty(workspace: Path, relative: str) -> ContractCheck:
     """Verify a single declared artifact has non-trivial content.
 
@@ -143,6 +150,8 @@ def check_artifact_nonempty(workspace: Path, relative: str) -> ContractCheck:
         # Cheap up-front: trim whitespace and check for the literal
         # empty containers before paying for a parse.
         stripped = text.strip()
+        if stripped == "[]" and relative in EMPTY_LIST_IS_AN_ANSWER:
+            return ContractCheck(relative, True, "")
         if stripped in ("{}", "[]", "null", ""):
             return ContractCheck(relative, False, f"empty JSON ({stripped or 'whitespace-only'!r})")
         try:
@@ -752,6 +761,13 @@ def check_specialist_artifacts(workspace: Path, specialist: str) -> list[Contrac
     # and reports the real row counts (docs: skills/files/data/data-tables.md).
     if specialist == "data_analyst" and not any(c.artifact == primary and not c.ok for c in checks):
         checks.extend(check_declared_tables(workspace))
+
+    # The data architect declares only tables an available source can load
+    # (a connector usable now, or a file in the study's data folder).
+    if specialist == "data_architect" and not any(c.artifact == primary and not c.ok for c in checks):
+        from .data_sources import check_declared_sources
+
+        checks.extend(check_declared_sources(workspace))
 
     # Draft-writing specialists may reference tables, never contain them.
     if specialist in _NO_INLINE_TABLES:

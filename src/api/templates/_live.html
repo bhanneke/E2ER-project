@@ -23,13 +23,32 @@
             hx-swap="none"
             hx-on::after-request="if (!event.detail.successful) { try { alert(JSON.parse(event.detail.xhr.responseText).detail); } catch (e) { alert('Could not cancel.'); } }">Cancel attempt</button>
   {% endif %}
-  {% if can_resume and not awaiting_review %}
-    <button class="btn-primary"
+  {% if can_resume and not awaiting_review and not budget_paused %}
+    <button class="btn-primary" id="resume"
             hx-post="/api/papers/{{ paper.id }}/resume"
-            hx-confirm="Resume this run?"
-            hx-swap="none">Resume</button>
+            hx-confirm="Resume this run? It picks up at the first step that has not finished."
+            hx-swap="none"
+            hx-on::after-request="if (!event.detail.successful) { try { alert(JSON.parse(event.detail.xhr.responseText).detail); } catch (e) { alert('Could not resume.'); } }">Resume</button>
   {% endif %}
 </div>
+<span id="live-flags" hidden data-rerun="{{ 1 if rerun_open else 0 }}" data-running="{{ 1 if running else 0 }}"
+      data-budget="{{ 1 if budget_paused and can_resume else 0 }}" data-awaiting="{{ 1 if awaiting_review else 0 }}"></span>
+
+{% if pending_queries %}
+  <div class="waiting-box" id="pending-queries">
+    <span><strong>Data queries wait for your approval.</strong> A specialist wants to run these queries on the data warehouse; they run only after you approve them.</span>
+    <ul class="small">
+      {% for q in pending_queries %}
+        <li>
+          <code class="mono">{{ (q.query_sql or "")[:400] }}</code>
+          {% if q.estimated_rows %}<span class="muted">about {{ q.estimated_rows }} rows</span>{% endif %}
+          <button class="btn btn-small" data-query="{{ q.id }}" data-approve="1">Approve</button>
+          <button class="btn btn-small" data-query="{{ q.id }}" data-approve="0">Refuse</button>
+        </li>
+      {% endfor %}
+    </ul>
+  </div>
+{% endif %}
 
 {% if elsewhere %}
   <div class="waiting-box elsewhere">

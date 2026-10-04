@@ -147,11 +147,13 @@ async def test_resume_with_no_review_scores_marks_failed(tmp_workspace, mock_llm
     )
 
     # No reviewer artifacts exist in the workspace, no contributions in memory.
-    status = await runner._run_revision_phase(PaperStatus.REVIEW)
-    assert status == PaperStatus.FAILED, (
-        f"resume with no review scores must mark FAILED, got {status}. "
-        "Auto-completing here produces a 'completed' paper with no review trail."
-    )
+    from src.core.strategist.state import StepFailedError
+
+    with pytest.raises(StepFailedError) as err:
+        await runner._run_revision_phase(PaperStatus.REVIEW)
+    # FAILED, with a reason, never a silent auto-complete with no review trail.
+    assert err.value.status == PaperStatus.FAILED
+    assert "no reviewer scores" in err.value.reason and "e2er resume" in err.value.reason
 
 
 # ---------------------------------------------------------------------------

@@ -76,6 +76,21 @@ class HumanReviewRequestedError(Exception):
         super().__init__(f"Human review requested after stage '{stage}'")
 
 
+class StepFailedError(Exception):
+    """A step ended the run: ``failed``, or ``rejected`` (shown as "stopped by a check").
+
+    Raised instead of returning the status, so the run stops at once (no later
+    step runs), the step is not marked done (``e2er resume`` runs it again), and
+    the reason always reaches the paper's ``last_error``.
+    """
+
+    def __init__(self, status: PaperStatus, reason: str, stage: str = "") -> None:
+        self.status = status
+        self.reason = reason.strip() or f"the step '{stage or '?'}' ended the run without a recorded reason"
+        self.stage = stage
+        super().__init__(self.reason)
+
+
 class GateHaltError(HumanReviewRequestedError):
     """A check placed inside the dispatch (a gate step with `after`) failed and halts the run.
 

@@ -82,6 +82,28 @@ def status_words(status: str | None) -> str:
     return STATUS_WORDS.get(s, s.replace("_", " "))
 
 
+#: What the number check left for the reader when the run went on with mismatches
+#: (written by the runner; see runner._settle_number_check).
+NUMBER_CHECK_FILE = "number_check.json"
+
+
+def run_notes(workspace: Path | str | None) -> list[str]:
+    """Plain-language notes on how the run went that the status line must carry.
+
+    Today one: the number check found tables that differ from the results and
+    the run continued (governance ``contracts``/``off``, or the researcher's
+    approval under ``full``).
+    """
+    if not workspace:
+        return []
+    try:
+        doc = json.loads((Path(workspace) / NUMBER_CHECK_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    note = doc.get("note") if isinstance(doc, dict) else None
+    return [str(note)] if note else []
+
+
 def read_aggregation(*folders: Path | str | None) -> dict[str, Any] | None:
     """``review_aggregation.json`` from the first folder that has it (a workspace, or a bundle's ``reviews/``)."""
     for folder in folders:

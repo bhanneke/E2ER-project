@@ -56,13 +56,41 @@ e2er review <paper_id> --approve
 
 An instruction is kept in `researcher_instructions.md`; every later specialist and the strategist receive it. Sending back re-runs that template step (and the steps after it) or that specialist with the remark, then the run stops at the same researcher step again.
 
-A study that is no longer stopped at a researcher step (a completed one, say) can be sent back too:
+A study that completed, failed or stopped can be sent back too:
 
 ```
 e2er rerun <paper_id> --from compare --remark "Write the report again from the comparison."
 ```
 
-The step and every step after it run again with the remark (a researcher step cannot be the start); their approvals are withdrawn, so the run stops at the next researcher step, where the new result needs approving.
+The step and every step after it run again with the remark (a researcher step cannot be the start); their approvals are withdrawn, so the run stops at the next researcher step, where the new result needs approving. After a failure the step may be one the run never reached: the run then picks up at its first unfinished step. When the run waits at a researcher step or a failed check, the rerun takes the place of that stop, and the checks run again on the way.
+
+Everything here is in the dashboard too: the stop pages have the files, the instruction, the send-back and the decision; the study page has "Run again from a step" (the template's steps and a remark), Resume, and a new spending limit when the limit was reached.
+
+## When the tables disagree with the results
+
+Before the reviewers run, the number check compares every number in the paper's tables with the
+results files, and patch_revisor gets one attempt to correct the cells that differ. When numbers
+still differ (governance `full`), the run stops at the researcher step `number_check`. It lists
+each mismatch (table cell, value in the table, value in the results, source key) and offers the
+draft and the results files. Edit one of them, give an instruction, or send back `paper_drafter`,
+`section_writer` (it writes the table layout) or `econometrics_specialist`; the check then runs
+again. Or approve (`e2er review <id> --approve`) to continue with exactly these mismatches: the
+dossier records each one as your decision. `e2er resume` alone runs the check again. The
+reviewers run once the check has passed or you have decided. Under governance `contracts` or
+`off` the check does not stop the run: the mismatches are recorded in the dossier and in
+`number_check.json`, and `e2er status` says so.
+
+## When output keeps failing its check
+
+A specialist's output is checked against its contract after every attempt, and a failed check is
+fed back into the next attempt. When the last attempt still fails, the run stops at the
+researcher step `output_contract`. It lists, per specialist, each attempt's violations and the
+files involved. You can keep the output as it is (`e2er review <id> --approve`; recorded in the
+dossier, and the step that wrote it is marked as failing its check), edit one of the files, give
+an instruction, or send the specialist back with a remark (`--send-back data_analyst --remark
+"..."`), which gives it new attempts. `e2er resume` alone also gives it new attempts. The
+specialists of the same batch that passed keep their output. A crash or an unavailable backend
+still fails the run, which can then be resumed.
 
 ## In the dossier
 

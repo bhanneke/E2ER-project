@@ -86,6 +86,12 @@ async def run_specialist(
             + ". Read each one before you write it (the write tool refuses to overwrite a file you have not read)."
         )
 
+    if specialist == "data_architect":
+        # Exactly the sources this study can load from now; the contract check holds the architect to them.
+        from .data_sources import sources_block
+
+        user_prompt += "\n\n" + sources_block(workspace)
+
     # Cross-attempt half of the self-correction loop: if a PRIOR attempt's
     # script crashed when the runner executed it, feed the captured traceback
     # into this attempt. Script-writing specialists can now also run their own
@@ -204,6 +210,7 @@ async def run_specialist(
     # failure blocks. A RELIABILITY failure (missing, unparseable, `{}`) blocks
     # in every regime — it means the run is broken, not that the paper is
     # ungoverned, and letting it through is what produced the 2026-08-05 cell.
+    violations: list[str] = []
     if result.success:
         from .contract_check import check_specialist_artifacts
 
@@ -225,7 +232,8 @@ async def run_specialist(
                     "; ".join(f"{c.artifact}: {c.reason}" for c in shadowed),
                 )
             if blocking:
-                block_summary = "; ".join(f"{c.artifact}: {c.reason}" for c in blocking)
+                violations = [f"{c.artifact}: {c.reason}" for c in blocking]
+                block_summary = "; ".join(violations)
                 logger.warning("%s: contract violation — %s", specialist, block_summary)
                 result.success = False
                 existing = (result.error or "").strip()
@@ -290,6 +298,7 @@ async def run_specialist(
         duration_seconds=duration,
         success=result.success,
         error=result.error or "",
+        contract_violations=violations,
     )
 
 

@@ -405,7 +405,11 @@ def read_run(db: Path, paper_id: str, files: dict[str, Any] | None = None, bundl
       rows inside its start and end, the ``contributions`` row likewise),
       ``check`` (gate verdicts, halts, the pre-registration check) and
       ``researcher`` (one per ``researcher_action`` row, all its fields kept,
-      plus files the researcher supplied). A send-back's rerun of a specialist
+      plus files the researcher supplied). A stop for output that failed its
+      contract in every attempt is a ``check`` step (``output_contract``) with
+      each attempt's violations; when the researcher keeps that output as it
+      is, the specialist step that wrote it carries ``approved_by_researcher``
+      (with ``contract_failed`` and the violations left). A send-back's rerun of a specialist
       (``researcher_rerun``, written by the runner) is noted on the specialist
       step it caused, not counted as a researcher action again.
     * **Events** keep the rest of the run's history: stops for review, pauses,
@@ -629,8 +633,47 @@ def read_run(db: Path, paper_id: str, files: dict[str, Any] | None = None, bundl
                     **({"frozen_at": _utc(data["frozen_at"])} if data.get("frozen_at") else {}),
                 }
             )
+        elif etype == "contract_halted":
+            # Output that failed its contract in every attempt: the run stopped for the researcher.
+            rec.workflow.append(
+                {
+                    "type": "check",
+                    "phase": phase,
+                    "check": "output_contract",
+                    **where,
+                    "passed": False,
+                    "enforced": True,
+                    "halted": True,
+                    "at": at,
+                    "specialists": _clip(list(data.get("specialists") or [])),
+                }
+            )
         elif etype == "researcher_action":
             rec.workflow.append({**researcher_step(data, created, phase), **where})
+            if data.get("decision") == "numbers_accepted":
+                # The run went on past the number check by the researcher's
+                # decision: the halted check says so, with each mismatch.
+                halted = [s for s in rec.workflow if s.get("type") == "check" and s.get("check") == "number_check"]
+                if halted:
+                    halted[-1]["approved_by_researcher"] = {
+                        "at": _utc(data.get("at") or created),
+                        "mismatches": _clip(list(data.get("mismatches") or [])),
+                    }
+            if data.get("decision") == "accepted_as_is":
+                # The output stands by the researcher's decision; one that still
+                # fails its contract is marked as such on the step that wrote it.
+                for acc in data.get("accepted") or []:
+                    prior = [
+                        s
+                        for s in rec.workflow
+                        if s.get("type") == "specialist" and s.get("specialist") == acc.get("specialist")
+                    ]
+                    if prior:
+                        prior[-1]["approved_by_researcher"] = {
+                            "at": _utc(data.get("at") or created),
+                            "contract_failed": bool(acc.get("contract_failed")),
+                            **({"violations": _clip(list(acc["violations"]))} if acc.get("violations") else {}),
+                        }
         elif etype == "researcher_input":
             rec.workflow.append(
                 {
@@ -747,6 +790,20 @@ def researcher_step(data: dict[str, Any], at: str, phase: str | None = None) -> 
         "at": _utc(data.get("at") or at),
     }
     for key, value in data.items():
+        if key == "accepted" and isinstance(value, list):
+            # The outputs kept at a contract stop. On a step, `accepted` is the
+            # specialist's yes/no in the dossier format; the list goes under `kept`
+            # (a dossier with an array there was refused by e2er.org).
+            key = "kept"
+        if key == "deviations" and isinstance(value, list) and any(isinstance(d, dict) for d in value):
+            # The changes to the pre-registered plan the researcher approved. In the
+            # dossier format `deviations` lists text (as on the pre-registration
+            # check); the records (file, SHA-256 frozen and approved) go under
+            # `approved_deviations` (e2er.org refused a dossier with objects there).
+            step["deviations"] = _clip(
+                [str(d.get("deviation") or d.get("file")) if isinstance(d, dict) else str(d) for d in value if d]
+            )
+            key = "approved_deviations"
         if key not in step and value is not None:
             step[key] = _clip(value)
     return step
@@ -869,11 +926,32 @@ def build_dossier(
     return doc
 
 
+#: The keys of a load the dossier keeps (data/data_sources.json, see modules/data/load_record.py).
+#: A load recorded before a key existed simply lacks it.
+_SOURCE_KEYS = (
+    "dataset",
+    "version",
+    "table",
+    "saved_to",
+    "licence",
+    "terms",
+    "citation",
+    "cite_key",
+    # Since every connector records its loads: what a study page shows.
+    "series",
+    "retrieved_at",
+    "terms_summary",
+    "citation_by",
+    "link",
+    "doi",
+)
+
+
 def _data_sources(bundle: Path | None) -> list[dict[str, Any]]:
     """The external-source loads ``data/data_sources.json`` records: source, release, files with SHA-256.
 
-    Written by ``e2er-data`` when a connector that publishes versioned files
-    (the GMD) loads a table. A study without the file has no ``data_sources``
+    Written by every data connector (FRED, yfinance, GMD, Allium, a Zenodo
+    record, the researcher's data folder) when it loads data. A study without the file has no ``data_sources``
     in its dossier, so its dossier (and address) is unchanged.
     """
     if bundle is None:
@@ -888,13 +966,14 @@ def _data_sources(bundle: Path | None) -> list[dict[str, Any]]:
         if not isinstance(load, dict) or not load.get("connector"):
             continue
         entry: dict[str, Any] = {"connector": str(load["connector"])}
-        for key in ("dataset", "version", "table", "saved_to", "licence", "terms", "citation", "cite_key"):
+        for key in _SOURCE_KEYS:
             if isinstance(load.get(key), str) and load[key]:
                 entry[key] = load[key]
+        # A file read from the source (url) or from the researcher's data folder (path).
         entry["files"] = [
-            {"url": str(f["url"]), "sha256": str(f["sha256"])}
+            {("url" if f.get("url") else "path"): str(f.get("url") or f["path"]), "sha256": str(f["sha256"])}
             for f in load.get("files") or []
-            if isinstance(f, dict) and f.get("url") and f.get("sha256")
+            if isinstance(f, dict) and (f.get("url") or f.get("path")) and f.get("sha256")
         ]
         out.append(entry)
     return out

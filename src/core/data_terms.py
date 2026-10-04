@@ -47,12 +47,7 @@ def _gmd() -> SourceTerms:
         name=gmd.DATASET,
         short="GMD",
         terms_url=gmd.TERMS_URL,
-        plain=(
-            "Free for academic use: research meant for publication, teaching and theses at universities "
-            "and academic research institutes. Everyone else needs written permission.",
-            "A study's replication package may include the GMD data it used, labelled as GMD data.",
-            "The data may not be republished anywhere else.",
-        ),
+        plain=gmd.TERMS_PLAIN,
         zenodo_licence="other-nc",
         cite_key=gmd.CITE_KEY,
         citation=gmd.CITATION,

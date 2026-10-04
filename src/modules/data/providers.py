@@ -140,7 +140,10 @@ class GMDFetcher(SeriesFetcher):
                 end=int(params["end"]) if params.get("end") is not None else None,
                 version=params.get("version"),
             )
-            env.pop("gmd_record", None)
+            # The record of the load, for data_sources.json (fetch_data takes it off the envelope).
+            record = env.pop("gmd_record", None)
+            if record:
+                env["_load_record"] = record
             return env
         return _unknown_method("gmd", method, ["versions", "variables", "countries", "series"])
 

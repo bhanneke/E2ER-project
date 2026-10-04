@@ -144,7 +144,7 @@ e2er cancel <paper_id>
 e2er resume <paper_id> --max-cost 15
 ```
 
-The dossier records every review action. `e2er rerun` sends a finished study back to one of its steps, and that step and all later steps run again. `e2er cancel` stops a running or paused study and keeps its files. `e2er resume` continues a paused or failed study and skips the steps whose output already exists; `--max-cost` raises the spending limit at the same time.
+The dossier records every review action. `e2er rerun` sends a study (finished, failed or stopped) back to one of its steps, and that step and all later steps run again. The dashboard offers each of these actions on the study's pages. `e2er cancel` stops a running or paused study and keeps its files. `e2er resume` continues a paused or failed study and skips the steps whose output already exists; `--max-cost` raises the spending limit at the same time.
 
 ### Studies and versions
 
@@ -174,7 +174,7 @@ e2er publish <study folder> --owner <github-login> --project <name> --to https:/
 
 `e2er verify` runs the check offline and without API keys. The check recomputes the hash values, rebuilds the tables from the estimation results, recomputes t and p values, compares the estimation with the declared identification strategy and confirms that every citation is in the bibliography. A pre-registration or a reproduction in the folder is checked as well. `--online` also looks up the citations in OpenAlex, Semantic Scholar and Crossref. `--against` compares the folder with the study or dossier that e2er.org published and only reads from e2er.org.
 
-`e2er publish` checks the folder and writes the study's description (`e2er.json`) and its dossier. `--to` sends the description, the dossier and the hash values of the files to e2er.org after `e2er login`. The files themselves stay on your computer. `--dry-run` prints the request and sends nothing. `--data` and `--code` state whether data and code are public (default private), and `--zenodo` deposits public data and code on Zenodo with your own token. `--demonstration` marks a study that is published only to demonstrate e2er: `e2er.json` and the dossier record it, and the paper and the reproduction report carry a disclaimer (default: `E2ER_PURPOSE` from the environment or `.env`). `--offline` prepares the folder for publishing in the browser at e2er.org/publish and sends nothing.
+`e2er publish` checks the folder and writes the study's description (`e2er.json`) and its dossier. `--to` sends the description, the dossier and the hash values of the files to e2er.org after `e2er login`. The files themselves stay on your computer. `--dry-run` prints the request and sends nothing. `--data` and `--code` state whether data and code are public (default private), and `--zenodo` deposits public data and code on Zenodo with your own token. `--demonstration` marks a demonstration or test run that is published as is: `e2er.json` and the dossier record it, and the paper and the reproduction report carry a disclaimer. A study started with `e2er run --demonstration` (or with the box in the dashboard) is marked from the start and needs no flag at publishing; `E2ER_PURPOSE` from the environment or `.env` also sets it. `--offline` prepares the folder for publishing in the browser at e2er.org/publish and sends nothing.
 
 `e2er submit` sends a skill, template, specialist or connector to e2er.org for review.
 
@@ -273,7 +273,7 @@ make smoke-paid   # one real study on Claude Haiku 4.5 (needs ANTHROPIC_API_KEY,
   title        = {{e2er (End-to-End Research): The Open Infrastructure for
                    Publishing, Verifying, Reproducing and Reusing AI-Enabled Research}},
   year         = {2026},
-  version      = {0.13.4},
+  version      = {0.13.5},
   url          = {https://github.com/bhanneke/E2ER-project},
   doi          = {10.5281/zenodo.20187238},
   license      = {MIT},

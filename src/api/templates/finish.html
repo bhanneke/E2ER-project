@@ -36,6 +36,7 @@
   </header>
   <p class="card-note">The same five checks as <code>e2er verify</code>, offline: every file matches its fingerprint,
     every table number traces to its source, the estimation follows the declared design, and every citation is in the bibliography.</p>
+  <label class="check"><input type="checkbox" id="verify-online"> <span>Also check every citation against the live registries (OpenAlex, Semantic Scholar, Crossref), as <code>e2er verify --online</code>.</span></label>
   <button type="button" class="btn-primary" id="do-verify" {% if not session_ok %}disabled{% endif %}>Verify</button>
   <div id="verify-out"></div>
 </section>
@@ -73,9 +74,52 @@
       <label><input type="radio" name="code" value="public"> public</label>
     </div>
   </div>
+  <div class="field-grid">
+    <label class="field" id="data-url-field" hidden>
+      <span>Where the public data live (repository or DOI, optional)</span>
+      <input id="pub-data-url" autocomplete="off" spellcheck="false">
+    </label>
+    <label class="field" id="code-url-field" hidden>
+      <span>Where the public code lives (optional)</span>
+      <input id="pub-code-url" autocomplete="off" spellcheck="false">
+    </label>
+  </div>
+  <label class="check" id="zenodo-field" hidden>
+    <input type="checkbox" id="pub-zenodo">
+    <span>Deposit the public data and code on Zenodo with your own token (<code>ZENODO_TOKEN</code>) and record the DOIs.</span>
+  </label>
+
+  <div id="terms-box">
+    {% for t in data_terms %}
+      <div class="pf-banner terms" data-connector="{{ t.connector }}">
+        <p>The study uses data from the {{ t.label }}. Its terms:</p>
+        <ul>{% for line in t.plain %}<li>{{ line }}</li>{% endfor %}</ul>
+        <p class="small">Citation: {{ t.citation }} · <a href="{{ t.terms_url }}" target="_blank" rel="noopener">Full terms</a></p>
+        <label class="check">
+          <input type="checkbox" class="confirm-terms" value="{{ t.connector }}">
+          <span>Publish the {{ t.short }} data with the study under these terms (needed when the data are public).</span>
+        </label>
+      </div>
+    {% endfor %}
+  </div>
+
+  <details class="more">
+    <summary>More: your name, ORCID iD, roles, licence, repository, what the study builds on</summary>
+    <div class="field-grid">
+      <label class="field"><span>Your name as it should appear in citations</span><input id="pub-name" autocomplete="name"></label>
+      <label class="field"><span>ORCID iD</span><input id="pub-orcid" placeholder="0000-0002-1825-0097" autocomplete="off" spellcheck="false"></label>
+      <label class="field"><span>Your roles (CRediT, separated by commas)</span><input id="pub-roles" placeholder="Conceptualization, Software" autocomplete="off"></label>
+      <label class="field"><span>Licence (e.g. CC-BY-4.0)</span><input id="pub-license" autocomplete="off" spellcheck="false"></label>
+      <label class="field"><span>Repository that holds the folder (URL)</span><input id="pub-repo" autocomplete="off" spellcheck="false"></label>
+      <label class="field"><span>Commit that pins it</span><input id="pub-commit" autocomplete="off" spellcheck="false"></label>
+      <label class="field"><span>Path of the folder in the repository</span><input id="pub-path" autocomplete="off" spellcheck="false"></label>
+      <label class="field"><span>Builds on (owner/project, separated by commas)</span><input id="pub-derived" autocomplete="off" spellcheck="false"></label>
+    </div>
+  </details>
+
   <label class="check">
     <input type="checkbox" id="pub-demo" {% if demonstration %}checked{% endif %}>
-    <span>Demonstration: published only to show e2er; the paper and the record say so.</span>
+    <span>Demonstration or test run: the study is published as is and marked as not a research contribution.</span>
   </label>
 
   <div class="save-row">
@@ -108,14 +152,14 @@
 
   document.getElementById('do-export').addEventListener('click', async () => {
     const m = document.getElementById('export-msg'); m.textContent = 'Preparing…';
-    try { const d = await call('POST', '/api/papers/' + pid + '/export'); document.getElementById('export-path').textContent = d.path; m.textContent = 'Ready.'; card('card-folder', 'ok', 'Ready'); }
+    try { const d = await call('POST', '/api/papers/' + pid + '/export'); document.getElementById('export-path').textContent = d.path; showTerms(d.data_terms); m.textContent = 'Ready.'; card('card-folder', 'ok', 'Ready'); }
     catch (e) { m.textContent = e.message; card('card-folder', 'bad', 'Could not prepare'); }
   });
 
   document.getElementById('do-verify').addEventListener('click', async () => {
     const out = document.getElementById('verify-out'); out.innerHTML = '<p class="muted">Checking…</p>';
     try {
-      const d = await call('POST', '/api/papers/' + pid + '/verify');
+      const d = await call('POST', '/api/papers/' + pid + '/verify', { online: document.getElementById('verify-online').checked });
       const mark = { PASS: '✓', FAIL: '✗', SKIP: '·' };
       out.innerHTML = '<div class="vf-list pf-list">' + d.checks.map((c) =>
         '<div class="pf pf-' + c.status.toLowerCase() + '"><span class="pf-mark">' + mark[c.status] + '</span><span class="pf-name">' + esc(c.name) + '</span><span class="pf-detail">' + esc(c.detail) + '</span></div>').join('') +
@@ -127,8 +171,34 @@
   const form = () => ({
     owner: document.getElementById('pub-owner').value, project: document.getElementById('pub-project').value,
     data: document.querySelector('input[name=data]:checked').value, code: document.querySelector('input[name=code]:checked').value,
+    data_url: document.getElementById('pub-data-url').value, code_url: document.getElementById('pub-code-url').value,
+    zenodo: document.getElementById('pub-zenodo').checked,
+    accept_data_terms: [...document.querySelectorAll('.confirm-terms:checked')].map((c) => c.value),
+    name: document.getElementById('pub-name').value, orcid: document.getElementById('pub-orcid').value,
+    license_id: document.getElementById('pub-license').value,
+    roles: document.getElementById('pub-roles').value.split(',').map((x) => x.trim()).filter(Boolean),
+    repo: document.getElementById('pub-repo').value, commit: document.getElementById('pub-commit').value,
+    path: document.getElementById('pub-path').value,
+    derived_from: document.getElementById('pub-derived').value.split(',').map((x) => x.trim()).filter(Boolean),
     demonstration: document.getElementById('pub-demo').checked,
   });
+  // Where public data and code live, and the Zenodo deposit, matter only when something is public.
+  const availability = () => {
+    const dataPublic = document.querySelector('input[name=data]:checked').value === 'public';
+    const codePublic = document.querySelector('input[name=code]:checked').value === 'public';
+    document.getElementById('data-url-field').hidden = !dataPublic;
+    document.getElementById('code-url-field').hidden = !codePublic;
+    document.getElementById('zenodo-field').hidden = !(dataPublic || codePublic);
+  };
+  document.querySelectorAll('input[name=data], input[name=code]').forEach((r) => r.addEventListener('change', availability));
+  availability();
+  const showTerms = (terms) => {
+    document.getElementById('terms-box').innerHTML = (terms || []).map((t) =>
+      '<div class="pf-banner terms" data-connector="' + esc(t.connector) + '"><p>The study uses data from the ' + esc(t.label) + '. Its terms:</p><ul>' +
+      t.plain.map((l) => '<li>' + esc(l) + '</li>').join('') + '</ul><p class="small">Citation: ' + esc(t.citation) +
+      ' · <a href="' + esc(t.terms_url) + '" target="_blank" rel="noopener">Full terms</a></p><label class="check"><input type="checkbox" class="confirm-terms" value="' +
+      esc(t.connector) + '"><span>Publish the ' + esc(t.short) + ' data with the study under these terms (needed when the data are public).</span></label></div>').join('');
+  };
   const pubMsg = document.getElementById('pub-msg');
   const pubBtn = document.getElementById('do-publish');
   let previewOk = false;

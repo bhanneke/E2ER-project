@@ -197,6 +197,11 @@ _DATE_PATTERNS: tuple[re.Pattern[str], ...] = (
 _SCRIPT_RE = re.compile(r"[\^_](?:\{[^{}]*\}|[A-Za-z0-9])")
 
 
+#: A word of at least two letters: the first cell of a row that has one is the
+#: row's label, not a value (a bare number or a year there is still checked).
+_LABEL_WORD_RE = re.compile(r"[A-Za-z]{2,}")
+
+
 def _normalize_cell(cell: str) -> str:
     """Pre-process a tabular cell before running ``_NUMBER_RE``.
 
@@ -319,11 +324,17 @@ def _extract_table_numbers(tex_content: str, *, zeros: bool = False) -> list[tup
         if caption_match:
             table_label += f" ({caption_match.group(1)}...)"
 
+        # The rows above the first \midrule are the column headers: labels such
+        # as "Scaled, day 15 or earlier" or "120-day window", not results. Read
+        # as values they "mismatched" the nearest number in the results (live
+        # run 2026-10-04: all three critical mismatches were header cells, and
+        # the run stopped on a correct paper).
+        header_rows = table_body.split("\\midrule", 1)[0].count("\\\\") if "\\midrule" in table_body else 0
         table_body = rule_re.sub("", table_body)
         rows = table_body.split("\\\\")
         for row_idx, row in enumerate(rows):
             row = row.strip()
-            if not row:
+            if not row or row_idx < header_rows:
                 continue
             # Skip structural rows that span columns with \multicolumn:
             # column-group headers and panel labels (e.g.
@@ -338,6 +349,10 @@ def _extract_table_numbers(tex_content: str, *, zeros: bool = False) -> list[tup
             cells = row.split("&")
             for cell_idx, cell in enumerate(cells):
                 cell = _normalize_cell(cell.strip())
+                if cell_idx == 0 and len(cells) > 1 and _LABEL_WORD_RE.search(re.sub(r"\\[A-Za-z]+", "", cell)):
+                    # The row label ("Surprise (25 bp)", "Placebo, 20 days
+                    # before"): a number in it names the row, it is no result.
+                    continue
                 for num_match in _NUMBER_RE.finditer(cell):
                     num_str = num_match.group(1)
                     parsed = _parse_number(num_str)

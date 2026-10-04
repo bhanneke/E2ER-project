@@ -208,3 +208,85 @@ def test_the_reproduction_step_marks_the_report_in_a_demonstration_study(tmp_pat
     monkeypatch.setenv("E2ER_PURPOSE", "demonstration")
     assert step(tmp_path).passed
     assert disclaimer("replication") in (tmp_path / "reproduction_report.md").read_text().split("# Report")[0]
+
+
+# ── chosen at run start (`e2er run --demonstration`) ────────────────────────
+NEW_STUDY_WORDING = (
+    "Demonstration. This study was produced with e2er as a demonstration or test run and is published as is. "
+    "It is not presented as a research contribution, and its author does not vouch for its findings."
+)
+REPLICATION_WORDING = (
+    "Demonstration. This reproduction was run as is to demonstrate e2er's replication template. "
+    "It is not an assessment of the original authors' work; differences can come from e2er itself."
+)
+
+
+def test_the_wordings_are_the_approved_ones():
+    assert disclaimer() == NEW_STUDY_WORDING
+    assert disclaimer("replication") == REPLICATION_WORDING  # unchanged
+
+
+def test_run_demonstration_records_the_purpose_at_start(monkeypatch):
+    from src import cli_run
+
+    sent: list[dict] = []
+
+    class _R:
+        status_code = 200
+
+        def json(self):
+            return {"paper_id": "p"}
+
+    def _post(url, json=None, headers=None, timeout=None):  # noqa: A002
+        sent.append(json)
+        return _R()
+
+    monkeypatch.setattr("httpx.post", _post)
+    assert cli_run._submit_paper("Does X affect Y?", "empirical", "single_pass", 1.0, demonstration=True)
+    assert cli_run._submit_paper("Does X affect Y?", "empirical", "single_pass", 1.0)
+    assert sent[0]["purpose"] == "demonstration" and "purpose" not in sent[1]
+    out = subprocess.run([sys.executable, "-m", "src", "run", "--help"], cwd=ROOT, capture_output=True, text=True)
+    assert "--demonstration" in out.stdout
+
+
+def test_the_purpose_chosen_at_start_reaches_export_and_publish_without_the_flag(tmp_path: Path):
+    """manifest.json (written at start) → the export's provenance → publish, paper footnote and dossier."""
+    from src.core.demonstration import study_purpose
+    from src.core.export.structured import export_paper
+    from src.core.pipeline.reproduction import check_reproduction
+
+    ws = tmp_path / "study" / "workspaces" / "ws"
+    shutil.copytree(ROOT / "tests" / "fixtures" / "replication_demo", ws)
+    manifest = json.loads((ws / "manifest.json").read_text()) if (ws / "manifest.json").is_file() else {}
+    (ws / "manifest.json").write_text(json.dumps({**manifest, "purpose": "demonstration"}))
+    (ws / "paper_draft.tex").write_text("\\documentclass{article}\\author{X}\\begin{document}R\\end{document}\n")
+    assert study_purpose(ws) == "demonstration"
+    assert check_reproduction(ws).passed
+    b = export_paper(ws, tmp_path / "study" / "exports", date_str="20260930", template="replication")
+    assert json.loads((b / "provenance.json").read_text())["run"]["purpose"] == "demonstration"
+    make_run_db(tmp_path / "study", paper_id_of(b), workspace=ws)
+    assert _publish(b, tmp_path) == 0  # no --demonstration
+    m = json.loads((b / "e2er.json").read_text())
+    assert m["purpose"] == "demonstration" and m["dossier"]["doc"]["purpose"] == "demonstration"
+    assert disclaimer("replication") in (b / "paper" / "paper.tex").read_text()
+
+
+def test_a_republish_replaces_an_earlier_wording_in_the_paper():
+    old = (
+        "\\title{T}\n\\author{Ada Lovelace with e2er\\thanks{This paper was produced with e2er. x}"
+        "\\thanks{Demonstration. This study was produced with e2er and published as is to demonstrate e2er.org. "
+        "It is not presented as a research contribution, and its author does not vouch for its findings.}}\n"
+        "\\begin{document}\n"
+    )
+    new = stamp_paper(old, "Ada Lovelace", DID, purpose="demonstration")
+    assert NEW_STUDY_WORDING in new and "to demonstrate e2er.org" not in new
+    assert new.count("Demonstration.") == 1
+
+
+def test_the_dashboard_box_says_what_the_choice_means():
+    from fastapi.testclient import TestClient
+
+    from src.api.app import app
+
+    html = TestClient(app).get("/papers/new").text
+    assert "Demonstration or test run: the study is published as is and marked as not a research contribution." in html

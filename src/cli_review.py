@@ -5,7 +5,7 @@
     e2er review <paper_id> --instruction "TEXT"    an instruction for the following steps
     e2er review <paper_id> --edit FILE             edit one of the step's files in $EDITOR
     e2er review <paper_id> --send-back STEP --remark "TEXT"
-    e2er rerun <paper_id> --from STEP --remark "TEXT"   a finished study
+    e2er rerun <paper_id> --from STEP --remark "TEXT"   a finished, failed or stopped study
     e2er preregister deposit <paper_id|folder> --zenodo [--sandbox]
 
 Every action is recorded and appears in the study's dossier.
@@ -105,18 +105,7 @@ def review(
         return _post(http, paper_id, {"action": "approve"})
 
     # Interactive.
-    label = {
-        "preregister": " (pre-registration)",
-        "gate": " (a check failed; it runs again on resume)",
-        "deviation": " (the pre-registered plan changed; approve the deviation, edit it back or send back)",
-    }
-    print(f"Researcher step: {pending['stage']}" + label.get(pending["kind"], ""))
-    for reason in pending.get("reasons") or []:
-        print(f"  - {reason}")
-    for name, f in files.items():
-        print(f"  {name}" + ("" if f["exists"] else " (not written yet)"))
-    if data.get("sendable"):
-        print(f"  can be sent back: {', '.join(data['sendable'])}")
+    print(format_pending(data))
     if not _interactive():
         print(_NO_TERMINAL.format(paper_id=paper_id, dashboard=_dashboard_url(paper_id)), file=sys.stderr)
         return 2
@@ -127,6 +116,58 @@ def review(
             "\nStopped. " + _NO_TERMINAL.format(paper_id=paper_id, dashboard=_dashboard_url(paper_id)), file=sys.stderr
         )
         return 2
+
+
+_LABELS = {
+    "preregister": " (pre-registration)",
+    "gate": " (a check failed; it runs again on resume)",
+    "deviation": " (the pre-registered plan changed; approve the deviation, edit it back or send back)",
+    "contract": " (output that failed its check after the last attempt)",
+    "numbers": " (the number check: tables differ from the results)",
+}
+
+
+def format_pending(data: dict[str, Any]) -> str:
+    """The researcher step a run waits at, as `e2er review` and `e2er status` print it."""
+    pending = data.get("pending") or {}
+    lines = [f"Researcher step: {pending.get('stage')}" + _LABELS.get(str(pending.get("kind")), "")]
+    if pending.get("kind") == "contract":
+        for f in pending.get("failures") or []:
+            attempts = f.get("attempts") or []
+            lines.append(f"  {f.get('specialist')}: the output failed its check in all {len(attempts)} attempts")
+            for a in attempts:
+                what = "; ".join(a.get("violations") or []) or a.get("error") or "no reason recorded"
+                lines.append(f"    attempt {a.get('attempt')}: {what}")
+            if f.get("files"):
+                lines.append(f"    files: {', '.join(f['files'])}")
+        lines.append(
+            "  Approve to keep the output as it is (the dossier marks it as failing its check), edit a file, "
+            "give an instruction, or send the specialist back with a remark for new attempts. "
+            "`e2er resume` alone gives it new attempts."
+        )
+    elif pending.get("kind") == "numbers":
+        mismatches = pending.get("mismatches") or []
+        lines.append(f"  {len(mismatches)} number(s) in the paper's tables differ from the results files:")
+        for m in mismatches:
+            lines.append(
+                f"  - {m.get('cell')}: the table says {m.get('in_table')}, "
+                f"the results say {m.get('in_results')} ({m.get('source_key')})"
+            )
+        if pending.get("auto_patch"):
+            lines.append(f"  The automatic correction did not fix them: {pending['auto_patch']}.")
+        lines.append(
+            "  Edit the draft or a results file, give an instruction, or send back paper_drafter, "
+            "section_writer (table layout) or econometrics_specialist; the check then runs again. "
+            "Approve to continue with these mismatches: the dossier records them as your decision. "
+            "The reviewers run after that."
+        )
+    else:
+        lines += [f"  - {reason}" for reason in pending.get("reasons") or []]
+    for f in data.get("files") or []:
+        lines.append(f"  {f['name']}" + ("" if f.get("exists") else " (not written yet)"))
+    if data.get("sendable"):
+        lines.append(f"  can be sent back: {', '.join(data['sendable'])}")
+    return "\n".join(lines)
 
 
 _NO_TERMINAL = (
@@ -177,7 +218,7 @@ def _interactive_loop(http: Any, paper_id: str, data: dict[str, Any], files: dic
 
 
 def rerun(paper_id: str, *, step: str, remark: str) -> int:
-    """`e2er rerun`: send a finished study back to ``step``; it and every later step run again.
+    """`e2er rerun`: send a study back to ``step``; it and every later step run again.
 
     The remark is the researcher's, recorded for the dossier like a send-back;
     the run stops again at the next researcher step.
@@ -190,6 +231,8 @@ def rerun(paper_id: str, *, step: str, remark: str) -> int:
         return 1
     rec = r.json().get("recorded", {})
     print(f"✓ rerun from {rec.get('step')}: {', '.join(rec.get('reruns') or [])} (recorded for the dossier)")
+    if rec.get("replaces"):
+        print(f"✓ in place of the stop at {rec['replaces']}")
     print("✓ the run continues; it stops at the next researcher step")
     return 0
 
