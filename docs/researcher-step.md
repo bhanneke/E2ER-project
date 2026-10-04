@@ -64,6 +64,18 @@ e2er rerun <paper_id> --from compare --remark "Write the report again from the c
 
 The step and every step after it run again with the remark (a researcher step cannot be the start); their approvals are withdrawn, so the run stops at the next researcher step, where the new result needs approving.
 
+## When output keeps failing its check
+
+A specialist's output is checked against its contract after every attempt, and a failed check is
+fed back into the next attempt. When the last attempt still fails, the run stops at the
+researcher step `output_contract`. It lists, per specialist, each attempt's violations and the
+files involved. You can keep the output as it is (`e2er review <id> --approve`; recorded in the
+dossier, and the step that wrote it is marked as failing its check), edit one of the files, give
+an instruction, or send the specialist back with a remark (`--send-back data_analyst --remark
+"..."`), which gives it new attempts. `e2er resume` alone also gives it new attempts. The
+specialists of the same batch that passed keep their output. A crash or an unavailable backend
+still fails the run, which can then be resumed.
+
 ## In the dossier
 
 Each action is a workflow step of type `researcher`: `edit` (file, SHA-256 before and after), `instruction` (the text), `send_back` and `rerun` (target and remark), `approve` (at a change to the pre-registered plan, with `decision: deviation_approved` and the changed files), `preregistration_frozen` (SHA-256), and `supplied_input` (a file the researcher supplied, such as the paper in the replication template: file, SHA-256, and the SHA-256 it replaces when it was changed). A frozen pre-registration also appears as its own block: file, SHA-256, time of freezing, the deviations the researcher approved and, after a deposit, the DOI. Dossiers with either use the format `e2er-dossier/0.4`; a study without them keeps `0.3`, so existing dossier addresses stay valid.

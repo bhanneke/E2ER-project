@@ -73,9 +73,9 @@ do not return them as work_orders.
     {"specialist":"identification_strategist","focus":"Propose ID strategy.","parallel_group":0},
     {"specialist":"data_architect","focus":"Write data_dictionary.json.","parallel_group":1},
     {"specialist":"data_analyst","focus":"Acquire data via Allium.","parallel_group":2},
-    {"specialist":"econometrics_specialist","focus":"Specify the econometric model.","parallel_group":2},
-    {"specialist":"paper_drafter","focus":"Draft the paper body.","parallel_group":3},
-    {"specialist":"abstract_writer","focus":"Write the abstract.","parallel_group":3}
+    {"specialist":"econometrics_specialist","focus":"Estimate the econometric model.","parallel_group":3},
+    {"specialist":"paper_drafter","focus":"Draft the paper body.","parallel_group":4},
+    {"specialist":"abstract_writer","focus":"Write the abstract.","parallel_group":4}
   ],
   "rationale": "Initial design + data acquisition + writing pass."
 }
@@ -94,6 +94,12 @@ The paper's `Methodology:` field (in the context block) is one of `empirical`,
   for a pure theoretical paper.
 - `mixed`: dispatch `theory_specialist` AND the empirical specialists. Theory
   develops the model; empirical specialists test its predictions.
+
+A specialist that reads another's output goes in a LATER parallel_group than it:
+`data_analyst` after `data_architect`, `econometrics_specialist` after
+`data_analyst` and `identification_strategist` (it estimates on the loaded
+data), `paper_drafter` after `econometrics_specialist`. The runner moves an
+order that breaks this behind the order it depends on.
 
 Division of labour for data: `data_architect` declares the tables in
 `data_dictionary.json`; `data_analyst` loads, cleans and describes them and

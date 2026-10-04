@@ -16,6 +16,7 @@ from ..pipeline.spec import RESEARCHER_KINDS, SEQUENCE_CHECKS, find_spec
 from ..specialists.contracts import Contribution, WorkOrder
 from ..specialists.dispatcher import (
     MAX_SPECIALIST_ATTEMPTS,
+    ContractFailureError,
     execute_parallel,
     execute_with_dependencies,
 )
@@ -238,6 +239,7 @@ class PipelineRunner:
         write, so it stays here, keyed by step name.
         """
         name = step.name
+        self._current_step = name
         if step.kind in RESEARCHER_KINDS:
             if state.is_approved(name):
                 if step.kind == "preregister":
@@ -479,6 +481,10 @@ class PipelineRunner:
             )
             await self._update_status(PaperStatus.PAUSED, error=error_msg)
             return {"status": "paused", "reason": "budget_exhausted", "spent": be.spent, "cap": be.cap}
+        except ContractFailureError as cf:
+            # Output that kept failing its contract: the run stops for the
+            # researcher instead of failing (crashes still fail, below).
+            return await self._stop_for_contract(cf, state)
         except GateHaltError as gh:
             # A design check failed before estimation. The run stops for the
             # researcher at the check; it runs again on resume.
@@ -654,10 +660,13 @@ class PipelineRunner:
 
         orders = [WorkOrder(**d) for d in state.metadata.get("initial_orders") or []]
         done = set(state.metadata.get("initial_done") or [])
+        # Output the researcher approved as it is, although it failed its contract.
+        accepted = set(state.metadata.get("contract_accepted_orders") or [])
         left = []
         for wo in orders:
-            complete = self._order_key(wo) in done and all(
-                c.ok for c in check_specialist_artifacts(self._workspace, wo.specialist)
+            key = self._order_key(wo)
+            complete = key in done and (
+                key in accepted or all(c.ok for c in check_specialist_artifacts(self._workspace, wo.specialist))
             )
             if not complete:
                 left.append(wo)
@@ -954,6 +963,11 @@ class PipelineRunner:
         from ..specialists.registry import POLISH_SPECIALISTS, REVIEWER_SPECIALISTS, SPECIALIST_DEFAULT_FOCUS
 
         tolerant = set(REVIEWER_SPECIALISTS) | set(POLISH_SPECIALISTS)
+        state = getattr(self, "_state", None)
+        meta = state.metadata if state is not None and isinstance(getattr(state, "metadata", None), dict) else {}
+        # After a stop for output that failed its contract: the specialists of
+        # this step that succeeded, or whose output the researcher approved, are done.
+        done_here = set((meta.get("step_done") or {}).get(step.name, []))
         for spec_name in step.run:
             if spec_name not in tolerant and self._failure_counts.get(spec_name, 0) >= _MAX_SPECIALIST_ATTEMPTS:
                 raise CircuitBreakerError(
@@ -972,7 +986,11 @@ class PipelineRunner:
                 context_tier=1,
             )
             for i, spec_name in enumerate(step.run)
+            if spec_name not in done_here
         ]
+        if not orders:
+            (meta.get("step_done") or {}).pop(step.name, None)
+            return
         contributions = await execute_with_dependencies(
             orders,
             self._backend,
@@ -985,6 +1003,7 @@ class PipelineRunner:
         )
         self._contributions.extend(contributions)
         self._update_failure_counts(contributions)
+        (meta.get("step_done") or {}).pop(step.name, None)
         failed = [c for c in contributions if not c.success and c.specialist not in tolerant]
         if failed:
             raise RuntimeError(
@@ -1055,6 +1074,9 @@ class PipelineRunner:
             if trig.kind == "researcher" and state.is_approved(trig.name):
                 state.mark_complete(trig.name)
 
+        if state.metadata.get("review", {}).get("kind") == "contract":
+            await self._settle_contract(state)
+            return
         reruns = state.metadata.pop("rerun", [])
         if not reruns:
             return
@@ -1131,6 +1153,126 @@ class PipelineRunner:
                 state.save(self._workspace)
                 return
             raise HumanReviewRequestedError(pending)
+
+    async def _stop_for_contract(self, cf: ContractFailureError, state: Any) -> dict[str, Any]:
+        """Stop the run for the researcher: output kept failing its contract after the last attempt.
+
+        The researcher step (kind ``contract``) lists, per specialist, the
+        violations of each attempt and the files involved. The researcher can
+        edit a file, give an instruction, send a step back (the failed
+        specialist included: it gets fresh attempts with the remark), or
+        approve the output as it is (recorded in the dossier, the output marked
+        as failing its contract). A plain resume gives the failed specialists
+        fresh attempts. Specialists that succeeded keep their output.
+        """
+        from ...db.events import log_event
+        from ..pipeline.researcher import CONTRACT_STEP, contract_reasons
+
+        previous = state.metadata.get("contract_pause") or {}
+        phase = getattr(self, "_current_step", None) or previous.get("phase")
+        succeeded = sorted({c.specialist for c in cf.contributions if c.success})
+        phase_step = self._spec.step(phase) if phase else None
+        if phase_step is not None and phase_step.kind == "specialists":
+            step_done = state.metadata.setdefault("step_done", {})
+            step_done[phase] = sorted(set(step_done.get(phase, [])) | set(succeeded))
+        files = list(dict.fromkeys(n for f in cf.failures for n in f["files"]))
+        reasons = contract_reasons(cf.failures)
+        state.metadata["contract_pause"] = {"phase": phase, "failed": cf.failures, "succeeded": succeeded}
+        if state.pending_review_stage and state.pending_review_stage != CONTRACT_STEP:
+            # Stopped from a send-back at another researcher step: come back to it afterwards.
+            state.metadata["contract_pause"]["return_to"] = state.pending_review_stage
+        if CONTRACT_STEP in state.approved_stages:
+            state.approved_stages.remove(CONTRACT_STEP)
+        state.pending_review_stage = CONTRACT_STEP
+        state.metadata["review"] = {"kind": "contract", "files": files, "reasons": reasons}
+        state.save(self._workspace)
+        names = ", ".join(f["specialist"] for f in cf.failures)
+        logger.warning("Pipeline stopped for the researcher (output contract) for paper %s: %s", self._paper_id, names)
+        await log_event(
+            self._paper_id,
+            "contract_halted",
+            stage=phase,
+            payload={
+                "specialists": [
+                    {"specialist": f["specialist"], "attempts": f["attempts"], "files": f["files"]} for f in cf.failures
+                ],
+                "succeeded": succeeded,
+            },
+        )
+        await self._update_status(
+            PaperStatus.PAUSED,
+            error=(
+                f"Stopped for you: the output of {names} did not pass its contract check after "
+                f"{MAX_SPECIALIST_ATTEMPTS} attempts. Review it with `e2er review {self._paper_id}`: approve the "
+                "output as it is, edit a file, give an instruction, or send the specialist back with a remark."
+            ),
+        )
+        return {"status": "paused", "reason": "contract", "specialists": [f["specialist"] for f in cf.failures]}
+
+    async def _settle_contract(self, state: Any) -> None:
+        """On resume after a stop for output that failed its contract (see _stop_for_contract)."""
+        from ...db.events import log_event
+        from ..pipeline.researcher import CONTRACT_STEP
+
+        pause = state.metadata.get("contract_pause") or {}
+        approved = state.is_approved(CONTRACT_STEP)
+        reruns = state.metadata.pop("rerun", [])
+        state.metadata.pop("sent_back", None)
+        if CONTRACT_STEP in state.approved_stages:
+            state.approved_stages.remove(CONTRACT_STEP)
+        failed = [f for f in pause.get("failed", []) if isinstance(f, dict)]
+        phase = pause.get("phase")
+
+        def mark_done(order: dict[str, Any], specialist: str) -> None:
+            if phase == "initial":
+                self._record_initial_done(WorkOrder(**order))
+            elif phase:
+                step_done = state.metadata.setdefault("step_done", {})
+                step_done[phase] = sorted(set(step_done.get(phase, [])) | {specialist})
+
+        if approved:
+            # The researcher took the output as it is (apply_action recorded which, with its violations).
+            keys = state.metadata.setdefault("contract_accepted_orders", [])
+            for f in failed:
+                keys.append(self._order_key(WorkOrder(**f["order"])))
+                mark_done(f["order"], f["specialist"])
+        else:
+            step_names = [s.name for s in self._spec.steps]
+            sent: set[str] = set()
+            for r in reruns:
+                target, remark = r["target"], r["remark"]
+                await log_event(self._paper_id, "researcher_rerun", stage=target, payload={"remark": remark})
+                if target in step_names:
+                    later = step_names[step_names.index(target) :]
+                    state.completed_stages = [c for c in state.completed_stages if c not in later]
+                    sent.update(f["specialist"] for f in failed)  # the step runs them again
+                    continue
+                order = next((f["order"] for f in failed if f["specialist"] == target), None)
+                focus = f"Revise your output. The researcher sent it back with this remark: {remark}"
+                if order is not None:
+                    focus = f"{order.get('focus', '')}\n\n{focus}".strip()
+                wo = WorkOrder(paper_id=self._paper_id, specialist=target, focus=focus)
+                contributions = await self._execute_orders([wo])  # stops again if it fails its contract
+                self._contributions.extend(contributions)
+                if order is not None and all(c.success for c in contributions):
+                    mark_done(order, target)
+                sent.add(target)
+            for f in failed:
+                if f["specialist"] in sent:
+                    continue
+                # Fresh attempts, with the researcher's instructions and edits.
+                wo = WorkOrder(**{**f["order"], "paper_id": self._paper_id})
+                contributions = await self._execute_orders([wo])
+                self._contributions.extend(contributions)
+                if all(c.success for c in contributions):
+                    mark_done(f["order"], f["specialist"])
+        state.metadata.pop("contract_pause", None)
+        state.metadata.pop("review", None)
+        return_to = pause.get("return_to")
+        state.pending_review_stage = return_to or None
+        state.save(self._workspace)
+        if return_to and not state.is_approved(return_to):
+            raise HumanReviewRequestedError(return_to)
 
     async def _researcher_edited_files(self) -> dict[str, str]:
         """Workspace files the researcher edited that still hold the researcher's version.
@@ -2433,9 +2575,14 @@ class PipelineRunner:
             # The first group would estimate: an open design check runs first.
             await self._run_open_gates(state, contract_orders)
         if len(contract_orders) == 1:
-            from ..specialists.dispatcher import execute_work_order, guard_artifacts
+            from ..specialists.dispatcher import (
+                execute_work_order,
+                guard_artifacts,
+                raise_contract_failure,
+                run_with_attempts,
+            )
 
-            c = await execute_work_order(
+            args = (
                 contract_orders[0],
                 self._backend,
                 self._workspace,
@@ -2445,7 +2592,16 @@ class PipelineRunner:
                 self._backend_name,
                 self._governance,
             )
+            if contract_orders[0].specialist in (set(REVIEWER_SPECIALISTS) | set(POLISH_SPECIALISTS)):
+                c = await execute_work_order(*args)
+            else:
+                # Output that fails its contract gets the same attempts as in a
+                # parallel batch, the violation fed back each time; a crash is not
+                # retried here (the strategist and the circuit breaker handle it).
+                c = await run_with_attempts(*args, retry_crashes=False)
             contributions = [c]
+            # After the last attempt: a stop for the researcher (ContractFailureError).
+            raise_contract_failure(contract_orders, contributions)
             # Same cascade guard execute_parallel applies — a lone non-tolerant
             # specialist that "succeeded" without its canonical artifact must
             # halt here, not starve downstream specialists (unless the regime

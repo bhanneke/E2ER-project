@@ -105,18 +105,7 @@ def review(
         return _post(http, paper_id, {"action": "approve"})
 
     # Interactive.
-    label = {
-        "preregister": " (pre-registration)",
-        "gate": " (a check failed; it runs again on resume)",
-        "deviation": " (the pre-registered plan changed; approve the deviation, edit it back or send back)",
-    }
-    print(f"Researcher step: {pending['stage']}" + label.get(pending["kind"], ""))
-    for reason in pending.get("reasons") or []:
-        print(f"  - {reason}")
-    for name, f in files.items():
-        print(f"  {name}" + ("" if f["exists"] else " (not written yet)"))
-    if data.get("sendable"):
-        print(f"  can be sent back: {', '.join(data['sendable'])}")
+    print(format_pending(data))
     if not _interactive():
         print(_NO_TERMINAL.format(paper_id=paper_id, dashboard=_dashboard_url(paper_id)), file=sys.stderr)
         return 2
@@ -127,6 +116,41 @@ def review(
             "\nStopped. " + _NO_TERMINAL.format(paper_id=paper_id, dashboard=_dashboard_url(paper_id)), file=sys.stderr
         )
         return 2
+
+
+_LABELS = {
+    "preregister": " (pre-registration)",
+    "gate": " (a check failed; it runs again on resume)",
+    "deviation": " (the pre-registered plan changed; approve the deviation, edit it back or send back)",
+    "contract": " (output that failed its check after the last attempt)",
+}
+
+
+def format_pending(data: dict[str, Any]) -> str:
+    """The researcher step a run waits at, as `e2er review` and `e2er status` print it."""
+    pending = data.get("pending") or {}
+    lines = [f"Researcher step: {pending.get('stage')}" + _LABELS.get(str(pending.get("kind")), "")]
+    if pending.get("kind") == "contract":
+        for f in pending.get("failures") or []:
+            attempts = f.get("attempts") or []
+            lines.append(f"  {f.get('specialist')}: the output failed its check in all {len(attempts)} attempts")
+            for a in attempts:
+                what = "; ".join(a.get("violations") or []) or a.get("error") or "no reason recorded"
+                lines.append(f"    attempt {a.get('attempt')}: {what}")
+            if f.get("files"):
+                lines.append(f"    files: {', '.join(f['files'])}")
+        lines.append(
+            "  Approve to keep the output as it is (the dossier marks it as failing its check), edit a file, "
+            "give an instruction, or send the specialist back with a remark for new attempts. "
+            "`e2er resume` alone gives it new attempts."
+        )
+    else:
+        lines += [f"  - {reason}" for reason in pending.get("reasons") or []]
+    for f in data.get("files") or []:
+        lines.append(f"  {f['name']}" + ("" if f.get("exists") else " (not written yet)"))
+    if data.get("sendable"):
+        lines.append(f"  can be sent back: {', '.join(data['sendable'])}")
+    return "\n".join(lines)
 
 
 _NO_TERMINAL = (

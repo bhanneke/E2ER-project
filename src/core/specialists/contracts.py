@@ -41,6 +41,12 @@ class Contribution(BaseModel):
     duration_seconds: float = 0.0
     success: bool = True
     error: str = ""
+    # The output-contract violations that failed this attempt ("artifact: reason"),
+    # empty when it succeeded or failed for another reason (a crash, a timeout).
+    contract_violations: list[str] = Field(default_factory=list)
+    # Every attempt the dispatcher made for this work order, oldest first:
+    # {"attempt": n, "error": "...", "violations": [...]}; set when it retried.
+    attempts: list[dict[str, Any]] = Field(default_factory=list)
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
 

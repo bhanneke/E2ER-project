@@ -969,6 +969,10 @@ def _sendable(workspace: Path, state: Any, pending: Any, spec: Any) -> list[str]
             if s.kind not in ("researcher", "preregister") and s.name in state.completed_stages:
                 steps.append(s.name)
     specialists = sorted(sp for sp, out in SPECIALIST_ARTIFACTS.items() if (workspace / out).is_file())
+    if pending.kind == "contract":
+        # The specialists whose output failed can always be sent back, written or not.
+        failed = [f.get("specialist") for f in (state.metadata.get("contract_pause") or {}).get("failed") or []]
+        specialists = sorted(set(specialists) | {f for f in failed if f})
     return steps + specialists
 
 
@@ -998,9 +1002,21 @@ async def get_review(paper_id: str = Depends(_validate_uuid)) -> dict[str, Any]:
             }
         )
     reasons = list(state.metadata.get("review", {}).get("reasons") or [])
+    extra: dict[str, Any] = {}
+    if pending.kind == "contract":
+        # Per specialist: each attempt with its violations, and the files involved.
+        extra["failures"] = [
+            {"specialist": f.get("specialist"), "attempts": f.get("attempts") or [], "files": f.get("files") or []}
+            for f in (state.metadata.get("contract_pause") or {}).get("failed") or []
+        ]
     return {
         # A halted check says why, so the researcher knows what to fix.
-        "pending": {"stage": pending.stage, "kind": pending.kind, **({"reasons": reasons} if reasons else {})},
+        "pending": {
+            "stage": pending.stage,
+            "kind": pending.kind,
+            **({"reasons": reasons} if reasons else {}),
+            **extra,
+        },
         "files": files,
         "sendable": _sendable(workspace, state, pending, spec),
         "actions": past,
@@ -1172,7 +1188,11 @@ async def resume_paper(paper_id: str, req: ResumeRequest | None = None) -> dict[
         pstate = PipelineState.load(workspace, paper_id, mode)
         # After a send-back the researcher wants to see the redone step, so the
         # pending researcher step stays unapproved and the run stops there again.
-        if pstate.pending_review_stage and not pstate.metadata.get("sent_back"):
+        # A stop for output that failed its contract is never approved by a plain
+        # resume: approving it is the researcher's decision (e2er review --approve);
+        # a resume gives the failed specialists fresh attempts.
+        contract_stop = (pstate.metadata.get("review") or {}).get("kind") == "contract"
+        if pstate.pending_review_stage and not pstate.metadata.get("sent_back") and not contract_stop:
             pstate.approve(pstate.pending_review_stage)
             pstate.save(workspace)
     except Exception as e:  # noqa: BLE001 — approval is best-effort; resume proceeds
@@ -2329,6 +2349,7 @@ _STEP_NAMES = {
     "compare": "Compare every number",
     "reproduction_gate": "Reproduction check",
     "event_window_gate": "Event-window check",
+    "output_contract": "Output that failed its check",
 }
 
 _STEP_KINDS = {

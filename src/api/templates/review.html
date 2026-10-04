@@ -13,6 +13,11 @@
     {% if pending.kind == "preregister" %}
       The pre-registration below was assembled from the study's design files. Edit it if needed;
       approving it freezes it with its fingerprint before any analysis runs.
+    {% elif pending.kind == "contract" %}
+      The output below failed its check in every attempt, so the run stopped for you. Approve to keep it
+      as it is (your decision is recorded in the dossier and the output is marked as failing its check),
+      edit a file, give an instruction, or send the specialist back with a remark for new attempts.
+      The specialists that passed keep their output.
     {% elif pending.kind == "deviation" %}
       The pre-registered plan changed after it was frozen, so the estimation does not run yet. Approve to keep
       the change as a deviation from the plan (your decision is recorded in the dossier and the deviation is
@@ -22,7 +27,15 @@
       send a step back, or approve to continue. Everything you do here appears in the study's dossier.
     {% endif %}
   </p>
-  {% if pending.reasons %}
+  {% if pending.kind == "contract" and pending.failures %}
+    {% for f in pending.failures %}
+      <section class="rv-contract">
+        <h2>{{ f.specialist }}: {{ f.attempts|length }} attempts</h2>
+        <ol>{% for a in f.attempts %}<li class="small">{% if a.violations %}{{ a.violations|join("; ") }}{% else %}{{ a.error or "no reason recorded" }}{% endif %}</li>{% endfor %}</ol>
+        {% if f.files %}<p class="muted small">Files: {{ f.files|join(", ") }}</p>{% endif %}
+      </section>
+    {% endfor %}
+  {% elif pending.reasons %}
     <ul>{% for r in pending.reasons %}<li class="small">{{ r }}</li>{% endfor %}</ul>
   {% endif %}
 
@@ -40,7 +53,7 @@
 
   <section>
     <h2>Instruction for the following steps</h2>
-    <textarea id="instr" rows="3" style="width:100%" placeholder="For instance: use monthly rather than daily data."></textarea>
+    <textarea id="instr" rows="3" style="width:100%" placeholder="For instance: use monthly data."></textarea>
     <button class="btn-ghost" id="send-instr">Add instruction</button>
   </section>
 
@@ -53,7 +66,7 @@
   </section>
   {% endif %}
 
-  <p><button class="btn-primary" id="approve">Approve and continue</button></p>
+  <p><button class="btn-primary" id="approve">{% if pending.kind == "contract" %}Keep the output as it is and continue{% else %}Approve and continue{% endif %}</button></p>
   <p class="form-note" id="rv-msg" hidden></p>
 {% endif %}
 

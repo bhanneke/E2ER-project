@@ -160,10 +160,17 @@ def test_the_fomc_event_study_replays_to_the_end_through_the_server(tmp_path: Pa
                 f"PORT={port}",
                 "CORPUS_AUTOINGEST=false",
                 "LITERATURE_ACQUIRE_LIMIT=0",
+                # As in the recorded run: a FRED key, and the researcher's own FOMC
+                # dates in the data folder (the data architect may only plan tables
+                # from sources the study has).
+                "FRED_API_KEY=replay-key",
+                f"LOCAL_DATA_DIR={study / 'data'}",
             ]
         )
         + "\n"
     )
+    (study / "data").mkdir()
+    (study / "data" / "fomc_announcement_dates.csv").write_text("date\n2015-12-16\n", encoding="utf-8")
     env = {
         **os.environ,
         "HOME": str(home),

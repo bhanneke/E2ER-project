@@ -16,6 +16,12 @@ A study that has finished (no researcher step pending) can still be sent back:
 researcher's remark, and the run stops at the next researcher step, which needs
 approving again (``e2er rerun <id> --from STEP --remark "…"``).
 
+The run also stops here when a specialist's output still fails its contract
+after the last attempt (kind ``contract``, step ``output_contract``): approving
+takes the output as it is (recorded, and marked as failing its contract in the
+dossier); a send-back of the failed specialist, or a plain resume, gives it
+fresh attempts.
+
 Every action is written to the event log as ``researcher_action``; the dossier
 lists them as steps of type ``researcher``, so a reader sees where the
 researcher decided and where the AI worked.
@@ -32,6 +38,9 @@ from typing import Any
 from .state import PipelineState
 
 INSTRUCTIONS_FILE = "researcher_instructions.md"
+#: The researcher step a run stops at when a specialist's output still fails its
+#: contract after the last attempt (kind ``contract``; see runner._stop_for_contract).
+CONTRACT_STEP = "output_contract"
 ACTIONS = ("approve", "edit", "instruction", "send_back")
 _EDITABLE_SUFFIXES = (".md", ".tex", ".json", ".txt", ".bib")
 
@@ -63,10 +72,48 @@ def instructions_block(workspace: Path) -> str:
     )
 
 
+def contract_reasons(failures: list[dict[str, Any]]) -> list[str]:
+    """One line per attempt of each specialist whose output failed its contract, for the researcher."""
+    lines: list[str] = []
+    for f in failures:
+        attempts = f.get("attempts") or []
+        for a in attempts:
+            what = "; ".join(a.get("violations") or []) or (a.get("error") or "no reason recorded")
+            lines.append(f"{f.get('specialist')}, attempt {a.get('attempt')} of {len(attempts)}: {what}")
+    return lines
+
+
+def _accepted_outputs(workspace: Path, state: PipelineState) -> list[dict[str, Any]]:
+    """What the researcher approves at a contract stop: per specialist, its files and the violations left now."""
+    from ..specialists.contract_check import check_specialist_artifacts
+
+    out = []
+    for f in (state.metadata.get("contract_pause") or {}).get("failed") or []:
+        name = f.get("specialist", "")
+        now = [f"{c.artifact}: {c.reason}" for c in check_specialist_artifacts(workspace, name) if not c.ok]
+        files = [
+            {"file": n, "sha256": _sha256((workspace / n).read_bytes())}
+            for n in f.get("files") or []
+            if (workspace / n).is_file()
+        ]
+        out.append(
+            {
+                "specialist": name,
+                # True: the output stands although it fails its contract (the
+                # researcher's decision). False: an edit made it pass.
+                "contract_failed": bool(now),
+                "violations": now,
+                "attempts": len(f.get("attempts") or []),
+                "files": files,
+            }
+        )
+    return out
+
+
 @dataclass(frozen=True)
 class PendingReview:
     stage: str
-    kind: str  # researcher | preregister | review_at | gate | deviation
+    kind: str  # researcher | preregister | review_at | gate | deviation | contract
     files: tuple[str, ...]
 
 
@@ -126,6 +173,12 @@ def apply_action(
             payload.update(decision="deviation_approved", deviations=approved)
             state.metadata.pop("preregistration_deviation", None)
             state.metadata.pop("review", None)
+        if pending.kind == "contract":
+            # The researcher takes the output as it is: recorded for the dossier,
+            # each output that still fails its contract marked as such.
+            accepted = _accepted_outputs(workspace, state)
+            payload.update(decision="accepted_as_is", accepted=accepted)
+            state.metadata.setdefault("contract_accepted", []).extend({**a, "at": payload["at"]} for a in accepted)
         state.approve(pending.stage)
 
     elif kind == "edit":

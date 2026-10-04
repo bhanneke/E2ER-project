@@ -405,7 +405,11 @@ def read_run(db: Path, paper_id: str, files: dict[str, Any] | None = None, bundl
       rows inside its start and end, the ``contributions`` row likewise),
       ``check`` (gate verdicts, halts, the pre-registration check) and
       ``researcher`` (one per ``researcher_action`` row, all its fields kept,
-      plus files the researcher supplied). A send-back's rerun of a specialist
+      plus files the researcher supplied). A stop for output that failed its
+      contract in every attempt is a ``check`` step (``output_contract``) with
+      each attempt's violations; when the researcher keeps that output as it
+      is, the specialist step that wrote it carries ``approved_by_researcher``
+      (with ``contract_failed`` and the violations left). A send-back's rerun of a specialist
       (``researcher_rerun``, written by the runner) is noted on the specialist
       step it caused, not counted as a researcher action again.
     * **Events** keep the rest of the run's history: stops for review, pauses,
@@ -629,8 +633,38 @@ def read_run(db: Path, paper_id: str, files: dict[str, Any] | None = None, bundl
                     **({"frozen_at": _utc(data["frozen_at"])} if data.get("frozen_at") else {}),
                 }
             )
+        elif etype == "contract_halted":
+            # Output that failed its contract in every attempt: the run stopped for the researcher.
+            rec.workflow.append(
+                {
+                    "type": "check",
+                    "phase": phase,
+                    "check": "output_contract",
+                    **where,
+                    "passed": False,
+                    "enforced": True,
+                    "halted": True,
+                    "at": at,
+                    "specialists": _clip(list(data.get("specialists") or [])),
+                }
+            )
         elif etype == "researcher_action":
             rec.workflow.append({**researcher_step(data, created, phase), **where})
+            if data.get("decision") == "accepted_as_is":
+                # The output stands by the researcher's decision; one that still
+                # fails its contract is marked as such on the step that wrote it.
+                for acc in data.get("accepted") or []:
+                    prior = [
+                        s
+                        for s in rec.workflow
+                        if s.get("type") == "specialist" and s.get("specialist") == acc.get("specialist")
+                    ]
+                    if prior:
+                        prior[-1]["approved_by_researcher"] = {
+                            "at": _utc(data.get("at") or created),
+                            "contract_failed": bool(acc.get("contract_failed")),
+                            **({"violations": _clip(list(acc["violations"]))} if acc.get("violations") else {}),
+                        }
         elif etype == "researcher_input":
             rec.workflow.append(
                 {

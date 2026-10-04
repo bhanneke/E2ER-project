@@ -753,6 +753,13 @@ def check_specialist_artifacts(workspace: Path, specialist: str) -> list[Contrac
     if specialist == "data_analyst" and not any(c.artifact == primary and not c.ok for c in checks):
         checks.extend(check_declared_tables(workspace))
 
+    # The data architect declares only tables an available source can load
+    # (a connector usable now, or a file in the study's data folder).
+    if specialist == "data_architect" and not any(c.artifact == primary and not c.ok for c in checks):
+        from .data_sources import check_declared_sources
+
+        checks.extend(check_declared_sources(workspace))
+
     # Draft-writing specialists may reference tables, never contain them.
     if specialist in _NO_INLINE_TABLES:
         draft = SPECIALIST_ARTIFACTS.get(specialist, "paper_draft.tex")

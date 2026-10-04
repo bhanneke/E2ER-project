@@ -18,6 +18,15 @@ analyst will load, before any data are pulled.
 }
 ```
 
+Every table names its `source`, and only a source available to the study
+counts: `yfinance` and `gmd` (no key needed), `fred` (only with FRED_API_KEY),
+`allium` (only with ALLIUM_API_KEY), or `file` for a file in the study's data
+folder (`data/` or LOCAL_DATA_DIR), named with `"file": "<name>"`. The prompt
+lists exactly what is available for this study. A table from any other source
+(CRSP, Compustat, WRDS, call reports, Fama-French factors, or FRED without a
+key) fails the contract check, which names the table, its source and why it
+is unavailable.
+
 Naming: lower case, letters, digits and `_`. Daily price series of a ticker
 are `<ticker>_prices` (`spy_prices`, `xlf_prices`); a FRED series is its id in
 lower case (`dgs2`, `dfedtaru`); a GMD panel is `gmd_<what>` (`gmd_macro`). Tables the researcher supplied (from the data

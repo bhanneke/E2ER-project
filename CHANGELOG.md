@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **Output that fails its check after the last attempt stops the run for the researcher.** Before,
+  the run ended `failed`. Now it stops at the researcher step `output_contract`, which lists each
+  attempt's violations and the files involved (`e2er status`, `e2er review`, the dashboard's
+  review page). The researcher keeps the output as it is (recorded in the dossier; the step that
+  wrote it is marked `approved_by_researcher` with `contract_failed`), edits a file, gives an
+  instruction, or sends the specialist back with a remark for new attempts. `e2er resume` alone
+  gives new attempts and never keeps failed output. Specialists in the same batch that passed
+  keep their output. Crashes and an unavailable backend still fail the run.
+- **A specialist no longer runs beside the one whose output it reads.** The live run had the
+  econometrics specialist in the data analyst's batch, estimating before any data were loaded.
+  The dispatcher now moves such an order behind its producer (`SPECIALIST_NEEDS`), and the
+  strategist's example plan no longer shows it.
+- **The data architect plans only tables an available source can load**: yfinance and GMD, FRED
+  with `FRED_API_KEY`, Allium with `ALLIUM_API_KEY`, or a file in the study's data folder. Its
+  prompt lists exactly these; any other table is a contract violation that names the table, its
+  source and why it is unavailable.
+- **`e2er run --demonstration`** marks a demonstration or test run from the start (manifest.json
+  `purpose`); export, publish, the paper footnote, the reproduction report and the dossier take
+  it from there. New disclaimer wording: "Demonstration. This study was produced with e2er as a
+  demonstration or test run and is published as is. It is not presented as a research
+  contribution, and its author does not vouch for its findings."
+
 ## [0.13.4] — 2026-10-03
 
 Fixes found by the new end-to-end stories (e2er-site `npm run test:e2e`, 15 research processes
