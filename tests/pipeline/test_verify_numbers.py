@@ -702,3 +702,40 @@ def test_a_draft_with_checkable_numbers_is_conclusive(tmp_path: Path):
     report = verify(tmp_path / "paper_draft.tex", ws)
     assert report.conclusive is True
     assert report.skipped_reason is None
+
+
+# ---------------------------------------------------------------------------
+# Header rows and row labels are not results (live run 2026-10-04)
+# ---------------------------------------------------------------------------
+
+
+def test_header_rows_and_row_labels_are_not_read_as_values():
+    """The live run stopped on three "critical mismatches" that were all column
+    headers ("Scaled, day 15 or earlier", "120-day window", "Placebo, -20 days"),
+    plus majors from the row label "Surprise (25 bp)". The table was correct."""
+    tex = r"""
+\label{tab:robust_samples}
+\begin{tabular}{lccc}
+\toprule
+ & Scaled, 5+ days left & Scaled, day 15 or earlier & 120-day window \\
+\midrule
+Surprise (25 bp) & -0.902 & 0.166 & -1.869 \\
+ & (0.369) & (1.667) & (0.960) \\
+2015 & 408 & 221 & 493 \\
+\bottomrule
+\end{tabular}
+"""
+    nums = [n for n, _ctx in _extract_table_numbers(tex)]
+    assert nums == ["-0.902", "0.166", "-1.869", "0.369", "1.667", "0.960", "2015", "408", "221", "493"]
+    # Data rows keep their row numbers in the context.
+    assert dict((n, c) for n, c in _extract_table_numbers(tex))["408"].endswith("row 4, col 2")
+
+
+def test_a_table_without_midrule_keeps_every_row():
+    tex = r"""
+\begin{tabular}{lc}
+x & 0.42 \\
+y & 15 \\
+\end{tabular}
+"""
+    assert [n for n, _ in _extract_table_numbers(tex)] == ["0.42", "15"]

@@ -525,6 +525,22 @@ def _check_numbers(bundle: Path, ws: Path) -> Check:
                 f"the paper ships rendered tables but no table cell could be checked: {report.skipped_reason}",
             )
         return Check("numbers", SKIP, f"{report.skipped_reason}{note}")
+    approved, open_ = _researcher_approved_cells(bundle, report.mismatches)
+    if approved and not open_:
+        # Every cell that differs is one the researcher continued with at the
+        # number check: the decision travels in the bundle (reviews/number_check.json,
+        # hashed in provenance.json) and in the dossier, so the check passes and says so.
+        shown = "; ".join(
+            f"{m.draft_value} ({m.table_context}; the results say {m.source_value}, {m.source_key})"
+            for m in approved[:3]
+        )
+        return Check(
+            "numbers",
+            PASS,
+            f"{report.matched} table cell(s) are source values at the precision shown; {len(approved)} differ from "
+            f"the results and the researcher continued with them at the number check (recorded in the dossier): "
+            f"{shown}{note}{_prose_note(report)}",
+        )
     if report.mismatches:
         first = "; ".join(
             f"{m.draft_value} ({m.table_context}; nearest source value {m.source_value}, {m.source_key})"
@@ -553,6 +569,25 @@ def _check_numbers(bundle: Path, ws: Path) -> Check:
         PASS,
         f"{report.matched} table cell(s) are source values at the precision shown{note}{_prose_note(report)}",
     )
+
+
+def _researcher_approved_cells(bundle: Path, mismatches: list[Any]) -> tuple[list[Any], list[Any]]:
+    """Split mismatches into those the researcher continued with at the number check and the rest.
+
+    A cell counts as approved when reviews/number_check.json records the
+    researcher's decision (``accepted_by_researcher``) for the same table cell
+    and the same printed value. A record from a regime that does not stop
+    (``recorded_and_continued``) is no decision and approves nothing.
+    """
+    try:
+        doc = json.loads((bundle / "reviews" / "number_check.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return [], list(mismatches)
+    if not isinstance(doc, dict) or doc.get("decision") != "accepted_by_researcher":
+        return [], list(mismatches)
+    cells = {(str(m.get("cell")), str(m.get("in_table"))) for m in doc.get("mismatches") or [] if isinstance(m, dict)}
+    approved = [m for m in mismatches if (m.table_context, m.draft_value) in cells]
+    return approved, [m for m in mismatches if (m.table_context, m.draft_value) not in cells]
 
 
 def _prose_note(report: Any) -> str:

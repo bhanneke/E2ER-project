@@ -271,6 +271,9 @@ async def test_approve_as_is_continues_and_the_dossier_marks_it(study, events, t
     assert check["check"] == "output_contract" and check["halted"] is True
     assert len(check["specialists"][0]["attempts"]) == 3
     assert researcher["decision"] == "accepted_as_is"
+    # The kept outputs go under `kept`: `accepted` is a yes/no in the dossier format,
+    # and e2er.org refused a dossier with a list there (E2E-16, 2026-10-04).
+    assert "accepted" not in researcher and researcher["kept"][0]["specialist"] == "data_analyst"
 
 
 async def test_a_plain_resume_does_not_approve_the_output(study, events):

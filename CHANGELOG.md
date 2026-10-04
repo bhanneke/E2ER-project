@@ -17,7 +17,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reviewers run after that. Before, the check marked the run stopped, a `--review-at review`
   pause hid it, and the review step was then counted as done without a single reviewer. Under
   `contracts` and `off` the mismatches are recorded and the run continues, and `e2er status`
-  and the dossier say so (`number_check.json`).
+  and the dossier say so (`number_check.json`). The export carries the record
+  (`reviews/number_check.json`); `e2er verify` passes a cell that differs only when the researcher
+  continued with exactly that cell, and names it.
+- **The number check no longer reads column headers and row labels as results.** All three
+  critical mismatches of the live run were header cells ("Scaled, day 15 or earlier",
+  "120-day window", a placebo shift of -20 days): the rows above the first `\midrule` and a row's
+  label ("Surprise (25 bp)") are skipped; a bare number in the first column is still checked.
+- **A dossier with output kept at a contract stop is accepted by e2er.org.** The researcher
+  step listed the kept outputs under `accepted`, which the dossier format reserves for a yes/no;
+  they are now under `kept`.
 - **A step that fails stops the run and says why.** A review step that ends without a reviewer
   score, a revision step without its patch file, or the citation check now ends the run with the
   reason in `last_error`; no later step runs (the live run went on to the replication step), and

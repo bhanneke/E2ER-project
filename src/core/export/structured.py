@@ -92,6 +92,10 @@ EXPORT_MAP: dict[str, list[tuple[str, str | None]]] = {
         ("self_attack_report.json", None),
         ("polish_*.md", None),
         ("citation_integrity.json", None),
+        # The number check's record when the run went on with tables that differ
+        # from the results (the researcher's decision, or a regime that does not
+        # stop): e2er verify reads the decision from here.
+        ("number_check.json", None),
     ],
 }
 

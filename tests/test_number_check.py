@@ -489,3 +489,19 @@ def test_a_plain_resume_never_approves_the_number_check():
 
     src = inspect.getsource(app_module.resume_paper)
     assert 'get("kind") == "numbers"' in src and "not numbers_stop" in src
+
+
+def test_verify_passes_only_the_cells_the_researcher_continued_with(tmp_path: Path):
+    from src.cli_verify import _researcher_approved_cells
+    from src.core.pipeline.verify_numbers import Mismatch
+
+    approved = Mismatch("41.20", "s.json.kbe.mean", "36.69", "tab:sample (Sample prices...), row 2, col 2", "critical")
+    other = Mismatch("7", "s.json.n", "9", "tab:sample (Sample prices...), row 3, col 2", "critical")
+    (tmp_path / "reviews").mkdir()
+    record = {"cell": approved.table_context, "in_table": "41.20", "in_results": "36.69", "source_key": "k"}
+    path = tmp_path / "reviews" / "number_check.json"
+    path.write_text(json.dumps({"decision": "accepted_by_researcher", "mismatches": [record]}))
+    assert _researcher_approved_cells(tmp_path, [approved, other]) == ([approved], [other])
+    # A regime that did not stop records the mismatches; that is no decision.
+    path.write_text(json.dumps({"decision": "recorded_and_continued", "mismatches": [record]}))
+    assert _researcher_approved_cells(tmp_path, [approved]) == ([], [approved])

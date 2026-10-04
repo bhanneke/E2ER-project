@@ -790,6 +790,11 @@ def researcher_step(data: dict[str, Any], at: str, phase: str | None = None) -> 
         "at": _utc(data.get("at") or at),
     }
     for key, value in data.items():
+        if key == "accepted" and isinstance(value, list):
+            # The outputs kept at a contract stop. On a step, `accepted` is the
+            # specialist's yes/no in the dossier format; the list goes under `kept`
+            # (a dossier with an array there was refused by e2er.org).
+            key = "kept"
         if key not in step and value is not None:
             step[key] = _clip(value)
     return step
