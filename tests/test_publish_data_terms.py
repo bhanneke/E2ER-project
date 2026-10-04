@@ -104,6 +104,9 @@ def test_private_gmd_data_publish_without_confirmation_and_state_the_terms(bundl
     out = capsys.readouterr().out
     assert "uses Global Macro Database (GMD), release 2026_09 data (kept private)" in out
     assert "warning" not in out  # the paper cites the GMD
+    # No nudge to publish data the GMD's terms keep: readers on e2er.org are sent to the source.
+    assert "note: The data come from the Global Macro Database (GMD), whose terms do not allow passing them on" in out
+    assert "--data public (with --data-url" not in out
     m = _manifest(bundle)
     assert m["availability"]["data"] == {"access": "private"}
     _states_terms(m)

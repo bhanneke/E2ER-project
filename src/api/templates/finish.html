@@ -61,11 +61,24 @@
     </label>
   </div>
   <div class="field">
+    <span>Paper (PDF)</span>
+    <div class="radio-row">
+      <label><input type="radio" name="paper" value="private" checked> private</label>
+      <label><input type="radio" name="paper" value="public"> public</label>
+    </div>
+    <p class="small muted reader-note" id="paper-note">Private: readers on e2er.org see a button to ask you for the paper.</p>
+  </div>
+  <label class="field" id="paper-url-field" hidden>
+    <span>Address of the public PDF (https; empty: paper/paper.pdf in the repository at the commit below)</span>
+    <input id="pub-paper-url" autocomplete="off" spellcheck="false">
+  </label>
+  <div class="field">
     <span>Data</span>
     <div class="radio-row">
       <label><input type="radio" name="data" value="private" checked> private</label>
       <label><input type="radio" name="data" value="public"> public</label>
     </div>
+    <p class="small muted reader-note" id="data-note">{% if data_terms %}If the data stay private, readers on e2er.org see a link to the {{ data_terms[0].short }} instead of a request button: its terms do not allow passing the data on outside the study's replication package.{% else %}Private: readers on e2er.org see a button to ask you for the data.{% endif %}</p>
   </div>
   <div class="field">
     <span>Code</span>
@@ -73,6 +86,7 @@
       <label><input type="radio" name="code" value="private" checked> private</label>
       <label><input type="radio" name="code" value="public"> public</label>
     </div>
+    <p class="small muted reader-note" id="code-note">Private: readers on e2er.org see a button to ask you for the code.</p>
   </div>
   <div class="field-grid">
     <label class="field" id="data-url-field" hidden>
@@ -172,6 +186,7 @@
     owner: document.getElementById('pub-owner').value, project: document.getElementById('pub-project').value,
     data: document.querySelector('input[name=data]:checked').value, code: document.querySelector('input[name=code]:checked').value,
     data_url: document.getElementById('pub-data-url').value, code_url: document.getElementById('pub-code-url').value,
+    paper: document.querySelector('input[name=paper]:checked').value, paper_url: document.getElementById('pub-paper-url').value,
     zenodo: document.getElementById('pub-zenodo').checked,
     accept_data_terms: [...document.querySelectorAll('.confirm-terms:checked')].map((c) => c.value),
     name: document.getElementById('pub-name').value, orcid: document.getElementById('pub-orcid').value,
@@ -189,10 +204,17 @@
     document.getElementById('data-url-field').hidden = !dataPublic;
     document.getElementById('code-url-field').hidden = !codePublic;
     document.getElementById('zenodo-field').hidden = !(dataPublic || codePublic);
+    const paperPublic = document.querySelector('input[name=paper]:checked').value === 'public';
+    document.getElementById('paper-url-field').hidden = !paperPublic;
+    // What readers on e2er.org see for what stays private (src/core/availability.py reader_notes says the same).
+    document.getElementById('paper-note').hidden = paperPublic;
+    document.getElementById('data-note').hidden = dataPublic;
+    document.getElementById('code-note').hidden = codePublic;
   };
-  document.querySelectorAll('input[name=data], input[name=code]').forEach((r) => r.addEventListener('change', availability));
+  document.querySelectorAll('input[name=data], input[name=code], input[name=paper]').forEach((r) => r.addEventListener('change', availability));
   availability();
   const showTerms = (terms) => {
+    if ((terms || []).length) document.getElementById('data-note').textContent = 'If the data stay private, readers on e2er.org see a link to the ' + terms[0].short + " instead of a request button: its terms do not allow passing the data on outside the study's replication package.";
     document.getElementById('terms-box').innerHTML = (terms || []).map((t) =>
       '<div class="pf-banner terms" data-connector="' + esc(t.connector) + '"><p>The study uses data from the ' + esc(t.label) + '. Its terms:</p><ul>' +
       t.plain.map((l) => '<li>' + esc(l) + '</li>').join('') + '</ul><p class="small">Citation: ' + esc(t.citation) +

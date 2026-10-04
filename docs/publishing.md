@@ -27,6 +27,16 @@ Both are private unless you say otherwise; run in a terminal without the two fla
 
 The study page and the dossier show what you chose, for instance "data private · code public". A dossier lists availability only when something is public, so a private study's dossier address does not change.
 
+### The paper
+
+The paper is private unless you publish its PDF's address: `--paper public --paper-url https://…/paper.pdf`. Without `--paper-url`, a public paper points at `paper/paper.pdf` in your repository at `--commit`. The address goes into `e2er.json` and the publish request only, never into the dossier, so stating it changes no fingerprint: publishing the same folder again with `--paper public` keeps the version and adds the link.
+
+### What readers see for what is not public
+
+On e2er.org, a paper, data or code that is not public has a button "Ask the authors for …" on the study page and the dossier, with the number of readers who asked (no names). A signed-in reader writes a short message; e2er.org forwards it to the authors who have an account there, without showing anyone's address. The reader may agree to be answered by email. You find the requests on your page "My submissions" (e2er.org/me), with the command that publishes the item; publishing it on a new version closes every open request for it and tells the readers. You can also mark a request as answered privately, decline it, or stop receiving requests.
+
+`e2er publish` and the dashboard's finish page say this in one sentence for each item you keep private, with the flag that publishes it. Data from the Global Macro Database get no such note: its terms do not allow passing the data on outside the study's replication package, so readers on e2er.org see a link to the GMD instead of a request button.
+
 ### Data with terms of use: the Global Macro Database
 
 Data loaded with `e2er-data gmd` come under the GMD's terms (version 1.1, https://www.globalmacrodata.com/license.html): free for academic use; a study's replication package may include the GMD data it used, labelled as GMD data; the data may not be republished anywhere else. Whatever you choose, the study's description (`e2er.json`) names the GMD, its terms and its citation on the data files that hold GMD data, and the dossier lists each GMD load with the same. The GMD citation is added to the paper's references when the data are loaded.

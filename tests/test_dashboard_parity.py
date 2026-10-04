@@ -208,6 +208,11 @@ def test_the_finish_page_asks_to_confirm_the_gmd_terms(live_db, session):
     assert "The study uses data from the Global Macro Database" in html
     assert 'class="confirm-terms" value="gmd"' in html
     assert 'id="pub-data-url"' in html and 'id="pub-zenodo"' in html and 'id="pub-orcid"' in html
+    # What readers on e2er.org see for what stays private; for GMD data the source, and no nudge.
+    assert 'name="paper" value="public"' in html and 'id="pub-paper-url"' in html
+    assert "Private: readers on e2er.org see a button to ask you for the paper." in html
+    assert "readers on e2er.org see a link to the GMD instead of a request button" in html
+    assert "Private: readers on e2er.org see a button to ask you for the data." not in html
 
 
 def test_the_finish_page_passes_every_publish_choice(live_db, session, monkeypatch):
@@ -229,6 +234,8 @@ def test_the_finish_page_passes_every_publish_choice(live_db, session, monkeypat
             "code": "public",
             "data_url": "https://doi.org/10.1/x",
             "code_url": " ",
+            "paper": "public",
+            "paper_url": " https://example.org/kim/paper.pdf ",
             "zenodo": True,
             "accept_data_terms": ["gmd"],
             "name": "Kim Dash",
@@ -245,6 +252,7 @@ def test_the_finish_page_passes_every_publish_choice(live_db, session, monkeypat
     assert r.status_code == 200, r.text
     assert seen["accept_data_terms"] == ["gmd"] and seen["zenodo"] is True
     assert seen["data_url"] == "https://doi.org/10.1/x" and seen["code_url"] is None
+    assert seen["paper"] == "public" and seen["paper_url"] == "https://example.org/kim/paper.pdf"
     assert seen["name"] == "Kim Dash" and seen["orcid"] == "0000-0002-1825-0097" and seen["license_id"] == "CC-BY-4.0"
     assert seen["demonstration"] is True and seen["data"] == "public"
     assert seen["roles"] == ["Conceptualization"] and seen["derived_from"] == ["ana/base-study"]
