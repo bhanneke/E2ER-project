@@ -221,6 +221,9 @@ class PublishRequest(BaseModel):
     code: str = "private"
     data_url: str | None = None
     code_url: str | None = None
+    #: The paper (`--paper`): public with the https address of its PDF (`--paper-url`), or private.
+    paper: str = "private"
+    paper_url: str | None = None
     zenodo: bool = False
     #: Sources whose terms the researcher confirmed (`--accept-data-terms`), e.g. ["gmd"].
     accept_data_terms: list[str] = []
@@ -248,6 +251,8 @@ async def publish_study(paper_id: str, req: PublishRequest) -> dict[str, Any]:
     bundle = _bundle(paper_id)
     if req.data not in {"public", "private"} or req.code not in {"public", "private"}:
         raise HTTPException(status_code=422, detail="Data and code are either public or private.")
+    if req.paper not in {"public", "private"}:
+        raise HTTPException(status_code=422, detail="The paper is either public or private.")
     owner, project = req.owner.strip().lower(), req.project.strip().lower()
     if not owner or not project:
         raise HTTPException(status_code=422, detail="Fill in the owner and the project name.")
@@ -268,6 +273,8 @@ async def publish_study(paper_id: str, req: PublishRequest) -> dict[str, Any]:
         code=req.code,
         data_url=(req.data_url or "").strip() or None,
         code_url=(req.code_url or "").strip() or None,
+        paper=req.paper,
+        paper_url=(req.paper_url or "").strip() or None,
         zenodo=req.zenodo,
         accept_data_terms=[a for a in req.accept_data_terms if a.strip()] or None,
         name=(req.name or "").strip() or None,

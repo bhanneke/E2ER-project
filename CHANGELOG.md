@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.6] — 2026-10-05
+
+- **The paper can be published with the study, and publish says what readers see for what stays
+  private.** `e2er publish --paper public --paper-url <address of the PDF>` (default address with
+  `--repo` and `--commit`: `paper/paper.pdf` in the repository at that commit) puts the link into
+  `e2er.json` and the publish request as `access`, and e2er.org links the PDF on the study page.
+  The address is not part of the dossier, so it changes no fingerprint. For each of the paper,
+  the data and the code that stays private, `e2er publish` and the dashboard's finish page say in
+  one sentence that readers on e2er.org see a button to ask you for it, and which flag publishes
+  it. Data from the Global Macro Database get no such note: its terms do not allow passing them on
+  outside the study's replication package, and readers on e2er.org are sent to the GMD. The
+  finish page has the paper choice and its address.
+
 ## [0.13.5] — 2026-10-04
 
 - **Every data connector records what it loaded, with the source's terms and citation.** Before,

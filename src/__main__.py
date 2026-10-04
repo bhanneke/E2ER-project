@@ -506,6 +506,19 @@ def main() -> None:
         "--code-url", default=None, help="Where the public code lives (default: the repository at --commit)."
     )
     publish_p.add_argument(
+        "--paper",
+        choices=["public", "private"],
+        default=None,
+        help="Whether the paper (PDF) is public: e2er.org then links it (default: private; readers on e2er.org see "
+        "a button to ask you for it).",
+    )
+    publish_p.add_argument(
+        "--paper-url",
+        default=None,
+        help="https address of the public paper PDF (default with --repo and --commit: paper/paper.pdf in the "
+        "repository at that commit).",
+    )
+    publish_p.add_argument(
         "--zenodo",
         action="store_true",
         help="Deposit the public data and code on Zenodo with your own token (ZENODO_TOKEN) and record the DOIs.",
@@ -648,6 +661,8 @@ def main() -> None:
                 site=args.to_url,
                 demonstration=args.demonstration,
                 accept_data_terms=args.accept_data_terms,
+                paper=args.paper,
+                paper_url=args.paper_url,
             )
         )
 

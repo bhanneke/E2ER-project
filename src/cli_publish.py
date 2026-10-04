@@ -52,7 +52,7 @@ from typing import Any
 from .core import data_terms
 from .core import zenodo as zen
 from .core.availability import describe as describe_availability
-from .core.availability import resolve
+from .core.availability import paper_access, reader_notes, resolve
 from .core.bibliography import escape_bib, point_bibliography, unresolved_citations
 from .core.demonstration import PURPOSES, disclaimer, kind_for, mark_report, resolve_purpose
 from .core.dossier import build_dossier, dossier_id, dossier_url, read_run, stamp_paper
@@ -288,6 +288,8 @@ def _describe(
     demonstration: bool = False,
     study_folder: Path | None = None,
     accept_data_terms: list[str] | None = None,
+    paper: str | None = None,
+    paper_url: str | None = None,
 ) -> tuple[int, dict[str, Any] | None]:
     from .cli_verify import _verdict
 
@@ -341,9 +343,12 @@ def _describe(
         availability, notes = resolve(
             data=data, code=code, data_url=data_url, code_url_=code_url, repository=repository
         )
+        # The paper: public with the address of its PDF, or private (readers can ask for it on e2er.org).
+        access, paper_notes = paper_access(paper, paper_url, repository)
     except ValueError as e:
         print(f"error: {e}")
         return 1, None
+    notes += paper_notes
     for n in notes:
         print(f"note: {n}")
     # Data loaded under a source's own terms (the GMD): public only after the researcher confirms them.
@@ -517,6 +522,8 @@ def _describe(
         print("note: --no-stamp: the paper does not carry the dossier link")
     manifest = manifest_now([{"check": c.name, "status": c.status, "detail": c.detail} for c in checks])
     manifest["availability"] = copy.deepcopy(availability)
+    if access:
+        manifest["access"] = copy.deepcopy(access)
     # The amendments stay in provenance.json (fixed by content_id) and in the dossier;
     # e2er.org's research-object format has no field for them.
     manifest["dossier"] = {"id": did, "url": dossier_url(did, site_url), "doc": doc}
@@ -583,6 +590,12 @@ def _describe(
     researcher = sum(1 for s in doc.get("workflow") or [] if s.get("type") == "researcher")
     print(f"✓ Dossier {did[:23]}…  {dossier_url(did, site_url)}  ({steps} steps, {researcher} researcher actions)")
     print(f"  availability: {describe_availability(availability)}")
+    if access:
+        print(f"  paper: public ({access['pdf']})")
+    # What readers see for what is not public, and the flag that publishes it (no nudge for data a source's terms keep).
+    restricted = [f"{u.terms.name} ({u.terms.short})" for u in licensed]
+    for line in reader_notes(availability, access, restricted):
+        print(f"  note: {line}")
     if purpose:
         print(f"  purpose: {purpose}{f' ({kind})' if kind else ''}: {disclaimer(kind)}")
     if entry:
