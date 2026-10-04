@@ -1118,7 +1118,7 @@ class PipelineRunner:
         # researcher supplied) run before a specialist is sent back to work, so
         # it works on what they provide.
         pending_at = state.pending_review_stage
-        # (A rerun of a finished study stops nowhere yet: the loop runs them in order.)
+        # (A rerun of a study not stopped at a researcher step stops nowhere yet: the loop runs them in order.)
         for s in self._spec.steps if pending_at else []:
             if s.name == pending_at:
                 break

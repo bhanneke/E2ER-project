@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **Every researcher action is in the dashboard too.** The study page runs a study again from a
+  step of its template with a remark (`e2er rerun`), resumes a failed or stopped study as well as a
+  paused one (`e2er resume`), resumes with a higher spending limit after the limit was reached
+  (`e2er resume --max-cost`; the plain Resume, which would stop again at once, is not offered
+  then), deposits the frozen pre-registration on Zenodo (`e2er preregister deposit --zenodo`),
+  approves or refuses data queries waiting for approval, and shows "Demonstration or test run" on
+  a demonstration study. The new-study page has the stops after a step (`e2er run --review-at`)
+  and takes a spending limit in cents. Each stop page says what continuing means for its kind
+  ("Keep the output as it is and continue", "Continue with these mismatches", "Approve the
+  deviation and continue", "Continue: run the check again", "Approve and freeze"). The finish
+  page has where public data and code live, the Zenodo deposit, name, ORCID iD, roles, licence,
+  repository, commit and path, what the study builds on, `--online` citation checks, and the
+  terms of a data source the study used: publishing GMD data as public needs the box that
+  confirms them, as `--accept-data-terms gmd` does.
+- **`e2er rerun` works after a run failed or stopped.** Before, it refused a step that had not
+  been marked done (the step a run failed in) and a run stopped at a researcher step or a check.
+  Now any template step of the study's mode can be the start: a step the failed run never
+  reached is accepted, and the run picks up at its first unfinished step; at a stop the rerun
+  takes the place of the stop (recorded as `replaces`), and the checks run again on the way. A
+  step run again runs all of its specialists. `e2er resume` works as before.
+- **A dossier with an approved deviation from the pre-registration is accepted by e2er.org.**
+  The researcher step listed the approved changes as records under `deviations`, which the
+  dossier format keeps for text; the text stays there and the records (file, SHA-256 frozen and
+  approved) are under `approved_deviations`.
+
 - **A failed number check stops the run for the researcher.** When the numbers in the paper's
   tables still differ from the results files after the automatic correction (governance `full`),
   the run stops at the researcher step `number_check`. It names each mismatch: the table cell,

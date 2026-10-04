@@ -102,6 +102,25 @@ def _signed_in(base: str) -> bool:
         return False
 
 
+def _terms(bundle: Path | None) -> list[dict[str, Any]]:
+    """Sources with terms whose data the folder holds (the GMD): what the finish page asks the researcher to confirm."""
+    from ..core import data_terms
+
+    if bundle is None:
+        return []
+    return [
+        {
+            "connector": u.terms.connector,
+            "label": u.label,
+            "short": u.terms.short,
+            "plain": list(u.terms.plain),
+            "citation": u.terms.citation,
+            "terms_url": u.terms.terms_url,
+        }
+        for u in data_terms.uses(bundle)
+    ]
+
+
 @router.get("/papers/{paper_id}/finish", response_class=HTMLResponse)
 async def finish_page(request: Request, paper_id: str) -> Any:
     from ..config import get_settings
@@ -123,6 +142,7 @@ async def finish_page(request: Request, paper_id: str) -> Any:
         {
             "paper": _with_outcome(dict(paper)),
             "export": str(export) if export else "",
+            "data_terms": _terms(export),
             "output_root": str(settings.resolved_output_root()),
             "platform": base,
             "signed_in": _signed_in(base),
@@ -151,7 +171,7 @@ async def export_study(paper_id: str) -> dict[str, Any]:
         date_str=datetime.now().strftime("%Y%m%d"),
         template=paper.get("pipeline") or None,
     )
-    return {"path": str(out)}
+    return {"path": str(out), "data_terms": _terms(Path(out))}
 
 
 def _bundle(paper_id: str) -> Path:
@@ -161,8 +181,13 @@ def _bundle(paper_id: str) -> Path:
     return b
 
 
+class VerifyRequest(BaseModel):
+    #: Also check the citations against the live registries (`e2er verify --online`).
+    online: bool = False
+
+
 @router.post("/api/papers/{paper_id}/verify", dependencies=[Depends(require_local_session)])
-async def verify_study(paper_id: str) -> dict[str, Any]:
+async def verify_study(paper_id: str, req: VerifyRequest | None = None) -> dict[str, Any]:
     """`e2er verify` on the study's exported folder: the same checks, the same verdict."""
     from dataclasses import asdict
 
@@ -170,7 +195,7 @@ async def verify_study(paper_id: str) -> dict[str, Any]:
 
     await _paper(paper_id)
     bundle = _bundle(paper_id)
-    checks = await asyncio.to_thread(_run_checks, bundle, False)
+    checks = await asyncio.to_thread(_run_checks, bundle, bool(req and req.online))
     verdict, code = _verdict(checks)
     return {"bundle": str(bundle), "checks": [asdict(c) for c in checks], "verdict": verdict, "verified": code == 0}
 
@@ -194,6 +219,22 @@ class PublishRequest(BaseModel):
     project: str
     data: str = "private"
     code: str = "private"
+    data_url: str | None = None
+    code_url: str | None = None
+    zenodo: bool = False
+    #: Sources whose terms the researcher confirmed (`--accept-data-terms`), e.g. ["gmd"].
+    accept_data_terms: list[str] = []
+    name: str | None = None
+    orcid: str | None = None
+    #: CRediT roles (`--role`, repeatable).
+    roles: list[str] = []
+    license_id: str | None = None
+    #: The repository that holds the folder, the commit that pins it, the folder's path in it.
+    repo: str | None = None
+    commit: str | None = None
+    path: str | None = None
+    #: owner/project of research objects this one builds on (`--derived-from`).
+    derived_from: list[str] = []
     demonstration: bool = False
     dry_run: bool = True
 
@@ -225,6 +266,18 @@ async def publish_study(paper_id: str, req: PublishRequest) -> dict[str, Any]:
         template=paper.get("pipeline") or None,
         data=req.data,
         code=req.code,
+        data_url=(req.data_url or "").strip() or None,
+        code_url=(req.code_url or "").strip() or None,
+        zenodo=req.zenodo,
+        accept_data_terms=[a for a in req.accept_data_terms if a.strip()] or None,
+        name=(req.name or "").strip() or None,
+        orcid=(req.orcid or "").strip() or None,
+        license_id=(req.license_id or "").strip() or None,
+        roles=[r.strip() for r in req.roles if r.strip()] or None,
+        repo=(req.repo or "").strip() or None,
+        commit=(req.commit or "").strip() or None,
+        path=(req.path or "").strip() or None,
+        derived_from=[d.strip() for d in req.derived_from if d.strip()] or None,
         demonstration=req.demonstration,
         out=str(bundle.parent / f"{bundle.name}-registry-entry"),
         site=base,
@@ -283,3 +336,41 @@ async def login_status() -> dict[str, Any]:
         state = dict(_LOGIN)
     state["signed_in"] = _signed_in(_platform())
     return state
+
+
+# ── deposit the frozen pre-registration (as `e2er preregister deposit --zenodo`) ──
+
+
+class DepositRequest(BaseModel):
+    sandbox: bool = False
+
+
+@router.post("/api/papers/{paper_id}/preregistration/deposit", dependencies=[Depends(require_local_session)])
+async def deposit_preregistration(paper_id: str, req: DepositRequest) -> dict[str, Any]:
+    """Deposit the study's frozen pre-registration on Zenodo with the researcher's own token."""
+    import os
+
+    from ..core.pipeline.preregistration import ZENODO_SANDBOX_URL, ZENODO_URL, deposit_zenodo, load_lock
+
+    paper = await _paper(paper_id)
+    folder = Path(str(paper.get("workspace") or ""))
+    if (folder / "design").is_dir() and load_lock(folder / "design"):
+        folder = folder / "design"
+    lock = load_lock(folder) if folder.is_dir() else None
+    if lock is None:
+        raise HTTPException(
+            status_code=409, detail="No frozen pre-registration here; approve it at its researcher step first."
+        )
+    if lock.get("deposit"):
+        raise HTTPException(status_code=409, detail=f"Already deposited: doi {lock['deposit'].get('doi')}.")
+    name = "ZENODO_SANDBOX_TOKEN" if req.sandbox else "ZENODO_TOKEN"
+    token = (os.environ.get(name) or "").strip()
+    if not token:
+        raise HTTPException(status_code=422, detail=f"Set {name} to your own Zenodo token, then start e2er again.")
+    try:
+        dep = await asyncio.to_thread(
+            deposit_zenodo, folder, token, base_url=ZENODO_SANDBOX_URL if req.sandbox else ZENODO_URL
+        )
+    except Exception as e:  # noqa: BLE001 — shown on the page
+        raise HTTPException(status_code=502, detail=f"The deposit did not go through: {e}") from e
+    return {"doi": dep.get("doi"), "url": dep.get("url"), "service": dep.get("service")}

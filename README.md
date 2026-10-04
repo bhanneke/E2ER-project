@@ -144,7 +144,7 @@ e2er cancel <paper_id>
 e2er resume <paper_id> --max-cost 15
 ```
 
-The dossier records every review action. `e2er rerun` sends a finished study back to one of its steps, and that step and all later steps run again. `e2er cancel` stops a running or paused study and keeps its files. `e2er resume` continues a paused or failed study and skips the steps whose output already exists; `--max-cost` raises the spending limit at the same time.
+The dossier records every review action. `e2er rerun` sends a study (finished, failed or stopped) back to one of its steps, and that step and all later steps run again. The dashboard offers each of these actions on the study's pages. `e2er cancel` stops a running or paused study and keeps its files. `e2er resume` continues a paused or failed study and skips the steps whose output already exists; `--max-cost` raises the spending limit at the same time.
 
 ### Studies and versions
 

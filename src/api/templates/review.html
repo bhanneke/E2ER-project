@@ -28,6 +28,9 @@
       The pre-registered plan changed after it was frozen, so the estimation does not run yet. Approve to keep
       the change as a deviation from the plan (your decision is recorded in the dossier and the deviation is
       disclosed), edit the file back to the frozen version, or send back the step that changed it.
+    {% elif pending.kind == "gate" %}
+      A check failed, so the run stopped here. Its reasons are below. Edit a file, give an instruction, or send a
+      step back; the check runs again when the run continues. Continuing does not pass the check.
     {% else %}
       The run stopped here for you. Edit a file, give an instruction for the following steps,
       send a step back, or approve to continue. Everything you do here appears in the study's dossier.
@@ -77,7 +80,7 @@
   </section>
   {% endif %}
 
-  <p><button class="btn-primary" id="approve">{% if pending.kind == "contract" %}Keep the output as it is and continue{% elif pending.kind == "numbers" %}Continue with these mismatches{% else %}Approve and continue{% endif %}</button></p>
+  <p><button class="btn-primary" id="approve">{% if pending.kind == "contract" %}Keep the output as it is and continue{% elif pending.kind == "numbers" %}Continue with these mismatches{% elif pending.kind == "deviation" %}Approve the deviation and continue{% elif pending.kind == "gate" %}Continue: run the check again{% elif pending.kind == "preregister" %}Approve and freeze{% else %}Approve and continue{% endif %}</button></p>
   <p class="form-note" id="rv-msg" hidden></p>
 {% endif %}
 
@@ -105,7 +108,11 @@
     const sb = document.getElementById('send-back');
     if (sb) sb.addEventListener('click', async () => { if (await send({ action: 'send_back', step: document.getElementById('sb-step').value, remark: document.getElementById('sb-remark').value })) location.href = '/papers/{{ paper_id }}'; });
     const a = document.getElementById('approve');
-    if (a) a.addEventListener('click', async () => { if (await send({ action: 'approve' })) location.href = '/papers/{{ paper_id }}'; });
+    if (a) a.addEventListener('click', async () => {
+      a.disabled = true;
+      if (await send({ action: 'approve' })) location.href = '/papers/{{ paper_id }}';
+      else a.disabled = false;
+    });
   })();
 </script>
 {% endblock %}

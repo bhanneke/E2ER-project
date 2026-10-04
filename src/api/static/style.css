@@ -592,3 +592,13 @@ details.move > summary::-webkit-details-marker { display: none; }
   .move-body { flex-wrap: wrap; }
   .move-body select { max-width: 100%; }
 }
+
+/* Study page: the purpose label, and the actions beside the live panel (rerun, spending limit, pre-registration). */
+.tag {
+  display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 12px; font-weight: 600;
+  background: #fff4d6; color: #7a5200;
+}
+#rerun-box, #prereg-box, #budget-box { margin: 16px 0; }
+#rerun-box summary { cursor: pointer; }
+#rerun-box .field, #budget-box .field { display: block; margin: 8px 0; }
+#rerun-box select { max-width: 100%; }

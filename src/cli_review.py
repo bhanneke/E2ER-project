@@ -5,7 +5,7 @@
     e2er review <paper_id> --instruction "TEXT"    an instruction for the following steps
     e2er review <paper_id> --edit FILE             edit one of the step's files in $EDITOR
     e2er review <paper_id> --send-back STEP --remark "TEXT"
-    e2er rerun <paper_id> --from STEP --remark "TEXT"   a finished study
+    e2er rerun <paper_id> --from STEP --remark "TEXT"   a finished, failed or stopped study
     e2er preregister deposit <paper_id|folder> --zenodo [--sandbox]
 
 Every action is recorded and appears in the study's dossier.
@@ -218,7 +218,7 @@ def _interactive_loop(http: Any, paper_id: str, data: dict[str, Any], files: dic
 
 
 def rerun(paper_id: str, *, step: str, remark: str) -> int:
-    """`e2er rerun`: send a finished study back to ``step``; it and every later step run again.
+    """`e2er rerun`: send a study back to ``step``; it and every later step run again.
 
     The remark is the researcher's, recorded for the dossier like a send-back;
     the run stops again at the next researcher step.
@@ -231,6 +231,8 @@ def rerun(paper_id: str, *, step: str, remark: str) -> int:
         return 1
     rec = r.json().get("recorded", {})
     print(f"✓ rerun from {rec.get('step')}: {', '.join(rec.get('reruns') or [])} (recorded for the dossier)")
+    if rec.get("replaces"):
+        print(f"✓ in place of the stop at {rec['replaces']}")
     print("✓ the run continues; it stops at the next researcher step")
     return 0
 

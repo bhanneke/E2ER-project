@@ -10,6 +10,7 @@
 {% endif %}
 <h1>{{ paper.title }}</h1>
 <p class="sub">{{ paper.research_question }}</p>
+{% if demonstration %}<p><span class="tag" id="demo-label">Demonstration or test run</span> <span class="muted">published as is and marked as not a research contribution</span></p>{% endif %}
 <p class="muted">
   Template: {{ paper.pipeline or "empirical" }} · {{ (paper.mode or "single_pass") | replace("_", " ") }}
   {% if paper.github_repo %} · <a href="{{ paper.github_repo }}" target="_blank" rel="noopener">{{ paper.github_repo }}</a>{% endif %}
@@ -35,6 +36,113 @@
          hx-swap="innerHTML">
   <p class="muted">Loading status…</p>
 </section>
+
+<section id="budget-box" class="waiting-box" hidden>
+  <span><strong>The spending limit was reached.</strong> The work done so far is kept. Raise the limit to continue
+    (as <code>e2er resume --max-cost</code>).</span>
+  <label class="field">
+    <span>New spending limit (USD)</span>
+    <input type="number" id="budget-cap" min="0.01" step="0.01" value="{{ suggested_cap | round(0) | int }}">
+  </label>
+  <button type="button" class="btn-primary" id="budget-resume">Resume with this limit</button>
+  <p class="form-note" id="budget-msg" role="status"></p>
+</section>
+
+{% if rerun_steps %}
+<details id="rerun-box" class="card"{% if not rerun_open %} hidden{% endif %}>
+  <summary><strong>Run again from a step</strong></summary>
+  <p class="card-note">The step you choose and every step after it run again, also after the run failed or
+    stopped. Your remark goes to the specialists and into the dossier, and the run stops again where it waits for you
+    (as <code>e2er rerun --from STEP --remark</code>).</p>
+  <label class="field">
+    <span>Step</span>
+    <select id="rerun-step">
+      {% for st in rerun_steps %}<option value="{{ st.name }}">{{ st.label }} ({{ st.name }})</option>{% endfor %}
+    </select>
+  </label>
+  <label class="field">
+    <span>Remark: what should change</span>
+    <textarea id="rerun-remark" rows="3" style="width:100%" placeholder="For instance: use the corrected event dates."></textarea>
+  </label>
+  <button type="button" class="btn-primary" id="rerun-go">Run again from this step</button>
+  <p class="form-note" id="rerun-msg" role="status"></p>
+</details>
+{% endif %}
+
+{% if prereg %}
+<section class="card" id="prereg-box">
+  <h2>Pre-registration</h2>
+  <p class="card-note">Frozen {{ prereg.frozen_at }} · SHA-256 <code>{{ (prereg.sha256 or "")[:16] }}…</code>
+    {% if prereg.deposit %} · deposited on {{ prereg.deposit.service }}{% if prereg.deposit.doi %}: doi {{ prereg.deposit.doi }}{% endif %}{% endif %}</p>
+  {% if not prereg.deposit %}
+    <p class="card-note">Deposit it on Zenodo with your own account (the token in <code>ZENODO_TOKEN</code>) for a DOI
+      (as <code>e2er preregister deposit</code>).</p>
+    <label class="check"><input type="checkbox" id="prereg-sandbox"> <span>Use Zenodo's test site (sandbox.zenodo.org, token in <code>ZENODO_SANDBOX_TOKEN</code>)</span></label>
+    <button type="button" class="btn" id="prereg-deposit">Deposit on Zenodo</button>
+    <p class="form-note" id="prereg-msg" role="status"></p>
+  {% endif %}
+</section>
+{% endif %}
+
+<script>
+(function () {
+  const pid = '{{ paper.id }}';
+  async function call(url, body) {
+    const r = await fetch(url, { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body || {}) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.detail || ('Failed (' + r.status + ')'));
+    return d;
+  }
+  // The live panel says whether the run is working, and whether the spending limit stopped it.
+  function sync() {
+    const f = document.getElementById('live-flags');
+    if (!f) return;
+    const box = document.getElementById('budget-box');
+    if (box) box.hidden = f.dataset.budget !== '1';
+    const rr = document.getElementById('rerun-box');
+    if (rr) rr.hidden = f.dataset.rerun !== '1';
+  }
+  document.body.addEventListener('htmx:afterSettle', sync);
+  const say = (id, t) => { const m = document.getElementById(id); if (m) m.textContent = t; };
+  const budget = document.getElementById('budget-resume');
+  if (budget) budget.addEventListener('click', async () => {
+    const cap = Number(document.getElementById('budget-cap').value);
+    if (!(cap > 0)) { say('budget-msg', 'Enter a limit above zero.'); return; }
+    budget.disabled = true;
+    try { await call('/api/papers/' + pid + '/resume', { max_cost_usd: cap }); say('budget-msg', 'Resumed with a limit of $' + cap + '.'); document.getElementById('budget-box').hidden = true; }
+    catch (e) { say('budget-msg', e.message); }
+    budget.disabled = false;
+  });
+  const rerun = document.getElementById('rerun-go');
+  if (rerun) rerun.addEventListener('click', async () => {
+    const step = document.getElementById('rerun-step').value;
+    const remark = document.getElementById('rerun-remark').value.trim();
+    if (!remark) { say('rerun-msg', 'Write what should change first.'); return; }
+    rerun.disabled = true;
+    try {
+      const d = await call('/api/papers/' + pid + '/rerun', { step, remark });
+      const rec = d.recorded || {};
+      say('rerun-msg', 'Running again: ' + (rec.reruns || []).join(', ') + (rec.replaces ? ' (in place of the stop at ' + rec.replaces + ')' : '') + '. Recorded for the dossier.');
+      document.getElementById('rerun-remark').value = '';
+    } catch (e) { say('rerun-msg', e.message); }
+    rerun.disabled = false;
+  });
+  const dep = document.getElementById('prereg-deposit');
+  if (dep) dep.addEventListener('click', async () => {
+    dep.disabled = true; say('prereg-msg', 'Depositing…');
+    try { const d = await call('/api/papers/' + pid + '/preregistration/deposit', { sandbox: document.getElementById('prereg-sandbox').checked }); say('prereg-msg', 'Deposited: doi ' + d.doi + ' ' + (d.url || '')); }
+    catch (e) { say('prereg-msg', e.message); dep.disabled = false; }
+  });
+  // Approving or refusing a data query (the buttons sit in the live panel, which is redrawn every few seconds).
+  document.body.addEventListener('click', async (ev) => {
+    const b = ev.target.closest('[data-query]');
+    if (!b) return;
+    b.disabled = true;
+    try { await call('/api/queries/' + b.dataset.query + '/approve', { approved: b.dataset.approve === '1' }); b.closest('li').remove(); }
+    catch (e) { alert(e.message); b.disabled = false; }
+  });
+})();
+</script>
 
 <section>
   <h2>Artifacts</h2>

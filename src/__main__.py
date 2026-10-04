@@ -287,7 +287,8 @@ def main() -> None:
 
     rerun_p = subparsers.add_parser(
         "rerun",
-        help="Send a finished study back to one of its steps: it and every later step run again with your remark.",
+        help="Send a study (finished, failed or stopped) back to one of its steps: it and every later step run "
+        "again with your remark.",
     )
     rerun_p.add_argument("paper_id", help="The paper UUID.")
     rerun_p.add_argument("--from", dest="from_step", required=True, metavar="STEP", help="The template step to rerun.")

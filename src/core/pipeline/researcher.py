@@ -11,9 +11,9 @@ stage named with `--review-at`) the run pauses. The researcher can
   * send a step back — a template step or a specialist runs again with the
     researcher's remark, and the run stops at the same researcher step again.
 
-A study that has finished (no researcher step pending) can still be sent back:
+A study that finished, failed or stopped can be sent back as well:
 ``apply_rerun`` reruns one template step and every step after it with the
-researcher's remark, and the run stops at the next researcher step, which needs
+researcher's remark (at a stop, in place of that stop), and the run stops at the next researcher step, which needs
 approving again (``e2er rerun <id> --from STEP --remark "…"``).
 
 The run also stops here when a specialist's output still fails its contract
@@ -291,22 +291,26 @@ def apply_action(
 _NOT_RERUNNABLE = ("researcher", "preregister")
 
 
-def apply_rerun(workspace: Path, state: PipelineState, spec: Any, step: str, remark: str) -> dict[str, Any]:
-    """Send a finished study back to ``step``: it and every later step run again with ``remark``.
+def rerunnable_steps(spec: Any, mode: str) -> list[str]:
+    """The template steps a study can be run again from, in order (for the dashboard's choice)."""
+    return [s.name for s in spec.steps if s.kind not in _NOT_RERUNNABLE and not s.after and s.applies_to(mode)]
 
-    For a study that is not stopped at a researcher step (a completed one, say);
-    at a researcher step, a send-back does this. The step must be a template
-    step that ran, and not a researcher step. The approvals of it and of every
-    later step are withdrawn, so the run stops at the next researcher step
-    again. The remark goes to ``researcher_instructions.md`` for the specialists
-    and into the event returned for the dossier; the runner reruns the steps
+
+def apply_rerun(workspace: Path, state: PipelineState, spec: Any, step: str, remark: str) -> dict[str, Any]:
+    """Send a study back to ``step``: it and every later step run again with ``remark``.
+
+    For a study that finished, failed or stopped. The step must be a template
+    step of the study's mode, and not a researcher step. A step that has not run
+    yet (the run failed or stopped before it) is accepted too: the run then
+    continues from its first unfinished step, with the remark. When the run is
+    stopped at a researcher step or a check, the rerun takes the place of that
+    stop (recorded as ``replaces``); the checks run again on the way. The
+    approvals of the step and of every later step are withdrawn, so the run
+    stops at the next researcher step again. The remark goes to
+    ``researcher_instructions.md`` for the specialists and into the event
+    returned for the dossier; the runner reruns the steps
     (``_settle_researcher_decisions``). Nothing in the workspace is deleted.
     """
-    if state.pending_review_stage:
-        raise ResearcherActionError(
-            f"the run is stopped at the researcher step {state.pending_review_stage}; send a step back from there "
-            "(e2er review --send-back)"
-        )
     step = str(step or "").strip()
     remark = str(remark or "").strip()
     if not step or not remark:
@@ -317,10 +321,33 @@ def apply_rerun(workspace: Path, state: PipelineState, spec: Any, step: str, rem
     target = spec.step(step)
     if target.kind in _NOT_RERUNNABLE:
         raise ResearcherActionError(f"{step!r} is a researcher step; rerun the step before it")
-    if step not in state.completed_stages:
-        raise ResearcherActionError(f"{step!r} has not run yet; resume the study instead")
+    if target.after:
+        raise ResearcherActionError(f"{step!r} runs inside another step; rerun that step")
+    if not target.applies_to(state.mode):
+        raise ResearcherActionError(f"{step!r} is not part of a {state.mode.replace('_', ' ')} run")
+    done = set(state.completed_stages) | set(state.approved_stages)
+    # Where the run picks up: the step, or an earlier one the failed or stopped run had not finished
+    # (a step that runs at every start, such as the estimation check, is never left unfinished).
+    open_ = [
+        n
+        for n in names
+        if spec.step(n).resumable
+        and spec.step(n).will_run(state.mode, done)
+        and spec.step(n).kind not in _NOT_RERUNNABLE
+    ]
+    start = min(names.index(step), names.index(open_[0])) if open_ else names.index(step)
     later = names[names.index(step) :]
+    replaces = state.pending_review_stage
+    if replaces:
+        # The rerun takes the place of the stop the run waits at; its checks run again.
+        state.pending_review_stage = None
+        for key in ("contract_pause", "preregistration_deviation"):
+            state.metadata.pop(key, None)
     state.approved_stages = [a for a in state.approved_stages if a not in later]
+    step_done = state.metadata.get("step_done")
+    if isinstance(step_done, dict):
+        for name in later:  # a step run again runs all of its specialists
+            step_done.pop(name, None)
     state.metadata.setdefault("rerun", []).append({"target": step, "remark": remark})
     state.metadata.pop("sent_back", None)
     state.metadata.pop("review", None)
@@ -329,7 +356,18 @@ def apply_rerun(workspace: Path, state: PipelineState, spec: Any, step: str, rem
     p = workspace / INSTRUCTIONS_FILE
     prior = p.read_text(encoding="utf-8") if p.is_file() else ""
     p.write_text(
-        prior + ("\n\n" if prior else "") + f"(for {step}, rerun of the finished study, {at}) {remark}\n",
+        prior + ("\n\n" if prior else "") + f"(for {step}, rerun of the study, {at}) {remark}\n",
         encoding="utf-8",
     )
-    return {"action": "rerun", "step": step, "target": step, "remark": remark, "at": at, "reruns": later}
+    reruns = [n for n in names[start:] if spec.step(n).applies_to(state.mode) and not spec.step(n).after]
+    payload: dict[str, Any] = {
+        "action": "rerun",
+        "step": step,
+        "target": step,
+        "remark": remark,
+        "at": at,
+        "reruns": reruns,
+    }
+    if replaces:
+        payload["replaces"] = replaces
+    return payload

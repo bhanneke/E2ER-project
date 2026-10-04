@@ -795,6 +795,15 @@ def researcher_step(data: dict[str, Any], at: str, phase: str | None = None) -> 
             # specialist's yes/no in the dossier format; the list goes under `kept`
             # (a dossier with an array there was refused by e2er.org).
             key = "kept"
+        if key == "deviations" and isinstance(value, list) and any(isinstance(d, dict) for d in value):
+            # The changes to the pre-registered plan the researcher approved. In the
+            # dossier format `deviations` lists text (as on the pre-registration
+            # check); the records (file, SHA-256 frozen and approved) go under
+            # `approved_deviations` (e2er.org refused a dossier with objects there).
+            step["deviations"] = _clip(
+                [str(d.get("deviation") or d.get("file")) if isinstance(d, dict) else str(d) for d in value if d]
+            )
+            key = "approved_deviations"
         if key not in step and value is not None:
             step[key] = _clip(value)
     return step

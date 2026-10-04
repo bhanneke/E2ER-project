@@ -56,13 +56,15 @@ e2er review <paper_id> --approve
 
 An instruction is kept in `researcher_instructions.md`; every later specialist and the strategist receive it. Sending back re-runs that template step (and the steps after it) or that specialist with the remark, then the run stops at the same researcher step again.
 
-A study that is no longer stopped at a researcher step (a completed one, say) can be sent back too:
+A study that completed, failed or stopped can be sent back too:
 
 ```
 e2er rerun <paper_id> --from compare --remark "Write the report again from the comparison."
 ```
 
-The step and every step after it run again with the remark (a researcher step cannot be the start); their approvals are withdrawn, so the run stops at the next researcher step, where the new result needs approving.
+The step and every step after it run again with the remark (a researcher step cannot be the start); their approvals are withdrawn, so the run stops at the next researcher step, where the new result needs approving. After a failure the step may be one the run never reached: the run then picks up at its first unfinished step. When the run waits at a researcher step or a failed check, the rerun takes the place of that stop, and the checks run again on the way.
+
+Everything here is in the dashboard too: the stop pages have the files, the instruction, the send-back and the decision; the study page has "Run again from a step" (the template's steps and a remark), Resume, and a new spending limit when the limit was reached.
 
 ## When the tables disagree with the results
 
