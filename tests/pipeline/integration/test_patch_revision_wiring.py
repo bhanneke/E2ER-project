@@ -31,7 +31,7 @@ import pytest
 
 from src.core.specialists.contracts import Contribution
 from src.core.strategist.runner import PipelineRunner
-from src.core.strategist.state import PaperStatus
+from src.core.strategist.state import PaperStatus, StepFailedError
 
 _DRAFT = r"""\documentclass{article}
 \begin{document}
@@ -263,9 +263,11 @@ async def test_missing_patch_file_yields_failed(tmp_path, mock_llm):
         patch("src.core.strategist.runner.aggregate_reviews", return_value=_Result()),
         patch("src.core.specialists.dispatcher.execute_work_order", side_effect=_no_patch_file),
     ):
-        result = await runner._run_revision_phase(PaperStatus.REVIEW)
+        with pytest.raises(StepFailedError) as err:
+            await runner._run_revision_phase(PaperStatus.REVIEW)
 
-    assert result == PaperStatus.FAILED
+    assert err.value.status == PaperStatus.FAILED
+    assert "patch_revisor wrote no patch file" in err.value.reason
 
 
 @pytest.mark.asyncio

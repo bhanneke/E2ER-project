@@ -30,6 +30,7 @@ from ..strategist.state import (
     GateHaltError,
     HumanReviewRequestedError,
     PaperStatus,
+    StepFailedError,
 )
 
 logger = get_logger(__name__)
@@ -205,6 +206,8 @@ class PipelineRunner:
         self._last_specialist_errors: dict[str, str] = {}
         # Deep-revision rounds spent this run (re-do-the-research loop).
         self._deep_revision_count: int = 0
+        # What the number check's automatic correction did this time, for the stop.
+        self._number_patch_outcome: str = ""
 
     def _in_memory_spent(self) -> float:
         """Sum of all specialist contribution costs + strategist usage cost.
@@ -258,6 +261,8 @@ class PipelineRunner:
             await check_budget(self._paper_id, self._max_cost_usd, self._in_memory_spent())
             await log_event(self._paper_id, "phase_start", stage="revision")
             status = await self._run_revision_phase(status)
+            if status in (PaperStatus.FAILED, PaperStatus.REJECTED):
+                raise StepFailedError(status, "", "revision")
             await log_event(self._paper_id, "phase_end", stage="revision")
             state.last_status = status.value
             state.contributions_count = prior_contributions + len(self._contributions)
@@ -356,6 +361,10 @@ class PipelineRunner:
             await check_budget(self._paper_id, self._max_cost_usd, self._in_memory_spent())
             await log_event(self._paper_id, "phase_start", stage=name)
             result = await fn()
+            if result in (PaperStatus.FAILED, PaperStatus.REJECTED):
+                # A phase that ends the run raises StepFailedError with its
+                # reason; a bare status here would let the next step run.
+                raise StepFailedError(result, "", name)
             await log_event(self._paper_id, "phase_end", stage=name)
             # Human-in-the-loop checkpoint: pause AFTER this stage's work is
             # done (and persisted) but before the next, if the researcher asked
@@ -414,6 +423,10 @@ class PipelineRunner:
                 state.save(self._workspace)
             if state.last_status:
                 final_status = _coerce_paper_status(state.last_status, status)
+                if final_status in (PaperStatus.FAILED, PaperStatus.REJECTED):
+                    # A run whose state says it ended there (an older run, every
+                    # step done): stop with the reason, never a bare status.
+                    raise StepFailedError(final_status, str(state.metadata.get("last_error") or ""), "")
                 await self._update_status(final_status)
                 status = final_status
 
@@ -481,6 +494,22 @@ class PipelineRunner:
             )
             await self._update_status(PaperStatus.PAUSED, error=error_msg)
             return {"status": "paused", "reason": "budget_exhausted", "spent": be.spent, "cap": be.cap}
+        except StepFailedError as sf:
+            # A step ended the run. Nothing after it runs; the step is not
+            # marked done, so `e2er resume` runs it again; the reason is the
+            # paper's last_error.
+            state.last_status = sf.status.value
+            state.metadata["last_error"] = sf.reason
+            state.save(self._workspace)
+            logger.error("Pipeline %s for paper %s: %s", sf.status.value, self._paper_id, sf.reason)
+            await log_event(
+                self._paper_id,
+                "failed" if sf.status == PaperStatus.FAILED else "stopped",
+                stage=sf.stage or None,
+                payload={"error": sf.reason},
+            )
+            await self._update_status(sf.status, error=sf.reason)
+            return {"status": sf.status.value, "error": sf.reason}
         except ContractFailureError as cf:
             # Output that kept failing its contract: the run stops for the
             # researcher instead of failing (crashes still fail, below).
@@ -492,6 +521,9 @@ class PipelineRunner:
             logger.warning("Pipeline halted by %s for paper %s: %s", gh.stage, self._paper_id, "; ".join(gh.reasons))
             await log_event(self._paper_id, "gate_halted", stage=gh.stage, payload={"reasons": gh.reasons})
             deviation = state.metadata.get("review", {}).get("kind") == "deviation"
+            if state.metadata.get("review", {}).get("kind") == "numbers":
+                await self._update_status(PaperStatus.PAUSED, error=self._number_check_status_text(gh.reasons))
+                return {"status": "paused", "reason": "number_check", "stage": gh.stage, "reasons": gh.reasons}
             await self._update_status(
                 PaperStatus.PAUSED,
                 error=(
@@ -1144,10 +1176,12 @@ class PipelineRunner:
                 # pre-registration itself.
                 await self._guard_preregistration(pending, state)
                 await self._stop_for_researcher(step, state)
-            if state.metadata.get("review", {}).get("kind") == "deviation":
+            if state.metadata.get("review", {}).get("kind") in ("deviation", "numbers"):
                 # Sent back from a change to the pre-registered plan: the plan
                 # check runs again in the estimation gate (halting again, with
                 # the files as they are now, if the change is still there).
+                # Likewise from the number check: the review step runs again and
+                # its number check with it, before any reviewer.
                 state.pending_review_stage = None
                 state.metadata.pop("review", None)
                 state.save(self._workspace)
@@ -1673,12 +1707,14 @@ class PipelineRunner:
             # every regime. Only the block/auto-patch is regime-gated.
             report = verify_and_save(draft_path, self._workspace)
             enforce_numbers = self._governance_enforces("numbers")
-            if report.critical_mismatches and enforce_numbers:
-                # v0.6 step 5: try to auto-patch before rejecting. Auto-patch
+            accepted = self._numbers_accepted(report)
+            if report.critical_mismatches and enforce_numbers and not accepted:
+                # v0.6 step 5: try to auto-patch before stopping. Auto-patch
                 # is an enforcement action (it repairs fabricated cells), so it
                 # is skipped in shadow — otherwise it would mask the very
                 # fabrication the experiment is measuring.
                 report = await self._verify_numbers_auto_patch(report)
+                accepted = self._numbers_accepted(report)
             failed_numbers = bool(report.critical_mismatches)
             detail_numbers = ""
             if failed_numbers:
@@ -1692,11 +1728,13 @@ class PipelineRunner:
                     f"First {min(5, len(report.critical_mismatches))}: {summary}"
                 )
             await self._record_gate("numbers", passed=not failed_numbers, detail=detail_numbers)
-            if failed_numbers and enforce_numbers:
-                error = f"verify_numbers: {detail_numbers}"
-                logger.error("Paper %s: %s", self._paper_id, error)
-                await self._update_status(PaperStatus.REJECTED, error=error)
-                return PaperStatus.REJECTED
+            if failed_numbers and enforce_numbers and not accepted:
+                # Under `full` a failed number check stops the run for the
+                # researcher (it never folds into a --review-at pause, and the
+                # reviewers do not run on a draft whose tables disagree with
+                # the results until the researcher has decided).
+                await self._stop_at_number_check(report)
+            await self._settle_number_check(report, enforced=enforce_numbers, accepted=accepted)
 
         # --- verify_citations pre-review gate (v0.9 M2) ---
         # Mechanical anti-hallucination for references: every \cite
@@ -1737,10 +1775,12 @@ class PipelineRunner:
                 detail_cites = "; ".join(pieces)
             await self._record_gate("citations", passed=not failed_cites, detail=detail_cites)
             if failed_cites and enforce_cites:
-                error = "verify_citations: " + detail_cites
-                logger.error("Paper %s: %s", self._paper_id, error)
-                await self._update_status(PaperStatus.REJECTED, error=error)
-                return PaperStatus.REJECTED
+                raise StepFailedError(
+                    PaperStatus.REJECTED,
+                    "Stopped by the citation check: " + detail_cites + ". Fix the bibliography or the draft "
+                    "(the workspace keeps both), then `e2er resume` runs the review step and the check again.",
+                    "review",
+                )
 
         await self._update_status(PaperStatus.REVIEW)
 
@@ -1765,6 +1805,21 @@ class PipelineRunner:
             self._governance,
         )
         self._contributions.extend(contributions)
+        if not self._read_review_scores():
+            # A review step without a single score is a failed step, never a
+            # silent skip: the revision step would have nothing to decide on.
+            why = "; ".join(
+                f"{c.specialist}: {(c.error or 'no score line in its review')[:200]}"
+                for c in contributions
+                if c.specialist in REVIEWER_SPECIALISTS
+            )
+            raise StepFailedError(
+                PaperStatus.FAILED,
+                "The review step failed: no reviewer produced a score"
+                + (f" ({why})" if why else " (no reviewer ran)")
+                + ". `e2er resume` runs the review step again.",
+                "review",
+            )
         return PaperStatus.REVIEW
 
     async def _run_revision_phase(self, current_status: PaperStatus) -> PaperStatus:
@@ -1787,11 +1842,17 @@ class PipelineRunner:
             # Auto-completing on missing review evidence is dangerous: it
             # produces a "completed" paper with no review trail. Surface as
             # FAILED so the user knows to re-run the review phase.
-            logger.error(
-                "No review scores extracted for paper %s — marking FAILED. Re-running the review phase will recover.",
-                self._paper_id,
+            state = getattr(self, "_state", None)
+            if state is not None and "review" in getattr(state, "completed_stages", []):
+                # Resume must run the reviewers again, not this step alone.
+                state.completed_stages.remove("review")
+                state.save(self._workspace)
+            raise StepFailedError(
+                PaperStatus.FAILED,
+                "The revision step found no reviewer scores (no review file holds a score). "
+                "`e2er resume` runs the review step again.",
+                "revision",
             )
-            return PaperStatus.FAILED
 
         result = aggregate_reviews(scores)
         logger.info("Internal quality review: %.2f of 10 (%s)", result.weighted_avg, result.rule_triggered)
@@ -1999,6 +2060,103 @@ class PipelineRunner:
         )
         self._contributions.append(c)
 
+    # ── the number check (verify_numbers before the reviewers) ─────────────
+
+    def _number_check_status_text(self, reasons: list[str]) -> str:
+        """The paper's status line while the run waits at the number check."""
+        tried = getattr(self, "_number_patch_outcome", "") or "it did not run"
+        shown = "; ".join(reasons[:3]) + (f"; and {len(reasons) - 3} more" if len(reasons) > 3 else "")
+        return (
+            f"Stopped at the number check: {len(reasons)} number(s) in the paper's tables differ from the "
+            f"results files, and the automatic correction did not fix them ({tried}). {shown[:1500]}. "
+            f"Open the check with `e2er review {self._paper_id}`: edit the draft or a results file, give an "
+            "instruction, send back paper_drafter, section_writer (table layout) or econometrics_specialist, "
+            "or approve to continue with these mismatches recorded in the dossier as your decision. "
+            "The reviewers run after that."
+        )
+
+    def _number_check_state(self) -> Any:
+        state = getattr(self, "_state", None)
+        if state is None or not isinstance(getattr(state, "metadata", None), dict):
+            return None
+        return state
+
+    def _numbers_accepted(self, report: Any) -> bool:
+        """True when the researcher approved continuing with exactly these mismatches (or a subset)."""
+        from ..pipeline.researcher import mismatch_key
+
+        state = self._number_check_state()
+        if state is None or not report.critical_mismatches:
+            return False
+        accepted = set(state.metadata.get("numbers_accepted") or [])
+        return bool(accepted) and all(mismatch_key(m) in accepted for m in report.critical_mismatches)
+
+    async def _stop_at_number_check(self, report: Any) -> None:
+        """Stop the run for the researcher at the number check (raises GateHaltError).
+
+        The step names each mismatch (table cell, value in the table, value in
+        the results, source key) and offers the draft and the results files.
+        The researcher edits, instructs, sends back the drafter, the table
+        layout (section_writer writes table_spec.json) or the estimation, or
+        approves continuing with the mismatches recorded in the dossier.
+        """
+        from ..pipeline.researcher import NUMBERS_STEP, describe_mismatch, mismatch_record
+
+        mismatches = [mismatch_record(m) for m in report.critical_mismatches]
+        reasons = [describe_mismatch(m) for m in mismatches]
+        sources = sorted({m["source_file"] for m in mismatches if m["source_file"]})
+        files = [f for f in ["paper_draft.tex", *sources, "table_spec.json"] if f and (self._workspace / f).is_file()]
+        state = self._number_check_state()
+        if state is None:
+            raise StepFailedError(
+                PaperStatus.REJECTED, "Stopped by the number check: " + "; ".join(reasons[:5]), "review"
+            )
+        if NUMBERS_STEP in state.approved_stages:
+            state.approved_stages.remove(NUMBERS_STEP)
+        tried = getattr(self, "_number_patch_outcome", "")
+        state.pending_review_stage = NUMBERS_STEP
+        state.metadata["number_check"] = {"mismatches": mismatches, "auto_patch": tried}
+        state.metadata["review"] = {"kind": "numbers", "files": files, "reasons": reasons}
+        state.save(self._workspace)
+        raise GateHaltError(NUMBERS_STEP, reasons)
+
+    async def _settle_number_check(self, report: Any, *, enforced: bool, accepted: bool) -> None:
+        """After the number check let the run go on: clear its stop, record why the run continues."""
+        from ...db.events import log_event
+        from ..pipeline.researcher import NUMBERS_STEP, mismatch_record
+
+        state = self._number_check_state()
+        if state is not None:
+            if state.pending_review_stage == NUMBERS_STEP:
+                state.pending_review_stage = None
+            if (state.metadata.get("review") or {}).get("kind") == "numbers":
+                state.metadata.pop("review", None)
+            state.metadata.pop("number_check", None)
+            state.save(self._workspace)
+        note_path = self._workspace / "number_check.json"
+        if not report.critical_mismatches:
+            note_path.unlink(missing_ok=True)
+            return
+        mismatches = [mismatch_record(m) for m in report.critical_mismatches]
+        regime = getattr(self, "_governance", DEFAULT_REGIME)
+        if enforced and accepted:
+            decision = "accepted_by_researcher"
+            note = (
+                f"The number check found {len(mismatches)} number(s) in the tables that differ from the results; "
+                "the researcher approved continuing with them (recorded in the dossier)."
+            )
+        else:
+            decision = "recorded_and_continued"
+            note = (
+                f"The number check found {len(mismatches)} number(s) in the tables that differ from the results. "
+                f"Under governance '{regime}' this check does not stop the run: the mismatches are recorded "
+                "in the dossier and the run continued."
+            )
+        logger.warning("Paper %s: %s", self._paper_id, note)
+        doc = {"decision": decision, "governance": regime, "note": note, "mismatches": mismatches}
+        note_path.write_text(json.dumps(doc, indent=2), encoding="utf-8")
+        await log_event(self._paper_id, "number_check_" + decision, stage="review", payload=doc)
+
     async def _verify_numbers_auto_patch(self, report):
         """Try to auto-patch verify_numbers critical mismatches before REJECT.
 
@@ -2030,6 +2188,27 @@ class PipelineRunner:
             logger.debug("verify_numbers auto-patch disabled by budget; the run stops at the check")
             return report
 
+        # One attempt per set of mismatches: a resume after the researcher's
+        # decision does not pay for the same correction again, but mismatches
+        # that are new (say, after the drafter was sent back) get their attempt.
+        from ..pipeline.researcher import mismatch_key
+
+        self._number_patch_outcome = ""
+        keys = {mismatch_key(m) for m in report.critical_mismatches}
+        state = self._number_check_state()
+        if state is not None:
+            tried = set(state.metadata.get("numbers_patch_tried") or [])
+            if keys <= tried:
+                logger.info(
+                    "verify_numbers: the automatic correction already ran for these %d mismatch(es); "
+                    "the run stops at the check",
+                    len(keys),
+                )
+                self._number_patch_outcome = "already tried for these mismatches"
+                return report
+            state.metadata["numbers_patch_tried"] = sorted(tried | keys)
+            state.save(self._workspace)
+
         logger.info(
             "verify_numbers gate found %d critical mismatch(es) — attempting auto-patch (budget=%d)",
             len(report.critical_mismatches),
@@ -2057,6 +2236,7 @@ class PipelineRunner:
                 "verify_numbers auto-patch: patch_revisor produced no patch file (%s) — the run stops at the check",
                 e,
             )
+            self._number_patch_outcome = "patch_revisor wrote no patch file"
             return report
 
         if not merge_result.fully_applied:
@@ -2076,6 +2256,12 @@ class PipelineRunner:
             logger.warning(
                 "verify_numbers auto-patch: %d critical mismatch(es) remain after patch",
                 len(new_report.critical_mismatches),
+            )
+            self._number_patch_outcome = (
+                f"patch_revisor applied {merge_result.n_applied} edit(s); "
+                f"{len(new_report.critical_mismatches)} mismatch(es) remain"
+                if merge_result.n_applied
+                else "patch_revisor made no edits"
             )
         else:
             logger.info(
@@ -2109,7 +2295,7 @@ class PipelineRunner:
         """
         import json
 
-        from ..specialists.dispatcher import execute_work_order
+        from ..specialists.dispatcher import run_with_attempts
         from .patch_merger import merge_patch_file
 
         # Serialise findings into the work order's focus so the
@@ -2142,7 +2328,11 @@ class PipelineRunner:
             focus=focus,
             context_tier=2,
         )
-        contribution = await execute_work_order(
+        # A patch file that fails its contract (not written, not JSON) gets the
+        # dispatcher's attempts with the violation fed back; a crash does not.
+        # After the last attempt the caller decides (the number check stops for
+        # the researcher; the revision step fails) — no separate contract stop.
+        contribution = await run_with_attempts(
             revision_order,
             self._backend,
             self._workspace,
@@ -2151,6 +2341,7 @@ class PipelineRunner:
             self._extra_handlers,
             self._backend_name,
             self._governance,
+            retry_crashes=False,
         )
         self._contributions.append(contribution)
 
@@ -2407,10 +2598,12 @@ class PipelineRunner:
         except FileNotFoundError as e:
             # The revision step did not produce its output: a failed step, not
             # a score. FAILED is resumable.
-            error_msg = f"patch_revisor did not produce a patch file: {e}"
-            logger.error("Paper %s: %s", self._paper_id, error_msg)
-            await self._update_status(PaperStatus.FAILED, error=error_msg)
-            return PaperStatus.FAILED
+            raise StepFailedError(
+                PaperStatus.FAILED,
+                f"The revision step failed: patch_revisor wrote no patch file ({e}). "
+                "`e2er resume` runs the revision step again.",
+                "revision",
+            ) from e
 
         # Partial application is progress, not failure. Edits the merger
         # dropped — out-of-scope (its scope-enforcement job, e.g. an
@@ -2748,6 +2941,12 @@ class PipelineRunner:
             logger.warning("GitHub push failed: %s", e)
 
     async def _update_status(self, status: PaperStatus, error: str | None = None) -> None:
+        if status in (PaperStatus.FAILED, PaperStatus.REJECTED) and not (error or "").strip():
+            # A run that ends must say why (tests/test_number_check.py pins it):
+            # never a failed run with an empty last_error.
+            logger.warning("Paper %s set to %s without a reason", self._paper_id, status.value)
+            where = getattr(self, "_current_step", None) or "?"
+            error = f"The run ended as {status.value} at step '{where}' without a recorded reason; see the server log."
         try:
             from ...db.client import execute
 

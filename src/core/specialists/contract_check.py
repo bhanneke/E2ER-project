@@ -116,6 +116,13 @@ class ContractCheck:
     kind: str = KIND_RELIABILITY
 
 
+#: Outputs for which an empty list is a valid answer, not an empty file: the
+#: patch file of patch_revisor (``[]`` = nothing in the findings it can fix by
+#: editing the draft, as its skill writing/scoped-revision says). Treating it
+#: as a violation made the revisor's honest "no edit" read as a broken step.
+EMPTY_LIST_IS_AN_ANSWER = frozenset({"paper_draft.tex.edits.json"})
+
+
 def check_artifact_nonempty(workspace: Path, relative: str) -> ContractCheck:
     """Verify a single declared artifact has non-trivial content.
 
@@ -143,6 +150,8 @@ def check_artifact_nonempty(workspace: Path, relative: str) -> ContractCheck:
         # Cheap up-front: trim whitespace and check for the literal
         # empty containers before paying for a parse.
         stripped = text.strip()
+        if stripped == "[]" and relative in EMPTY_LIST_IS_AN_ANSWER:
+            return ContractCheck(relative, True, "")
         if stripped in ("{}", "[]", "null", ""):
             return ContractCheck(relative, False, f"empty JSON ({stripped or 'whitespace-only'!r})")
         try:

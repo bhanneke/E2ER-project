@@ -123,6 +123,7 @@ _LABELS = {
     "gate": " (a check failed; it runs again on resume)",
     "deviation": " (the pre-registered plan changed; approve the deviation, edit it back or send back)",
     "contract": " (output that failed its check after the last attempt)",
+    "numbers": " (the number check: tables differ from the results)",
 }
 
 
@@ -143,6 +144,22 @@ def format_pending(data: dict[str, Any]) -> str:
             "  Approve to keep the output as it is (the dossier marks it as failing its check), edit a file, "
             "give an instruction, or send the specialist back with a remark for new attempts. "
             "`e2er resume` alone gives it new attempts."
+        )
+    elif pending.get("kind") == "numbers":
+        mismatches = pending.get("mismatches") or []
+        lines.append(f"  {len(mismatches)} number(s) in the paper's tables differ from the results files:")
+        for m in mismatches:
+            lines.append(
+                f"  - {m.get('cell')}: the table says {m.get('in_table')}, "
+                f"the results say {m.get('in_results')} ({m.get('source_key')})"
+            )
+        if pending.get("auto_patch"):
+            lines.append(f"  The automatic correction did not fix them: {pending['auto_patch']}.")
+        lines.append(
+            "  Edit the draft or a results file, give an instruction, or send back paper_drafter, "
+            "section_writer (table layout) or econometrics_specialist; the check then runs again. "
+            "Approve to continue with these mismatches: the dossier records them as your decision. "
+            "The reviewers run after that."
         )
     else:
         lines += [f"  - {reason}" for reason in pending.get("reasons") or []]

@@ -650,6 +650,15 @@ def read_run(db: Path, paper_id: str, files: dict[str, Any] | None = None, bundl
             )
         elif etype == "researcher_action":
             rec.workflow.append({**researcher_step(data, created, phase), **where})
+            if data.get("decision") == "numbers_accepted":
+                # The run went on past the number check by the researcher's
+                # decision: the halted check says so, with each mismatch.
+                halted = [s for s in rec.workflow if s.get("type") == "check" and s.get("check") == "number_check"]
+                if halted:
+                    halted[-1]["approved_by_researcher"] = {
+                        "at": _utc(data.get("at") or created),
+                        "mismatches": _clip(list(data.get("mismatches") or [])),
+                    }
             if data.get("decision") == "accepted_as_is":
                 # The output stands by the researcher's decision; one that still
                 # fails its contract is marked as such on the step that wrote it.

@@ -744,7 +744,7 @@ async def test_update_status_clears_last_error_on_non_failed(tmp_path, mock_llm)
         await runner._update_status(PaperStatus.IN_PROGRESS)
         await runner._update_status(PaperStatus.COMPLETED)
         await runner._update_status(PaperStatus.FAILED, error="boom")
-        # FAILED with no error message should also clear (treated like non-FAILED-with-error)
+        # FAILED with no error message never leaves last_error empty (live run 2026-10-04)
         await runner._update_status(PaperStatus.FAILED)
 
     assert len(captured) == 4
@@ -754,8 +754,9 @@ async def test_update_status_clears_last_error_on_non_failed(tmp_path, mock_llm)
     # Third: FAILED with error, must write the error
     assert "last_error = %(e)s" in captured[2][0]
     assert captured[2][1].get("e") == "boom"
-    # Fourth: FAILED without error, falls through to clearing branch
-    assert "last_error = NULL" in captured[3][0]
+    # Fourth: FAILED without error still writes a reason, never NULL
+    assert "last_error = %(e)s" in captured[3][0]
+    assert "without a recorded reason" in captured[3][1].get("e")
 
 
 async def test_execute_parallel_logs_aggregate_failure(tmp_path, caplog):

@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **A failed number check stops the run for the researcher.** When the numbers in the paper's
+  tables still differ from the results files after the automatic correction (governance `full`),
+  the run stops at the researcher step `number_check`. It names each mismatch: the table cell,
+  the value in the table, the value in the results and the source key, and offers the draft and
+  the results files. Edit them, give an instruction, or send back `paper_drafter`,
+  `section_writer` (table layout) or `econometrics_specialist`, and the check runs again; or
+  approve to continue with these mismatches, recorded in the dossier as your decision. The
+  reviewers run after that. Before, the check marked the run stopped, a `--review-at review`
+  pause hid it, and the review step was then counted as done without a single reviewer. Under
+  `contracts` and `off` the mismatches are recorded and the run continues, and `e2er status`
+  and the dossier say so (`number_check.json`).
+- **A step that fails stops the run and says why.** A review step that ends without a reviewer
+  score, a revision step without its patch file, or the citation check now ends the run with the
+  reason in `last_error`; no later step runs (the live run went on to the replication step), and
+  the step is not counted as done, so `e2er resume` runs it again. No failed or stopped status is
+  written without a reason.
+- **patch_revisor's empty patch is an answer.** `[]` ("nothing I can fix by editing the draft")
+  no longer counts as a contract violation, as its skill already said; a missing or unreadable
+  patch file gets the usual attempts with the violation fed back. The automatic correction runs
+  once per set of mismatches: a resume after the researcher's decision does not pay for it again.
 - **Output that fails its check after the last attempt stops the run for the researcher.** Before,
   the run ended `failed`. Now it stops at the researcher step `output_contract`, which lists each
   attempt's violations and the files involved (`e2er status`, `e2er review`, the dashboard's

@@ -113,13 +113,14 @@ def _with_outcome(paper: dict[str, Any]) -> dict[str, Any]:
     ``status`` stays the stored internal code: the resume, cancel and archive
     rules read it. Pages show ``shown_status``.
     """
-    from ..core.run_outcome import internal_review, read_aggregation, workspace_status
+    from ..core.run_outcome import internal_review, read_aggregation, run_notes, workspace_status
 
     ws = _paper_workspace(paper)
     return {
         **paper,
         "shown_status": workspace_status(paper.get("status"), ws),
         "internal_review": internal_review(read_aggregation(ws)),
+        "notes": run_notes(ws),
     }
 
 
@@ -962,9 +963,11 @@ def _sendable(workspace: Path, state: Any, pending: Any, spec: Any) -> list[str]
     from ..core.specialists.registry import SPECIALIST_ARTIFACTS
 
     steps: list[str] = []
+    # The number check runs inside the review step: what can go back is before it.
+    stop_at = "review" if pending.kind == "numbers" else pending.stage
     if spec is not None:
         for s in spec.steps:
-            if s.name == pending.stage:
+            if s.name == stop_at:
                 break
             if s.kind not in ("researcher", "preregister") and s.name in state.completed_stages:
                 steps.append(s.name)
@@ -973,6 +976,10 @@ def _sendable(workspace: Path, state: Any, pending: Any, spec: Any) -> list[str]
         # The specialists whose output failed can always be sent back, written or not.
         failed = [f.get("specialist") for f in (state.metadata.get("contract_pause") or {}).get("failed") or []]
         specialists = sorted(set(specialists) | {f for f in failed if f})
+    if pending.kind == "numbers":
+        from ..core.pipeline.researcher import NUMBERS_SENDABLE
+
+        specialists = sorted(set(specialists) | set(NUMBERS_SENDABLE))
     return steps + specialists
 
 
@@ -1003,6 +1010,15 @@ async def get_review(paper_id: str = Depends(_validate_uuid)) -> dict[str, Any]:
         )
     reasons = list(state.metadata.get("review", {}).get("reasons") or [])
     extra: dict[str, Any] = {}
+    if pending.kind == "numbers":
+        # Per mismatch: the table cell, the value in the table, in the results, and the source key.
+        check = state.metadata.get("number_check") or {}
+        extra["mismatches"] = [
+            {k: m.get(k) for k in ("cell", "in_table", "in_results", "source_key")}
+            for m in check.get("mismatches") or []
+        ]
+        if check.get("auto_patch"):
+            extra["auto_patch"] = check["auto_patch"]
     if pending.kind == "contract":
         # Per specialist: each attempt with its violations, and the files involved.
         extra["failures"] = [
@@ -1192,7 +1208,15 @@ async def resume_paper(paper_id: str, req: ResumeRequest | None = None) -> dict[
         # resume: approving it is the researcher's decision (e2er review --approve);
         # a resume gives the failed specialists fresh attempts.
         contract_stop = (pstate.metadata.get("review") or {}).get("kind") == "contract"
-        if pstate.pending_review_stage and not pstate.metadata.get("sent_back") and not contract_stop:
+        # Nor is the number check: continuing with mismatches is the researcher's
+        # decision too; a plain resume runs the check again.
+        numbers_stop = (pstate.metadata.get("review") or {}).get("kind") == "numbers"
+        if (
+            pstate.pending_review_stage
+            and not pstate.metadata.get("sent_back")
+            and not contract_stop
+            and not numbers_stop
+        ):
             pstate.approve(pstate.pending_review_stage)
             pstate.save(workspace)
     except Exception as e:  # noqa: BLE001 — approval is best-effort; resume proceeds
@@ -2406,6 +2430,10 @@ def _template_progress(paper: dict[str, Any], events: list[dict[str, Any]]) -> d
         elif et == "specialist_failed" and who and who not in failed_specialists and who not in done_specialists:
             failed_specialists.append(str(who))
 
+    if pending == "number_check":
+        # The number check runs inside the review step: show its stop on that row.
+        halted.add("review")
+        pending = "review"
     steps: list[dict[str, Any]] = []
     if spec is not None:
         inner = [st for st in spec.steps if st.after]

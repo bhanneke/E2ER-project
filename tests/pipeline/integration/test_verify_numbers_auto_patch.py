@@ -28,7 +28,7 @@ import pytest
 
 from src.core.specialists.contracts import Contribution
 from src.core.strategist.runner import PipelineRunner
-from src.core.strategist.state import PaperStatus
+from src.core.strategist.state import PaperStatus, StepFailedError
 
 
 def _draft_with_value(value: str) -> str:
@@ -134,7 +134,7 @@ async def test_critical_mismatch_auto_patched_then_reviewers_run(tmp_path, mock_
             Contribution(
                 paper_id=runner._paper_id,
                 specialist=o.specialist,
-                output="ok",
+                output="OVERALL SCORE: 7/10",
                 success=True,
             )
             for o in orders
@@ -199,9 +199,10 @@ async def test_residual_critical_after_patch_yields_rejected(tmp_path, mock_llm)
         "src.core.specialists.dispatcher.execute_work_order",
         side_effect=_patch_with_wrong_value,
     ):
-        result = await runner._run_review_phase()
+        with pytest.raises(StepFailedError) as err:
+            await runner._run_review_phase()
 
-    assert result == PaperStatus.REJECTED
+    assert err.value.status == PaperStatus.REJECTED
 
 
 @pytest.mark.asyncio
@@ -221,9 +222,10 @@ async def test_patch_revisor_emits_no_patch_file_yields_rejected(tmp_path, mock_
         )
 
     with patch("src.core.specialists.dispatcher.execute_work_order", side_effect=_no_patch):
-        result = await runner._run_review_phase()
+        with pytest.raises(StepFailedError) as err:
+            await runner._run_review_phase()
 
-    assert result == PaperStatus.REJECTED
+    assert err.value.status == PaperStatus.REJECTED
 
 
 @pytest.mark.asyncio
@@ -271,7 +273,7 @@ async def test_partial_patch_resolving_all_criticals_proceeds_to_review(tmp_path
             Contribution(
                 paper_id=runner._paper_id,
                 specialist=o.specialist,
-                output="ok",
+                output="OVERALL SCORE: 7/10",
                 success=True,
             )
             for o in orders
@@ -316,7 +318,7 @@ async def test_no_critical_mismatches_no_auto_patch(tmp_path, mock_llm):
             Contribution(
                 paper_id=runner._paper_id,
                 specialist=o.specialist,
-                output="ok",
+                output="OVERALL SCORE: 7/10",
                 success=True,
             )
             for o in orders
@@ -360,9 +362,10 @@ async def test_zero_budget_falls_through_to_reject_immediately(tmp_path, mock_ll
         )
 
     with patch("src.core.specialists.dispatcher.execute_work_order", side_effect=_capture):
-        result = await runner._run_review_phase()
+        with pytest.raises(StepFailedError) as err:
+            await runner._run_review_phase()
 
-    assert result == PaperStatus.REJECTED
+    assert err.value.status == PaperStatus.REJECTED
     assert dispatched == [], f"With budget=0 no specialist should be dispatched; saw {dispatched}"
 
 
@@ -406,7 +409,7 @@ async def test_verification_report_overwritten_on_second_pass(tmp_path, mock_llm
             Contribution(
                 paper_id=runner._paper_id,
                 specialist=o.specialist,
-                output="ok",
+                output="OVERALL SCORE: 7/10",
                 success=True,
             )
             for o in orders

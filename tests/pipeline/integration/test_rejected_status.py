@@ -28,6 +28,7 @@ from src.core.strategist.runner import PipelineRunner
 from src.core.strategist.state import (
     VALID_TRANSITIONS,
     PaperStatus,
+    StepFailedError,
     can_transition,
 )
 
@@ -161,9 +162,13 @@ log RV & 0.80 & 0.10 \\
         "src.core.strategist.runner.execute_parallel",
         new_callable=AsyncMock,
     ) as mock_parallel:
-        result = await runner._run_review_phase()
+        # Without a pipeline state (no researcher step to stop at) the check
+        # ends the step as REJECTED, with the mismatch as the reason.
+        with pytest.raises(StepFailedError) as err:
+            await runner._run_review_phase()
 
-    assert result == PaperStatus.REJECTED, f"verify_numbers critical mismatch must yield REJECTED, got {result}"
+    assert err.value.status == PaperStatus.REJECTED
+    assert "the table says 0.80" in err.value.reason
     assert mock_parallel.call_count == 0, "Reviewers must NOT be dispatched when verify_numbers gate trips"
 
     # number_verification.json was persisted (the gate runs verify_and_save,
@@ -191,7 +196,7 @@ x & 0.42 \\
             Contribution(
                 paper_id=runner._paper_id,
                 specialist=o.specialist,
-                output="",
+                output="OVERALL SCORE: 7/10",
                 success=True,
             )
             for o in orders
@@ -219,7 +224,7 @@ async def test_verify_numbers_no_draft_runs_reviewers_anyway(tmp_path, mock_llm)
             Contribution(
                 paper_id=runner._paper_id,
                 specialist=o.specialist,
-                output="",
+                output="OVERALL SCORE: 7/10",
                 success=True,
             )
             for o in orders

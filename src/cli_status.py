@@ -100,6 +100,8 @@ def _format_status_summary(d: dict) -> str:
     ]
     if last_error:
         lines.append(f"Last error: {_truncate(str(last_error), 120)}")
+    for note in d.get("notes") or []:
+        lines.append(f"Note:       {note}")
     return "\n".join(lines)
 
 

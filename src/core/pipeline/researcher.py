@@ -22,6 +22,13 @@ takes the output as it is (recorded, and marked as failing its contract in the
 dossier); a send-back of the failed specialist, or a plain resume, gives it
 fresh attempts.
 
+And it stops here when the number check still finds numbers in the paper's
+tables that differ from the results files after the automatic correction
+(kind ``numbers``, step ``number_check``, governance ``full``): approving
+continues with those mismatches, each recorded in the dossier as the
+researcher's decision; an edit, an instruction or a send-back is followed by
+the check running again.
+
 Every action is written to the event log as ``researcher_action``; the dossier
 lists them as steps of type ``researcher``, so a reader sees where the
 researcher decided and where the AI worked.
@@ -41,6 +48,14 @@ INSTRUCTIONS_FILE = "researcher_instructions.md"
 #: The researcher step a run stops at when a specialist's output still fails its
 #: contract after the last attempt (kind ``contract``; see runner._stop_for_contract).
 CONTRACT_STEP = "output_contract"
+#: The researcher step a run stops at when the number check (tables against the
+#: results files) still fails after the automatic correction, under governance
+#: ``full`` (kind ``numbers``; see runner._stop_at_number_check).
+NUMBERS_STEP = "number_check"
+#: What a researcher can send back from the number check, beside the earlier steps:
+#: the drafter, the table layout (section_writer writes table_spec.json) and the
+#: work that produced the results.
+NUMBERS_SENDABLE = ("paper_drafter", "section_writer", "econometrics_specialist", "data_analyst")
 ACTIONS = ("approve", "edit", "instruction", "send_back")
 _EDITABLE_SUFFIXES = (".md", ".tex", ".json", ".txt", ".bib")
 
@@ -83,6 +98,44 @@ def contract_reasons(failures: list[dict[str, Any]]) -> list[str]:
     return lines
 
 
+def _plain_number(value: str) -> str:
+    """``17.0`` → ``17``; anything else as it is."""
+    text = str(value)
+    try:
+        f = float(text)
+    except ValueError:
+        return text
+    return str(int(f)) if f.is_integer() and abs(f) < 1e15 else text
+
+
+def mismatch_key(m: Any) -> str:
+    """One mismatch of the number check, as a key: the cell, the table's value, the source key."""
+    get = m.get if isinstance(m, dict) else lambda k: getattr(m, k, "")
+    return f"{get('table_context')}|{get('draft_value')}|{get('source_key')}"
+
+
+def mismatch_record(m: Any) -> dict[str, Any]:
+    """A mismatch of the number check for the researcher and the dossier."""
+    source_key = str(getattr(m, "source_key", ""))
+    source_file = source_key.split(".json", 1)[0] + ".json" if ".json" in source_key else ""
+    return {
+        "cell": str(getattr(m, "table_context", "")),
+        "in_table": str(getattr(m, "draft_value", "")),
+        "in_results": _plain_number(str(getattr(m, "source_value", ""))),
+        "source_key": source_key,
+        "source_file": source_file,
+        "key": mismatch_key(m),
+    }
+
+
+def describe_mismatch(rec: dict[str, Any]) -> str:
+    """One line per mismatch, as the researcher reads it."""
+    return (
+        f"{rec.get('cell')}: the table says {rec.get('in_table')}, the results say {rec.get('in_results')} "
+        f"({rec.get('source_key')})"
+    )
+
+
 def _accepted_outputs(workspace: Path, state: PipelineState) -> list[dict[str, Any]]:
     """What the researcher approves at a contract stop: per specialist, its files and the violations left now."""
     from ..specialists.contract_check import check_specialist_artifacts
@@ -113,7 +166,7 @@ def _accepted_outputs(workspace: Path, state: PipelineState) -> list[dict[str, A
 @dataclass(frozen=True)
 class PendingReview:
     stage: str
-    kind: str  # researcher | preregister | review_at | gate | deviation | contract
+    kind: str  # researcher | preregister | review_at | gate | deviation | contract | numbers
     files: tuple[str, ...]
 
 
@@ -173,6 +226,13 @@ def apply_action(
             payload.update(decision="deviation_approved", deviations=approved)
             state.metadata.pop("preregistration_deviation", None)
             state.metadata.pop("review", None)
+        if pending.kind == "numbers":
+            # The researcher continues with the tables as they are: each mismatch
+            # is recorded (dossier) and the check lets exactly these through.
+            mismatches = list((state.metadata.get("number_check") or {}).get("mismatches") or [])
+            payload.update(decision="numbers_accepted", mismatches=mismatches)
+            keys = state.metadata.setdefault("numbers_accepted", [])
+            keys.extend(m["key"] for m in mismatches if m.get("key") and m["key"] not in keys)
         if pending.kind == "contract":
             # The researcher takes the output as it is: recorded for the dossier,
             # each output that still fails its contract marked as such.

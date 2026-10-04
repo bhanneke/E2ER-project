@@ -64,6 +64,20 @@ e2er rerun <paper_id> --from compare --remark "Write the report again from the c
 
 The step and every step after it run again with the remark (a researcher step cannot be the start); their approvals are withdrawn, so the run stops at the next researcher step, where the new result needs approving.
 
+## When the tables disagree with the results
+
+Before the reviewers run, the number check compares every number in the paper's tables with the
+results files, and patch_revisor gets one attempt to correct the cells that differ. When numbers
+still differ (governance `full`), the run stops at the researcher step `number_check`. It lists
+each mismatch (table cell, value in the table, value in the results, source key) and offers the
+draft and the results files. Edit one of them, give an instruction, or send back `paper_drafter`,
+`section_writer` (it writes the table layout) or `econometrics_specialist`; the check then runs
+again. Or approve (`e2er review <id> --approve`) to continue with exactly these mismatches: the
+dossier records each one as your decision. `e2er resume` alone runs the check again. The
+reviewers run once the check has passed or you have decided. Under governance `contracts` or
+`off` the check does not stop the run: the mismatches are recorded in the dossier and in
+`number_check.json`, and `e2er status` says so.
+
 ## When output keeps failing its check
 
 A specialist's output is checked against its contract after every attempt, and a failed check is
