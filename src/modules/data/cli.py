@@ -76,6 +76,7 @@ def _build_handler(paper_id: str, specialist: str, workspace: Path) -> Any:
         paper_id=paper_id,
         specialist=specialist,
         dictionary=dictionary,
+        workspace=workspace,
     )
 
 
@@ -191,6 +192,9 @@ async def _run_dev_transfers(args: argparse.Namespace) -> str:
         limit=args.limit,
         cursor=args.cursor,
     )
+    from .load_record import allium_load, now_utc
+
+    _record(result, args, allium_load(f"token transfers of {args.address} on {args.chain}", now_utc()))
     return _json.dumps(result, indent=2, default=str)
 
 
@@ -218,6 +222,9 @@ async def _run_dev_wallet_tx(args: argparse.Namespace) -> str:
         transaction_hash=args.transaction_hash,
         activity_type=args.activity_type,
     )
+    from .load_record import allium_load, now_utc
+
+    _record(result, args, allium_load(f"transactions of {args.address} on {args.chain}", now_utc()))
     return _json.dumps(result, indent=2, default=str)
 
 
@@ -237,6 +244,9 @@ async def _run_dev_balances_history(args: argparse.Namespace) -> str:
         from_ts=args.from_ts,
         to_ts=args.to_ts,
     )
+    from .load_record import allium_load, now_utc
+
+    _record(result, args, allium_load(f"balance history of {args.address} on {args.chain}", now_utc()))
     return _json.dumps(result, indent=2, default=str)
 
 
@@ -260,6 +270,9 @@ async def _run_dev_prices_history(args: argparse.Namespace) -> str:
         from_ts=args.from_ts,
         to_ts=args.to_ts,
     )
+    from .load_record import allium_load, now_utc
+
+    _record(result, args, allium_load(f"price history of {args.token_address} on {args.chain}", now_utc()))
     return _json.dumps(result, indent=2, default=str)
 
 
@@ -274,6 +287,9 @@ async def _run_dev_get_price(args: argparse.Namespace) -> str:
         return "Allium not configured. Set ALLIUM_API_KEY in .env."
     provider = AlliumDeveloperProvider(settings.allium_api_key, settings.allium_api_base)
     result = await provider.get_token_latest_price(chain=args.chain, token_address=args.token_address)
+    from .load_record import allium_load, now_utc
+
+    _record(result, args, allium_load(f"latest price of {args.token_address} on {args.chain}", now_utc()))
     return _json.dumps(result, indent=2, default=str)
 
 
@@ -446,6 +462,31 @@ def _maybe_save_csv(result: dict, args: argparse.Namespace) -> None:
         result["save_error"] = f"{type(e).__name__}: {e}"
 
 
+def _record(result: dict, args: argparse.Namespace, entry: dict[str, Any]) -> None:
+    """Record a load that returned rows in the study's ``data_sources.json`` (see load_record.py).
+
+    Where it went (``--table``, ``--save-to``) is added; a load that saved
+    nothing is recorded too, because its rows reached the specialist.
+    """
+    if not isinstance(result, dict) or result.get("error") or result.get("table_error") or not result.get("items"):
+        return
+    from .load_record import try_record
+
+    entry = {
+        **entry,
+        "table": result.get("saved_table"),
+        "table_rows": result.get("saved_table_rows"),
+        "saved_to": result.get("saved_to"),
+        "rows": len(result.get("items") or []),
+        "specialist": getattr(args, "specialist", None),
+    }
+    err = try_record(_resolve_workspace(args.paper_id), entry)
+    if err:
+        result["record_error"] = err
+    else:
+        result.setdefault("recorded_in", []).append("data_sources.json")
+
+
 # ---------------------------------------------------------------------------
 # yfinance handlers — public Yahoo Finance data, no API key.
 # ---------------------------------------------------------------------------
@@ -467,6 +508,10 @@ async def _run_yf_history(args: argparse.Namespace) -> str:
     )
     _maybe_save_csv(result, args)
     _maybe_save_table(result, args)
+    from .load_record import now_utc, yfinance_load
+
+    what = "daily prices" if args.interval == "1d" else f"prices at interval {args.interval}"
+    _record(result, args, yfinance_load(args.ticker, now_utc(), what=what))
     return _json.dumps(result, indent=2, default=str)
 
 
@@ -491,6 +536,9 @@ async def _run_yf_fundamentals(args: argparse.Namespace) -> str:
     result = await provider.fundamentals(ticker=args.ticker, statement=args.statement)
     _maybe_save_csv(result, args)
     _maybe_save_table(result, args)
+    from .load_record import now_utc, yfinance_load
+
+    _record(result, args, yfinance_load(args.ticker, now_utc(), what=f"annual {args.statement.replace('_', ' ')}"))
     return _json.dumps(result, indent=2, default=str)
 
 
@@ -504,6 +552,9 @@ async def _run_yf_dividends(args: argparse.Namespace) -> str:
     result = await provider.dividends(ticker=args.ticker)
     _maybe_save_csv(result, args)
     _maybe_save_table(result, args)
+    from .load_record import now_utc, yfinance_load
+
+    _record(result, args, yfinance_load(args.ticker, now_utc(), what="dividends"))
     return _json.dumps(result, indent=2, default=str)
 
 
@@ -563,6 +614,11 @@ async def _run_fred_series(args: argparse.Namespace) -> str:
     )
     _maybe_save_csv(result, args)
     _maybe_save_table(result, args)
+    if result.get("items") and not result.get("error"):
+        from .load_record import fred_load, now_utc
+
+        meta = await provider.citation_info(args.series_id)
+        _record(result, args, fred_load(args.series_id, now_utc(), **meta))
     return _json.dumps(result, indent=2, default=str)
 
 
@@ -689,7 +745,8 @@ async def _run_gmd_series(args: argparse.Namespace) -> str:
                     "table": result.get("saved_table"),
                     "table_rows": result.get("saved_table_rows"),
                     "saved_to": result.get("saved_to"),
-                    "loaded_at": _utc_now(),
+                    "loaded_at": (now := _utc_now()),
+                    "retrieved_at": now,
                     "specialist": args.specialist,
                 }
                 record = {k: v for k, v in record.items() if v is not None}

@@ -926,11 +926,32 @@ def build_dossier(
     return doc
 
 
+#: The keys of a load the dossier keeps (data/data_sources.json, see modules/data/load_record.py).
+#: A load recorded before a key existed simply lacks it.
+_SOURCE_KEYS = (
+    "dataset",
+    "version",
+    "table",
+    "saved_to",
+    "licence",
+    "terms",
+    "citation",
+    "cite_key",
+    # Since every connector records its loads: what a study page shows.
+    "series",
+    "retrieved_at",
+    "terms_summary",
+    "citation_by",
+    "link",
+    "doi",
+)
+
+
 def _data_sources(bundle: Path | None) -> list[dict[str, Any]]:
     """The external-source loads ``data/data_sources.json`` records: source, release, files with SHA-256.
 
-    Written by ``e2er-data`` when a connector that publishes versioned files
-    (the GMD) loads a table. A study without the file has no ``data_sources``
+    Written by every data connector (FRED, yfinance, GMD, Allium, a Zenodo
+    record, the researcher's data folder) when it loads data. A study without the file has no ``data_sources``
     in its dossier, so its dossier (and address) is unchanged.
     """
     if bundle is None:
@@ -945,13 +966,14 @@ def _data_sources(bundle: Path | None) -> list[dict[str, Any]]:
         if not isinstance(load, dict) or not load.get("connector"):
             continue
         entry: dict[str, Any] = {"connector": str(load["connector"])}
-        for key in ("dataset", "version", "table", "saved_to", "licence", "terms", "citation", "cite_key"):
+        for key in _SOURCE_KEYS:
             if isinstance(load.get(key), str) and load[key]:
                 entry[key] = load[key]
+        # A file read from the source (url) or from the researcher's data folder (path).
         entry["files"] = [
-            {"url": str(f["url"]), "sha256": str(f["sha256"])}
+            {("url" if f.get("url") else "path"): str(f.get("url") or f["path"]), "sha256": str(f["sha256"])}
             for f in load.get("files") or []
-            if isinstance(f, dict) and f.get("url") and f.get("sha256")
+            if isinstance(f, dict) and (f.get("url") or f.get("path")) and f.get("sha256")
         ]
         out.append(entry)
     return out

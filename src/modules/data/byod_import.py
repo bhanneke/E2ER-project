@@ -198,10 +198,23 @@ def _import_corpus_sync(workspace: Path, max_rows: int) -> list[dict[str, Any]]:
     for path in files:
         rel_label = path.relative_to(data_dir).as_posix()
         try:
-            imported.extend(_import_one_file_sync(db_path, rel_label, path, existing, max_rows))
+            tables = _import_one_file_sync(db_path, rel_label, path, existing, max_rows)
         except Exception as e:  # noqa: BLE001 — best-effort: one bad file must not fail paper creation
             logger.warning("BYOD import skipped %s: %s (paper creation continues)", rel_label, e)
+            continue
+        imported.extend(tables)
+        _record_file(workspace, rel_label, path, tables)
     return imported
+
+
+def _record_file(workspace: Path, rel: str, path: Path, tables: list[dict[str, Any]]) -> None:
+    """Record the researcher's file in data_sources.json: its name, SHA-256 and the tables it became."""
+    from .load_record import data_folder_load, now_utc, try_record
+
+    entry = data_folder_load(rel, path, now_utc())
+    entry["tables"] = [t["table"] for t in tables]
+    entry["rows"] = sum(int(t.get("rows") or 0) for t in tables)
+    try_record(workspace, entry)
 
 
 async def import_corpus_into_data_db(workspace: Path, max_rows: int) -> list[dict[str, Any]]:

@@ -85,10 +85,12 @@ ALLIUM_TOOLS: list[dict[str, Any]] = [
 class AlliumToolHandler(ToolHandler):
     """Intercepts Allium tool calls and routes through the guardrail layer."""
 
-    def __init__(self, paper_id: str, specialist: str, dictionary: Any) -> None:
+    def __init__(self, paper_id: str, specialist: str, dictionary: Any, workspace: Path | None = None) -> None:
         self._paper_id = paper_id
         self._specialist = specialist
         self._dictionary = dictionary  # DataDictionary | None
+        #: Where the load is recorded (data_sources.json); None records nothing.
+        self._workspace: Path | None = workspace
 
     def can_handle(self, tool_name: str) -> bool:
         return tool_name in {"query_allium", "check_approval", "list_allium_tables"}
@@ -226,6 +228,11 @@ class AlliumToolHandler(ToolHandler):
             rows = query_result.get("rows", [])
             row_count = len(rows)
             await mark_executed(query_id, row_count)
+            if rows and self._workspace is not None:
+                from .load_record import allium_load, now_utc, try_record
+
+                entry = allium_load(primary_table or "query", now_utc(), query=exec_sql)
+                try_record(self._workspace, {**entry, "rows": row_count, "specialist": self._specialist})
             return (
                 f"Feasibility query executed. {row_count} rows returned.\n"
                 f"query_id: {query_id}\n"

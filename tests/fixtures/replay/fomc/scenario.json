@@ -81,7 +81,8 @@
         "data_summary.md",
         "summary_statistics.json",
         "figure_spec.json",
-        "data.db"
+        "data.db",
+        "data_sources.json"
       ],
       "output": "Wrote data_summary.md, summary_statistics.json, figure_spec.json, data.db.",
       "usage": {

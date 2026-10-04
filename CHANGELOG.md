@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **Every data connector records what it loaded, with the source's terms and citation.** Before,
+  only the Global Macro Database connector wrote `data_sources.json`. Now FRED, Yahoo Finance
+  (yfinance), Allium, a Zenodo record fetched by the replication template and the researcher's
+  data folder write an entry for every load too, through `e2er-data` and through `fetch_data`
+  (the API backends). Each entry names the source, what was loaded (series, ticker, variables,
+  query or file), where it went, the release or the date it was read, the source's terms in a
+  sentence or two and in full with their address, and the citation: FRED's own format from the
+  series' Cite tab (with the series title and source, read from FRED), Zenodo's format for a
+  record, and for Yahoo Finance and Allium, which publish no citation format, one that e2er
+  suggests (`citation_by: e2er`). A file from the data folder is recorded with its SHA-256.
+  The dossier keeps the new keys (`series`, `retrieved_at`, `terms_summary`, `citation_by`,
+  `link`, `doi`) and lists data-folder files by `path`; e2er.org shows them as the study's
+  "Data used". Studies published before this record no entries for these sources.
+
 - **Every researcher action is in the dashboard too.** The study page runs a study again from a
   step of its template with a remark (`e2er rerun`), resumes a failed or stopped study as well as a
   paused one (`e2er resume`), resumes with a higher spending limit after the limit was reached

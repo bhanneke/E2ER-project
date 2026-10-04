@@ -136,11 +136,57 @@ class SeriesDataToolHandler(ToolHandler):
             logger.warning("fetch_data %s.%s failed: %s", provider, method, e)
             return json.dumps({"error": str(e)})
 
+        load = envelope.pop("_load_record", None) if isinstance(envelope, dict) else None
+        materialized = None
         if inp.get("materialize"):
             materialized = await self._materialize(provider, method, params, inp.get("table"), envelope)
             if materialized:
                 envelope = {**envelope, "materialized_table": materialized}
+        await self._record(fetcher, provider, method, params, envelope, load, materialized)
         return json.dumps(envelope, default=str)
+
+    async def _record(
+        self,
+        fetcher: Any,
+        provider: str,
+        method: str,
+        params: dict[str, Any],
+        envelope: dict[str, Any],
+        load: dict[str, Any] | None,
+        table: str | None,
+    ) -> None:
+        """Record a fetch that returned rows in the study's data_sources.json (see load_record.py)."""
+        if self._workspace is None or not isinstance(envelope, dict) or envelope.get("error"):
+            return
+        items = envelope.get("items") or []
+        if not items:
+            return
+        from .load_record import fred_load, now_utc, try_record, yfinance_load
+
+        now = now_utc()
+        entry: dict[str, Any] | None = None
+        if provider == "gmd" and method == "series" and load:
+            entry = {**load, "retrieved_at": now}
+        elif provider == "fred" and method == "observations" and params.get("series_id"):
+            meta: dict[str, str] = {}
+            info = getattr(getattr(fetcher, "_provider", None), "citation_info", None)
+            if info is not None:
+                meta = await info(params["series_id"])
+            entry = fred_load(str(params["series_id"]), now, **meta)
+        elif provider == "yfinance" and method in {"history", "fundamentals", "dividends"} and params.get("ticker"):
+            what = {
+                "history": "daily prices"
+                if params.get("interval", "1d") == "1d"
+                else f"prices at interval {params.get('interval')}",
+                "fundamentals": f"annual {str(params.get('statement', 'income')).replace('_', ' ')}",
+                "dividends": "dividends",
+            }[method]
+            entry = yfinance_load(str(params["ticker"]), now, what=what)
+        if entry is None:
+            return
+        entry = {**entry, "table": table, "rows": len(items)}
+        if try_record(self._workspace, entry) is None:
+            envelope["recorded_in"] = ["data_sources.json"]
 
     async def _materialize(
         self,
