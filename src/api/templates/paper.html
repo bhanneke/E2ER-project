@@ -151,7 +151,7 @@
   {% else %}
   <p class="muted">
     Grouped by the phase that produced them. A file a specialist declared and
-    never wrote is shown in red — the absence is the point.
+    never wrote is shown in red.
   </p>
   {% for g in groups %}
     <details class="ag ag-{{ g.status }}"{% if g.status == "fail" %} open{% endif %}>
