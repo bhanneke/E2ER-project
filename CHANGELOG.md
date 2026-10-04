@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.6] — 2026-10-05
+
 - **The paper can be published with the study, and publish says what readers see for what stays
   private.** `e2er publish --paper public --paper-url <address of the PDF>` (default address with
   `--repo` and `--commit`: `paper/paper.pdf` in the repository at that commit) puts the link into
