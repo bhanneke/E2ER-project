@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.5] — 2026-10-04
+
 - **Every data connector records what it loaded, with the source's terms and citation.** Before,
   only the Global Macro Database connector wrote `data_sources.json`. Now FRED, Yahoo Finance
   (yfinance), Allium, a Zenodo record fetched by the replication template and the researcher's
