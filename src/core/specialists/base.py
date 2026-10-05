@@ -130,9 +130,11 @@ async def run_specialist(
     # Discovered May 2026 NFT-paper run #3: specialists "succeeded" with
     # tools_called=0 because they read "use `write_file`" but only `Write`
     # was available, and just emitted text instead.
-    if backend_name == "claude_code":
-        system = _translate_tool_names_for_cli(system)
-        user_prompt = _translate_tool_names_for_cli(user_prompt)
+    # Codex and Gemini have their own names too (apply_patch / shell; replace),
+    # and the same failure: a prompt naming a tool the CLI does not have.
+    if backend_name in _CLI_TOOL_ALIASES_BY_BACKEND:
+        system = _translate_tool_names_for_cli(system, backend_name)
+        user_prompt = _translate_tool_names_for_cli(user_prompt, backend_name)
 
     tools = list(FILE_TOOLS)
     if extra_tools:
@@ -183,7 +185,7 @@ async def run_specialist(
     # `run_estimation.py` for econometrics_specialist) but didn't
     # populate the sidecar, the runner shells out and executes the
     # script itself. Backend-agnostic, idempotent, auditable.
-    # See docs/M4_DIAGNOSIS.md for the diagnosis this fixes.
+    # See docs/internal/M4_DIAGNOSIS.md for the diagnosis this fixes.
     if result.success:
         from .post_execution import maybe_execute_specialist_script
 
@@ -392,15 +394,30 @@ _CLI_TOOL_ALIASES = {
     "list_directory": "Glob",
 }
 
+#: Per CLI backend. Codex writes and edits files with `apply_patch` and reads
+#: and lists them through its shell; Gemini's file tools carry the SDK names
+#: already, except editing, which is `replace`.
+_CLI_TOOL_ALIASES_BY_BACKEND: dict[str, dict[str, str]] = {
+    "claude_code": _CLI_TOOL_ALIASES,
+    "codex": {
+        "write_file": "apply_patch",
+        "read_file": "cat",
+        "edit_file": "apply_patch",
+        "list_directory": "ls",
+    },
+    "gemini": {"edit_file": "replace"},
+}
 
-def _translate_tool_names_for_cli(text: str) -> str:
-    """Replace SDK tool names with their Claude Code CLI equivalents.
+
+def _translate_tool_names_for_cli(text: str, backend_name: str = "claude_code") -> str:
+    """Replace SDK tool names with the CLI backend's own equivalents.
 
     Replaces both backtick-quoted forms (`write_file`) and bare references
     that appear in skill files. Order matters: replace the longest names
     first so we don't truncate (e.g. read_file before read).
     """
-    for sdk_name, cli_name in sorted(_CLI_TOOL_ALIASES.items(), key=lambda kv: -len(kv[0])):
+    aliases = _CLI_TOOL_ALIASES_BY_BACKEND.get(backend_name, {})
+    for sdk_name, cli_name in sorted(aliases.items(), key=lambda kv: -len(kv[0])):
         text = text.replace(f"`{sdk_name}`", f"`{cli_name}`")
         text = text.replace(sdk_name, cli_name)
     return text
@@ -433,7 +450,7 @@ def _build_system_prompt(
         # econometric_spec.md missing — once cut off at the timeout, once
         # finishing on its own in 24 minutes inside a 30-minute cap. So it is
         # not a budget problem, it is an ordering problem: their first write
-        # belongs BEFORE the script, not after it. See docs/USER_JOURNEY.md.
+        # belongs BEFORE the script, not after it. See docs/internal/USER_JOURNEY.md.
         early_write_by = max(5, max_turns // 8)
     lines = [
         f"You are the {name} specialist in an end-to-end empirical research pipeline.",
@@ -738,7 +755,7 @@ def _load_reference_summary(specialist: str) -> str:
     (``reference_libraries``). Today that's the local ``.bib`` corpus
     (``LITERATURE_BIBTEX_FILE`` + any ``*.bib`` in ``LOCAL_DATA_DIR``);
     Zotero and Citavi plug in there later (see
-    ``docs/MODULARIZATION_PLAN.md``). Entries are merged and de-duplicated
+    ``docs/internal/MODULARIZATION_PLAN.md``). Entries are merged and de-duplicated
     by (title, year) so the same paper in two libraries isn't listed
     twice. Empty config → empty string.
     """

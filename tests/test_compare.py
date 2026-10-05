@@ -199,3 +199,37 @@ def test_compare_via_matrix_json(tmp_path: Path):
 def test_compare_needs_two_runs(tmp_path: Path):
     b1 = _make_bundle(tmp_path / "solo", backend="codex", estimator="ols", fe=[], controls=[], cluster="none")
     assert compare([str(b1)]) == 2  # only one bundle
+
+
+def test_a_run_without_the_treatment_term_is_marked_and_left_out_of_the_dispersion(tmp_path: Path):
+    """Live 2026-10-05: Codex reported three means, not the declared `year_2023`
+    term; the comparison set its 2021 mean against Claude's 2023-minus-2021 gap
+    and called the SE "agreed" because only one run had one."""
+    from src.core.compare import build_comparison, load_run_record, render_report
+
+    a = _make_bundle(
+        tmp_path / "a",
+        backend="claude_code",
+        estimator="ols",
+        fe=[],
+        controls=[],
+        cluster="none",
+        treatment="year_2023",
+        estimate=2.512,
+    )
+    b = _make_bundle(
+        tmp_path / "b",
+        backend="codex",
+        estimator="ols",
+        fe=[],
+        controls=[],
+        cluster="none",
+        treatment="year_2023",
+        coeffs={"mean_2021_pct": {"estimate": 1.447}, "difference_pp": {"estimate": 2.512}},
+    )
+    recs = [load_run_record(a, "claude_code/rep-1"), load_run_record(b, "codex/rep-1")]
+    comp = build_comparison(recs)
+    assert comp["variance"]["available"] is False and "codex/rep-1" in comp["variance"]["reason"]
+    assert comp["agreement"]["coef_se"]["score"] == 0.5  # one run reports an SE, the other does not
+    report = render_report(comp)
+    assert "1.447 †" in report and "† The run does not report the treatment term" in report

@@ -131,7 +131,11 @@ def build_parser() -> argparse.ArgumentParser:
         "packs in from the RISE catalogue; `sync` pushes e2er's own skills out to "
         "a headless CLI backend so the `claude`/`codex`/`gemini` process can see them.",
     )
-    p.add_argument("--catalogue", default=None, help="Path to a RISE checkout (default: RISE_PATH)")
+    p.add_argument(
+        "--catalogue",
+        default=None,
+        help="Path to a RISE checkout (default: RISE_PATH, else a copy downloaded from github.com/bhanneke/RISE)",
+    )
     p.add_argument("--json", action="store_true")
     sub = p.add_subparsers(dest="action", required=True)
 

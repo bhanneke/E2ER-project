@@ -2,7 +2,7 @@
 
 > **⚠️ SUPERSEDED (2026-05-28).** This document is May-12 vintage (221
 > tests, Allium-blocker framing) and no longer reflects the roadmap.
-> See **`docs/MODULARIZATION_PLAN.md`** for the current direction
+> See **`docs/internal/MODULARIZATION_PLAN.md`** for the current direction
 > (pluggable data/library providers → Zotero → Citavi). The lessons and
 > architecture-invariants sections below remain accurate and useful.
 
@@ -89,7 +89,7 @@ phase specifically. Not blocking — flagged for awareness.
 
 ---
 
-## #2 priority: features from `docs/PORTING_PLAN.md`
+## #2 priority: features from `docs/internal/PORTING_PLAN.md`
 
 Five items inspired by Imbad0202/academic-research-skills, all still
 unstarted. In execution order:
@@ -112,7 +112,7 @@ unstarted. In execution order:
    replication packages. Now possible at $0 on Max plan.
 
 All five are developable at $0 under the CLI backend. The original
-porting plan with full design sketches is at `docs/PORTING_PLAN.md`.
+porting plan with full design sketches is at `docs/internal/PORTING_PLAN.md`.
 
 ---
 

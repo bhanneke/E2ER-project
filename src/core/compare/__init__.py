@@ -90,7 +90,7 @@ def _coef_of_interest(primary: dict, main: dict) -> tuple[str | None, dict, bool
     return term, {"estimate": c.get("estimate"), "se": c.get("se"), "p_value": c.get("p_value")}, fell_back
 
 
-def load_run_record(bundle: Path, label: str, backend_hint: str | None = None) -> dict:
+def load_run_record(bundle: Path, label: str, backend_hint: str | None = None, model_hint: str | None = None) -> dict:
     """Extract one run's design record from an exported bundle dir."""
     bundle = Path(bundle)
     primary = _dict(_dict(_load_json(bundle / "design" / "identification_spec.json")).get("primary"))
@@ -108,7 +108,9 @@ def load_run_record(bundle: Path, label: str, backend_hint: str | None = None) -
     return {
         "label": label,
         "backend": backend_hint or run_meta.get("backend"),
-        "model": run_meta.get("model"),
+        # The bundle's own record first; matrix.json's for bundles exported
+        # before provenance carried the model.
+        "model": run_meta.get("model") or model_hint,
         "governance": run_meta.get("governance"),
         "bundle_path": str(bundle),
         "coef_fallback": fell_back,
@@ -149,21 +151,36 @@ def _agreement(records: list[dict], field: str) -> dict:
         score = statistics.mean(_jaccard(sets[i], sets[j]) for i, j in pairs) if pairs else 1.0
         modal_key = Counter(frozenset(s) for s in sets).most_common(1)[0][0]
         return {"kind": "set", "score": score, "modal": sorted(modal_key)}
-    counts = Counter(present)
+    # A run that does not report a field differs from one that does: count
+    # "not reported" as a value of its own, or one run's SE "agrees" 1.00.
+    counts = Counter(_hashable(v) for v in values)
     modal, cnt = counts.most_common(1)[0]
-    return {"kind": "scalar", "score": cnt / len(present), "modal": modal}
+    return {"kind": "scalar", "score": cnt / len(values), "modal": modal}
+
+
+def _hashable(v: Any) -> Any:
+    return tuple(v) if isinstance(v, list) else v
 
 
 def _variance_decomposition(records: list[dict]) -> dict:
     """Descriptive within- vs between-backend variance of the coefficient of
     interest. No significance tests — this describes dispersion, nothing more."""
+    # A run that does not report the declared treatment term contributes the
+    # first coefficient it has (coef_fallback) — a different quantity, so it is
+    # left out here (seen live: a 2021 mean set against a 2023-minus-2021 gap).
     data = [
         (r["backend"] or "unknown", float(r["fields"]["coef_estimate"]))
         for r in records
-        if isinstance(r["fields"]["coef_estimate"], (int, float)) and not isinstance(r["fields"]["coef_estimate"], bool)
+        if isinstance(r["fields"]["coef_estimate"], (int, float))
+        and not isinstance(r["fields"]["coef_estimate"], bool)
+        and not r.get("coef_fallback")
     ]
+    left_out = [r["label"] for r in records if r.get("coef_fallback")]
     if len(data) < 2:
-        return {"available": False, "reason": "need >= 2 numeric coefficient estimates"}
+        reason = "need >= 2 numeric estimates of the declared treatment term"
+        if left_out:
+            reason += f"; not reported by {', '.join(left_out)}"
+        return {"available": False, "reason": reason}
     groups: dict[str, list[float]] = defaultdict(list)
     for backend, est in data:
         groups[backend].append(est)
@@ -235,16 +252,29 @@ def render_report(comparison: dict) -> str:
     for f in comparison["fields"]:
         agr = comparison["agreement"][f]
         score = "n/a" if agr["score"] is None else f"{agr['score']:.2f}"
-        cells = " | ".join(_fmt(comparison["design_matrix"][f][lbl]) for lbl in labels)
+        fallback = {r["label"] for r in runs if r.get("coef_fallback")}
+        cells = " | ".join(
+            _fmt(comparison["design_matrix"][f][lbl])
+            + (" †" if f in ("coef_term", "coef_estimate", "coef_se", "coef_p_value") and lbl in fallback else "")
+            for lbl in labels
+        )
         flag = " ⚠️" if (agr["score"] is not None and agr["score"] < 1.0) else ""
         out.append(f"| `{f}`{flag} | {score} | {cells} |")
     out.append("")
     out += [
-        "Agreement = share of runs sharing the modal value (scalars) or mean "
-        "pairwise Jaccard (set-valued `fixed_effects` / `controls`). ⚠️ marks a "
-        "field where the models diverged.",
+        "Agreement = share of runs sharing the modal value (scalars; a run that "
+        "does not report the field counts as its own value) or mean pairwise "
+        "Jaccard (set-valued `fixed_effects` / `controls`). ⚠️ marks a field "
+        "where the models diverged.",
         "",
     ]
+    if any(r.get("coef_fallback") for r in runs):
+        out += [
+            "† The run does not report the treatment term its own design declares; the first "
+            "coefficient it reports is shown instead. It is a different quantity, so it is left "
+            "out of the dispersion below.",
+            "",
+        ]
 
     if comparison["divergent_fields"]:
         out += ["**Divergent fields:** " + ", ".join(f"`{f}`" for f in comparison["divergent_fields"]), ""]
@@ -294,7 +324,9 @@ def _resolve_records(paths: list[str]) -> tuple[list[dict], str | None, Path]:
             bp = run.get("bundle_path")
             if run.get("status") == "completed" and bp and Path(bp).is_dir():
                 label = f"{run.get('backend')}/rep-{run.get('repeat')}"
-                records.append(load_run_record(Path(bp), label, backend_hint=run.get("backend")))
+                records.append(
+                    load_run_record(Path(bp), label, backend_hint=run.get("backend"), model_hint=run.get("model"))
+                )
         return records, rq, mpath.parent
     records = [load_run_record(Path(p), label=Path(p).name) for p in paths if Path(p).is_dir()]
     return records, None, Path.cwd()

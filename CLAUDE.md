@@ -85,7 +85,7 @@ src/
   skills/                — skill file loader
 skills/files/            — skill markdown files (injected into specialist prompts)
 sql/                     — PostgreSQL migrations (run in order)
-docker/                  — Dockerfile + docker-compose.yml
+docker/                  — optional Postgres stack for development (docker/README.md)
 tests/                   — pytest tests (no network, no LLM calls)
 docs/diagrams/           — Mermaid architecture diagrams
 ```

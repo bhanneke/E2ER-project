@@ -1,0 +1,5 @@
+# The packages the study code runs with (e2er reproduce installs them in a new environment).
+# The run itself used numpy and pandas only; these versions give byte-identical results
+# from the study's own data (checked 2026-10-05 on Python 3.11 and 3.14).
+numpy==2.3.5
+pandas==2.3.3

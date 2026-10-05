@@ -9,7 +9,7 @@ the model"). So an econometrics specialist can write a perfectly correct
 ``run_estimation.py`` and then has no tool to run it — it falls through to
 writing ``estimation_results.json = "{}"`` as the documented honest
 signal. The M4 paper ran this failure mode end to end. Diagnosis:
-``docs/M4_DIAGNOSIS.md``.
+``docs/internal/M4_DIAGNOSIS.md``.
 
 The M4.3 contract check catches the empty sidecar at the boundary and
 flips the specialist to ``success=False``. That's the negative path:
@@ -21,7 +21,7 @@ Why this exists at the runner level (not the skill file): the model
 genuinely cannot execute code, so a skill instruction "run your script"
 would be unactionable. Execution has to happen here.
 
-Robustness (the M5 re-run lesson, ``docs/M4_RERUN_FINDINGS.md``): the
+Robustness (the M5 re-run lesson, ``docs/internal/M4_RERUN_FINDINGS.md``): the
 first version keyed on a single hardcoded script filename
 (``run_estimation.py``) and sidecar (``estimation_results.json``). The
 re-run's specialist named its script ``analyze.py`` writing
@@ -55,6 +55,7 @@ Properties:
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -298,6 +299,8 @@ def maybe_execute_specialist_script(workspace: Path, specialist: str) -> Executi
         completed = subprocess.run(
             [sys.executable, str(script_path)],
             cwd=str(workspace),
+            # Plain tracebacks for the model that reads them (Python 3.13+ colours them under FORCE_COLOR).
+            env={**os.environ, "PYTHON_COLORS": "0"},
             capture_output=True,
             text=True,
             timeout=convention.timeout_seconds,

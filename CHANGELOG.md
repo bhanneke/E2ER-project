@@ -7,6 +7,178 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.7] — 2026-10-06
+
+- **Yahoo Finance data get the GMD's treatment.** Yahoo's terms allow personal use only, so data
+  loaded with `e2er-data yfinance` are now a source with terms for `e2er publish`, beside the
+  GMD. The description names Yahoo Finance and its terms (from the yfinance load record) on the
+  data files that hold Yahoo data. If the data stay private, the reader note says "The data come
+  from Yahoo Finance, whose terms allow personal use only, so readers on e2er.org see a link to
+  the source instead of a request button." and there is no nudge to publish them. `--data public`
+  needs `--accept-data-terms yfinance` or a yes to "Publish the Yahoo Finance data with the study
+  although Yahoo's terms allow personal use only?". A Zenodo deposit of Yahoo data is refused
+  before anything is written or sent: no Zenodo licence fits personal use only. Yahoo publishes
+  no citation format, so publish asks for no BibTeX entry. The finish page says the same. A study
+  with GMD and Yahoo data names both sources in one reader note, and a data file holding both
+  (`data/data.db`) names both sources and their terms in the description. See `docs/publishing.md`.
+
+- **The Codex backend works.** Validated live on a ChatGPT plan with codex-cli 0.155 (October
+  2026): single calls, a whole study (`e2er run --demonstration`, empirical template) and the
+  end-to-end story E2E-01. Before, `codex exec` ran read-only (no specialist could write a file),
+  refused to start outside a git repository (every study folder), had no network for
+  `e2er-data`/`e2er-lit`, could not write the run database, ran under the user's own Codex
+  configuration (model, effort, plugins, MCP servers, notify hooks) and kept session history.
+  It now runs with `-s workspace-write` (setting `CODEX_SANDBOX`), `--skip-git-repo-check`,
+  network on, `--add-dir` for the run database's folder, the whole environment passed to shell
+  commands, no login shell, and `--ignore-user-config --ignore-rules --ephemeral`; sign-in still
+  comes from `~/.codex`. Output is read from `--json` events and `-o`: the final message, token
+  usage (cached input recorded as cache reads) and the number of commands and file changes. A
+  timeout stops the CLI and everything it started; a dropped connection or a server error is
+  tried twice more, a used-up plan limit is not. Prompts name Codex's own tools (`apply_patch`),
+  as they name Claude Code's.
+- **Codex cannot be limited to e2er's commands, and the docs now say so.** Claude Code runs with
+  an allowlist; Codex's command rules can only be set in the user's own `~/.codex`, which e2er
+  does not change. Under Codex the model can run any shell command; writes stay inside the
+  workspace, the run database's folder and the temporary folder. See `docs/BACKENDS.md`.
+- **The CLI is found where it is.** `e2er doctor`, `e2er init` and the setup page used to look for
+  `codex`/`gemini`/`claude` on PATH only, ignoring `CODEX_PATH` and the other path settings. They
+  now use the configured path, and find the `codex` inside the ChatGPT desktop app when it is not
+  on PATH. The setup page lists the models the signed-in ChatGPT plan offers.
+- **A run records the model and CLI version that answered.** Without `CODEX_MODEL`, Codex runs
+  were labelled `codex-cli-default`; e2er now passes the first model of the CLI's own list
+  explicitly and records it. A new `backend_identity` event records backend, model, reasoning
+  effort and CLI version per run. `e2er run --model` (and `run-matrix --models`) now reach the
+  backend; before, the per-paper model only labelled the run while the backend ran its configured
+  one.
+- **Settings in the study's `.env` reach e2er's commands.** `e2er-data`, `e2er-lit` and the other
+  wrappers run in the workspace (or the e2er checkout) and read their own folder's `.env`, so a
+  FRED key or a study-local database set only in the study's `.env` never reached them. The CLI
+  backends now pass on that `.env` and the run database, as an absolute path. Applies to Claude
+  Code too.
+- **Gemini backend: same fixes, not validated live.** Absolute workspace root, the wrappers on
+  PATH, the run database, the tool name `replace`, JSON output with token counts and tool calls,
+  a help probe that no longer pins old flags after a slow start, and a sign-in hint that names a
+  command that exists. The Gemini CLI was not installed where this was tested.
+- **`e2er run-matrix` takes `--template`, `--review-at`, `--demonstration` and `--models
+  backend=model,...`.** Without `--backends` it runs the subscription CLIs that are ready on this
+  computer, not all three. `matrix.json` and `e2er compare` name each run's model.
+- `e2er-data fred series --help` crashed on a `%` in its help text; a model that asked for help
+  got a traceback.
+- **A deep revision round no longer fails the run when the revised analysis renames its result
+  keys.** Seen live on Claude Code (Sonnet): the re-run econometrics specialist wrote
+  `pooled_hac_lag_20` where `table_spec.json` still asked for `hac_lag_20`, and the render check
+  failed the run before the section writer, which repairs `table_spec.json`, could run. The
+  writer is now told which references no longer resolve, and the check comes after it.
+- The CLI backends no longer pass e2er's own control settings (the dashboard session token, the
+  API token and address, the e2er.org sign-in file) to the AI CLI; no e2er command a specialist
+  runs needs them.
+- `e2er run` said it started the server "on :8280" whatever port was configured.
+- **`e2er` refuses to run inside a study's AI step.** Seen live on Codex: while a study was in
+  its review step, a reviewer's shell started a second study on the same server with `e2er run`.
+  Every AI CLI call now carries `E2ER_AI_STEP`, and `e2er` exits with a one-line message under it.
+  The step's own commands (`e2er-data`, `e2er-lit`, `e2er-run`, `e2er-check-tables`) are separate
+  and unaffected.
+- **A re-done analysis that fails its output contract stops the run for the researcher.** In the
+  deep revision round the data analyst and the econometrics specialist got one attempt and their
+  contract result was ignored; seen live on Codex, the revised `estimation_results.json` lacked
+  `n_clusters`, the study completed, and `e2er verify` failed the export. They now get the usual
+  attempts and, if those fail, the same stop as everywhere else.
+- Codex: "Selected model is at capacity" is retried.
+- **`e2er compare` no longer sets different quantities against each other.** When a run does not
+  report the treatment term its design declares, the first coefficient it reports is shown with a
+  mark and a note, and it is left out of the dispersion of the estimate. A field one run reports
+  and another does not now counts as a difference (it read as full agreement). Seen in the first
+  live Claude Code (Sonnet) vs Codex comparison, where Codex reported three means and no
+  `year_2023` term.
+
+- **`e2er reproduce <study folder>` runs a study's code again and compares the results.** A
+  study's `reproduce.json` names the pinned requirements, the steps, the inputs with their
+  SHA-256 and the result files to compare. The code runs in a run folder of its own, inside a new
+  virtual environment (uv when installed, else venv); the study folder is not changed. Every
+  result value is compared with the published one (identical, the same at the published
+  precision, small differences under the replication path's 10% tolerance, or different), the
+  inputs with the study's own files, and the paper's tables are rendered again from the rerun's
+  results. Exit code 0 reproduced, 1 differences, 2 could not run; `--json` writes the report.
+  Export ships `reproduce.json`, `code/requirements.txt` and `code/get_data.py` when the workspace
+  has them, and the README's "Reproduce" section now says what the folder supports: it promised
+  `data/data.db` and `cd code && python run_estimation.py`, which could not run.
+
+- **The showcase study can be run again.** `examples/showcase` is re-exported with this version:
+  `code/get_data.py` reloads its 37 Yahoo Finance extracts with `e2er-data` (Yahoo's terms allow
+  personal use only, so the extracts are not shipped; `data/data_sources.json` records the reload),
+  `code/requirements.txt` pins numpy and pandas, and `reproduce.json` holds the SHA-256 of every
+  original extract. With the study's own extracts the estimation and robustness results come out
+  byte for byte; with today's Yahoo and Ken French data, `e2er reproduce examples/showcase` reports
+  which values moved. The publish tests now copy `tests/fixtures/showcase_export`, the showcase as
+  it was exported before publishing.
+
+- **`.parquet` and `.xlsx` files in the data folder load.** The README offered both, but the
+  packages pandas needs to read them (pyarrow, openpyxl) were not installed with e2er, so such
+  files were skipped with a warning in the log. Both are now dependencies, and if one is missing
+  anyway, e2er prints which file was not loaded and the command that installs the reader.
+
+- **`e2er doctor` says what it can and cannot know.** Without any AI access chosen (no
+  `LLM_BACKEND` and no `.env`), it no longer reports a missing `ANTHROPIC_API_KEY`: it says that
+  nothing is set up yet, names Claude Code when it is installed, and points to the setup page or
+  `e2er init --defaults`. A Claude Code, Codex or Gemini CLI that is not signed in fails the check,
+  and one whose sign-in cannot be read is reported as "couldn't check" instead of "Ready". The
+  Docker check now asks the Docker daemon whether it runs; an installed but stopped Docker is no
+  longer reported as available.
+
+- **`e2er skills list` and `e2er skills install` work without a local RISE checkout.** The
+  default catalogue was a folder on the maintainer's computer (`~/Documents/Projects/RISE`). e2er
+  now downloads the pack list from the public catalogue at github.com/bhanneke/RISE into
+  `~/.e2er/cache/rise` (refreshed once a day; an older copy is used when GitHub cannot be
+  reached). `RISE_PATH` and `--catalogue` still point to a local clone, and when neither works
+  the error says how to set one.
+
+- **`e2er init` copies skill files only for the chosen AI access, and asks first.** It used to
+  copy all of e2er's skill files into `~/.claude`, `~/.codex` and `~/.gemini` without asking,
+  whichever CLI was chosen. The wizard now asks before copying into the chosen CLI's folder and
+  copies nothing for the API backends; `--defaults` copies into `~/.claude/skills` only. Both say
+  where the files went. The `.env` header names the current e2er version instead of "e2er v3".
+
+- **`e2er export <id>` works from any folder and takes a short id.** It looked for the workspace
+  only under `workspaces/` in the current folder. It now uses the workspace the database records
+  for the paper (new studies record the full path), falls back to `WORKSPACE_ROOT`, and accepts
+  the first characters of the id (at least 4) when they match one paper. When the workspace
+  cannot be found, the error says where it looked and what to do.
+- **Exported studies are no longer read back in as data.** The default export folder is
+  `<data folder>/e2er_papers`; with recursive staging, the next study picked up the earlier
+  studies' files as its own data. Folders named `e2er_papers` are now skipped.
+- **On Windows without Developer Mode, data files and PDFs are copied into the study.** Linking
+  them fails there, and the files used to be left out with only a line in the log. e2er now
+  copies them and says once in the terminal that copies do not follow later edits, and how
+  Developer Mode lets it link instead.
+
+- **`--methodology mixed` runs the estimation check.** It applied to empirical papers only, so
+  a mixed paper with a data warehouse could reach the draft with a broken or empty estimation
+  file. Mixed papers are now checked and repaired like empirical ones.
+
+- **`e2er-data` runs on Python 3.14.** A `%` in the help of `e2er-data fred series --units`
+  made Python 3.14's argparse refuse to build the command, so every `e2er-data` call failed there.
+- **The nightly Allium check stops reporting the same thing every night.** Allium's OpenAPI
+  files at docs.allium.so now redirect to a login page; the check read that page as a changed
+  API and commented on issue #2 every night (141 comments). It now tells a spec it cannot fetch
+  (a warning in the run, no comment) from a real change, fingerprints a real change, and comments
+  only when the change differs from the one already reported (`scripts/check_allium_drift.py`).
+  The fixtures stay as they are: the current specs are not publicly available to refresh them.
+
+- **Internal planning notes moved to `docs/internal/`.** Version plans, run diagnoses and reviews
+  sat next to the user documentation; they are now in `docs/internal/` with a note on what they
+  are, and references point there. `docs/NEW_USER_WALKTHROUGH.md` no longer shows paths from the
+  maintainer's computer. `docker/` has a README saying it is an optional Postgres stack for
+  development, not needed to use e2er.
+
+- **Tracebacks from estimation scripts reach the model in plain text.** On Python 3.13 and 3.14,
+  with `FORCE_COLOR` set (Claude Code and uv set it), Python coloured the traceback, and the
+  escape codes split the error line the specialist reads to fix its script. `e2er-run` and the
+  post-step execution now turn the colours off.
+- **README:** the replication template works with Zenodo packages and R or Python code only; the
+  spending limit applies to the API backends, since studies on Claude Code, Codex and Gemini CLI
+  cost $0 in e2er's records; e2er works with Python 3.11 to 3.14 (the automated tests now run on
+  all four); `e2er --version` prints the installed version (new flag).
+
 ## [0.13.6] — 2026-10-05
 
 - **The paper can be published with the study, and publish says what readers see for what stays
@@ -1198,7 +1370,7 @@ wrong null.
 
 - **Hardens the runner-side execution from the previous entry** after the
   M5 re-run failed in the design phase
-  ([`docs/M4_RERUN_FINDINGS.md`](docs/M4_RERUN_FINDINGS.md)). The first
+  ([`docs/internal/M4_RERUN_FINDINGS.md`](docs/internal/M4_RERUN_FINDINGS.md)). The first
   version keyed on a single hardcoded `run_estimation.py` /
   `estimation_results.json`; the re-run's specialist named its script
   `analyze.py` writing `analysis_output.json`, so the runner found
@@ -1238,7 +1410,7 @@ wrong null.
   declared script via `subprocess.run` before M4.3's contract check
   fires, when the script is on disk but the sidecar is empty. Closes
   the load-bearing M5 prerequisite identified in
-  [`docs/M4_DIAGNOSIS.md`](docs/M4_DIAGNOSIS.md): in the M4 paper run,
+  [`docs/internal/M4_DIAGNOSIS.md`](docs/internal/M4_DIAGNOSIS.md): in the M4 paper run,
   the econometrics specialist wrote a correct `run_estimation.py` and
   then chose to write `estimation_results.json` as `{}` (per the
   skill file's *"don't fabricate, write empty"* rule), so the paper
@@ -1275,15 +1447,15 @@ wrong null.
 
 Cumulative bugfix + capability release on the v0.8 line. Contains the
 seven milestones (M1-M3 + M4.1-M4.3) that were developed against the
-v0.9 plan in [`docs/V0.9_PLAN.md`](docs/V0.9_PLAN.md). They ship in
+v0.9 plan in [`docs/internal/V0.9_PLAN.md`](docs/internal/V0.9_PLAN.md). They ship in
 v0.8.2 because **the v0.9.0 tag is now gated on M5 producing a paper
 that survives review under real conditions** — the v0.9 plan's own
 *"install → trust loop closed"* bar. M1-M4.x are necessary but not
 sufficient for that gate: the orchestration layer caught its own
 failures correctly in the M4 live run, but the pipeline has never
 produced a successful end-to-end paper. See
-[`docs/VERSIONING_RESET.md`](docs/VERSIONING_RESET.md) for the
-argument and [`docs/M4_FINDINGS.md`](docs/M4_FINDINGS.md) for the
+[`docs/internal/VERSIONING_RESET.md`](docs/internal/VERSIONING_RESET.md) for the
+argument and [`docs/internal/M4_FINDINGS.md`](docs/internal/M4_FINDINGS.md) for the
 live-run findings the M4.x fixes close.
 
 The `Mi (v0.9 plan)` subsection headings below preserve the
@@ -1612,7 +1784,7 @@ Both lanes are now registry-pluggable, so new providers are drop-in.
 ### Lane C — Data
 
 - **Allium folded behind a `Warehouse` capability (M3b of
-  `docs/MODULARIZATION_PLAN.md`).** Allium is now a first-class registered
+  `docs/internal/MODULARIZATION_PLAN.md`).** Allium is now a first-class registered
   provider: `AlliumWarehouse` owns its `card()`, `tools()` (→ `ALLIUM_TOOLS`)
   and `handler()` (→ `DeferredAlliumToolHandler`); `_run_pipeline` assembles
   it by iterating `warehouses(settings)` instead of hardcoding, and the
@@ -1621,7 +1793,7 @@ Both lanes are now registry-pluggable, so new providers are drop-in.
   approval flow are untouched**, and `has_allium`/`data_module_enabled` are
   unchanged. Completes the Lane-C registry (series + warehouse).
 - **Series data in the agent loop + RQ-aware discovery (M3a of
-  `docs/MODULARIZATION_PLAN.md`).** FRED and yfinance are no longer
+  `docs/internal/MODULARIZATION_PLAN.md`).** FRED and yfinance are no longer
   CLI-only — specialists reach them in the tool loop. New `SeriesFetcher`
   capability + data registry (`providers.py`, `registry.py`) mirror the
   Lane-B pattern. Two new tools: `list_data_sources` (serves the registry
@@ -1642,7 +1814,7 @@ Both lanes are now registry-pluggable, so new providers are drop-in.
   present-but-null value. Both parsers now guard with `or {}` / `or []`.
   Regression tests added (the mocked payloads previously only used
   well-formed fields, so the bug only surfaced live).
-- **Full-text `read_reference` tool (M2.5 of `docs/MODULARIZATION_PLAN.md`).**
+- **Full-text `read_reference` tool (M2.5 of `docs/internal/MODULARIZATION_PLAN.md`).**
   Specialists can now read a reference's PDF in full to deepen the lit
   review, not just its abstract. New `read_reference` literature tool takes
   a `pdf_url` (surfaced in search/fetch results and on `[PDF]`-marked
@@ -1661,7 +1833,7 @@ Both lanes are now registry-pluggable, so new providers are drop-in.
   Unset → no-op. Sync `fetch_text_sync` helper added for the (sync)
   reference-library path. Degrades to `[]` on any Zotero error — can't
   break paper creation.
-- **Provider interface + registry (M1 of `docs/MODULARIZATION_PLAN.md`).**
+- **Provider interface + registry (M1 of `docs/internal/MODULARIZATION_PLAN.md`).**
   Formalized the de-facto interface the source modules already shared into
   capability sub-types — `SearchSource` (web discovery; OpenAlex, arXiv,
   Semantic Scholar) and `ReferenceLibrary` (the researcher's own corpus;
@@ -1885,7 +2057,7 @@ Full mocked suite: 525 passed (was 521 in v0.6.0; +4 here).
 ## v0.6.0 — 2026-05-23
 
 **Targeted-revision discipline.** Closes the three drift sources
-identified in `docs/V0.6_PLAN.md`: full-rewrite `revisor` on
+identified in `docs/internal/V0.6_PLAN.md`: full-rewrite `revisor` on
 MAJOR_REVISION, parallel-`revisor` write race in self-attack, and
 unconstrained `paper_drafter` re-dispatch in the iterative phase.
 Validated end-to-end on paper `3bc58e8d` (2026-05-22, 38 min,
@@ -1983,10 +2155,10 @@ $12.36 est., Sonnet via Claude Code CLI).
 ## v0.5.0 — 2026-05-21
 
 **Anti-hallucination & methodology-aware pipeline.** Full design
-record at `docs/V0.5_PLAN.md`. Motivated by v0.4.5 live tests on
+record at `docs/internal/V0.5_PLAN.md`. Motivated by v0.4.5 live tests on
 papers `a6182f08`, `cbe8048f`, `eea5379b`, and validated end-to-end
 against fresh live runs on 2026-05-20 (`234a11ea`, `fd6bf64d`) and
-2026-05-21 (`525fa03c`) — see `docs/V0.5_LIVE_VALIDATION.md`.
+2026-05-21 (`525fa03c`) — see `docs/internal/V0.5_LIVE_VALIDATION.md`.
 
 ### Lane A — Pipeline
 

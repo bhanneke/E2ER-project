@@ -323,6 +323,15 @@ class PipelineRunner:
 
         logger.info("Run identity for paper %s: %s", self._paper_id, identity_summary())
         await log_event(self._paper_id, "run_identity", payload=run_identity())
+        # Which model and which CLI version answered the calls — the process
+        # identity above only knows the process-wide default backend.
+        try:
+            # identity() may run `<cli> --version`; keep it off the event loop.
+            backend_identity = {"backend": self._backend_name, **(await asyncio.to_thread(self._backend.identity))}
+            backend_identity["backend"] = self._backend_name or backend_identity.get("backend")
+            await log_event(self._paper_id, "backend_identity", payload=backend_identity)
+        except Exception as e:  # noqa: BLE001 — a missing stamp must not stop the run
+            logger.debug("backend identity not recorded: %s", e)
         # The template's own skills and sidecar files (`[skills]`, `[sidecars]`)
         # apply to every specialist this run dispatches.
         from ..pipeline.components import activate, deactivate
@@ -1457,7 +1466,7 @@ class PipelineRunner:
         injected automatically) until the contract is clean, or trip the
         circuit breaker into a resumable PAUSED — never a hollow paper.
 
-        Honest-failure escape: papers without a data warehouse (theory,
+        Runs for empirical and mixed papers. Honest-failure escape: papers without a data warehouse (theory,
         literature-only, design-without-estimates) are untouched.
 
         With a frozen pre-registration, the plan files are compared with their
@@ -1470,7 +1479,7 @@ class PipelineRunner:
         workspace: Path | None = getattr(self, "_workspace", None)
         if workspace is not None:
             await self._check_preregistered_plan(workspace)
-        if self._methodology != "empirical":
+        if self._methodology not in ("empirical", "mixed"):
             return
         from ...db.paper_data_db import has_data_db
 
@@ -2008,8 +2017,8 @@ class PipelineRunner:
         tables from the revised JSON, then re-dispatches section_writer to bring
         the prose in line with the revised analysis.
         """
-        from ..renderer.complete import render_all_or_halt
-        from ..specialists.dispatcher import execute_work_order
+        from ..renderer.complete import render_all, render_all_or_halt
+        from ..specialists.dispatcher import execute_work_order, raise_contract_failure, run_with_attempts
 
         feedback = self._referee_feedback_text()
         research_focus = (
@@ -2021,9 +2030,14 @@ class PipelineRunner:
             "and apply the standard corrections they cite. Rewrite your "
             "script/output accordingly.\n\n=== Referee reports ===\n" + feedback
         )
+        # Same attempts and the same stop as everywhere else: a re-done
+        # analysis that still fails its output contract stops the run for the
+        # researcher. It used to be appended and ignored — seen live on Codex
+        # (2026-10-05): the revised estimation_results.json lacked n_clusters,
+        # the run completed, and `e2er verify` failed the exported study.
         for spec in ("data_analyst", "econometrics_specialist"):
             order = WorkOrder(paper_id=self._paper_id, specialist=spec, focus=research_focus, context_tier=2)
-            c = await execute_work_order(
+            c = await run_with_attempts(
                 order,
                 self._backend,
                 self._workspace,
@@ -2034,18 +2048,37 @@ class PipelineRunner:
                 self._governance,
             )
             self._contributions.append(c)
+            raise_contract_failure([order], [c])
 
         # Tables follow the revised JSON; re-render before the writer edits
-        # prose. Halts if the revised analysis still can't fill them — a hole
-        # here is what the writer papers over with its own numbers.
-        render_all_or_halt(self._workspace)
+        # prose. The revised analysis may rename its result keys (seen live
+        # 2026-10-05: `hac_lag_20` became `pooled_hac_lag_20`), leaving
+        # table_spec.json, written for the first analysis, pointing at keys that
+        # no longer exist. Halting here failed the run before section_writer —
+        # the one specialist that repairs table_spec.json — could run. So the
+        # writer is told what no longer resolves, and the halt comes after it.
+        completeness = render_all(self._workspace)
+        table_repair = ""
+        if not completeness.tables_ok:
+            logger.warning(
+                "Deep revision: tables no longer render from the revised analysis (%s); "
+                "section_writer repairs table_spec.json before the render check",
+                completeness.summary(),
+            )
+            table_repair = (
+                "\n\n=== Tables to repair ===\nThe revised analysis no longer has every key "
+                "table_spec.json asks for: " + completeness.summary() + ". Update table_spec.json "
+                "so every reference names a key that exists in the revised estimation_results.json / "
+                "summary_statistics.json (run `e2er-check-tables` to see what resolves), or drop the "
+                "row if the revised analysis no longer computes it. Never type a number into a table."
+            )
 
         writer_focus = (
             "Revise the paper to reflect the REVISED analysis (the updated "
             "estimation_results.json / summary_statistics.json) and to address "
             "the referee findings below. Report only what was actually computed "
             "— do not claim or imply results that are still missing.\n\n"
-            "=== Referee reports ===\n" + feedback
+            "=== Referee reports ===\n" + feedback + table_repair
         )
         order = WorkOrder(paper_id=self._paper_id, specialist="section_writer", focus=writer_focus, context_tier=2)
         c = await execute_work_order(
@@ -2059,6 +2092,9 @@ class PipelineRunner:
             self._governance,
         )
         self._contributions.append(c)
+        # Halts if the revised analysis still cannot fill the tables — a hole
+        # here is what the writer would paper over with its own numbers.
+        render_all_or_halt(self._workspace)
 
     # ── the number check (verify_numbers before the reviewers) ─────────────
 

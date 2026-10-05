@@ -1,7 +1,7 @@
 # M4 root-cause diagnosis — why the estimator never ran
 
 > **Status**: closed diagnosis (2026-06-10). Follow-up to
-> [`docs/M4_FINDINGS.md`](M4_FINDINGS.md) finding #4 (specialist
+> [`docs/internal/M4_FINDINGS.md`](M4_FINDINGS.md) finding #4 (specialist
 > contract violation). M4.3 catches the symptom (empty
 > `estimation_results.json`) at the boundary. This document identifies
 > the cause — a skill-file gap, not a code bug — and proposes the fix.

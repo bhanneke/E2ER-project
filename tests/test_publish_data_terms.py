@@ -148,7 +148,7 @@ def test_confirmed_public_gmd_data_publish_and_state_the_terms(bundle: Path, tmp
 def test_unknown_terms_name_is_refused(bundle: Path, tmp_path: Path, capsys):
     rc = publish(str(bundle), **BASE, **REPO, data="public", accept_data_terms=["gdm"], out=str(tmp_path / "e"))
     assert rc == 1
-    assert "--accept-data-terms gdm: e2er knows the terms of gmd only" in capsys.readouterr().out
+    assert "--accept-data-terms gdm: e2er knows the terms of gmd, yfinance only" in capsys.readouterr().out
     assert not (bundle / "e2er.json").exists()
 
 

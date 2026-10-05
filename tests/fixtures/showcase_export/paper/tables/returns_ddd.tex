@@ -1,0 +1,27 @@
+\begin{table}[t]
+\centering
+\begin{threeparttable}
+\caption{Returns-level triple difference: the differential change in Bitcoin's equity loading}
+\label{tab:ddd}
+\begin{tabular}{lc}
+\toprule
+ & Daily returns, all ten assets \\
+\midrule
+$\hat\delta^{\mathrm{DDD}}$: $r_{\mathrm{SPY}} \times$ Post $\times$ BTC & -0.0798 \\
+ & (0.1619) \\
+$\hat\psi$: $r_{\mathrm{SPY}} \times$ BTC & -0.3945*** \\
+ & (0.1029) \\
+SE on $\hat\delta^{\mathrm{DDD}}$, clustered on asset & 0.0835 \\
+$\quad$ corresponding $p$-value & 0.364 \\
+Within $R^2$ & 0.0018 \\
+Assets & 10 \\
+Dates & 1,128 \\
+$N$ (asset-days) & 11,280 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}[flushleft]
+\footnotesize
+\item The specification is $r_{it} = \beta r_{\mathrm{SPY},t} + \pi (r_{\mathrm{SPY},t} \times \mathrm{Post}_t) + \psi (r_{\mathrm{SPY},t} \times \mathrm{BTC}_i) + \delta^{\mathrm{DDD}} (r_{\mathrm{SPY},t} \times \mathrm{Post}_t \times \mathrm{BTC}_i) + \alpha_i + \delta_t + \epsilon_{it}$, with asset and date fixed effects that absorb $r_{\mathrm{SPY},t}$ and its interaction with Post. The triple interaction is the differential change in Bitcoin's equity loading relative to the never-listed coins, which is the returns-level counterpart of the panel estimate in Table~\ref{tab:main}. Its point is that it uses no generated outcome at all, so the generated-regressor critique of the Fisher-$z$ panel does not apply to it and the correlation transform cannot be driving the result. Standard errors in parentheses are clustered on date, the dimension along which the equity return varies; the asset-clustered alternative is reported in the rows beneath. The gap between this coefficient and the undifferenced estimate in Table~\ref{tab:returns_interacted} is the common crypto-wide decline in equity betas that a control group removes.
+\end{tablenotes}
+\end{threeparttable}
+\end{table}

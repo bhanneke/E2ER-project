@@ -96,28 +96,28 @@ class TestBackendPrereqs:
     def test_claude_code_checks_for_claude_cli(self, monkeypatch):
         """When the `claude` binary is on PATH, claude_code is ready;
         when it isn't, the wizard surfaces the npm install command."""
-        with patch("src.cli_init.shutil.which", return_value="/usr/local/bin/claude"):
+        with patch("src.modules.llm.cli_support.shutil.which", return_value="/usr/local/bin/claude"):
             ready, notes = _check_backend_prereqs("claude_code")
         assert ready is True
         assert any("claude CLI found" in n for n in notes)
 
-        with patch("src.cli_init.shutil.which", return_value=None):
+        with patch("src.modules.llm.cli_support.shutil.which", return_value=None):
             ready, notes = _check_backend_prereqs("claude_code")
         assert ready is False
         # The fix-it instruction is included
         assert any("npm i -g @anthropic-ai/claude-code" in n for n in notes)
 
     def test_codex_checks_for_codex_binary(self):
-        with patch("src.cli_init.shutil.which", return_value="/usr/local/bin/codex"):
+        with patch("src.modules.llm.cli_support.shutil.which", return_value="/usr/local/bin/codex"):
             ready, _ = _check_backend_prereqs("codex")
         assert ready is True
-        with patch("src.cli_init.shutil.which", return_value=None):
+        with patch("src.modules.llm.cli_support.shutil.which", return_value=None):
             ready, notes = _check_backend_prereqs("codex")
         assert ready is False
         assert any("npm i -g @openai/codex" in n for n in notes)
 
     def test_gemini_checks_for_gemini_binary(self):
-        with patch("src.cli_init.shutil.which", return_value=None):
+        with patch("src.modules.llm.cli_support.shutil.which", return_value=None):
             ready, notes = _check_backend_prereqs("gemini")
         assert ready is False
         assert any("npm i -g @google/gemini-cli" in n for n in notes)
@@ -335,3 +335,41 @@ class TestExampleRQs:
             # No placeholder tokens
             for placeholder in ("<", ">", "TODO", "PLACEHOLDER"):
                 assert placeholder not in rq, f"Example RQ contains placeholder {placeholder!r}: {rq!r}"
+
+
+class TestSkillCopy:
+    def test_defaults_copies_only_for_claude_code_and_says_where(self, tmp_path: Path, monkeypatch, capsys):
+        monkeypatch.chdir(tmp_path)
+        calls = []
+        with (
+            patch("src.cli_init._is_tty", return_value=False),
+            patch("src.cli_install_skills.install_skills", side_effect=lambda **kw: calls.append(kw) or 0),
+        ):
+            init(force=False, defaults=True)
+        assert calls == [{"backend": "claude", "force": False}]
+        out = capsys.readouterr().out
+        assert ".claude" in out and "skill files" in out
+
+    def test_wizard_asks_before_copying(self, monkeypatch, capsys):
+        from src import cli_init
+
+        calls = []
+        monkeypatch.setattr(cli_init, "_ask_yes_no", lambda *a, **k: False)
+        with patch("src.cli_install_skills.install_skills", side_effect=lambda **kw: calls.append(kw) or 0):
+            cli_init._copy_skills_for("codex", ask=True)
+        assert calls == []
+        assert "not copied" in capsys.readouterr().out
+
+    def test_api_backends_copy_nothing(self, capsys):
+        from src import cli_init
+
+        with patch("src.cli_install_skills.install_skills", side_effect=AssertionError("copied")):
+            cli_init._copy_skills_for("anthropic", ask=True)
+        assert "no skill files copied" in capsys.readouterr().out
+
+    def test_env_header_names_the_current_version(self):
+        from src import __version__
+
+        body = _env_block("claude_code", False, "", "", "", "", local_data_dir="./data", literature_dir="./literature")
+        assert "v3" not in body.splitlines()[0]
+        assert f"e2er {__version__}" in body.splitlines()[0]

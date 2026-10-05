@@ -240,7 +240,7 @@ SPECIALIST_SIDECAR_ARTIFACTS: dict[str, list[str]] = {
 # *derived* from the analysis the runner executes post-hoc — so the model
 # legitimately can't author populated figure values at the data-design
 # boundary. Hard-gating it there killed the M5 re-run in the design phase
-# (docs/M4_RERUN_FINDINGS.md). Figures are a paper-assembly concern: they
+# (docs/internal/M4_RERUN_FINDINGS.md). Figures are a paper-assembly concern: they
 # get authored in the iterative phase and checked by verify_numbers if
 # present, which is the right place to enforce them.
 SPECIALIST_OPTIONAL_SIDECARS: dict[str, frozenset[str]] = {

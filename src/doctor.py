@@ -64,7 +64,7 @@ BACKEND_HELP: dict[str, dict[str, str]] = {
     },
     "codex": {
         "label": "ChatGPT subscription, through the Codex CLI",
-        "how": "Install the Codex CLI, then run `codex login`.",
+        "how": "Install the Codex CLI (the ChatGPT desktop app includes it), then run `codex login`.",
         "url": "https://github.com/openai/codex",
     },
     "gemini": {
@@ -100,15 +100,50 @@ BACKEND_MODELS: dict[str, tuple[str, list[tuple[str, str]]]] = {
             ("anthropic/claude-sonnet-4-5", "Claude Sonnet 4.5 — recommended"),
         ],
     ),
+    # Filled from the CLI's own model list when it has one (see _codex_models).
     "codex": ("CODEX_MODEL", [("", "The Codex CLI's own default")]),
     "gemini": (
         "GEMINI_MODEL",
         [
-            ("gemini-2.5-flash", "Gemini 2.5 Flash — cheapest"),
-            ("gemini-2.5-pro", "Gemini 2.5 Pro — strongest"),
+            ("", "The Gemini CLI's own default"),
+            ("gemini-2.5-flash", "Gemini 2.5 Flash — uses the least of your plan"),
+            ("gemini-2.5-pro", "Gemini 2.5 Pro"),
         ],
     ),
 }
+
+
+def _codex_models() -> list[tuple[str, str]]:
+    """The models the signed-in ChatGPT plan offers, as Codex last fetched them.
+
+    Read from the CLI's own cache; a fixed list here went stale within weeks.
+    Falls back to the CLI default alone.
+    """
+    from .modules.llm.codex import codex_models
+
+    listed = codex_models()
+    if not listed:
+        return BACKEND_MODELS["codex"][1]
+    out = [("", f"The Codex CLI's own default ({listed[0]['slug']})")]
+    for m in listed:
+        desc = str(m.get("description") or "").strip().rstrip(".")
+        out.append((str(m["slug"]), f"{m.get('display_name') or m['slug']} — {desc}" if desc else str(m["slug"])))
+    return out
+
+
+def resolve_backend_cli(backend: str, settings: Any = None) -> str | None:
+    """Where the backend's CLI is: CLAUDE_CODE_PATH / CODEX_PATH / GEMINI_PATH,
+    PATH, and the ChatGPT app's own `codex`. None when not installed."""
+    from .modules.llm.cli_support import resolve_cli
+
+    if settings is None:
+        try:
+            from .config import get_settings
+
+            settings = get_settings()
+        except Exception:  # noqa: BLE001 — a broken .env must not hide an installed CLI
+            settings = None
+    return resolve_cli(backend, settings)
 
 
 def cli_signed_in(backend: str, home: Path | None = None) -> tuple[bool | None, str]:
@@ -131,7 +166,7 @@ def cli_signed_in(backend: str, home: Path | None = None) -> tuple[bool | None, 
             if data.get("oauthAccount"):
                 return True, "signed in"
             return False, "not signed in — run `claude` once and sign in in the browser"
-        return None, "could not tell whether it is signed in — run `claude` once to check"
+        return None, "couldn't check whether it is signed in — run `claude` once to check"
     if backend == "codex":
         codex_home = Path(os.environ.get("CODEX_HOME") or h / ".codex")
         if os.environ.get("OPENAI_API_KEY") or (codex_home / "auth.json").is_file():
@@ -166,9 +201,11 @@ def detect_backends(settings: Any = None) -> list[BackendStatus]:
     out: list[BackendStatus] = []
     for name in ("claude_code", "codex", "gemini", "anthropic", "openrouter"):
         model_setting, models = BACKEND_MODELS[name]
+        if name == "codex":
+            models = _codex_models()
         info = BACKEND_HELP[name]
         if name in _BACKEND_CLI:
-            path = shutil.which(_BACKEND_CLI[name])
+            path = resolve_backend_cli(name, settings)
             if path:
                 signed, note = cli_signed_in(name)
                 detail = f"`{_BACKEND_CLI[name]}` found; {note}"
@@ -218,11 +255,27 @@ def python_check() -> Check:
 
 
 def docker_check() -> Check:
-    """Docker runs the replication template's sandbox; nothing else needs it."""
+    """Docker runs the replication template's sandbox; nothing else needs it.
+
+    Installed is not enough: the daemon must answer.
+    """
+    import subprocess
+
     path = shutil.which("docker")
-    if path:
-        return Check("docker", PASS, f"docker at {path} (used by the replication template)")
-    return Check("docker", SKIP, f"Docker is not installed; only the replication template needs it ({DOCKER_URL})")
+    if not path:
+        return Check("docker", SKIP, f"Docker is not installed; only the replication template needs it ({DOCKER_URL})")
+    try:
+        cp = subprocess.run([path, "info", "--format", "{{.ServerVersion}}"], capture_output=True, timeout=15)
+    except (OSError, subprocess.TimeoutExpired):
+        cp = None
+    if cp is None or cp.returncode != 0:
+        return Check(
+            "docker",
+            SKIP,
+            f"docker at {path}, but Docker is not running; start Docker Desktop before a replication "
+            "(only the replication template needs it)",
+        )
+    return Check("docker", PASS, f"Docker is running (docker at {path}; used by the replication template)")
 
 
 def _mask_db_url(url: str) -> str:
@@ -236,24 +289,38 @@ async def backend_check(settings) -> Check:
     backend = settings.llm_backend
     if backend in {"anthropic", "openrouter"}:
         key = settings.anthropic_api_key if backend == "anthropic" else settings.openrouter_api_key
+        if not key and backend == "anthropic" and not _raw_setting("LLM_BACKEND"):
+            # Nothing chosen yet: the Anthropic value is only the settings' fallback,
+            # so naming its key would send the person after the wrong thing.
+            claude = resolve_backend_cli("claude_code", settings)
+            found = f" Claude Code is installed at {claude};" if claude else ""
+            return Check(
+                "backend",
+                FAIL,
+                f"no AI access is set up in this folder (no LLM_BACKEND here or in .env).{found} "
+                "run `e2er` and use the setup page, or `e2er init --defaults` for Claude Code",
+            )
         if not key:
             return Check(f"backend.{backend}", FAIL, f"{backend.upper()}_API_KEY not set — `e2er run` will fail")
         return Check(f"backend.{backend}", PASS, "API key configured (metered backend)")
     cli = _BACKEND_CLI.get(backend)
     if cli is None:
         return Check(f"backend.{backend}", FAIL, f"unknown backend literal: {backend!r}")
-    path = shutil.which(cli)
+    path = resolve_backend_cli(backend, settings)
     if not path:
         where = CLAUDE_CODE_SETUP_URL if backend == "claude_code" else BACKEND_HELP[backend]["url"]
+        setting = {"claude_code": "CLAUDE_CODE_PATH", "codex": "CODEX_PATH", "gemini": "GEMINI_PATH"}[backend]
         return Check(
             f"backend.{backend}",
             FAIL,
-            f"`{cli}` CLI not on PATH — install it ({where}), or see {INSTALL_URL}",
+            f"`{cli}` CLI not found on PATH or at {setting} — install it ({where}), or see {INSTALL_URL}",
         )
     signed, note = cli_signed_in(backend)
     if signed is False:
-        return Check(f"backend.{backend}", PASS, f"CLI at {path} ($0 flat-rate); {note}")
-    return Check(f"backend.{backend}", PASS, f"CLI at {path} ($0 flat-rate)")
+        return Check(f"backend.{backend}", FAIL, f"CLI at {path}, but {note}")
+    if signed is None:
+        return Check(f"backend.{backend}", SKIP, f"CLI at {path}; {note}")
+    return Check(f"backend.{backend}", PASS, f"CLI at {path} ($0 on the subscription); {note}")
 
 
 async def skills_check(_settings) -> Check:
@@ -647,8 +714,13 @@ def render_human(checks: list[Check]) -> str:
     n_pass = sum(c.status == PASS for c in checks)
     n_skip = sum(c.status == SKIP for c in checks)
     n_fail = sum(c.status == FAIL for c in checks)
-    blocker_failed = any(c.status == FAIL and c.name.startswith(_BLOCKERS_PREFIXES) for c in checks)
-    if n_fail == 0:
+    blocker_failed = any(
+        c.status == FAIL and (c.name == "backend" or c.name.startswith(_BLOCKERS_PREFIXES)) for c in checks
+    )
+    backend_unknown = any(c.status == SKIP and c.name.startswith("backend.") for c in checks)
+    if n_fail == 0 and backend_unknown:
+        verdict = "⚠️  Couldn't check — the AI access is installed, but whether it is signed in is unknown (see above)."
+    elif n_fail == 0:
         verdict = '✅ Ready — `e2er run "<your research question>"` should work.'
     elif blocker_failed:
         verdict = "❌ Blocked — fix the backend / DB / skills failure above before running a paper."

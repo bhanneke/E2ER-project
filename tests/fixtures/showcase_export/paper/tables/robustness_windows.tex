@@ -1,0 +1,21 @@
+\begin{table}[t]
+\centering
+\begin{threeparttable}
+\caption{Robustness: rolling-window length in the daily panel}
+\label{tab:robustness_windows}
+\begin{tabular}{lccc}
+\toprule
+ & (1) 30-day window & (2) 60-day window & (3) 90-day window \\
+\midrule
+$\hat\tau^{d}$: BTC $\times$ Post & -0.0272 & -0.0183 & -0.0169 \\
+ & (0.0182) & (0.0208) & (0.0210) \\
+Independent windows & 368 & 180 & 117 \\
+Asset-day rows & 11,050 & 10,810 & 10,570 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}[flushleft]
+\footnotesize
+\item The outcome is the Fisher-$z$ transform of a backward-looking rolling correlation between the asset's daily return and the return on SPY, in an asset-day panel with asset and date fixed effects, clustered on asset. Rolling windows overlap on all but one day, so the row count overstates the information in the panel by roughly the window length; the number of non-overlapping windows is reported alongside and is the figure against which the standard errors should be judged. A result appearing at only one window length would be a windowing artifact.
+\end{tablenotes}
+\end{threeparttable}
+\end{table}

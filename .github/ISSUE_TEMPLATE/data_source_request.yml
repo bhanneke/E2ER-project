@@ -7,7 +7,7 @@ body:
     attributes:
       value: |
         Use this form to propose a new data source for E2ER. Lane C is registry-pluggable
-        (see `docs/MODULARIZATION_PLAN.md`), so adding a provider is usually small —
+        (see `docs/internal/MODULARIZATION_PLAN.md`), so adding a provider is usually small —
         but a clear description here makes it concrete.
   - type: input
     id: provider_name

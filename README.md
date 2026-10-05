@@ -2,7 +2,7 @@
 
 [![Status](https://img.shields.io/badge/status-active%20development-blue)](https://github.com/bhanneke/E2ER-project)
 [![License](https://img.shields.io/badge/license-MIT-green)](https://github.com/bhanneke/E2ER-project/blob/main/LICENSE)
-[![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://pypi.org/project/e2er/)
+[![Python](https://img.shields.io/badge/python-3.11%E2%80%933.14-blue)](https://pypi.org/project/e2er/)
 [![Tests](https://github.com/bhanneke/E2ER-project/actions/workflows/tests.yml/badge.svg)](https://github.com/bhanneke/E2ER-project/actions/workflows/tests.yml)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20187238.svg)](https://doi.org/10.5281/zenodo.20187238)
 [![PyPI](https://img.shields.io/pypi/v/e2er.svg)](https://pypi.org/project/e2er/)
@@ -36,7 +36,7 @@ Examples:
 
 ## Reproducing research
 
-The replication template reproduces a published study from its replication package on Zenodo. Specialists read the package and plan which of the study's numbers to compare. The researcher reviews that plan before anything is executed.
+The replication template reproduces a published study from its replication package on Zenodo. It works with packages on Zenodo only, and executes code in R (on a `rocker/r-ver` image) or Python (on a `python` slim image); Stata, MATLAB and other languages are not supported yet. Specialists read the package and plan which of the study's numbers to compare. The researcher reviews that plan before anything is executed.
 
 The authors' code is then executed again in a container on the researcher's computer, without network access. Every number the study reports is compared with the number from the new execution and labelled reproduced, reproduced with a minor difference, or not reproduced. The researcher reviews the report, and the dossier records every comparison.
 
@@ -46,7 +46,7 @@ Example:
 
 ## Installation in detail
 
-e2er needs Python 3.11 or newer. The automated tests run on Ubuntu with Python 3.11 and 3.12, and e2er is developed on macOS. Windows is untested so far.
+e2er works with Python 3.11, 3.12, 3.13 and 3.14. The automated tests run on Ubuntu with all four, and e2er is developed on macOS. Windows is untested so far. `e2er --version` prints the installed version.
 
 The installer uv downloads Python together with e2er. On Mac and Linux, in a terminal:
 
@@ -84,7 +84,7 @@ e2er works with one of the following. The setup page shows which of them it find
 
 - A Claude subscription through Claude Code. Install Claude Code following [Anthropic's instructions](https://code.claude.com/docs/en/setup), then run `claude` once and sign in. Studies then run on the subscription.
 - An API key from [Anthropic](https://console.anthropic.com/settings/keys) or [OpenRouter](https://openrouter.ai/keys), billed per use. You paste the key on the setup page.
-- The [Codex CLI](https://github.com/openai/codex) with a ChatGPT plan or the [Gemini CLI](https://github.com/google-gemini/gemini-cli) with a Google AI plan. e2er uses them in the same way as Claude Code.
+- The [Codex CLI](https://github.com/openai/codex) with a ChatGPT plan (the ChatGPT desktop app includes it) or the [Gemini CLI](https://github.com/google-gemini/gemini-cli) with a Google AI plan. e2er hands them the same work as Claude Code, but they cannot be limited to e2er's own commands the way Claude Code is; [docs/BACKENDS.md](docs/BACKENDS.md) says what each may do. The Gemini backend has not yet been run against the real Gemini CLI.
 
 In the terminal, the setting `LLM_BACKEND` selects the access: `claude_code`, `codex`, `gemini`, `anthropic` or `openrouter`.
 
@@ -98,9 +98,10 @@ The replication template also needs [Docker Desktop](https://docs.docker.com/get
 e2er init                # asks questions, writes .env
 e2er init --defaults     # the same without questions, with Claude Code
 e2er doctor              # checks the setup
+e2er --version           # prints the installed version
 ```
 
-`e2er init` asks which AI access to use and checks that it is installed. The command then creates the folders `data/` and `literature/` and writes the settings to `.env` in the current folder; `--force` overwrites an existing `.env`. The setup page in the browser writes the same file. `e2er doctor` reports the AI access, the database and the data and literature it finds.
+`e2er init` asks which AI access to use and checks that it is installed. The command then creates the folders `data/` and `literature/` and writes the settings to `.env` in the current folder; `--force` overwrites an existing `.env`. For Claude Code, Codex or Gemini it asks before copying e2er's skill files into that CLI's skills folder (`~/.claude/skills`, `~/.codex/skills` or `~/.gemini/skills`); `--defaults` copies them into `~/.claude/skills` only. Other CLIs' folders are left alone. The setup page in the browser writes the same file. `e2er doctor` reports the AI access, the database and the data and literature it finds.
 
 Studies are recorded in a SQLite database at `~/.e2er/papers.db`. Setting `DATABASE_URL` to a Postgres address switches e2er to Postgres, and `e2er migrate` then creates the tables.
 
@@ -120,7 +121,7 @@ e2er status <paper_id> --tail
 `e2er run` starts a study and follows it in the terminal. Ctrl+C stops the output in the terminal, and the study keeps running in the background. The options are:
 
 - `--template NAME`: the template the study follows (default `empirical`).
-- `--max-cost USD`: the spending limit of the study in US dollars (default 5).
+- `--max-cost USD`: the spending limit of the study in US dollars (default 5). It applies to the API backends; on Claude Code, Codex and Gemini CLI a study costs $0 in e2er's records.
 - `--review-at STEP`: an additional pause for your review after this step (repeatable).
 - `--backend` and `--model`: another AI access or model for this study.
 - `--methodology empirical|theoretical|mixed` and `--mode single_pass|iterative`.
@@ -128,7 +129,7 @@ e2er status <paper_id> --tail
 
 `e2er run` starts a local server on port 8280 when none is running. The page at http://127.0.0.1:8280 lists all studies. The files of a study are in `workspaces/<paper_id>/`.
 
-`e2er run-matrix "<research question>" --backends claude_code,codex,gemini --repeats 3` runs one question with several AI providers, and `e2er compare matrix.json` lists the design choices each run made.
+`e2er run-matrix "<research question>" --backends claude_code,codex --models claude_code=sonnet,codex=gpt-6-luna --repeats 3` runs one question with several AI providers (without `--backends`, every subscription CLI that is ready on your computer), and `e2er compare matrix.json` lists the design choices each run made and the model that made them.
 
 ### Reviewing, stopping and resuming
 
@@ -166,13 +167,16 @@ Archiving hides attempts from the lists and deletes no file. Running and paused 
 e2er export <paper_id>
 e2er verify <study folder>
 e2er verify <study folder> --against https://e2er.org/<owner>/<project>
+e2er reproduce <study folder>
 e2er login
 e2er publish <study folder> --owner <github-login> --project <name> --to https://e2er.org
 ```
 
-`e2er export` writes the study folder with the subfolders `paper/`, `code/`, `data/`, `results/`, `design/` and `reviews/`. The file `provenance.json` in it lists every file with its hash value. `--to` sets where the folder is written.
+`e2er export` writes the study folder with the subfolders `paper/`, `code/`, `data/`, `results/`, `design/` and `reviews/`. The file `provenance.json` in it lists every file with its hash value. `--to` sets where the folder is written (default: `OUTPUT_DIR`, else `e2er_papers/` in the data folder, which is never read back in as data). The command works from any folder and takes the first characters of the paper id when they are unique.
 
 `e2er verify` runs the check offline and without API keys. The check recomputes the hash values, rebuilds the tables from the estimation results, recomputes t and p values, compares the estimation with the declared identification strategy and confirms that every citation is in the bibliography. A pre-registration or a reproduction in the folder is checked as well. `--online` also looks up the citations in OpenAlex, Semantic Scholar and Crossref. `--against` compares the folder with the study or dossier that e2er.org published and only reads from e2er.org.
+
+`e2er reproduce` runs the study's code again and compares what it produces with what the study published. The folder's `reproduce.json` says how: the pinned packages (a requirements file), the steps, the inputs with their hash values and the result files to compare. The code runs in a folder of its own, in a new virtual environment (made with `uv` when it is installed, else with Python's `venv`); the study folder is not changed. The report says which inputs are identical to the study's own, which result values are identical, the same at the published precision, slightly different (under 10%, same sign) or different, and which of the paper's tables render the same from the rerun's results. It exits with 0 when everything matches, 1 when something differs and 2 when the code could not run. `--json FILE` also writes the report as JSON. The [showcase study](examples/showcase) carries a `reproduce.json`.
 
 `e2er publish` checks the folder and writes the study's description (`e2er.json`) and its dossier. `--to` sends the description, the dossier and the hash values of the files to e2er.org after `e2er login`. The files themselves stay on your computer. `--dry-run` prints the request and sends nothing. `--data` and `--code` state whether data and code are public (default private), and `--zenodo` deposits public data and code on Zenodo with your own token. `--demonstration` marks a demonstration or test run that is published as is: `e2er.json` and the dossier record it, and the paper and the reproduction report carry a disclaimer. A study started with `e2er run --demonstration` (or with the box in the dashboard) is marked from the start and needs no flag at publishing; `E2ER_PURPOSE` from the environment or `.env` also sets it. `--offline` prepares the folder for publishing in the browser at e2er.org/publish and sends nothing.
 
@@ -185,11 +189,11 @@ A template is a `.toml` file. e2er ships four in [`pipelines/`](https://github.c
 - `empirical` (default): from a research question and data to an empirical paper.
 - `empirical-preregistered`: `empirical` with three pauses for the researcher (design review, pre-registration frozen before any estimation, draft review).
 - `event-study-finance`: abnormal-return event studies around announcements, with the pauses of `empirical-preregistered`. A check before estimation tests the estimation window, the overlap between events and the event dates.
-- `replication`: reproduction of a published study from its replication package on Zenodo, executed in a Docker container. The result is a reproduction report.
+- `replication`: reproduction of a published study from its replication package on Zenodo, executed in a Docker container (R or Python code only). The result is a reproduction report.
 
 The three empirical templates end with e2er's internal quality review. Six reviewer specialists each score the draft from one angle on a scale of 0 to 10. The six angles are data, identification, literature, mechanism, technical quality and writing. The score is their weighted average. The score decides whether the draft is revised before the study ends, and the study reports it, for example "e2er's internal quality review: 6.1 of 10". A study that finishes its steps is completed whatever its score.
 
-e2er ships with 63 skill files and 28 specialist roles. `e2er run --template NAME` looks for a template in `./pipelines`, then in `~/.e2er/pipelines`, then among the four above. [docs/templates.md](https://github.com/bhanneke/E2ER-project/blob/main/docs/templates.md) describes the file format, and [docs/researcher-step.md](https://github.com/bhanneke/E2ER-project/blob/main/docs/researcher-step.md) describes the pauses. `e2er skills install` adds skill packs from a local copy of the RISE catalogue (`RISE_PATH`).
+e2er ships with 63 skill files and 28 specialist roles. `e2er run --template NAME` looks for a template in `./pipelines`, then in `~/.e2er/pipelines`, then among the four above. [docs/templates.md](https://github.com/bhanneke/E2ER-project/blob/main/docs/templates.md) describes the file format, and [docs/researcher-step.md](https://github.com/bhanneke/E2ER-project/blob/main/docs/researcher-step.md) describes the pauses. `e2er skills list` and `e2er skills install` read the [RISE catalogue](https://github.com/bhanneke/RISE) of skill packs: e2er downloads its pack list from GitHub (refreshed daily), or reads a local clone named by `RISE_PATH` or `--catalogue`. Packs are installed from their own sources.
 
 ## Data sources
 
@@ -228,7 +232,9 @@ The library is stored at `~/.e2er/corpus.db` (`CORPUS_DB` moves it). Before draf
 
 ## Costs
 
-Each study has a spending limit, set with `--max-cost` (default 5 US dollars in the terminal). A study that reaches the limit pauses, and `e2er resume <paper_id> --max-cost <higher limit>` continues it. The first study with a given combination of model, methodology and mode is limited to 1 US dollar until one such study has completed. `--acknowledge-unproven` lifts this limit. On Claude Code, Codex and Gemini CLI, e2er lifts it automatically.
+Each study has a spending limit, set with `--max-cost` (default 5 US dollars in the terminal). A study that reaches the limit pauses, and `e2er resume <paper_id> --max-cost <higher limit>` continues it. The first study with a given combination of model, methodology and mode is limited to 1 US dollar until one such study has completed. `--acknowledge-unproven` lifts this limit.
+
+These limits apply to the API backends (Anthropic, OpenRouter), which bill per use. On Claude Code, Codex and Gemini CLI the study runs on your subscription: e2er records its cost as $0, so no spending limit applies, and the subscription's own usage limits are the only ones.
 
 ## Troubleshooting
 
@@ -273,7 +279,7 @@ make smoke-paid   # one real study on Claude Haiku 4.5 (needs ANTHROPIC_API_KEY,
   title        = {{e2er (End-to-End Research): The Open Infrastructure for
                    Publishing, Verifying, Reproducing and Reusing AI-Enabled Research}},
   year         = {2026},
-  version      = {0.13.6},
+  version      = {0.13.7},
   url          = {https://github.com/bhanneke/E2ER-project},
   doi          = {10.5281/zenodo.20187238},
   license      = {MIT},

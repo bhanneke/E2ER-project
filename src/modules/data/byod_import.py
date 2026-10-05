@@ -15,6 +15,7 @@ Large files are chunk-loaded and capped at ``settings.max_rows_per_paper``.
 from __future__ import annotations
 
 import asyncio
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -96,6 +97,27 @@ def _systematic_sample(df: pd.DataFrame, max_rows: int) -> pd.DataFrame:
     return df.take(idx)
 
 
+#: The package pandas needs to read each file type, for the error a researcher sees.
+_READERS = {".parquet": "pyarrow", ".xlsx": "openpyxl"}
+
+
+class MissingReaderError(RuntimeError):
+    """A data file whose reader package is not installed."""
+
+
+def _require_reader(path: Path) -> None:
+    """Fail with a plain instruction when the package that reads this file type is missing."""
+    import importlib.util
+
+    package = _READERS.get(path.suffix.lower())
+    if package and importlib.util.find_spec(package) is None:
+        raise MissingReaderError(
+            f"{path.name} was not loaded: reading {path.suffix.lower()} files needs the {package} package, "
+            f"which is not installed. Install it with `pip install {package}` (or reinstall e2er, which "
+            "includes it) and start the study again."
+        )
+
+
 def _load_flat_dataframe(path: Path, max_rows: int) -> pd.DataFrame:
     """Read a non-CSV tabular file fully, systematic-sampled to the cap.
     CSV/TSV use the chunked path."""
@@ -123,6 +145,7 @@ def _import_one_file_sync(
 
     suffix = path.suffix.lower()
     results: list[dict[str, Any]] = []
+    _require_reader(path)
 
     if suffix == ".xlsx":
         # One table per sheet; suffix the sheet name when there's more than one.
@@ -199,6 +222,12 @@ def _import_corpus_sync(workspace: Path, max_rows: int) -> list[dict[str, Any]]:
         rel_label = path.relative_to(data_dir).as_posix()
         try:
             tables = _import_one_file_sync(db_path, rel_label, path, existing, max_rows)
+        except MissingReaderError as e:
+            # Loud: a missing reader is a setup problem the researcher can fix,
+            # not a bad file. Logged as an error and printed to the terminal.
+            logger.error("%s", e)
+            print(f"e2er: {e}", file=sys.stderr)
+            continue
         except Exception as e:  # noqa: BLE001 — best-effort: one bad file must not fail paper creation
             logger.warning("BYOD import skipped %s: %s (paper creation continues)", rel_label, e)
             continue

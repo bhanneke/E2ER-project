@@ -1,4 +1,4 @@
-"""Lane B — provider interface + registry (M1 of docs/MODULARIZATION_PLAN.md).
+"""Lane B — provider interface + registry (M1 of docs/internal/MODULARIZATION_PLAN.md).
 
 The registry formalizes the de-facto interface the source modules already
 shared. These tests pin:

@@ -137,3 +137,18 @@ def test_the_two_skills_directions_are_described_as_opposites():
 
     assert "in" in out and "out" in out
     assert "rise" in out, "where packs come from"
+
+
+def test_version_flag_prints_the_package_version(capsys, monkeypatch):
+    import sys
+
+    import pytest
+
+    from src import __version__
+    from src.__main__ import main
+
+    monkeypatch.setattr(sys, "argv", ["e2er", "--version"])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 0
+    assert capsys.readouterr().out.strip() == f"e2er {__version__}"

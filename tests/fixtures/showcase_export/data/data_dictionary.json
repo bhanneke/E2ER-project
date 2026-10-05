@@ -1,0 +1,815 @@
+{
+  "schema_version": "1.0",
+  "artifact": "data_dictionary",
+  "paper_id": "e432cf3f-9008-4202-8ee6-ff09a93948ec",
+  "working_title": "No Cash Flows, New Owners: Spot Bitcoin ETFs and the Origins of Comovement",
+  "research_question": "Did the January 2024 approval of US spot Bitcoin ETFs change the co-movement between Bitcoin returns and US equity returns?",
+  "prepared_by": "data_architect",
+  "prepared_on": "2026-09-11",
+  "note_on_scope": "The work order named two deliverables (data_dictionary.json and a short data_plan.md). Pipeline output discipline permits exactly one artifact, so the data plan is embedded here as the `data_plan` object rather than written as a second file. Nothing from the requested plan has been dropped.",
+
+  "treatment": {
+    "event_name": "SEC approval and commencement of trading of eleven US spot Bitcoin ETPs",
+    "approval_order_datetime_et": "2024-01-10T16:00:00-05:00",
+    "listing_datetime_et": "2024-01-11T09:30:00-05:00",
+    "treated_asset": "BTC",
+    "baseline_treatment_date_used_in_panel": "2024-02-01",
+    "baseline_treatment_month": "2024m2",
+    "why_2024m2_not_2024m1": "Donut specification from identification_strategy.md §7: 2023m8-2024m1 is excluded to absorb Grayscale-ruling anticipation, the two false-news events, listing week itself, and the GBTC redemption transition. The no-donut variant (treatment from 2024-01-11) is built in parallel as d_post_listing_raw."
+  },
+
+  "sample": {
+    "primary_window_start": "2021-01-01",
+    "primary_window_end": "2026-08-31",
+    "as_of_extract_date": "2026-09-11",
+    "extended_window_for_break_tests": {"start": "2018-01-01", "end": "2026-08-31"},
+    "n_months_primary": 68,
+    "n_nyse_sessions_primary_approx": 1435,
+    "n_crypto_assets": 13,
+    "n_coin_month_cells_approx": 884,
+    "regime_windows": {
+      "clean_pre": {"start": "2021-01-01", "end": "2023-07-31", "n_months": 31},
+      "donut_excluded": {"start": "2023-08-01", "end": "2024-01-31", "n_months": 6},
+      "clean_post": {"start": "2024-02-01", "end": "2026-08-31", "n_months": 31},
+      "pre_halving_sub": {"start": "2024-02-01", "end": "2024-03-31"},
+      "pre_election_sub": {"start": "2024-02-01", "end": "2024-10-31"},
+      "post_election_sub": {"start": "2024-11-01", "end": "2026-08-31"}
+    },
+    "deviation_from_work_order": "The work order anticipated '~3 years pre and ~1.5+ years post'. As of the 2026-09-11 extract the post-period is 31 months (2.6 years), exactly matching the 31-month clean pre-period. This symmetry is a gain, not a change of design, and should be stated in the paper's data section."
+  },
+
+  "conventions": {
+    "naming": {
+      "style": "snake_case throughout; no spaces, no capitals, no units in the value (units live in this dictionary)",
+      "prefixes": {
+        "px_": "price level",
+        "r_": "log return (decimal, not percent)",
+        "rx_": "excess log return over the daily risk-free rate",
+        "y_": "estimation outcome (the LHS of a regression)",
+        "d_": "binary indicator in {0,1}",
+        "x_": "control / conditioning variable",
+        "n_": "count",
+        "w_": "weight or share"
+      },
+      "suffixes": {
+        "_ec": "computed on the equity-close clock (16:00 ET to 16:00 ET) - the BASELINE",
+        "_utc": "computed on the 00:00 UTC to 00:00 UTC clock - ROBUSTNESS",
+        "_m": "monthly, non-overlapping calendar-month block",
+        "_60d": "60-trading-day backward-looking rolling window",
+        "_s": "session-level (intraday partition)",
+        "_usd": "denominated in US dollars",
+        "_mn": "in millions",
+        "_pct": "in percent (0-100), not decimal"
+      }
+    },
+    "return_definition": {
+      "functional_form": "log (continuously compounded) returns: r_t = ln(P_t) - ln(P_{t-1})",
+      "units": "decimal per period. Multiply by 100 only at the reporting layer; never store percent in the panel.",
+      "price_basis_equities": "split- and dividend-adjusted close (yfinance default). px_close_raw retained alongside for the ETF premium/discount work, where the unadjusted print is the right object.",
+      "price_basis_crypto": "raw close. No adjustment concept applies.",
+      "excess_returns": "rx = r - rf, with rf the Ken French daily risk-free rate converted from percent to decimal. Applied to the equity market factor and, for the beta specifications, to the crypto leg as well."
+    },
+
+    "timezone_alignment": {
+      "why_this_section_exists": "Crypto trades 24/7; US equities close at 16:00 ET. The clock choice is not a formatting detail - it changes the estimate. identification_strategy.md §2 identifies resynchronization as the single most underrated threat: if the ETF relocated Bitcoin price discovery into US cash hours, a daily correlation measured on a 16:00 ET clock rises MECHANICALLY even with an unchanged 24-hour covariance. The clock convention is therefore specified here, before any estimation, and a timing-invariant outcome (rho_3d_m, beta_dimson_m) is built alongside it.",
+
+      "master_clock": "America/New_York (ET), DST-aware. Every timestamp is stored in the data files as tz-aware UTC; every join key is date_et, the NYSE session date derived from that UTC instant.",
+      "never_hardcode_offset": "16:00 ET is 21:00 UTC under EST and 20:00 UTC under EDT. Do the conversion with a tz database (zoneinfo / pytz 'America/New_York'), never with a fixed offset. A fixed -5 offset silently corrupts roughly 8 months of every year.",
+
+      "baseline_clock": {
+        "name": "equity_close_clock",
+        "suffix": "_ec",
+        "sampling_instant": "16:00:00 America/New_York",
+        "crypto_return_for_session_t": "r_ec[i,t] = ln P_i(16:00 ET on session t) - ln P_i(16:00 ET on session t-1), where t-1 is the PREVIOUS NYSE SESSION, not the previous calendar day.",
+        "equity_return_for_session_t": "r_ec[mkt,t] = ln P_mkt(close, t) - ln P_mkt(close, t-1), the same session pair.",
+        "why_this_is_exactly_synchronous": "Because t-1 is the previous NYSE session for BOTH legs, the crypto and equity return windows span an identical wall-clock interval, including across weekends and holidays. Monday's crypto return is a Friday-16:00-to-Monday-16:00 three-day return, and Monday's equity return is a Friday-close-to-Monday-close three-day return. No non-synchronicity remains by construction. This is the property that the 00:00 UTC clock does not have.",
+        "construction_from_hourly_bars": "The 16:00 ET price is the close of the hourly bar whose RIGHT edge is 16:00 ET (i.e. the 15:00-16:00 ET bar). Provider bar labelling differs: yfinance labels 60m bars by their LEFT edge, so select the bar with ET hour == 15. A build-time assertion (see qa_checks.qa_04) verifies the convention against a day with a known large intraday move before the panel is accepted.",
+        "availability_constraint": "BLOCKING. See availability_audit.aud_03. Hourly crypto bars are the only way to strike a 16:00 ET price, and the only configured hourly source (yfinance 60m) is capped at the trailing 730 days, i.e. from roughly 2024-09-12 onward. The baseline clock is therefore NOT constructible over the pre-period with current credentials. Resolution paths are enumerated in data_plan.blockers.blk_01."
+      },
+
+      "robustness_clock": {
+        "name": "utc_day_clock",
+        "suffix": "_utc",
+        "sampling_instant": "00:00:00 UTC",
+        "crypto_return_for_session_t": "r_utc[i,t] = ln P_i(close of the UTC calendar day t) - ln P_i(close of UTC calendar day t-1). This is exactly the yfinance daily crypto bar dated t - verified, the bars are stamped 00:00:00+00:00.",
+        "alignment_rule": "Join the UTC-day return dated t to the NYSE session dated t. Sessions on which equities are closed are dropped from the daily estimation panel (retained in crypto_offday_returns for the weekend test F14).",
+        "non_synchronicity_this_induces": "The UTC crypto day for date t ends at 19:00 ET (EST) or 20:00 ET (EDT) - that is 3 to 4 hours AFTER the equity close - and begins 20 to 21 hours BEFORE it. The mismatch is two-sided, not a simple lead or lag, which is why a single Scholes-Williams lag correction is insufficient and the 3-day-return construction (rho_3d_m) is the preferred invariance check.",
+        "status": "AVAILABLE for the full 2021-01-01 to 2026-08-31 window, verified. With current credentials this clock is the only one that spans the sample, so it is the DE FACTO baseline until blk_01 is resolved. The paper must report which clock produced the headline number."
+      },
+
+      "session_partition": {
+        "defined_on": "ET wall clock, so the boundaries track US market hours through DST transitions",
+        "sessions": [
+          {"session_id": "asia", "start_et": "00:00", "end_et": "07:00", "hours": 7.0},
+          {"session_id": "europe", "start_et": "07:00", "end_et": "09:30", "hours": 2.5},
+          {"session_id": "us_cash", "start_et": "09:30", "end_et": "16:00", "hours": 6.5},
+          {"session_id": "us_post", "start_et": "16:00", "end_et": "24:00", "hours": 8.0},
+          {"session_id": "nav_strike", "start_et": "15:45", "end_et": "16:00", "hours": 0.25, "nested_within": "us_cash", "note": "Nested, not a partition element. Used only in the companion DDD specification of identification_strategy.md §6.4; never summed with the other four."}
+        ],
+        "dst_caveat": "Anchoring sessions to the ET clock means the Asian session drifts by one hour in Tokyo local time across DST changes. That is the correct choice, because the treatment operates through a US-listed vehicle whose hours are ET-anchored. A robustness variant fixing 'asia' on the Tokyo local clock (09:00-17:00 JST) is specified as sens_04.",
+        "equity_leg": "S&P 500 E-mini future (CME ticker ES, front month, rolled on volume). ES trades 18:00-17:00 ET with a one-hour break, which is what makes the covariance well defined in the Asian and European sessions. STATUS: BLOCKED - no configured wrapper serves CME intraday. See blk_02."
+      }
+    },
+
+    "calendar": {
+      "trading_calendar": "NYSE (XNYS) via pandas_market_calendars. Half-days (day after Thanksgiving, Christmas Eve, July 3) close at 13:00 ET; on those sessions the equity-close clock strikes at 13:00 ET, not 16:00 ET, for both legs. A half_day flag is carried in the panel and a robustness variant drops them.",
+      "crypto_calendar": "365 days. Days on which the NYSE is closed are excluded from asset_panel_daily and written to crypto_offday_returns.",
+      "month_definition": "Calendar month, ET. n_days_m is the count of NYSE sessions in the month with a non-missing return on both legs; cells with n_days_m < 15 are flagged and, per the pre-analysis plan, dropped from the headline with the kept-version reported in robustness."
+    },
+
+    "missing_data": {
+      "sentinel": "null in JSON, NaN in parquet. Never 0, never -999.",
+      "policy": "No forward-filling of crypto prices. A missing hourly bar leaves the derived return missing; a gap longer than 3 hours inside a session voids that session-day cell for that asset. Exchange outages are logged in data_exceptions rather than patched."
+    },
+
+    "outlier_policy": {
+      "baseline": "No winsorization in the headline specification.",
+      "robustness": "Winsorize returns at the 0.5 / 99.5 percentiles, computed within asset over the full sample. Reported both ways per paper_plan.md §6."
+    }
+  },
+
+  "sources": [
+    {
+      "source_id": "yfinance",
+      "access": "e2er-data yfinance {history|ticker-info|search}",
+      "status": "VERIFIED WORKING 2026-09-11",
+      "covers": ["crypto daily bars", "equity and ETF daily bars", "index levels (VIX, MOVE, DXY)", "crypto and equity 60m bars, trailing 730 days only"],
+      "provenance_rule": "Every pull must pass --save-to <name>.csv so the replication package runs offline. Yahoo silently revises history and delists tickers.",
+      "citation": "Yahoo Finance, retrieved 2026-09-11 via the yfinance Python library (https://pypi.org/project/yfinance/).",
+      "known_limits": ["60m interval limited to the trailing 730 days", "no shares outstanding, no NAV, no fund flows", "survivorship: delisted tickers disappear", "adjusted closes are revised without notice"]
+    },
+    {
+      "source_id": "fred",
+      "access": "e2er-data fred {series|series-info|search}",
+      "status": "BLOCKED - FRED_API_KEY not configured (verified 2026-09-11, exact error in availability_audit.aud_02)",
+      "covers": ["VIXCLS", "DGS10", "DFII10", "T10YIE", "DTWEXBGS", "SOFR", "DFF"],
+      "mitigation": "Every macro variable below carries a yfinance fallback ticker, verified working. Two variables (10y TIPS real yield, 10y breakeven) have NO adequate yfinance substitute and are marked blocked.",
+      "citation": "Series <ID>: Federal Reserve Bank of St. Louis, FRED, retrieved YYYY-MM-DD. https://fred.stlouisfed.org/series/<ID>"
+    },
+    {
+      "source_id": "allium",
+      "access": "e2er-data allium",
+      "status": "BLOCKED - ALLIUM_API_KEY not configured (verified 2026-09-11: 'Allium not configured. Set ALLIUM_API_KEY in .env.')",
+      "intended_role_in_work_order": "on-chain and CEX price data for the crypto leg",
+      "consequence": "The crypto leg falls back entirely to yfinance daily bars. This is a real degradation for cross-venue price validation (paper_plan.md §6 asks for it) and it removes any path to tick-level CEX data. It is NOT fatal to the headline design, because the monthly Fisher-z correlation is robust to the venue choice at daily frequency, but the cross-venue validation row in the robustness table cannot be produced without this key or an external source.",
+      "note": "Allium would not have solved the hourly-history problem for equities anyway; it is a blockchain and CEX source, not a US futures source."
+    },
+    {
+      "source_id": "ken_french",
+      "access": "Direct HTTPS download (no gatekeeper wrapper exists); or pandas_datareader.DataReader(..., 'famafrench')",
+      "status": "AVAILABLE, not yet pulled - no wrapper means no audit-log entry, so the download must be scripted into build_02 with the retrieved-on date recorded",
+      "files": [
+        {"name": "F-F_Research_Data_5_Factors_2x3_daily", "url": "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/F-F_Research_Data_5_Factors_2x3_daily_CSV.zip", "yields": ["mktrf", "smb", "hml", "rmw", "cma", "rf"]},
+        {"name": "F-F_Momentum_Factor_daily", "url": "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/F-F_Momentum_Factor_daily_CSV.zip", "yields": ["mom"]}
+      ],
+      "units_warning": "Ken French ships factors in PERCENT per day. Divide by 100 on ingest so the panel is uniformly in decimals. rf is a daily simple rate in percent, not annualized.",
+      "timezone": "Dates are US trading days with no time component; join directly on date_et. No conversion needed - and no conversion should be attempted.",
+      "publication_lag": "The daily files trail the current date by roughly one month. Expect the factor panel to end around 2026-07/2026-08 even though prices run to 2026-09-11. Truncate the factor-based specifications to the common window rather than padding.",
+      "citation": "Kenneth R. French Data Library, Dartmouth College, retrieved YYYY-MM-DD."
+    },
+    {
+      "source_id": "etf_flows_external",
+      "access": "MANUAL / EXTERNAL - no configured wrapper",
+      "status": "BLOCKED for automated retrieval",
+      "candidates": [
+        {"name": "Farside Investors daily Bitcoin ETF flow table", "granularity": "fund x day, net flow in USD mn", "note": "the de facto standard series in this literature; free HTML/CSV"},
+        {"name": "Issuer daily disclosures", "granularity": "fund x day, shares outstanding, NAV per share, BTC held", "note": "BlackRock, Fidelity, Bitwise and Grayscale each publish a daily holdings page; this is the primary-source version and the one to prefer for the headline"},
+        {"name": "Bloomberg FLOW / ETF fund-flow function", "granularity": "fund x day", "note": "if terminal access is available, use it to cross-check the two above"}
+      ],
+      "consequence": "Design D3 (flow dose-response, paper_plan.md §5.3) cannot be executed from configured sources. See blockers.blk_03. D1, D2 and D4 do not depend on it."
+    }
+  ],
+
+  "reference_tables": {
+    "asset_reference": {
+      "description": "One row per asset. The spine of the panel. Frozen before any estimation; no ex-post edits.",
+      "key": "asset_id",
+      "columns": {
+        "asset_id": {"type": "string", "description": "Canonical short code, uppercase, e.g. BTC, ETH, ALTIDX_EW, MKT"},
+        "asset_class": {"type": "string", "domain": ["crypto", "equity_index", "equity_etf", "factor", "commodity", "crypto_etf", "macro_index", "synthetic_index"]},
+        "yf_ticker": {"type": "string", "description": "Yahoo Finance symbol used for retrieval; null where the source is not yfinance"},
+        "treatment_cohort": {"type": "string", "domain": ["treated_btc", "eventually_treated", "never_treated", "not_applicable"]},
+        "etf_listing_date": {"type": "date", "description": "First trading day of a US-listed SPOT ETF on this asset; null for never-treated"},
+        "in_headline_control_group": {"type": "bool", "description": "TRUE only for never-treated coins. Eventually-treated coins are excluded from the headline control group so that no already-treated unit ever serves as a comparison (identification_strategy.md §5)."},
+        "in_altidx_ew": {"type": "bool", "description": "Member of the equal-weighted non-BTC altcoin index"},
+        "in_clean_control_subsample": {"type": "bool", "description": "Small, non-US-exchange-centric coins least exposed to BTC-ETF spillover; used for the SUTVA robustness cut"},
+        "history_verified_from": {"type": "date", "description": "Earliest date verified to return data from the named source on 2026-09-11"}
+      },
+      "rows": [
+        {"asset_id": "BTC", "asset_class": "crypto", "yf_ticker": "BTC-USD", "treatment_cohort": "treated_btc", "etf_listing_date": "2024-01-11", "in_headline_control_group": false, "in_altidx_ew": false, "in_clean_control_subsample": false, "history_verified_from": "2021-01-04"},
+        {"asset_id": "ETH", "asset_class": "crypto", "yf_ticker": "ETH-USD", "treatment_cohort": "eventually_treated", "etf_listing_date": "2024-07-23", "in_headline_control_group": false, "in_altidx_ew": true, "in_clean_control_subsample": false, "history_verified_from": "2021-01-04", "verification_status": "listing date from paper_plan.md §5.1; confirm against the exchange listing notice and the 19b-4 order before use"},
+        {"asset_id": "SOL", "asset_class": "crypto", "yf_ticker": "SOL-USD", "treatment_cohort": "eventually_treated", "etf_listing_date": null, "in_headline_control_group": false, "in_altidx_ew": true, "in_clean_control_subsample": false, "history_verified_from": "2021-01-04", "verification_status": "UNVERIFIED. A US spot SOL ETF listed during 2025; the exact first trading day must be taken from the fund's Form 8-A and the exchange listing notice. Left null deliberately rather than guessed - a wrong cohort date silently contaminates the staggered extension."},
+        {"asset_id": "XRP", "asset_class": "crypto", "yf_ticker": "XRP-USD", "treatment_cohort": "eventually_treated", "etf_listing_date": null, "in_headline_control_group": false, "in_altidx_ew": true, "in_clean_control_subsample": false, "history_verified_from": "2021-01-04", "verification_status": "UNVERIFIED - same rule as SOL."},
+        {"asset_id": "LTC", "asset_class": "crypto", "yf_ticker": "LTC-USD", "treatment_cohort": "never_treated", "etf_listing_date": null, "in_headline_control_group": true, "in_altidx_ew": true, "in_clean_control_subsample": false, "history_verified_from": "2021-01-04", "note": "Work order lists LTC as a named control. Monitor: LTC has been a recurring spot-ETF filing candidate. If an LTC spot ETF lists inside the sample it must move to eventually_treated and leave the headline control group. Re-check at estimation time."},
+        {"asset_id": "BNB", "asset_class": "crypto", "yf_ticker": "BNB-USD", "treatment_cohort": "never_treated", "etf_listing_date": null, "in_headline_control_group": true, "in_altidx_ew": true, "in_clean_control_subsample": false, "history_verified_from": "2021-01-04", "note": "Named in the work order. Caveat for the paper: BNB is an exchange-affiliated token whose returns load on Binance-specific regulatory news (the 2023 DOJ/CFTC actions sit inside the pre-period). Retained, but a leave-BNB-out row is mandatory in F7."},
+        {"asset_id": "ADA", "asset_class": "crypto", "yf_ticker": "ADA-USD", "treatment_cohort": "never_treated", "etf_listing_date": null, "in_headline_control_group": true, "in_altidx_ew": true, "in_clean_control_subsample": false, "history_verified_from": "2021-01-04"},
+        {"asset_id": "DOGE", "asset_class": "crypto", "yf_ticker": "DOGE-USD", "treatment_cohort": "never_treated", "etf_listing_date": null, "in_headline_control_group": true, "in_altidx_ew": true, "in_clean_control_subsample": false, "history_verified_from": "2021-01-04", "note": "The May 2021 DOGE episode is a large idiosyncratic pre-period shock. Kept (it raises DOGE's idiosyncratic variance and so LOWERS its equity correlation, biasing the DiD against finding a BTC effect) but flagged in F7."},
+        {"asset_id": "BCH", "asset_class": "crypto", "yf_ticker": "BCH-USD", "treatment_cohort": "never_treated", "etf_listing_date": null, "in_headline_control_group": true, "in_altidx_ew": true, "in_clean_control_subsample": false, "history_verified_from": "2021-01-04"},
+        {"asset_id": "LINK", "asset_class": "crypto", "yf_ticker": "LINK-USD", "treatment_cohort": "never_treated", "etf_listing_date": null, "in_headline_control_group": true, "in_altidx_ew": true, "in_clean_control_subsample": false, "history_verified_from": "2021-01-04"},
+        {"asset_id": "AVAX", "asset_class": "crypto", "yf_ticker": "AVAX-USD", "treatment_cohort": "never_treated", "etf_listing_date": null, "in_headline_control_group": true, "in_altidx_ew": true, "in_clean_control_subsample": true, "history_verified_from": "2021-01-04"},
+        {"asset_id": "DOT", "asset_class": "crypto", "yf_ticker": "DOT-USD", "treatment_cohort": "never_treated", "etf_listing_date": null, "in_headline_control_group": true, "in_altidx_ew": true, "in_clean_control_subsample": true, "history_verified_from": "2021-01-04"},
+        {"asset_id": "XLM", "asset_class": "crypto", "yf_ticker": "XLM-USD", "treatment_cohort": "never_treated", "etf_listing_date": null, "in_headline_control_group": true, "in_altidx_ew": true, "in_clean_control_subsample": true, "history_verified_from": "2021-01-04"},
+        {"asset_id": "ALTIDX_EW", "asset_class": "synthetic_index", "yf_ticker": null, "treatment_cohort": "not_applicable", "etf_listing_date": null, "in_headline_control_group": false, "in_altidx_ew": false, "in_clean_control_subsample": false, "history_verified_from": "2021-01-04", "note": "Equal-weighted non-BTC altcoin index. Constructed, not retrieved. See derived_variables.dv_18. Enters as a descriptive benchmark and as a synthetic-control donor, NOT as a DiD control unit (it is a composite and would double-count its constituents)."},
+        {"asset_id": "MKT", "asset_class": "factor", "yf_ticker": null, "treatment_cohort": "not_applicable", "etf_listing_date": null, "in_headline_control_group": false, "in_altidx_ew": false, "in_clean_control_subsample": false, "history_verified_from": "2021-01-04", "note": "Ken French MKT-RF + RF, the headline US equity market return. CRSP VW (the plan's first choice) requires WRDS, which is not configured; MKT-RF from Ken French IS the CRSP value-weighted excess return, so this substitution is exact, not a compromise. State that in the paper."},
+        {"asset_id": "SPY", "asset_class": "equity_etf", "yf_ticker": "SPY", "treatment_cohort": "not_applicable", "etf_listing_date": null, "in_headline_control_group": false, "in_altidx_ew": false, "in_clean_control_subsample": false, "history_verified_from": "2021-01-04"},
+        {"asset_id": "SPX", "asset_class": "equity_index", "yf_ticker": "^GSPC", "treatment_cohort": "not_applicable", "etf_listing_date": null, "in_headline_control_group": false, "in_altidx_ew": false, "in_clean_control_subsample": false, "history_verified_from": "2021-01-04"},
+        {"asset_id": "QQQ", "asset_class": "equity_etf", "yf_ticker": "QQQ", "treatment_cohort": "not_applicable", "etf_listing_date": null, "in_headline_control_group": false, "in_altidx_ew": false, "in_clean_control_subsample": false, "history_verified_from": "2021-01-04"},
+        {"asset_id": "IWM", "asset_class": "equity_etf", "yf_ticker": "IWM", "treatment_cohort": "not_applicable", "etf_listing_date": null, "in_headline_control_group": false, "in_altidx_ew": false, "in_clean_control_subsample": false, "history_verified_from": "2021-01-04", "note": "Russell 2000. IWM (the ETF) is preferred to ^RUT because the ETF print is a tradable close aligned to 16:00 ET."},
+        {"asset_id": "ARKK", "asset_class": "equity_etf", "yf_ticker": "ARKK", "treatment_cohort": "not_applicable", "etf_listing_date": null, "in_headline_control_group": false, "in_altidx_ew": false, "in_clean_control_subsample": false, "history_verified_from": "2021-01-04", "note": "Tech/speculative-growth proxy. The work order's 'tech/growth proxy'. ARKK is the high-duration, high-beta speculative proxy; QQQ is the megacap-tech proxy. Both are carried because they diverged sharply in 2022-2024 and the paper's factor-migration test (§6.4) needs to know which one Bitcoin loaded onto."},
+        {"asset_id": "XLK", "asset_class": "equity_etf", "yf_ticker": "XLK", "treatment_cohort": "not_applicable", "etf_listing_date": null, "in_headline_control_group": false, "in_altidx_ew": false, "in_clean_control_subsample": false, "history_verified_from": "2021-01-04", "note": "Third tech proxy, sector-pure. Optional."},
+        {"asset_id": "ACWX", "asset_class": "equity_etf", "yf_ticker": "ACWX", "treatment_cohort": "not_applicable", "etf_listing_date": null, "in_headline_control_group": false, "in_altidx_ew": false, "in_clean_control_subsample": false, "history_verified_from": "2021-01-04", "note": "MSCI ACWI ex-US. Required for falsification F8: if the mechanism is a US brokerage habitat, co-movement should rise more against US than non-US equities."},
+        {"asset_id": "GLD", "asset_class": "commodity", "yf_ticker": "GLD", "treatment_cohort": "not_applicable", "etf_listing_date": null, "in_headline_control_group": false, "in_altidx_ew": false, "in_clean_control_subsample": false, "history_verified_from": "2021-01-04", "note": "PLACEBO ASSET, not a control. identification_strategy.md §4 demotes the gold triple-difference and repromotes gold as a placebo: a long-standing ETF wrapper, the same macro regime, no 2024 access change. A January 2024 break in gold's equity correlation falsifies the design's macro-neutrality (F3)."},
+        {"asset_id": "SLV", "asset_class": "commodity", "yf_ticker": "SLV", "treatment_cohort": "not_applicable", "etf_listing_date": null, "in_headline_control_group": false, "in_altidx_ew": false, "in_clean_control_subsample": false, "history_verified_from": "2021-01-04", "note": "Second precious-metal placebo (F3.ii)."}
+      ]
+    },
+
+    "etf_reference": {
+      "description": "One row per US-listed Bitcoin exchange-traded product in scope.",
+      "key": "etf_ticker",
+      "columns": {
+        "etf_ticker": {"type": "string"},
+        "fund_name": {"type": "string"},
+        "issuer": {"type": "string"},
+        "wrapper": {"type": "string", "domain": ["spot", "futures"]},
+        "listing_date": {"type": "date"},
+        "in_spot_eleven": {"type": "bool", "description": "One of the eleven funds that began trading 2024-01-11"},
+        "yf_available": {"type": "bool", "description": "Verified against yfinance on 2026-09-11"}
+      },
+      "rows": [
+        {"etf_ticker": "IBIT", "fund_name": "iShares Bitcoin Trust ETF", "issuer": "BlackRock", "wrapper": "spot", "listing_date": "2024-01-11", "in_spot_eleven": true, "yf_available": true, "verified_note": "ticker-info returned shortName 'iShares Bitcoin Trust ETF', exchange NGM"},
+        {"etf_ticker": "FBTC", "fund_name": "Fidelity Wise Origin Bitcoin Fund", "issuer": "Fidelity", "wrapper": "spot", "listing_date": "2024-01-11", "in_spot_eleven": true, "yf_available": true},
+        {"etf_ticker": "GBTC", "fund_name": "Grayscale Bitcoin Trust ETF", "issuer": "Grayscale", "wrapper": "spot", "listing_date": "2024-01-11", "in_spot_eleven": true, "yf_available": true, "note": "Converted from a closed-end trust; quoted OTC since 2015 and NYSE Arca-listed from 2024-01-11. The pre-2024 OTC price series is what generates the premium/discount variable. Its 2024 outflows dominate the aggregate net-flow series and MUST be netted, per paper_plan.md §5.3 step 1."},
+        {"etf_ticker": "ARKB", "fund_name": "ARK 21Shares Bitcoin ETF", "issuer": "ARK / 21Shares", "wrapper": "spot", "listing_date": "2024-01-11", "in_spot_eleven": true, "yf_available": true},
+        {"etf_ticker": "BITB", "fund_name": "Bitwise Bitcoin ETF", "issuer": "Bitwise", "wrapper": "spot", "listing_date": "2024-01-11", "in_spot_eleven": true, "yf_available": true},
+        {"etf_ticker": "BTCO", "fund_name": "Invesco Galaxy Bitcoin ETF", "issuer": "Invesco / Galaxy", "wrapper": "spot", "listing_date": "2024-01-11", "in_spot_eleven": true, "yf_available": true, "verified_note": "first bar returned 2024-01-11"},
+        {"etf_ticker": "EZBC", "fund_name": "Franklin Bitcoin ETF", "issuer": "Franklin Templeton", "wrapper": "spot", "listing_date": "2024-01-11", "in_spot_eleven": true, "yf_available": true, "verified_note": "first bar returned 2024-01-11"},
+        {"etf_ticker": "BRRR", "fund_name": "Bitcoin ETF (formerly Valkyrie Bitcoin Fund)", "issuer": "CoinShares / Valkyrie", "wrapper": "spot", "listing_date": "2024-01-11", "in_spot_eleven": true, "yf_available": true, "verified_note": "first bar returned 2024-01-11"},
+        {"etf_ticker": "HODL", "fund_name": "VanEck Bitcoin ETF", "issuer": "VanEck", "wrapper": "spot", "listing_date": "2024-01-11", "in_spot_eleven": true, "yf_available": true, "verified_note": "first bar returned 2024-01-11"},
+        {"etf_ticker": "BTCW", "fund_name": "WisdomTree Bitcoin Fund", "issuer": "WisdomTree", "wrapper": "spot", "listing_date": "2024-01-11", "in_spot_eleven": true, "yf_available": true, "verified_note": "first bar returned 2024-01-11"},
+        {"etf_ticker": "DEFI", "fund_name": "Hashdex Bitcoin ETF", "issuer": "Hashdex", "wrapper": "spot", "listing_date": "2024-01-11", "in_spot_eleven": true, "yf_available": false, "verified_note": "yfinance returned no data for 2024-01-11 to 2024-01-13: 'Data doesn't exist for startDate=1704949200'. The Hashdex fund was a conversion of an existing futures product and has been renamed/reticketed since. Its AUM is a rounding error in the aggregate, so the eleventh fund is documented as MISSING FROM THE PRICE PANEL rather than substituted. Aggregate flow series must state that they cover 10 of 11 funds on the price side, and all 11 on the Farside flow side."},
+        {"etf_ticker": "BITO", "fund_name": "ProShares Bitcoin Strategy ETF", "issuer": "ProShares", "wrapper": "futures", "listing_date": "2021-10-19", "in_spot_eleven": false, "yf_available": true, "verified_note": "history returned from 2021-10-20 in a 2021-10-18 to 2021-10-21 request; confirm whether 2021-10-19 is retrievable with a wider window at build time", "role": "PLACEBO. Falsification F6: a US-listed, brokerage-accessible Bitcoin ETF that did NOT change spot plumbing. A large effect at 2021-10-19 favours a pure listing/visibility channel; a null favours the spot-plumbing channel. Informative in either direction."}
+      ]
+    },
+
+    "event_reference": {
+      "description": "Event dates and times for the D4 announcement study and the falsification layer. All times ET.",
+      "rows": [
+        {"event_id": "E1", "label": "Grayscale v. SEC, DC Circuit ruling", "datetime_et": "2023-08-29T10:00:00-04:00", "type": "anticipation_onset", "time_precision": "opinion release time approximate - verify against the court docket before using a sub-daily window"},
+        {"event_id": "E2", "label": "Compromised SEC X account announces approval", "datetime_et": "2024-01-09T16:11:00-05:00", "type": "false_news_placebo", "retracted_within_min": 15, "note": "News without plumbing. Pucher, Schiereck & Bormann (2026, JAIS) document this event; lean on their construction."},
+        {"event_id": "E2p", "label": "Erroneous Cointelegraph report of BlackRock approval", "datetime_et": "2023-10-16T09:14:00-04:00", "type": "false_news_placebo", "retracted_within_min": 30, "note": "Cleaner than E2 because it is three months from the real approval and cannot be contaminated by the listing. Timestamp approximate - verify."},
+        {"event_id": "E3", "label": "SEC approval order", "datetime_et": "2024-01-10T16:00:00-05:00", "type": "treatment_news"},
+        {"event_id": "E4", "label": "Spot ETFs commence trading", "datetime_et": "2024-01-11T09:30:00-05:00", "type": "treatment_plumbing"},
+        {"event_id": "P1", "label": "Bitcoin halving", "datetime_et": "2024-04-19T20:09:00-04:00", "type": "btc_specific_confound", "note": "Block 840000. The main post-treatment BTC-specific shock the cross-coin DiD cannot difference out; handled by the pre-halving sub-window, F5, and the coin-month FE in the session DDD."},
+        {"event_id": "P2", "label": "US general election", "datetime_et": "2024-11-05T00:00:00-05:00", "type": "btc_specific_confound", "note": "Disproportionately a Bitcoin story. The pre-election sub-window is the pre-committed attributable estimate."},
+        {"event_id": "P3", "label": "Prior halving (2020)", "datetime_et": "2020-05-11T00:00:00-04:00", "type": "placebo_treatment", "note": "F5. Contaminated by the COVID aftermath; report with the limitation attached."},
+        {"event_id": "P4", "label": "Prior halving (2016)", "datetime_et": "2016-07-09T00:00:00-04:00", "type": "placebo_treatment", "note": "F5. Few usable control coins in 2016; report with the limitation attached."},
+        {"event_id": "P5", "label": "BITO futures-ETF launch", "datetime_et": "2021-10-19T09:30:00-04:00", "type": "placebo_treatment", "note": "F6."}
+      ]
+    }
+  },
+
+  "datasets": [
+    {
+      "table_id": "T01",
+      "name": "crypto_prices_daily_utc",
+      "grain": "asset_id x utc_calendar_date",
+      "source": "yfinance",
+      "retrieval": "e2er-data yfinance history --ticker <yf_ticker> --start 2020-12-01 --end 2026-09-11 --interval 1d --save-to crypto_<asset_id>_daily.csv",
+      "status": "AVAILABLE - verified for all 13 crypto assets back to 2021-01-04",
+      "expected_rows": 26800,
+      "columns": [
+        {"name": "date_utc", "type": "date", "unit": "UTC calendar date", "description": "Date stamp of the daily bar. yfinance returns these as 00:00:00+00:00, confirming the UTC-midnight boundary."},
+        {"name": "asset_id", "type": "string", "unit": "-", "description": "FK to asset_reference"},
+        {"name": "px_open", "type": "float", "unit": "USD", "description": "Open of the UTC day"},
+        {"name": "px_high", "type": "float", "unit": "USD"},
+        {"name": "px_low", "type": "float", "unit": "USD"},
+        {"name": "px_close", "type": "float", "unit": "USD", "description": "Close at 00:00 UTC of the following day. The input to r_utc."},
+        {"name": "volume_usd_24h", "type": "float", "unit": "USD", "description": "Yahoo's aggregated 24h volume. Use for descriptive statistics and the weekend test only; it is an aggregation across venues with no documented methodology and must not be used as a regression control."},
+        {"name": "source_tag", "type": "string", "unit": "-", "description": "Literal 'yfinance'; present so a later Allium or CoinMetrics pull can be unioned in and compared"}
+      ]
+    },
+    {
+      "table_id": "T02",
+      "name": "crypto_prices_hourly",
+      "grain": "asset_id x hour (UTC)",
+      "source": "yfinance (60m) - PARTIAL; external source required for full coverage",
+      "retrieval": "e2er-data yfinance history --ticker <yf_ticker> --start <>=today-730d> --end 2026-09-11 --interval 60m --save-to crypto_<asset_id>_60m.csv",
+      "status": "PARTIALLY BLOCKED - verified available from roughly 2024-09-12; verified UNAVAILABLE for 2021 ('1h data not available ... must be within the last 730 days')",
+      "why_it_matters": "This is the only input that can strike a 16:00 ET price and the only input to the session partition. Without pre-period coverage, neither the baseline equity-close clock nor the session DDD (the paper's strongest attribution test) can be run over the pre-period.",
+      "columns": [
+        {"name": "ts_utc", "type": "timestamp", "unit": "UTC, tz-aware", "description": "Bar timestamp. yfinance labels 60m bars by their LEFT edge - verify with qa_04 before deriving anything."},
+        {"name": "ts_et", "type": "timestamp", "unit": "America/New_York, tz-aware", "description": "Derived. ts_utc.tz_convert('America/New_York')."},
+        {"name": "date_et", "type": "date", "unit": "-", "description": "NYSE session date this bar is attributed to"},
+        {"name": "session_id", "type": "string", "unit": "-", "description": "asia | europe | us_cash | us_post, from conventions.timezone_alignment.session_partition"},
+        {"name": "asset_id", "type": "string", "unit": "-"},
+        {"name": "px_open", "type": "float", "unit": "USD"},
+        {"name": "px_high", "type": "float", "unit": "USD"},
+        {"name": "px_low", "type": "float", "unit": "USD"},
+        {"name": "px_close", "type": "float", "unit": "USD"},
+        {"name": "volume_usd", "type": "float", "unit": "USD"}
+      ]
+    },
+    {
+      "table_id": "T03",
+      "name": "equity_prices_daily",
+      "grain": "ticker x date_et",
+      "source": "yfinance",
+      "retrieval": "e2er-data yfinance history --ticker <t> --start 2020-12-01 --end 2026-09-11 --interval 1d --save-to eq_<t>_daily.csv",
+      "status": "AVAILABLE - verified for SPX, SPY, QQQ, IWM, ARKK, ACWX, GLD back to 2021-01-04",
+      "columns": [
+        {"name": "date_et", "type": "date", "unit": "-", "description": "NYSE session date. yfinance stamps these with an ET offset (-05:00 / -04:00); normalise to a naive date on ingest."},
+        {"name": "ticker", "type": "string", "unit": "-"},
+        {"name": "px_close_adj", "type": "float", "unit": "USD", "description": "Split- and dividend-adjusted close. The input to all equity returns."},
+        {"name": "px_close_raw", "type": "float", "unit": "USD", "description": "Unadjusted close, pulled with --raw. Required for the ETF premium/discount calculation, where the adjusted series is the wrong object."},
+        {"name": "px_open", "type": "float", "unit": "USD"},
+        {"name": "px_high", "type": "float", "unit": "USD"},
+        {"name": "px_low", "type": "float", "unit": "USD"},
+        {"name": "volume", "type": "float", "unit": "shares"},
+        {"name": "d_half_day", "type": "bool", "unit": "-", "description": "NYSE 13:00 ET close. Derived from the XNYS calendar, not from the data."}
+      ]
+    },
+    {
+      "table_id": "T04",
+      "name": "etf_market_daily",
+      "grain": "etf_ticker x date_et",
+      "source": "yfinance",
+      "status": "AVAILABLE for 10 of the 11 spot funds plus BITO; DEFI unavailable (see etf_reference)",
+      "columns": [
+        {"name": "date_et", "type": "date", "unit": "-"},
+        {"name": "etf_ticker", "type": "string", "unit": "-", "description": "FK to etf_reference"},
+        {"name": "px_close_raw", "type": "float", "unit": "USD", "description": "Unadjusted close - the correct input for premium/discount"},
+        {"name": "px_close_adj", "type": "float", "unit": "USD"},
+        {"name": "volume_shares", "type": "float", "unit": "shares"},
+        {"name": "dollar_volume_usd", "type": "float", "unit": "USD", "description": "Derived: px_close_raw * volume_shares. A GROSS TURNOVER proxy. It is NOT net flow and must never be substituted for one in the D3 dose-response; a day of heavy two-sided trading with zero net creation produces a large value here."},
+        {"name": "d_listed", "type": "bool", "unit": "-", "description": "1 from listing_date onward. Prevents the pre-listing zero-padding that would otherwise manufacture a spurious flow jump at 2024-01-11."}
+      ]
+    },
+    {
+      "table_id": "T05",
+      "name": "etf_flows_daily",
+      "grain": "etf_ticker x date_et",
+      "source": "etf_flows_external (Farside Investors primary; issuer daily disclosures for the primary-source version)",
+      "status": "BLOCKED - no configured wrapper. See blockers.blk_03.",
+      "columns": [
+        {"name": "date_et", "type": "date", "unit": "-"},
+        {"name": "etf_ticker", "type": "string", "unit": "-"},
+        {"name": "net_flow_usd_mn", "type": "float", "unit": "USD millions", "description": "Net creations minus redemptions, in dollars, at that day's NAV. Sign convention: positive = creation = money in."},
+        {"name": "gross_creation_usd_mn", "type": "float", "unit": "USD millions", "description": "Required separately: arbitrage intensity depends on gross, not net, activity (paper_plan.md §5.3 step 1)."},
+        {"name": "gross_redemption_usd_mn", "type": "float", "unit": "USD millions", "description": "Stored positive; net = creation - redemption."},
+        {"name": "shares_outstanding", "type": "float", "unit": "shares"},
+        {"name": "nav_per_share_usd", "type": "float", "unit": "USD"},
+        {"name": "aum_usd_mn", "type": "float", "unit": "USD millions", "description": "shares_outstanding * nav_per_share_usd / 1e6"},
+        {"name": "btc_holdings", "type": "float", "unit": "BTC", "description": "Coins held by the trust. The cleanest flow input, because it is invariant to the BTC price: d(btc_holdings) is a pure quantity flow."}
+      ],
+      "aggregate_series_to_build": {
+        "flow_net_all_usd_mn": "Sum of net_flow_usd_mn across all eleven funds, INCLUDING GBTC's negative values. This is the headline aggregate.",
+        "flow_net_exgbtc_usd_mn": "Same, excluding GBTC. Reported alongside, because the GBTC redemption wave in 2024H1 is a mechanical unwind of a pre-existing closed-end discount, not an allocation decision, and it dominates the aggregate.",
+        "flow_gross_all_usd_mn": "Sum of gross creations plus gross redemptions across funds.",
+        "aum_total_usd_mn": "Sum of aum_usd_mn across funds."
+      }
+    },
+    {
+      "table_id": "T06",
+      "name": "gbtc_premium_daily",
+      "grain": "date_et",
+      "source": "T04 (price, yfinance, available) + NAV inputs (external, blocked)",
+      "status": "PARTIALLY BLOCKED",
+      "columns": [
+        {"name": "date_et", "type": "date", "unit": "-"},
+        {"name": "px_gbtc_raw", "type": "float", "unit": "USD", "description": "From T04. AVAILABLE."},
+        {"name": "btc_per_share", "type": "float", "unit": "BTC per GBTC share", "description": "Grayscale's daily disclosure. BLOCKED. A modelled approximation is possible - btc_per_share_t = btc_per_share_0 * exp(-fee * dt), with the sponsor fee 2.00% p.a. before the 2024-01-11 conversion and 1.50% after - but it requires an anchor value read from Grayscale's disclosure, which is not fabricated here. If the modelled version is used it must be labelled gbtc_bps_modeled and its error bound stated."},
+        {"name": "nav_per_share_usd", "type": "float", "unit": "USD", "description": "btc_per_share * px_btc(16:00 ET). Depends on both blocked inputs above and on the equity-close BTC price."},
+        {"name": "gbtc_premium_pct", "type": "float", "unit": "percent of NAV", "description": "100 * (px_gbtc_raw / nav_per_share_usd - 1). Negative through 2022-2023 (the discount), converging to roughly zero after 2024-01-11. Its collapse is the arbitrage-restoration evidence in paper_plan.md §2 and the institutional-background section."}
+      ]
+    },
+    {
+      "table_id": "T07",
+      "name": "macro_daily",
+      "grain": "date_et",
+      "source": "fred (BLOCKED) with verified yfinance fallbacks",
+      "status": "AVAILABLE VIA FALLBACK for VIX, MOVE, DXY, 10y nominal; BLOCKED for the real yield and breakeven",
+      "columns": [
+        {"name": "date_et", "type": "date", "unit": "-"},
+        {"name": "x_vix", "type": "float", "unit": "index points (annualized vol, percent)", "fred_id": "VIXCLS", "yf_fallback": "^VIX", "status": "AVAILABLE via ^VIX, verified 2021-01-04", "role": "Equity-market risk appetite. The 2024 regime's principal common factor."},
+        {"name": "x_move", "type": "float", "unit": "index points (bp of annualized rate vol)", "fred_id": null, "yf_fallback": "^MOVE", "status": "AVAILABLE via ^MOVE, verified 2024-01-08 (117.72 close); confirm 2021 coverage at build time", "role": "Rate volatility. identification_strategy.md §2 threat 2: falling MOVE compresses the idiosyncratic rates-driven variance component and mechanically RAISES measured cross-asset correlation with no change in the covariance structure. This is the single most important macro control for the descriptive series."},
+        {"name": "x_dgs10", "type": "float", "unit": "percent per annum", "fred_id": "DGS10", "yf_fallback": "^TNX", "status": "AVAILABLE via ^TNX", "scale_warning": "^TNX has historically been quoted at 10x the yield. Assert 0 < x_dgs10 < 20 on ingest and divide by 10 if the assertion fires. Do not assume."},
+        {"name": "x_dxy", "type": "float", "unit": "index points", "fred_id": "DTWEXBGS", "yf_fallback": "DX-Y.NYB", "status": "AVAILABLE via DX-Y.NYB, verified 2024-01-08 (102.21 close)", "note": "DX-Y.NYB is the ICE DXY (six currencies, EUR-heavy); DTWEXBGS is the Fed's broad trade-weighted index. They are not interchangeable in levels. Whichever is used must be named explicitly in the paper."},
+        {"name": "x_r10y_real", "type": "float", "unit": "percent per annum", "fred_id": "DFII10", "yf_fallback": null, "status": "BLOCKED - no adequate yfinance substitute. Optional control; its absence does not affect the headline specification, which takes no controls."},
+        {"name": "x_breakeven10", "type": "float", "unit": "percent per annum", "fred_id": "T10YIE", "yf_fallback": null, "status": "BLOCKED - same."},
+        {"name": "x_gld_ret", "type": "float", "unit": "decimal log return", "source": "T03 GLD", "status": "AVAILABLE", "role": "Alternative-asset benchmark AND placebo asset (F3)."}
+      ]
+    },
+    {
+      "table_id": "T08",
+      "name": "ff_factors_daily",
+      "grain": "date_et",
+      "source": "ken_french",
+      "status": "AVAILABLE (direct download; record the retrieval date)",
+      "columns": [
+        {"name": "date_et", "type": "date", "unit": "-"},
+        {"name": "mktrf", "type": "float", "unit": "decimal per day", "description": "CRSP value-weighted market return minus RF. THE headline equity market excess return. Divide the shipped percent by 100."},
+        {"name": "smb", "type": "float", "unit": "decimal per day"},
+        {"name": "hml", "type": "float", "unit": "decimal per day"},
+        {"name": "rmw", "type": "float", "unit": "decimal per day"},
+        {"name": "cma", "type": "float", "unit": "decimal per day"},
+        {"name": "mom", "type": "float", "unit": "decimal per day", "description": "From the separate momentum file; join on date and assert no unmatched dates"},
+        {"name": "rf", "type": "float", "unit": "decimal per day (simple, not annualized)"},
+        {"name": "r_mkt", "type": "float", "unit": "decimal per day", "description": "Derived: mktrf + rf, the raw market return. Used where a total return rather than an excess return is wanted."}
+      ],
+      "join_note": "Ken French dates are US trading days with no time component and are already on the equity-close clock. Join straight onto date_et. Any date in ff_factors_daily that fails to match an XNYS session (or vice versa) is a build error, not something to coalesce away - see qa_03."
+    },
+    {
+      "table_id": "T09",
+      "name": "asset_panel_daily",
+      "grain": "asset_id x date_et",
+      "source": "derived from T01, T02, T03, T07, T08",
+      "status": "BUILDABLE on the UTC clock for the full sample; the _ec columns are populated only from roughly 2024-09-12 until blk_01 is resolved",
+      "description": "The daily analysis panel. One row per asset per NYSE session.",
+      "columns": [
+        {"name": "date_et", "type": "date"},
+        {"name": "asset_id", "type": "string"},
+        {"name": "r_ec", "type": "float", "unit": "decimal log return", "description": "BASELINE equity-close-clock return. See derived_variables.dv_01."},
+        {"name": "r_utc", "type": "float", "unit": "decimal log return", "description": "ROBUSTNESS UTC-clock return. See dv_02."},
+        {"name": "rx_ec", "type": "float", "unit": "decimal", "description": "r_ec - rf"},
+        {"name": "r_mkt", "type": "float", "unit": "decimal", "description": "Broadcast from T08"},
+        {"name": "rx_mkt", "type": "float", "unit": "decimal", "description": "mktrf"},
+        {"name": "n_cal_days_spanned", "type": "int", "unit": "days", "description": "1 on a normal session, 3 across a weekend, more across a holiday weekend. Required because return variance scales with the span; the monthly correlation is computed on the raw session returns, but the volatility variables must be reported per calendar day where they are compared across regimes."},
+        {"name": "d_weekend_adjacent", "type": "bool", "description": "1 if n_cal_days_spanned > 1. Used in the F14 weekend test and as a robustness exclusion."},
+        {"name": "d_half_day", "type": "bool"},
+        {"name": "d_winsor_flag", "type": "bool", "description": "1 if the raw return lies outside the 0.5/99.5 within-asset percentiles. The panel stores the RAW value plus this flag, never a pre-winsorized value; winsorization happens at estimation time so both versions come from one build."}
+      ]
+    },
+    {
+      "table_id": "T10",
+      "name": "coin_month_panel",
+      "grain": "asset_id x year_month",
+      "source": "derived from T09",
+      "status": "BUILDABLE",
+      "description": "THE ESTIMATION PANEL declared in identification_spec.json. Unit of analysis: coin-month. Non-overlapping calendar-month blocks, NOT rolling windows - a 60-day rolling correlation induces a mechanical MA(59) structure that makes daily pre-trend tests uninterpretable and phases any true effect in linearly over the window (identification_strategy.md §3.iii).",
+      "expected_rows": 884,
+      "columns": [
+        {"name": "asset_id", "type": "string", "description": "Cluster variable in the primary specification"},
+        {"name": "year_month", "type": "string", "unit": "YYYY-MM", "description": "Time fixed effect"},
+        {"name": "y_fisherz_corr_equity", "type": "float", "unit": "Fisher-z units (unbounded)", "description": "THE PRIMARY OUTCOME, matching identification_spec.json.primary.outcome. See dv_08."},
+        {"name": "rho_m", "type": "float", "unit": "correlation, [-1, 1]", "description": "The untransformed input to y_fisherz_corr_equity. Reported in figures and tables for interpretability."},
+        {"name": "rho2_m", "type": "float", "unit": "share of variance, [0, 1]", "description": "rho_m^2. MUST be reported next to every correlation. At rho = 0.4 only 16 percent of Bitcoin's return variance is equity-driven; the magnitude discipline in paper_plan.md §11 forbids writing 'Bitcoin became a risk asset' on the strength of a correlation alone."},
+        {"name": "beta_m", "type": "float", "unit": "dimensionless", "description": "Secondary outcome. See dv_09."},
+        {"name": "ln_sigma_ratio_m", "type": "float", "unit": "log ratio", "description": "ln(sigma_i / sigma_mkt). The F10 decomposition: beta = rho * sigma_ratio, so d(ln beta) = d(artanh-ish rho term) + d(ln sigma_ratio). Bitcoin's realized volatility fell over the sample, so a beta-based outcome mixes the object of interest with a volatility trend. This column is what separates them."},
+        {"name": "rho_3d_m", "type": "float", "unit": "correlation", "description": "Correlation of non-overlapping 3-session returns within the month. TIMING-INVARIANT. The core of falsification F9: it cannot be moved by a shift in WHEN within the day information is impounded."},
+        {"name": "beta_dimson_m", "type": "float", "unit": "dimensionless", "description": "Sum of the coefficients on the lead, contemporaneous and lagged market return. The Dimson/Scholes-Williams construction."},
+        {"name": "rho_dcc_m", "type": "float", "unit": "correlation", "description": "DCC-GARCH conditional correlation averaged within the month. Alternative outcome, descriptive - a DCC correlation that rises in January 2024 is exactly as confounded as a rolling correlation that rises in January 2024."},
+        {"name": "n_days_m", "type": "int", "unit": "sessions", "description": "Sessions with non-missing returns on both legs. Enters the Fisher-z variance 1/(n_m - 3) and the min-15 inclusion rule."},
+        {"name": "se_fisherz", "type": "float", "unit": "Fisher-z units", "description": "sqrt(1/(n_days_m - 3)). Known analytically and - this is the point - the SAME for every coin and every month given n. The generated-outcome error is therefore classical, homoskedastic and mean-zero: it inflates standard errors but does not bias tau, and the inflation is analytically removable. The sampling variance of beta_m, by contrast, scales with sigma_i/sigma_mkt and differs by an order of magnitude between BTC and a small-cap altcoin, which would make the DiD residual variance itself a function of treatment status. This is why Fisher-z is the headline and beta is not."},
+        {"name": "d_etf_listed", "type": "bool", "description": "THE TREATMENT. See dv_20."},
+        {"name": "d_post_etf", "type": "bool", "description": "Time-only post indicator, for the fallback single-series specification"},
+        {"name": "d_donut", "type": "bool", "description": "1 for 2023m8 through 2024m1. Dropped in the baseline; retained in the no-donut robustness."},
+        {"name": "d_anticipation", "type": "bool", "description": "Same window, used as its own regime in the three-regime specification where the anticipation coefficient is itself interpretable"},
+        {"name": "event_k", "type": "int", "unit": "months relative to listing", "description": "m - T_i, for the event-study specification. K = 24 leads and lags, binned at the endpoints, reference k = -1. null for never-treated coins."},
+        {"name": "cohort", "type": "string", "description": "treated_btc | eventually_treated | never_treated"},
+        {"name": "d_in_headline_sample", "type": "bool", "description": "BTC plus never-treated coins only. Eventually-treated coins are excluded so no already-treated unit ever serves as a comparison - which is why the negative-weights problem does not arise and TWFE is admissible here."},
+        {"name": "mkt_proxy", "type": "string", "description": "Which equity proxy produced this row: MKT | SPY | QQQ | IWM | ACWX. The panel is built long over proxies so F8 is a filter, not a rebuild."}
+      ]
+    },
+    {
+      "table_id": "T11",
+      "name": "coin_session_month_panel",
+      "grain": "asset_id x session_id x year_month",
+      "source": "derived from T02 (crypto hourly) + ES intraday (BLOCKED)",
+      "status": "BLOCKED - see blk_01 and blk_02",
+      "description": "The session DDD panel (identification_strategy.md §6.4). The paper's strongest attribution test and the only design that removes BTC-specific time shocks, because the coin-month fixed effect absorbs the halving and the election outright.",
+      "columns": [
+        {"name": "asset_id", "type": "string"},
+        {"name": "session_id", "type": "string", "description": "asia | europe | us_cash | us_post"},
+        {"name": "year_month", "type": "string"},
+        {"name": "y_fisherz_corr_session", "type": "float", "unit": "Fisher-z units", "description": "Fisher-z of the within-month correlation between the coin's session-s return and the ES session-s return"},
+        {"name": "rcov_session", "type": "float", "unit": "decimal squared", "description": "Realized covariance: sum over days in the month of r[i,s,d] * r[es,s,d]. The level object behind the F13 test Delta_Cov_US - Delta_Cov_Asia > 0."},
+        {"name": "rvar_session_share", "type": "float", "unit": "share, [0, 1]", "description": "Session share of the coin's daily return variance. The mechanism predicts the US-cash share rises post-2024 for BTC and not for controls."},
+        {"name": "beta_session", "type": "float", "unit": "dimensionless"},
+        {"name": "d_us_cash", "type": "bool", "description": "The DDD interaction partner: lambda is identified off d_etf_listed x d_us_cash"},
+        {"name": "d_nav_strike", "type": "bool", "description": "Companion specification only; the 15:45-16:00 ET window nested inside us_cash"},
+        {"name": "n_days_m", "type": "int"}
+      ]
+    },
+    {
+      "table_id": "T12",
+      "name": "crypto_offday_returns",
+      "grain": "asset_id x calendar_date",
+      "source": "derived from T01/T02",
+      "status": "BUILDABLE on the UTC clock",
+      "description": "Crypto returns on days the NYSE is closed. Excluded from the estimation panel; retained for the F14 weekend-margin test, which is an independent corroboration from a direction the DiD does not use: if the ETF's marginal holder now sets the price, Bitcoin's weekend share of volume and volatility should FALL post-2024 and weekend returns should become less informative for Monday pricing.",
+      "columns": [
+        {"name": "date", "type": "date"},
+        {"name": "asset_id", "type": "string"},
+        {"name": "r_offday", "type": "float", "unit": "decimal log return"},
+        {"name": "volume_usd_24h", "type": "float", "unit": "USD"},
+        {"name": "offday_type", "type": "string", "description": "saturday | sunday | us_holiday"},
+        {"name": "w_weekend_vol_share", "type": "float", "unit": "share", "description": "Weekend realized variance divided by total weekly realized variance, per asset-week"},
+        {"name": "w_weekend_volume_share", "type": "float", "unit": "share"}
+      ]
+    }
+  ],
+
+  "derived_variables": [
+    {
+      "id": "dv_01",
+      "name": "r_ec",
+      "formula": "r_ec[i,t] = ln( P_i(16:00 ET, t) ) - ln( P_i(16:00 ET, t-1) ), t-1 = previous NYSE session",
+      "unit": "decimal log return",
+      "inputs": ["crypto_prices_hourly.px_close", "equity_prices_daily.px_close_adj"],
+      "role": "BASELINE daily return for every asset. Exactly synchronous across legs by construction (see conventions.timezone_alignment.baseline_clock).",
+      "status": "constructible from 2024-09-12 only; blocked earlier"
+    },
+    {
+      "id": "dv_02",
+      "name": "r_utc",
+      "formula": "r_utc[i,t] = ln( P_i(00:00 UTC, t+1) ) - ln( P_i(00:00 UTC, t) ), i.e. the log change of the yfinance daily close dated t",
+      "unit": "decimal log return",
+      "role": "ROBUSTNESS clock, and the de facto baseline until blk_01 clears. Two-sided non-synchronicity of +3/4h and -20/21h against the equity window.",
+      "status": "constructible for the full sample"
+    },
+    {
+      "id": "dv_03",
+      "name": "rx_ec / rx_utc",
+      "formula": "rx = r - rf, rf from ff_factors_daily (converted to decimal)",
+      "unit": "decimal",
+      "note": "On multi-day spans (weekends) rf is summed over the calendar days in the span, not applied once."
+    },
+    {
+      "id": "dv_04",
+      "name": "rho_60d",
+      "formula": "Pearson correlation of r[i] and r_mkt over the trailing 60 NYSE sessions, BACKWARD-LOOKING ONLY",
+      "unit": "correlation",
+      "role": "Figures F1 and F3 and one robustness row. NEVER the headline.",
+      "warning": "Adjacent daily values share 59 of 60 observations, inducing a mechanical MA(59). Two consequences that are routinely mishandled: a true effect phases in LINEARLY over 60 days rather than jumping, so an event-study plot on this series shows a ramp regardless of the true dynamics; and daily pre-trend tests are near-uninterpretable because pre-period values within 60 days of the event are contaminated by post-period returns. A centered window would be worse still - it contaminates plus and minus 30 days around the event."
+    },
+    {
+      "id": "dv_05",
+      "name": "beta_60d",
+      "formula": "OLS slope of rx[i] on rx_mkt over the trailing 60 NYSE sessions",
+      "unit": "dimensionless",
+      "role": "Figure only; same MA(59) warning as dv_04"
+    },
+    {
+      "id": "dv_06",
+      "name": "beta_tvp_kalman",
+      "formula": "State-space model, rx[i,t] = alpha_t + beta_t * rx_mkt_t + e_t, with (alpha_t, beta_t) a random walk; Kalman-smoothed",
+      "unit": "dimensionless",
+      "role": "The cleanest device for LOCATING a break because it imposes no window. Descriptive, never identification."
+    },
+    {
+      "id": "dv_07",
+      "name": "rho_m",
+      "formula": "Pearson correlation of r[i,t] and r_mkt[t] over the n_m NYSE sessions in calendar month m. Non-overlapping blocks.",
+      "unit": "correlation, [-1, 1]"
+    },
+    {
+      "id": "dv_08",
+      "name": "y_fisherz_corr_equity",
+      "formula": "artanh(rho_m) = 0.5 * ln( (1 + rho_m) / (1 - rho_m) )",
+      "unit": "Fisher-z units, unbounded",
+      "role": "THE PRIMARY OUTCOME. Unbounded, approximately normal, and with variance 1/(n_m - 3) that is known and identical across coins - which is exactly what makes the generated-outcome problem tractable and what the randomization and bootstrap inference rely on.",
+      "guard": "Undefined at |rho| = 1. Assert |rho_m| < 0.999 and flag any cell that trips it rather than clipping silently."
+    },
+    {
+      "id": "dv_09",
+      "name": "beta_m",
+      "formula": "OLS slope of rx[i,t] on rx_mkt[t] within month m",
+      "unit": "dimensionless",
+      "role": "Secondary outcome, reported beside the primary. beta = rho * sigma_i / sigma_mkt, so it confounds the co-movement change with the relative-volatility trend."
+    },
+    {
+      "id": "dv_10",
+      "name": "ln_sigma_ratio_m",
+      "formula": "ln( sd(r[i,t] over m) / sd(r_mkt[t] over m) )",
+      "unit": "log ratio",
+      "role": "The second leg of the F10 decomposition. Bitcoin's daily volatility runs roughly 3-5x the market's, so beta is roughly 3-5 rho and a small correlation change produces a large beta change. Reporting the two legs separately is what stops the paper from overstating."
+    },
+    {
+      "id": "dv_11",
+      "name": "rho2_m",
+      "formula": "rho_m ** 2",
+      "unit": "share of variance",
+      "role": "Magnitude discipline. Printed adjacent to every correlation in every table, per paper_plan.md §11."
+    },
+    {
+      "id": "dv_12",
+      "name": "rho_3d_m",
+      "formula": "Correlation of non-overlapping 3-session cumulative log returns within a rolling quarter (a month yields only ~7 three-day blocks, so this variable is computed on a 63-session block and mapped to the month of its endpoint)",
+      "unit": "correlation",
+      "role": "The timing-invariance test (F9). Aggregating to 3-session returns absorbs any shift in when within the day information is impounded, so if the effect survives here it is not pure resynchronization. If it does NOT survive, the paper reports that the ETF re-timed price discovery without changing 24-hour covariance - which is itself a real and reportable result, not a failure."
+    },
+    {
+      "id": "dv_13",
+      "name": "beta_dimson_m",
+      "formula": "Sum of b_{-1} + b_0 + b_{+1} from rx[i,t] = a + b_{-1} rx_mkt[t+1] + b_0 rx_mkt[t] + b_{+1} rx_mkt[t-1] + e, estimated on a 63-session block",
+      "unit": "dimensionless",
+      "role": "Dimson/Scholes-Williams. Companion to dv_12."
+    },
+    {
+      "id": "dv_14",
+      "name": "rho_dcc_m",
+      "formula": "Engle (2002) DCC-GARCH(1,1) on the bivariate (r[i], r_mkt) system, conditional correlation averaged within month; ADCC asymmetric variant reported alongside",
+      "unit": "correlation",
+      "role": "Alternative outcome construction, descriptive"
+    },
+    {
+      "id": "dv_15",
+      "name": "rcov_session",
+      "formula": "rcov[i,s,m] = sum over days d in m of ( r[i,s,d] * r[ES,s,d] ), where r[.,s,d] is the log return from the session-s open to the session-s close on day d",
+      "unit": "decimal squared",
+      "role": "The session DDD level object. The F13 required finding is Delta_rcov_US - Delta_rcov_Asia > 0: a macro regime shift raises global risk-asset correlation in ALL sessions, whereas only a mechanism operating through a US-listed vehicle relocates covariance into US exchange hours.",
+      "status": "blocked pending blk_01 and blk_02"
+    },
+    {
+      "id": "dv_16",
+      "name": "rvar_session_share",
+      "formula": "sum_d r[i,s,d]^2 / sum_d sum_s' r[i,s',d]^2, within month",
+      "unit": "share",
+      "status": "blocked pending blk_01"
+    },
+    {
+      "id": "dv_17",
+      "name": "w_weekend_vol_share",
+      "formula": "Weekend realized variance / total weekly realized variance, per asset-week, using r_utc daily returns",
+      "unit": "share",
+      "role": "F14. Constructible from daily UTC data alone - it does NOT depend on hourly coverage, which makes it the one piece of D2's logic that survives blk_01."
+    },
+    {
+      "id": "dv_18",
+      "name": "r_altidx_ew",
+      "formula": "r_ALTIDX_EW[t] = (1/N) * sum over constituents i of r[i,t], daily-rebalanced equal weight",
+      "unit": "decimal log return",
+      "constituents": ["ETH", "SOL", "XRP", "LTC", "BNB", "ADA", "DOGE", "BCH", "LINK", "AVAX", "DOT", "XLM"],
+      "constituent_selection_rule": "The list is FROZEN as of 2020-12-31, before the sample opens, and never rebalanced. This is a deliberate choice against a 'top-N by market cap' rule: selecting today's top N and running it backward would load the index with survivors and with coins that rose during the sample, which is precisely the look-ahead bias that manufactures spurious correlation dynamics. The frozen list is stated in the paper and the index is reported with and without ETH (which is eventually treated).",
+      "cap_weighted_variant": "OPTIONAL and currently BLOCKED - historical market caps require CoinGecko or CoinMetrics, neither of which is configured. Do not approximate caps from price alone; supply changes over the sample.",
+      "role_restriction": "Descriptive benchmark and synthetic-control donor. NOT a DiD control unit - it is a composite of units already in the panel and would double-count them."
+    },
+    {
+      "id": "dv_19",
+      "name": "flow_alloc / flow_basis",
+      "formula": "Project daily aggregate net flow on the annualized CME futures basis, the change in CME open interest, and COT positioning: Flow_t = g0 + g1*Basis_t + g2*dOI_t + e_t. Fitted value = basis-trade flow; residual = allocation flow.",
+      "unit": "USD millions per day",
+      "role": "The H3 decomposition. H1 predicts the conditional beta loads on allocation flow (delta_A > 0) and not on basis flow (delta_B ~ 0). Validated against 13F filings of spot-ETF holders classified into hedge funds (basis traders), RIAs and wealth platforms (allocators), and other.",
+      "status": "BLOCKED - requires T05 (flows, blocked) and CME futures basis/OI/COT (no configured source)"
+    },
+    {
+      "id": "dv_20",
+      "name": "d_etf_listed",
+      "formula": "d_etf_listed[i,m] = 1{ i == BTC } * 1{ m >= 2024m2 } in the headline sample; 1{ m >= T_i } with cohort-specific T_i in the staggered extension",
+      "unit": "binary",
+      "role": "THE TREATMENT INDICATOR, matching identification_spec.json.primary.treatment ('etf_listed').",
+      "variants": {
+        "d_post_listing_raw": "1{ m >= 2024m1 }, no donut - the robustness variant",
+        "d_post_etf": "1{ m >= 2024m2 } with no coin interaction - time-only, for the fallback single-series specification, which is descriptive and must be labelled as such in every table that reports it",
+        "d_anticipation": "1{ 2023m8 <= m <= 2024m1 } - the middle regime in the three-regime specification"
+      },
+      "date_integrity_warning": "SOL and XRP listing dates are null in asset_reference pending primary-source verification. The staggered extension MUST NOT be run until they are filled. A guessed cohort date does not fail loudly; it quietly biases the pooled ATT."
+    },
+    {
+      "id": "dv_21",
+      "name": "event_k",
+      "formula": "event_k[i,m] = (months between m and T_i), binned at -24 and +24, reference k = -1",
+      "unit": "months",
+      "role": "Event-study specification (identification_strategy.md §6.3). Joint F-test on k = -24..-2 is the pre-trend test; the Rambachan-Roth breakdown value Mbar is what the text should quote, not the pre-trend p-value - failing to reject a pre-trend with 31 monthly pre-observations is weak evidence."
+    }
+  ],
+
+  "qa_checks": [
+    {"id": "qa_01", "check": "Every date_et in asset_panel_daily is an XNYS trading session, and every XNYS session in the window appears. Symmetric difference must be empty.", "severity": "build_error"},
+    {"id": "qa_02", "check": "For every crypto asset, r_ec and r_utc have correlation above 0.95 over the overlapping window (from 2024-09-12). A lower value means the hourly bar selection is mislabelled, not that the clocks genuinely disagree.", "severity": "build_error"},
+    {"id": "qa_03", "check": "ff_factors_daily joins onto the session calendar with zero unmatched dates on either side over the common window. Do not left-join and coalesce - an unmatched date is a calendar bug.", "severity": "build_error"},
+    {"id": "qa_04", "check": "Hourly bar-edge convention. Pick a session with a large, precisely timed intraday move and confirm that the bar selected as '16:00 ET close' contains the pre-16:00 price, not the post-16:00 one. Assert before any _ec column is written.", "severity": "build_error", "why": "A one-bar labelling error shifts the entire baseline clock by an hour and would silently change the headline estimate."},
+    {"id": "qa_05", "check": "x_dgs10 lies in (0, 20). If not, the ^TNX 10x scale convention applies - divide and re-assert.", "severity": "build_error"},
+    {"id": "qa_06", "check": "|rho_m| < 0.999 for every cell, so artanh is finite. Flag, do not clip.", "severity": "build_error"},
+    {"id": "qa_07", "check": "n_days_m >= 15 for every retained coin-month; the count of dropped cells is reported in the data appendix.", "severity": "warning"},
+    {"id": "qa_08", "check": "d_listed in etf_market_daily is 0 for every date before listing_date, and no zero-padded flow or volume rows exist pre-listing.", "severity": "build_error", "why": "Zero-padding pre-listing manufactures a mechanical jump at 2024-01-11 in any aggregate."},
+    {"id": "qa_09", "check": "DST transition days. On the two changeover Sundays each year, confirm the ET session partition still sums to 24 hours and that no bar is double-counted or dropped.", "severity": "build_error"},
+    {"id": "qa_10", "check": "Every coin-month cell of the headline sample has cohort in {treated_btc, never_treated}. No eventually-treated unit may appear.", "severity": "build_error"},
+    {"id": "qa_11", "check": "Cross-source price sanity: BTC close from yfinance versus at least one independent reference on ten randomly chosen days, agreeing within 0.5 percent.", "severity": "warning", "note": "This is the residue of the cross-venue validation paper_plan.md §6 asked for. With Allium unconfigured it cannot be done systematically."},
+    {"id": "qa_12", "check": "No forward-fill anywhere in the price tables. Assert that no two consecutive rows of any crypto price series are bit-identical.", "severity": "warning"}
+  ],
+
+  "availability_audit": [
+    {"id": "aud_01", "target": "yfinance wrapper", "command": "e2er-data yfinance ticker-info --ticker IBIT", "run_on": "2026-09-11", "result": "SUCCESS - returned shortName 'iShares Bitcoin Trust ETF', exchange NGM, quoteType ETF, 97 raw fields", "implication": "yfinance path is live"},
+    {"id": "aud_02", "target": "FRED wrapper", "command": "e2er-data fred series-info --series-id DGS10", "run_on": "2026-09-11", "result": "ERROR - 'FRED_API_KEY not configured. Set it in .env.'", "implication": "All FRED macro series unavailable. Verified yfinance fallbacks substitute for VIX, MOVE, DXY and the 10y nominal; the 10y TIPS real yield and the 10y breakeven have no substitute and are dropped from the control set."},
+    {"id": "aud_03", "target": "hourly crypto history", "command": "e2er-data yfinance history --ticker BTC-USD --start 2021-03-01 --end 2021-03-05 --interval 60m", "run_on": "2026-09-11", "result": "EMPTY - '$BTC-USD: 1h data not available for startTime=1614556800 and endTime=1614902400. The requested range must be within the last 730 days.'", "implication": "THE BINDING CONSTRAINT. The 16:00 ET baseline clock and the entire session decomposition are unavailable before roughly 2024-09-12."},
+    {"id": "aud_04", "target": "hourly crypto history, recent window", "command": "e2er-data yfinance history --ticker BTC-USD --start 2026-08-20 --end 2026-08-23 --interval 60m", "run_on": "2026-09-11", "result": "SUCCESS - hourly bars returned, stamped 2026-08-20T00:00:00+00:00, 01:00:00+00:00, ... confirming UTC stamping and left-edge labelling", "implication": "Hourly is available on a 730-day trailing basis, so the post-period session analysis is partially feasible; the pre-period comparison is not."},
+    {"id": "aud_05", "target": "daily crypto history", "command": "e2er-data yfinance history --ticker BTC-USD --start 2024-01-08 --end 2024-01-15 --interval 1d", "run_on": "2026-09-11", "result": "SUCCESS - bars stamped 00:00:00+00:00, confirming the UTC-midnight day boundary for crypto daily bars", "implication": "Establishes that the yfinance daily crypto bar IS the 00:00 UTC clock, not the equity-close clock. This is the fact that forces the r_ec / r_utc distinction."},
+    {"id": "aud_06", "target": "Allium wrapper", "command": "e2er-data allium list-tables", "run_on": "2026-09-11", "result": "ERROR - 'Allium not configured. Set ALLIUM_API_KEY in .env.'", "implication": "No on-chain or CEX price data. The work order assigned Allium the crypto price leg; that leg now runs on yfinance alone."},
+    {"id": "aud_07", "target": "equity and macro tickers", "command": "e2er-data yfinance history --ticker {^VIX|^GSPC|IWM|ARKK|ACWX} --start 2021-01-04 --end 2021-01-07 --interval 1d", "run_on": "2026-09-11", "result": "SUCCESS for all five; ^VIX close 26.97 on 2021-01-04, ^GSPC 3700.65, IWM 181.21 (adjusted), ARKK 124.15, ACWX 46.39", "implication": "Full equity and volatility coverage back to the sample start"},
+    {"id": "aud_08", "target": "MOVE and DXY", "command": "e2er-data yfinance history --ticker {^MOVE|DX-Y.NYB} --start 2024-01-08 --end 2024-01-12 --interval 1d", "run_on": "2026-09-11", "result": "SUCCESS - ^MOVE close 117.72 on 2024-01-08; DX-Y.NYB close 102.21", "implication": "Both FRED-unavailable macro controls have working yfinance sources"},
+    {"id": "aud_09", "target": "spot ETF tickers", "command": "e2er-data yfinance history --ticker {BTCO|BRRR|HODL|EZBC|BTCW|DEFI} --start 2024-01-11 --end 2024-01-13 --interval 1d", "run_on": "2026-09-11", "result": "SUCCESS for BTCO, BRRR, HODL, EZBC, BTCW - all with a first bar on 2024-01-11. FAILURE for DEFI - 'Data doesn't exist for startDate=1704949200'.", "implication": "10 of the 11 spot funds are retrievable on the price side. DEFI (Hashdex) is documented as missing rather than substituted."},
+    {"id": "aud_10", "target": "control coin history", "command": "e2er-data yfinance history --ticker {SOL-USD|BNB-USD|AVAX-USD|XLM-USD} --start 2021-01-04 --end 2021-01-07 --interval 1d", "run_on": "2026-09-11", "result": "SUCCESS for all four - SOL 2.16 open, BNB 41.20, AVAX 3.47, XLM 0.137 on 2021-01-04", "implication": "The full 13-coin panel is retrievable from the sample start. The control group is not constrained by data."},
+    {"id": "aud_11", "target": "BITO placebo", "command": "e2er-data yfinance history --ticker BITO --start 2021-10-18 --end 2021-10-21 --interval 1d", "run_on": "2026-09-11", "result": "SUCCESS - first bar returned 2021-10-20, not 2021-10-19", "implication": "BITO history is present. Whether the 2021-10-19 launch bar is retrievable with a wider request window must be checked at build time; F6 needs day 0."}
+  ],
+
+  "data_plan": {
+    "one_paragraph_summary": "The panel is a coin-month dataset of 13 crypto assets over 2021m1-2026m8 (68 months, roughly 884 cells), whose outcome is the Fisher-z of the within-month correlation between each coin's daily return and the US equity market return, with Bitcoin treated from 2024m2 and never-ETF'd coins as controls. Around it sit a daily asset panel, a session panel for the triple-difference, an ETF market and flow panel, and the macro and factor series. Everything on the equity side is verified available through the yfinance wrapper and the Ken French library. Two things are not: hourly crypto history before roughly 2024-09-12, which the 16:00 ET baseline clock and the session decomposition both require; and ETF net flows, which no configured wrapper serves. Those two gaps are not cosmetic - they bind on the paper's baseline clock and on two of its four designs - and they are stated as explicit asks below rather than papered over with proxies.",
+
+    "build_order": [
+      {"step": "build_01", "what": "Pull daily prices for 13 crypto assets, 9 equity/commodity tickers, 11 ETF tickers and 3 macro indices via e2er-data yfinance history, every call with --save-to. Window 2020-12-01 to 2026-09-11 (the extra month gives a clean first return in January 2021).", "produces": ["T01", "T03", "T04"], "status": "ready"},
+      {"step": "build_02", "what": "Download the Ken French 5-factor daily and momentum daily files; divide by 100; join on date.", "produces": ["T08"], "status": "ready"},
+      {"step": "build_03", "what": "Assemble macro_daily from the yfinance fallback tickers; run the ^TNX scale assertion.", "produces": ["T07"], "status": "ready"},
+      {"step": "build_04", "what": "Build the NYSE session spine, compute r_utc for every asset, join the factors, apply qa_01 and qa_03.", "produces": ["T09 (r_utc columns)"], "status": "ready"},
+      {"step": "build_05", "what": "Aggregate to non-overlapping calendar months: rho_m, Fisher-z, beta_m, ln_sigma_ratio_m, rho2_m, n_days_m, se_fisherz. Attach treatment, cohort, donut and event_k. Build the panel long over market proxies so F8 is a filter.", "produces": ["T10"], "status": "ready - this is the estimation panel and it can be delivered on the UTC clock today"},
+      {"step": "build_06", "what": "Weekend/holiday panel and the weekend variance and volume shares.", "produces": ["T12"], "status": "ready"},
+      {"step": "build_07", "what": "Pull 60m crypto and SPY bars for the trailing 730 days; run qa_04; build the post-period-only session panel.", "produces": ["T02 (partial)", "T11 (partial)"], "status": "partial - post-period only, which is not enough for a DDD"},
+      {"step": "build_08", "what": "Backfill hourly crypto to 2021-01-01 from an external source; rebuild r_ec and the full session panel.", "produces": ["T02", "T11", "T09 (r_ec columns)"], "status": "blocked - blk_01"},
+      {"step": "build_09", "what": "Ingest ETF daily flows and GBTC NAV inputs; build the aggregate flow series and the premium series.", "produces": ["T05", "T06"], "status": "blocked - blk_03"}
+    ],
+
+    "cleaning_decisions_to_document_in_the_paper": [
+      "Venue: single-source (Yahoo aggregated) crypto prices, not a cross-venue composite. The cross-venue validation the plan called for is reduced to the spot check in qa_11 because Allium is unconfigured. State this rather than implying a validation that was not performed.",
+      "Denomination: USD pairs throughout. The USD-versus-USDT question is not testable with this source; note it as a limitation.",
+      "Exchange outages and gaps: logged, never patched. A gap voids the affected cell.",
+      "Winsorization: none in the headline, 0.5/99.5 as robustness, both from a single build via d_winsor_flag.",
+      "US market holidays: crypto trades, equities do not. Excluded from the daily estimation panel, retained in T12 for F14.",
+      "Half-days: the equity-close clock strikes at 13:00 ET on NYSE half-days for both legs; flagged and available as a robustness exclusion.",
+      "Pre-listing ETF rows: absent, not zero. Zero-padding would manufacture a jump at 2024-01-11.",
+      "Index constituents: frozen as of 2020-12-31, never rebalanced, to avoid look-ahead in the altcoin index."
+    ],
+
+    "blockers": [
+      {
+        "id": "blk_01",
+        "severity": "HIGH - affects the declared baseline clock and the paper's strongest design",
+        "what": "Hourly crypto (and intraday equity) history before roughly 2024-09-12 is unavailable. yfinance caps 60m data at the trailing 730 days; Allium is unconfigured.",
+        "blocks": ["the 16:00 ET equity-close baseline return (dv_01)", "the entire session decomposition D2 and the session DDD (T11, dv_15, dv_16, F13)"],
+        "what_still_works": "The full coin-month estimation panel on the UTC clock (T10), the event studies, the break tests, the synthetic control, and the weekend margin test F14 - which recovers part of D2's logic from daily data alone.",
+        "resolution_options": [
+          "Set ALLIUM_API_KEY. Allium serves CEX trade data and would cover the crypto leg back to 2021, though not the CME equity leg.",
+          "CryptoCompare or Binance public klines REST - free, hourly OHLCV back to 2017, no key needed for Binance klines. Cheapest fix for the crypto leg.",
+          "CoinMetrics community reference rate at hourly frequency - the source paper_plan.md §6 names first, and the one with the best provenance story for a published paper.",
+          "For the equity leg: CME ES intraday via a data vendor, or Databento / Polygon.io. No free path."
+        ],
+        "interim_position": "Report the headline on the UTC clock, state plainly that it is the robustness clock elevated to baseline by data availability, and hold the session DDD for the revision. Do NOT present a post-period-only session panel as a difference-in-differences - without a pre-period there is nothing to difference."
+      },
+      {
+        "id": "blk_02",
+        "severity": "HIGH - compounds blk_01",
+        "what": "No configured source for CME E-mini S&P (ES) intraday prices.",
+        "blocks": ["the equity leg of every session-level covariance"],
+        "why_spy_is_not_a_substitute": "SPY trades 09:30-16:00 ET (plus thin extended hours). It cannot price the Asian or European sessions, which is exactly where the DDD's identifying contrast lives. Substituting SPY would make the US-cash session the only one with a defined covariance and would turn the triple-difference into a tautology."
+      },
+      {
+        "id": "blk_03",
+        "severity": "MEDIUM - blocks one of four designs",
+        "what": "ETF daily net flows, shares outstanding, NAV and BTC holdings are unavailable from any configured wrapper. yfinance serves prices and volume only.",
+        "blocks": ["D3 flow dose-response (paper_plan.md §5.3)", "the basis/allocation decomposition dv_19", "the GBTC premium/discount series T06", "aggregate AUM"],
+        "what_must_not_be_done": "dollar_volume_usd (price x volume) is a gross turnover proxy and is NOT net flow. A day of heavy two-sided trading with zero net creation produces a large value. Using it in the dose-response would answer a different question while appearing to answer this one.",
+        "resolution_options": [
+          "Farside Investors publishes the daily fund-by-fund flow table free; it is the de facto standard series in this literature.",
+          "Issuer daily disclosure pages (BlackRock, Fidelity, Bitwise, Grayscale) give shares outstanding, NAV and coins held - the primary-source version, and the one to prefer for a published paper.",
+          "Bloomberg, if terminal access exists, to cross-check both."
+        ],
+        "additional_gap": "The CME futures basis, open interest and COT positioning that dv_19 projects flows onto also have no configured source. CME publishes COT and settlement data publicly; this is a scripting task, not an access problem."
+      },
+      {
+        "id": "blk_04",
+        "severity": "LOW",
+        "what": "FRED_API_KEY unset.",
+        "blocks": ["the 10y TIPS real yield and the 10y breakeven"],
+        "mitigated": "VIX, MOVE, DXY and the 10y nominal all have verified yfinance substitutes. The headline specification takes no controls, so this does not touch the main estimate - it costs two rows in the descriptive table. A free key takes about thirty seconds to obtain."
+      },
+      {
+        "id": "blk_05",
+        "severity": "MEDIUM - silent failure risk",
+        "what": "SOL and XRP US spot ETF listing dates are unverified and are stored as null.",
+        "blocks": ["the staggered multi-cohort extension (Callaway-Sant'Anna, Sun-Abraham, Borusyak-Jaravel-Spiess)"],
+        "why_it_is_left_null": "A guessed cohort date does not fail loudly. It quietly mis-assigns treatment timing and biases the pooled ATT, and no diagnostic in the pipeline would catch it. The dates must come from each fund's Form 8-A and the exchange listing notice.",
+        "does_not_block": "The headline DiD, which uses BTC plus never-treated coins only and never touches these dates."
+      }
+    ],
+
+    "known_measurement_risks_carried_into_estimation": [
+      "Resynchronization. If the ETF relocated price discovery into US hours, an equity-close-clock correlation rises mechanically. dv_12 (rho_3d_m) and dv_13 (beta_dimson_m) are the invariance checks, and the pre-committed reading if the effect vanishes under them is that the ETF re-timed price discovery without changing 24-hour covariance - a real result, reported as such.",
+      "Beta versus correlation. beta = rho * sigma_ratio and Bitcoin's volatility fell over the sample, so a beta outcome mixes the object of interest with a volatility trend. The panel carries both legs separately (dv_08, dv_10) so the decomposition is a filter, not a rebuild.",
+      "Generated outcome. The LHS is estimated. Fisher-z makes its variance known and coin-invariant, which keeps the error classical; se_fisherz is stored per cell so the two-step correction is available.",
+      "Rolling-window overlap. The 60-day series (dv_04, dv_05) are figure-only. The estimation panel is non-overlapping monthly blocks. This keeps the effective sample honest at roughly 68 months x 13 coins rather than 15,000 quasi-independent days.",
+      "One treated unit. Not a data issue, but it determines what the panel must support: the placebo grid needs every coin x every candidate month, so T10 is built over the full asset set and full window with no pre-filtering on treatment status."
+    ],
+
+    "handoff_to_econometrics": {
+      "estimation_panel": "T10 coin_month_panel",
+      "outcome_column": "y_fisherz_corr_equity",
+      "treatment_column": "d_etf_listed",
+      "fixed_effects": ["asset_id", "year_month"],
+      "cluster_column": "asset_id",
+      "sample_filter": "d_in_headline_sample == True AND d_donut == False",
+      "weights": "none in the headline; 1/se_fisherz^2 as a robustness row (it is a legitimate GLS weight here precisely because se_fisherz is known)",
+      "matches_identification_spec": true,
+      "caveat_to_carry_forward": "Until blk_01 is resolved, y_fisherz_corr_equity is computed on the 00:00 UTC clock, not the 16:00 ET clock the design declared as baseline. Every table must say which clock produced it."
+    }
+  },
+
+  "allium_dictionary_compat": {
+    "note": "Structure retained so the e2er-data allium guardrail can validate field lists against this file if ALLIUM_API_KEY is later configured. No Allium query has been run - the key is unset as of 2026-09-11.",
+    "time_filter": {"column": "block_timestamp", "min": "2021-01-01", "max": "2026-09-11"},
+    "tables": {
+      "prices.dex_trades": {"fields": ["block_timestamp", "token_address", "price_usd", "amount_usd", "chain"]},
+      "prices.hourly": {"fields": ["hour", "token_address", "symbol", "price_usd"]},
+      "cex.trades": {"fields": ["block_timestamp", "exchange", "symbol", "price", "size", "side"]}
+    },
+    "intended_use": "Hourly USD reference prices for the 13 crypto assets over 2021-01-01 to 2026-09-11, to strike the 16:00 ET price and populate the session partition - i.e. the fix for blk_01 on the crypto leg."
+  }
+}

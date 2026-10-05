@@ -1,0 +1,22 @@
+\begin{table}[t]
+\centering
+\begin{threeparttable}
+\caption{Returns-level and conditional-correlation estimates of the change in Bitcoin's equity loading}
+\label{tab:complementary}
+\begin{tabular}{lccc}
+\toprule
+ & (1) BTC returns, interacted & (2) Returns triple difference & (3) DCC--GARCH(1,1) \\
+\midrule
+Change in the equity loading & -0.0010 & -0.0798 & 0.1203* \\
+ & (0.0014) & (0.1619) & (0.0674) \\
+Pre-treatment days & 647 & 6,470 & 774 \\
+Post-treatment days & 481 & 4,810 & 481 \\
+$N$ & 1,128 & 11,280 & 1,255 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}[flushleft]
+\footnotesize
+\item Each column reports its own estimate of the post-listing change in Bitcoin's equity loading. Column (1) estimates $r_{\mathrm{BTC},t} = \alpha + \beta r_{\mathrm{SPY},t} + \delta (r_{\mathrm{SPY},t} \times \mathrm{Post}_t) + \gamma \mathrm{Post}_t + \epsilon_t$ on daily returns with Newey--West standard errors, so the reported coefficient is $\hat\delta$; the same model is fitted to every control coin and the cross-sectional distribution of $\hat\delta$ over those coins is the randomization distribution, which returns $p = 0.30$ and is discussed in the text. Column (2) is the pooled triple difference with asset and date fixed effects, clustered on date, so the reported coefficient is $\hat\delta^{\mathrm{DDD}}$; it uses no generated regressor, which means the Fisher-$z$ transform cannot drive the result. Column (3) is a two-stage quasi-maximum-likelihood DCC--GARCH(1,1) in which a post-listing dummy shifts the off-diagonal long-run correlation target, so the reported coefficient is $\hat\phi$; the same model is fitted to all nine control-coin pairs, every one of which returns a positive shift, and that distribution supplies a randomization $p$ of 0.20. Second-stage DCC standard errors ignore first-stage GARCH estimation error, so the control-pair distribution rather than the printed standard error is the inference channel. Column (1) is not differenced against a control group and is reported to show what a design without one would have concluded; column (2) is its differenced counterpart.
+\end{tablenotes}
+\end{threeparttable}
+\end{table}

@@ -1124,7 +1124,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--units",
         default=None,
-        help="Transformation: lin (raw, default), chg (level change), ch1 (yoy change), pch (% change), log.",
+        help="Transformation: lin (raw, default), chg (level change), ch1 (yoy change), pch (%% change), log.",
     )
     p.add_argument(
         "--limit",

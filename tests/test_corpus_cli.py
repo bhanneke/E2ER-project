@@ -484,7 +484,7 @@ def _patch_pipeline(monkeypatch, *, text: FullText | None = None, review=None, e
 
     monkeypatch.setattr("src.modules.literature.fulltext.fetch_full_text", _text)
     monkeypatch.setattr("src.modules.literature.extract.extract_review", _extract)
-    monkeypatch.setattr("src.modules.llm.registry.get_backend", lambda s, name=None: object())
+    monkeypatch.setattr("src.modules.llm.registry.get_backend", lambda s, name=None, model=None: object())
 
 
 async def test_the_extracting_model_is_recorded(db, monkeypatch):
@@ -540,7 +540,7 @@ async def test_a_known_paper_is_skipped_before_any_model_is_called(db, monkeypat
 
     monkeypatch.setattr("src.modules.literature.extract.extract_review", _never_extract)
     monkeypatch.setattr("src.modules.literature.fulltext.fetch_full_text", _never_fetch)
-    monkeypatch.setattr("src.modules.llm.registry.get_backend", lambda s, name=None: object())
+    monkeypatch.setattr("src.modules.llm.registry.get_backend", lambda s, name=None, model=None: object())
 
     report = await _ingest(db, [PaperMetadata(title="P", doi="10.1/a")], model="m", skip_known=True, verbose=False)
 

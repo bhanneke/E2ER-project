@@ -167,7 +167,8 @@ class Settings(BaseSettings):
     # A local checkout of the RISE catalogue (github.com/bhanneke/RISE), which
     # indexes skill packs published by other research projects. `e2er skills`
     # reads it to install packs from their own sources rather than vendoring
-    # them — most of the catalogue is not E2ER's to redistribute.
+    # them — most of the catalogue is not E2ER's to redistribute. Unset: e2er
+    # downloads the pack list from GitHub into ~/.e2er/cache/rise.
     rise_path: str | None = None
 
     # BYOD literature folder: a directory of the researcher's own papers,
@@ -301,20 +302,27 @@ class Settings(BaseSettings):
     # e.g. CLAUDE_CODE_MODEL=claude-sonnet-4-6 (aliases like "sonnet" work).
     claude_code_model: str = ""
 
-    # ── Codex CLI backend (free under ChatGPT Plus/Pro plan) ──────────────────
+    # ── Codex CLI backend (runs on a ChatGPT plan) ────────────────────────────
     # Set LLM_BACKEND=codex to delegate to the `codex exec` subprocess.
-    # Requires Codex installed (`npm install -g @openai/codex`) + `codex login`.
-    # Alpha: interface is stable but live validation pending.
+    # Requires the Codex CLI (`npm install -g @openai/codex`, or the copy inside
+    # the ChatGPT desktop app, found automatically) + `codex login`.
+    # Validated live on codex-cli 0.155 (2026-10).
     codex_path: str = "codex"
     codex_timeout: int = 1800
-    codex_model: str = ""  # Empty → CLI's default
-    codex_reasoning_effort: str = ""  # low | medium | high; empty → CLI default
+    # Empty → the first model in the CLI's own list ($CODEX_HOME/models_cache.json),
+    # passed explicitly so the run records which model it was.
+    codex_model: str = ""
+    # low | medium | high | xhigh (some models also max); empty → the model's default.
+    codex_reasoning_effort: str = ""
+    # read-only | workspace-write | danger-full-access. workspace-write is the
+    # only one under which specialists can write files and stay confined.
+    codex_sandbox: str = "workspace-write"
     codex_cwd: str = ""
 
     # ── Gemini CLI backend (free under Google AI Pro/Ultra plan) ──────────────
     # Set LLM_BACKEND=gemini to delegate to the `gemini` subprocess. Requires
-    # Gemini CLI installed (`npm install -g @google/gemini-cli`) + `gemini auth`.
-    # Alpha: interface is stable but live validation pending.
+    # the Gemini CLI (`npm install -g @google/gemini-cli`); sign in by running
+    # `gemini` once. Not validated live yet.
     gemini_path: str = "gemini"
     gemini_timeout: int = 1800
     gemini_model: str = ""  # Empty → CLI's default
@@ -349,7 +357,11 @@ class Settings(BaseSettings):
         if backend == "claude_code":
             return self.claude_code_model or self.anthropic_model
         if backend == "codex":
-            return self.codex_model or "codex-cli-default"
+            if self.codex_model:
+                return self.codex_model
+            from .modules.llm.codex import effective_codex_model
+
+            return effective_codex_model(self) or "codex-cli-default"
         if backend == "gemini":
             return self.gemini_model or "gemini-cli-default"
         return self.anthropic_model

@@ -3,11 +3,35 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
+#: Set by e2er in the environment of every AI CLI call (modules/llm/cli_support.run_env).
+_INSIDE_AI_STEP = "E2ER_AI_STEP"
+
+
+def _refuse_inside_a_specialist() -> None:
+    """`e2er` itself is not a specialist's tool.
+
+    Seen live on Codex (2026-10-05): while a study was in its review step, a
+    reviewer's shell started a second study on the same server with `e2er run`.
+    Claude Code's allowlist never lets a specialist reach `e2er`; Codex and
+    Gemini have no allowlist (docs/BACKENDS.md). A specialist's tools are
+    e2er-data, e2er-lit, e2er-run and e2er-check-tables, separate commands.
+    """
+    who = os.environ.get(_INSIDE_AI_STEP)
+    if who:
+        print(
+            f"e2er: this command does not run inside a study's step (the {who} step is running). "
+            "A step uses e2er-data, e2er-lit, e2er-run and e2er-check-tables.",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+
 
 def main() -> None:
+    _refuse_inside_a_specialist()
     # `e2er corpus …` delegates wholesale to its own parser. Done before the
     # main parser sees anything, so `corpus search --limit 5` and
     # `corpus --help` reach cli_corpus intact instead of being claimed here.
@@ -29,6 +53,9 @@ def main() -> None:
         description="e2er is the open infrastructure for publishing, verifying, reproducing and reusing "
         "AI-enabled research. Run `e2er` alone to open it in your browser.",
     )
+    from . import __version__
+
+    parser.add_argument("--version", action="version", version=f"e2er {__version__}")
     # For bare `e2er` (which serves the dashboard). Own dests, so that the serve
     # subcommand's defaults cannot overwrite them.
     parser.add_argument(
@@ -56,7 +83,7 @@ def main() -> None:
 
     init_p = subparsers.add_parser(
         "init",
-        help="Guided first-paper setup: scaffold data/ + literature/, write .env, bundle skills.",
+        help="Guided first-paper setup: scaffold data/ + literature/, write .env, copy skills for the chosen CLI.",
     )
     init_p.add_argument(
         "--force",
@@ -67,7 +94,8 @@ def main() -> None:
         "--defaults",
         action="store_true",
         help="Non-interactive setup with sensible defaults (claude_code backend, "
-        "scaffold data/ + literature/, write .env). Works in CI / non-TTY.",
+        "scaffold data/ + literature/, write .env, copy e2er's skill files into ~/.claude/skills). "
+        "Works in CI / non-TTY.",
     )
 
     run_p = subparsers.add_parser(
@@ -179,11 +207,50 @@ def main() -> None:
     matrix_p.add_argument("--rq-file", default=None, help="Read the research question from a file.")
     matrix_p.add_argument(
         "--backends",
-        default="claude_code,codex,gemini",
-        help="Comma-separated backends to run (default: claude_code,codex,gemini — the $0 CLI backends).",
+        default=None,
+        help="Comma-separated backends to run, e.g. claude_code,codex. Default: every subscription CLI "
+        "(Claude Code, Codex, Gemini) that is installed and signed in on this computer, as `e2er doctor` "
+        "finds them; if there is none, every API backend with a key.",
+    )
+    matrix_p.add_argument(
+        "--models",
+        default=None,
+        metavar="BACKEND=MODEL,...",
+        help="Model per backend, e.g. claude_code=sonnet,codex=gpt-6-luna. A backend left out runs its "
+        "configured model (CLAUDE_CODE_MODEL, CODEX_MODEL, ...).",
     )
     matrix_p.add_argument("--repeats", type=int, default=3, help="Repeats per backend (default 3).")
     matrix_p.add_argument("--methodology", choices=["empirical", "theoretical", "mixed"], default="empirical")
+    matrix_p.add_argument(
+        "--template",
+        "--pipeline",
+        dest="template",
+        default="empirical",
+        help="Template (pipeline file) every run follows, as for `e2er run`. Default: empirical.",
+    )
+    matrix_p.add_argument(
+        "--review-at",
+        action="append",
+        default=None,
+        metavar="STAGE",
+        choices=[
+            "initial",
+            "iterative",
+            "estimation_gate",
+            "self_attack",
+            "polish",
+            "review",
+            "revision",
+            "replication",
+        ],
+        help="Pause every run for human review after this stage (repeatable). A paused run is recorded "
+        "as paused and not exported; review it with `e2er review <paper_id>`, then `e2er export` it.",
+    )
+    matrix_p.add_argument(
+        "--demonstration",
+        action="store_true",
+        help="Mark every run as a demonstration or test run, as `e2er run --demonstration` does.",
+    )
     matrix_p.add_argument("--mode", choices=["single_pass", "iterative"], default="single_pass")
     matrix_p.add_argument("--governance", choices=["off", "contracts", "full"], default=None)
     matrix_p.add_argument("--max-cost", type=float, default=5.0, help="Per-paper cost cap (default $5).")
@@ -388,6 +455,20 @@ def main() -> None:
         help="Like --against, from a saved copy of the study record, the dossier or e2er.json.",
     )
 
+    reproduce_p = subparsers.add_parser(
+        "reproduce",
+        help="Run a study's code again in a new environment and compare the results with the published ones.",
+        description="Runs the steps in the folder's reproduce.json in a run folder of its own, inside a new "
+        "virtual environment with the study's pinned requirements, then compares every result value with the "
+        "published one and renders the paper's tables again. The study folder is not changed. Exit code 0: "
+        "reproduced; 1: values or tables differ; 2: the code could not be run.",
+    )
+    reproduce_p.add_argument("folder", help="The study folder (with reproduce.json).")
+    reproduce_p.add_argument("--keep", action="store_true", help="Keep the run folder also when everything matches.")
+    reproduce_p.add_argument(
+        "--json", dest="json_out", default=None, metavar="FILE", help="Also write the report as JSON."
+    )
+
     # `question` says what it does; `rq` is the abbreviation researchers type.
     rq_p = subparsers.add_parser(
         "question",
@@ -533,7 +614,8 @@ def main() -> None:
         dest="accept_data_terms",
         metavar="CONNECTOR",
         help="Confirm the terms of a data source the study used, so its data can be published with the study "
-        "(--data public), e.g. --accept-data-terms gmd for the Global Macro Database. In a terminal you are asked.",
+        "(--data public), e.g. --accept-data-terms gmd for the Global Macro Database, --accept-data-terms yfinance "
+        "for Yahoo Finance (its terms allow personal use only). In a terminal you are asked.",
     )
     publish_p.add_argument(
         "--offline",
@@ -601,7 +683,9 @@ def main() -> None:
         "export",
         help="Assemble a clean, structured project folder (paper/code/data/results/design/reviews) from a run.",
     )
-    export_p.add_argument("paper_id", help="The paper UUID returned by `e2er run`.")
+    export_p.add_argument(
+        "paper_id", help="The paper id returned by `e2er run`, or its first characters (at least 4) when unique."
+    )
     export_p.add_argument(
         "--to",
         default=None,
@@ -709,6 +793,11 @@ def main() -> None:
 
         sys.exit(_export(paper_id=args.paper_id, to=args.to))
 
+    if args.command == "reproduce":
+        from .cli_reproduce import reproduce as _reproduce
+
+        sys.exit(_reproduce(args.folder, keep=args.keep, json_out=args.json_out))
+
     if args.command == "verify":
         from .cli_verify import verify as _verify
 
@@ -751,7 +840,22 @@ def main() -> None:
         if not rq:
             print("run-matrix: provide a research question (positional or --rq) or --rq-file", file=sys.stderr)
             sys.exit(2)
-        backends = [b.strip() for b in args.backends.split(",") if b.strip()]
+        from .cli_run_matrix import MatrixArgError, available_backends, parse_models
+
+        if args.backends:
+            backends = [b.strip() for b in args.backends.split(",") if b.strip()]
+        else:
+            backends = available_backends()
+            print(
+                f"run-matrix: no --backends given; using {', '.join(backends) or 'none'} "
+                "(the ones ready on this computer)",
+                file=sys.stderr,
+            )
+        try:
+            models = parse_models(args.models, backends)
+        except MatrixArgError as e:
+            print(f"run-matrix: {e}", file=sys.stderr)
+            sys.exit(2)
         sys.exit(
             _run_matrix(
                 rq=rq,
@@ -763,6 +867,10 @@ def main() -> None:
                 governance=args.governance,
                 out=args.out,
                 monitor_seconds=args.monitor_seconds,
+                template=args.template,
+                review_stages=args.review_at,
+                demonstration=args.demonstration,
+                models=models,
             )
         )
 
@@ -918,6 +1026,7 @@ _PATH_ARGS: dict[str, tuple[str, ...]] = {
     "run-matrix": ("rq_file", "out"),
     "status": ("paper_id",),
     "verify": ("bundle",),
+    "reproduce": ("folder", "json_out"),
     "verify-citations": ("draft", "bib"),
     "publish": ("bundle", "out", "db"),
     "export": ("to",),

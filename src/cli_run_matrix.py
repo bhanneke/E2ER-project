@@ -22,6 +22,68 @@ from pathlib import Path
 
 from .cli_run import _ensure_api_up, _poll_status, _submit_paper
 
+#: Backends run-matrix knows, in the order it runs them.
+_BACKENDS = ("claude_code", "codex", "gemini", "anthropic", "openrouter")
+
+
+class MatrixArgError(ValueError):
+    """A run-matrix argument that cannot be used; reported as one line."""
+
+
+def available_backends(settings=None) -> list[str]:
+    """The backends ready on this computer, as `e2er doctor` finds them.
+
+    The subscription CLIs (Claude Code, Codex, Gemini) that are installed and
+    not known to be signed out; if there is none, the API backends with a key.
+    The old default named all three CLIs whether or not they were there, so a
+    matrix on a machine with one CLI spent two thirds of its runs failing.
+    """
+    from .doctor import detect_backends
+
+    if settings is None:
+        from .config import get_settings
+
+        settings = get_settings()
+    rows = detect_backends(settings)
+    cli = [b.name for b in rows if b.kind == "cli" and b.ready]
+    if cli:
+        return cli
+    return [b.name for b in rows if b.kind == "api" and b.ready]
+
+
+def parse_models(spec: str | None, backends: list[str]) -> dict[str, str]:
+    """`claude_code=sonnet,codex=gpt-6-luna` → {backend: model}, checked against `backends`."""
+    out: dict[str, str] = {}
+    if not spec:
+        return out
+    for part in spec.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        backend, sep, model = part.partition("=")
+        backend, model = backend.strip(), model.strip()
+        if not sep or not backend or not model:
+            raise MatrixArgError(f"--models takes backend=model pairs, got {part!r}")
+        if backend not in _BACKENDS:
+            raise MatrixArgError(f"--models names an unknown backend {backend!r} (known: {', '.join(_BACKENDS)})")
+        if backend not in backends:
+            raise MatrixArgError(
+                f"--models names {backend!r}, which is not among the backends run: {', '.join(backends)}"
+            )
+        out[backend] = model
+    return out
+
+
+def model_label(backend: str, models: dict[str, str], settings=None) -> str:
+    """The model a run on `backend` uses: the --models choice, else the backend's configured one."""
+    if backend in models:
+        return models[backend]
+    if settings is None:
+        from .config import get_settings
+
+        settings = get_settings()
+    return settings.default_model_for(backend)
+
 
 def _export_bundle(paper_id: str, dest_root: Path) -> Path | None:
     """Export a completed paper's workspace into dest_root; return the bundle
@@ -51,12 +113,24 @@ def run_matrix(
     governance: str | None = None,
     out: str | None = None,
     monitor_seconds: float = 3600.0,
+    template: str | None = None,
+    review_stages: list[str] | None = None,
+    demonstration: bool = False,
+    models: dict[str, str] | None = None,
 ) -> int:
     """Entry point for `e2er run-matrix`. Returns a shell exit code."""
     from .core.export.structured import slugify
 
+    models = dict(models or {})
     if not backends:
-        print("run-matrix: no backends given", file=sys.stderr)
+        print(
+            "run-matrix: no backends to run — none is ready on this computer (see `e2er doctor`), or pass --backends",
+            file=sys.stderr,
+        )
+        return 2
+    unknown = [b for b in backends if b not in _BACKENDS]
+    if unknown:
+        print(f"run-matrix: unknown backend(s): {', '.join(unknown)} (known: {', '.join(_BACKENDS)})", file=sys.stderr)
         return 2
     if repeats < 1:
         print("run-matrix: --repeats must be >= 1", file=sys.stderr)
@@ -77,24 +151,45 @@ def run_matrix(
         file=sys.stderr,
     )
 
+    labels = {b: model_label(b, models) for b in backends}
+    for b in backends:
+        print(f"  {b}: {labels[b]}", file=sys.stderr)
+    meta = {
+        "template": template or "empirical",
+        "review_stages": review_stages or [],
+        "demonstration": demonstration,
+        "models": labels,
+    }
+
     runs: list[dict] = []
     for backend, rep in jobs:
         label = f"{backend}/rep-{rep}"
-        print(f"\n── {label} ──", file=sys.stderr)
+        print(f"\n── {label} ({labels[backend]}) ──", file=sys.stderr)
         resp = _submit_paper(
             rq,
             methodology,
             mode,
             max_cost,
             backend=backend,
+            model=models.get(backend),
             governance=governance,
+            review_stages=review_stages,
             title_suffix=f" [{label}]",
+            template=template,
+            demonstration=demonstration,
         )
         if not resp or not resp.get("paper_id"):
             runs.append(
-                {"backend": backend, "repeat": rep, "paper_id": None, "status": "submit_failed", "bundle_path": None}
+                {
+                    "backend": backend,
+                    "model": labels[backend],
+                    "repeat": rep,
+                    "paper_id": None,
+                    "status": "submit_failed",
+                    "bundle_path": None,
+                }
             )
-            _write_matrix(out_dir, rq, methodology, mode, governance, backends, repeats, runs)
+            _write_matrix(out_dir, rq, methodology, mode, governance, backends, repeats, runs, meta)
             continue
         paper_id = resp["paper_id"]
         status = _poll_status(paper_id, total_seconds=monitor_seconds)
@@ -103,10 +198,17 @@ def run_matrix(
             bundle = _export_bundle(paper_id, out_dir / f"{backend}-{rep}")
             bundle_path = str(bundle) if bundle else None
         runs.append(
-            {"backend": backend, "repeat": rep, "paper_id": paper_id, "status": status, "bundle_path": bundle_path}
+            {
+                "backend": backend,
+                "model": resp.get("model") or labels[backend],
+                "repeat": rep,
+                "paper_id": paper_id,
+                "status": status,
+                "bundle_path": bundle_path,
+            }
         )
         # Persist after every run so a long matrix is recoverable if interrupted.
-        _write_matrix(out_dir, rq, methodology, mode, governance, backends, repeats, runs)
+        _write_matrix(out_dir, rq, methodology, mode, governance, backends, repeats, runs, meta)
 
     n_done = sum(r["status"] == "completed" for r in runs)
     print(f"\nrun-matrix: {n_done}/{len(runs)} completed. matrix.json → {out_dir / 'matrix.json'}", file=sys.stderr)
@@ -122,6 +224,7 @@ def _write_matrix(
     backends: list[str],
     repeats: int,
     runs: list[dict],
+    meta: dict | None = None,
 ) -> None:
     matrix = {
         "research_question": rq,
@@ -130,6 +233,7 @@ def _write_matrix(
         "governance": governance,
         "backends": backends,
         "repeats": repeats,
+        **(meta or {}),
         "runs": runs,
     }
     (out_dir / "matrix.json").write_text(json.dumps(matrix, indent=2), encoding="utf-8")

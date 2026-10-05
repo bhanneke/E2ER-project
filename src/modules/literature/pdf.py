@@ -4,7 +4,7 @@ Backs the ``read_reference`` tool so specialists can pull the full text of a
 reference into the lit review. pypdf is deliberately chosen for a tiny,
 permissively-licensed dependency; extraction is adequate for prose and
 weaker on tables/complex layout (revisit pymupdf4llm if users need that —
-see docs/MODULARIZATION_PLAN.md).
+see docs/internal/MODULARIZATION_PLAN.md).
 """
 
 from __future__ import annotations

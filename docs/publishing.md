@@ -35,13 +35,19 @@ The paper is private unless you publish its PDF's address: `--paper public --pap
 
 On e2er.org, a paper, data or code that is not public has a button "Ask the authors for …" on the study page and the dossier, with the number of readers who asked (no names). A signed-in reader writes a short message; e2er.org forwards it to the authors who have an account there, without showing anyone's address. The reader may agree to be answered by email. You find the requests on your page "My submissions" (e2er.org/me), with the command that publishes the item; publishing it on a new version closes every open request for it and tells the readers. You can also mark a request as answered privately, decline it, or stop receiving requests.
 
-`e2er publish` and the dashboard's finish page say this in one sentence for each item you keep private, with the flag that publishes it. Data from the Global Macro Database get no such note: its terms do not allow passing the data on outside the study's replication package, so readers on e2er.org see a link to the GMD instead of a request button.
+`e2er publish` and the dashboard's finish page say this in one sentence for each item you keep private, with the flag that publishes it. Data from the Global Macro Database and from Yahoo Finance get no such note: the GMD's terms do not allow passing the data on outside the study's replication package, and Yahoo's terms allow personal use only, so readers on e2er.org see a link to the source instead of a request button.
 
 ### Data with terms of use: the Global Macro Database
 
 Data loaded with `e2er-data gmd` come under the GMD's terms (version 1.1, https://www.globalmacrodata.com/license.html): free for academic use; a study's replication package may include the GMD data it used, labelled as GMD data; the data may not be republished anywhere else. Whatever you choose, the study's description (`e2er.json`) names the GMD, its terms and its citation on the data files that hold GMD data, and the dossier lists each GMD load with the same. The GMD citation is added to the paper's references when the data are loaded.
 
 Publishing the GMD data with the study (`--data public`, also with `--zenodo`) needs your confirmation. In a terminal, publish shows the terms and asks; otherwise add `--accept-data-terms gmd`. Without it, publish refuses and changes nothing. With `--data private` no confirmation is needed. A Zenodo deposit of GMD data takes Zenodo's licence "Other (Non-Commercial)" and states the GMD terms and citation in its description.
+
+### Data with terms of use: Yahoo Finance
+
+Data loaded with `e2er-data yfinance` come under Yahoo's terms of use (https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html). The yfinance project notes that Yahoo's finance data are intended for personal use only; yfinance is not affiliated with Yahoo. The study's description names Yahoo Finance and these terms on the data files that hold Yahoo data. Yahoo publishes no citation format, so publish asks for no BibTeX entry; the dossier lists each load with the citation e2er wrote for it.
+
+If the data stay private, readers on e2er.org see a link to Yahoo Finance instead of a request button, and publish does not suggest publishing them. Publishing them with the study (`--data public`) needs your confirmation that you know Yahoo's terms allow personal use only: in a terminal publish asks "Publish the Yahoo Finance data with the study although Yahoo's terms allow personal use only?"; otherwise add `--accept-data-terms yfinance`. e2er does not deposit Yahoo data on Zenodo: a deposit republishes the data for anyone to reuse, which no Zenodo licence reconciles with personal use only. `--zenodo` with public Yahoo data is refused before anything is written or sent; keep the data private to deposit the code alone.
 
 ## A DOI for public data and code in one step
 

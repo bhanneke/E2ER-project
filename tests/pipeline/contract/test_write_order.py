@@ -1,6 +1,6 @@
 """The narrative artifact is written BEFORE the analysis script.
 
-The 2026-08-12 canary (docs/USER_JOURNEY.md) failed twice at the same
+The 2026-08-12 canary (docs/internal/USER_JOURNEY.md) failed twice at the same
 place: `econometrics_specialist` wrote `run_estimation.py`,
 `summary_statistics.json`, `figure_spec.json` and `robustness_results.json`
 but never wrote `econometric_spec.md`, its declared artifact. One attempt was

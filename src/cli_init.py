@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import os
 import re
-import shutil
 import sys
 from pathlib import Path
 
@@ -156,8 +155,11 @@ def _check_backend_prereqs(backend: str) -> tuple[bool, list[str]]:
 
     if backend in _BACKEND_CLI_BINARY:
         binary = _BACKEND_CLI_BINARY[backend]
-        if shutil.which(binary):
-            notes.append(f"  ✓ {binary} CLI found")
+        from .doctor import resolve_backend_cli
+
+        found = resolve_backend_cli(backend)
+        if found:
+            notes.append(f"  ✓ {binary} CLI found ({found})")
         else:
             ready = False
             install_cmd = _BACKEND_CLI_INSTALL[backend]
@@ -238,6 +240,45 @@ def _scaffold_project_dirs(root: Path) -> tuple[Path, Path]:
     return data_dir, lit_dir
 
 
+def _version() -> str:
+    from . import __version__
+
+    return __version__
+
+
+#: The skills folder each CLI backend reads, as `install_skills` names it.
+_SKILL_TARGETS = {"claude_code": "claude", "codex": "codex", "gemini": "gemini"}
+
+
+def _copy_skills_for(backend: str, *, ask: bool) -> None:
+    """Copy e2er's skill files into the chosen CLI backend's skills folder, and say so.
+
+    Only the chosen backend: the other CLIs' folders are not e2er's to fill. The
+    API backends read the skills from the package and need no copy. With
+    ``ask``, the person confirms first.
+    """
+    target = _SKILL_TARGETS.get(backend)
+    if target is None:
+        print(f"  · no skill files copied: the {backend} backend reads them from the e2er package")
+        return
+    from .cli_install_skills import _backend_skills_dirs
+
+    folder = _backend_skills_dirs(target)[0]
+    if ask and not _ask_yes_no(
+        f"Copy e2er's skill files into {folder}? The {backend} CLI reads them from there (existing files are kept)",
+        default=True,
+    ):
+        print(f"  · skill files not copied; `e2er skills sync --backend {target}` copies them later")
+        return
+    print(f"Copying e2er's skill files into {folder} (the folder the {backend} CLI reads; existing files kept)...")
+    try:
+        from .cli_install_skills import install_skills as _install
+
+        _install(backend=target, force=False)
+    except Exception as e:  # noqa: BLE001 — best-effort; setup still succeeded
+        print(f"  ! copying the skill files failed: {e} (run `e2er skills sync --backend {target}` later)")
+
+
 def _env_block(
     backend: str,
     use_data: bool,
@@ -261,7 +302,7 @@ def _env_block(
     """
     keys = {k: v for k, v in (keys or {}).items() if v}
     lines = [
-        f"# e2er v3 configuration — written by {written_by}",
+        f"# e2er configuration (e2er {_version()}) — written by {written_by}",
         "# Re-run `e2er init` (or open Settings in the dashboard) to change it, or edit by hand.",
         "",
         "# ── LLM backend ──────────────────────────────────────────────────",
@@ -392,7 +433,7 @@ def _write_env(env_path: Path, content: str, force: bool) -> bool:
 
 def _init_defaults() -> int:
     """Non-interactive setup (`e2er init --defaults`). Scaffolds data/ +
-    literature/, writes a claude_code .env, bundles skills. Safe in CI /
+    literature/, writes a claude_code .env, copies the skill files for Claude Code. Safe in CI /
     non-TTY — never calls input()."""
     root = Path.cwd()
     print("e2er init --defaults — non-interactive setup")
@@ -409,12 +450,7 @@ def _init_defaults() -> int:
         literature_dir="./literature",
     )
     _write_env(root / ".env", content, force=True)
-    try:
-        from .cli_install_skills import install_skills as _install
-
-        _install(backend="all", force=False)
-    except Exception as e:  # noqa: BLE001 — best-effort; setup still succeeded
-        print(f"  ! skills sync failed: {e} (run `e2er skills sync` later)")
+    _copy_skills_for("claude_code", ask=False)
     print('  ✓ ready — verify with `e2er doctor`, then `e2er run "<your RQ>"`')
     return 0
 
@@ -434,7 +470,7 @@ def init(force: bool = False, defaults: bool = False) -> int:
     print()
     print("┌──────────────────────────────────────────────────────────────────┐")
     print("│  e2er init — first-paper setup wizard                            │")
-    print("│  ~1 minute. Writes .env, bundles skills, prints next steps.      │")
+    print("│  ~1 minute. Writes .env, copies skills, prints next steps.       │")
     print("└──────────────────────────────────────────────────────────────────┘")
     print()
 
@@ -535,16 +571,9 @@ def init(force: bool = False, defaults: bool = False) -> int:
     )
     _write_env(env_path, content, force=force)
 
-    # Install skills (always — costs nothing and is required for CLI backends)
+    # Skill files: only into the chosen CLI backend's folder, after asking.
     print()
-    print("Bundling skill files for headless CLI backends...")
-    try:
-        from .cli_install_skills import install_skills as _install
-
-        _install(backend="all", force=False)
-    except Exception as e:
-        print(f"  ! skills sync failed: {e}")
-        print("    Run `e2er skills sync` manually after install.")
+    _copy_skills_for(backend, ask=True)
 
     # Postgres migrate hint (don't auto-run; the user may need to start the DB first)
     if database_url:

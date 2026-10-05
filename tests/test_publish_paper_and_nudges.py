@@ -14,7 +14,7 @@ from src.core.dossier import dossier_id
 from tests.run_db import make_run_db, paper_id_of
 
 ROOT = Path(__file__).resolve().parents[1]
-SHOWCASE = ROOT / "examples" / "showcase"
+SHOWCASE = ROOT / "tests" / "fixtures" / "showcase_export"
 BASE = dict(owner="bhanneke", project="demo", github="bhanneke", orcid="0009-0000-7466-9581", name=None)
 REPO = dict(repo="https://github.com/bhanneke/E2ER-project", commit="abc1234", path="examples/showcase")
 PDF = "https://example.org/demo/paper.pdf"

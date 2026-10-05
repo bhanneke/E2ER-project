@@ -1,0 +1,26 @@
+\begin{table}[t]
+\centering
+\begin{threeparttable}
+\caption{DCC--GARCH(1,1) with a post-listing shift in the long-run correlation target}
+\label{tab:dcc}
+\begin{tabular}{lc}
+\toprule
+ & BTC--SPY pair \\
+\midrule
+$\hat\phi$: post-listing shift in the correlation target & 0.1203* \\
+ & (0.0674) \\
+$\hat a$ (DCC news parameter) & 0.0121 \\
+$\hat b$ (DCC persistence parameter) & 0.9749 \\
+$\hat a + \hat b$ & 0.9869 \\
+Unconditional BTC--SPY correlation & 0.3804 \\
+Randomization $p$ across the nine control pairs & 0.20 \\
+Log-likelihood & 104.82 \\
+$N$ (days) & 1,255 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}[flushleft]
+\footnotesize
+\item Univariate GARCH(1,1) models are fitted to Bitcoin and SPY returns, and the Engle dynamic conditional correlation recursion is then estimated on the standardised residuals with a post-listing dummy shifting the off-diagonal long-run target: $q_{12,t} = (1-a-b)(\bar q_{12} + \phi\,\mathrm{Post}_t) + a\,u_{1,t-1}u_{2,t-1} + b\,q_{12,t-1}$. Estimation is by two-stage quasi-maximum likelihood on the uninterrupted daily series, since the recursion requires a continuous sample and cannot accommodate the donut. Second-stage standard errors ignore first-stage GARCH estimation error, so the printed standard error is not the inference channel; the identical model fitted to all nine control-coin pairs is, and it returns a positive $\hat\phi$ for every one of them, ranging from $+0.016$ to $+0.146$, the upper end of which exceeds Bitcoin's. The randomization $p$-value reported in the table is computed against that control-pair distribution. Read on its own this specification would have reported a post-2024 rise in Bitcoin's equity correlation at conventional significance; read against its own control group it reports a crypto-wide phenomenon.
+\end{tablenotes}
+\end{threeparttable}
+\end{table}

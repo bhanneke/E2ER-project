@@ -221,7 +221,7 @@ def _stage_corpus_files(
 
     ``LOCAL_DATA_DIR`` accepts a comma-separated list of paths.
     """
-    from ..modules.local_corpus import iter_corpus_files, parse_corpus_roots
+    from ..modules.local_corpus import iter_corpus_files, link_or_copy, parse_corpus_roots
 
     if not local_data_dir:
         return 0
@@ -248,7 +248,7 @@ def _stage_corpus_files(
             continue  # defensive: never overwrite a workspace file
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.symlink_to(file_path.resolve())
+            link_or_copy(file_path, target)
             linked += 1
         except OSError as e:
             logger.warning("could not symlink %s → %s: %s (paper creation continues)", file_path, target, e)
@@ -459,16 +459,13 @@ async def _log_config() -> None:
         "on" if s.github_enabled else "off",
         s.default_max_cost_usd,
     )
-    # CLI backends (Claude Code Max, Codex CLI, Gemini CLI) run on flat-rate
-    # plans, so the cost meter values are Sonnet-equivalent ESTIMATES, not
-    # what the user actually pays. The budget cap still functions as a
-    # token-spend guardrail — useful for runaway protection — but the dollar
-    # number in `/api/papers/<id>` is informational only.
+    # CLI backends (Claude Code, Codex CLI, Gemini CLI) run on the person's
+    # subscription: compute_cost records $0 for them, so the spending limit
+    # never trips; the subscription's own usage limits apply instead.
     if s.llm_backend in {"claude_code", "codex", "gemini"}:
-        logger.warning(
-            "Backend %s: cost values are Sonnet-rate ESTIMATES (synthetic). "
-            "Actual user cost on a flat-rate plan is $0. Budget cap still "
-            "operates as a token-spend guardrail.",
+        logger.info(
+            "Backend %s runs on the subscription: costs are recorded as $0 and the spending limit "
+            "does not apply; the subscription's own usage limits do.",
             s.llm_backend,
         )
 
@@ -781,7 +778,8 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
                 "id": paper_id,
                 "title": req.title,
                 "rq": req.research_question,
-                "ws": str(workspace),
+                # Absolute, so `e2er export` finds it from any folder.
+                "ws": str(workspace.resolve()),
                 "mode": req.mode,
                 "methodology": req.methodology,
                 "model": current_model,
@@ -2865,6 +2863,21 @@ async def _prepare_and_run(
     )
 
 
+def model_override(settings: Any, backend_name: str, model: str | None) -> str | None:
+    """The per-paper model to hand the backend, or None to let it use its own setting.
+
+    Only a model that differs from the backend's configured default is an
+    override. A resumed run passes the label stored on its row, which for an
+    unpinned CLI backend is a placeholder ("codex-cli-default") or, on Claude
+    Code, the API model id; neither may reach the CLI as `-m`/`--model`.
+    """
+    if not model or model in {"codex-cli-default", "gemini-cli-default"}:
+        return None
+    if model == settings.default_model_for(backend_name):
+        return None
+    return model
+
+
 async def _run_pipeline(
     paper_id: str,
     workspace: Path,
@@ -2889,9 +2902,12 @@ async def _run_pipeline(
     # Per-paper overrides (multi-model runs / experiment); fall back to the
     # process-global config when unset.
     effective_backend_name = backend_name or settings.llm_backend
-    effective_model = model or settings.default_model_for(effective_backend_name)
     effective_governance = governance or settings.governance
-    backend = get_backend(settings, name=effective_backend_name)
+    # The per-paper model reaches the backend itself, not just the label.
+    # (The override is passed only when set: test doubles and replay backends take name= alone.)
+    override = model_override(settings, effective_backend_name, model)
+    backend = get_backend(settings, name=effective_backend_name, **({"model": override} if override else {}))
+    effective_model = model or getattr(backend, "model", "") or settings.default_model_for(effective_backend_name)
 
     # Tools are unioned across all enabled providers; specialists' skill files
     # determine which they actually invoke.

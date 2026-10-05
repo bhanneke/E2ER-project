@@ -1,0 +1,756 @@
+{
+  "main": {
+    "specification": "TWFE difference-in-differences on the coin-month panel; outcome is the Fisher-z within-month correlation of the coin's daily return with SPY; coin and year-month fixed effects; no controls (volume/volatility/market cap are mediators, not confounders); SEs clustered on coin; randomization inference is the primary inference procedure because there is one treated unit.",
+    "n_observations": 540,
+    "n_clusters": 10,
+    "cluster_level": "coin",
+    "fixed_effects": [
+      "coin",
+      "year_month"
+    ],
+    "controls": [],
+    "coefficients": {
+      "d_etf_listed": {
+        "estimate": -0.02117707,
+        "se": 0.01695747,
+        "t_stat": -1.24883405,
+        "p_value": 0.24323096,
+        "ci_lower": -0.05953754,
+        "ci_upper": 0.0171834
+      }
+    },
+    "diagnostics": {
+      "within_r_squared": 0.00057,
+      "df_residual": 476,
+      "n_fixed_effect_groups": 63,
+      "n_coin_fe": 10,
+      "n_month_fe": 54,
+      "n_clusters_coin": 10
+    },
+    "unit_of_analysis": "coin-month",
+    "outcome": "y_fisherz_corr_equity",
+    "treatment": "d_etf_listed",
+    "treated_units": 1,
+    "n_pre_treatment": 31,
+    "n_post_treatment": 23,
+    "sample_window": "2021-01 to 2025-12; donut 2023m8-2024m1 excluded",
+    "p_value_ri": 0.665,
+    "p_value_ri_space_only": 0.8,
+    "p_value_wild_bootstrap": 0.467,
+    "n_placebo_assignments": 199,
+    "ri_sd": 0.06194872,
+    "conley_taber_ci_lower": -0.10645802,
+    "conley_taber_ci_upper": 0.03859717,
+    "ri_ci95_lower": -0.14259433,
+    "ri_ci95_upper": 0.10024019,
+    "rho_pre_treatment_mean": 0.38223723,
+    "correlation_conversion_factor": 0.8538947,
+    "effect_in_correlation_units": -0.01808299
+  },
+  "descriptive_raw_gap": {
+    "specification": "DESCRIPTIVE BASELINE, NOT IDENTIFIED: Bitcoin-only monthly time series of the Fisher-z equity correlation on a post-2024m2 indicator, Newey-West(6). Cannot separate the ETF from the 2024 macro regime; reported so the reader can see what the control group and month fixed effects are doing.",
+    "unit_of_analysis": "month",
+    "outcome": "y_fisherz_corr_equity",
+    "treatment": "post_etf",
+    "n_observations": 54,
+    "n_clusters": null,
+    "cluster_level": "none",
+    "fixed_effects": [],
+    "controls": [],
+    "n_pre_treatment": 31,
+    "n_post_treatment": 23,
+    "coefficients": {
+      "const": {
+        "estimate": 0.43219066,
+        "se": 0.0906694,
+        "t_stat": 4.76666505,
+        "p_value": 1.549e-05,
+        "ci_lower": 0.25447863,
+        "ci_upper": 0.60990268
+      },
+      "post_etf": {
+        "estimate": -0.00638745,
+        "se": 0.09391469,
+        "t_stat": -0.06801334,
+        "p_value": 0.94603587,
+        "ci_lower": -0.19046024,
+        "ci_upper": 0.17768533
+      }
+    },
+    "diagnostics": {
+      "r_squared": 0.00011494,
+      "newey_west_lags": 6,
+      "df_residual": 52,
+      "n_fixed_effect_groups": 0,
+      "mean_y_pre": 0.43219066,
+      "mean_y_post": 0.4258032
+    }
+  },
+  "event_study": {
+    "specification": "Event study in six-month event-time bins relative to 2024m2, with coin and year-month fixed effects; reference bin -2 (K = -12 to -7, the six months ending at the donut, since the conventional k=-1 falls inside the donut). Bins rather than single months because a month-by-month specification is saturated for the single treated unit: BTC's residual is identically zero in any month carrying its own dummy, so the standard errors would be computed off the control coins alone. Clustered on coin.",
+    "unit_of_analysis": "coin-month",
+    "outcome": "y_fisherz_corr_equity",
+    "treatment": "btc_x_event_bin",
+    "bin_width_months": 6,
+    "n_observations": 540,
+    "n_clusters": 10,
+    "cluster_level": "coin",
+    "fixed_effects": [
+      "coin",
+      "year_month"
+    ],
+    "controls": [],
+    "n_pre_treatment": 31,
+    "n_post_treatment": 23,
+    "reference_period": -2,
+    "coefficients": {
+      "ev_-7": {
+        "estimate": 0.20263191,
+        "se": 0.05169382,
+        "t_stat": 3.91984794,
+        "p_value": 0.00351178,
+        "ci_lower": 0.08569237,
+        "ci_upper": 0.31957146
+      },
+      "ev_-6": {
+        "estimate": 0.07737033,
+        "se": 0.0272958,
+        "t_stat": 2.83451408,
+        "p_value": 0.01957764,
+        "ci_lower": 0.01562294,
+        "ci_upper": 0.13911772
+      },
+      "ev_-5": {
+        "estimate": 0.05858008,
+        "se": 0.04253434,
+        "t_stat": 1.37724194,
+        "p_value": 0.20171977,
+        "ci_lower": -0.03763929,
+        "ci_upper": 0.15479944
+      },
+      "ev_-4": {
+        "estimate": 0.09135362,
+        "se": 0.02584994,
+        "t_stat": 3.53399697,
+        "p_value": 0.00637384,
+        "ci_lower": 0.03287699,
+        "ci_upper": 0.14983025
+      },
+      "ev_-3": {
+        "estimate": 0.16893988,
+        "se": 0.03635017,
+        "t_stat": 4.64756746,
+        "p_value": 0.00120626,
+        "ci_lower": 0.08671008,
+        "ci_upper": 0.25116968
+      },
+      "ev_0": {
+        "estimate": 0.00285433,
+        "se": 0.03674995,
+        "t_stat": 0.07766898,
+        "p_value": 0.9397907,
+        "ci_lower": -0.08027983,
+        "ci_upper": 0.08598849
+      },
+      "ev_1": {
+        "estimate": 0.14057473,
+        "se": 0.04428896,
+        "t_stat": 3.1740353,
+        "p_value": 0.0112925,
+        "ci_lower": 0.04038614,
+        "ci_upper": 0.24076332
+      },
+      "ev_2": {
+        "estimate": 0.02063334,
+        "se": 0.02580581,
+        "t_stat": 0.79956165,
+        "p_value": 0.44455434,
+        "ci_lower": -0.03774347,
+        "ci_upper": 0.07901014
+      },
+      "ev_3": {
+        "estimate": 0.08856346,
+        "se": 0.03580849,
+        "t_stat": 2.47325346,
+        "p_value": 0.03538091,
+        "ci_lower": 0.00755904,
+        "ci_upper": 0.16956788
+      }
+    },
+    "pre_trend_f_stat": 9.18533771,
+    "pre_trend_p_value": 0.0024337,
+    "n_pre_coefficients": 5,
+    "pre_trend_p_value_ri": 0.8,
+    "pre_trend_placebo_F_max": 84.3036213,
+    "pre_trend_placebo_F_median": 17.35834172,
+    "n_placebo_assignments": 9,
+    "pre_trend_inference_note": "pre_trend_p_value is the clustered/asymptotic F p-value and is subject to the same one-treated-unit objection as the clustered p-value on tau: the lead coefficients are BTC-specific, so the cluster-robust covariance is driven by a single cluster. pre_trend_p_value_ri -- the share of placebo treated coins whose own pre-trend F is at least as large -- is the valid test and the one the paper quotes.",
+    "linear_pre_trend_estimate": -0.00143895,
+    "linear_pre_trend_se": 0.00131888,
+    "linear_pre_trend_p_value": 0.30360108,
+    "linear_pre_trend_p_value_ri": 0.7,
+    "monthly_path_point_estimates": {
+      "-24": -0.073594,
+      "-23": -0.07602,
+      "-22": 0.188649,
+      "-21": -0.087991,
+      "-20": -0.076196,
+      "-19": -0.048573,
+      "-18": -0.041948,
+      "-17": 0.188317,
+      "-16": 0.217942,
+      "-15": -0.113091,
+      "-14": 0.100469,
+      "-13": -0.189702,
+      "-12": -0.104558,
+      "-11": -0.180493,
+      "-10": -0.135312,
+      "-9": -0.117777,
+      "-8": -0.313513,
+      "0": -0.445819,
+      "1": -0.194199,
+      "2": -0.146378,
+      "3": -0.001975,
+      "4": 0.137328,
+      "5": -0.183483,
+      "6": -0.003139,
+      "7": 0.020419,
+      "8": -0.106283,
+      "9": -0.064339,
+      "10": 0.252669,
+      "11": -0.10753,
+      "12": -0.127995,
+      "13": -0.142648,
+      "14": -0.068641,
+      "15": -0.297401,
+      "16": -0.189353,
+      "17": 0.098186,
+      "18": -0.232107,
+      "19": 0.0579,
+      "20": -0.256017,
+      "21": 0.224015,
+      "22": -0.060683
+    },
+    "monthly_path_note": "Point estimates only. The month-by-month specification is saturated for the single treated unit, so no standard error reported against it would be interpretable; use the binned coefficients for inference.",
+    "diagnostics": {
+      "within_r_squared": 0.017503,
+      "df_residual": 468,
+      "n_fixed_effect_groups": 63
+    }
+  },
+  "daily_rolling_did": {
+    "specification": "Daily rolling-window DiD: Fisher-z of the 30-day rolling correlation with SPY, asset and date fixed effects, clustered on asset. Windows overlap, so the number of independent blocks is far below the row count (reported as n_effective_blocks) and the standard error must not be read as coming from n_observations independent draws.",
+    "n_observations": 11050,
+    "n_clusters": 10,
+    "cluster_level": "asset",
+    "fixed_effects": [
+      "asset",
+      "date"
+    ],
+    "controls": [],
+    "coefficients": {
+      "d_etf_listed": {
+        "estimate": -0.02715866,
+        "se": 0.01822892,
+        "t_stat": -1.48986682,
+        "p_value": 0.17044501,
+        "ci_lower": -0.06839535,
+        "ci_upper": 0.01407802
+      }
+    },
+    "diagnostics": {
+      "within_r_squared": 0.001363,
+      "df_residual": 9935,
+      "n_fixed_effect_groups": 1114,
+      "n_dates": 1105,
+      "n_assets": 10
+    },
+    "unit_of_analysis": "asset-day",
+    "outcome": "fisherz_rho30d_spy",
+    "treatment": "d_etf_listed",
+    "treated_units": 1,
+    "rolling_window_days": 30,
+    "n_effective_blocks": 368,
+    "n_pre_treatment": 624,
+    "n_post_treatment": 481,
+    "se_twoway_cluster": 0.01837883,
+    "p_value_twoway_cluster": 0.17360262
+  },
+  "returns_interacted_BTC": {
+    "specification": "Returns-level interacted model for Bitcoin: r_btc = a + b*r_spy + delta*(r_spy x Post) + g*Post, Newey-West HAC standard errors. delta is the change in the equity loading, estimated without a generated-regressor step.",
+    "unit_of_analysis": "day",
+    "outcome": "r_BTC",
+    "treatment": "r_spy_x_post",
+    "n_observations": 1128,
+    "n_clusters": null,
+    "cluster_level": "none",
+    "fixed_effects": [],
+    "controls": [
+      "r_spy",
+      "post"
+    ],
+    "n_pre_treatment": 647,
+    "n_post_treatment": 481,
+    "coefficients": {
+      "const": {
+        "estimate": -0.0010117,
+        "se": 0.00140443,
+        "t_stat": -0.72036749,
+        "p_value": 0.47144854,
+        "ci_lower": -0.00376438,
+        "ci_upper": 0.00174097
+      },
+      "r_spy": {
+        "estimate": 1.40331608,
+        "se": 0.13270288,
+        "t_stat": 10.57487262,
+        "p_value": 0.0,
+        "ci_lower": 1.14321843,
+        "ci_upper": 1.66341374
+      },
+      "r_spy_x_post": {
+        "estimate": -0.41483658,
+        "se": 0.23023181,
+        "t_stat": -1.80182135,
+        "p_value": 0.07184138,
+        "ci_lower": -0.86609093,
+        "ci_upper": 0.03641776
+      },
+      "post": {
+        "estimate": 0.00139246,
+        "se": 0.00183183,
+        "t_stat": 0.76014649,
+        "p_value": 0.44732644,
+        "ci_lower": -0.00219792,
+        "ci_upper": 0.00498284
+      }
+    },
+    "diagnostics": {
+      "r_squared": 0.16113724,
+      "newey_west_lags": 6,
+      "df_residual": 1124,
+      "n_fixed_effect_groups": 0
+    },
+    "p_value_ri_across_control_coins": 0.3,
+    "control_coin_delta_mean": -0.32210163,
+    "control_coin_delta_sd": 0.23939485,
+    "control_coin_deltas": {
+      "LTC": -0.21982341,
+      "BNB": -0.76868927,
+      "ADA": -0.29953371,
+      "DOGE": -0.21407053,
+      "BCH": -0.26149783,
+      "LINK": 0.04019436,
+      "AVAX": -0.17449072,
+      "DOT": -0.59001255,
+      "XLM": -0.410991
+    }
+  },
+  "returns_ddd": {
+    "specification": "Pooled returns-level triple difference: r_it on (r_spy x Post x BTC) and (r_spy x BTC), with asset and date fixed effects, which absorb r_spy and r_spy x Post. The triple interaction is the differential change in Bitcoin's equity loading relative to the never-treated coins. Uses no generated regressor, so the Fisher-z transform cannot drive the result. Clustered on date.",
+    "n_observations": 11280,
+    "n_clusters": 1128,
+    "cluster_level": "date",
+    "fixed_effects": [
+      "asset",
+      "date"
+    ],
+    "controls": [
+      "reqXbtc"
+    ],
+    "coefficients": {
+      "reqXpostXbtc": {
+        "estimate": -0.07981067,
+        "se": 0.16190288,
+        "t_stat": -0.49295402,
+        "p_value": 0.62214111,
+        "ci_lower": -0.39747564,
+        "ci_upper": 0.23785429
+      },
+      "reqXbtc": {
+        "estimate": -0.39454431,
+        "se": 0.1028788,
+        "t_stat": -3.83504017,
+        "p_value": 0.0001325,
+        "ci_lower": -0.59639983,
+        "ci_upper": -0.1926888
+      }
+    },
+    "diagnostics": {
+      "within_r_squared": 0.001756,
+      "df_residual": 10141,
+      "n_fixed_effect_groups": 1137,
+      "n_dates": 1128,
+      "n_assets": 10
+    },
+    "unit_of_analysis": "asset-day",
+    "outcome": "r_asset",
+    "treatment": "reqXpostXbtc",
+    "treated_units": 1,
+    "n_pre_treatment": 6470,
+    "n_post_treatment": 4810,
+    "se_cluster_asset": 0.08346723,
+    "p_value_cluster_asset": 0.36395292
+  },
+  "chow_test": {
+    "specification": "Chow test for a structural break in Bitcoin's equity-loading regression at the imposed date 2024-02-01 (donut sample). Classical F, HC3 Wald and HAC (Newey-West) Wald are all reported because they differ; the HAC Wald is the one to quote, the classical F is reported for completeness only.",
+    "unit_of_analysis": "day",
+    "outcome": "r_BTC",
+    "treatment": "break_2024_02_01",
+    "n_observations": 1128,
+    "n_clusters": null,
+    "cluster_level": "none",
+    "fixed_effects": [],
+    "controls": [
+      "r_spy",
+      "post"
+    ],
+    "n_pre_treatment": 647,
+    "n_post_treatment": 481,
+    "coefficients": {
+      "const": {
+        "estimate": -0.0010117,
+        "se": 0.00140443,
+        "t_stat": -0.72036749,
+        "p_value": 0.47144854,
+        "ci_lower": -0.00376438,
+        "ci_upper": 0.00174097
+      },
+      "r_spy": {
+        "estimate": 1.40331608,
+        "se": 0.13270288,
+        "t_stat": 10.57487262,
+        "p_value": 0.0,
+        "ci_lower": 1.14321843,
+        "ci_upper": 1.66341374
+      },
+      "post": {
+        "estimate": 0.00139246,
+        "se": 0.00183183,
+        "t_stat": 0.76014649,
+        "p_value": 0.44732644,
+        "ci_lower": -0.00219792,
+        "ci_upper": 0.00498284
+      },
+      "r_spy_x_post": {
+        "estimate": -0.41483658,
+        "se": 0.23023181,
+        "t_stat": -1.80182135,
+        "p_value": 0.07184138,
+        "ci_lower": -0.86609093,
+        "ci_upper": 0.03641776
+      }
+    },
+    "f_stat_classical": 2.88649847,
+    "p_value_classical": 0.05618469,
+    "wald_hc3": 4.283621,
+    "p_value_hc3": 0.11744202,
+    "wald_hac_newey_west": 3.31513241,
+    "p_value_hac": 0.1906023,
+    "wald_hac_no_donut_2024_01_11": 2.62958551,
+    "p_value_hac_no_donut": 0.26852997,
+    "diagnostics": {
+      "newey_west_lags": 6,
+      "df_residual": 1124,
+      "n_fixed_effect_groups": 0
+    }
+  },
+  "bai_perron": {
+    "specification": "Bai-Perron multiple structural break tests (15% trimming, up to 5 breaks, BIC and LWZ selection, sequential supF(l+1|l)) on Bitcoin's 30-day rolling beta and on the BTC-minus-control-mean differential Fisher-z series. Every estimated break date is reported whether or not it supports the hypothesis. Andrews (1993) sup-Wald with unknown breakpoint reported alongside.",
+    "unit_of_analysis": "day",
+    "outcome": "rolling_beta_and_differential_fisherz",
+    "treatment": "endogenous_break_date",
+    "n_observations": 1232,
+    "n_clusters": null,
+    "cluster_level": "none",
+    "fixed_effects": [],
+    "controls": [],
+    "n_pre_treatment": 751,
+    "n_post_treatment": 481,
+    "coefficients": {},
+    "btc_rolling_beta": {
+      "series": "beta30d_BTC_SPY",
+      "n_observations": 1232,
+      "trimming": 0.15,
+      "max_breaks": 5,
+      "n_breaks_bic": 4,
+      "n_breaks_lwz": 4,
+      "break_dates_bic": [
+        "2022-02-02",
+        "2023-03-16",
+        "2024-04-30",
+        "2025-02-03"
+      ],
+      "all_break_dates_by_m": {
+        "1": [
+          "2022-10-13"
+        ],
+        "2": [
+          "2023-03-03",
+          "2024-04-29"
+        ],
+        "3": [
+          "2023-03-03",
+          "2024-04-30",
+          "2025-02-03"
+        ],
+        "4": [
+          "2022-02-02",
+          "2023-03-16",
+          "2024-04-30",
+          "2025-02-03"
+        ],
+        "5": [
+          "2021-11-01",
+          "2022-07-27",
+          "2023-04-20",
+          "2024-04-30",
+          "2025-02-03"
+        ]
+      },
+      "sequential_supF": {
+        "1": 166.8327,
+        "2": 294.811,
+        "3": 83.6562,
+        "4": 32.2002,
+        "5": -23.5263
+      },
+      "ssr_by_m": {
+        "0": 733.329468,
+        "1": 645.7432,
+        "2": 520.811551,
+        "3": 487.594673,
+        "4": 475.125927,
+        "5": 484.421738
+      },
+      "break_ci_90": null,
+      "note": "Break-date confidence intervals are not reported: the Bai-Perron interval requires a HAC break-fraction asymptotic that is not implemented here."
+    },
+    "differential_fisherz": {
+      "series": "fisherz_rho30d_BTC_minus_control_mean",
+      "n_observations": 1232,
+      "trimming": 0.15,
+      "max_breaks": 5,
+      "n_breaks_bic": 4,
+      "n_breaks_lwz": 3,
+      "break_dates_bic": [
+        "2022-04-11",
+        "2023-01-30",
+        "2024-05-02",
+        "2025-01-31"
+      ],
+      "all_break_dates_by_m": {
+        "1": [
+          "2023-01-30"
+        ],
+        "2": [
+          "2023-02-06",
+          "2024-05-02"
+        ],
+        "3": [
+          "2022-04-11",
+          "2023-01-30",
+          "2024-05-02"
+        ],
+        "4": [
+          "2022-04-11",
+          "2023-01-30",
+          "2024-05-02",
+          "2025-01-31"
+        ],
+        "5": [
+          "2022-04-11",
+          "2023-01-25",
+          "2023-10-18",
+          "2024-07-15",
+          "2025-04-08"
+        ]
+      },
+      "sequential_supF": {
+        "1": 140.4082,
+        "2": 250.566,
+        "3": 148.2273,
+        "4": 13.9253,
+        "5": -40.8655
+      },
+      "ssr_by_m": {
+        "0": 18.177513,
+        "1": 16.315095,
+        "2": 13.552117,
+        "3": 12.092479,
+        "4": 11.95678,
+        "5": 12.369071
+      },
+      "break_ci_90": null,
+      "note": "Break-date confidence intervals are not reported: the Bai-Perron interval requires a HAC break-fraction asymptotic that is not implemented here."
+    },
+    "andrews_sup_wald": 140.4082478,
+    "andrews_break_date": "2023-01-31",
+    "andrews_sup_wald_hac": 6.38653999,
+    "andrews_break_date_hac": "2023-01-31",
+    "andrews_hac_lags": 60,
+    "andrews_p_value": null,
+    "andrews_note": "The sup-Wald null distribution is non-standard (Andrews 1993), so no p-value is computed; the 5% asymptotic critical value for a one-parameter mean break with 15% trimming is approximately 8.85. The iid version is badly oversized here because the 30-day rolling windows overlap on 29 of 30 days; the Newey-West version (L = 60, twice the window length) is the one to read.",
+    "diagnostics": {
+      "n_fixed_effect_groups": 0,
+      "df_residual": 1230
+    }
+  },
+  "dcc_garch_btc_spy": {
+    "specification": "DCC-GARCH(1,1) on the BTC-SPY pair, two-stage QML, with a post-treatment dummy shifting the off-diagonal long-run correlation target: q12_t = (1-a-b)(qbar + phi*Post_t) + a u1_{t-1}u2_{t-1} + b q12_{t-1}. phi is the post-listing shift in the correlation target. The same model is fitted to every control-coin-SPY pair, and that cross-sectional distribution of phi is the placebo distribution for Bitcoin's.",
+    "unit_of_analysis": "day",
+    "outcome": "conditional_correlation_btc_spy",
+    "treatment": "post_etf",
+    "n_observations": 1255,
+    "n_clusters": null,
+    "cluster_level": "none",
+    "fixed_effects": [],
+    "controls": [],
+    "n_pre_treatment": 774,
+    "n_post_treatment": 481,
+    "coefficients": {
+      "phi_post": {
+        "estimate": 0.12030805,
+        "se": 0.067392,
+        "t_stat": 1.78519779,
+        "p_value": 0.07422924,
+        "ci_lower": -0.01178027,
+        "ci_upper": 0.25239637
+      },
+      "dcc_a": {
+        "estimate": 0.01207285,
+        "se": null,
+        "t_stat": null,
+        "p_value": null
+      },
+      "dcc_b": {
+        "estimate": 0.97485216,
+        "se": null,
+        "t_stat": null,
+        "p_value": null
+      }
+    },
+    "p_value_ri_across_control_pairs": 0.2,
+    "control_pair_phi": {
+      "LTC": 0.05360288,
+      "BNB": 0.0377048,
+      "ADA": 0.02504154,
+      "DOGE": 0.14565085,
+      "BCH": 0.06767187,
+      "LINK": 0.07817328,
+      "AVAX": 0.0856868,
+      "DOT": 0.0156522,
+      "XLM": 0.05820015
+    },
+    "unconditional_corr_btc_spy": 0.38035286,
+    "diagnostics": {
+      "loglik": 104.82391364,
+      "converged": true,
+      "dcc_a_plus_b": 0.98692501,
+      "garch_btc_alpha": 0.06760778,
+      "garch_btc_beta": 0.90704253,
+      "garch_spy_alpha": 0.11028675,
+      "garch_spy_beta": 0.85592458,
+      "n_fixed_effect_groups": 0,
+      "df_residual": 1252,
+      "note": "Second-stage standard errors ignore first-stage GARCH estimation error; the control-pair placebo distribution is the reliable inference channel. The DCC uses the uninterrupted daily series (no donut) because the recursion needs a continuous sample."
+    }
+  },
+  "bdm_collapsed": {
+    "specification": "Bertrand-Duflo-Mullainathan collapse: the panel is reduced to one pre-mean and one post-mean per coin and the DiD re-estimated, which removes serial correlation in the idiosyncratic error by construction.",
+    "n_observations": 20,
+    "n_clusters": 10,
+    "cluster_level": "coin",
+    "fixed_effects": [
+      "coin",
+      "period"
+    ],
+    "controls": [],
+    "coefficients": {
+      "d_etf_listed": {
+        "estimate": -0.02117707,
+        "se": 0.02455851,
+        "t_stat": -0.86231081,
+        "p_value": 0.41090398,
+        "ci_lower": -0.07673228,
+        "ci_upper": 0.03437814
+      }
+    },
+    "diagnostics": {
+      "within_r_squared": 0.021337,
+      "df_residual": 8,
+      "n_fixed_effect_groups": 11
+    },
+    "unit_of_analysis": "coin-period",
+    "outcome": "y_fisherz_corr_equity",
+    "treatment": "d_etf_listed",
+    "treated_units": 1,
+    "n_pre_treatment": 10,
+    "n_post_treatment": 10
+  },
+  "power_analysis": {
+    "specification": "Minimum detectable effect for the primary specification at alpha=0.05 two-sided and 80% power: MDE = (z_0.975 + z_0.80) * se = 2.80158 * se, computed from three reference distributions. The randomization-based number is the honest one under a single treated unit. Pre-specified in econometric_spec.md section 9 before estimation.",
+    "unit_of_analysis": "coin-month",
+    "outcome": "y_fisherz_corr_equity",
+    "treatment": "d_etf_listed",
+    "n_observations": 540,
+    "n_clusters": 10,
+    "cluster_level": "coin",
+    "fixed_effects": [
+      "coin",
+      "year_month"
+    ],
+    "controls": [],
+    "n_pre_treatment": 31,
+    "n_post_treatment": 23,
+    "coefficients": {
+      "mde_fisherz_ri": {
+        "estimate": 0.17355462,
+        "se": null,
+        "t_stat": null,
+        "p_value": null
+      },
+      "mde_fisherz_cluster": {
+        "estimate": 0.04750781,
+        "se": null,
+        "t_stat": null,
+        "p_value": null
+      },
+      "mde_fisherz_conley_taber": {
+        "estimate": 0.14974431,
+        "se": null,
+        "t_stat": null,
+        "p_value": null
+      }
+    },
+    "alpha": 0.05,
+    "power": 0.8,
+    "mde_multiplier": 2.80158522,
+    "se_cluster": 0.01695747,
+    "sd_randomization": 0.06194872,
+    "sd_conley_taber": 0.05344985,
+    "mde_correlation_units_ri": 0.14819737,
+    "mde_correlation_units_cluster": 0.04056666,
+    "mde_correlation_units_conley_taber": 0.12786587,
+    "rho_pre_treatment_mean": 0.38223723,
+    "point_estimate": -0.02117707,
+    "correlation_conversion_factor": 0.8538947,
+    "ci95_lower_fisherz": -0.05953754,
+    "ci95_upper_fisherz": 0.0171834,
+    "ci95_upper_correlation_units": 0.01467281,
+    "ri_ci95_lower_fisherz": -0.14259433,
+    "ri_ci95_upper_fisherz": 0.10024019,
+    "ri_ci95_lower_correlation_units": -0.12176054,
+    "ri_ci95_upper_correlation_units": 0.08559457,
+    "conley_taber_ci_lower_correlation_units": -0.09090394,
+    "conley_taber_ci_upper_correlation_units": 0.03295792,
+    "prespecified_null_threshold_fisherz": 0.1,
+    "prespecified_mde_bar_correlation_units": 0.1,
+    "prespecified_bar_met": false,
+    "verdict": "The randomization-based MDE in correlation units is 0.148. Section 9.2 of econometric_spec.md pre-committed to licensing a null claim only if this was at or below 0.10 and to making no null claim if it exceeded 0.20. The realized value falls between the two bars, so the paper reports a null on every pre-specified dimension while stating that effects below roughly 0.15 in correlation units could not have been detected with 80% power. The randomization 95% interval separately excludes increases above 0.086 in correlation units.",
+    "diagnostics": {
+      "n_fixed_effect_groups": 0,
+      "df_residual": 476
+    }
+  }
+}

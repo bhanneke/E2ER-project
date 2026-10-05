@@ -1,8 +1,9 @@
 """Data a study loaded under a source's own terms, and what publishing it requires.
 
-A connector whose source sets terms of use (today the Global Macro Database,
-``e2er-data gmd``) records every load in ``data/data_sources.json`` and, for a
-table, in ``data/data_dictionary.json``. ``e2er publish`` reads both:
+A connector whose source sets terms of use (the Global Macro Database,
+``e2er-data gmd``, and Yahoo Finance, ``e2er-data yfinance``) records every
+load in ``data/data_sources.json`` and, for a table, in
+``data/data_dictionary.json``. ``e2er publish`` reads both:
 
 - the description (``e2er.json``) names the source, its terms and its citation
   on every data file that holds the source's data, public or private;
@@ -11,7 +12,9 @@ table, in ``data/data_dictionary.json``. ``e2er publish`` reads both:
   deposit) needs the researcher's confirmation: ``--accept-data-terms gmd``,
   or a yes at the prompt in a terminal;
 - a Zenodo deposit of the data states the terms in its description and takes
-  the licence that matches them.
+  the licence that matches them; for a source no Zenodo licence fits (Yahoo
+  Finance, personal use only) e2er refuses the data deposit;
+- readers on e2er.org see a link to the source instead of a request button.
 """
 
 from __future__ import annotations
@@ -32,11 +35,29 @@ class SourceTerms:
     terms_url: str
     #: The terms in plain words, one line each, shown before the researcher confirms.
     plain: tuple[str, ...]
-    #: Zenodo's licence id that does not contradict the terms (applies to the whole data deposit).
-    zenodo_licence: str
-    cite_key: str
+    #: Zenodo's licence id that does not contradict the terms (applies to the whole data deposit);
+    #: None: no Zenodo licence fits, so e2er does not deposit the data on Zenodo.
+    zenodo_licence: str | None
+    #: The BibTeX key the paper must cite; None when the source publishes no citation format.
+    cite_key: str | None
+    #: The source's own citation; empty when it publishes none.
     citation: str
     licence: str
+    #: What the terms do, after "whose terms" (publish's reader note) and after "its terms" (the finish page).
+    limit: str = "do not allow passing them on outside the study's replication package"
+    limit_finish: str = "do not allow passing the data on outside the study's replication package"
+    #: How the confirmation ends: "Publish the GMD data with the study under these terms?"
+    confirm: str = "under these terms"
+    #: A line the refusal of --data public adds, when the terms rule out more than e2er can check.
+    warn: str = ""
+    #: "the " before the name in a sentence ("the Global Macro Database"), "" for a name used bare.
+    article: str = "the "
+    #: Why no Zenodo licence fits (when ``zenodo_licence`` is None).
+    no_zenodo_why: str = ""
+
+    @property
+    def the_short(self) -> str:
+        return f"{self.article}{self.short}"
 
 
 def _gmd() -> SourceTerms:
@@ -55,10 +76,36 @@ def _gmd() -> SourceTerms:
     )
 
 
+def _yahoo() -> SourceTerms:
+    from ..modules.data.load_record import YFINANCE
+
+    return SourceTerms(
+        connector=YFINANCE.connector,
+        name="Yahoo Finance",
+        short="Yahoo Finance",
+        terms_url=YFINANCE.terms_url,
+        # Verbatim from the load record's terms summary, one sentence per line.
+        plain=tuple(
+            s.strip() if s.strip().endswith(".") else s.strip() + "." for s in YFINANCE.terms_summary.split(". ")
+        ),
+        zenodo_licence=None,
+        no_zenodo_why=(
+            "Yahoo's terms allow personal use only, and a Zenodo deposit republishes the data for anyone to reuse"
+        ),
+        cite_key=None,
+        citation="",
+        licence=YFINANCE.licence,
+        limit="allow personal use only",
+        limit_finish="allow personal use only",
+        confirm="although Yahoo's terms allow personal use only",
+        warn="Yahoo's terms allow personal use only.",
+        article="",
+    )
+
+
 def known() -> dict[str, SourceTerms]:
     """The sources with terms e2er knows, by connector name."""
-    t = _gmd()
-    return {t.connector: t}
+    return {t.connector: t for t in (_gmd(), _yahoo())}
 
 
 @dataclass
@@ -72,7 +119,19 @@ class Use:
     @property
     def label(self) -> str:
         rel = ", ".join(self.versions)
-        return f"{self.terms.name} ({self.terms.short})" + (f", release {rel}" if rel else "")
+        t = self.terms
+        name = t.name if t.name == t.short else f"{t.name} ({t.short})"
+        return name + (f", release {rel}" if rel else "")
+
+    @property
+    def the_label(self) -> str:
+        return f"{self.terms.article}{self.label}"
+
+    @property
+    def the_name(self) -> str:
+        """The source as the reader note names it: "the Global Macro Database (GMD)", "Yahoo Finance"."""
+        t = self.terms
+        return t.article + (t.name if t.name == t.short else f"{t.name} ({t.short})")
 
 
 def _read(path: Path) -> Any:
@@ -125,21 +184,27 @@ def uses(bundle: Path) -> list[Use]:
 
 def statement(use: Use) -> str:
     """The sentence the description carries on each data file holding the source's data."""
-    return f"Holds data from the {use.label}, used under its terms. {use.terms.licence}"
+    return f"Holds data from {use.the_label}, used under its terms. {use.terms.licence}"
 
 
 def annotate(manifest: dict[str, Any], found: list[Use]) -> None:
     """Name the source, its terms and its citation on the data files of the description that hold its data.
 
     The site's format (research-object 0.1) lets a ``data`` entry carry more
-    than path, sha256 and bytes; these keys travel with the description.
+    than path, sha256 and bytes; these keys travel with the description. A
+    file holding data of several sources (``data/data.db`` with a GMD table and
+    Yahoo prices) names each: sources joined with "; ", their statements and
+    citations one after the other.
     """
-    for use in found:
-        for entry in manifest.get("data") or []:
-            if entry.get("path") in use.files:
-                entry["source"] = use.label
-                entry["terms"] = statement(use)
-                entry["citation"] = use.terms.citation
+    for entry in manifest.get("data") or []:
+        held = [u for u in found if entry.get("path") in u.files]
+        if not held:
+            continue
+        entry["source"] = "; ".join(u.label for u in held)
+        entry["terms"] = " ".join(statement(u) for u in held)
+        citations = [u.terms.citation for u in held if u.terms.citation]
+        if citations:
+            entry["citation"] = " ".join(citations)
 
 
 def missing_confirmation(found: list[Use], accepted: list[str] | None) -> list[Use]:
@@ -154,9 +219,10 @@ def unknown_names(accepted: list[str] | None) -> list[str]:
 
 def terms_text(use: Use) -> str:
     """The terms in plain words, for the terminal."""
-    lines = [f"The study uses data from the {use.label}. Its terms:"]
+    lines = [f"The study uses data from {use.the_label}. Its terms:"]
     lines += [f"  - {p}" for p in use.terms.plain]
-    lines.append(f"  Citation: {use.terms.citation}")
+    if use.terms.citation:
+        lines.append(f"  Citation: {use.terms.citation}")
     lines.append(f"  Full terms: {use.terms.terms_url}")
     return "\n".join(lines)
 
@@ -168,6 +234,7 @@ def refusal(missing: list[Use]) -> str:
         lines.append(
             f"error: the study uses {u.label} data. Publishing them with the study (--data public) "
             f"needs your confirmation of the {u.terms.short} terms: {u.terms.terms_url}"
+            + (f"\n  {u.terms.warn}" if u.terms.warn else "")
         )
     lines.append("  Nothing was written or sent.")
     lines.append(f"  To confirm, add --accept-data-terms {names}; to keep the data here, use --data private.")
@@ -179,7 +246,7 @@ def deposit_text(found: list[Use]) -> str:
     parts = []
     for u in found:
         parts.append(
-            f"This deposit holds data from the {u.label}, published with the study as part of its "
+            f"This deposit holds data from {u.the_label}, published with the study as part of its "
             f"replication package and labelled as {u.terms.short} data. {u.terms.licence} "
             f"Cite: {u.terms.citation} Full terms: {u.terms.terms_url}."
         )
@@ -193,4 +260,21 @@ def bibliography_lacks(bundle: Path, found: list[Use]) -> list[Use]:
         text = refs.read_text(encoding="utf-8") if refs.is_file() else ""
     except OSError:
         text = ""
-    return [u for u in found if f"{{{u.terms.cite_key}," not in text.replace(" ", "")]
+    return [u for u in found if u.terms.cite_key and f"{{{u.terms.cite_key}," not in text.replace(" ", "")]
+
+
+def no_zenodo(found: list[Use]) -> list[Use]:
+    """The sources whose data e2er does not deposit on Zenodo (no Zenodo licence fits their terms)."""
+    return [u for u in found if u.terms.zenodo_licence is None]
+
+
+def zenodo_refusal(refused: list[Use]) -> str:
+    lines = [
+        f"error: e2er does not deposit {u.terms.the_short} data on Zenodo: {u.terms.no_zenodo_why}." for u in refused
+    ]
+    lines.append("  Nothing was written or sent.")
+    lines.append(
+        "  To deposit the code alone, use --data private; to publish the data with the study, "
+        "give --data-url and leave out --zenodo."
+    )
+    return "\n".join(lines)

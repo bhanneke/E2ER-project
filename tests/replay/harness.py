@@ -66,7 +66,7 @@ def _patch_backend() -> None:
 
     from .backend import ReplayBackend
 
-    def get_backend(settings: Any, name: str | None = None) -> Any:
+    def get_backend(settings: Any, name: str | None = None, model: str | None = None) -> Any:
         return ReplayBackend()
 
     registry.get_backend = get_backend  # type: ignore[assignment]

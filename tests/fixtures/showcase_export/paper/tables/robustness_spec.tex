@@ -1,0 +1,23 @@
+\begin{table}[t]
+\centering
+\begin{threeparttable}
+\caption{Robustness: equity leg, differential macro loadings and post-period sub-windows}
+\label{tab:robustness_spec}
+\begin{tabular}{lcccccc}
+\toprule
+ & (1) Market factor leg & (2) Non-US equity leg & (3) Macro $\times$ BTC & (4) Pre-halving post & (5) Pre-election post & (6) Post-election post \\
+\midrule
+$\hat\tau$: BTC $\times$ Post & -0.0239 & -0.0496*** & 0.0195 & -0.2613*** & -0.0439** & -0.0066 \\
+ & (0.0174) & (0.0145) & (0.0201) & (0.0316) & (0.0193) & (0.0189) \\
+Randomization $p$ (placebo-in-space) & 0.80 & 0.30 & 0.80 & 0.10 & 0.60 & 1.00 \\
+SD of the randomization distribution & 0.0549 & 0.0458 & 0.0536 & 0.0991 & 0.0605 & 0.0594 \\
+Post-treatment months & 23 & 23 & 23 & 2 & 9 & 14 \\
+$N$ & 540 & 540 & 540 & 330 & 400 & 450 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}[flushleft]
+\footnotesize
+\item Column (1) replaces SPY with the excess-return market factor and column (2) with MSCI ACWI ex-US; if the operative mechanism were a US brokerage habitat, co-movement should have risen more against US than against non-US equities. Column (3) adds monthly VIX and MOVE levels interacted with the Bitcoin indicator, which is the version of the macro-confounding story that calendar-month fixed effects cannot absorb; the interaction coefficients themselves are reported in Table~\ref{tab:macro}. Columns (4)--(6) partition the post-period around the two Bitcoin-specific shocks the cross-coin design cannot difference out. Column (4) truncates the post-window before the April 2024 halving and rests on the two post-treatment months printed in the table, which is far too few to establish anything and is reported because our pre-analysis committed to reporting it. Column (5) truncates the post-window before the November 2024 US election and is the estimate our pre-analysis designated as ETF-attributable. Column (6) restricts the post-period to the months after the election and should be read as the ETF plus the post-election policy regime rather than as an ETF effect. Randomization $p$-values have a floor of 0.10 on nine donor coins.
+\end{tablenotes}
+\end{threeparttable}
+\end{table}

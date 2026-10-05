@@ -1,0 +1,31 @@
+\begin{table}[t]
+\centering
+\begin{threeparttable}
+\caption{Inference procedures for the baseline estimate under a single treated unit}
+\label{tab:inference}
+\begin{tabular}{lc}
+\toprule
+ & Baseline specification \\
+\midrule
+$\hat\tau$: BTC $\times$ Post (Fisher-$z$) & -0.0212 \\
+ & (0.0170) \\
+$\hat\tau$ translated into correlation units & -0.0181 \\
+Bitcoin pre-period mean correlation & 0.3822 \\
+Randomization $p$ (space $\times$ time grid) --- primary & 0.665 \\
+Randomization $p$ (placebo-in-space only) & 0.80 \\
+Wild cluster bootstrap $p$ (unreliable here) & 0.467 \\
+Placebo assignments in the grid & 199 \\
+SD of the randomization distribution & 0.0619 \\
+Randomization 95\% CI, lower (Fisher-$z$) & -0.1426 \\
+Randomization 95\% CI, upper (Fisher-$z$) & 0.1002 \\
+Conley--Taber 95\% CI, lower (Fisher-$z$) & -0.1065 \\
+Conley--Taber 95\% CI, upper (Fisher-$z$) & 0.0386 \\
+$N$ & 540 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}[flushleft]
+\footnotesize
+\item All rows refer to the baseline coin-month specification reported in column (1) of Table~\ref{tab:main}. With ten clusters of which one is treated, cluster-robust variance estimation has no valid asymptotic justification and the wild cluster bootstrap is also unreliable, so the randomization and Conley--Taber procedures are the ones on which the paper's claims rest. The randomization $p$-value is the share of placebo assignments producing an absolute estimate at least as large as the actual one, over a grid combining nine placebo coins at the true date with placebo dates drawn from every month of 2021m7--2023m1 on the pre-period sample. The cluster-robust interval printed in Table~\ref{tab:main} is roughly a third the width of the two valid intervals shown here, which is a direct measurement of the downward bias a single treated cluster induces. Correlation units are obtained via $\Delta\rho \approx (1-\bar\rho_{\mathrm{pre}}^2)\,\hat\tau$.
+\end{tablenotes}
+\end{threeparttable}
+\end{table}

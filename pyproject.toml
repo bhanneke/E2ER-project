@@ -1,6 +1,6 @@
 [project]
 name = "e2er"
-version = "0.13.6"
+version = "0.13.7"
 description = "e2er is the open infrastructure for publishing, verifying, reproducing and reusing AI-enabled research."
 requires-python = ">=3.11"
 readme = "README.md"
@@ -24,7 +24,7 @@ dependencies = [
     # Cap below 3.0: pandas 3.0 removed legacy offset aliases ('M', 'Y', …).
     # LLM-generated estimation scripts use `resample("M")` (the pre-3.0
     # idiom), which raises on 3.x. Pin to the 2.x line the generated code
-    # targets. See docs/M4_RERUN_FINDINGS.md.
+    # targets. See docs/internal/M4_RERUN_FINDINGS.md.
     "pandas>=2.0,<3.0",
     "numpy>=1.26",
     # The estimation runner executes a specialist's run_estimation.py with
@@ -44,6 +44,11 @@ dependencies = [
     # transitively in most environments, which is exactly why it has to be
     # declared: a fresh `pip install e2er` would otherwise crash on first use.
     "PyYAML>=6.0",
+    # Readers for the .parquet and .xlsx files a researcher puts in the data
+    # folder (README, "Bring your own data"). pandas imports them lazily, so
+    # without these the files were skipped with a warning nobody saw.
+    "pyarrow>=14.0",
+    "openpyxl>=3.1",
 ]
 
 [project.optional-dependencies]
@@ -118,7 +123,7 @@ line-length = 120
 target-version = "py311"
 # Recorded output of real runs, replayed byte for byte by the end-to-end stories
 # (tests/replay/): the specialists wrote these files, so they are data, not code we style.
-extend-exclude = ["tests/fixtures/replay"]
+extend-exclude = ["tests/fixtures/replay", "tests/fixtures/showcase_export"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP"]

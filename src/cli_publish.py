@@ -365,7 +365,14 @@ def _describe(
             return 1, None
     for use in licensed:
         shared = "published with the study" if availability["data"]["access"] == "public" else "kept private"
-        print(f"note: the study uses {use.label} data ({shared}); the description states its terms and citation")
+        what = "terms and citation" if use.terms.citation else "terms"
+        print(f"note: the study uses {use.label} data ({shared}); the description states its {what}")
+    if (zenodo or zenodo_plan_only) and availability["data"]["access"] == "public":
+        # Data whose terms no Zenodo licence fits (Yahoo Finance) are never deposited.
+        refused_terms = data_terms.no_zenodo(licensed)
+        if refused_terms:
+            print(data_terms.zenodo_refusal(refused_terms))
+            return 1, None
     for use in data_terms.bibliography_lacks(b, licensed):
         print(f"warning: paper/refs.bib has no entry {use.terms.cite_key}; the paper must cite the {use.terms.short}")
     # A demonstration study (--demonstration, the purpose recorded on the study, or
@@ -593,7 +600,7 @@ def _describe(
     if access:
         print(f"  paper: public ({access['pdf']})")
     # What readers see for what is not public, and the flag that publishes it (no nudge for data a source's terms keep).
-    restricted = [f"{u.terms.name} ({u.terms.short})" for u in licensed]
+    restricted: list[str | tuple[str, str]] = [(u.the_name, u.terms.limit) for u in licensed]
     for line in reader_notes(availability, access, restricted):
         print(f"  note: {line}")
     if purpose:
@@ -701,7 +708,7 @@ def publish(bundle: str, *, dry_run: bool = False, to_url: str | None = None, of
         accepted = list(kw.get("accept_data_terms") or [])
         for use in data_terms.missing_confirmation(data_terms.uses(b), accepted):
             print(data_terms.terms_text(use))
-            if _confirm(f"Publish the {use.terms.short} data with the study under these terms?"):
+            if _confirm(f"Publish the {use.terms.short} data with the study {use.terms.confirm}?"):
                 accepted.append(use.terms.connector)
         kw["accept_data_terms"] = accepted
     if kw.get("zenodo") and offline:
@@ -944,7 +951,10 @@ def _deposit_plan(bundle: Path, availability: dict[str, Any], project: str) -> d
 def _deposit_licence(item: str, manifest: dict[str, Any], licensed: list[data_terms.Use] | None = None) -> str:
     """Zenodo's licence id for a deposit; data held under a source's terms take the licence that matches them."""
     if item == "data" and licensed:
-        return licensed[0].terms.zenodo_licence
+        licence = licensed[0].terms.zenodo_licence
+        if licence is None:  # Yahoo Finance: publish refuses the data deposit before it gets here
+            raise ValueError(f"no Zenodo licence fits the terms of {licensed[0].label}")
+        return licence
     return zen.LICENCES.get(manifest.get("license") or "", "cc-by-4.0" if item == "data" else "mit")
 
 

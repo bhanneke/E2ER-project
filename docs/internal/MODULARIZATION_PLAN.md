@@ -1,7 +1,7 @@
 # Modularization plan — pluggable data & library providers
 
 **Status:** active design doc (2026-05-28). **Supersedes the roadmap in
-`docs/NEXT_STEPS.md`** (that doc is May-12 vintage and frames everything
+`docs/internal/NEXT_STEPS.md`** (that doc is May-12 vintage and frames everything
 around an Allium blocker that no longer reflects reality).
 
 ## Goal

@@ -31,7 +31,7 @@ and a real end-to-end paper proof. The first four shipped (M1-M3 + M4.x
 fixes). The last one — the actual proof — **failed in the M4 run**, and
 correctly so. That's the load-bearing detail.
 
-What M4 surfaced (documented in [`docs/M4_FINDINGS.md`](M4_FINDINGS.md)):
+What M4 surfaced (documented in [`docs/internal/M4_FINDINGS.md`](M4_FINDINGS.md)):
 
 - Three real bugs in the v0.8 stack that M4.1/M4.2/M4.3 fixed.
 - The mechanism reviewer's verdict — *"A referee cannot accept, or even
@@ -79,7 +79,7 @@ v0.8-quality validation, not v0.9.
   lands first).
 - Release notes describe M1-M3 + M4.x as improvements to the v0.8 line
   with no breaking API changes.
-- The `docs/V0.9_PLAN.md` document stays as **the goal**, and a tag of
+- The `docs/internal/V0.9_PLAN.md` document stays as **the goal**, and a tag of
   `v0.9.0` is **gated on M5 producing a paper that survives review**.
 - v1.0 is not on the timeline; it gets a separate plan when v0.9 has
   shipped and been used.
@@ -133,7 +133,7 @@ Light, mostly mechanical:
    `v0.9` work was implicit back to **`0.8.2`** (or `0.8.3` if a few more
    bugfix PRs land before tagging). The standardised release flow then
    does the rest.
-2. **Rename or annotate**: `docs/V0.9_PLAN.md` either renamed to
+2. **Rename or annotate**: `docs/internal/V0.9_PLAN.md` either renamed to
    something neutral (`docs/ROADMAP.md`) or kept as-is with a top-line
    note that v0.9.0 is **gated on M5 (real paper succeeds)** and the
    five Mi milestones in it are necessary but not sufficient.

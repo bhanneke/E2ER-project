@@ -1,6 +1,6 @@
 """Data module — provider capability interfaces and series adapters (M3a).
 
-M3 of docs/MODULARIZATION_PLAN.md, series side. The data lane has two
+M3 of docs/internal/MODULARIZATION_PLAN.md, series side. The data lane has two
 capability sub-types (locked decision #2):
 
 - ``SeriesFetcher`` — parameterized reads of public series data (FRED macro,

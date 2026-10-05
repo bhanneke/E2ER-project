@@ -23,7 +23,7 @@ class OpenRouterBackend(LLMBackend):
     Token usage mapped from OpenAI format; no cache fields available.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, model: str | None = None) -> None:
         settings = get_settings()
         if not settings.openrouter_api_key:
             raise ValueError("OPENROUTER_API_KEY is not set")
@@ -36,7 +36,7 @@ class OpenRouterBackend(LLMBackend):
             },
             max_retries=5,
         )
-        self._model = settings.openrouter_model
+        self._model = model or settings.openrouter_model
         self._max_tokens = settings.max_tokens_per_call
 
     def _convert_tools(self, tools: list[dict[str, Any]]) -> list[dict[str, Any]]:

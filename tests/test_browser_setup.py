@@ -522,7 +522,9 @@ def live_db(tmp_path, monkeypatch):
     monkeypatch.setattr(dbc, "execute", dbc._sqlite_execute)
     monkeypatch.setattr(dbc, "fetch_all", dbc._sqlite_fetch_all)
     monkeypatch.setattr(dbc, "fetch_one", _fetch_one)
-    monkeypatch.setattr("src.modules.llm.registry.get_backend", lambda settings, name=None: MockLLMBackend())
+    monkeypatch.setattr(
+        "src.modules.llm.registry.get_backend", lambda settings, name=None, model=None: MockLLMBackend()
+    )
 
     async def _nothing(*a, **kw):
         return None

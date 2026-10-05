@@ -1,0 +1,286 @@
+{
+  "schema": "e2er-reproduce/1",
+  "about": "Added on 2026-10-05, after the run, so that the study can be run again. The steps are the study's own scripts in the order the run used them; get_data.py replaces the Yahoo Finance extracts, which the study does not ship.",
+  "requirements": "code/requirements.txt",
+  "files": {
+    "get_data.py": "code/get_data.py",
+    "build_panel.py": "code/scratch/build_panel.py",
+    "run_estimation.py": "code/run_estimation.py"
+  },
+  "steps": [
+    {
+      "run": [
+        "python",
+        "get_data.py"
+      ],
+      "about": "reload the Yahoo Finance extracts with e2er-data"
+    },
+    {
+      "run": [
+        "python",
+        "build_panel.py"
+      ],
+      "about": "build the panel; downloads the Ken French factors"
+    },
+    {
+      "run": [
+        "python",
+        "run_estimation.py"
+      ],
+      "about": "estimate the models"
+    }
+  ],
+  "inputs": [
+    {
+      "path": "data/px_BTC_USD.csv",
+      "sha256": "94f4d28196e6d37e4cab0995a30d731826f852467fbc412a82a7a28a4e9abc92",
+      "rows": 2110,
+      "source": "Yahoo Finance BTC-USD, daily, 2020-12-01 to 2026-09-11, loaded 2026-09-11"
+    },
+    {
+      "path": "data/px_ETH_USD.csv",
+      "sha256": "6a90b573d86a86cf079001684953822ca1ff99a012e689da70d98b3f8c65b82c",
+      "rows": 2110,
+      "source": "Yahoo Finance ETH-USD, daily, 2020-12-01 to 2026-09-11, loaded 2026-09-11"
+    },
+    {
+      "path": "data/px_SOL_USD.csv",
+      "sha256": "6715af07cd7059da9631ec7da3228616ae8b03418071efeb242c20efb0d56e93",
+      "rows": 2110,
+      "source": "Yahoo Finance SOL-USD, daily, 2020-12-01 to 2026-09-11, loaded 2026-09-11"
+    },
+    {
+      "path": "data/px_XRP_USD.csv",
+      "sha256": "61a463c6f0cb4b43bfe0051e1a1ba572dab4522c4eedec9a2549b277c03d75bf",
+      "rows": 2110,
+      "source": "Yahoo Finance XRP-USD, daily, 2020-12-01 to 2026-09-11, loaded 2026-09-11"
+    },
+    {
+      "path": "data/px_LTC_USD.csv",
+      "sha256": "00a8f62f65e69651f93ba71f45367d9472f78c03f4f38e51fe378f0464425604",
+      "rows": 2110,
+      "source": "Yahoo Finance LTC-USD, daily, 2020-12-01 to 2026-09-11, loaded 2026-09-11"
+    },
+    {
+      "path": "data/px_BNB_USD.csv",
+      "sha256": "d705af3a20ff12ff0db5d5bec0d6a892176dad3d7407edc23e85366b5573a20d",
+      "rows": 2110,
+      "source": "Yahoo Finance BNB-USD, daily, 2020-12-01 to 2026-09-11, loaded 2026-09-11"
+    },
+    {
+      "path": "data/px_ADA_USD.csv",
+      "sha256": "39bb19620b328016337c5550bc8f08a5ac1abd44417f0acd3f9b7456e3caaa61",
+      "rows": 2110,
+      "source": "Yahoo Finance ADA-USD, daily, 2020-12-01 to 2026-09-11, loaded 2026-09-11"
+    },
+    {
+      "path": "data/px_DOGE_USD.csv",
+      "sha256": "3b7cce325f715a9393d861c6bfd5943321173072bef2e6c62c7e42b79927438e",
+      "rows": 2110,
+      "source": "Yahoo Finance DOGE-USD, daily, 2020-12-01 to 2026-09-11, loaded 2026-09-11"
+    },
+    {
+      "path": "data/px_BCH_USD.csv",
+      "sha256": "1dd6d22be3e9032f9d21f60e83f258ab734d40689ecb3c0d0052fdbefd4b5f30",
+      "rows": 2110,
+      "source": "Yahoo Finance BCH-USD, daily, 2020-12-01 to 2026-09-11, loaded 2026-09-11"
+    },
+    {
+      "path": "data/px_LINK_USD.csv",
+      "sha256": "976580e54cc83f3bddf3b3da84e3f268296160f2f578639e5012d3b7de20d335",
+      "rows": 2110,
+      "source": "Yahoo Finance LINK-USD, daily, 2020-12-01 to 2026-09-11, loaded 2026-09-11"
+    },
+    {
+      "path": "data/px_AVAX_USD.csv",
+      "sha256": "71363bfe9ae70d1fbd198379c1f3f64fda9c4725c8225c9aee40353c2664c312",
+      "rows": 2110,
+      "source": "Yahoo Finance AVAX-USD, daily, 2020-12-01 to 2026-09-11, loaded 2026-09-11"
+    },
+    {
+      "path": "data/px_DOT_USD.csv",
+      "sha256": "45eca939aef4eb8a5ea32ad8fc0c83974c94bd28057e941d1a0839b671d3e049",
+      "rows": 2110,
+      "source": "Yahoo Finance DOT-USD, daily, 2020-12-01 to 2026-09-11, loaded 2026-09-11"
+    },
+    {
+      "path": "data/px_XLM_USD.csv",
+      "sha256": "52e18ccc0b7a24d7852894a950718a7f595d08bc8ac8f52dbe05bf74e2cec96c",
+      "rows": 2110,
+      "source": "Yahoo Finance XLM-USD, daily, 2020-12-01 to 2026-09-11, loaded 2026-09-11"
+    },
+    {
+      "path": "data/px_SPY.csv",
+      "sha256": "95217e99718a7bcaf65ccb413f01410fef53ade3b1925e8941ad865b3815f12e",
+      "rows": 1450,
+      "source": "Yahoo Finance SPY, daily, 2020-12-01 to 2026-09-11, loaded 2026-09-11"
+    },
+    {
+      "path": "data/px_QQQ.csv",
+      "sha256": "b741a13997bcc4dd9a6766506bd98f3ac27ca4a550851e4773765c7ed0ef7ed1",
+      "rows": 1450,
+      "source": "Yahoo Finance QQQ, daily, 2020-12-01 to 2026-09-11, loaded 2026-09-11"
+    },
+    {
+      "path": "data/px_IWM.csv",
+      "sha256": "ecd398410d3ef9b6adda53bdec0001a898cba82c00b5c90dd839b2302dba600a",
+      "rows": 1450,
+      "source": "Yahoo Finance IWM, daily, 2020-12-01 to 2026-09-11, loaded 2026-09-11"
+    },
+    {
+      "path": "data/px_ARKK.csv",
+      "sha256": "4d5f55c934132721a37bc6bbe1ea927a8020f4bfbb647359fcfd485cf2dca306",
+      "rows": 1450,
+      "source": "Yahoo Finance ARKK, daily, 2020-12-01 to 2026-09-11, loaded 2026-09-11"
+    },
+    {
+      "path": "data/px_XLK.csv",
+      "sha256": "12c5b55313b92c069ce42b82b612947382a708519f8f1bd795d23b504679350a",
+      "rows": 1450,
+      "source": "Yahoo Finance XLK, daily, 2020-12-01 to 2026-09-11, loaded 2026-09-11"
+    },
+    {
+      "path": "data/px_ACWX.csv",
+      "sha256": "b8119a94b9a1ec7921c8172b3fe50dccb6de821013eee48119bf16b15b657ebb",
+      "rows": 1450,
+      "source": "Yahoo Finance ACWX, daily, 2020-12-01 to 2026-09-11, loaded 2026-09-11"
+    },
+    {
+      "path": "data/px_GLD.csv",
+      "sha256": "4a09497f6345732db95f691a3fa79cef10d69ceb70e444066201683a481f75d3",
+      "rows": 1450,
+      "source": "Yahoo Finance GLD, daily, 2020-12-01 to 2026-09-11, loaded 2026-09-11"
+    },
+    {
+      "path": "data/px_SLV.csv",
+      "sha256": "3d71a9b009adfe469ff4a39eab9548abb1e7c0bab32933f412eb78024f8c7d7f",
+      "rows": 1450,
+      "source": "Yahoo Finance SLV, daily, 2020-12-01 to 2026-09-11, loaded 2026-09-11"
+    },
+    {
+      "path": "data/px_GSPC.csv",
+      "sha256": "483dcee17d816135b943d3f04787a5ee9a56af4b2aa2741059be5b10b1bcec74",
+      "rows": 1450,
+      "source": "Yahoo Finance ^GSPC, daily, 2020-12-01 to 2026-09-11, loaded 2026-09-11"
+    },
+    {
+      "path": "data/px_VIX.csv",
+      "sha256": "ec5bacb2f0798b20f7de29b00409634906b2845d20cb25d3d7422711cbb28a4d",
+      "rows": 1452,
+      "source": "Yahoo Finance ^VIX, daily, 2020-12-01 to 2026-09-11, loaded 2026-09-11"
+    },
+    {
+      "path": "data/px_MOVE.csv",
+      "sha256": "77ac87c76ba02a23b89927390b84eae6aa05184a5ac46d1c9aa024a862535bf4",
+      "rows": 1441,
+      "source": "Yahoo Finance ^MOVE, daily, 2020-12-01 to 2026-09-11, loaded 2026-09-11"
+    },
+    {
+      "path": "data/px_TNX.csv",
+      "sha256": "9c957bfbf1c7e66c30ea7fa503a50074328468b64cd3e5a72dea92ac716781e0",
+      "rows": 1450,
+      "source": "Yahoo Finance ^TNX, daily, 2020-12-01 to 2026-09-11, loaded 2026-09-11"
+    },
+    {
+      "path": "data/px_DXY.csv",
+      "sha256": "d720008e955c58f5be2184b131574ad9d37d7de98ed5065ecd4b3dd22c58694c",
+      "rows": 1452,
+      "source": "Yahoo Finance DX-Y.NYB, daily, 2020-12-01 to 2026-09-11, loaded 2026-09-11"
+    },
+    {
+      "path": "data/etf_IBIT.csv",
+      "sha256": "03ae7dd7aea79669f713056d7da7c7ce25f3be834a81b59048b78c1be9e26a78",
+      "rows": 668,
+      "source": "Yahoo Finance IBIT, daily, 2020-12-01 to 2026-09-11, loaded 2026-09-11"
+    },
+    {
+      "path": "data/etf_FBTC.csv",
+      "sha256": "16574731df6ddd6fa7c4c96a2ebbefe7f10e0a66fa7000c7225d7cb282a148e4",
+      "rows": 668,
+      "source": "Yahoo Finance FBTC, daily, 2020-12-01 to 2026-09-11, loaded 2026-09-11"
+    },
+    {
+      "path": "data/etf_GBTC.csv",
+      "sha256": "69ac848aa25ccd1b347f8af811cff74b341fcbb3865ba63f792120c05632c322",
+      "rows": 1450,
+      "source": "Yahoo Finance GBTC, daily, 2020-12-01 to 2026-09-11, loaded 2026-09-11"
+    },
+    {
+      "path": "data/etf_ARKB.csv",
+      "sha256": "efe4d71478da130e3d0459eb892b8c787a6fd9967b3f394f7d7149100bdb616c",
+      "rows": 668,
+      "source": "Yahoo Finance ARKB, daily, 2020-12-01 to 2026-09-11, loaded 2026-09-11"
+    },
+    {
+      "path": "data/etf_BITB.csv",
+      "sha256": "e2d2c3d8d3d2183dafe43bca4e3a8da404f065a5c0b59f27f1500f8df402ba3a",
+      "rows": 668,
+      "source": "Yahoo Finance BITB, daily, 2020-12-01 to 2026-09-11, loaded 2026-09-11"
+    },
+    {
+      "path": "data/etf_BTCO.csv",
+      "sha256": "9b3e97da15d5f134666a38efe83fdbb6cc589341ff70b3185b301789518288bd",
+      "rows": 668,
+      "source": "Yahoo Finance BTCO, daily, 2020-12-01 to 2026-09-11, loaded 2026-09-11"
+    },
+    {
+      "path": "data/etf_EZBC.csv",
+      "sha256": "b57ddfd326c44430a80d6a5296d5197075802e4af47726d78b611065bf2f7f9f",
+      "rows": 668,
+      "source": "Yahoo Finance EZBC, daily, 2020-12-01 to 2026-09-11, loaded 2026-09-11"
+    },
+    {
+      "path": "data/etf_BRRR.csv",
+      "sha256": "2d992c2617f69a32efb513a5aa742701e40698321b7b4516864d13affa165711",
+      "rows": 668,
+      "source": "Yahoo Finance BRRR, daily, 2020-12-01 to 2026-09-11, loaded 2026-09-11"
+    },
+    {
+      "path": "data/etf_HODL.csv",
+      "sha256": "c78499722d300c06f337ca1bae9252f9762d45588bf7f0633bc225efcac1aaad",
+      "rows": 668,
+      "source": "Yahoo Finance HODL, daily, 2020-12-01 to 2026-09-11, loaded 2026-09-11"
+    },
+    {
+      "path": "data/etf_BTCW.csv",
+      "sha256": "b89c39912d0c4863055ba191dcbc22b0186984029172dda05243c0de75dc900b",
+      "rows": 668,
+      "source": "Yahoo Finance BTCW, daily, 2020-12-01 to 2026-09-11, loaded 2026-09-11"
+    },
+    {
+      "path": "data/etf_BITO.csv",
+      "sha256": "27532db451f1685f18f806bfc4a3e3f7b462704b032757c78ade2e1c8c38bb88",
+      "rows": 1227,
+      "source": "Yahoo Finance BITO, daily, 2020-12-01 to 2026-09-11, loaded 2026-09-11"
+    },
+    {
+      "path": "data/etf_DEFI.csv",
+      "sha256": "6ada5af37f881f6b55bb3f3237f762b871b46bcaf6af50ead16647673fb10044",
+      "rows": 16,
+      "source": "Yahoo Finance DEFI, daily, 2020-12-01 to 2026-09-11, loaded 2026-09-11"
+    }
+  ],
+  "compare": [
+    {
+      "published": "results/estimation_results.json",
+      "produced": "estimation_results.json"
+    },
+    {
+      "published": "results/robustness_results.json",
+      "produced": "robustness_results.json"
+    },
+    {
+      "published": "results/summary_statistics.json",
+      "produced": "summary_statistics.json"
+    },
+    {
+      "published": "results/figure_spec.json",
+      "produced": "figure_spec.json"
+    }
+  ],
+  "notes": [
+    "Yahoo's terms allow personal use only, so the study does not ship its extracts; get_data.py loads them again. Yahoo revises its history: prices adjusted for dividends change with every new dividend, and a delisted fund can disappear.",
+    "build_panel.py downloads the current Ken French daily factors. The run on 2026-09-11 read factors up to 2026-07-31; a later release adds months, which extends the panel, and revises past values.",
+    "With the study's own extracts (2026-09-11) and these packages, run_estimation.py reproduces results/estimation_results.json and results/robustness_results.json byte for byte."
+  ]
+}

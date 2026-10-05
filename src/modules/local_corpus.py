@@ -15,8 +15,14 @@ The corpus has three file kinds with different consumers:
 
 from __future__ import annotations
 
+import shutil
+import sys
 from collections.abc import Iterable, Iterator
 from pathlib import Path
+
+from ..logging_config import get_logger
+
+logger = get_logger(__name__)
 
 DATA_EXTENSIONS: frozenset[str] = frozenset({".csv", ".tsv", ".jsonl", ".parquet", ".xlsx", ".txt"})
 BIB_EXTENSIONS: frozenset[str] = frozenset({".bib"})
@@ -37,6 +43,10 @@ def parse_corpus_roots(setting: str | None) -> list[Path]:
     return roots
 
 
+#: The default folder for exported studies inside the data folder (config.resolved_output_root).
+EXPORT_FOLDER = "e2er_papers"
+
+
 def iter_corpus_files(
     roots: Iterable[Path],
     suffixes: frozenset[str],
@@ -49,5 +59,40 @@ def iter_corpus_files(
     for root in roots:
         walker = root.rglob("*") if recursive else root.iterdir()
         for path in walker:
-            if path.is_file() and path.suffix.lower() in suffixes:
-                yield root, path
+            if not (path.is_file() and path.suffix.lower() in suffixes):
+                continue
+            # Exported studies land in <data>/e2er_papers by default; staging them
+            # would feed earlier studies' files to the next one as "data".
+            if EXPORT_FOLDER in path.relative_to(root).parts[:-1]:
+                continue
+            yield root, path
+
+
+_copy_notice_shown = False
+
+
+def link_or_copy(source: Path, target: Path) -> str:
+    """Put ``source`` at ``target`` as a link, or as a copy where links are not allowed.
+
+    Windows lets a program create links only with Developer Mode on (or as
+    administrator). There the link fails, and the file used to be left out
+    with a line in the log. Now it is copied, and the first copy says so in
+    the terminal: a copy does not follow later edits of the original.
+    Returns "linked" or "copied"; raises OSError when the copy fails too.
+    """
+    global _copy_notice_shown
+    try:
+        target.symlink_to(source.resolve())
+        return "linked"
+    except OSError as e:
+        shutil.copy2(source, target)
+        if not _copy_notice_shown:
+            _copy_notice_shown = True
+            msg = (
+                f"could not link {source.name} into the study ({e}); copied it instead. "
+                "Copies do not follow later edits of your files. On Windows, turning on Developer Mode "
+                "(Settings > System > For developers) lets e2er link them."
+            )
+            logger.warning("%s", msg)
+            print(f"e2er: {msg}", file=sys.stderr)
+        return "copied"

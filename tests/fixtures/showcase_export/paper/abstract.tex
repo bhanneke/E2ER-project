@@ -1,0 +1,54 @@
+% abstract.tex --- title, abstract, keywords, JEL codes.
+% Paper ID: e432cf3f-9008-4202-8ee6-ff09a93948ec
+%
+% NUMBER PROVENANCE. Every numeric value below carries a "% src:" comment
+% naming the sidecar file and the dotted key path it comes from; the one
+% derived quantity carries a "% computed:" comment showing the arithmetic.
+% Word count of the abstract body: 197.
+
+\title{No Cash Flows, New Owners:\\ Spot Bitcoin ETFs and the Origins of Co-movement}
+
+\begin{abstract}
+\noindent
+Did the SEC's January 10, 2024 approval of eleven US spot Bitcoin ETFs move
+% src: summary_statistics.json#etf.n_spot_funds_approved
+Bitcoin into the conventional risk-asset complex? The approval changed who
+could hold Bitcoin and in what wrapper; it changed nothing about the asset,
+which has no cash flows and hence no fundamentals that could have grown more
+correlated with stocks. We estimate a difference-in-differences on monthly
+equity co-movement in a panel of ten cryptocurrencies over 2021--2025 ---
+% src: summary_statistics.json#n_units
+% src: summary_statistics.json#raw_contrast.SPY.control_group_mean.n_control_coins
+Bitcoin against nine that never received a US spot ETF --- with coin and
+calendar-month fixed effects and randomization inference over placebo assets
+and dates, because there is one treated unit.
+% src: estimation_results.json#main.treated_units
+Bitcoin's correlation with the S\&P 500 changed by
+% src: estimation_results.json#main.effect_in_correlation_units
+$-0.018$ against a pre-listing level of
+% src: estimation_results.json#main.rho_pre_treatment_mean
+$0.382$, and its equity beta by
+% src: robustness_results.json#outcome_beta.coefficients.d_etf_listed.estimate
+$-0.189$ against a pre-listing
+% src: summary_statistics.json#raw_contrast.SPY.by_asset.BTC.mean_beta_pre
+$1.23$ --- neither distinguishable from the placebo distribution, and both of
+the wrong sign for integration. What did move is relative volatility:
+Bitcoin's log volatility ratio to the equity market shifts by
+% src: robustness_results.json#outcome_ln_sigma_ratio.coefficients.d_etf_listed.estimate
+$-0.113$, roughly 11 percent,
+% computed: exp(-0.11281474) - 1 = -0.107, i.e. a fall of about 11 percent
+against the controls. With 80\% power the design could only have detected
+% src: estimation_results.json#power_analysis.power
+correlation increases above
+% src: estimation_results.json#power_analysis.mde_correlation_units_ri
+$0.148$; it excludes increases above
+% src: estimation_results.json#power_analysis.ri_ci95_upper_correlation_units
+$0.086$. Spot ETFs changed how volatile Bitcoin is relative to stocks, not how
+much it moves with them.
+
+\bigskip
+\noindent\textbf{Keywords:} co-movement, exchange-traded funds, investor
+clienteles, Bitcoin, difference-in-differences, randomization inference
+
+\noindent\textbf{JEL:} G12, G14, G23, G11
+\end{abstract}

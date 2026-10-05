@@ -73,6 +73,8 @@ matrix-*/
 # rule that drops part of it (*.log caught code/scratch/paper_draft.log) ships a
 # bundle that verifies only on the machine that produced it.
 !examples/showcase/**
+# The same bundle as it was exported before publishing: the fixture the publish tests copy.
+!tests/fixtures/showcase_export/**
 
 # ...but never secrets, keys or databases, even inside the bundle. The negation
 # above is last-match-wins and would otherwise switch off every rule in this
@@ -92,3 +94,16 @@ examples/showcase/**/*.sqlite-*
 examples/showcase/**/credentials*
 examples/showcase/**/*secret*
 examples/showcase/**/*token*
+tests/fixtures/showcase_export/**/.env
+tests/fixtures/showcase_export/**/.env.*
+tests/fixtures/showcase_export/**/*.pem
+tests/fixtures/showcase_export/**/*.key
+tests/fixtures/showcase_export/**/*_rsa
+tests/fixtures/showcase_export/**/*_rsa.pub
+tests/fixtures/showcase_export/**/id_*
+tests/fixtures/showcase_export/**/*.db
+tests/fixtures/showcase_export/**/*.sqlite
+tests/fixtures/showcase_export/**/*.sqlite-*
+tests/fixtures/showcase_export/**/credentials*
+tests/fixtures/showcase_export/**/*secret*
+tests/fixtures/showcase_export/**/*token*

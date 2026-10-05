@@ -23,7 +23,8 @@ from src.doctor import (
 # ── backend_check ────────────────────────────────────────────────────────────
 
 
-async def test_backend_anthropic_no_key_fails():
+async def test_backend_anthropic_no_key_fails(monkeypatch):
+    monkeypatch.setenv("LLM_BACKEND", "anthropic")
     s = SimpleNamespace(llm_backend="anthropic", anthropic_api_key=None)
     c = await backend_check(s)
     assert c.status == FAIL and "ANTHROPIC_API_KEY" in c.detail
@@ -43,16 +44,65 @@ async def test_backend_openrouter_with_key_passes():
 
 async def test_backend_claude_code_not_installed_fails():
     s = SimpleNamespace(llm_backend="claude_code")
-    with patch("src.doctor.shutil.which", return_value=None):
+    with patch("src.modules.llm.cli_support.shutil.which", return_value=None):
         c = await backend_check(s)
-    assert c.status == FAIL and "not on PATH" in c.detail
+    assert c.status == FAIL and "not found on PATH" in c.detail
 
 
 async def test_backend_claude_code_installed_passes():
     s = SimpleNamespace(llm_backend="claude_code")
-    with patch("src.doctor.shutil.which", return_value="/usr/local/bin/claude"):
+    with (
+        patch("src.modules.llm.cli_support.shutil.which", return_value="/usr/local/bin/claude"),
+        patch("src.doctor.cli_signed_in", return_value=(True, "signed in")),
+    ):
         c = await backend_check(s)
     assert c.status == PASS and "/usr/local/bin/claude" in c.detail
+
+
+async def test_backend_claude_code_sign_in_unknown_is_not_ready():
+    s = SimpleNamespace(llm_backend="claude_code")
+    with (
+        patch("src.modules.llm.cli_support.shutil.which", return_value="/usr/local/bin/claude"),
+        patch("src.doctor.cli_signed_in", return_value=(None, "couldn't check whether it is signed in")),
+    ):
+        c = await backend_check(s)
+    assert c.status == SKIP and "couldn't check" in c.detail
+    out = render_human([c, Check("db", PASS, "ok")])
+    assert "Ready" not in out and "Couldn't check" in out
+
+
+async def test_backend_claude_code_signed_out_fails():
+    s = SimpleNamespace(llm_backend="claude_code")
+    with (
+        patch("src.modules.llm.cli_support.shutil.which", return_value="/usr/local/bin/claude"),
+        patch("src.doctor.cli_signed_in", return_value=(False, "not signed in")),
+    ):
+        c = await backend_check(s)
+    assert c.status == FAIL and "not signed in" in c.detail
+
+
+async def test_backend_unset_does_not_ask_for_the_anthropic_key(monkeypatch, tmp_path):
+    monkeypatch.delenv("LLM_BACKEND", raising=False)
+    monkeypatch.chdir(tmp_path)
+    s = SimpleNamespace(llm_backend="anthropic", anthropic_api_key=None)
+    with patch("src.modules.llm.cli_support.shutil.which", return_value="/usr/local/bin/claude"):
+        c = await backend_check(s)
+    assert c.status == FAIL and "ANTHROPIC_API_KEY" not in c.detail
+    assert "no AI access is set up" in c.detail and "Claude Code is installed" in c.detail
+    assert "Blocked" in render_human([c])
+
+
+def test_docker_installed_but_not_running(monkeypatch):
+    import subprocess
+
+    from src.doctor import docker_check
+
+    monkeypatch.setattr("src.modules.llm.cli_support.shutil.which", lambda name: "/usr/local/bin/docker")
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a, 1, b"", b"no daemon"))
+    c = docker_check()
+    assert c.status == SKIP and "not running" in c.detail
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a, 0, b"27.0", b""))
+    assert docker_check().status == PASS
 
 
 # ── skills_check + db_check ──────────────────────────────────────────────────

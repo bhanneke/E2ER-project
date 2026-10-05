@@ -7,7 +7,7 @@ each edit's `target` against the work order's `Finding` list, and
 applies the in-scope edits to the draft.
 
 Why patch file vs. unified diff (decision recorded in
-`docs/V0.6_PLAN.md`): LLMs produce JSON reliably; unified diffs
+`docs/internal/V0.6_PLAN.md`): LLMs produce JSON reliably; unified diffs
 poorly (line drift, whitespace-sensitive context matching). Per-
 edit failures here are debuggable in human terms ("edit targeting
 `section:robustness` could not find text X — closest matches: Y")
