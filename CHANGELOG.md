@@ -50,6 +50,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a mixed paper with a data warehouse could reach the draft with a broken or empty estimation
   file. Mixed papers are now checked and repaired like empirical ones.
 
+- **`e2er-data` runs on Python 3.14.** A `%` in the help of `e2er-data fred series --units`
+  made Python 3.14's argparse refuse to build the command, so every `e2er-data` call failed there.
+- **The nightly Allium check stops reporting the same thing every night.** Allium's OpenAPI
+  files at docs.allium.so now redirect to a login page; the check read that page as a changed
+  API and commented on issue #2 every night (141 comments). It now tells a spec it cannot fetch
+  (a warning in the run, no comment) from a real change, fingerprints a real change, and comments
+  only when the change differs from the one already reported (`scripts/check_allium_drift.py`).
+  The fixtures stay as they are: the current specs are not publicly available to refresh them.
+
 ## [0.13.6] — 2026-10-05
 
 - **The paper can be published with the study, and publish says what readers see for what stays
