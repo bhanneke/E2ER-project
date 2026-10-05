@@ -1457,7 +1457,7 @@ class PipelineRunner:
         injected automatically) until the contract is clean, or trip the
         circuit breaker into a resumable PAUSED — never a hollow paper.
 
-        Honest-failure escape: papers without a data warehouse (theory,
+        Runs for empirical and mixed papers. Honest-failure escape: papers without a data warehouse (theory,
         literature-only, design-without-estimates) are untouched.
 
         With a frozen pre-registration, the plan files are compared with their
@@ -1470,7 +1470,7 @@ class PipelineRunner:
         workspace: Path | None = getattr(self, "_workspace", None)
         if workspace is not None:
             await self._check_preregistered_plan(workspace)
-        if self._methodology != "empirical":
+        if self._methodology not in ("empirical", "mixed"):
             return
         from ...db.paper_data_db import has_data_db
 

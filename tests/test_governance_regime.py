@@ -180,3 +180,21 @@ async def test_estimation_gate_skips_non_empirical():
     r._methodology = "theoretical"
     # Returns immediately, before touching has_data_db.
     await r._enforce_estimation_gate()
+
+
+async def test_estimation_gate_runs_for_mixed(tmp_path: Path):
+    """`--methodology mixed` estimates too, so its estimation file is checked like an empirical one."""
+    from src.core.specialists.contract_check import KIND_VERIFICATION, ContractCheck
+
+    r = _bare_runner("off")
+    r._methodology = "mixed"
+    r._workspace = tmp_path
+    failing = [ContractCheck("estimation_results.json", False, "no coefficients block", kind=KIND_VERIFICATION)]
+    with (
+        patch("src.db.paper_data_db.has_data_db", return_value=True),
+        patch("src.core.specialists.contract_check.check_specialist_artifacts", return_value=failing) as chk,
+        patch("src.db.events.log_event", new=AsyncMock()) as le,
+    ):
+        await r._enforce_estimation_gate()
+    assert chk.called
+    assert le.call_args[1]["payload"]["gate"] == "estimation"

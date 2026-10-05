@@ -46,6 +46,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   copies them and says once in the terminal that copies do not follow later edits, and how
   Developer Mode lets it link instead.
 
+- **`--methodology mixed` runs the estimation check.** It applied to empirical papers only, so
+  a mixed paper with a data warehouse could reach the draft with a broken or empty estimation
+  file. Mixed papers are now checked and repaired like empirical ones.
+
 ## [0.13.6] — 2026-10-05
 
 - **The paper can be published with the study, and publish says what readers see for what stays
