@@ -69,6 +69,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `n_clusters`, the study completed, and `e2er verify` failed the export. They now get the usual
   attempts and, if those fail, the same stop as everywhere else.
 - Codex: "Selected model is at capacity" is retried.
+- **`e2er compare` no longer sets different quantities against each other.** When a run does not
+  report the treatment term its design declares, the first coefficient it reports is shown with a
+  mark and a note, and it is left out of the dispersion of the estimate. A field one run reports
+  and another does not now counts as a difference (it read as full agreement). Seen in the first
+  live Claude Code (Sonnet) vs Codex comparison, where Codex reported three means and no
+  `year_2023` term.
 
 - **`e2er reproduce <study folder>` runs a study's code again and compares the results.** A
   study's `reproduce.json` names the pinned requirements, the steps, the inputs with their
