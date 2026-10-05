@@ -12,6 +12,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   files were skipped with a warning in the log. Both are now dependencies, and if one is missing
   anyway, e2er prints which file was not loaded and the command that installs the reader.
 
+- **`e2er doctor` says what it can and cannot know.** Without any AI access chosen (no
+  `LLM_BACKEND` and no `.env`), it no longer reports a missing `ANTHROPIC_API_KEY`: it says that
+  nothing is set up yet, names Claude Code when it is installed, and points to the setup page or
+  `e2er init --defaults`. A Claude Code, Codex or Gemini CLI that is not signed in fails the check,
+  and one whose sign-in cannot be read is reported as "couldn't check" instead of "Ready". The
+  Docker check now asks the Docker daemon whether it runs; an installed but stopped Docker is no
+  longer reported as available.
+
 ## [0.13.6] — 2026-10-05
 
 - **The paper can be published with the study, and publish says what readers see for what stays

@@ -131,7 +131,7 @@ def cli_signed_in(backend: str, home: Path | None = None) -> tuple[bool | None, 
             if data.get("oauthAccount"):
                 return True, "signed in"
             return False, "not signed in — run `claude` once and sign in in the browser"
-        return None, "could not tell whether it is signed in — run `claude` once to check"
+        return None, "couldn't check whether it is signed in — run `claude` once to check"
     if backend == "codex":
         codex_home = Path(os.environ.get("CODEX_HOME") or h / ".codex")
         if os.environ.get("OPENAI_API_KEY") or (codex_home / "auth.json").is_file():
@@ -218,11 +218,24 @@ def python_check() -> Check:
 
 
 def docker_check() -> Check:
-    """Docker runs the replication template's sandbox; nothing else needs it."""
+    """Docker runs the replication template's sandbox; nothing else needs it. Installed is not enough: the daemon must run."""
+    import subprocess
+
     path = shutil.which("docker")
-    if path:
-        return Check("docker", PASS, f"docker at {path} (used by the replication template)")
-    return Check("docker", SKIP, f"Docker is not installed; only the replication template needs it ({DOCKER_URL})")
+    if not path:
+        return Check("docker", SKIP, f"Docker is not installed; only the replication template needs it ({DOCKER_URL})")
+    try:
+        cp = subprocess.run([path, "info", "--format", "{{.ServerVersion}}"], capture_output=True, timeout=15)
+    except (OSError, subprocess.TimeoutExpired):
+        cp = None
+    if cp is None or cp.returncode != 0:
+        return Check(
+            "docker",
+            SKIP,
+            f"docker at {path}, but Docker is not running; start Docker Desktop before a replication "
+            "(only the replication template needs it)",
+        )
+    return Check("docker", PASS, f"Docker is running (docker at {path}; used by the replication template)")
 
 
 def _mask_db_url(url: str) -> str:
@@ -236,6 +249,17 @@ async def backend_check(settings) -> Check:
     backend = settings.llm_backend
     if backend in {"anthropic", "openrouter"}:
         key = settings.anthropic_api_key if backend == "anthropic" else settings.openrouter_api_key
+        if not key and backend == "anthropic" and not _raw_setting("LLM_BACKEND"):
+            # Nothing chosen yet: the Anthropic value is only the settings' fallback,
+            # so naming its key would send the person after the wrong thing.
+            claude = shutil.which("claude")
+            found = f" Claude Code is installed at {claude};" if claude else ""
+            return Check(
+                "backend",
+                FAIL,
+                f"no AI access is set up in this folder (no LLM_BACKEND here or in .env).{found} "
+                "run `e2er` and use the setup page, or `e2er init --defaults` for Claude Code",
+            )
         if not key:
             return Check(f"backend.{backend}", FAIL, f"{backend.upper()}_API_KEY not set — `e2er run` will fail")
         return Check(f"backend.{backend}", PASS, "API key configured (metered backend)")
@@ -252,8 +276,10 @@ async def backend_check(settings) -> Check:
         )
     signed, note = cli_signed_in(backend)
     if signed is False:
-        return Check(f"backend.{backend}", PASS, f"CLI at {path} ($0 flat-rate); {note}")
-    return Check(f"backend.{backend}", PASS, f"CLI at {path} ($0 flat-rate)")
+        return Check(f"backend.{backend}", FAIL, f"CLI at {path}, but {note}")
+    if signed is None:
+        return Check(f"backend.{backend}", SKIP, f"CLI at {path}; {note}")
+    return Check(f"backend.{backend}", PASS, f"CLI at {path} ($0 on the subscription); {note}")
 
 
 async def skills_check(_settings) -> Check:
@@ -647,8 +673,13 @@ def render_human(checks: list[Check]) -> str:
     n_pass = sum(c.status == PASS for c in checks)
     n_skip = sum(c.status == SKIP for c in checks)
     n_fail = sum(c.status == FAIL for c in checks)
-    blocker_failed = any(c.status == FAIL and c.name.startswith(_BLOCKERS_PREFIXES) for c in checks)
-    if n_fail == 0:
+    blocker_failed = any(
+        c.status == FAIL and (c.name == "backend" or c.name.startswith(_BLOCKERS_PREFIXES)) for c in checks
+    )
+    backend_unknown = any(c.status == SKIP and c.name.startswith("backend.") for c in checks)
+    if n_fail == 0 and backend_unknown:
+        verdict = "⚠️  Couldn't check — the AI access is installed, but whether it is signed in is unknown (see above)."
+    elif n_fail == 0:
         verdict = '✅ Ready — `e2er run "<your research question>"` should work.'
     elif blocker_failed:
         verdict = "❌ Blocked — fix the backend / DB / skills failure above before running a paper."
