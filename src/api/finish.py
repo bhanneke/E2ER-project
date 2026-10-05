@@ -103,7 +103,10 @@ def _signed_in(base: str) -> bool:
 
 
 def _terms(bundle: Path | None) -> list[dict[str, Any]]:
-    """Sources with terms whose data the folder holds (the GMD): what the finish page asks the researcher to confirm."""
+    """Sources with terms whose data the folder holds (the GMD, Yahoo Finance).
+
+    What the finish page asks the researcher to confirm, and what readers see if the data stay private.
+    """
     from ..core import data_terms
 
     if bundle is None:
@@ -112,10 +115,17 @@ def _terms(bundle: Path | None) -> list[dict[str, Any]]:
         {
             "connector": u.terms.connector,
             "label": u.label,
+            "the_label": u.the_label,
             "short": u.terms.short,
             "plain": list(u.terms.plain),
             "citation": u.terms.citation,
             "terms_url": u.terms.terms_url,
+            "confirm": u.terms.confirm,
+            # What readers on e2er.org see if the data stay private (publish's reader note says the same).
+            "reader_note": (
+                f"If the data stay private, readers on e2er.org see a link to {u.terms.the_short} instead of a "
+                f"request button: its terms {u.terms.limit_finish}."
+            ),
         }
         for u in data_terms.uses(bundle)
     ]

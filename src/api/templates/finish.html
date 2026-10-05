@@ -78,7 +78,7 @@
       <label><input type="radio" name="data" value="private" checked> private</label>
       <label><input type="radio" name="data" value="public"> public</label>
     </div>
-    <p class="small muted reader-note" id="data-note">{% if data_terms %}If the data stay private, readers on e2er.org see a link to the {{ data_terms[0].short }} instead of a request button: its terms do not allow passing the data on outside the study's replication package.{% else %}Private: readers on e2er.org see a button to ask you for the data.{% endif %}</p>
+    <p class="small muted reader-note" id="data-note">{% if data_terms %}{{ data_terms | map(attribute='reader_note') | join(' ') }}{% else %}Private: readers on e2er.org see a button to ask you for the data.{% endif %}</p>
   </div>
   <div class="field">
     <span>Code</span>
@@ -106,12 +106,12 @@
   <div id="terms-box">
     {% for t in data_terms %}
       <div class="pf-banner terms" data-connector="{{ t.connector }}">
-        <p>The study uses data from the {{ t.label }}. Its terms:</p>
+        <p>The study uses data from {{ t.the_label }}. Its terms:</p>
         <ul>{% for line in t.plain %}<li>{{ line }}</li>{% endfor %}</ul>
-        <p class="small">Citation: {{ t.citation }} · <a href="{{ t.terms_url }}" target="_blank" rel="noopener">Full terms</a></p>
+        <p class="small">{% if t.citation %}Citation: {{ t.citation }} · {% endif %}<a href="{{ t.terms_url }}" target="_blank" rel="noopener">Full terms</a></p>
         <label class="check">
           <input type="checkbox" class="confirm-terms" value="{{ t.connector }}">
-          <span>Publish the {{ t.short }} data with the study under these terms (needed when the data are public).</span>
+          <span>Publish the {{ t.short }} data with the study {{ t.confirm }} (needed when the data are public).</span>
         </label>
       </div>
     {% endfor %}
@@ -214,12 +214,12 @@
   document.querySelectorAll('input[name=data], input[name=code], input[name=paper]').forEach((r) => r.addEventListener('change', availability));
   availability();
   const showTerms = (terms) => {
-    if ((terms || []).length) document.getElementById('data-note').textContent = 'If the data stay private, readers on e2er.org see a link to the ' + terms[0].short + " instead of a request button: its terms do not allow passing the data on outside the study's replication package.";
+    if ((terms || []).length) document.getElementById('data-note').textContent = terms.map((t) => t.reader_note).join(' ');
     document.getElementById('terms-box').innerHTML = (terms || []).map((t) =>
-      '<div class="pf-banner terms" data-connector="' + esc(t.connector) + '"><p>The study uses data from the ' + esc(t.label) + '. Its terms:</p><ul>' +
-      t.plain.map((l) => '<li>' + esc(l) + '</li>').join('') + '</ul><p class="small">Citation: ' + esc(t.citation) +
-      ' · <a href="' + esc(t.terms_url) + '" target="_blank" rel="noopener">Full terms</a></p><label class="check"><input type="checkbox" class="confirm-terms" value="' +
-      esc(t.connector) + '"><span>Publish the ' + esc(t.short) + ' data with the study under these terms (needed when the data are public).</span></label></div>').join('');
+      '<div class="pf-banner terms" data-connector="' + esc(t.connector) + '"><p>The study uses data from ' + esc(t.the_label) + '. Its terms:</p><ul>' +
+      t.plain.map((l) => '<li>' + esc(l) + '</li>').join('') + '</ul><p class="small">' + (t.citation ? 'Citation: ' + esc(t.citation) + ' · ' : '') +
+      '<a href="' + esc(t.terms_url) + '" target="_blank" rel="noopener">Full terms</a></p><label class="check"><input type="checkbox" class="confirm-terms" value="' +
+      esc(t.connector) + '"><span>Publish the ' + esc(t.short) + ' data with the study ' + esc(t.confirm) + ' (needed when the data are public).</span></label></div>').join('');
   };
   const pubMsg = document.getElementById('pub-msg');
   const pubBtn = document.getElementById('do-publish');

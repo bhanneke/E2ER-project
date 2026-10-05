@@ -614,7 +614,8 @@ def main() -> None:
         dest="accept_data_terms",
         metavar="CONNECTOR",
         help="Confirm the terms of a data source the study used, so its data can be published with the study "
-        "(--data public), e.g. --accept-data-terms gmd for the Global Macro Database. In a terminal you are asked.",
+        "(--data public), e.g. --accept-data-terms gmd for the Global Macro Database, --accept-data-terms yfinance "
+        "for Yahoo Finance (its terms allow personal use only). In a terminal you are asked.",
     )
     publish_p.add_argument(
         "--offline",

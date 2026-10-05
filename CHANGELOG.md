@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **Yahoo Finance data get the GMD's treatment.** Yahoo's terms allow personal use only, so data
+  loaded with `e2er-data yfinance` are now a source with terms for `e2er publish`, beside the
+  GMD. The description names Yahoo Finance and its terms (from the yfinance load record) on the
+  data files that hold Yahoo data. If the data stay private, the reader note says "The data come
+  from Yahoo Finance, whose terms allow personal use only, so readers on e2er.org see a link to
+  the source instead of a request button." and there is no nudge to publish them. `--data public`
+  needs `--accept-data-terms yfinance` or a yes to "Publish the Yahoo Finance data with the study
+  although Yahoo's terms allow personal use only?". A Zenodo deposit of Yahoo data is refused
+  before anything is written or sent: no Zenodo licence fits personal use only. Yahoo publishes
+  no citation format, so publish asks for no BibTeX entry. The finish page says the same. A study
+  with GMD and Yahoo data names both sources in one reader note. See `docs/publishing.md`.
+
 - **The Codex backend works.** Validated live on a ChatGPT plan with codex-cli 0.155 (October
   2026): single calls, a whole study (`e2er run --demonstration`, empirical template) and the
   end-to-end story E2E-01. Before, `codex exec` ran read-only (no specialist could write a file),

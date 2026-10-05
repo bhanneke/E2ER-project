@@ -119,12 +119,16 @@ def paper_access(
 def reader_notes(
     availability: dict[str, dict[str, Any]] | None,
     paper: dict[str, Any] | None,
-    restricted: list[str] | None = None,
+    restricted: list[str | tuple[str, str]] | None = None,
 ) -> list[str]:
     """What readers on e2er.org see for what is not public, and the flag that publishes it; one sentence each.
 
-    ``restricted`` names data sources whose terms do not allow passing the data
-    on (the GMD): their data get no nudge, and readers are sent to the source.
+    ``restricted`` names data sources whose terms keep the data with their
+    source: ``(name, what the terms do)``, e.g. ``("Yahoo Finance", "allow
+    personal use only")``; a bare name is the GMD's case (``"Global Macro
+    Database (GMD)"``, terms that do not allow passing the data on outside the
+    study's replication package). Their data get no nudge, and readers are sent
+    to the sources.
     """
     out: list[str] = []
     if not paper:
@@ -135,11 +139,15 @@ def reader_notes(
     av = availability or {}
     if (av.get("data") or {}).get("access") != "public":
         if restricted:
-            out.append(
-                f"The data come from the {', '.join(restricted)}, whose terms do not allow passing them on "
-                "outside the study's replication package, so readers on e2er.org see a link to the source "
-                "instead of a request button."
-            )
+            named = [
+                (f"the {r}", "do not allow passing them on outside the study's replication package")
+                if isinstance(r, str)
+                else r
+                for r in restricted
+            ]
+            sources = ", and ".join(f"{name}, whose terms {limit}" for name, limit in named)
+            links = "a link to the source" if len(named) == 1 else "links to the sources"
+            out.append(f"The data come from {sources}, so readers on e2er.org see {links} instead of a request button.")
         else:
             out.append(
                 "The data are private: readers on e2er.org see a button to ask you for them, "

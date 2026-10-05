@@ -271,3 +271,24 @@ def test_publishing_public_gmd_data_without_the_confirmation_is_refused(live_db,
     )
     assert r.status_code == 200 and r.json()["ok"] is False
     assert "needs your confirmation of the GMD terms" in r.json()["output"]
+
+
+def test_the_finish_page_says_yahoo_allows_personal_use_only(live_db, session):
+    from src.core.export.structured import export_paper
+
+    _gmd_export(live_db)
+    ws = live_db / "workspaces" / PID
+    (ws / "data_sources.json").write_text(
+        json.dumps({"loads": [{"connector": "yfinance", "saved_to": "data/btc.csv"}]})
+    )
+    export_paper(ws, live_db / "exports", date_str="20261005")
+    html = _client().get(f"/papers/{PID}/finish").text
+    assert "The study uses data from Yahoo Finance. Its terms:" in html
+    assert 'class="confirm-terms" value="yfinance"' in html
+    assert "Publish the Yahoo Finance data with the study although Yahoo&#39;s terms allow personal use only" in html
+    assert (
+        "If the data stay private, readers on e2er.org see a link to Yahoo Finance instead of a request button: "
+        "its terms allow personal use only."
+    ) in html
+    assert '<p class="small">Citation:' not in html and "Global Macro Database" not in html
+    assert "Private: readers on e2er.org see a button to ask you for the data." not in html
