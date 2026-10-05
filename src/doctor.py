@@ -218,7 +218,10 @@ def python_check() -> Check:
 
 
 def docker_check() -> Check:
-    """Docker runs the replication template's sandbox; nothing else needs it. Installed is not enough: the daemon must run."""
+    """Docker runs the replication template's sandbox; nothing else needs it.
+
+    Installed is not enough: the daemon must answer.
+    """
     import subprocess
 
     path = shutil.which("docker")
