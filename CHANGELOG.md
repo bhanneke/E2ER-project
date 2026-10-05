@@ -27,6 +27,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reached). `RISE_PATH` and `--catalogue` still point to a local clone, and when neither works
   the error says how to set one.
 
+- **`e2er init` copies skill files only for the chosen AI access, and asks first.** It used to
+  copy all of e2er's skill files into `~/.claude`, `~/.codex` and `~/.gemini` without asking,
+  whichever CLI was chosen. The wizard now asks before copying into the chosen CLI's folder and
+  copies nothing for the API backends; `--defaults` copies into `~/.claude/skills` only. Both say
+  where the files went. The `.env` header names the current e2er version instead of "e2er v3".
+
 ## [0.13.6] — 2026-10-05
 
 - **The paper can be published with the study, and publish says what readers see for what stays

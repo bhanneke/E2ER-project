@@ -56,7 +56,7 @@ def main() -> None:
 
     init_p = subparsers.add_parser(
         "init",
-        help="Guided first-paper setup: scaffold data/ + literature/, write .env, bundle skills.",
+        help="Guided first-paper setup: scaffold data/ + literature/, write .env, copy skills for the chosen CLI.",
     )
     init_p.add_argument(
         "--force",
@@ -67,7 +67,8 @@ def main() -> None:
         "--defaults",
         action="store_true",
         help="Non-interactive setup with sensible defaults (claude_code backend, "
-        "scaffold data/ + literature/, write .env). Works in CI / non-TTY.",
+        "scaffold data/ + literature/, write .env, copy e2er's skill files into ~/.claude/skills). "
+        "Works in CI / non-TTY.",
     )
 
     run_p = subparsers.add_parser(
