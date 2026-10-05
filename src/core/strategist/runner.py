@@ -2017,7 +2017,7 @@ class PipelineRunner:
         tables from the revised JSON, then re-dispatches section_writer to bring
         the prose in line with the revised analysis.
         """
-        from ..renderer.complete import render_all_or_halt
+        from ..renderer.complete import render_all, render_all_or_halt
         from ..specialists.dispatcher import execute_work_order
 
         feedback = self._referee_feedback_text()
@@ -2045,16 +2045,34 @@ class PipelineRunner:
             self._contributions.append(c)
 
         # Tables follow the revised JSON; re-render before the writer edits
-        # prose. Halts if the revised analysis still can't fill them — a hole
-        # here is what the writer papers over with its own numbers.
-        render_all_or_halt(self._workspace)
+        # prose. The revised analysis may rename its result keys (seen live
+        # 2026-10-05: `hac_lag_20` became `pooled_hac_lag_20`), leaving
+        # table_spec.json, written for the first analysis, pointing at keys that
+        # no longer exist. Halting here failed the run before section_writer —
+        # the one specialist that repairs table_spec.json — could run. So the
+        # writer is told what no longer resolves, and the halt comes after it.
+        completeness = render_all(self._workspace)
+        table_repair = ""
+        if not completeness.tables_ok:
+            logger.warning(
+                "Deep revision: tables no longer render from the revised analysis (%s); "
+                "section_writer repairs table_spec.json before the render check",
+                completeness.summary(),
+            )
+            table_repair = (
+                "\n\n=== Tables to repair ===\nThe revised analysis no longer has every key "
+                "table_spec.json asks for: " + completeness.summary() + ". Update table_spec.json "
+                "so every reference names a key that exists in the revised estimation_results.json / "
+                "summary_statistics.json (run `e2er-check-tables` to see what resolves), or drop the "
+                "row if the revised analysis no longer computes it. Never type a number into a table."
+            )
 
         writer_focus = (
             "Revise the paper to reflect the REVISED analysis (the updated "
             "estimation_results.json / summary_statistics.json) and to address "
             "the referee findings below. Report only what was actually computed "
             "— do not claim or imply results that are still missing.\n\n"
-            "=== Referee reports ===\n" + feedback
+            "=== Referee reports ===\n" + feedback + table_repair
         )
         order = WorkOrder(paper_id=self._paper_id, specialist="section_writer", focus=writer_focus, context_tier=2)
         c = await execute_work_order(
@@ -2068,6 +2086,9 @@ class PipelineRunner:
             self._governance,
         )
         self._contributions.append(c)
+        # Halts if the revised analysis still cannot fill the tables — a hole
+        # here is what the writer would paper over with its own numbers.
+        render_all_or_halt(self._workspace)
 
     # ── the number check (verify_numbers before the reviewers) ─────────────
 
