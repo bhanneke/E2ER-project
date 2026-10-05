@@ -84,7 +84,7 @@ e2er works with one of the following. The setup page shows which of them it find
 
 - A Claude subscription through Claude Code. Install Claude Code following [Anthropic's instructions](https://code.claude.com/docs/en/setup), then run `claude` once and sign in. Studies then run on the subscription.
 - An API key from [Anthropic](https://console.anthropic.com/settings/keys) or [OpenRouter](https://openrouter.ai/keys), billed per use. You paste the key on the setup page.
-- The [Codex CLI](https://github.com/openai/codex) with a ChatGPT plan or the [Gemini CLI](https://github.com/google-gemini/gemini-cli) with a Google AI plan. e2er uses them in the same way as Claude Code.
+- The [Codex CLI](https://github.com/openai/codex) with a ChatGPT plan (the ChatGPT desktop app includes it) or the [Gemini CLI](https://github.com/google-gemini/gemini-cli) with a Google AI plan. e2er hands them the same work as Claude Code, but they cannot be limited to e2er's own commands the way Claude Code is; [docs/BACKENDS.md](docs/BACKENDS.md) says what each may do. The Gemini backend has not yet been run against the real Gemini CLI.
 
 In the terminal, the setting `LLM_BACKEND` selects the access: `claude_code`, `codex`, `gemini`, `anthropic` or `openrouter`.
 
@@ -129,7 +129,7 @@ e2er status <paper_id> --tail
 
 `e2er run` starts a local server on port 8280 when none is running. The page at http://127.0.0.1:8280 lists all studies. The files of a study are in `workspaces/<paper_id>/`.
 
-`e2er run-matrix "<research question>" --backends claude_code,codex,gemini --repeats 3` runs one question with several AI providers, and `e2er compare matrix.json` lists the design choices each run made.
+`e2er run-matrix "<research question>" --backends claude_code,codex --models claude_code=sonnet,codex=gpt-6-luna --repeats 3` runs one question with several AI providers (without `--backends`, every subscription CLI that is ready on your computer), and `e2er compare matrix.json` lists the design choices each run made and the model that made them.
 
 ### Reviewing, stopping and resuming
 

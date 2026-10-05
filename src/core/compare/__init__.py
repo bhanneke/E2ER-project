@@ -90,7 +90,7 @@ def _coef_of_interest(primary: dict, main: dict) -> tuple[str | None, dict, bool
     return term, {"estimate": c.get("estimate"), "se": c.get("se"), "p_value": c.get("p_value")}, fell_back
 
 
-def load_run_record(bundle: Path, label: str, backend_hint: str | None = None) -> dict:
+def load_run_record(bundle: Path, label: str, backend_hint: str | None = None, model_hint: str | None = None) -> dict:
     """Extract one run's design record from an exported bundle dir."""
     bundle = Path(bundle)
     primary = _dict(_dict(_load_json(bundle / "design" / "identification_spec.json")).get("primary"))
@@ -108,7 +108,9 @@ def load_run_record(bundle: Path, label: str, backend_hint: str | None = None) -
     return {
         "label": label,
         "backend": backend_hint or run_meta.get("backend"),
-        "model": run_meta.get("model"),
+        # The bundle's own record first; matrix.json's for bundles exported
+        # before provenance carried the model.
+        "model": run_meta.get("model") or model_hint,
         "governance": run_meta.get("governance"),
         "bundle_path": str(bundle),
         "coef_fallback": fell_back,
@@ -294,7 +296,9 @@ def _resolve_records(paths: list[str]) -> tuple[list[dict], str | None, Path]:
             bp = run.get("bundle_path")
             if run.get("status") == "completed" and bp and Path(bp).is_dir():
                 label = f"{run.get('backend')}/rep-{run.get('repeat')}"
-                records.append(load_run_record(Path(bp), label, backend_hint=run.get("backend")))
+                records.append(
+                    load_run_record(Path(bp), label, backend_hint=run.get("backend"), model_hint=run.get("model"))
+                )
         return records, rq, mpath.parent
     records = [load_run_record(Path(p), label=Path(p).name) for p in paths if Path(p).is_dir()]
     return records, None, Path.cwd()

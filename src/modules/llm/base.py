@@ -66,6 +66,11 @@ class CompositeToolHandler(ToolHandler):
 class LLMBackend(ABC):
     """Abstract LLM execution backend."""
 
+    def identity(self) -> dict[str, Any]:
+        """What runs the calls: backend, model, and for the CLI backends the
+        CLI's version. Recorded once per run (the `backend_identity` event)."""
+        return {"model": getattr(self, "_model", None) or None}
+
     @abstractmethod
     async def tool_loop(
         self,

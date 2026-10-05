@@ -323,6 +323,15 @@ class PipelineRunner:
 
         logger.info("Run identity for paper %s: %s", self._paper_id, identity_summary())
         await log_event(self._paper_id, "run_identity", payload=run_identity())
+        # Which model and which CLI version answered the calls — the process
+        # identity above only knows the process-wide default backend.
+        try:
+            # identity() may run `<cli> --version`; keep it off the event loop.
+            backend_identity = {"backend": self._backend_name, **(await asyncio.to_thread(self._backend.identity))}
+            backend_identity["backend"] = self._backend_name or backend_identity.get("backend")
+            await log_event(self._paper_id, "backend_identity", payload=backend_identity)
+        except Exception as e:  # noqa: BLE001 — a missing stamp must not stop the run
+            logger.debug("backend identity not recorded: %s", e)
         # The template's own skills and sidecar files (`[skills]`, `[sidecars]`)
         # apply to every specialist this run dispatches.
         from ..pipeline.components import activate, deactivate

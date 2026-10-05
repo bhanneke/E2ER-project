@@ -96,28 +96,28 @@ class TestBackendPrereqs:
     def test_claude_code_checks_for_claude_cli(self, monkeypatch):
         """When the `claude` binary is on PATH, claude_code is ready;
         when it isn't, the wizard surfaces the npm install command."""
-        with patch("src.cli_init.shutil.which", return_value="/usr/local/bin/claude"):
+        with patch("src.modules.llm.cli_support.shutil.which", return_value="/usr/local/bin/claude"):
             ready, notes = _check_backend_prereqs("claude_code")
         assert ready is True
         assert any("claude CLI found" in n for n in notes)
 
-        with patch("src.cli_init.shutil.which", return_value=None):
+        with patch("src.modules.llm.cli_support.shutil.which", return_value=None):
             ready, notes = _check_backend_prereqs("claude_code")
         assert ready is False
         # The fix-it instruction is included
         assert any("npm i -g @anthropic-ai/claude-code" in n for n in notes)
 
     def test_codex_checks_for_codex_binary(self):
-        with patch("src.cli_init.shutil.which", return_value="/usr/local/bin/codex"):
+        with patch("src.modules.llm.cli_support.shutil.which", return_value="/usr/local/bin/codex"):
             ready, _ = _check_backend_prereqs("codex")
         assert ready is True
-        with patch("src.cli_init.shutil.which", return_value=None):
+        with patch("src.modules.llm.cli_support.shutil.which", return_value=None):
             ready, notes = _check_backend_prereqs("codex")
         assert ready is False
         assert any("npm i -g @openai/codex" in n for n in notes)
 
     def test_gemini_checks_for_gemini_binary(self):
-        with patch("src.cli_init.shutil.which", return_value=None):
+        with patch("src.modules.llm.cli_support.shutil.which", return_value=None):
             ready, notes = _check_backend_prereqs("gemini")
         assert ready is False
         assert any("npm i -g @google/gemini-cli" in n for n in notes)

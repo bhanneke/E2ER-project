@@ -183,11 +183,50 @@ def main() -> None:
     matrix_p.add_argument("--rq-file", default=None, help="Read the research question from a file.")
     matrix_p.add_argument(
         "--backends",
-        default="claude_code,codex,gemini",
-        help="Comma-separated backends to run (default: claude_code,codex,gemini — the $0 CLI backends).",
+        default=None,
+        help="Comma-separated backends to run, e.g. claude_code,codex. Default: every subscription CLI "
+        "(Claude Code, Codex, Gemini) that is installed and signed in on this computer, as `e2er doctor` "
+        "finds them; if there is none, every API backend with a key.",
+    )
+    matrix_p.add_argument(
+        "--models",
+        default=None,
+        metavar="BACKEND=MODEL,...",
+        help="Model per backend, e.g. claude_code=sonnet,codex=gpt-6-luna. A backend left out runs its "
+        "configured model (CLAUDE_CODE_MODEL, CODEX_MODEL, ...).",
     )
     matrix_p.add_argument("--repeats", type=int, default=3, help="Repeats per backend (default 3).")
     matrix_p.add_argument("--methodology", choices=["empirical", "theoretical", "mixed"], default="empirical")
+    matrix_p.add_argument(
+        "--template",
+        "--pipeline",
+        dest="template",
+        default="empirical",
+        help="Template (pipeline file) every run follows, as for `e2er run`. Default: empirical.",
+    )
+    matrix_p.add_argument(
+        "--review-at",
+        action="append",
+        default=None,
+        metavar="STAGE",
+        choices=[
+            "initial",
+            "iterative",
+            "estimation_gate",
+            "self_attack",
+            "polish",
+            "review",
+            "revision",
+            "replication",
+        ],
+        help="Pause every run for human review after this stage (repeatable). A paused run is recorded "
+        "as paused and not exported; review it with `e2er review <paper_id>`, then `e2er export` it.",
+    )
+    matrix_p.add_argument(
+        "--demonstration",
+        action="store_true",
+        help="Mark every run as a demonstration or test run, as `e2er run --demonstration` does.",
+    )
     matrix_p.add_argument("--mode", choices=["single_pass", "iterative"], default="single_pass")
     matrix_p.add_argument("--governance", choices=["off", "contracts", "full"], default=None)
     matrix_p.add_argument("--max-cost", type=float, default=5.0, help="Per-paper cost cap (default $5).")
@@ -776,7 +815,22 @@ def main() -> None:
         if not rq:
             print("run-matrix: provide a research question (positional or --rq) or --rq-file", file=sys.stderr)
             sys.exit(2)
-        backends = [b.strip() for b in args.backends.split(",") if b.strip()]
+        from .cli_run_matrix import MatrixArgError, available_backends, parse_models
+
+        if args.backends:
+            backends = [b.strip() for b in args.backends.split(",") if b.strip()]
+        else:
+            backends = available_backends()
+            print(
+                f"run-matrix: no --backends given; using {', '.join(backends) or 'none'} "
+                "(the ones ready on this computer)",
+                file=sys.stderr,
+            )
+        try:
+            models = parse_models(args.models, backends)
+        except MatrixArgError as e:
+            print(f"run-matrix: {e}", file=sys.stderr)
+            sys.exit(2)
         sys.exit(
             _run_matrix(
                 rq=rq,
@@ -788,6 +842,10 @@ def main() -> None:
                 governance=args.governance,
                 out=args.out,
                 monitor_seconds=args.monitor_seconds,
+                template=args.template,
+                review_stages=args.review_at,
+                demonstration=args.demonstration,
+                models=models,
             )
         )
 

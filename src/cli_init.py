@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import os
 import re
-import shutil
 import sys
 from pathlib import Path
 
@@ -156,8 +155,11 @@ def _check_backend_prereqs(backend: str) -> tuple[bool, list[str]]:
 
     if backend in _BACKEND_CLI_BINARY:
         binary = _BACKEND_CLI_BINARY[backend]
-        if shutil.which(binary):
-            notes.append(f"  ✓ {binary} CLI found")
+        from .doctor import resolve_backend_cli
+
+        found = resolve_backend_cli(backend)
+        if found:
+            notes.append(f"  ✓ {binary} CLI found ({found})")
         else:
             ready = False
             install_cmd = _BACKEND_CLI_INSTALL[backend]

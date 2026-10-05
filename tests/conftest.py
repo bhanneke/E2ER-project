@@ -454,6 +454,25 @@ def mock_db():
 
 
 @pytest.fixture(autouse=True)
+def _isolate_the_cli_installs(monkeypatch, tmp_path_factory):
+    """Never let the suite see this machine's AI CLIs outside PATH or Codex's model list.
+
+    The Codex backend finds the ChatGPT app's own `codex` and reads the model
+    list Codex keeps in $CODEX_HOME. On a machine with both, a test asserting
+    "not installed" or the "codex-cli-default" label failed only there. Tests
+    that want either point at their own.
+    """
+    from src.modules.llm import cli_support, codex
+
+    monkeypatch.setattr(cli_support, "_EXTRA_LOCATIONS", {})
+    empty_home = tmp_path_factory.mktemp("no-codex-home")
+    monkeypatch.setattr(codex, "_codex_home", lambda: empty_home)
+    codex.default_codex_model.cache_clear()
+    yield
+    codex.default_codex_model.cache_clear()
+
+
+@pytest.fixture(autouse=True)
 def _isolate_the_corpus(monkeypatch, tmp_path_factory):
     """Never let the suite read the machine's real corpus at ~/.e2er/corpus.db.
 

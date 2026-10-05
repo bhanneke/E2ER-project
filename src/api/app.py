@@ -2863,6 +2863,21 @@ async def _prepare_and_run(
     )
 
 
+def model_override(settings: Any, backend_name: str, model: str | None) -> str | None:
+    """The per-paper model to hand the backend, or None to let it use its own setting.
+
+    Only a model that differs from the backend's configured default is an
+    override. A resumed run passes the label stored on its row, which for an
+    unpinned CLI backend is a placeholder ("codex-cli-default") or, on Claude
+    Code, the API model id; neither may reach the CLI as `-m`/`--model`.
+    """
+    if not model or model in {"codex-cli-default", "gemini-cli-default"}:
+        return None
+    if model == settings.default_model_for(backend_name):
+        return None
+    return model
+
+
 async def _run_pipeline(
     paper_id: str,
     workspace: Path,
@@ -2887,9 +2902,12 @@ async def _run_pipeline(
     # Per-paper overrides (multi-model runs / experiment); fall back to the
     # process-global config when unset.
     effective_backend_name = backend_name or settings.llm_backend
-    effective_model = model or settings.default_model_for(effective_backend_name)
     effective_governance = governance or settings.governance
-    backend = get_backend(settings, name=effective_backend_name)
+    # The per-paper model reaches the backend itself, not just the label.
+    # (The override is passed only when set: test doubles and replay backends take name= alone.)
+    override = model_override(settings, effective_backend_name, model)
+    backend = get_backend(settings, name=effective_backend_name, **({"model": override} if override else {}))
+    effective_model = model or getattr(backend, "model", "") or settings.default_model_for(effective_backend_name)
 
     # Tools are unioned across all enabled providers; specialists' skill files
     # determine which they actually invoke.

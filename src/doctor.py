@@ -64,7 +64,7 @@ BACKEND_HELP: dict[str, dict[str, str]] = {
     },
     "codex": {
         "label": "ChatGPT subscription, through the Codex CLI",
-        "how": "Install the Codex CLI, then run `codex login`.",
+        "how": "Install the Codex CLI (the ChatGPT desktop app includes it), then run `codex login`.",
         "url": "https://github.com/openai/codex",
     },
     "gemini": {
@@ -100,15 +100,50 @@ BACKEND_MODELS: dict[str, tuple[str, list[tuple[str, str]]]] = {
             ("anthropic/claude-sonnet-4-5", "Claude Sonnet 4.5 — recommended"),
         ],
     ),
+    # Filled from the CLI's own model list when it has one (see _codex_models).
     "codex": ("CODEX_MODEL", [("", "The Codex CLI's own default")]),
     "gemini": (
         "GEMINI_MODEL",
         [
-            ("gemini-2.5-flash", "Gemini 2.5 Flash — cheapest"),
-            ("gemini-2.5-pro", "Gemini 2.5 Pro — strongest"),
+            ("", "The Gemini CLI's own default"),
+            ("gemini-2.5-flash", "Gemini 2.5 Flash — uses the least of your plan"),
+            ("gemini-2.5-pro", "Gemini 2.5 Pro"),
         ],
     ),
 }
+
+
+def _codex_models() -> list[tuple[str, str]]:
+    """The models the signed-in ChatGPT plan offers, as Codex last fetched them.
+
+    Read from the CLI's own cache; a fixed list here went stale within weeks.
+    Falls back to the CLI default alone.
+    """
+    from .modules.llm.codex import codex_models
+
+    listed = codex_models()
+    if not listed:
+        return BACKEND_MODELS["codex"][1]
+    out = [("", f"The Codex CLI's own default ({listed[0]['slug']})")]
+    for m in listed:
+        desc = str(m.get("description") or "").strip().rstrip(".")
+        out.append((str(m["slug"]), f"{m.get('display_name') or m['slug']} — {desc}" if desc else str(m["slug"])))
+    return out
+
+
+def resolve_backend_cli(backend: str, settings: Any = None) -> str | None:
+    """Where the backend's CLI is: CLAUDE_CODE_PATH / CODEX_PATH / GEMINI_PATH,
+    PATH, and the ChatGPT app's own `codex`. None when not installed."""
+    from .modules.llm.cli_support import resolve_cli
+
+    if settings is None:
+        try:
+            from .config import get_settings
+
+            settings = get_settings()
+        except Exception:  # noqa: BLE001 — a broken .env must not hide an installed CLI
+            settings = None
+    return resolve_cli(backend, settings)
 
 
 def cli_signed_in(backend: str, home: Path | None = None) -> tuple[bool | None, str]:
@@ -166,9 +201,11 @@ def detect_backends(settings: Any = None) -> list[BackendStatus]:
     out: list[BackendStatus] = []
     for name in ("claude_code", "codex", "gemini", "anthropic", "openrouter"):
         model_setting, models = BACKEND_MODELS[name]
+        if name == "codex":
+            models = _codex_models()
         info = BACKEND_HELP[name]
         if name in _BACKEND_CLI:
-            path = shutil.which(_BACKEND_CLI[name])
+            path = resolve_backend_cli(name, settings)
             if path:
                 signed, note = cli_signed_in(name)
                 detail = f"`{_BACKEND_CLI[name]}` found; {note}"
@@ -255,7 +292,7 @@ async def backend_check(settings) -> Check:
         if not key and backend == "anthropic" and not _raw_setting("LLM_BACKEND"):
             # Nothing chosen yet: the Anthropic value is only the settings' fallback,
             # so naming its key would send the person after the wrong thing.
-            claude = shutil.which("claude")
+            claude = resolve_backend_cli("claude_code", settings)
             found = f" Claude Code is installed at {claude};" if claude else ""
             return Check(
                 "backend",
@@ -269,13 +306,14 @@ async def backend_check(settings) -> Check:
     cli = _BACKEND_CLI.get(backend)
     if cli is None:
         return Check(f"backend.{backend}", FAIL, f"unknown backend literal: {backend!r}")
-    path = shutil.which(cli)
+    path = resolve_backend_cli(backend, settings)
     if not path:
         where = CLAUDE_CODE_SETUP_URL if backend == "claude_code" else BACKEND_HELP[backend]["url"]
+        setting = {"claude_code": "CLAUDE_CODE_PATH", "codex": "CODEX_PATH", "gemini": "GEMINI_PATH"}[backend]
         return Check(
             f"backend.{backend}",
             FAIL,
-            f"`{cli}` CLI not on PATH — install it ({where}), or see {INSTALL_URL}",
+            f"`{cli}` CLI not found on PATH or at {setting} — install it ({where}), or see {INSTALL_URL}",
         )
     signed, note = cli_signed_in(backend)
     if signed is False:

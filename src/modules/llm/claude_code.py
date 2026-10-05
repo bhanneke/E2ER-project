@@ -25,9 +25,6 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import shutil
-import sys
-import sysconfig
 import time
 from pathlib import Path
 from typing import Any
@@ -35,6 +32,7 @@ from typing import Any
 from ...config import get_settings
 from ...logging_config import get_logger
 from .base import LLMBackend, TokenUsage, ToolHandler, ToolLoopResult
+from .cli_support import cli_path_or_setting, cli_version, run_env
 
 logger = get_logger(__name__)
 
@@ -161,13 +159,28 @@ class ClaudeCodeBackend(LLMBackend):
     docstring for why and the implications for Allium guardrails.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, model: str | None = None) -> None:
         settings = get_settings()
-        self._cli_path = shutil.which(settings.claude_code_path) or settings.claude_code_path
+        self._cli_path = cli_path_or_setting("claude_code", settings)
         self._timeout = settings.claude_code_timeout
         self._max_turns_default = settings.claude_code_max_turns
         self._cwd = settings.claude_code_cwd or os.getcwd()
-        self._model = settings.claude_code_model
+        # A per-paper model (`e2er run --model`, `run-matrix --models`) wins
+        # over CLAUDE_CODE_MODEL.
+        self._model = model or settings.claude_code_model
+
+    @property
+    def model(self) -> str:
+        return self._model
+
+    def identity(self) -> dict[str, Any]:
+        """What ran: model and CLI version, for the run record."""
+        return {
+            "backend": "claude_code",
+            "model": self._model or None,
+            "cli": self._cli_path,
+            "cli_version": cli_version(self._cli_path),
+        }
 
     async def tool_loop(
         self,
@@ -336,53 +349,18 @@ async def _invoke_cli(
 
     logger.info("ClaudeCode: invoking %s (max_turns=%d, prompt=%d chars)", cli_path, max_turns, len(prompt))
 
-    # Make `e2er-data` resolvable from the subprocess by name. Two sources,
-    # prepended in priority order:
-    #   1. The dev-checkout `scripts/` directory (bash wrappers — used when
-    #      running from a source checkout).
-    #   2. The venv `bin/` dir where pip installs the `e2er-data` entry-point
-    #      shim from pyproject.toml [project.scripts] (pip-install users).
-    #
-    # For (2), use `sysconfig.get_path("scripts")` rather than
-    # `Path(sys.executable).parent`. On macOS framework venvs the venv's
-    # bin/python is a symlink to the underlying Python.framework binary,
-    # so `.resolve().parent` lands in the framework's bin/ — where the
-    # entry-point shim does NOT live. `sysconfig.get_path("scripts")`
-    # returns the venv's own bin/ correctly on all platforms (verified
-    # on macOS 26 framework venv where .resolve() jumps to
-    # /opt/homebrew/Cellar/python@3.12/.../Python.framework/.../bin/).
-    env = os.environ.copy()
-    _bin_dir = sysconfig.get_path("scripts")
-    # Only include the dev-checkout `scripts/` dir if it actually exists.
-    # On pip-installed wheels `_SCRIPTS_DIR` resolves to a non-existent
-    # `site-packages/scripts/` because scripts/ is excluded from packaging.
-    # The entry-point shim in `_bin_dir` covers pip users.
-    _path_parts = [_bin_dir, env.get("PATH", "")]
-    if _SCRIPTS_DIR.exists():
-        _path_parts.insert(0, str(_SCRIPTS_DIR))
-    env["PATH"] = os.pathsep.join(p for p in _path_parts if p)
-    # Tell the wrapper which Python to use — same interpreter that's running
-    # the runner, so the subprocess inherits the correct venv (project deps)
-    # and the correct Python version (>=3.11, needed for PEP 604 union types
-    # used throughout the codebase). Discovered run #10: without this the
-    # wrapper called bare `python` from the CLI subprocess's PATH, which
-    # either resolved to nothing (then `exec: python: not found`) or to a
-    # system Python 3.9 that crashed on first import (`str | None`).
-    env["E2ER_PYTHON"] = sys.executable
-    # Wire deterministic context — the wrapper reads these and injects them
-    # into the python CLI call, so the specialist doesn't have to remember
-    # its own paper_id.
-    if paper_id:
-        env["E2ER_PAPER_ID"] = paper_id
-    if specialist:
-        env["E2ER_SPECIALIST"] = specialist
-    # Absolute workspace root so e2er-data's `_resolve_workspace` resolves to
-    # the same path regardless of subprocess cwd. Without this the relative
-    # default `"workspaces"` resolves against the subprocess cwd, which is
-    # ALREADY the paper's workspace dir → we get `workspaces/<id>/workspaces/<id>/data/`.
-    # See live test eea5379b (v0.4.4) for the failure mode.
-    if workspace_root_abs is not None:
-        env["E2ER_WORKSPACE_ROOT"] = str(workspace_root_abs)
+    # The wrappers' PATH (dev-checkout scripts/, then the venv's entry-point
+    # shims via sysconfig — not sys.executable's dir, which on macOS framework
+    # venvs is the framework's bin/), E2ER_PYTHON (run #10), the paper id and
+    # specialist, the ABSOLUTE workspace root (eea5379b: a relative root nests
+    # workspaces/<id> inside itself), the run database, and whatever the
+    # study's .env sets. One copy for all three CLI backends: cli_support.run_env.
+    env = run_env(
+        get_settings(),
+        paper_id=paper_id,
+        specialist=specialist,
+        workspace_root_abs=workspace_root_abs,
+    )
 
     try:
         proc = await asyncio.create_subprocess_exec(

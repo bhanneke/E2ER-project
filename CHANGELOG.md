@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **The Codex backend works.** Validated live on a ChatGPT plan with codex-cli 0.155 (October
+  2026): single calls, a whole study (`e2er run --demonstration`, empirical template) and the
+  end-to-end story E2E-01. Before, `codex exec` ran read-only (no specialist could write a file),
+  refused to start outside a git repository (every study folder), had no network for
+  `e2er-data`/`e2er-lit`, could not write the run database, ran under the user's own Codex
+  configuration (model, effort, plugins, MCP servers, notify hooks) and kept session history.
+  It now runs with `-s workspace-write` (setting `CODEX_SANDBOX`), `--skip-git-repo-check`,
+  network on, `--add-dir` for the run database's folder, the whole environment passed to shell
+  commands, no login shell, and `--ignore-user-config --ignore-rules --ephemeral`; sign-in still
+  comes from `~/.codex`. Output is read from `--json` events and `-o`: the final message, token
+  usage (cached input recorded as cache reads) and the number of commands and file changes. A
+  timeout stops the CLI and everything it started; a dropped connection or a server error is
+  tried twice more, a used-up plan limit is not. Prompts name Codex's own tools (`apply_patch`),
+  as they name Claude Code's.
+- **Codex cannot be limited to e2er's commands, and the docs now say so.** Claude Code runs with
+  an allowlist; Codex's command rules can only be set in the user's own `~/.codex`, which e2er
+  does not change. Under Codex the model can run any shell command; writes stay inside the
+  workspace, the run database's folder and the temporary folder. See `docs/BACKENDS.md`.
+- **The CLI is found where it is.** `e2er doctor`, `e2er init` and the setup page used to look for
+  `codex`/`gemini`/`claude` on PATH only, ignoring `CODEX_PATH` and the other path settings. They
+  now use the configured path, and find the `codex` inside the ChatGPT desktop app when it is not
+  on PATH. The setup page lists the models the signed-in ChatGPT plan offers.
+- **A run records the model and CLI version that answered.** Without `CODEX_MODEL`, Codex runs
+  were labelled `codex-cli-default`; e2er now passes the first model of the CLI's own list
+  explicitly and records it. A new `backend_identity` event records backend, model, reasoning
+  effort and CLI version per run. `e2er run --model` (and `run-matrix --models`) now reach the
+  backend; before, the per-paper model only labelled the run while the backend ran its configured
+  one.
+- **Settings in the study's `.env` reach e2er's commands.** `e2er-data`, `e2er-lit` and the other
+  wrappers run in the workspace (or the e2er checkout) and read their own folder's `.env`, so a
+  FRED key or a study-local database set only in the study's `.env` never reached them. The CLI
+  backends now pass on that `.env` and the run database, as an absolute path. Applies to Claude
+  Code too.
+- **Gemini backend: same fixes, not validated live.** Absolute workspace root, the wrappers on
+  PATH, the run database, the tool name `replace`, JSON output with token counts and tool calls,
+  a help probe that no longer pins old flags after a slow start, and a sign-in hint that names a
+  command that exists. The Gemini CLI was not installed where this was tested.
+- **`e2er run-matrix` takes `--template`, `--review-at`, `--demonstration` and `--models
+  backend=model,...`.** Without `--backends` it runs the subscription CLIs that are ready on this
+  computer, not all three. `matrix.json` and `e2er compare` name each run's model.
+- `e2er-data fred series --help` crashed on a `%` in its help text; a model that asked for help
+  got a traceback.
+
 - **`e2er reproduce <study folder>` runs a study's code again and compares the results.** A
   study's `reproduce.json` names the pinned requirements, the steps, the inputs with their
   SHA-256 and the result files to compare. The code runs in a run folder of its own, inside a new
