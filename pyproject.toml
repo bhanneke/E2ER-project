@@ -44,6 +44,11 @@ dependencies = [
     # transitively in most environments, which is exactly why it has to be
     # declared: a fresh `pip install e2er` would otherwise crash on first use.
     "PyYAML>=6.0",
+    # Readers for the .parquet and .xlsx files a researcher puts in the data
+    # folder (README, "Bring your own data"). pandas imports them lazily, so
+    # without these the files were skipped with a warning nobody saw.
+    "pyarrow>=14.0",
+    "openpyxl>=3.1",
 ]
 
 [project.optional-dependencies]

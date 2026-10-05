@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **`.parquet` and `.xlsx` files in the data folder load.** The README offered both, but the
+  packages pandas needs to read them (pyarrow, openpyxl) were not installed with e2er, so such
+  files were skipped with a warning in the log. Both are now dependencies, and if one is missing
+  anyway, e2er prints which file was not loaded and the command that installs the reader.
+
 ## [0.13.6] — 2026-10-05
 
 - **The paper can be published with the study, and publish says what readers see for what stays
