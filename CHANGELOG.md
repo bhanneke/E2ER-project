@@ -17,7 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   although Yahoo's terms allow personal use only?". A Zenodo deposit of Yahoo data is refused
   before anything is written or sent: no Zenodo licence fits personal use only. Yahoo publishes
   no citation format, so publish asks for no BibTeX entry. The finish page says the same. A study
-  with GMD and Yahoo data names both sources in one reader note. See `docs/publishing.md`.
+  with GMD and Yahoo data names both sources in one reader note, and a data file holding both
+  (`data/data.db`) names both sources and their terms in the description. See `docs/publishing.md`.
 
 - **The Codex backend works.** Validated live on a ChatGPT plan with codex-cli 0.155 (October
   2026): single calls, a whole study (`e2er run --demonstration`, empirical template) and the

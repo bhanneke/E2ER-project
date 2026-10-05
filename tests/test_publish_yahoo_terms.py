@@ -227,3 +227,17 @@ def test_a_yahoo_publish_matches_the_sites_format(bundle: Path, monkeypatch):
     jsonschema.Draft202012Validator(SCHEMA).validate(
         {**manifest, "dossier": {"id": d["id"], "url": manifest["dossier"]["url"], "doc": d["doc"]}}
     )
+
+
+def test_a_file_holding_gmd_and_yahoo_data_names_both(tmp_path: Path):
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data" / "data.db").write_bytes(b"x")
+    tables = {"tables": [{"source": "gmd", "version": "2025_09"}, {"source": "yfinance"}]}
+    (tmp_path / "data" / "data_dictionary.json").write_text(json.dumps(tables))
+    manifest = {"data": [{"path": "data/data.db", "sha256": "0" * 64, "bytes": 1}]}
+    data_terms.annotate(manifest, data_terms.uses(tmp_path))
+    (entry,) = manifest["data"]
+    assert entry["source"] == "Global Macro Database (GMD), release 2025_09; Yahoo Finance"
+    assert entry["terms"].startswith("Holds data from the Global Macro Database (GMD), release 2025_09, used under")
+    assert " Holds data from Yahoo Finance, used under its terms. Yahoo terms of service" in entry["terms"]
+    assert entry["citation"] == data_terms.known()["gmd"].citation

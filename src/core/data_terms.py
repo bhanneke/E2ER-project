@@ -191,15 +191,20 @@ def annotate(manifest: dict[str, Any], found: list[Use]) -> None:
     """Name the source, its terms and its citation on the data files of the description that hold its data.
 
     The site's format (research-object 0.1) lets a ``data`` entry carry more
-    than path, sha256 and bytes; these keys travel with the description.
+    than path, sha256 and bytes; these keys travel with the description. A
+    file holding data of several sources (``data/data.db`` with a GMD table and
+    Yahoo prices) names each: sources joined with "; ", their statements and
+    citations one after the other.
     """
-    for use in found:
-        for entry in manifest.get("data") or []:
-            if entry.get("path") in use.files:
-                entry["source"] = use.label
-                entry["terms"] = statement(use)
-                if use.terms.citation:
-                    entry["citation"] = use.terms.citation
+    for entry in manifest.get("data") or []:
+        held = [u for u in found if entry.get("path") in u.files]
+        if not held:
+            continue
+        entry["source"] = "; ".join(u.label for u in held)
+        entry["terms"] = " ".join(statement(u) for u in held)
+        citations = [u.terms.citation for u in held if u.terms.citation]
+        if citations:
+            entry["citation"] = " ".join(citations)
 
 
 def missing_confirmation(found: list[Use], accepted: list[str] | None) -> list[Use]:
