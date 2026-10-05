@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.7] — 2026-10-06
+
 - **Yahoo Finance data get the GMD's treatment.** Yahoo's terms allow personal use only, so data
   loaded with `e2er-data yfinance` are now a source with terms for `e2er publish`, beside the
   GMD. The description names Yahoo Finance and its terms (from the yfinance load record) on the
