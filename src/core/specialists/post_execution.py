@@ -55,6 +55,7 @@ Properties:
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -298,6 +299,8 @@ def maybe_execute_specialist_script(workspace: Path, specialist: str) -> Executi
         completed = subprocess.run(
             [sys.executable, str(script_path)],
             cwd=str(workspace),
+            # Plain tracebacks for the model that reads them (Python 3.13+ colours them under FORCE_COLOR).
+            env={**os.environ, "PYTHON_COLORS": "0"},
             capture_output=True,
             text=True,
             timeout=convention.timeout_seconds,

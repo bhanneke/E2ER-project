@@ -459,16 +459,13 @@ async def _log_config() -> None:
         "on" if s.github_enabled else "off",
         s.default_max_cost_usd,
     )
-    # CLI backends (Claude Code Max, Codex CLI, Gemini CLI) run on flat-rate
-    # plans, so the cost meter values are Sonnet-equivalent ESTIMATES, not
-    # what the user actually pays. The budget cap still functions as a
-    # token-spend guardrail — useful for runaway protection — but the dollar
-    # number in `/api/papers/<id>` is informational only.
+    # CLI backends (Claude Code, Codex CLI, Gemini CLI) run on the person's
+    # subscription: compute_cost records $0 for them, so the spending limit
+    # never trips; the subscription's own usage limits apply instead.
     if s.llm_backend in {"claude_code", "codex", "gemini"}:
-        logger.warning(
-            "Backend %s: cost values are Sonnet-rate ESTIMATES (synthetic). "
-            "Actual user cost on a flat-rate plan is $0. Budget cap still "
-            "operates as a token-spend guardrail.",
+        logger.info(
+            "Backend %s runs on the subscription: costs are recorded as $0 and the spending limit "
+            "does not apply; the subscription's own usage limits do.",
             s.llm_backend,
         )
 

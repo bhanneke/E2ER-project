@@ -29,6 +29,9 @@ def main() -> None:
         description="e2er is the open infrastructure for publishing, verifying, reproducing and reusing "
         "AI-enabled research. Run `e2er` alone to open it in your browser.",
     )
+    from . import __version__
+
+    parser.add_argument("--version", action="version", version=f"e2er {__version__}")
     # For bare `e2er` (which serves the dashboard). Own dests, so that the serve
     # subcommand's defaults cannot overwrite them.
     parser.add_argument(

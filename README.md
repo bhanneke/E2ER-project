@@ -2,7 +2,7 @@
 
 [![Status](https://img.shields.io/badge/status-active%20development-blue)](https://github.com/bhanneke/E2ER-project)
 [![License](https://img.shields.io/badge/license-MIT-green)](https://github.com/bhanneke/E2ER-project/blob/main/LICENSE)
-[![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://pypi.org/project/e2er/)
+[![Python](https://img.shields.io/badge/python-3.11%E2%80%933.14-blue)](https://pypi.org/project/e2er/)
 [![Tests](https://github.com/bhanneke/E2ER-project/actions/workflows/tests.yml/badge.svg)](https://github.com/bhanneke/E2ER-project/actions/workflows/tests.yml)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20187238.svg)](https://doi.org/10.5281/zenodo.20187238)
 [![PyPI](https://img.shields.io/pypi/v/e2er.svg)](https://pypi.org/project/e2er/)
@@ -36,7 +36,7 @@ Examples:
 
 ## Reproducing research
 
-The replication template reproduces a published study from its replication package on Zenodo. Specialists read the package and plan which of the study's numbers to compare. The researcher reviews that plan before anything is executed.
+The replication template reproduces a published study from its replication package on Zenodo. It works with packages on Zenodo only, and executes code in R (on a `rocker/r-ver` image) or Python (on a `python` slim image); Stata, MATLAB and other languages are not supported yet. Specialists read the package and plan which of the study's numbers to compare. The researcher reviews that plan before anything is executed.
 
 The authors' code is then executed again in a container on the researcher's computer, without network access. Every number the study reports is compared with the number from the new execution and labelled reproduced, reproduced with a minor difference, or not reproduced. The researcher reviews the report, and the dossier records every comparison.
 
@@ -46,7 +46,7 @@ Example:
 
 ## Installation in detail
 
-e2er needs Python 3.11 or newer. The automated tests run on Ubuntu with Python 3.11 and 3.12, and e2er is developed on macOS. Windows is untested so far.
+e2er works with Python 3.11, 3.12, 3.13 and 3.14. The automated tests run on Ubuntu with all four, and e2er is developed on macOS. Windows is untested so far. `e2er --version` prints the installed version.
 
 The installer uv downloads Python together with e2er. On Mac and Linux, in a terminal:
 
@@ -98,6 +98,7 @@ The replication template also needs [Docker Desktop](https://docs.docker.com/get
 e2er init                # asks questions, writes .env
 e2er init --defaults     # the same without questions, with Claude Code
 e2er doctor              # checks the setup
+e2er --version           # prints the installed version
 ```
 
 `e2er init` asks which AI access to use and checks that it is installed. The command then creates the folders `data/` and `literature/` and writes the settings to `.env` in the current folder; `--force` overwrites an existing `.env`. For Claude Code, Codex or Gemini it asks before copying e2er's skill files into that CLI's skills folder (`~/.claude/skills`, `~/.codex/skills` or `~/.gemini/skills`); `--defaults` copies them into `~/.claude/skills` only. Other CLIs' folders are left alone. The setup page in the browser writes the same file. `e2er doctor` reports the AI access, the database and the data and literature it finds.
@@ -120,7 +121,7 @@ e2er status <paper_id> --tail
 `e2er run` starts a study and follows it in the terminal. Ctrl+C stops the output in the terminal, and the study keeps running in the background. The options are:
 
 - `--template NAME`: the template the study follows (default `empirical`).
-- `--max-cost USD`: the spending limit of the study in US dollars (default 5).
+- `--max-cost USD`: the spending limit of the study in US dollars (default 5). It applies to the API backends; on Claude Code, Codex and Gemini CLI a study costs $0 in e2er's records.
 - `--review-at STEP`: an additional pause for your review after this step (repeatable).
 - `--backend` and `--model`: another AI access or model for this study.
 - `--methodology empirical|theoretical|mixed` and `--mode single_pass|iterative`.
@@ -185,7 +186,7 @@ A template is a `.toml` file. e2er ships four in [`pipelines/`](https://github.c
 - `empirical` (default): from a research question and data to an empirical paper.
 - `empirical-preregistered`: `empirical` with three pauses for the researcher (design review, pre-registration frozen before any estimation, draft review).
 - `event-study-finance`: abnormal-return event studies around announcements, with the pauses of `empirical-preregistered`. A check before estimation tests the estimation window, the overlap between events and the event dates.
-- `replication`: reproduction of a published study from its replication package on Zenodo, executed in a Docker container. The result is a reproduction report.
+- `replication`: reproduction of a published study from its replication package on Zenodo, executed in a Docker container (R or Python code only). The result is a reproduction report.
 
 The three empirical templates end with e2er's internal quality review. Six reviewer specialists each score the draft from one angle on a scale of 0 to 10. The six angles are data, identification, literature, mechanism, technical quality and writing. The score is their weighted average. The score decides whether the draft is revised before the study ends, and the study reports it, for example "e2er's internal quality review: 6.1 of 10". A study that finishes its steps is completed whatever its score.
 
@@ -228,7 +229,9 @@ The library is stored at `~/.e2er/corpus.db` (`CORPUS_DB` moves it). Before draf
 
 ## Costs
 
-Each study has a spending limit, set with `--max-cost` (default 5 US dollars in the terminal). A study that reaches the limit pauses, and `e2er resume <paper_id> --max-cost <higher limit>` continues it. The first study with a given combination of model, methodology and mode is limited to 1 US dollar until one such study has completed. `--acknowledge-unproven` lifts this limit. On Claude Code, Codex and Gemini CLI, e2er lifts it automatically.
+Each study has a spending limit, set with `--max-cost` (default 5 US dollars in the terminal). A study that reaches the limit pauses, and `e2er resume <paper_id> --max-cost <higher limit>` continues it. The first study with a given combination of model, methodology and mode is limited to 1 US dollar until one such study has completed. `--acknowledge-unproven` lifts this limit.
+
+These limits apply to the API backends (Anthropic, OpenRouter), which bill per use. On Claude Code, Codex and Gemini CLI the study runs on your subscription: e2er records its cost as $0, so no spending limit applies, and the subscription's own usage limits are the only ones.
 
 ## Troubleshooting
 

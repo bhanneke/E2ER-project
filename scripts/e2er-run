@@ -75,6 +75,10 @@ PYTHON_BIN="${E2ER_PYTHON:-python3}"
 # Note: macOS ships bash 3.2, where "${ARR[@]}" on an empty array trips
 # `set -u`. Branch on the command instead of building a possibly-empty array.
 echo "e2er-run: executing $TARGET (timeout ${TIMEOUT_SECONDS}s)" >&2
+# Plain tracebacks: a model reads them. Python 3.13+ colours them when
+# FORCE_COLOR is set (Claude Code and uv set it), and the escape codes split
+# "ValueError: boom" apart.
+export PYTHON_COLORS=0
 if command -v timeout >/dev/null 2>&1; then
   exec timeout "$TIMEOUT_SECONDS" "$PYTHON_BIN" "$RESOLVED"
 elif command -v gtimeout >/dev/null 2>&1; then

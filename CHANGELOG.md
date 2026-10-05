@@ -65,6 +65,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   maintainer's computer. `docker/` has a README saying it is an optional Postgres stack for
   development, not needed to use e2er.
 
+- **Tracebacks from estimation scripts reach the model in plain text.** On Python 3.13 and 3.14,
+  with `FORCE_COLOR` set (Claude Code and uv set it), Python coloured the traceback, and the
+  escape codes split the error line the specialist reads to fix its script. `e2er-run` and the
+  post-step execution now turn the colours off.
+- **README:** the replication template works with Zenodo packages and R or Python code only; the
+  spending limit applies to the API backends, since studies on Claude Code, Codex and Gemini CLI
+  cost $0 in e2er's records; e2er works with Python 3.11 to 3.14 (the automated tests now run on
+  all four); `e2er --version` prints the installed version (new flag).
+
 ## [0.13.6] — 2026-10-05
 
 - **The paper can be published with the study, and publish says what readers see for what stays
