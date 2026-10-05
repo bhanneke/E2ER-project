@@ -478,7 +478,7 @@ def verdict(files: list[FileComparison], tables: dict[str, Any] | None, steps: l
     if count(DIFFERS):
         parts.append(f"{count(DIFFERS)} differ")
     if count(MISSING) or count(NEW):
-        parts.append(f"{count(MISSING)} are missing from the rerun and {count(NEW)} are new")
+        parts.append(f"{count(MISSING)} missing from the rerun, {count(NEW)} only in the rerun")
     if bad_files:
         parts.append(f"{len(bad_files)} result file(s) could not be compared ({', '.join(bad_files)})")
     if bad_tables:

@@ -1,0 +1,174 @@
+<!doctype html><html lang='en'><head><meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>Did the January 2024 approval of US spot Bitcoin ETFs change the co-movement ...</title><style>
+:root{--paper:#faf9f6;--card:#fff;--ink:#1b1f2b;--muted:#5f6676;--line:#e3ded4;
+--ok:#2c7a54;--bad:#ab392f;--accent:#ad5a29;--okbg:#e6f2ea;--badbg:#fbe9e7}
+@media(prefers-color-scheme:dark){:root{--paper:#14161c;--card:#1b1e26;--ink:#e9e7e1;
+--muted:#98a0af;--line:#2c313b;--ok:#56b483;--bad:#e07a6d;--accent:#e0884d;
+--okbg:#16302a;--badbg:#3a201d}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);line-height:1.6;
+font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:940px;margin:0 auto;padding:40px 20px 72px}
+h1{font-size:30px;line-height:1.15;margin:0 0 8px}
+h2{font-size:20px;margin:44px 0 12px}
+h3{font-size:15px;margin:0}
+p{margin:0 0 12px;max-width:70ch}
+.muted{color:var(--muted)}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px}
+a{color:var(--accent)}
+.lede{border-bottom:2px solid var(--ink);padding-bottom:22px;margin-bottom:8px}
+.abstract{background:var(--card);border:1px solid var(--line);padding:18px 20px;margin:18px 0}
+.reads{display:flex;flex-wrap:wrap;gap:8px;margin:18px 0 6px}
+.reads a{display:block;padding:10px 14px;border:1px solid var(--line);background:var(--card);
+border-radius:4px;text-decoration:none;color:var(--ink);font-size:14px}
+.reads a.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+.reads a .p{display:block;font-size:11px;color:var(--muted);font-family:ui-monospace,Menlo,monospace}
+.reads a.primary .p{color:rgba(255,255,255,.85)}
+.v{display:grid;grid-template-columns:26px 150px 1fr;gap:12px;padding:12px 16px;
+border-bottom:1px solid var(--line);align-items:start}
+.v:last-child{border-bottom:none}
+.vs{border:1px solid var(--line);background:var(--card)}
+.mark{font-weight:700}
+.ok{color:var(--ok)}.bad{color:var(--bad)}
+.pill{display:inline-block;padding:2px 8px;border-radius:3px;font-size:11px;
+text-transform:uppercase;letter-spacing:.06em}
+.pill.ok{background:var(--okbg)}.pill.bad{background:var(--badbg)}
+table{border-collapse:collapse;width:100%;background:var(--card);border:1px solid var(--line)}
+th{text-align:left;font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;
+color:var(--muted);padding:8px 10px;border-bottom:1px solid var(--line)}
+td{padding:7px 10px;border-bottom:1px solid var(--paper);font-size:13.5px;vertical-align:top}
+td.n{text-align:right;font-family:ui-monospace,Menlo,monospace;white-space:nowrap;color:var(--muted)}
+details{border:1px solid var(--line);background:var(--card);margin-bottom:6px}
+summary{cursor:pointer;padding:10px 14px;font-weight:600;display:flex;
+justify-content:space-between;gap:12px;list-style:none}
+summary::-webkit-details-marker{display:none}
+details ul{margin:0;padding:0 0 8px;list-style:none;border-top:1px solid var(--line)}
+details li{display:flex;justify-content:space-between;gap:12px;padding:5px 14px}
+footer{margin-top:48px;padding-top:18px;border-top:1px solid var(--line);
+color:var(--muted);font-size:13px}
+@media(max-width:620px){.v{grid-template-columns:26px 1fr}.v div:last-child{grid-column:2}}
+</style></head><body><div class='wrap'>
+<div class='lede'>
+<h1>Did the January 2024 approval of US spot Bitcoin ETFs change the co-movement ...</h1>
+<p class='muted'>Did the January 2024 approval of US spot Bitcoin ETFs change the co-movement between Bitcoin returns and US equity returns?</p>
+<p class='mono muted'>backend: claude_code · model: claude-sonnet-4-5 · governance: full · exported_at: 20261005</p>
+</div>
+<div class='reads'>
+<a href='paper/paper.pdf' class='primary'>The paper (PDF)<span class='p'>paper/paper.pdf</span></a>
+<a href='paper/paper.tex'>LaTeX source<span class='p'>paper/paper.tex</span></a>
+<a href='paper/abstract.tex'>Abstract<span class='p'>paper/abstract.tex</span></a>
+<a href='design/identification_strategy.md'>Identification strategy<span class='p'>design/identification_strategy.md</span></a>
+<a href='results/estimation_results.json'>Estimation results<span class='p'>results/estimation_results.json</span></a>
+<a href='replication/estimation.py'>Replication script<span class='p'>replication/estimation.py</span></a>
+</div>
+<div class='abstract'><h3>Abstract</h3><p>% abstract.tex --- title, abstract, keywords, JEL codes. % Paper ID: e432cf3f-9008-4202-8ee6-ff09a93948ec % % NUMBER PROVENANCE. Every numeric value below carries a &quot;% src:&quot; comment % naming the sidecar file and the dotted key path it comes from; the one % derived quantity carries a &quot;% computed:&quot; comment showing the arithmetic. % Word count of the abstract body: 197. \title{No Cash Flows, New Owners:\\ Spot Bitcoin ETFs and the Origins of Co-movement} \noindent Did the SEC&#x27;s January 10, 2024 approval of eleven US spot Bitcoin ETFs move % src: summary_statistics.json#etf.n_spot_funds_approved Bitcoin into the conventional risk-asset complex? The approval changed who could hold Bitcoin and in what wrapper; it changed nothing about the asset, which has no cash flows and hence no fundamentals that could have grown more correlated with stocks. We estimate a difference-in-differences on monthly equity co-movement in a panel of ten cryptocurrencies over 2021--2025 --- % src: summary_statistics.json#n_units % src: summary_statistics.json#raw_contrast.SPY.control_group_mean.n_control_coins Bitcoin against nine that never received a US spot ETF --- with coin and calendar-month fixed effects and randomization inference over placebo assets and dates, because there is one treated unit. % src: estimation_results.json#main.treated_units Bitcoin&#x27;s correlation with the S\&amp;P 500 changed by % src: estimation_results.json#main.effect_in_correlation_units $-0.018$ against a pre-listing level of % src: estimation_results.json#main.rho_pre_treatment_mean $0.382$, and its equity beta by % src: robustness_results.json#outcome_beta.coefficients.d_etf_listed.estimate $-0.189$ against a pre-listing % src: summary_statistics.json#raw_contrast.SPY.by_asset.BTC.mean_beta_pre $1.23$ --- neither distinguishable from the placebo distribution, and both of the wrong sign for integration. What did move is relative volatility: Bitcoin&#x27;s log volatility ratio to the equity market shifts by % src: robustness_results.json#outcome_ln_sigma_ratio.coefficients.d_etf_listed.estimate $-0.113$, roughly 11 percent, % computed: exp(-0.11281474) - 1 = -0.107, i.e. a fall of about 11 percent against the controls.</p></div>
+<h2>What was checked</h2>
+<div class='vs'>
+<div class='v'><div class='mark ok'>✓</div><div><strong>Tables</strong></div><div class='muted'>13 rendered from the result files, 0 unresolved</div></div>
+<div class='v'><div class='mark ok'>✓</div><div><strong>Numbers</strong></div><div class='muted'>346 table cells trace to a source key, 0 critical mismatches</div></div>
+<div class='v'><div class='mark ok'>✓</div><div><strong>Citations</strong></div><div class='muted'>33 of 33 verified, 0 missing from the bibliography</div></div>
+<div class='v'><div class='mark muted'>·</div><div><strong>e2er&#x27;s internal quality review</strong></div><div class='muted'>6.1 of 10 (weighted average): data 6.0, identification 6.0, literature 5.9, mechanism 5.6, technical 6.5, writing 7.0</div></div>
+</div>
+<p class='muted' style='margin-top:14px'>These are the results the run recorded, not a re-check. The internal quality review is a score: six reviewer specialists each score the draft from one angle, and the score is their weighted average. To verify the bundle independently — re-hash every file, recompute the numbers, re-render the tables and resolve every citation — run <span class='mono'>e2er verify</span> on this folder.</p>
+<h2>Provenance</h2>
+<p><strong>73</strong> files inventoried by SHA-256, <strong>385</strong> derivation edges recording where each output came from.</p>
+<table><thead><tr><th>Edge</th><th style='text-align:right'>Count</th></tr></thead><tbody>
+<tr><td class='mono'>table_cell</td><td class='n'>346</td></tr>
+<tr><td class='mono'>citation</td><td class='n'>33</td></tr>
+<tr><td class='mono'>figure</td><td class='n'>5</td></tr>
+<tr><td class='mono'>estimation</td><td class='n'>1</td></tr>
+</tbody></table>
+<h2>Everything in this folder</h2>
+<details><summary><span>paper</span><span class='mono muted'>20 files · 616 KB</span></summary><ul>
+<li><a class='mono' href='paper/abstract.tex'>paper/abstract.tex</a><span class='mono muted'>2 KB</span></li>
+<li><a class='mono' href='paper/paper.pdf'>paper/paper.pdf</a><span class='mono muted'>461 KB</span></li>
+<li><a class='mono' href='paper/paper.tex'>paper/paper.tex</a><span class='mono muted'>104 KB</span></li>
+<li><a class='mono' href='paper/refs.bib'>paper/refs.bib</a><span class='mono muted'>17 KB</span></li>
+<li><a class='mono' href='paper/tables/complementary.tex'>paper/tables/complementary.tex</a><span class='mono muted'>2 KB</span></li>
+<li><a class='mono' href='paper/tables/dcc.tex'>paper/tables/dcc.tex</a><span class='mono muted'>1 KB</span></li>
+<li><a class='mono' href='paper/tables/decomposition.tex'>paper/tables/decomposition.tex</a><span class='mono muted'>1 KB</span></li>
+<li><a class='mono' href='paper/tables/event_study.tex'>paper/tables/event_study.tex</a><span class='mono muted'>2 KB</span></li>
+<li><a class='mono' href='paper/tables/inference.tex'>paper/tables/inference.tex</a><span class='mono muted'>1 KB</span></li>
+<li><a class='mono' href='paper/tables/macro_controls.tex'>paper/tables/macro_controls.tex</a><span class='mono muted'>1 KB</span></li>
+<li><a class='mono' href='paper/tables/main.tex'>paper/tables/main.tex</a><span class='mono muted'>2 KB</span></li>
+<li><a class='mono' href='paper/tables/placebos.tex'>paper/tables/placebos.tex</a><span class='mono muted'>1 KB</span></li>
+<li><a class='mono' href='paper/tables/power.tex'>paper/tables/power.tex</a><span class='mono muted'>2 KB</span></li>
+<li><a class='mono' href='paper/tables/rawcontrast.tex'>paper/tables/rawcontrast.tex</a><span class='mono muted'>1 KB</span></li>
+<li><a class='mono' href='paper/tables/returns_ddd.tex'>paper/tables/returns_ddd.tex</a><span class='mono muted'>1 KB</span></li>
+<li><a class='mono' href='paper/tables/returns_interacted.tex'>paper/tables/returns_interacted.tex</a><span class='mono muted'>1 KB</span></li>
+<li><a class='mono' href='paper/tables/robustness_sample.tex'>paper/tables/robustness_sample.tex</a><span class='mono muted'>1 KB</span></li>
+<li><a class='mono' href='paper/tables/robustness_spec.tex'>paper/tables/robustness_spec.tex</a><span class='mono muted'>2 KB</span></li>
+<li><a class='mono' href='paper/tables/robustness_windows.tex'>paper/tables/robustness_windows.tex</a><span class='mono muted'>1 KB</span></li>
+<li><a class='mono' href='paper/tables/sumstats.tex'>paper/tables/sumstats.tex</a><span class='mono muted'>2 KB</span></li>
+</ul></details>
+<details><summary><span>results</span><span class='mono muted'>12 files · 1.0 MB</span></summary><ul>
+<li><a class='mono' href='results/estimation_results.json'>results/estimation_results.json</a><span class='mono muted'>24 KB</span></li>
+<li><a class='mono' href='results/figure_spec.json'>results/figure_spec.json</a><span class='mono muted'>566 KB</span></li>
+<li><a class='mono' href='results/figures/fig_etf_cumulative_turnover.pdf'>results/figures/fig_etf_cumulative_turnover.pdf</a><span class='mono muted'>39 KB</span></li>
+<li><a class='mono' href='results/figures/fig_gbtc_discount.pdf'>results/figures/fig_gbtc_discount.pdf</a><span class='mono muted'>40 KB</span></li>
+<li><a class='mono' href='results/figures/fig_prepost_correlation_change.pdf'>results/figures/fig_prepost_correlation_change.pdf</a><span class='mono muted'>18 KB</span></li>
+<li><a class='mono' href='results/figures/fig_rolling_btc_spy.pdf'>results/figures/fig_rolling_btc_spy.pdf</a><span class='mono muted'>64 KB</span></li>
+<li><a class='mono' href='results/figures/fig_rolling_overlay_controls.pdf'>results/figures/fig_rolling_overlay_controls.pdf</a><span class='mono muted'>109 KB</span></li>
+<li><a class='mono' href='results/number_verification.json'>results/number_verification.json</a><span class='mono muted'>85 KB</span></li>
+<li><a class='mono' href='results/robustness_results.json'>results/robustness_results.json</a><span class='mono muted'>26 KB</span></li>
+<li><a class='mono' href='results/summary_statistics.json'>results/summary_statistics.json</a><span class='mono muted'>36 KB</span></li>
+<li><a class='mono' href='results/table_render_report.json'>results/table_render_report.json</a><span class='mono muted'>406 B</span></li>
+<li><a class='mono' href='results/table_spec.json'>results/table_spec.json</a><span class='mono muted'>30 KB</span></li>
+</ul></details>
+<details><summary><span>design</span><span class='mono muted'>5 files · 219 KB</span></summary><ul>
+<li><a class='mono' href='design/econometric_spec.md'>design/econometric_spec.md</a><span class='mono muted'>65 KB</span></li>
+<li><a class='mono' href='design/identification_spec.json'>design/identification_spec.json</a><span class='mono muted'>2 KB</span></li>
+<li><a class='mono' href='design/identification_strategy.md'>design/identification_strategy.md</a><span class='mono muted'>43 KB</span></li>
+<li><a class='mono' href='design/literature_review.md'>design/literature_review.md</a><span class='mono muted'>62 KB</span></li>
+<li><a class='mono' href='design/paper_plan.md'>design/paper_plan.md</a><span class='mono muted'>45 KB</span></li>
+</ul></details>
+<details><summary><span>code</span><span class='mono muted'>9 files · 143 KB</span></summary><ul>
+<li><a class='mono' href='code/get_data.py'>code/get_data.py</a><span class='mono muted'>3 KB</span></li>
+<li><a class='mono' href='code/requirements.txt'>code/requirements.txt</a><span class='mono muted'>282 B</span></li>
+<li><a class='mono' href='code/run_estimation.py'>code/run_estimation.py</a><span class='mono muted'>70 KB</span></li>
+<li><a class='mono' href='code/scratch/build_panel.py'>code/scratch/build_panel.py</a><span class='mono muted'>40 KB</span></li>
+<li><a class='mono' href='code/scratch/inspect_json.py'>code/scratch/inspect_json.py</a><span class='mono muted'>592 B</span></li>
+<li><a class='mono' href='code/scratch/paper_draft.log'>code/scratch/paper_draft.log</a><span class='mono muted'>19 KB</span></li>
+<li><a class='mono' href='code/scratch/probe.py'>code/scratch/probe.py</a><span class='mono muted'>2 KB</span></li>
+<li><a class='mono' href='code/scratch/report_numbers.py'>code/scratch/report_numbers.py</a><span class='mono muted'>2 KB</span></li>
+<li><a class='mono' href='code/scratch/validate_sidecars.py'>code/scratch/validate_sidecars.py</a><span class='mono muted'>3 KB</span></li>
+</ul></details>
+<details><summary><span>data</span><span class='mono muted'>3 files · 173 KB</span></summary><ul>
+<li><a class='mono' href='data/data_dictionary.json'>data/data_dictionary.json</a><span class='mono muted'>89 KB</span></li>
+<li><a class='mono' href='data/data_sources.json'>data/data_sources.json</a><span class='mono muted'>39 KB</span></li>
+<li><a class='mono' href='data/data_summary.md'>data/data_summary.md</a><span class='mono muted'>44 KB</span></li>
+</ul></details>
+<details><summary><span>replication</span><span class='mono muted'>3 files · 133 KB</span></summary><ul>
+<li><a class='mono' href='replication/audit_log.csv'>replication/audit_log.csv</a><span class='mono muted'>152 B</span></li>
+<li><a class='mono' href='replication/data_queries.sql'>replication/data_queries.sql</a><span class='mono muted'>137 B</span></li>
+<li><a class='mono' href='replication/estimation.py'>replication/estimation.py</a><span class='mono muted'>132 KB</span></li>
+</ul></details>
+<details><summary><span>reviews</span><span class='mono muted'>8 files · 244 KB</span></summary><ul>
+<li><a class='mono' href='reviews/citation_integrity.json'>reviews/citation_integrity.json</a><span class='mono muted'>14 KB</span></li>
+<li><a class='mono' href='reviews/review_aggregation.json'>reviews/review_aggregation.json</a><span class='mono muted'>1 KB</span></li>
+<li><a class='mono' href='reviews/review_data.md'>reviews/review_data.md</a><span class='mono muted'>42 KB</span></li>
+<li><a class='mono' href='reviews/review_identification.md'>reviews/review_identification.md</a><span class='mono muted'>44 KB</span></li>
+<li><a class='mono' href='reviews/review_literature.md'>reviews/review_literature.md</a><span class='mono muted'>23 KB</span></li>
+<li><a class='mono' href='reviews/review_mechanism.md'>reviews/review_mechanism.md</a><span class='mono muted'>29 KB</span></li>
+<li><a class='mono' href='reviews/review_technical.md'>reviews/review_technical.md</a><span class='mono muted'>56 KB</span></li>
+<li><a class='mono' href='reviews/review_writing.md'>reviews/review_writing.md</a><span class='mono muted'>31 KB</span></li>
+</ul></details>
+<details><summary><span>misc</span><span class='mono muted'>10 files · 346 KB</span></summary><ul>
+<li><a class='mono' href='misc/fig_etf_cumulative_turnover.pdf'>misc/fig_etf_cumulative_turnover.pdf</a><span class='mono muted'>39 KB</span></li>
+<li><a class='mono' href='misc/fig_gbtc_discount.pdf'>misc/fig_gbtc_discount.pdf</a><span class='mono muted'>40 KB</span></li>
+<li><a class='mono' href='misc/fig_prepost_correlation_change.pdf'>misc/fig_prepost_correlation_change.pdf</a><span class='mono muted'>18 KB</span></li>
+<li><a class='mono' href='misc/fig_rolling_btc_spy.pdf'>misc/fig_rolling_btc_spy.pdf</a><span class='mono muted'>64 KB</span></li>
+<li><a class='mono' href='misc/fig_rolling_overlay_controls.pdf'>misc/fig_rolling_overlay_controls.pdf</a><span class='mono muted'>109 KB</span></li>
+<li><a class='mono' href='misc/figure_render_report.json'>misc/figure_render_report.json</a><span class='mono muted'>284 B</span></li>
+<li><a class='mono' href='misc/paper_draft.blg'>misc/paper_draft.blg</a><span class='mono muted'>3 KB</span></li>
+<li><a class='mono' href='misc/paper_draft.tex.applied.diff'>misc/paper_draft.tex.applied.diff</a><span class='mono muted'>14 KB</span></li>
+<li><a class='mono' href='misc/paper_draft.tex.edits.json'>misc/paper_draft.tex.edits.json</a><span class='mono muted'>37 KB</span></li>
+<li><a class='mono' href='misc/refs.bib'>misc/refs.bib</a><span class='mono muted'>17 KB</span></li>
+</ul></details>
+<details><summary><span>(root)</span><span class='mono muted'>2 files · 12 KB</span></summary><ul>
+<li><a class='mono' href='README.md'>README.md</a><span class='mono muted'>1 KB</span></li>
+<li><a class='mono' href='reproduce.json'>reproduce.json</a><span class='mono muted'>11 KB</span></li>
+</ul></details>
+<footer>Generated by e2er at export and fingerprinted in provenance.json like every other file. Everything above is read from this bundle — open any file beside this one to check it. Verification establishes that the paper's claims trace to the artifacts that produced them; whether the analysis was a good idea is a separate question, and still the reader's.</footer>
+</div></body></html>
