@@ -123,7 +123,7 @@ line-length = 120
 target-version = "py311"
 # Recorded output of real runs, replayed byte for byte by the end-to-end stories
 # (tests/replay/): the specialists wrote these files, so they are data, not code we style.
-extend-exclude = ["tests/fixtures/replay"]
+extend-exclude = ["tests/fixtures/replay", "tests/fixtures/showcase_export"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP"]
