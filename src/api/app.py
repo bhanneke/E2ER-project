@@ -221,7 +221,7 @@ def _stage_corpus_files(
 
     ``LOCAL_DATA_DIR`` accepts a comma-separated list of paths.
     """
-    from ..modules.local_corpus import iter_corpus_files, parse_corpus_roots
+    from ..modules.local_corpus import iter_corpus_files, link_or_copy, parse_corpus_roots
 
     if not local_data_dir:
         return 0
@@ -248,7 +248,7 @@ def _stage_corpus_files(
             continue  # defensive: never overwrite a workspace file
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.symlink_to(file_path.resolve())
+            link_or_copy(file_path, target)
             linked += 1
         except OSError as e:
             logger.warning("could not symlink %s → %s: %s (paper creation continues)", file_path, target, e)
@@ -781,7 +781,8 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
                 "id": paper_id,
                 "title": req.title,
                 "rq": req.research_question,
-                "ws": str(workspace),
+                # Absolute, so `e2er export` finds it from any folder.
+                "ws": str(workspace.resolve()),
                 "mode": req.mode,
                 "methodology": req.methodology,
                 "model": current_model,

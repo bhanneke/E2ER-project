@@ -602,7 +602,9 @@ def main() -> None:
         "export",
         help="Assemble a clean, structured project folder (paper/code/data/results/design/reviews) from a run.",
     )
-    export_p.add_argument("paper_id", help="The paper UUID returned by `e2er run`.")
+    export_p.add_argument(
+        "paper_id", help="The paper id returned by `e2er run`, or its first characters (at least 4) when unique."
+    )
     export_p.add_argument(
         "--to",
         default=None,

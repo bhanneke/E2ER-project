@@ -33,6 +33,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   copies nothing for the API backends; `--defaults` copies into `~/.claude/skills` only. Both say
   where the files went. The `.env` header names the current e2er version instead of "e2er v3".
 
+- **`e2er export <id>` works from any folder and takes a short id.** It looked for the workspace
+  only under `workspaces/` in the current folder. It now uses the workspace the database records
+  for the paper (new studies record the full path), falls back to `WORKSPACE_ROOT`, and accepts
+  the first characters of the id (at least 4) when they match one paper. When the workspace
+  cannot be found, the error says where it looked and what to do.
+- **Exported studies are no longer read back in as data.** The default export folder is
+  `<data folder>/e2er_papers`; with recursive staging, the next study picked up the earlier
+  studies' files as its own data. Folders named `e2er_papers` are now skipped.
+- **On Windows without Developer Mode, data files and PDFs are copied into the study.** Linking
+  them fails there, and the files used to be left out with only a line in the log. e2er now
+  copies them and says once in the terminal that copies do not follow later edits, and how
+  Developer Mode lets it link instead.
+
 ## [0.13.6] — 2026-10-05
 
 - **The paper can be published with the study, and publish says what readers see for what stays

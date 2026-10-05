@@ -73,7 +73,9 @@ def stage_pdf(workspace: Path, item: PaperMetadata) -> None:
         n += 1
     try:
         if not target.exists():
-            target.symlink_to(src.resolve())
+            from ..local_corpus import link_or_copy
+
+            link_or_copy(src, target)
         item.pdf_path = f"literature/{target.name}"
     except OSError as e:
         logger.debug("could not stage PDF %s: %s", src, e)
