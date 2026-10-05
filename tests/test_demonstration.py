@@ -18,7 +18,7 @@ from src.core.research_object import build_manifest
 from tests.run_db import make_run_db, paper_id_of
 
 ROOT = Path(__file__).resolve().parents[1]
-SHOWCASE = ROOT / "examples" / "showcase"
+SHOWCASE = ROOT / "tests" / "fixtures" / "showcase_export"
 DID = "sha256:" + "ab" * 32
 
 

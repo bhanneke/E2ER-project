@@ -1,0 +1,874 @@
+{
+  "window_60d": {
+    "specification": "Daily rolling-window DiD: Fisher-z of the 60-day rolling correlation with SPY, asset and date fixed effects, clustered on asset. Windows overlap, so the number of independent blocks is far below the row count (reported as n_effective_blocks) and the standard error must not be read as coming from n_observations independent draws.",
+    "n_observations": 10810,
+    "n_clusters": 10,
+    "cluster_level": "asset",
+    "fixed_effects": [
+      "asset",
+      "date"
+    ],
+    "controls": [],
+    "coefficients": {
+      "d_etf_listed": {
+        "estimate": -0.01830077,
+        "se": 0.020772,
+        "t_stat": -0.88103051,
+        "p_value": 0.40121662,
+        "ci_lower": -0.0652903,
+        "ci_upper": 0.02868877
+      }
+    },
+    "diagnostics": {
+      "within_r_squared": 0.001169,
+      "df_residual": 9719,
+      "n_fixed_effect_groups": 1090,
+      "n_dates": 1081,
+      "n_assets": 10
+    },
+    "unit_of_analysis": "asset-day",
+    "outcome": "fisherz_rho60d_spy",
+    "treatment": "d_etf_listed",
+    "treated_units": 1,
+    "rolling_window_days": 60,
+    "n_effective_blocks": 180,
+    "n_pre_treatment": 600,
+    "n_post_treatment": 481,
+    "se_twoway_cluster": 0.02082924,
+    "p_value_twoway_cluster": 0.4024603
+  },
+  "window_90d": {
+    "specification": "Daily rolling-window DiD: Fisher-z of the 90-day rolling correlation with SPY, asset and date fixed effects, clustered on asset. Windows overlap, so the number of independent blocks is far below the row count (reported as n_effective_blocks) and the standard error must not be read as coming from n_observations independent draws.",
+    "n_observations": 10570,
+    "n_clusters": 10,
+    "cluster_level": "asset",
+    "fixed_effects": [
+      "asset",
+      "date"
+    ],
+    "controls": [],
+    "coefficients": {
+      "d_etf_listed": {
+        "estimate": -0.01685506,
+        "se": 0.02098316,
+        "t_stat": -0.80326587,
+        "p_value": 0.44251769,
+        "ci_lower": -0.06432227,
+        "ci_upper": 0.03061216
+      }
+    },
+    "diagnostics": {
+      "within_r_squared": 0.001405,
+      "df_residual": 9503,
+      "n_fixed_effect_groups": 1066,
+      "n_dates": 1057,
+      "n_assets": 10
+    },
+    "unit_of_analysis": "asset-day",
+    "outcome": "fisherz_rho90d_spy",
+    "treatment": "d_etf_listed",
+    "treated_units": 1,
+    "rolling_window_days": 90,
+    "n_effective_blocks": 117,
+    "n_pre_treatment": 576,
+    "n_post_treatment": 481,
+    "se_twoway_cluster": 0.02105427,
+    "p_value_twoway_cluster": 0.44400867
+  },
+  "utc_alignment": {
+    "specification": "24h-UTC return alignment: crypto returns rebuilt as 00:00-00:00 UTC log close-to-close from the raw price files and matched to ET-dated equity returns. NOTE: the delivered daily_returns.csv crypto series are already on the UTC clock, so this row reproduces `main` rather than testing against it. The equity-close (16:00-16:00 ET) clock is not constructible from the delivered data; the alignment_offday_span row below is the alignment test that is feasible here.",
+    "n_observations": 540,
+    "n_clusters": 10,
+    "cluster_level": "coin",
+    "fixed_effects": [
+      "coin",
+      "year_month"
+    ],
+    "controls": [],
+    "coefficients": {
+      "d_etf_listed": {
+        "estimate": -0.02117707,
+        "se": 0.01695747,
+        "t_stat": -1.24883405,
+        "p_value": 0.24323096,
+        "ci_lower": -0.05953754,
+        "ci_upper": 0.0171834
+      }
+    },
+    "diagnostics": {
+      "within_r_squared": 0.00057,
+      "df_residual": 476,
+      "n_fixed_effect_groups": 63,
+      "n_coin_fe": 10,
+      "n_month_fe": 54
+    },
+    "unit_of_analysis": "coin-month",
+    "outcome": "y_fisherz_corr_equity",
+    "treatment": "d_etf_listed",
+    "treated_units": 1,
+    "n_pre_treatment": 31,
+    "n_post_treatment": 23,
+    "p_value_ri_space": 0.8,
+    "n_placebo_assignments": 9,
+    "ri_sd": 0.05344985,
+    "reproduces_main_exactly": true
+  },
+  "alignment_offday_span": {
+    "specification": "Off-day-span alignment: weekend and holiday crypto returns (crypto_offday_returns.csv) are cumulated into the next equity session, so each crypto return spans exactly the same calendar interval as the equity return it is correlated with. This removes the non-synchronicity that 24/7 trading creates. Applied to 10 of 10 sample assets.",
+    "n_observations": 540,
+    "n_clusters": 10,
+    "cluster_level": "coin",
+    "fixed_effects": [
+      "coin",
+      "year_month"
+    ],
+    "controls": [],
+    "coefficients": {
+      "d_etf_listed": {
+        "estimate": -0.02117589,
+        "se": 0.01868199,
+        "t_stat": -1.13349227,
+        "p_value": 0.28629783,
+        "ci_lower": -0.06343747,
+        "ci_upper": 0.0210857
+      }
+    },
+    "diagnostics": {
+      "within_r_squared": 0.00056,
+      "df_residual": 476,
+      "n_fixed_effect_groups": 63,
+      "n_coin_fe": 10,
+      "n_month_fe": 54
+    },
+    "unit_of_analysis": "coin-month",
+    "outcome": "y_fisherz_corr_equity",
+    "treatment": "d_etf_listed",
+    "treated_units": 1,
+    "n_pre_treatment": 31,
+    "n_post_treatment": 23,
+    "p_value_ri_space": 0.8,
+    "n_placebo_assignments": 9,
+    "ri_sd": 0.0588855
+  },
+  "excl_halving": {
+    "specification": "Excludes 2024m4-2024m5, the April 19-20 2024 Bitcoin halving window: the largest BTC-specific post-treatment shock the DiD cannot difference out.",
+    "n_observations": 520,
+    "n_clusters": 10,
+    "cluster_level": "coin",
+    "fixed_effects": [
+      "coin",
+      "year_month"
+    ],
+    "controls": [],
+    "coefficients": {
+      "d_etf_listed": {
+        "estimate": -0.02172122,
+        "se": 0.016922,
+        "t_stat": -1.28360833,
+        "p_value": 0.23134102,
+        "ci_lower": -0.06000145,
+        "ci_upper": 0.01655901
+      }
+    },
+    "diagnostics": {
+      "within_r_squared": 0.000588,
+      "df_residual": 458,
+      "n_fixed_effect_groups": 61,
+      "n_coin_fe": 10,
+      "n_month_fe": 52
+    },
+    "unit_of_analysis": "coin-month",
+    "outcome": "y_fisherz_corr_equity",
+    "treatment": "d_etf_listed",
+    "treated_units": 1,
+    "n_pre_treatment": 31,
+    "n_post_treatment": 21,
+    "p_value_ri_space": 0.8,
+    "n_placebo_assignments": 9,
+    "ri_sd": 0.0533184
+  },
+  "ctrl_vix_move": {
+    "specification": "Adds monthly VIX and MOVE levels interacted with the Bitcoin indicator, letting the macro regime load differentially on Bitcoin -- the version of the macro story that month fixed effects do not absorb. Main effects are collinear with the month FE and are absorbed.",
+    "n_observations": 540,
+    "n_clusters": 10,
+    "cluster_level": "coin",
+    "fixed_effects": [
+      "coin",
+      "year_month"
+    ],
+    "controls": [
+      "vix_x_btc",
+      "move_x_btc"
+    ],
+    "coefficients": {
+      "d_etf_listed": {
+        "estimate": 0.019513,
+        "se": 0.02011862,
+        "t_stat": 0.96989769,
+        "p_value": 0.35743914,
+        "ci_lower": -0.02599847,
+        "ci_upper": 0.06502447
+      },
+      "vix_x_btc": {
+        "estimate": 0.00999835,
+        "se": 0.00176336,
+        "t_stat": 5.67005816,
+        "p_value": 0.0003057,
+        "ci_lower": 0.00600935,
+        "ci_upper": 0.01398734
+      },
+      "move_x_btc": {
+        "estimate": -0.00033968,
+        "se": 0.0002929,
+        "t_stat": -1.15971718,
+        "p_value": 0.27600463,
+        "ci_lower": -0.00100226,
+        "ci_upper": 0.0003229
+      }
+    },
+    "diagnostics": {
+      "within_r_squared": 0.008336,
+      "df_residual": 474,
+      "n_fixed_effect_groups": 63,
+      "n_coin_fe": 10,
+      "n_month_fe": 54
+    },
+    "unit_of_analysis": "coin-month",
+    "outcome": "y_fisherz_corr_equity",
+    "treatment": "d_etf_listed",
+    "treated_units": 1,
+    "n_pre_treatment": 31,
+    "n_post_treatment": 23,
+    "p_value_ri_space": 0.8,
+    "n_placebo_assignments": 9,
+    "ri_sd": 0.05359089
+  },
+  "placebo_dates_pre": {
+    "specification": "Placebo treatment dates drawn from the pre-period (every month 2021m7-2023m1 for every coin including Bitcoin) combined with placebo-in-space at the true date. This grid is the randomization distribution from which the headline p-value is computed.",
+    "unit_of_analysis": "coin-month",
+    "outcome": "y_fisherz_corr_equity",
+    "treatment": "placebo_d_etf_listed",
+    "n_observations": 540,
+    "n_clusters": 10,
+    "cluster_level": "coin",
+    "fixed_effects": [
+      "coin",
+      "year_month"
+    ],
+    "controls": [],
+    "n_pre_treatment": 31,
+    "n_post_treatment": 23,
+    "coefficients": {
+      "placebo_mean": {
+        "estimate": 0.00010642,
+        "se": 0.06194872,
+        "t_stat": null,
+        "p_value": null
+      },
+      "placebo_abs_p90": {
+        "estimate": 0.10837266,
+        "se": null,
+        "t_stat": null,
+        "p_value": null
+      },
+      "actual_estimate": {
+        "estimate": -0.02117707,
+        "se": 0.01695747,
+        "t_stat": null,
+        "p_value": 0.665
+      }
+    },
+    "n_placebo_assignments": 199,
+    "n_placebo_space": 9,
+    "n_placebo_time": 190,
+    "share_abs_ge_actual": 0.66331658,
+    "p_value_ri": 0.665,
+    "diagnostics": {
+      "placebo_sd": 0.06194872,
+      "placebo_q025": -0.1383758,
+      "placebo_q975": 0.10253694,
+      "n_fixed_effect_groups": 63,
+      "df_residual": 476
+    }
+  },
+  "placebo_bito_2021": {
+    "specification": "Placebo event: the 2021-10-19 launch of BITO, a US-listed futures-based Bitcoin ETF that did not change spot plumbing (no spot creation/redemption, roll costs). Sample restricted to 2021m1-2023m7 so the 2024 spot approval cannot contaminate it. Informative in either direction.",
+    "n_observations": 310,
+    "n_clusters": 10,
+    "cluster_level": "coin",
+    "fixed_effects": [
+      "coin",
+      "year_month"
+    ],
+    "controls": [],
+    "coefficients": {
+      "d_etf_listed": {
+        "estimate": 0.04124387,
+        "se": 0.01651524,
+        "t_stat": 2.4973215,
+        "p_value": 0.03401097,
+        "ci_lower": 0.0038838,
+        "ci_upper": 0.07860394
+      }
+    },
+    "diagnostics": {
+      "within_r_squared": 0.002187,
+      "df_residual": 269,
+      "n_fixed_effect_groups": 40,
+      "n_coin_fe": 10,
+      "n_month_fe": 31
+    },
+    "unit_of_analysis": "coin-month",
+    "outcome": "y_fisherz_corr_equity",
+    "treatment": "d_etf_listed",
+    "treated_units": 1,
+    "n_pre_treatment": 10,
+    "n_post_treatment": 21,
+    "p_value_ri_space": 0.4,
+    "n_placebo_assignments": 9,
+    "ri_sd": 0.05168424
+  },
+  "excl_extreme_news": {
+    "specification": "Drops days with extreme crypto-idiosyncratic news: |r_BTC| above its 99th percentile (0.1096) plus the 2022-11-06 to 2022-11-20 FTX-collapse window, with monthly outcomes rebuilt on the surviving days.",
+    "n_observations": 540,
+    "n_clusters": 10,
+    "cluster_level": "coin",
+    "fixed_effects": [
+      "coin",
+      "year_month"
+    ],
+    "controls": [],
+    "coefficients": {
+      "d_etf_listed": {
+        "estimate": -0.0353457,
+        "se": 0.01650845,
+        "t_stat": -2.14106772,
+        "p_value": 0.06091538,
+        "ci_lower": -0.0726904,
+        "ci_upper": 0.001999
+      }
+    },
+    "diagnostics": {
+      "within_r_squared": 0.001486,
+      "df_residual": 476,
+      "n_fixed_effect_groups": 63,
+      "n_coin_fe": 10,
+      "n_month_fe": 54
+    },
+    "unit_of_analysis": "coin-month",
+    "outcome": "y_fisherz_corr_equity",
+    "treatment": "d_etf_listed",
+    "treated_units": 1,
+    "n_pre_treatment": 31,
+    "n_post_treatment": 23,
+    "p_value_ri_space": 0.6,
+    "n_placebo_assignments": 9,
+    "ri_sd": 0.05203452
+  },
+  "no_donut": {
+    "specification": "No donut: treatment switched on at the 2024-01-11 listing (2024m1) with 2023m8-2024m1 retained in the sample. Shows how much of the estimate the donut is absorbing.",
+    "n_observations": 600,
+    "n_clusters": 10,
+    "cluster_level": "coin",
+    "fixed_effects": [
+      "coin",
+      "year_month"
+    ],
+    "controls": [],
+    "coefficients": {
+      "d_etf_listed": {
+        "estimate": -0.00919135,
+        "se": 0.01588569,
+        "t_stat": -0.57859327,
+        "p_value": 0.57705392,
+        "ci_lower": -0.04512727,
+        "ci_upper": 0.02674457
+      }
+    },
+    "diagnostics": {
+      "within_r_squared": 0.000106,
+      "df_residual": 530,
+      "n_fixed_effect_groups": 69,
+      "n_coin_fe": 10,
+      "n_month_fe": 60
+    },
+    "unit_of_analysis": "coin-month",
+    "outcome": "y_fisherz_corr_equity",
+    "treatment": "d_etf_listed",
+    "treated_units": 1,
+    "n_pre_treatment": 36,
+    "n_post_treatment": 24,
+    "p_value_ri_space": 1.0,
+    "n_placebo_assignments": 9,
+    "ri_sd": 0.05011951
+  },
+  "leg_mkt": {
+    "specification": "Excess-return market factor leg instead of SPY.",
+    "n_observations": 540,
+    "n_clusters": 10,
+    "cluster_level": "coin",
+    "fixed_effects": [
+      "coin",
+      "year_month"
+    ],
+    "controls": [],
+    "coefficients": {
+      "d_etf_listed": {
+        "estimate": -0.02387046,
+        "se": 0.01742297,
+        "t_stat": -1.37005724,
+        "p_value": 0.20387254,
+        "ci_lower": -0.06328396,
+        "ci_upper": 0.01554303
+      }
+    },
+    "diagnostics": {
+      "within_r_squared": 0.000709,
+      "df_residual": 476,
+      "n_fixed_effect_groups": 63,
+      "n_coin_fe": 10,
+      "n_month_fe": 54
+    },
+    "unit_of_analysis": "coin-month",
+    "outcome": "y_fisherz_corr_equity",
+    "treatment": "d_etf_listed",
+    "treated_units": 1,
+    "n_pre_treatment": 31,
+    "n_post_treatment": 23,
+    "p_value_ri_space": 0.8,
+    "n_placebo_assignments": 9,
+    "ri_sd": 0.05491709
+  },
+  "outcome_beta": {
+    "specification": "Monthly equity beta instead of the Fisher-z correlation. beta = rho * (sigma_i/sigma_mkt), so it mixes the co-movement margin with the relative-volatility margin.",
+    "n_observations": 540,
+    "n_clusters": 10,
+    "cluster_level": "coin",
+    "fixed_effects": [
+      "coin",
+      "year_month"
+    ],
+    "controls": [],
+    "coefficients": {
+      "d_etf_listed": {
+        "estimate": -0.1890071,
+        "se": 0.14309136,
+        "t_stat": -1.32088413,
+        "p_value": 0.21913748,
+        "ci_lower": -0.51270224,
+        "ci_upper": 0.13468804
+      }
+    },
+    "diagnostics": {
+      "within_r_squared": 0.001003,
+      "df_residual": 476,
+      "n_fixed_effect_groups": 63,
+      "n_coin_fe": 10,
+      "n_month_fe": 54
+    },
+    "unit_of_analysis": "coin-month",
+    "outcome": "beta_m",
+    "treatment": "d_etf_listed",
+    "treated_units": 1,
+    "n_pre_treatment": 31,
+    "n_post_treatment": 23,
+    "p_value_ri_space": 0.8,
+    "n_placebo_assignments": 9,
+    "ri_sd": 0.45102307
+  },
+  "outcome_ln_sigma_ratio": {
+    "specification": "Log relative volatility ln(sigma_i/sigma_mkt), the second factor in beta, which isolates the volatility margin from the correlation margin.",
+    "n_observations": 540,
+    "n_clusters": 10,
+    "cluster_level": "coin",
+    "fixed_effects": [
+      "coin",
+      "year_month"
+    ],
+    "controls": [],
+    "coefficients": {
+      "d_etf_listed": {
+        "estimate": -0.11281474,
+        "se": 0.02966538,
+        "t_stat": -3.80290897,
+        "p_value": 0.00419857,
+        "ci_lower": -0.1799225,
+        "ci_upper": -0.04570699
+      }
+    },
+    "diagnostics": {
+      "within_r_squared": 0.005726,
+      "df_residual": 476,
+      "n_fixed_effect_groups": 63,
+      "n_coin_fe": 10,
+      "n_month_fe": 54
+    },
+    "unit_of_analysis": "coin-month",
+    "outcome": "ln_sigma_ratio_m",
+    "treatment": "d_etf_listed",
+    "treated_units": 1,
+    "n_pre_treatment": 31,
+    "n_post_treatment": 23,
+    "p_value_ri_space": 0.2,
+    "n_placebo_assignments": 9,
+    "ri_sd": 0.0935051
+  },
+  "placebo_gold": {
+    "specification": "Placebo asset: GLD assigned Bitcoin's treatment date against the never-treated crypto controls. Same macro regime, long-standing ETF, no 2024 access change -- a break here would falsify the design's macro-neutrality.",
+    "n_observations": 540,
+    "n_clusters": 10,
+    "cluster_level": "coin",
+    "fixed_effects": [
+      "coin",
+      "year_month"
+    ],
+    "controls": [],
+    "coefficients": {
+      "d_etf_listed": {
+        "estimate": -0.04004444,
+        "se": 0.01695747,
+        "t_stat": -2.36146294,
+        "p_value": 0.04249937,
+        "ci_lower": -0.07840491,
+        "ci_upper": -0.00168397
+      }
+    },
+    "diagnostics": {
+      "within_r_squared": 0.001065,
+      "df_residual": 476,
+      "n_fixed_effect_groups": 63,
+      "n_coin_fe": 10,
+      "n_month_fe": 54
+    },
+    "unit_of_analysis": "coin-month",
+    "outcome": "y_fisherz_corr_equity",
+    "treatment": "d_etf_listed",
+    "treated_units": 1,
+    "n_pre_treatment": 31,
+    "n_post_treatment": 23,
+    "p_value_ri_space": 0.5,
+    "n_placebo_assignments": 9,
+    "ri_sd": 0.05344985
+  },
+  "placebo_silver": {
+    "specification": "Placebo asset: SLV assigned Bitcoin's treatment date against the never-treated crypto controls. Same macro regime, long-standing ETF, no 2024 access change -- a break here would falsify the design's macro-neutrality.",
+    "n_observations": 540,
+    "n_clusters": 10,
+    "cluster_level": "coin",
+    "fixed_effects": [
+      "coin",
+      "year_month"
+    ],
+    "controls": [],
+    "coefficients": {
+      "d_etf_listed": {
+        "estimate": -0.03397561,
+        "se": 0.01695747,
+        "t_stat": -2.00357773,
+        "p_value": 0.07611246,
+        "ci_lower": -0.07233608,
+        "ci_upper": 0.00438485
+      }
+    },
+    "diagnostics": {
+      "within_r_squared": 0.000895,
+      "df_residual": 476,
+      "n_fixed_effect_groups": 63,
+      "n_coin_fe": 10,
+      "n_month_fe": 54
+    },
+    "unit_of_analysis": "coin-month",
+    "outcome": "y_fisherz_corr_equity",
+    "treatment": "d_etf_listed",
+    "treated_units": 1,
+    "n_pre_treatment": 31,
+    "n_post_treatment": 23,
+    "p_value_ri_space": 0.7,
+    "n_placebo_assignments": 9,
+    "ri_sd": 0.05344985
+  },
+  "winsorized": {
+    "specification": "Daily returns winsorized at the 0.5/99.5 within-asset percentiles before the monthly correlation is computed.",
+    "n_observations": 540,
+    "n_clusters": 10,
+    "cluster_level": "coin",
+    "fixed_effects": [
+      "coin",
+      "year_month"
+    ],
+    "controls": [],
+    "coefficients": {
+      "d_etf_listed": {
+        "estimate": -0.01843857,
+        "se": 0.01725938,
+        "t_stat": -1.06832145,
+        "p_value": 0.3131912,
+        "ci_lower": -0.057482,
+        "ci_upper": 0.02060486
+      }
+    },
+    "diagnostics": {
+      "within_r_squared": 0.000438,
+      "df_residual": 476,
+      "n_fixed_effect_groups": 63,
+      "n_coin_fe": 10,
+      "n_month_fe": 54
+    },
+    "unit_of_analysis": "coin-month",
+    "outcome": "y_fisherz_corr_equity",
+    "treatment": "d_etf_listed",
+    "treated_units": 1,
+    "n_pre_treatment": 31,
+    "n_post_treatment": 23,
+    "p_value_ri_space": 1.0,
+    "n_placebo_assignments": 9,
+    "ri_sd": 0.05440146
+  },
+  "sample_extended_2026": {
+    "specification": "Estimation window extended to 2026m7, the full delivered panel. The declared window ends 2025m12; this row shows what the extra seven months do rather than hiding the choice.",
+    "n_observations": 610,
+    "n_clusters": 10,
+    "cluster_level": "coin",
+    "fixed_effects": [
+      "coin",
+      "year_month"
+    ],
+    "controls": [],
+    "coefficients": {
+      "d_etf_listed": {
+        "estimate": -0.00881451,
+        "se": 0.0157212,
+        "t_stat": -0.5606769,
+        "p_value": 0.5887015,
+        "ci_lower": -0.04437833,
+        "ci_upper": 0.02674931
+      }
+    },
+    "diagnostics": {
+      "within_r_squared": 0.000102,
+      "df_residual": 539,
+      "n_fixed_effect_groups": 70,
+      "n_coin_fe": 10,
+      "n_month_fe": 61
+    },
+    "unit_of_analysis": "coin-month",
+    "outcome": "y_fisherz_corr_equity",
+    "treatment": "d_etf_listed",
+    "treated_units": 1,
+    "n_pre_treatment": 31,
+    "n_post_treatment": 30,
+    "p_value_ri_space": 0.9,
+    "n_placebo_assignments": 9,
+    "ri_sd": 0.04960753
+  },
+  "twoway_cluster": {
+    "specification": "Primary specification with two-way clustering on coin and month. Subject to the same one-treated-unit objection as one-way clustering on coin.",
+    "n_observations": 540,
+    "n_clusters": 10,
+    "cluster_level": "coin_and_month",
+    "fixed_effects": [
+      "coin",
+      "year_month"
+    ],
+    "controls": [],
+    "coefficients": {
+      "d_etf_listed": {
+        "estimate": -0.02117707,
+        "se": 0.02286291,
+        "t_stat": -0.92626314,
+        "p_value": 0.37847798,
+        "ci_lower": -0.07289656,
+        "ci_upper": 0.03054242
+      }
+    },
+    "diagnostics": {
+      "within_r_squared": 0.00057,
+      "df_residual": 476,
+      "n_fixed_effect_groups": 63,
+      "n_coin_fe": 10,
+      "n_month_fe": 54
+    },
+    "unit_of_analysis": "coin-month",
+    "outcome": "y_fisherz_corr_equity",
+    "treatment": "d_etf_listed",
+    "treated_units": 1,
+    "n_pre_treatment": 31,
+    "n_post_treatment": 23,
+    "p_value_ri_space": 0.8,
+    "n_placebo_assignments": 9,
+    "ri_sd": 0.05344985
+  },
+  "subwindow_pre_halving": {
+    "specification": "Post window truncated at 2024m3, entirely before the April 2024 halving.",
+    "n_observations": 330,
+    "n_clusters": 10,
+    "cluster_level": "coin",
+    "fixed_effects": [
+      "coin",
+      "year_month"
+    ],
+    "controls": [],
+    "coefficients": {
+      "d_etf_listed": {
+        "estimate": -0.26129572,
+        "se": 0.03162875,
+        "t_stat": -8.2613364,
+        "p_value": 1.711e-05,
+        "ci_lower": -0.33284492,
+        "ci_upper": -0.18974653
+      }
+    },
+    "diagnostics": {
+      "within_r_squared": 0.022301,
+      "df_residual": 287,
+      "n_fixed_effect_groups": 42,
+      "n_coin_fe": 10,
+      "n_month_fe": 33
+    },
+    "unit_of_analysis": "coin-month",
+    "outcome": "y_fisherz_corr_equity",
+    "treatment": "d_etf_listed",
+    "treated_units": 1,
+    "n_pre_treatment": 31,
+    "n_post_treatment": 2,
+    "p_value_ri_space": 0.1,
+    "n_placebo_assignments": 9,
+    "ri_sd": 0.09908348
+  },
+  "subwindow_pre_election": {
+    "specification": "Post window truncated at 2024m10, before the November 2024 US election. This is the estimate to treat as ETF-attributable.",
+    "n_observations": 400,
+    "n_clusters": 10,
+    "cluster_level": "coin",
+    "fixed_effects": [
+      "coin",
+      "year_month"
+    ],
+    "controls": [],
+    "coefficients": {
+      "d_etf_listed": {
+        "estimate": -0.04390119,
+        "se": 0.01926513,
+        "t_stat": -2.27879081,
+        "p_value": 0.04865861,
+        "ci_lower": -0.08748193,
+        "ci_upper": -0.00032045
+      }
+    },
+    "diagnostics": {
+      "within_r_squared": 0.001839,
+      "df_residual": 350,
+      "n_fixed_effect_groups": 49,
+      "n_coin_fe": 10,
+      "n_month_fe": 40
+    },
+    "unit_of_analysis": "coin-month",
+    "outcome": "y_fisherz_corr_equity",
+    "treatment": "d_etf_listed",
+    "treated_units": 1,
+    "n_pre_treatment": 31,
+    "n_post_treatment": 9,
+    "p_value_ri_space": 0.6,
+    "n_placebo_assignments": 9,
+    "ri_sd": 0.06051955
+  },
+  "subwindow_post_election": {
+    "specification": "Post period restricted to 2024m11-2025m12, after the November 2024 US election; the pre-period is unchanged. Interpreted as ETF plus the post-election policy regime, not as an ETF effect.",
+    "n_observations": 450,
+    "n_clusters": 10,
+    "cluster_level": "coin",
+    "fixed_effects": [
+      "coin",
+      "year_month"
+    ],
+    "controls": [],
+    "coefficients": {
+      "d_etf_listed": {
+        "estimate": -0.00656871,
+        "se": 0.01888491,
+        "t_stat": -0.34782827,
+        "p_value": 0.73596571,
+        "ci_lower": -0.04928934,
+        "ci_upper": 0.03615193
+      }
+    },
+    "diagnostics": {
+      "within_r_squared": 5e-05,
+      "df_residual": 395,
+      "n_fixed_effect_groups": 54,
+      "n_coin_fe": 10,
+      "n_month_fe": 45
+    },
+    "unit_of_analysis": "coin-month",
+    "outcome": "y_fisherz_corr_equity",
+    "treatment": "d_etf_listed",
+    "treated_units": 1,
+    "n_pre_treatment": 31,
+    "n_post_treatment": 14,
+    "p_value_ri_space": 1.0,
+    "n_placebo_assignments": 9,
+    "ri_sd": 0.05941096
+  },
+  "leg_acwx_non_us": {
+    "specification": "Non-US equity leg (ACWX, MSCI ACWI ex-US). If the mechanism is a US brokerage habitat, co-movement should rise more against US equities than against non-US equities; a uniform rise would point to global macro instead.",
+    "n_observations": 540,
+    "n_clusters": 10,
+    "cluster_level": "coin",
+    "fixed_effects": [
+      "coin",
+      "year_month"
+    ],
+    "controls": [],
+    "coefficients": {
+      "d_etf_listed": {
+        "estimate": -0.04960075,
+        "se": 0.01453729,
+        "t_stat": -3.41196601,
+        "p_value": 0.00772553,
+        "ci_lower": -0.08248639,
+        "ci_upper": -0.01671511
+      }
+    },
+    "diagnostics": {
+      "within_r_squared": 0.002812,
+      "df_residual": 476,
+      "n_fixed_effect_groups": 63,
+      "n_coin_fe": 10,
+      "n_month_fe": 54
+    },
+    "unit_of_analysis": "coin-month",
+    "outcome": "y_fisherz_corr_equity",
+    "treatment": "d_etf_listed",
+    "treated_units": 1,
+    "n_pre_treatment": 31,
+    "n_post_treatment": 23,
+    "p_value_ri_space": 0.3,
+    "n_placebo_assignments": 9,
+    "ri_sd": 0.04582145
+  },
+  "sanity_rebuild_check": {
+    "specification": "Diagnostic, not a specification: correlation between the delivered coin_month_panel Fisher-z outcome for Bitcoin and the same object rebuilt from daily_returns.csv inside this script. Confirms that the rebuilt-outcome robustness rows (utc_alignment, excl_extreme_news, winsorized, leg_acwx_non_us) are built on the same construct as `main`.",
+    "unit_of_analysis": "month",
+    "outcome": "y_fisherz_corr_equity",
+    "treatment": "none",
+    "n_observations": 60,
+    "n_clusters": null,
+    "cluster_level": "none",
+    "fixed_effects": [],
+    "controls": [],
+    "n_pre_treatment": 31,
+    "n_post_treatment": 23,
+    "coefficients": {
+      "rebuild_correlation": {
+        "estimate": 1.0,
+        "se": null,
+        "t_stat": null,
+        "p_value": null
+      }
+    },
+    "diagnostics": {
+      "n_fixed_effect_groups": 0,
+      "df_residual": 59
+    }
+  }
+}

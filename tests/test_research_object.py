@@ -16,7 +16,7 @@ from src.core.dossier import build_dossier, canonical, dossier_id, recorded_work
 from src.core.research_object import PublishError, build_manifest
 
 ROOT = Path(__file__).resolve().parents[1]
-SHOWCASE = ROOT / "examples" / "showcase"
+SHOWCASE = ROOT / "tests" / "fixtures" / "showcase_export"
 PAPER_ID = json.loads((SHOWCASE / "provenance.json").read_text())["run"]["paper_id"]
 
 

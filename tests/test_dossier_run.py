@@ -268,7 +268,7 @@ def test_agents_and_skills_are_the_runs_not_todays(tmp_path: Path, fake_git):
         "identification_strategist": ["base/researcher", "econometrics/event-study"],
         "econometrics_specialist": ["base/economist"],
     }
-    bundle = Path(__file__).resolve().parents[1] / "examples" / "showcase"
+    bundle = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "showcase_export"
     m = build_manifest(
         bundle, owner="bhanneke", project="demo", contributors=[{"github": "b"}], run_record=run, db=None
     )

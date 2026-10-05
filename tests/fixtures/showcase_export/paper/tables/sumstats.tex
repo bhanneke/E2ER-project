@@ -1,0 +1,36 @@
+% Descriptive statistics for the coin-month panel.
+% Source: summary_statistics.json (written by the data analyst). This table is
+% not rendered from table_spec.json because the table renderer reads only
+% estimation_results.json and robustness_results.json; every cell below
+% therefore carries an explicit "% src:" key path into summary_statistics.json.
+\begin{table}[t]
+\centering
+\begin{threeparttable}
+\caption{Summary statistics, coin-month panel}
+\label{tab:sumstats}
+\begin{tabular}{lrrrrr}
+\toprule
+& Mean & SD & p25 & Median & p75 \\
+\midrule
+Fisher-$z$ correlation with SPY & 0.394 & 0.296 & 0.217 & 0.396 & 0.587 \\ % src: summary_statistics.json#outcome
+Correlation with SPY, $\rho_{im}$ & 0.351 & 0.247 & 0.213 & 0.377 & 0.528 \\ % src: summary_statistics.json#outcome_rho
+Variance share, $\rho_{im}^2$ & 0.184 & 0.155 & 0.061 & 0.142 & 0.278 \\ % src: summary_statistics.json#outcome_rho2
+Equity beta, $\beta_{im}$ & 1.693 & 1.807 & 0.842 & 1.609 & 2.433 \\ % src: summary_statistics.json#outcome_beta
+$\ln(\sigma_i/\sigma_{mkt})$ & 1.545 & 0.576 & 1.156 & 1.514 & 1.905 \\ % src: summary_statistics.json#ln_sigma_ratio
+Sessions per coin-month, $n_{im}$ & 20.869 & 1.181 & 20.000 & 21.000 & 22.000 \\ % src: summary_statistics.json#n_days_m
+\midrule
+\multicolumn{6}{l}{\emph{Daily return standard deviations}} \\
+Bitcoin & 0.0334 & & & & \\ % src: summary_statistics.json#daily_returns.BTC.sd
+SPY & 0.0105 & & & & \\ % src: summary_statistics.json#daily_returns.SPY.sd
+\midrule
+Coin-month observations & \multicolumn{5}{r}{610} \\ % src: summary_statistics.json#n_observations
+Coins & \multicolumn{5}{r}{10} \\ % src: summary_statistics.json#n_units
+Months & \multicolumn{5}{r}{61} \\ % src: summary_statistics.json#n_periods
+\bottomrule
+\end{tabular}
+\begin{tablenotes}[flushleft]
+\footnotesize
+\item The panel covers Bitcoin and nine never-listed control coins over 2021m1--2026m7, excluding the donut window 2023m8--2024m1. The equity leg is SPY. Correlations are computed within a coin-month from daily returns and then Fisher-$z$ transformed; the beta is the within-month univariate slope on SPY. The headline estimation sample truncates the window at 2025m12 and contains 540 coin-months.
+\end{tablenotes}
+\end{threeparttable}
+\end{table}

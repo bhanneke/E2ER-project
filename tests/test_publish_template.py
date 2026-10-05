@@ -26,7 +26,7 @@ from tests.run_db import make_run_db, paper_id_of
 
 FIXTURES = Path(__file__).parent / "fixtures"
 REPL = FIXTURES / "replication_demo"
-SHOWCASE = Path(__file__).resolve().parents[1] / "examples" / "showcase"
+SHOWCASE = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "showcase_export"
 ARGS = dict(owner="ada-lab", project="repro", github="ada-lab", commit="abc1234")
 
 

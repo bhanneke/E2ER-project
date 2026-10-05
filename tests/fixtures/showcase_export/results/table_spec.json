@@ -1,0 +1,274 @@
+{
+  "tables": [
+    {
+      "filename": "main.tex",
+      "label": "tab:main",
+      "caption": "The spot-ETF listing and Bitcoin's equity co-movement: difference-in-differences estimates",
+      "columns": [
+        {"spec_key": "main", "header": "(1) Baseline"},
+        {"spec_key": "bdm_collapsed", "header": "(2) BDM collapse"},
+        {"spec_key": "twoway_cluster", "header": "(3) Two-way cluster"},
+        {"spec_key": "no_donut", "header": "(4) No donut"},
+        {"spec_key": "daily_rolling_did", "header": "(5) Daily 30d panel"}
+      ],
+      "rows": [
+        {"type": "coefficient", "var": "d_etf_listed", "label": "$\\hat\\tau$: BTC $\\times$ Post", "decimals": 4},
+        {"type": "stat", "field": "within_r_squared", "label": "Within $R^2$", "decimals": 4},
+        {"type": "stat", "field": "n_pre_treatment", "label": "Pre-treatment periods", "decimals": 0},
+        {"type": "stat", "field": "n_post_treatment", "label": "Post-treatment periods", "decimals": 0},
+        {"type": "stat", "field": "n_clusters", "label": "Clusters", "decimals": 0},
+        {"type": "stat", "field": "n_observations", "label": "$N$", "decimals": 0}
+      ],
+      "notes": "The outcome is the Fisher-$z$ transform of the within-period correlation between the asset's daily return and the return on SPY. Columns (1)--(4) are coin-month panels with coin and calendar-month fixed effects; column (2) collapses the panel to one pre-mean and one post-mean per coin, which removes serial correlation in the idiosyncratic error by construction; column (4) dates treatment to the January 2024 listing and retains the 2023m8--2024m1 donut months. Column (5) is an asset-day panel in the Fisher-$z$ of a 30-day rolling correlation with asset and date fixed effects, whose overlapping windows leave roughly 368 independent blocks rather than 11,050 independent draws. Standard errors in parentheses are cluster-robust on the unit dimension and are reported for convention only: with a single treated unit they have no valid asymptotic justification and are severely downward-biased. Any significance markers derive from those invalid cluster-robust $p$-values and must not be read as inference. The inferential basis of this paper is randomization inference over a grid of counterfactual treatment assignments, reported for the baseline specification in Table~\\ref{tab:inference} and alongside every robustness row."
+    },
+    {
+      "filename": "inference.tex",
+      "label": "tab:inference",
+      "caption": "Inference procedures for the baseline estimate under a single treated unit",
+      "columns": [
+        {"spec_key": "main", "header": "Baseline specification"}
+      ],
+      "rows": [
+        {"type": "coefficient", "var": "d_etf_listed", "label": "$\\hat\\tau$: BTC $\\times$ Post (Fisher-$z$)", "decimals": 4},
+        {"type": "stat", "field": "effect_in_correlation_units", "label": "$\\hat\\tau$ translated into correlation units", "decimals": 4},
+        {"type": "stat", "field": "rho_pre_treatment_mean", "label": "Bitcoin pre-period mean correlation", "decimals": 4},
+        {"type": "stat", "field": "p_value_ri", "label": "Randomization $p$ (space $\\times$ time grid) --- primary", "decimals": 3},
+        {"type": "stat", "field": "p_value_ri_space_only", "label": "Randomization $p$ (placebo-in-space only)", "decimals": 2},
+        {"type": "stat", "field": "p_value_wild_bootstrap", "label": "Wild cluster bootstrap $p$ (unreliable here)", "decimals": 3},
+        {"type": "stat", "field": "n_placebo_assignments", "label": "Placebo assignments in the grid", "decimals": 0},
+        {"type": "stat", "field": "ri_sd", "label": "SD of the randomization distribution", "decimals": 4},
+        {"type": "stat", "field": "ri_ci95_lower", "label": "Randomization 95\\% CI, lower (Fisher-$z$)", "decimals": 4},
+        {"type": "stat", "field": "ri_ci95_upper", "label": "Randomization 95\\% CI, upper (Fisher-$z$)", "decimals": 4},
+        {"type": "stat", "field": "conley_taber_ci_lower", "label": "Conley--Taber 95\\% CI, lower (Fisher-$z$)", "decimals": 4},
+        {"type": "stat", "field": "conley_taber_ci_upper", "label": "Conley--Taber 95\\% CI, upper (Fisher-$z$)", "decimals": 4},
+        {"type": "stat", "field": "n_observations", "label": "$N$", "decimals": 0}
+      ],
+      "notes": "All rows refer to the baseline coin-month specification reported in column (1) of Table~\\ref{tab:main}. With ten clusters of which one is treated, cluster-robust variance estimation has no valid asymptotic justification and the wild cluster bootstrap is also unreliable, so the randomization and Conley--Taber procedures are the ones on which the paper's claims rest. The randomization $p$-value is the share of placebo assignments producing an absolute estimate at least as large as the actual one, over a grid combining nine placebo coins at the true date with placebo dates drawn from every month of 2021m7--2023m1 on the pre-period sample. The cluster-robust interval printed in Table~\\ref{tab:main} is roughly a third the width of the two valid intervals shown here, which is a direct measurement of the downward bias a single treated cluster induces. Correlation units are obtained via $\\Delta\\rho \\approx (1-\\bar\\rho_{\\mathrm{pre}}^2)\\,\\hat\\tau$."
+    },
+    {
+      "filename": "event_study.tex",
+      "label": "tab:event_study",
+      "caption": "Event study in six-month bins, and tests of parallel pre-trends",
+      "columns": [
+        {"spec_key": "event_study", "header": "Fisher-$z$ correlation with SPY"}
+      ],
+      "rows": [
+        {"type": "coefficient", "var": "ev_-7", "label": "Bin $-7$", "decimals": 4},
+        {"type": "coefficient", "var": "ev_-6", "label": "Bin $-6$", "decimals": 4},
+        {"type": "coefficient", "var": "ev_-5", "label": "Bin $-5$", "decimals": 4},
+        {"type": "coefficient", "var": "ev_-4", "label": "Bin $-4$", "decimals": 4},
+        {"type": "coefficient", "var": "ev_-3", "label": "Bin $-3$", "decimals": 4},
+        {"type": "coefficient", "var": "ev_0", "label": "Bin $0$ (first six treated months)", "decimals": 4},
+        {"type": "coefficient", "var": "ev_1", "label": "Bin $1$", "decimals": 4},
+        {"type": "coefficient", "var": "ev_2", "label": "Bin $2$", "decimals": 4},
+        {"type": "coefficient", "var": "ev_3", "label": "Bin $3$", "decimals": 4},
+        {"type": "stat", "field": "pre_trend_f_stat", "label": "Joint $F$, all pre-treatment bins", "decimals": 3},
+        {"type": "stat", "field": "pre_trend_p_value", "label": "$\\quad$ asymptotic $p$ (invalid here)", "decimals": 4},
+        {"type": "stat", "field": "pre_trend_p_value_ri", "label": "$\\quad$ randomization $p$", "decimals": 2},
+        {"type": "stat", "field": "pre_trend_placebo_F_median", "label": "$\\quad$ median placebo $F$", "decimals": 2},
+        {"type": "stat", "field": "pre_trend_placebo_F_max", "label": "$\\quad$ maximum placebo $F$", "decimals": 2},
+        {"type": "stat", "field": "linear_pre_trend_estimate", "label": "Linear pre-trend, per month", "decimals": 5},
+        {"type": "stat", "field": "linear_pre_trend_se", "label": "$\\quad$ cluster-robust SE", "decimals": 5},
+        {"type": "stat", "field": "linear_pre_trend_p_value_ri", "label": "$\\quad$ randomization $p$", "decimals": 2},
+        {"type": "stat", "field": "n_observations", "label": "$N$", "decimals": 0}
+      ],
+      "notes": "Coefficients are Bitcoin-specific interactions with six-month event-time bins relative to 2024m2, from a specification with coin and calendar-month fixed effects. The reference bin is $-2$, covering the six months ending at the donut, because the conventional $k=-1$ bin falls inside the excluded window. Bins rather than single months are used because a month-by-month specification is saturated for a single treated unit: Bitcoin's residual is identically zero in any month carrying its own dummy, so the standard errors would be computed off the control coins alone. Standard errors in parentheses are cluster-robust on coin. The joint pre-trend $F$-test is reported in both its asymptotic and its randomization form. The asymptotic version inherits the one-treated-unit problem and rejects for every coin in the panel, treated or not; the randomization version, obtained by casting each of the nine control coins in turn as the treated unit, is the valid test, and Bitcoin's statistic lies below the median placebo."
+    },
+    {
+      "filename": "returns_interacted.tex",
+      "label": "tab:returns_interacted",
+      "caption": "Bitcoin's equity loading before and after the listing, estimated from returns",
+      "columns": [
+        {"spec_key": "returns_interacted_BTC", "header": "Daily Bitcoin returns"}
+      ],
+      "rows": [
+        {"type": "coefficient", "var": "r_spy", "label": "$\\hat\\beta$: $r_{\\mathrm{SPY}}$ (pre-period loading)", "decimals": 4},
+        {"type": "coefficient", "var": "r_spy_x_post", "label": "$\\hat\\delta$: $r_{\\mathrm{SPY}} \\times$ Post", "decimals": 4},
+        {"type": "coefficient", "var": "post", "label": "Post", "decimals": 5},
+        {"type": "coefficient", "var": "const", "label": "Constant", "decimals": 5},
+        {"type": "stat", "field": "control_coin_delta_mean", "label": "Mean $\\hat\\delta$ across the nine control coins", "decimals": 4},
+        {"type": "stat", "field": "control_coin_delta_sd", "label": "$\\quad$ cross-sectional SD", "decimals": 4},
+        {"type": "stat", "field": "p_value_ri_across_control_coins", "label": "$\\quad$ randomization $p$ for Bitcoin's $\\hat\\delta$", "decimals": 2},
+        {"type": "stat", "field": "r_squared", "label": "$R^2$", "decimals": 4},
+        {"type": "stat", "field": "newey_west_lags", "label": "Newey--West lags", "decimals": 0},
+        {"type": "stat", "field": "n_observations", "label": "$N$ (days)", "decimals": 0}
+      ],
+      "notes": "The specification is $r_{\\mathrm{BTC},t} = \\alpha + \\beta r_{\\mathrm{SPY},t} + \\delta (r_{\\mathrm{SPY},t} \\times \\mathrm{Post}_t) + \\gamma \\mathrm{Post}_t + \\epsilon_t$ on daily returns with donut dates dropped and Newey--West standard errors, so $\\hat\\delta$ is the post-listing change in Bitcoin's equity loading estimated directly from returns with no generated-regressor step. This specification has no control group, and it is reported precisely to show what a design without one would have concluded: read on its own, it says Bitcoin's equity beta fell substantially and dates the fall to the listing. The identical model fitted to each of the nine never-listed control coins returns the mean and cross-sectional standard deviation shown in the table, so every crypto asset's equity beta fell over this window and Bitcoin's decline is an unremarkable draw from that distribution. Table~\\ref{tab:ddd} differences the common component out."
+    },
+    {
+      "filename": "returns_ddd.tex",
+      "label": "tab:ddd",
+      "caption": "Returns-level triple difference: the differential change in Bitcoin's equity loading",
+      "columns": [
+        {"spec_key": "returns_ddd", "header": "Daily returns, all ten assets"}
+      ],
+      "rows": [
+        {"type": "coefficient", "var": "reqXpostXbtc", "label": "$\\hat\\delta^{\\mathrm{DDD}}$: $r_{\\mathrm{SPY}} \\times$ Post $\\times$ BTC", "decimals": 4},
+        {"type": "coefficient", "var": "reqXbtc", "label": "$\\hat\\psi$: $r_{\\mathrm{SPY}} \\times$ BTC", "decimals": 4},
+        {"type": "stat", "field": "se_cluster_asset", "label": "SE on $\\hat\\delta^{\\mathrm{DDD}}$, clustered on asset", "decimals": 4},
+        {"type": "stat", "field": "p_value_cluster_asset", "label": "$\\quad$ corresponding $p$-value", "decimals": 3},
+        {"type": "stat", "field": "within_r_squared", "label": "Within $R^2$", "decimals": 4},
+        {"type": "stat", "field": "n_assets", "label": "Assets", "decimals": 0},
+        {"type": "stat", "field": "n_dates", "label": "Dates", "decimals": 0},
+        {"type": "stat", "field": "n_observations", "label": "$N$ (asset-days)", "decimals": 0}
+      ],
+      "notes": "The specification is $r_{it} = \\beta r_{\\mathrm{SPY},t} + \\pi (r_{\\mathrm{SPY},t} \\times \\mathrm{Post}_t) + \\psi (r_{\\mathrm{SPY},t} \\times \\mathrm{BTC}_i) + \\delta^{\\mathrm{DDD}} (r_{\\mathrm{SPY},t} \\times \\mathrm{Post}_t \\times \\mathrm{BTC}_i) + \\alpha_i + \\delta_t + \\epsilon_{it}$, with asset and date fixed effects that absorb $r_{\\mathrm{SPY},t}$ and its interaction with Post. The triple interaction is the differential change in Bitcoin's equity loading relative to the never-listed coins, which is the returns-level counterpart of the panel estimate in Table~\\ref{tab:main}. Its point is that it uses no generated outcome at all, so the generated-regressor critique of the Fisher-$z$ panel does not apply to it and the correlation transform cannot be driving the result. Standard errors in parentheses are clustered on date, the dimension along which the equity return varies; the asset-clustered alternative is reported in the rows beneath. The gap between this coefficient and the undifferenced estimate in Table~\\ref{tab:returns_interacted} is the common crypto-wide decline in equity betas that a control group removes."
+    },
+    {
+      "filename": "dcc.tex",
+      "label": "tab:dcc",
+      "caption": "DCC--GARCH(1,1) with a post-listing shift in the long-run correlation target",
+      "columns": [
+        {"spec_key": "dcc_garch_btc_spy", "header": "BTC--SPY pair"}
+      ],
+      "rows": [
+        {"type": "coefficient", "var": "phi_post", "label": "$\\hat\\phi$: post-listing shift in the correlation target", "decimals": 4},
+        {"type": "coefficient", "var": "dcc_a", "label": "$\\hat a$ (DCC news parameter)", "se": false, "decimals": 4},
+        {"type": "coefficient", "var": "dcc_b", "label": "$\\hat b$ (DCC persistence parameter)", "se": false, "decimals": 4},
+        {"type": "stat", "field": "dcc_a_plus_b", "label": "$\\hat a + \\hat b$", "decimals": 4},
+        {"type": "stat", "field": "unconditional_corr_btc_spy", "label": "Unconditional BTC--SPY correlation", "decimals": 4},
+        {"type": "stat", "field": "p_value_ri_across_control_pairs", "label": "Randomization $p$ across the nine control pairs", "decimals": 2},
+        {"type": "stat", "field": "loglik", "label": "Log-likelihood", "decimals": 2},
+        {"type": "stat", "field": "n_observations", "label": "$N$ (days)", "decimals": 0}
+      ],
+      "notes": "Univariate GARCH(1,1) models are fitted to Bitcoin and SPY returns, and the Engle dynamic conditional correlation recursion is then estimated on the standardised residuals with a post-listing dummy shifting the off-diagonal long-run target: $q_{12,t} = (1-a-b)(\\bar q_{12} + \\phi\\,\\mathrm{Post}_t) + a\\,u_{1,t-1}u_{2,t-1} + b\\,q_{12,t-1}$. Estimation is by two-stage quasi-maximum likelihood on the uninterrupted daily series, since the recursion requires a continuous sample and cannot accommodate the donut. Second-stage standard errors ignore first-stage GARCH estimation error, so the printed standard error is not the inference channel; the identical model fitted to all nine control-coin pairs is, and it returns a positive $\\hat\\phi$ for every one of them, ranging from $+0.016$ to $+0.146$, the upper end of which exceeds Bitcoin's. The randomization $p$-value reported in the table is computed against that control-pair distribution. Read on its own this specification would have reported a post-2024 rise in Bitcoin's equity correlation at conventional significance; read against its own control group it reports a crypto-wide phenomenon."
+    },
+    {
+      "filename": "decomposition.tex",
+      "label": "tab:decomposition",
+      "caption": "Decomposing the beta change into a co-movement margin and a relative-volatility margin",
+      "columns": [
+        {"spec_key": "main", "header": "Fisher-$z$ correlation"},
+        {"spec_key": "outcome_beta", "header": "Monthly equity beta"},
+        {"spec_key": "outcome_ln_sigma_ratio", "header": "$\\ln(\\sigma_i/\\sigma_{mkt})$"}
+      ],
+      "rows": [
+        {"type": "coefficient", "var": "d_etf_listed", "label": "$\\hat\\tau$: BTC $\\times$ Post", "decimals": 4},
+        {"type": "stat", "field": "ri_sd", "label": "SD of the randomization distribution", "decimals": 4},
+        {"type": "stat", "field": "within_r_squared", "label": "Within $R^2$", "decimals": 4},
+        {"type": "stat", "field": "n_observations", "label": "$N$", "decimals": 0}
+      ],
+      "notes": "All three columns use the same coin-month panel, the same coin and calendar-month fixed effects and the same treatment indicator, and differ only in the outcome. Because $\\beta_{im} = \\rho_{im}\\,(\\sigma_{i,m}/\\sigma_{mkt,m})$, the beta column is the product of the other two margins: a flat correlation combined with a decline in relative volatility produces a decline in beta that is a volatility result rather than a co-movement result. Standard errors in parentheses are cluster-robust on coin and are not the inferential basis; each coefficient should be judged against the standard deviation of its own randomization distribution, reported in the row beneath. The randomization $p$-values are 0.67 for the correlation outcome, 0.80 for beta and 0.20 for the log volatility ratio, the last of which is one step above the floor of 0.10 imposed by having nine placebo donors."
+    },
+    {
+      "filename": "power.tex",
+      "label": "tab:power",
+      "caption": "Minimum detectable effects and pre-specified power bars",
+      "columns": [
+        {"spec_key": "power_analysis", "header": "Value"}
+      ],
+      "rows": [
+        {"type": "stat", "field": "point_estimate", "label": "Point estimate $\\hat\\tau$ (Fisher-$z$)", "decimals": 4},
+        {"type": "stat", "field": "mde_multiplier", "label": "MDE multiplier, $z_{0.975}+z_{0.80}$", "decimals": 4},
+        {"type": "stat", "field": "se_cluster", "label": "Cluster-robust SE (not valid here)", "decimals": 4},
+        {"type": "stat", "field": "sd_randomization", "label": "SD of randomization distribution", "decimals": 4},
+        {"type": "stat", "field": "sd_conley_taber", "label": "SD of Conley--Taber distribution", "decimals": 4},
+        {"type": "stat", "field": "mde_correlation_units_cluster", "label": "MDE in correlation units, cluster-robust (invalid)", "decimals": 3},
+        {"type": "stat", "field": "mde_correlation_units_conley_taber", "label": "MDE in correlation units, Conley--Taber", "decimals": 3},
+        {"type": "stat", "field": "mde_correlation_units_ri", "label": "MDE in correlation units, randomization", "decimals": 3},
+        {"type": "stat", "field": "ri_ci95_lower_correlation_units", "label": "Randomization 95\\% CI, lower (correlation units)", "decimals": 3},
+        {"type": "stat", "field": "ri_ci95_upper_correlation_units", "label": "Randomization 95\\% CI, upper (correlation units)", "decimals": 3},
+        {"type": "stat", "field": "conley_taber_ci_lower_correlation_units", "label": "Conley--Taber 95\\% CI, lower (correlation units)", "decimals": 3},
+        {"type": "stat", "field": "conley_taber_ci_upper_correlation_units", "label": "Conley--Taber 95\\% CI, upper (correlation units)", "decimals": 3},
+        {"type": "stat", "field": "prespecified_mde_bar_correlation_units", "label": "Pre-specified bar for licensing a null claim", "decimals": 2},
+        {"type": "stat", "field": "n_observations", "label": "$N$", "decimals": 0}
+      ],
+      "notes": "The minimum detectable effect is $(z_{0.975}+z_{0.80})\\,\\mathrm{se}(\\hat\\tau)$ at a two-sided size of 5\\% and 80\\% power, computed from three reference distributions and then translated into correlation units at Bitcoin's pre-period mean correlation via $\\Delta\\rho \\approx (1-\\bar\\rho_{\\mathrm{pre}}^2)\\,\\mathrm{MDE}$. The cluster-robust row is reported for comparability only; with one treated cluster that standard error is severely downward-biased, and the minimum detectable effect it implies would support a far stronger claim than the data can carry. The two valid reference distributions are the randomization placebo grid and the Conley--Taber control-group distribution, and they agree closely. Our pre-analysis committed in advance to licensing a null claim only if the minimum detectable effect in correlation units fell at or below the bar reported in the penultimate row, and to making no null claim at all if it exceeded twice that bar. The realized value falls between the two, and the text states the finding accordingly."
+    },
+    {
+      "filename": "robustness_sample.tex",
+      "label": "tab:robustness_sample",
+      "caption": "Robustness: sample construction, outcome construction and return alignment",
+      "columns": [
+        {"spec_key": "excl_halving", "header": "(1) Excl.\\ halving"},
+        {"spec_key": "excl_extreme_news", "header": "(2) Excl.\\ extreme news"},
+        {"spec_key": "winsorized", "header": "(3) Winsorized"},
+        {"spec_key": "alignment_offday_span", "header": "(4) Off-day alignment"},
+        {"spec_key": "sample_extended_2026", "header": "(5) Window to 2026m7"}
+      ],
+      "rows": [
+        {"type": "coefficient", "var": "d_etf_listed", "label": "$\\hat\\tau$: BTC $\\times$ Post", "decimals": 4},
+        {"type": "stat", "field": "p_value_ri_space", "label": "Randomization $p$ (placebo-in-space)", "decimals": 2},
+        {"type": "stat", "field": "ri_sd", "label": "SD of the randomization distribution", "decimals": 4},
+        {"type": "stat", "field": "within_r_squared", "label": "Within $R^2$", "decimals": 4},
+        {"type": "stat", "field": "n_post_treatment", "label": "Post-treatment months", "decimals": 0},
+        {"type": "stat", "field": "n_observations", "label": "$N$", "decimals": 0}
+      ],
+      "notes": "Every column re-estimates the baseline coin-month specification with coin and calendar-month fixed effects, varying only the stated construction choice. Column (1) drops 2024m4--2024m5, the April 19--20 2024 halving window. Column (2) drops days on which Bitcoin's absolute return exceeded its 99th percentile together with the November 2022 exchange-collapse window, rebuilding the monthly outcome on the surviving days. Column (3) winsorizes daily returns at the 0.5 and 99.5 within-asset percentiles before the correlation is computed. Column (4) cumulates weekend and holiday crypto returns into the following equity session, so that each crypto return spans the same calendar interval as the equity return it is matched against. Column (5) extends the estimation window to the end of the delivered panel. Cluster-robust standard errors in parentheses are reported for convention only; the randomization $p$-values are the inferential basis and have a floor of 0.10 on nine donor coins."
+    },
+    {
+      "filename": "robustness_spec.tex",
+      "label": "tab:robustness_spec",
+      "caption": "Robustness: equity leg, differential macro loadings and post-period sub-windows",
+      "columns": [
+        {"spec_key": "leg_mkt", "header": "(1) Market factor leg"},
+        {"spec_key": "leg_acwx_non_us", "header": "(2) Non-US equity leg"},
+        {"spec_key": "ctrl_vix_move", "header": "(3) Macro $\\times$ BTC"},
+        {"spec_key": "subwindow_pre_halving", "header": "(4) Pre-halving post"},
+        {"spec_key": "subwindow_pre_election", "header": "(5) Pre-election post"},
+        {"spec_key": "subwindow_post_election", "header": "(6) Post-election post"}
+      ],
+      "rows": [
+        {"type": "coefficient", "var": "d_etf_listed", "label": "$\\hat\\tau$: BTC $\\times$ Post", "decimals": 4},
+        {"type": "stat", "field": "p_value_ri_space", "label": "Randomization $p$ (placebo-in-space)", "decimals": 2},
+        {"type": "stat", "field": "ri_sd", "label": "SD of the randomization distribution", "decimals": 4},
+        {"type": "stat", "field": "n_post_treatment", "label": "Post-treatment months", "decimals": 0},
+        {"type": "stat", "field": "n_observations", "label": "$N$", "decimals": 0}
+      ],
+      "notes": "Column (1) replaces SPY with the excess-return market factor and column (2) with MSCI ACWI ex-US; if the operative mechanism were a US brokerage habitat, co-movement should have risen more against US than against non-US equities. Column (3) adds monthly VIX and MOVE levels interacted with the Bitcoin indicator, which is the version of the macro-confounding story that calendar-month fixed effects cannot absorb; the interaction coefficients themselves are reported in Table~\\ref{tab:macro}. Columns (4)--(6) partition the post-period around the two Bitcoin-specific shocks the cross-coin design cannot difference out. Column (4) truncates the post-window before the April 2024 halving and rests on the two post-treatment months printed in the table, which is far too few to establish anything and is reported because our pre-analysis committed to reporting it. Column (5) truncates the post-window before the November 2024 US election and is the estimate our pre-analysis designated as ETF-attributable. Column (6) restricts the post-period to the months after the election and should be read as the ETF plus the post-election policy regime rather than as an ETF effect. Randomization $p$-values have a floor of 0.10 on nine donor coins."
+    },
+    {
+      "filename": "macro_controls.tex",
+      "label": "tab:macro",
+      "caption": "Letting the macro volatility regime load differentially on Bitcoin",
+      "columns": [
+        {"spec_key": "ctrl_vix_move", "header": "Fisher-$z$ correlation with SPY"}
+      ],
+      "rows": [
+        {"type": "coefficient", "var": "d_etf_listed", "label": "$\\hat\\tau$: BTC $\\times$ Post", "decimals": 4},
+        {"type": "coefficient", "var": "vix_x_btc", "label": "VIX $\\times$ BTC", "decimals": 4},
+        {"type": "coefficient", "var": "move_x_btc", "label": "MOVE $\\times$ BTC", "decimals": 5},
+        {"type": "stat", "field": "p_value_ri_space", "label": "Randomization $p$ on $\\hat\\tau$ (placebo-in-space)", "decimals": 2},
+        {"type": "stat", "field": "ri_sd", "label": "SD of the randomization distribution", "decimals": 4},
+        {"type": "stat", "field": "within_r_squared", "label": "Within $R^2$", "decimals": 4},
+        {"type": "stat", "field": "n_observations", "label": "$N$", "decimals": 0}
+      ],
+      "notes": "The specification adds the monthly VIX and MOVE levels interacted with the Bitcoin indicator to the baseline coin-month regression. The main effects are collinear with the calendar-month fixed effects and are absorbed, so what these interactions identify is whether the macro volatility regime loads differentially on Bitcoin relative to the never-listed control coins. It does: Bitcoin's equity co-movement is a strong positive function of the VIX level, while the rate-volatility interaction does nothing. Including these interactions moves the treatment coefficient from $-0.0212$ in the baseline to the value shown here, a shift of roughly two-thirds of a randomization standard deviation, and reverses its sign. Both estimates lie deep inside the randomization distribution, so neither is distinguishable from zero and the sign reversal is not a finding; it is a statement about precision, and it is the reason the paper describes the estimate as robustly null rather than robustly negative."
+    },
+    {
+      "filename": "robustness_windows.tex",
+      "label": "tab:robustness_windows",
+      "caption": "Robustness: rolling-window length in the daily panel",
+      "columns": [
+        {"spec_key": "daily_rolling_did", "header": "(1) 30-day window"},
+        {"spec_key": "window_60d", "header": "(2) 60-day window"},
+        {"spec_key": "window_90d", "header": "(3) 90-day window"}
+      ],
+      "rows": [
+        {"type": "coefficient", "var": "d_etf_listed", "label": "$\\hat\\tau^{d}$: BTC $\\times$ Post", "decimals": 4},
+        {"type": "stat", "field": "n_effective_blocks", "label": "Independent windows", "decimals": 0},
+        {"type": "stat", "field": "n_observations", "label": "Asset-day rows", "decimals": 0}
+      ],
+      "notes": "The outcome is the Fisher-$z$ transform of a backward-looking rolling correlation between the asset's daily return and the return on SPY, in an asset-day panel with asset and date fixed effects, clustered on asset. Rolling windows overlap on all but one day, so the row count overstates the information in the panel by roughly the window length; the number of non-overlapping windows is reported alongside and is the figure against which the standard errors should be judged. A result appearing at only one window length would be a windowing artifact."
+    },
+    {
+      "filename": "placebos.tex",
+      "label": "tab:placebos",
+      "caption": "Placebo assets and a placebo event",
+      "columns": [
+        {"spec_key": "placebo_gold", "header": "(1) Gold"},
+        {"spec_key": "placebo_silver", "header": "(2) Silver"},
+        {"spec_key": "placebo_bito_2021", "header": "(3) 2021 futures ETF"}
+      ],
+      "rows": [
+        {"type": "coefficient", "var": "d_etf_listed", "label": "$\\hat\\tau$: placebo treatment", "decimals": 4},
+        {"type": "stat", "field": "p_value_ri_space", "label": "Randomization $p$ (placebo-in-space)", "decimals": 2},
+        {"type": "stat", "field": "ri_sd", "label": "SD of the randomization distribution", "decimals": 4},
+        {"type": "stat", "field": "within_r_squared", "label": "Within $R^2$", "decimals": 4},
+        {"type": "stat", "field": "n_post_treatment", "label": "Post-treatment months", "decimals": 0},
+        {"type": "stat", "field": "n_observations", "label": "$N$", "decimals": 0}
+      ],
+      "notes": "Columns (1) and (2) assign Bitcoin's treatment date to gold and to silver against the same never-treated crypto control group. Both have had exchange-traded wrappers for two decades and experienced the same macro regime with no 2024 access change, so a genuine break in either at January 2024 would falsify the design's macro-neutrality. Under the cluster-robust $p$-values from which any significance markers are computed, gold breaks at the 5\\% level; under randomization inference the same estimate is an ordinary draw from the placebo distribution, which is why the randomization row rather than the markers governs. Column (3) uses the October 2021 launch of a US-listed Bitcoin \\emph{futures} product as the event, on a sample truncated at 2023m7 so that the 2024 spot approval cannot contaminate it; this is a US-listed, brokerage-accessible vehicle that did not change spot creation and redemption. Its estimate is larger in magnitude than the actual spot-approval estimate and of the opposite sign, which bounds what this design can resolve rather than identifying a channel."
+    }
+  ]
+}

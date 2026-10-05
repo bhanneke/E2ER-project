@@ -30,7 +30,7 @@ from src.core.dossier import dossier_id
 from tests.run_db import make_run_db, paper_id_of
 
 ROOT = Path(__file__).resolve().parents[1]
-SHOWCASE = ROOT / "examples" / "showcase"
+SHOWCASE = ROOT / "tests" / "fixtures" / "showcase_export"
 ARGS = dict(owner="bhanneke", project="demo", github="bhanneke", commit="abc1234", data="private", code="private")
 
 

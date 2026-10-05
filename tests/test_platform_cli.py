@@ -19,7 +19,7 @@ from src.core.secret_scan import find_local_paths, find_secrets
 from tests.run_db import make_run_db, paper_id_of
 
 ROOT = Path(__file__).resolve().parents[1]
-SHOWCASE = ROOT / "examples" / "showcase"
+SHOWCASE = ROOT / "tests" / "fixtures" / "showcase_export"
 URL = "https://platform.test"
 ARGS = dict(owner="ada-lab", project="showcase", github="ada-lab", name="Ada Lovelace", commit="abc1234")
 

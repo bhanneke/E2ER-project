@@ -534,7 +534,7 @@ def test_template_skills_are_recorded_in_the_description_and_dossier(tmp_path: P
     from src.core.dossier import build_dossier
     from src.core.research_object import build_manifest
 
-    showcase = ROOT / "examples" / "showcase"
+    showcase = ROOT / "tests" / "fixtures" / "showcase_export"
     bundle = tmp_path / "bundle"
     shutil.copytree(showcase, bundle)
     paper_id = json.loads((showcase / "provenance.json").read_text())["run"]["paper_id"]
