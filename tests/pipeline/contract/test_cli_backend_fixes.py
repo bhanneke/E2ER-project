@@ -437,9 +437,15 @@ def test_a_wrong_configured_path_is_not_papered_over(cfg, tmp_path, monkeypatch)
     assert cli_support.resolve_cli("codex", get_settings()) is None
 
 
-async def test_doctor_uses_the_configured_cli_path(cfg, tmp_path):
+async def test_doctor_uses_the_configured_cli_path(cfg, tmp_path, monkeypatch):
     from src.doctor import PASS, backend_check, detect_backends
 
+    # A signed-in Codex home, so the check does not depend on the machine's ~/.codex.
+    codex_home = tmp_path / "codex-home"
+    codex_home.mkdir()
+    (codex_home / "auth.json").write_text("{}")
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     exe = tmp_path / "codex-bin"
     exe.write_text("#!/bin/sh\n")
     exe.chmod(0o755)
