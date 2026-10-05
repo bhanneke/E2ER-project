@@ -39,9 +39,17 @@ EXPORT_MAP: dict[str, list[tuple[str, str | None]]] = {
         ("paper_draft.pdf", "paper.pdf"),
         ("paper.pdf", None),
     ],
+    # How to run the study again (`e2er reproduce`): the recipe sits at the
+    # top of the folder, beside README.md.
+    ".": [
+        ("reproduce.json", None),
+    ],
     "code": [
         ("run_estimation.py", None),
         ("*.do", None),  # stata, if a specialist ever writes one
+        # the pinned environment and the script that reloads inputs that cannot be shipped
+        ("requirements.txt", None),
+        ("get_data.py", None),
     ],
     "data": [
         ("data.db", None),
@@ -325,13 +333,23 @@ def _render_readme(workspace: Path, manifest: dict, slug: str, notes: list[str] 
             p_s = f"{p_v:.3g}" if isinstance(p_v, (int, float)) else "—"
             lines.append(f"| `{term}` | {est_s} | {p_s} |")
 
+    data_line = "- `data/` — the data summary and dictionary"
+    if (workspace / "data.db").is_file():
+        data_line = "- `data/` — the study's data (`data.db`, SQLite) with the data summary and dictionary"
+    if (workspace / "data_sources.json").is_file():
+        data_line += "; `data_sources.json` records where each input came from and under which terms"
+    code_line = "- `code/` — the estimation script (`code/scratch/` holds exploratory scripts and logs)"
+    if (workspace / "requirements.txt").is_file():
+        code_line += "; `requirements.txt` pins the packages it runs with"
+    if (workspace / "get_data.py").is_file():
+        code_line += "; `get_data.py` loads the inputs the folder does not ship"
     lines += [
         "",
         "## Folder guide",
         "",
         "- `paper/` — the manuscript (`paper.tex`, `abstract.tex`, `refs.bib`, compiled `paper.pdf`)",
-        "- `code/` — the estimation script (`code/scratch/` holds exploratory probes + logs)",
-        "- `data/` — the SQLite data warehouse (`data.db`) + data summary & dictionary",
+        code_line,
+        data_line,
         "- `results/` — estimation/robustness JSON + figures",
         "- `design/` — research plan, identification strategy, econometric spec",
         "- `reviews/` — the six reviewer reports and the combined score (`review_aggregation.json`)",
@@ -339,15 +357,25 @@ def _render_readme(workspace: Path, manifest: dict, slug: str, notes: list[str] 
     ]
     if notes:
         lines += ["## Export notes", ""] + [f"- {n}" for n in notes] + [""]
-    lines += [
-        "## Reproduce",
-        "",
-        "```bash",
-        "cd code && python run_estimation.py   # reads ../data/ (or the original data files)",
-        "```",
-        "",
-        f"_Exported as `{slug}` from e2er._",
-    ]
+    lines += ["## Reproduce", ""]
+    if (workspace / "reproduce.json").is_file():
+        lines += [
+            "`reproduce.json` says how to run the study's code again. With e2er installed:",
+            "",
+            "```bash",
+            "e2er reproduce .",
+            "```",
+            "",
+            "This runs the code in a folder of its own, in a new environment with the pinned packages, "
+            "and compares every result value and every table with the ones in this folder.",
+        ]
+    else:
+        lines += [
+            "This folder has no `reproduce.json`, so `e2er reproduce` cannot run it. The estimation script "
+            "(`code/run_estimation.py`) was written to run in the study's workspace, with its inputs in `data/`; "
+            "the folder ships only the inputs listed under `data/`.",
+        ]
+    lines += ["", f"_Exported as `{slug}` from e2er._"]
     return "\n".join(lines) + "\n"
 
 

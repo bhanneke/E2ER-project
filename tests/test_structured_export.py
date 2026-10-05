@@ -173,6 +173,27 @@ def test_readme_has_the_review_score_and_coef(tmp_path: Path):
     assert "aggregator_routed" in readme  # headline estimate table
 
 
+def test_readme_reproduce_section_follows_what_the_folder_has(tmp_path: Path):
+    ws = _workspace(tmp_path)
+    out = export_paper(ws, tmp_path / "out", date_str="20260627")
+    readme = (out / "README.md").read_text()
+    # no recipe: say so, and never promise a command that cannot run
+    assert "has no `reproduce.json`" in readme and "cd code && python" not in readme
+    assert "`data.db`, SQLite" in readme
+
+    (ws / "reproduce.json").write_text('{"schema": "e2er-reproduce/1"}')
+    (ws / "requirements.txt").write_text("numpy==2.3.5\n")
+    (ws / "get_data.py").write_text("# reload inputs")
+    (ws / "data.db").unlink()
+    out = export_paper(ws, tmp_path / "out", date_str="20260627")
+    readme = (out / "README.md").read_text()
+    assert "e2er reproduce ." in readme
+    assert "data.db" not in readme
+    assert (out / "reproduce.json").is_file()
+    assert (out / "code" / "requirements.txt").is_file() and (out / "code" / "get_data.py").is_file()
+    assert not (out / "misc" / "reproduce.json").exists()
+
+
 def test_internal_files_not_exported(tmp_path: Path):
     ws = _workspace(tmp_path)
     out = export_paper(ws, tmp_path / "out", date_str="20260627")

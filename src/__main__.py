@@ -392,6 +392,20 @@ def main() -> None:
         help="Like --against, from a saved copy of the study record, the dossier or e2er.json.",
     )
 
+    reproduce_p = subparsers.add_parser(
+        "reproduce",
+        help="Run a study's code again in a new environment and compare the results with the published ones.",
+        description="Runs the steps in the folder's reproduce.json in a run folder of its own, inside a new "
+        "virtual environment with the study's pinned requirements, then compares every result value with the "
+        "published one and renders the paper's tables again. The study folder is not changed. Exit code 0: "
+        "reproduced; 1: values or tables differ; 2: the code could not be run.",
+    )
+    reproduce_p.add_argument("folder", help="The study folder (with reproduce.json).")
+    reproduce_p.add_argument("--keep", action="store_true", help="Keep the run folder also when everything matches.")
+    reproduce_p.add_argument(
+        "--json", dest="json_out", default=None, metavar="FILE", help="Also write the report as JSON."
+    )
+
     # `question` says what it does; `rq` is the abbreviation researchers type.
     rq_p = subparsers.add_parser(
         "question",
@@ -715,6 +729,11 @@ def main() -> None:
 
         sys.exit(_export(paper_id=args.paper_id, to=args.to))
 
+    if args.command == "reproduce":
+        from .cli_reproduce import reproduce as _reproduce
+
+        sys.exit(_reproduce(args.folder, keep=args.keep, json_out=args.json_out))
+
     if args.command == "verify":
         from .cli_verify import verify as _verify
 
@@ -924,6 +943,7 @@ _PATH_ARGS: dict[str, tuple[str, ...]] = {
     "run-matrix": ("rq_file", "out"),
     "status": ("paper_id",),
     "verify": ("bundle",),
+    "reproduce": ("folder", "json_out"),
     "verify-citations": ("draft", "bib"),
     "publish": ("bundle", "out", "db"),
     "export": ("to",),

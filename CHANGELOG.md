@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **`e2er reproduce <study folder>` runs a study's code again and compares the results.** A
+  study's `reproduce.json` names the pinned requirements, the steps, the inputs with their
+  SHA-256 and the result files to compare. The code runs in a run folder of its own, inside a new
+  virtual environment (uv when installed, else venv); the study folder is not changed. Every
+  result value is compared with the published one (identical, the same at the published
+  precision, small differences under the replication path's 10% tolerance, or different), the
+  inputs with the study's own files, and the paper's tables are rendered again from the rerun's
+  results. Exit code 0 reproduced, 1 differences, 2 could not run; `--json` writes the report.
+  Export ships `reproduce.json`, `code/requirements.txt` and `code/get_data.py` when the workspace
+  has them, and the README's "Reproduce" section now says what the folder supports: it promised
+  `data/data.db` and `cd code && python run_estimation.py`, which could not run.
+
 - **`.parquet` and `.xlsx` files in the data folder load.** The README offered both, but the
   packages pandas needs to read them (pyarrow, openpyxl) were not installed with e2er, so such
   files were skipped with a warning in the log. Both are now dependencies, and if one is missing

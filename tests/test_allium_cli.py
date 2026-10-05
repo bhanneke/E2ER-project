@@ -553,3 +553,19 @@ def test_list_tables_uses_information_schema(workspace, capsys, monkeypatch):
     assert any("information_schema" in sql.lower() for sql in captured_sql), (
         f"list-tables must use INFORMATION_SCHEMA, not a vendor REST endpoint. SQL: {captured_sql}"
     )
+
+
+def test_every_help_text_formats():
+    """A lone % in a help string breaks `--help` (and, on Python 3.14, building the parser at all)."""
+    import argparse
+
+    from src.modules.data import cli
+
+    def walk(parser: argparse.ArgumentParser) -> None:
+        parser.format_help()
+        for action in parser._actions:
+            if isinstance(action, argparse._SubParsersAction):
+                for sub in action.choices.values():
+                    walk(sub)
+
+    walk(cli._build_parser())

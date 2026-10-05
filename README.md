@@ -167,6 +167,7 @@ Archiving hides attempts from the lists and deletes no file. Running and paused 
 e2er export <paper_id>
 e2er verify <study folder>
 e2er verify <study folder> --against https://e2er.org/<owner>/<project>
+e2er reproduce <study folder>
 e2er login
 e2er publish <study folder> --owner <github-login> --project <name> --to https://e2er.org
 ```
@@ -174,6 +175,8 @@ e2er publish <study folder> --owner <github-login> --project <name> --to https:/
 `e2er export` writes the study folder with the subfolders `paper/`, `code/`, `data/`, `results/`, `design/` and `reviews/`. The file `provenance.json` in it lists every file with its hash value. `--to` sets where the folder is written (default: `OUTPUT_DIR`, else `e2er_papers/` in the data folder, which is never read back in as data). The command works from any folder and takes the first characters of the paper id when they are unique.
 
 `e2er verify` runs the check offline and without API keys. The check recomputes the hash values, rebuilds the tables from the estimation results, recomputes t and p values, compares the estimation with the declared identification strategy and confirms that every citation is in the bibliography. A pre-registration or a reproduction in the folder is checked as well. `--online` also looks up the citations in OpenAlex, Semantic Scholar and Crossref. `--against` compares the folder with the study or dossier that e2er.org published and only reads from e2er.org.
+
+`e2er reproduce` runs the study's code again and compares what it produces with what the study published. The folder's `reproduce.json` says how: the pinned packages (a requirements file), the steps, the inputs with their hash values and the result files to compare. The code runs in a folder of its own, in a new virtual environment (made with `uv` when it is installed, else with Python's `venv`); the study folder is not changed. The report says which inputs are identical to the study's own, which result values are identical, the same at the published precision, slightly different (under 10%, same sign) or different, and which of the paper's tables render the same from the rerun's results. It exits with 0 when everything matches, 1 when something differs and 2 when the code could not run. `--json FILE` also writes the report as JSON. The [showcase study](examples/showcase) carries a `reproduce.json`.
 
 `e2er publish` checks the folder and writes the study's description (`e2er.json`) and its dossier. `--to` sends the description, the dossier and the hash values of the files to e2er.org after `e2er login`. The files themselves stay on your computer. `--dry-run` prints the request and sends nothing. `--data` and `--code` state whether data and code are public (default private), and `--zenodo` deposits public data and code on Zenodo with your own token. `--demonstration` marks a demonstration or test run that is published as is: `e2er.json` and the dossier record it, and the paper and the reproduction report carry a disclaimer. A study started with `e2er run --demonstration` (or with the box in the dashboard) is marked from the start and needs no flag at publishing; `E2ER_PURPOSE` from the environment or `.env` also sets it. `--offline` prepares the folder for publishing in the browser at e2er.org/publish and sends nothing.
 
