@@ -19,6 +19,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   has them, and the README's "Reproduce" section now says what the folder supports: it promised
   `data/data.db` and `cd code && python run_estimation.py`, which could not run.
 
+- **The showcase study can be run again.** `examples/showcase` is re-exported with this version:
+  `code/get_data.py` reloads its 37 Yahoo Finance extracts with `e2er-data` (Yahoo's terms allow
+  personal use only, so the extracts are not shipped; `data/data_sources.json` records the reload),
+  `code/requirements.txt` pins numpy and pandas, and `reproduce.json` holds the SHA-256 of every
+  original extract. With the study's own extracts the estimation and robustness results come out
+  byte for byte; with today's Yahoo and Ken French data, `e2er reproduce examples/showcase` reports
+  which values moved. The publish tests now copy `tests/fixtures/showcase_export`, the showcase as
+  it was exported before publishing.
+
 - **`.parquet` and `.xlsx` files in the data folder load.** The README offered both, but the
   packages pandas needs to read them (pyarrow, openpyxl) were not installed with e2er, so such
   files were skipped with a warning in the log. Both are now dependencies, and if one is missing

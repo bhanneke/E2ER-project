@@ -1,0 +1,2453 @@
+{
+  "schema": "e2er-research-object/0.1",
+  "id": "bhanneke/spot-bitcoin-etf-comovement",
+  "content_id": "sha256:363ad799c5ac38561551b6f11132bee2674d9f320e3f03d7a21089f6594321ba",
+  "title": "No Cash Flows, New Owners: Spot Bitcoin ETFs and the Origins of Co-movement",
+  "question": "Did the January 2024 approval of US spot Bitcoin ETFs change the co-movement between Bitcoin returns and US equity returns?",
+  "contributors": [
+    {
+      "name": "Björn Hanneke",
+      "github": "bhanneke",
+      "orcid": "0009-0000-7466-9581",
+      "roles": [
+        "conceptualization",
+        "investigation"
+      ]
+    }
+  ],
+  "ai": {
+    "backend": "claude_code",
+    "model": "claude-sonnet-4-5",
+    "agents": [
+      "idea_developer",
+      "literature_scanner",
+      "identification_strategist",
+      "data_architect",
+      "data_analyst",
+      "econometrics_specialist",
+      "paper_drafter",
+      "abstract_writer",
+      "mechanism_reviewer",
+      "technical_reviewer",
+      "literature_reviewer",
+      "writing_reviewer",
+      "data_reviewer",
+      "identification_reviewer",
+      "patch_revisor",
+      "replication_packager"
+    ],
+    "agents_source": "recorded",
+    "usage": [
+      {
+        "agent": "strategist:decide",
+        "backend": "claude_code",
+        "model": "claude-sonnet-4-5",
+        "calls": 1,
+        "input_tokens": 2,
+        "output_tokens": 4450,
+        "cache_read_tokens": 11688,
+        "cache_write_tokens": 11156,
+        "cost_usd": 0.0,
+        "first": "2026-09-11 09:48:20",
+        "last": "2026-09-11 09:48:20"
+      },
+      {
+        "agent": "idea_developer",
+        "backend": "claude_code",
+        "model": "claude-sonnet-4-5",
+        "calls": 1,
+        "input_tokens": 12,
+        "output_tokens": 28991,
+        "cache_read_tokens": 168275,
+        "cache_write_tokens": 49501,
+        "cost_usd": 0.0,
+        "first": "2026-09-11 09:50:45",
+        "last": "2026-09-11 09:50:45"
+      },
+      {
+        "agent": "literature_scanner",
+        "backend": "claude_code",
+        "model": "claude-sonnet-4-5",
+        "calls": 1,
+        "input_tokens": 50,
+        "output_tokens": 47785,
+        "cache_read_tokens": 1508224,
+        "cache_write_tokens": 101662,
+        "cost_usd": 0.0,
+        "first": "2026-09-11 09:55:26",
+        "last": "2026-09-11 09:55:26"
+      },
+      {
+        "agent": "identification_strategist",
+        "backend": "claude_code",
+        "model": "claude-sonnet-4-5",
+        "calls": 1,
+        "input_tokens": 12,
+        "output_tokens": 31778,
+        "cache_read_tokens": 253328,
+        "cache_write_tokens": 66060,
+        "cost_usd": 0.0,
+        "first": "2026-09-11 09:58:02",
+        "last": "2026-09-11 09:58:02"
+      },
+      {
+        "agent": "data_architect",
+        "backend": "claude_code",
+        "model": "claude-sonnet-4-5",
+        "calls": 1,
+        "input_tokens": 30,
+        "output_tokens": 53480,
+        "cache_read_tokens": 818909,
+        "cache_write_tokens": 101835,
+        "cost_usd": 0.0,
+        "first": "2026-09-11 10:02:15",
+        "last": "2026-09-11 10:02:15"
+      },
+      {
+        "agent": "data_analyst",
+        "backend": "claude_code",
+        "model": "claude-sonnet-4-5",
+        "calls": 1,
+        "input_tokens": 74,
+        "output_tokens": 66586,
+        "cache_read_tokens": 4352669,
+        "cache_write_tokens": 149925,
+        "cost_usd": 0.0,
+        "first": "2026-09-11 10:08:09",
+        "last": "2026-09-11 10:08:09"
+      },
+      {
+        "agent": "econometrics_specialist",
+        "backend": "claude_code",
+        "model": "claude-sonnet-4-5",
+        "calls": 1,
+        "input_tokens": 86,
+        "output_tokens": 154967,
+        "cache_read_tokens": 6629813,
+        "cache_write_tokens": 228019,
+        "cost_usd": 0.0,
+        "first": "2026-09-11 10:18:38",
+        "last": "2026-09-11 10:18:38"
+      },
+      {
+        "agent": "paper_drafter",
+        "backend": "claude_code",
+        "model": "claude-sonnet-4-5",
+        "calls": 2,
+        "input_tokens": 136,
+        "output_tokens": 147970,
+        "cache_read_tokens": 8845574,
+        "cache_write_tokens": 383652,
+        "cost_usd": 0.0,
+        "first": "2026-09-11 10:27:00",
+        "last": "2026-09-11 10:29:22"
+      },
+      {
+        "agent": "abstract_writer",
+        "backend": "claude_code",
+        "model": "claude-sonnet-4-5",
+        "calls": 1,
+        "input_tokens": 14,
+        "output_tokens": 13248,
+        "cache_read_tokens": 431143,
+        "cache_write_tokens": 83001,
+        "cost_usd": 0.0,
+        "first": "2026-09-11 10:28:02",
+        "last": "2026-09-11 10:28:02"
+      },
+      {
+        "agent": "mechanism_reviewer",
+        "backend": "claude_code",
+        "model": "claude-sonnet-4-5",
+        "calls": 1,
+        "input_tokens": 4,
+        "output_tokens": 17513,
+        "cache_read_tokens": 214566,
+        "cache_write_tokens": 202686,
+        "cost_usd": 0.0,
+        "first": "2026-09-11 10:31:03",
+        "last": "2026-09-11 10:31:03"
+      },
+      {
+        "agent": "technical_reviewer",
+        "backend": "claude_code",
+        "model": "claude-sonnet-4-5",
+        "calls": 1,
+        "input_tokens": 4,
+        "output_tokens": 63237,
+        "cache_read_tokens": 213640,
+        "cache_write_tokens": 248166,
+        "cost_usd": 0.0,
+        "first": "2026-09-11 10:35:41",
+        "last": "2026-09-11 10:35:41"
+      },
+      {
+        "agent": "literature_reviewer",
+        "backend": "claude_code",
+        "model": "claude-sonnet-4-5",
+        "calls": 1,
+        "input_tokens": 4,
+        "output_tokens": 21075,
+        "cache_read_tokens": 210695,
+        "cache_write_tokens": 202977,
+        "cost_usd": 0.0,
+        "first": "2026-09-11 10:37:27",
+        "last": "2026-09-11 10:37:27"
+      },
+      {
+        "agent": "writing_reviewer",
+        "backend": "claude_code",
+        "model": "claude-sonnet-4-5",
+        "calls": 1,
+        "input_tokens": 4,
+        "output_tokens": 49246,
+        "cache_read_tokens": 213424,
+        "cache_write_tokens": 234580,
+        "cost_usd": 0.0,
+        "first": "2026-09-11 10:41:02",
+        "last": "2026-09-11 10:41:02"
+      },
+      {
+        "agent": "data_reviewer",
+        "backend": "claude_code",
+        "model": "claude-sonnet-4-5",
+        "calls": 1,
+        "input_tokens": 20,
+        "output_tokens": 46847,
+        "cache_read_tokens": 2039989,
+        "cache_write_tokens": 240534,
+        "cost_usd": 0.0,
+        "first": "2026-09-11 10:44:43",
+        "last": "2026-09-11 10:44:43"
+      },
+      {
+        "agent": "identification_reviewer",
+        "backend": "claude_code",
+        "model": "claude-sonnet-4-5",
+        "calls": 1,
+        "input_tokens": 4,
+        "output_tokens": 43353,
+        "cache_read_tokens": 215770,
+        "cache_write_tokens": 230414,
+        "cost_usd": 0.0,
+        "first": "2026-09-11 10:48:14",
+        "last": "2026-09-11 10:48:14"
+      },
+      {
+        "agent": "patch_revisor",
+        "backend": "claude_code",
+        "model": "claude-sonnet-4-5",
+        "calls": 1,
+        "input_tokens": 36,
+        "output_tokens": 41272,
+        "cache_read_tokens": 1516302,
+        "cache_write_tokens": 128127,
+        "cost_usd": 0.0,
+        "first": "2026-09-11 10:51:38",
+        "last": "2026-09-11 10:51:38"
+      },
+      {
+        "agent": "replication_packager",
+        "backend": "claude_code",
+        "model": "claude-sonnet-4-5",
+        "calls": 1,
+        "input_tokens": 30,
+        "output_tokens": 68007,
+        "cache_read_tokens": 1386761,
+        "cache_write_tokens": 174583,
+        "cost_usd": 0.0,
+        "first": "2026-09-11 10:55:37",
+        "last": "2026-09-11 10:55:37"
+      }
+    ]
+  },
+  "process": {
+    "template": "empirical",
+    "mode": "single_pass",
+    "methodology": "empirical",
+    "governance": "full",
+    "e2er_version": "0.13.6",
+    "exported": "20261005"
+  },
+  "components": {
+    "skills": {
+      "idea_developer": [
+        "base/researcher",
+        "base/economist",
+        "reasoning/creative-ideation",
+        "reasoning/novelty"
+      ],
+      "literature_scanner": [
+        "base/researcher",
+        "synthesis/context-builder"
+      ],
+      "identification_strategist": [
+        "causal-inference/judge-designs",
+        "causal-inference/natural-experiments",
+        "reasoning/identification",
+        "causal-inference/identification-spec-schema"
+      ],
+      "data_architect": [
+        "data/query-data",
+        "data/blockchain",
+        "data/crypto-defi",
+        "base/economist",
+        "data/allium-cli",
+        "data/allium-developer-api",
+        "data/yfinance",
+        "data/fred"
+      ],
+      "data_analyst": [
+        "data/query-data",
+        "data/cleaning",
+        "data/figure-spec",
+        "econometrics/panel-data",
+        "data/allium-cli",
+        "data/allium-developer-api",
+        "data/yfinance",
+        "data/fred",
+        "data/summary-statistics-schema"
+      ],
+      "econometrics_specialist": [
+        "data/query-data",
+        "econometrics/iv-estimation",
+        "econometrics/did",
+        "econometrics/panel-data",
+        "econometrics/event-study",
+        "econometrics/estimation-results-schema"
+      ],
+      "paper_drafter": [
+        "writing/paper-structure",
+        "writing/personal-style",
+        "base/researcher",
+        "writing/cite-numbers-by-source",
+        "data/table-spec"
+      ],
+      "abstract_writer": [
+        "writing/abstract",
+        "reasoning/anti-slop",
+        "writing/cite-numbers-by-source"
+      ],
+      "mechanism_reviewer": [
+        "review/referee-simulation",
+        "modeling/market-microstructure"
+      ],
+      "technical_reviewer": [
+        "review/technical-review",
+        "review/consistency-check"
+      ],
+      "literature_reviewer": [
+        "review/referee-simulation",
+        "synthesis/context-builder"
+      ],
+      "writing_reviewer": [
+        "review/writing-quality",
+        "reasoning/anti-slop"
+      ],
+      "data_reviewer": [
+        "review/data-quality",
+        "data/cleaning"
+      ],
+      "identification_reviewer": [
+        "causal-inference/sensitivity",
+        "review/technical-review"
+      ],
+      "patch_revisor": [
+        "writing/scoped-revision",
+        "writing/cite-numbers-by-source",
+        "writing/personal-style",
+        "reasoning/anti-slop"
+      ],
+      "replication_packager": [
+        "data/cleaning",
+        "base/researcher",
+        "synthesis/replication-package"
+      ]
+    },
+    "skills_source": "recorded"
+  },
+  "literature": [
+    {
+      "cite_key": "barberis2003style",
+      "doi": "10.1016/s0304-405x(03)00064-3",
+      "status": "verified_doi",
+      "verified_by": "openalex"
+    },
+    {
+      "cite_key": "barberis2004comovement",
+      "doi": "10.1016/j.jfineco.2004.04.003",
+      "status": "verified_doi",
+      "verified_by": "openalex"
+    },
+    {
+      "cite_key": "khatib2026from",
+      "doi": "10.1016/j.iref.2026.105664",
+      "status": "verified_doi",
+      "verified_by": "openalex"
+    },
+    {
+      "cite_key": "glosten2020etf",
+      "doi": "10.1287/mnsc.2019.3427",
+      "status": "verified_doi",
+      "verified_by": "openalex"
+    },
+    {
+      "cite_key": "israeli2017is",
+      "doi": "10.1007/s11142-017-9400-8",
+      "status": "verified_doi",
+      "verified_by": "openalex"
+    },
+    {
+      "cite_key": "pindyck1993the",
+      "doi": "10.2307/2118460",
+      "status": "verified_doi",
+      "verified_by": "openalex"
+    },
+    {
+      "cite_key": "vijh1994sp",
+      "doi": "10.1093/rfs/7.1.215",
+      "status": "verified_doi",
+      "verified_by": "openalex"
+    },
+    {
+      "cite_key": "boyer2011stylerelated",
+      "doi": "10.1111/j.1540-6261.2010.01633.x",
+      "status": "verified_doi",
+      "verified_by": "openalex"
+    },
+    {
+      "cite_key": "greenwood2007excess",
+      "doi": "10.1093/rfs/hhm052",
+      "status": "verified_doi",
+      "verified_by": "openalex"
+    },
+    {
+      "cite_key": "froot1999how",
+      "doi": "10.1016/s0304-405x(99)00020-3",
+      "status": "verified_doi",
+      "verified_by": "openalex"
+    },
+    {
+      "cite_key": "shleifer1986do",
+      "doi": "10.1111/j.1540-6261.1986.tb04518.x",
+      "status": "verified_doi",
+      "verified_by": "openalex"
+    },
+    {
+      "cite_key": "harris1986price",
+      "doi": "10.1111/j.1540-6261.1986.tb04550.x",
+      "status": "verified_doi",
+      "verified_by": "openalex"
+    },
+    {
+      "cite_key": "chen2004the",
+      "doi": "10.1111/j.1540-6261.2004.00683.x",
+      "status": "verified_doi",
+      "verified_by": "openalex"
+    },
+    {
+      "cite_key": "da2017exchange",
+      "doi": "10.1111/eufm.12137",
+      "status": "verified_doi",
+      "verified_by": "openalex"
+    },
+    {
+      "cite_key": "bendavid2014do",
+      "doi": "10.1111/jofi.12727",
+      "status": "verified_doi",
+      "verified_by": "openalex"
+    },
+    {
+      "cite_key": "brown2020etf",
+      "doi": "10.1093/rof/rfaa027",
+      "status": "verified_doi",
+      "verified_by": "openalex"
+    },
+    {
+      "cite_key": "baltussen2018indexing",
+      "doi": "10.1016/j.jfineco.2018.07.016",
+      "status": "verified_doi",
+      "verified_by": "openalex"
+    },
+    {
+      "cite_key": "coles2022on",
+      "doi": "10.1016/j.jfineco.2022.05.007",
+      "status": "verified_doi",
+      "verified_by": "openalex"
+    },
+    {
+      "cite_key": "bendavid2017exchangetraded",
+      "doi": "10.1146/annurev-financial-110716-032538",
+      "status": "verified_doi",
+      "verified_by": "openalex"
+    },
+    {
+      "cite_key": "liu2020risks",
+      "doi": "10.1093/rfs/hhaa113",
+      "status": "verified_doi",
+      "verified_by": "openalex"
+    },
+    {
+      "cite_key": "liu2022common",
+      "doi": "10.1111/jofi.13119",
+      "status": "verified_doi",
+      "verified_by": "openalex"
+    },
+    {
+      "cite_key": "biais2023equilibrium",
+      "doi": "10.1111/jofi.13206",
+      "status": "verified_doi",
+      "verified_by": "openalex"
+    },
+    {
+      "cite_key": "hu2019cryptocurrencies",
+      "doi": "10.1111/fima.12300",
+      "status": "verified_doi",
+      "verified_by": "openalex"
+    },
+    {
+      "cite_key": "makarov2019trading",
+      "doi": "10.1016/j.jfineco.2019.07.001",
+      "status": "verified_doi",
+      "verified_by": "openalex"
+    },
+    {
+      "cite_key": "griffin2020is",
+      "doi": "10.1111/jofi.12903",
+      "status": "verified_doi",
+      "verified_by": "openalex"
+    },
+    {
+      "cite_key": "bouri2016on",
+      "doi": "10.1016/j.frl.2016.09.025",
+      "status": "verified_doi",
+      "verified_by": "openalex"
+    },
+    {
+      "cite_key": "baur2017bitcoin",
+      "doi": "10.1016/j.intfin.2017.12.004",
+      "status": "verified_doi",
+      "verified_by": "openalex"
+    },
+    {
+      "cite_key": "corbet2018exploring",
+      "doi": "10.1016/j.econlet.2018.01.004",
+      "status": "verified_doi",
+      "verified_by": "openalex"
+    },
+    {
+      "cite_key": "conlon2020safe",
+      "doi": "10.1016/j.frl.2020.101607",
+      "status": "verified_doi",
+      "verified_by": "openalex"
+    },
+    {
+      "cite_key": "corbet2020the",
+      "doi": "10.1016/j.frl.2020.101554",
+      "status": "verified_doi",
+      "verified_by": "openalex"
+    },
+    {
+      "cite_key": "guliyev2025from",
+      "doi": "10.5195/ledger.2025.393",
+      "status": "verified_doi",
+      "verified_by": "openalex"
+    },
+    {
+      "cite_key": "tang2026the",
+      "doi": "10.61173/mpgy2h45",
+      "status": "verified_doi",
+      "verified_by": "openalex"
+    },
+    {
+      "cite_key": "pucher2026falsenews",
+      "doi": null,
+      "status": "verified_title",
+      "verified_by": "openalex"
+    }
+  ],
+  "data": [
+    {
+      "path": "data/data_dictionary.json",
+      "sha256": "3b54e0ba62778644a81195d77c630540aa2a38edf97a9ede570058d328ba19bf",
+      "bytes": 89071
+    },
+    {
+      "path": "data/data_sources.json",
+      "sha256": "57a6bb75a18c8a27823984465fbae4d4afc01dbbf639d8de3b57ee86cf4518f5",
+      "bytes": 39731
+    },
+    {
+      "path": "data/data_summary.md",
+      "sha256": "285377de56fb3d7802ea146bcaa3f689ea028c406d8aaebfb24a2ec0a1ef1966",
+      "bytes": 44213
+    }
+  ],
+  "outputs": [
+    {
+      "path": "paper/abstract.tex",
+      "sha256": "4e6faf86b4ddbda0af257bc748c56f399ed1df4cf62a025c7b90aad62411cef1"
+    },
+    {
+      "path": "paper/paper.pdf",
+      "sha256": "1be5f26889cfca202b664e8fed3569bf6d1a5aafaffeb0bb70f59d1fd65f9a56"
+    },
+    {
+      "path": "paper/paper.tex",
+      "sha256": "178f3309267e80e50e462c03599315c5504ae89b15f434b8b19de3f3a1ccff97"
+    },
+    {
+      "path": "paper/refs.bib",
+      "sha256": "ac1a3e8e7085ab21a9c3c81d5b1c82a2980b4fc321691d9d5299d3cf179ba5b2"
+    },
+    {
+      "path": "paper/tables/complementary.tex",
+      "sha256": "2e11bb3df83fa49f7151a6f2f338be8da21e1c06ec92c5e786f99802508f694c"
+    },
+    {
+      "path": "paper/tables/dcc.tex",
+      "sha256": "c5cf3c45751198d0ffd6b7e2bb5d10d8b0f9d78bf897e6fb0426265c07d913f7"
+    },
+    {
+      "path": "paper/tables/decomposition.tex",
+      "sha256": "edbfe758b6a62d6853d2cc3edfd2eabae01db27b2739dbfb658718350df07910"
+    },
+    {
+      "path": "paper/tables/event_study.tex",
+      "sha256": "8b6cf067662831da6eacdcb344aedb890ce7d8ad2ba3271e17d22ff17ecae52c"
+    },
+    {
+      "path": "paper/tables/inference.tex",
+      "sha256": "0fe45e9bae5715941473bd529d2fbc2cb54deb381af8f07ad44f0c278200d79f"
+    },
+    {
+      "path": "paper/tables/macro_controls.tex",
+      "sha256": "8e03a3d98679dbac69096ea07c74bac966a7d5e55fd18e410e15679838a3b976"
+    },
+    {
+      "path": "paper/tables/main.tex",
+      "sha256": "aaf092406d1a88e0db64b5d3bf8024f15c96501d53b5dd1de086aac6b8a718b1"
+    },
+    {
+      "path": "paper/tables/placebos.tex",
+      "sha256": "eb91445050f48d4e791b115847d358017df87e98d5d8c882e05ca4534aea5343"
+    },
+    {
+      "path": "paper/tables/power.tex",
+      "sha256": "8fd84ca590ec2f116b514683ceb26a2ea90d764a7b01aafd6b07780923771b4e"
+    },
+    {
+      "path": "paper/tables/rawcontrast.tex",
+      "sha256": "74d2a4bd73b70ceabb42c02d1fed6667753cef587d759549e50df3a911448db1"
+    },
+    {
+      "path": "paper/tables/returns_ddd.tex",
+      "sha256": "7792118a7d1d18dab23726956dfae2253ced7e25599640c11618fc92e4272bf4"
+    },
+    {
+      "path": "paper/tables/returns_interacted.tex",
+      "sha256": "e83f90c39c4456cead51f04fc6ced31887ff35a80f5a7fb2216d4636e974969e"
+    },
+    {
+      "path": "paper/tables/robustness_sample.tex",
+      "sha256": "1ea01ae71bb9b4d674f2edb1ee90cbe7b449f4cffc3ba6cee58fbe020eef8d3d"
+    },
+    {
+      "path": "paper/tables/robustness_spec.tex",
+      "sha256": "f0ed35962833ca779cd7277d463cca1440861a55f1f8f3d7b7a11fc4f7b0e3cb"
+    },
+    {
+      "path": "paper/tables/robustness_windows.tex",
+      "sha256": "4b1da8e1dcba210fed90e8b7a4be65733184f5d69a3285cdc14674aeaa07a976"
+    },
+    {
+      "path": "paper/tables/sumstats.tex",
+      "sha256": "3b59824c28b2efa2f294a923ced3220f0b10b789d353d80c97d10679f9aa09fa"
+    },
+    {
+      "path": "replication/audit_log.csv",
+      "sha256": "ec4c2f5d007c66e617ae6ba079ea264d8d7829c6a2112ee32d5ede13e5ae9ae2"
+    },
+    {
+      "path": "replication/data_queries.sql",
+      "sha256": "22f31e5237075e4b242f4013e5eb509e9bfb3c83b3ebe2145428275e00a158b9"
+    },
+    {
+      "path": "replication/estimation.py",
+      "sha256": "4e1399297feea7777aeb12ec4f81726d7fc8325ae2e1abd5109c57f92c6ed0cb"
+    },
+    {
+      "path": "results/estimation_results.json",
+      "sha256": "4765d2a27bc31d66760951a25f915d99085b7f4278521a0d55aeb14eefecf323"
+    },
+    {
+      "path": "results/figure_spec.json",
+      "sha256": "aa1ff6949533ed6bee25728bd886a30e81185c1b463a9ba1b9a565223e32f093"
+    },
+    {
+      "path": "results/figures/fig_etf_cumulative_turnover.pdf",
+      "sha256": "cdfbc49436d3975399709cdb44784b72187ab964b960ca4f4927cd450bf99b87"
+    },
+    {
+      "path": "results/figures/fig_gbtc_discount.pdf",
+      "sha256": "19cd37379116d06234fc52d802dc5ffd858ffa1c8921d2384a1e26e4cb8032a2"
+    },
+    {
+      "path": "results/figures/fig_prepost_correlation_change.pdf",
+      "sha256": "38920ec9850d5944b272a6322952f60c76632a93de6f71ee01baf81295a99ddd"
+    },
+    {
+      "path": "results/figures/fig_rolling_btc_spy.pdf",
+      "sha256": "9fff37efacde8fd78cf5affe426901bdd872845baafa49fd804c491a5e30dc8c"
+    },
+    {
+      "path": "results/figures/fig_rolling_overlay_controls.pdf",
+      "sha256": "835a4d0b916df700ca74eed73ecc5bfcbd8fb00b53dfb8d87dba3f65b854c025"
+    },
+    {
+      "path": "results/number_verification.json",
+      "sha256": "2639f85d7bf0ad3cb45b644cb08802fb7c3847cc16cf97cb1db7098f4fa8ac5c"
+    },
+    {
+      "path": "results/robustness_results.json",
+      "sha256": "b77d26e6037072e1c743d48b55aadd7f4a33e00af6ef6499704b2f01d1182cb6"
+    },
+    {
+      "path": "results/summary_statistics.json",
+      "sha256": "aaaf7134d6333f90024471a0627106478a611d4428335975f2850d9cc10d9fa6"
+    },
+    {
+      "path": "results/table_render_report.json",
+      "sha256": "cbb8c5f159ebef04e6aba0222ba9abbc61e0c2d41ddeb2ec1a8e43573877a571"
+    },
+    {
+      "path": "results/table_spec.json",
+      "sha256": "71f3739e3a8efd25c7986bdbb98565a05065d2b98d5b204ede74cf247bfea44d"
+    }
+  ],
+  "provenance": {
+    "files": 73,
+    "edges": {
+      "citation": 33,
+      "estimation": 1,
+      "figure": 5,
+      "table_cell": 346
+    }
+  },
+  "verification": [
+    {
+      "check": "integrity",
+      "status": "PASS",
+      "detail": "73 files hash-verified against provenance.json; 346 table cell(s) traced in the derivation graph; 3 change(s) after export recorded as amendments (paper/paper.pdf, paper/paper.tex, paper/refs.bib)"
+    },
+    {
+      "check": "numbers",
+      "status": "PASS",
+      "detail": "290 table cell(s) are source values at the precision shown; 48 coefficient(s) checked, 0 inconsistent; text (not gating): 292 of 307 number(s) are source values, 4 differ from the quantity named nearby, 11 untraced"
+    },
+    {
+      "check": "tables",
+      "status": "PASS",
+      "detail": "13 table(s) reproduce byte-identically from the sidecars; 2 not renderer-produced (rawcontrast.tex, sumstats.tex)"
+    },
+    {
+      "check": "spec",
+      "status": "PASS",
+      "detail": "estimation implements the declared identification"
+    },
+    {
+      "check": "citations",
+      "status": "PASS",
+      "detail": "33 cite key(s) resolve in refs.bib; snapshot: 33 verified, 0 unverifiable at run time"
+    }
+  ],
+  "dependencies": {
+    "uses": [
+      "template:empirical",
+      "agent:idea_developer",
+      "agent:literature_scanner",
+      "agent:identification_strategist",
+      "agent:data_architect",
+      "agent:data_analyst",
+      "agent:econometrics_specialist",
+      "agent:paper_drafter",
+      "agent:abstract_writer",
+      "agent:mechanism_reviewer",
+      "agent:technical_reviewer",
+      "agent:literature_reviewer",
+      "agent:writing_reviewer",
+      "agent:data_reviewer",
+      "agent:identification_reviewer",
+      "agent:patch_revisor",
+      "agent:replication_packager",
+      "skill:e2er/base/economist",
+      "skill:e2er/base/researcher",
+      "skill:e2er/causal-inference/identification-spec-schema",
+      "skill:e2er/causal-inference/judge-designs",
+      "skill:e2er/causal-inference/natural-experiments",
+      "skill:e2er/causal-inference/sensitivity",
+      "skill:e2er/data/allium-cli",
+      "skill:e2er/data/allium-developer-api",
+      "skill:e2er/data/blockchain",
+      "skill:e2er/data/cleaning",
+      "skill:e2er/data/crypto-defi",
+      "skill:e2er/data/figure-spec",
+      "skill:e2er/data/fred",
+      "skill:e2er/data/query-data",
+      "skill:e2er/data/summary-statistics-schema",
+      "skill:e2er/data/table-spec",
+      "skill:e2er/data/yfinance",
+      "skill:e2er/econometrics/did",
+      "skill:e2er/econometrics/estimation-results-schema",
+      "skill:e2er/econometrics/event-study",
+      "skill:e2er/econometrics/iv-estimation",
+      "skill:e2er/econometrics/panel-data",
+      "skill:e2er/modeling/market-microstructure",
+      "skill:e2er/reasoning/anti-slop",
+      "skill:e2er/reasoning/creative-ideation",
+      "skill:e2er/reasoning/identification",
+      "skill:e2er/reasoning/novelty",
+      "skill:e2er/review/consistency-check",
+      "skill:e2er/review/data-quality",
+      "skill:e2er/review/referee-simulation",
+      "skill:e2er/review/technical-review",
+      "skill:e2er/review/writing-quality",
+      "skill:e2er/synthesis/context-builder",
+      "skill:e2er/synthesis/replication-package",
+      "skill:e2er/writing/abstract",
+      "skill:e2er/writing/cite-numbers-by-source",
+      "skill:e2er/writing/paper-structure",
+      "skill:e2er/writing/personal-style",
+      "skill:e2er/writing/scoped-revision"
+    ],
+    "derived_from": []
+  },
+  "repository": {
+    "url": "https://github.com/bhanneke/E2ER-project",
+    "path": "examples/showcase"
+  },
+  "license": null,
+  "published": "2026-10-05T08:01:16Z",
+  "purpose": "demonstration",
+  "availability": {
+    "data": {
+      "access": "private"
+    },
+    "code": {
+      "access": "public",
+      "url": "https://github.com/bhanneke/E2ER-project"
+    }
+  },
+  "dossier": {
+    "id": "sha256:37aca410ed871da5884eca4b2c5d723d14facd3612986e183caee3f5e7ebc95d",
+    "url": "https://e2er.org/d/37aca410ed871da5",
+    "doc": {
+      "study": {
+        "title": "No Cash Flows, New Owners: Spot Bitcoin ETFs and the Origins of Co-movement"
+      },
+      "schema": "e2er-dossier/0.6",
+      "e2er": {
+        "version": "0.8.2",
+        "repository": "https://github.com/bhanneke/E2ER-project",
+        "commit": "f59c79fda8bfed3cbb47416cb18501df18b5afa9",
+        "uncommitted_changes": false,
+        "segments": [
+          {
+            "commit": "f59c79fda8bfed3cbb47416cb18501df18b5afa9",
+            "version": "0.8.2",
+            "uncommitted_changes": false,
+            "from": "2026-09-11T09:47:52Z",
+            "skills": "the registry at this commit and the template's additions",
+            "steps": 24
+          }
+        ],
+        "exported_with": "0.13.6"
+      },
+      "run": {
+        "template": "empirical",
+        "mode": "single_pass",
+        "governance": "full",
+        "backend": "claude_code",
+        "models": [
+          {
+            "backend": "claude_code",
+            "model": "claude-sonnet-4-5"
+          }
+        ],
+        "exported": "20261005",
+        "outcome": {
+          "status": "completed",
+          "at": "2026-09-11T10:55:37Z"
+        },
+        "internal_review": {
+          "score": 6.14,
+          "scale": 10,
+          "combined": "weighted average",
+          "reviewers": {
+            "mechanism_reviewer": 5.6,
+            "technical_reviewer": 6.5,
+            "literature_reviewer": 5.9,
+            "writing_reviewer": 7.0,
+            "data_reviewer": 6.0,
+            "identification_reviewer": 6.0
+          },
+          "weights": {
+            "mechanism_reviewer": 1.0,
+            "technical_reviewer": 1.5,
+            "literature_reviewer": 1.0,
+            "writing_reviewer": 0.75,
+            "data_reviewer": 1.25,
+            "identification_reviewer": 1.5
+          },
+          "rounds": 1
+        },
+        "events": []
+      },
+      "components": [
+        {
+          "id": "agent:abstract_writer",
+          "kind": "agent",
+          "name": "abstract_writer",
+          "pin": {
+            "path": "src/core/specialists/registry.py",
+            "repository": "https://github.com/bhanneke/E2ER-project",
+            "commit": "f59c79fda8bfed3cbb47416cb18501df18b5afa9",
+            "git_blob": "ceb87d1d66455aa39cf303b60c8b877ac6e803c0"
+          }
+        },
+        {
+          "id": "agent:data_analyst",
+          "kind": "agent",
+          "name": "data_analyst",
+          "pin": {
+            "path": "src/core/specialists/registry.py",
+            "repository": "https://github.com/bhanneke/E2ER-project",
+            "commit": "f59c79fda8bfed3cbb47416cb18501df18b5afa9",
+            "git_blob": "ceb87d1d66455aa39cf303b60c8b877ac6e803c0"
+          }
+        },
+        {
+          "id": "agent:data_architect",
+          "kind": "agent",
+          "name": "data_architect",
+          "pin": {
+            "path": "src/core/specialists/registry.py",
+            "repository": "https://github.com/bhanneke/E2ER-project",
+            "commit": "f59c79fda8bfed3cbb47416cb18501df18b5afa9",
+            "git_blob": "ceb87d1d66455aa39cf303b60c8b877ac6e803c0"
+          }
+        },
+        {
+          "id": "agent:data_reviewer",
+          "kind": "agent",
+          "name": "data_reviewer",
+          "pin": {
+            "path": "src/core/specialists/registry.py",
+            "repository": "https://github.com/bhanneke/E2ER-project",
+            "commit": "f59c79fda8bfed3cbb47416cb18501df18b5afa9",
+            "git_blob": "ceb87d1d66455aa39cf303b60c8b877ac6e803c0"
+          }
+        },
+        {
+          "id": "agent:econometrics_specialist",
+          "kind": "agent",
+          "name": "econometrics_specialist",
+          "pin": {
+            "path": "src/core/specialists/registry.py",
+            "repository": "https://github.com/bhanneke/E2ER-project",
+            "commit": "f59c79fda8bfed3cbb47416cb18501df18b5afa9",
+            "git_blob": "ceb87d1d66455aa39cf303b60c8b877ac6e803c0"
+          }
+        },
+        {
+          "id": "agent:idea_developer",
+          "kind": "agent",
+          "name": "idea_developer",
+          "pin": {
+            "path": "src/core/specialists/registry.py",
+            "repository": "https://github.com/bhanneke/E2ER-project",
+            "commit": "f59c79fda8bfed3cbb47416cb18501df18b5afa9",
+            "git_blob": "ceb87d1d66455aa39cf303b60c8b877ac6e803c0"
+          }
+        },
+        {
+          "id": "agent:identification_reviewer",
+          "kind": "agent",
+          "name": "identification_reviewer",
+          "pin": {
+            "path": "src/core/specialists/registry.py",
+            "repository": "https://github.com/bhanneke/E2ER-project",
+            "commit": "f59c79fda8bfed3cbb47416cb18501df18b5afa9",
+            "git_blob": "ceb87d1d66455aa39cf303b60c8b877ac6e803c0"
+          }
+        },
+        {
+          "id": "agent:identification_strategist",
+          "kind": "agent",
+          "name": "identification_strategist",
+          "pin": {
+            "path": "src/core/specialists/registry.py",
+            "repository": "https://github.com/bhanneke/E2ER-project",
+            "commit": "f59c79fda8bfed3cbb47416cb18501df18b5afa9",
+            "git_blob": "ceb87d1d66455aa39cf303b60c8b877ac6e803c0"
+          }
+        },
+        {
+          "id": "agent:literature_reviewer",
+          "kind": "agent",
+          "name": "literature_reviewer",
+          "pin": {
+            "path": "src/core/specialists/registry.py",
+            "repository": "https://github.com/bhanneke/E2ER-project",
+            "commit": "f59c79fda8bfed3cbb47416cb18501df18b5afa9",
+            "git_blob": "ceb87d1d66455aa39cf303b60c8b877ac6e803c0"
+          }
+        },
+        {
+          "id": "agent:literature_scanner",
+          "kind": "agent",
+          "name": "literature_scanner",
+          "pin": {
+            "path": "src/core/specialists/registry.py",
+            "repository": "https://github.com/bhanneke/E2ER-project",
+            "commit": "f59c79fda8bfed3cbb47416cb18501df18b5afa9",
+            "git_blob": "ceb87d1d66455aa39cf303b60c8b877ac6e803c0"
+          }
+        },
+        {
+          "id": "agent:mechanism_reviewer",
+          "kind": "agent",
+          "name": "mechanism_reviewer",
+          "pin": {
+            "path": "src/core/specialists/registry.py",
+            "repository": "https://github.com/bhanneke/E2ER-project",
+            "commit": "f59c79fda8bfed3cbb47416cb18501df18b5afa9",
+            "git_blob": "ceb87d1d66455aa39cf303b60c8b877ac6e803c0"
+          }
+        },
+        {
+          "id": "agent:paper_drafter",
+          "kind": "agent",
+          "name": "paper_drafter",
+          "pin": {
+            "path": "src/core/specialists/registry.py",
+            "repository": "https://github.com/bhanneke/E2ER-project",
+            "commit": "f59c79fda8bfed3cbb47416cb18501df18b5afa9",
+            "git_blob": "ceb87d1d66455aa39cf303b60c8b877ac6e803c0"
+          }
+        },
+        {
+          "id": "agent:patch_revisor",
+          "kind": "agent",
+          "name": "patch_revisor",
+          "pin": {
+            "path": "src/core/specialists/registry.py",
+            "repository": "https://github.com/bhanneke/E2ER-project",
+            "commit": "f59c79fda8bfed3cbb47416cb18501df18b5afa9",
+            "git_blob": "ceb87d1d66455aa39cf303b60c8b877ac6e803c0"
+          }
+        },
+        {
+          "id": "agent:replication_packager",
+          "kind": "agent",
+          "name": "replication_packager",
+          "pin": {
+            "path": "src/core/specialists/registry.py",
+            "repository": "https://github.com/bhanneke/E2ER-project",
+            "commit": "f59c79fda8bfed3cbb47416cb18501df18b5afa9",
+            "git_blob": "ceb87d1d66455aa39cf303b60c8b877ac6e803c0"
+          }
+        },
+        {
+          "id": "agent:technical_reviewer",
+          "kind": "agent",
+          "name": "technical_reviewer",
+          "pin": {
+            "path": "src/core/specialists/registry.py",
+            "repository": "https://github.com/bhanneke/E2ER-project",
+            "commit": "f59c79fda8bfed3cbb47416cb18501df18b5afa9",
+            "git_blob": "ceb87d1d66455aa39cf303b60c8b877ac6e803c0"
+          }
+        },
+        {
+          "id": "agent:writing_reviewer",
+          "kind": "agent",
+          "name": "writing_reviewer",
+          "pin": {
+            "path": "src/core/specialists/registry.py",
+            "repository": "https://github.com/bhanneke/E2ER-project",
+            "commit": "f59c79fda8bfed3cbb47416cb18501df18b5afa9",
+            "git_blob": "ceb87d1d66455aa39cf303b60c8b877ac6e803c0"
+          }
+        },
+        {
+          "id": "connector:claude-code",
+          "kind": "connector",
+          "name": "claude-code",
+          "pin": {
+            "path": "src/modules/llm/claude_code.py",
+            "repository": "https://github.com/bhanneke/E2ER-project",
+            "commit": "f59c79fda8bfed3cbb47416cb18501df18b5afa9",
+            "git_blob": "7af2fb88bea10d0885c9956fbe889fb3d4b2f690"
+          }
+        },
+        {
+          "id": "skill:e2er/base/economist",
+          "kind": "skill",
+          "name": "economist",
+          "pin": {
+            "path": "skills/files/base/economist.md",
+            "repository": "https://github.com/bhanneke/E2ER-project",
+            "commit": "f59c79fda8bfed3cbb47416cb18501df18b5afa9",
+            "git_blob": "19c9055fc91c8feca8ccafe3b28d009dc443a219"
+          }
+        },
+        {
+          "id": "skill:e2er/base/researcher",
+          "kind": "skill",
+          "name": "researcher",
+          "pin": {
+            "path": "skills/files/base/researcher.md",
+            "repository": "https://github.com/bhanneke/E2ER-project",
+            "commit": "f59c79fda8bfed3cbb47416cb18501df18b5afa9",
+            "git_blob": "4ea07ba854393d52041127ac7c162bb2a941daa1"
+          }
+        },
+        {
+          "id": "skill:e2er/causal-inference/identification-spec-schema",
+          "kind": "skill",
+          "name": "identification-spec-schema",
+          "pin": {
+            "path": "skills/files/causal-inference/identification-spec-schema.md",
+            "repository": "https://github.com/bhanneke/E2ER-project",
+            "commit": "f59c79fda8bfed3cbb47416cb18501df18b5afa9",
+            "git_blob": "ae4d68b723965631fe6f60cea670275104900499"
+          }
+        },
+        {
+          "id": "skill:e2er/causal-inference/judge-designs",
+          "kind": "skill",
+          "name": "judge-designs",
+          "pin": {
+            "path": "skills/files/causal-inference/judge-designs.md",
+            "repository": "https://github.com/bhanneke/E2ER-project",
+            "commit": "f59c79fda8bfed3cbb47416cb18501df18b5afa9",
+            "git_blob": "014da279cd53b3ca926b7e8fab421b3d8c8bb28c"
+          }
+        },
+        {
+          "id": "skill:e2er/causal-inference/natural-experiments",
+          "kind": "skill",
+          "name": "natural-experiments",
+          "pin": {
+            "path": "skills/files/causal-inference/natural-experiments.md",
+            "repository": "https://github.com/bhanneke/E2ER-project",
+            "commit": "f59c79fda8bfed3cbb47416cb18501df18b5afa9",
+            "git_blob": "9a4cfc62dada68b83a1dfc2602fb672b166003df"
+          }
+        },
+        {
+          "id": "skill:e2er/causal-inference/sensitivity",
+          "kind": "skill",
+          "name": "sensitivity",
+          "pin": {
+            "path": "skills/files/causal-inference/sensitivity.md",
+            "repository": "https://github.com/bhanneke/E2ER-project",
+            "commit": "f59c79fda8bfed3cbb47416cb18501df18b5afa9",
+            "git_blob": "d8fa9b2f0817bbb67defdaa7c6a2f8091ebf394c"
+          }
+        },
+        {
+          "id": "skill:e2er/data/allium-cli",
+          "kind": "skill",
+          "name": "allium-cli",
+          "pin": {
+            "path": "skills/files/data/allium-cli.md",
+            "repository": "https://github.com/bhanneke/E2ER-project",
+            "commit": "f59c79fda8bfed3cbb47416cb18501df18b5afa9",
+            "git_blob": "41e291e7d60054b0a30d7d1cab70d9776c0a57e1"
+          }
+        },
+        {
+          "id": "skill:e2er/data/allium-developer-api",
+          "kind": "skill",
+          "name": "allium-developer-api",
+          "pin": {
+            "path": "skills/files/data/allium-developer-api.md",
+            "repository": "https://github.com/bhanneke/E2ER-project",
+            "commit": "f59c79fda8bfed3cbb47416cb18501df18b5afa9",
+            "git_blob": "8ed60a6cbc5aa4c81d4ab1cbb8284f45774844ff"
+          }
+        },
+        {
+          "id": "skill:e2er/data/blockchain",
+          "kind": "skill",
+          "name": "blockchain",
+          "pin": {
+            "path": "skills/files/data/blockchain.md",
+            "repository": "https://github.com/bhanneke/E2ER-project",
+            "commit": "f59c79fda8bfed3cbb47416cb18501df18b5afa9",
+            "git_blob": "6beaaee99a240345f0ae8bd18709e2274cd1bddd"
+          }
+        },
+        {
+          "id": "skill:e2er/data/cleaning",
+          "kind": "skill",
+          "name": "cleaning",
+          "pin": {
+            "path": "skills/files/data/cleaning.md",
+            "repository": "https://github.com/bhanneke/E2ER-project",
+            "commit": "f59c79fda8bfed3cbb47416cb18501df18b5afa9",
+            "git_blob": "30ca7723f2c808b778d15bd6db50b9822c85927e"
+          }
+        },
+        {
+          "id": "skill:e2er/data/crypto-defi",
+          "kind": "skill",
+          "name": "crypto-defi",
+          "pin": {
+            "path": "skills/files/data/crypto-defi.md",
+            "repository": "https://github.com/bhanneke/E2ER-project",
+            "commit": "f59c79fda8bfed3cbb47416cb18501df18b5afa9",
+            "git_blob": "787e86a48d3616a45880817674da6adbb081421a"
+          }
+        },
+        {
+          "id": "skill:e2er/data/figure-spec",
+          "kind": "skill",
+          "name": "figure-spec",
+          "pin": {
+            "path": "skills/files/data/figure-spec.md",
+            "repository": "https://github.com/bhanneke/E2ER-project",
+            "commit": "f59c79fda8bfed3cbb47416cb18501df18b5afa9",
+            "git_blob": "d2c9f59959c5ffb74237cde6f5d34e05820ce3a4"
+          }
+        },
+        {
+          "id": "skill:e2er/data/fred",
+          "kind": "skill",
+          "name": "fred",
+          "pin": {
+            "path": "skills/files/data/fred.md",
+            "repository": "https://github.com/bhanneke/E2ER-project",
+            "commit": "f59c79fda8bfed3cbb47416cb18501df18b5afa9",
+            "git_blob": "8173078e637e75e7d9598a798a450e1593bbcc43"
+          }
+        },
+        {
+          "id": "skill:e2er/data/query-data",
+          "kind": "skill",
+          "name": "query-data",
+          "pin": {
+            "path": "skills/files/data/query-data.md",
+            "repository": "https://github.com/bhanneke/E2ER-project",
+            "commit": "f59c79fda8bfed3cbb47416cb18501df18b5afa9",
+            "git_blob": "d1140adf88065aa60dfe2d7330c1f5a2ad76abd5"
+          }
+        },
+        {
+          "id": "skill:e2er/data/summary-statistics-schema",
+          "kind": "skill",
+          "name": "summary-statistics-schema",
+          "pin": {
+            "path": "skills/files/data/summary-statistics-schema.md",
+            "repository": "https://github.com/bhanneke/E2ER-project",
+            "commit": "f59c79fda8bfed3cbb47416cb18501df18b5afa9",
+            "git_blob": "ec67ec2d6633a31e7e65ed1af3d959344ded46d8"
+          }
+        },
+        {
+          "id": "skill:e2er/data/table-spec",
+          "kind": "skill",
+          "name": "table-spec",
+          "pin": {
+            "path": "skills/files/data/table-spec.md",
+            "repository": "https://github.com/bhanneke/E2ER-project",
+            "commit": "f59c79fda8bfed3cbb47416cb18501df18b5afa9",
+            "git_blob": "3bb6083c74782499eee01f314d7907201846ba46"
+          }
+        },
+        {
+          "id": "skill:e2er/data/yfinance",
+          "kind": "skill",
+          "name": "yfinance",
+          "pin": {
+            "path": "skills/files/data/yfinance.md",
+            "repository": "https://github.com/bhanneke/E2ER-project",
+            "commit": "f59c79fda8bfed3cbb47416cb18501df18b5afa9",
+            "git_blob": "9e407bc9bdf2aa98f6602cd39006fb25f035e535"
+          }
+        },
+        {
+          "id": "skill:e2er/econometrics/did",
+          "kind": "skill",
+          "name": "did",
+          "pin": {
+            "path": "skills/files/econometrics/did.md",
+            "repository": "https://github.com/bhanneke/E2ER-project",
+            "commit": "f59c79fda8bfed3cbb47416cb18501df18b5afa9",
+            "git_blob": "3d969b0a3bc7ca492c94dbe2f09efcd9901676b1"
+          }
+        },
+        {
+          "id": "skill:e2er/econometrics/estimation-results-schema",
+          "kind": "skill",
+          "name": "estimation-results-schema",
+          "pin": {
+            "path": "skills/files/econometrics/estimation-results-schema.md",
+            "repository": "https://github.com/bhanneke/E2ER-project",
+            "commit": "f59c79fda8bfed3cbb47416cb18501df18b5afa9",
+            "git_blob": "fd6baadfe5c0b041ac95800a4ab5554939415066"
+          }
+        },
+        {
+          "id": "skill:e2er/econometrics/event-study",
+          "kind": "skill",
+          "name": "event-study",
+          "pin": {
+            "path": "skills/files/econometrics/event-study.md",
+            "repository": "https://github.com/bhanneke/E2ER-project",
+            "commit": "f59c79fda8bfed3cbb47416cb18501df18b5afa9",
+            "git_blob": "1a8360a2f246c1fff55dfa50231fd0f8fbda51fa"
+          }
+        },
+        {
+          "id": "skill:e2er/econometrics/iv-estimation",
+          "kind": "skill",
+          "name": "iv-estimation",
+          "pin": {
+            "path": "skills/files/econometrics/iv-estimation.md",
+            "repository": "https://github.com/bhanneke/E2ER-project",
+            "commit": "f59c79fda8bfed3cbb47416cb18501df18b5afa9",
+            "git_blob": "1f29b0c346ada6cdc5073f4584a7be4b510de293"
+          }
+        },
+        {
+          "id": "skill:e2er/econometrics/panel-data",
+          "kind": "skill",
+          "name": "panel-data",
+          "pin": {
+            "path": "skills/files/econometrics/panel-data.md",
+            "repository": "https://github.com/bhanneke/E2ER-project",
+            "commit": "f59c79fda8bfed3cbb47416cb18501df18b5afa9",
+            "git_blob": "586249ec87ca08cb20d71c3577e52b07ba901a29"
+          }
+        },
+        {
+          "id": "skill:e2er/modeling/market-microstructure",
+          "kind": "skill",
+          "name": "market-microstructure",
+          "pin": {
+            "path": "skills/files/modeling/market-microstructure.md",
+            "repository": "https://github.com/bhanneke/E2ER-project",
+            "commit": "f59c79fda8bfed3cbb47416cb18501df18b5afa9",
+            "git_blob": "ffeb9c07f53d758c4b69286a1befa618a14c7bd3"
+          }
+        },
+        {
+          "id": "skill:e2er/reasoning/anti-slop",
+          "kind": "skill",
+          "name": "anti-slop",
+          "pin": {
+            "path": "skills/files/reasoning/anti-slop.md",
+            "repository": "https://github.com/bhanneke/E2ER-project",
+            "commit": "f59c79fda8bfed3cbb47416cb18501df18b5afa9",
+            "git_blob": "5a6974a4419618fc3d4bc7acf981c2c5f78b80f9"
+          }
+        },
+        {
+          "id": "skill:e2er/reasoning/creative-ideation",
+          "kind": "skill",
+          "name": "creative-ideation",
+          "pin": {
+            "path": "skills/files/reasoning/creative-ideation.md",
+            "repository": "https://github.com/bhanneke/E2ER-project",
+            "commit": "f59c79fda8bfed3cbb47416cb18501df18b5afa9",
+            "git_blob": "9d63d7733f7ce1c972d8cc3a9a11b254c401b12e"
+          }
+        },
+        {
+          "id": "skill:e2er/reasoning/identification",
+          "kind": "skill",
+          "name": "identification",
+          "pin": {
+            "path": "skills/files/reasoning/identification.md",
+            "repository": "https://github.com/bhanneke/E2ER-project",
+            "commit": "f59c79fda8bfed3cbb47416cb18501df18b5afa9",
+            "git_blob": "15540149c56b9598bd012532efa5924210ba5899"
+          }
+        },
+        {
+          "id": "skill:e2er/reasoning/novelty",
+          "kind": "skill",
+          "name": "novelty",
+          "pin": {
+            "path": "skills/files/reasoning/novelty.md",
+            "repository": "https://github.com/bhanneke/E2ER-project",
+            "commit": "f59c79fda8bfed3cbb47416cb18501df18b5afa9",
+            "git_blob": "35602cdc03d6a7f71801d79cb422778ccf4ac9fd"
+          }
+        },
+        {
+          "id": "skill:e2er/review/consistency-check",
+          "kind": "skill",
+          "name": "consistency-check",
+          "pin": {
+            "path": "skills/files/review/consistency-check.md",
+            "repository": "https://github.com/bhanneke/E2ER-project",
+            "commit": "f59c79fda8bfed3cbb47416cb18501df18b5afa9",
+            "git_blob": "9cc05037e9420033da8b4e9a87e1c64db8908d55"
+          }
+        },
+        {
+          "id": "skill:e2er/review/data-quality",
+          "kind": "skill",
+          "name": "data-quality",
+          "pin": {
+            "path": "skills/files/review/data-quality.md",
+            "repository": "https://github.com/bhanneke/E2ER-project",
+            "commit": "f59c79fda8bfed3cbb47416cb18501df18b5afa9",
+            "git_blob": "1408f7634aa0148f363beb16c6f40e21195c5ad5"
+          }
+        },
+        {
+          "id": "skill:e2er/review/referee-simulation",
+          "kind": "skill",
+          "name": "referee-simulation",
+          "pin": {
+            "path": "skills/files/review/referee-simulation.md",
+            "repository": "https://github.com/bhanneke/E2ER-project",
+            "commit": "f59c79fda8bfed3cbb47416cb18501df18b5afa9",
+            "git_blob": "bae61c5458d3466039b334f2d66c69c87da8d092"
+          }
+        },
+        {
+          "id": "skill:e2er/review/technical-review",
+          "kind": "skill",
+          "name": "technical-review",
+          "pin": {
+            "path": "skills/files/review/technical-review.md",
+            "repository": "https://github.com/bhanneke/E2ER-project",
+            "commit": "f59c79fda8bfed3cbb47416cb18501df18b5afa9",
+            "git_blob": "4667357ea72fa67b48cd5d82a2fe52dac00bacf8"
+          }
+        },
+        {
+          "id": "skill:e2er/review/writing-quality",
+          "kind": "skill",
+          "name": "writing-quality",
+          "pin": {
+            "path": "skills/files/review/writing-quality.md",
+            "repository": "https://github.com/bhanneke/E2ER-project",
+            "commit": "f59c79fda8bfed3cbb47416cb18501df18b5afa9",
+            "git_blob": "4816a6365e45a19e97eae4dcb0aeccae7adbafed"
+          }
+        },
+        {
+          "id": "skill:e2er/synthesis/context-builder",
+          "kind": "skill",
+          "name": "context-builder",
+          "pin": {
+            "path": "skills/files/synthesis/context-builder.md",
+            "repository": "https://github.com/bhanneke/E2ER-project",
+            "commit": "f59c79fda8bfed3cbb47416cb18501df18b5afa9",
+            "git_blob": "01f557a56aee0408f8b9c97ec7476fb397d3db19"
+          }
+        },
+        {
+          "id": "skill:e2er/synthesis/replication-package",
+          "kind": "skill",
+          "name": "replication-package",
+          "pin": {
+            "path": "skills/files/synthesis/replication-package.md",
+            "repository": "https://github.com/bhanneke/E2ER-project",
+            "commit": "f59c79fda8bfed3cbb47416cb18501df18b5afa9",
+            "git_blob": "fb6da0d724bda70efe7e8966a7ed3eb46c5b81bb"
+          }
+        },
+        {
+          "id": "skill:e2er/writing/abstract",
+          "kind": "skill",
+          "name": "abstract",
+          "pin": {
+            "path": "skills/files/writing/abstract.md",
+            "repository": "https://github.com/bhanneke/E2ER-project",
+            "commit": "f59c79fda8bfed3cbb47416cb18501df18b5afa9",
+            "git_blob": "afa804b7aca2b81cc3df1411ebd454a2b2affac6"
+          }
+        },
+        {
+          "id": "skill:e2er/writing/cite-numbers-by-source",
+          "kind": "skill",
+          "name": "cite-numbers-by-source",
+          "pin": {
+            "path": "skills/files/writing/cite-numbers-by-source.md",
+            "repository": "https://github.com/bhanneke/E2ER-project",
+            "commit": "f59c79fda8bfed3cbb47416cb18501df18b5afa9",
+            "git_blob": "c4f1a9fc7cb274b25a3bc63f362dfe42d3b0adbd"
+          }
+        },
+        {
+          "id": "skill:e2er/writing/paper-structure",
+          "kind": "skill",
+          "name": "paper-structure",
+          "pin": {
+            "path": "skills/files/writing/paper-structure.md",
+            "repository": "https://github.com/bhanneke/E2ER-project",
+            "commit": "f59c79fda8bfed3cbb47416cb18501df18b5afa9",
+            "git_blob": "e618167f6e0eb90b46b0febbf8938df83d0eac81"
+          }
+        },
+        {
+          "id": "skill:e2er/writing/personal-style",
+          "kind": "skill",
+          "name": "personal-style",
+          "pin": {
+            "path": "skills/files/writing/personal-style.md",
+            "repository": "https://github.com/bhanneke/E2ER-project",
+            "commit": "f59c79fda8bfed3cbb47416cb18501df18b5afa9",
+            "git_blob": "ebd564a65583f3a4fce4fa8d1e57f03c4be016b9"
+          }
+        },
+        {
+          "id": "skill:e2er/writing/scoped-revision",
+          "kind": "skill",
+          "name": "scoped-revision",
+          "pin": {
+            "path": "skills/files/writing/scoped-revision.md",
+            "repository": "https://github.com/bhanneke/E2ER-project",
+            "commit": "f59c79fda8bfed3cbb47416cb18501df18b5afa9",
+            "git_blob": "a2675a0c92d8e7e8ed59f1b248b1a38d684b3a2a"
+          }
+        },
+        {
+          "id": "template:empirical",
+          "kind": "template",
+          "name": "empirical",
+          "pin": {
+            "path": "pipelines/empirical.toml",
+            "repository": "https://github.com/bhanneke/E2ER-project",
+            "commit": "f59c79fda8bfed3cbb47416cb18501df18b5afa9",
+            "note": "unresolved: pipelines/empirical.toml at f59c79fda8bf is not in the E2ER checkout this dossier was built from"
+          }
+        }
+      ],
+      "data": [
+        {
+          "path": "data/data_dictionary.json",
+          "sha256": "3b54e0ba62778644a81195d77c630540aa2a38edf97a9ede570058d328ba19bf"
+        },
+        {
+          "path": "data/data_sources.json",
+          "sha256": "57a6bb75a18c8a27823984465fbae4d4afc01dbbf639d8de3b57ee86cf4518f5"
+        },
+        {
+          "path": "data/data_summary.md",
+          "sha256": "285377de56fb3d7802ea146bcaa3f689ea028c406d8aaebfb24a2ec0a1ef1966"
+        }
+      ],
+      "data_sources": [
+        {
+          "connector": "yfinance",
+          "dataset": "Yahoo Finance (through yfinance)",
+          "saved_to": "data/px_BTC_USD.csv",
+          "licence": "Yahoo terms of service (https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html). The data are read through yfinance, which is not affiliated with Yahoo; its documentation refers users to Yahoo's terms for their rights to use the data and notes that the data are intended for personal use only.",
+          "terms": "https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html",
+          "citation": "Yahoo Finance, BTC-USD daily prices, retrieved through yfinance on 2026-10-05, https://finance.yahoo.com/quote/BTC-USD.",
+          "series": "BTC-USD daily prices",
+          "retrieved_at": "2026-10-05T07:57:21Z",
+          "terms_summary": "Yahoo's terms of use apply. The yfinance project notes that Yahoo's finance data are intended for personal use only; yfinance is not affiliated with Yahoo.",
+          "citation_by": "e2er",
+          "link": "https://finance.yahoo.com/quote/BTC-USD",
+          "files": []
+        },
+        {
+          "connector": "yfinance",
+          "dataset": "Yahoo Finance (through yfinance)",
+          "saved_to": "data/px_ETH_USD.csv",
+          "licence": "Yahoo terms of service (https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html). The data are read through yfinance, which is not affiliated with Yahoo; its documentation refers users to Yahoo's terms for their rights to use the data and notes that the data are intended for personal use only.",
+          "terms": "https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html",
+          "citation": "Yahoo Finance, ETH-USD daily prices, retrieved through yfinance on 2026-10-05, https://finance.yahoo.com/quote/ETH-USD.",
+          "series": "ETH-USD daily prices",
+          "retrieved_at": "2026-10-05T07:57:23Z",
+          "terms_summary": "Yahoo's terms of use apply. The yfinance project notes that Yahoo's finance data are intended for personal use only; yfinance is not affiliated with Yahoo.",
+          "citation_by": "e2er",
+          "link": "https://finance.yahoo.com/quote/ETH-USD",
+          "files": []
+        },
+        {
+          "connector": "yfinance",
+          "dataset": "Yahoo Finance (through yfinance)",
+          "saved_to": "data/px_SOL_USD.csv",
+          "licence": "Yahoo terms of service (https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html). The data are read through yfinance, which is not affiliated with Yahoo; its documentation refers users to Yahoo's terms for their rights to use the data and notes that the data are intended for personal use only.",
+          "terms": "https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html",
+          "citation": "Yahoo Finance, SOL-USD daily prices, retrieved through yfinance on 2026-10-05, https://finance.yahoo.com/quote/SOL-USD.",
+          "series": "SOL-USD daily prices",
+          "retrieved_at": "2026-10-05T07:57:25Z",
+          "terms_summary": "Yahoo's terms of use apply. The yfinance project notes that Yahoo's finance data are intended for personal use only; yfinance is not affiliated with Yahoo.",
+          "citation_by": "e2er",
+          "link": "https://finance.yahoo.com/quote/SOL-USD",
+          "files": []
+        },
+        {
+          "connector": "yfinance",
+          "dataset": "Yahoo Finance (through yfinance)",
+          "saved_to": "data/px_XRP_USD.csv",
+          "licence": "Yahoo terms of service (https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html). The data are read through yfinance, which is not affiliated with Yahoo; its documentation refers users to Yahoo's terms for their rights to use the data and notes that the data are intended for personal use only.",
+          "terms": "https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html",
+          "citation": "Yahoo Finance, XRP-USD daily prices, retrieved through yfinance on 2026-10-05, https://finance.yahoo.com/quote/XRP-USD.",
+          "series": "XRP-USD daily prices",
+          "retrieved_at": "2026-10-05T07:57:26Z",
+          "terms_summary": "Yahoo's terms of use apply. The yfinance project notes that Yahoo's finance data are intended for personal use only; yfinance is not affiliated with Yahoo.",
+          "citation_by": "e2er",
+          "link": "https://finance.yahoo.com/quote/XRP-USD",
+          "files": []
+        },
+        {
+          "connector": "yfinance",
+          "dataset": "Yahoo Finance (through yfinance)",
+          "saved_to": "data/px_LTC_USD.csv",
+          "licence": "Yahoo terms of service (https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html). The data are read through yfinance, which is not affiliated with Yahoo; its documentation refers users to Yahoo's terms for their rights to use the data and notes that the data are intended for personal use only.",
+          "terms": "https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html",
+          "citation": "Yahoo Finance, LTC-USD daily prices, retrieved through yfinance on 2026-10-05, https://finance.yahoo.com/quote/LTC-USD.",
+          "series": "LTC-USD daily prices",
+          "retrieved_at": "2026-10-05T07:57:28Z",
+          "terms_summary": "Yahoo's terms of use apply. The yfinance project notes that Yahoo's finance data are intended for personal use only; yfinance is not affiliated with Yahoo.",
+          "citation_by": "e2er",
+          "link": "https://finance.yahoo.com/quote/LTC-USD",
+          "files": []
+        },
+        {
+          "connector": "yfinance",
+          "dataset": "Yahoo Finance (through yfinance)",
+          "saved_to": "data/px_BNB_USD.csv",
+          "licence": "Yahoo terms of service (https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html). The data are read through yfinance, which is not affiliated with Yahoo; its documentation refers users to Yahoo's terms for their rights to use the data and notes that the data are intended for personal use only.",
+          "terms": "https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html",
+          "citation": "Yahoo Finance, BNB-USD daily prices, retrieved through yfinance on 2026-10-05, https://finance.yahoo.com/quote/BNB-USD.",
+          "series": "BNB-USD daily prices",
+          "retrieved_at": "2026-10-05T07:57:29Z",
+          "terms_summary": "Yahoo's terms of use apply. The yfinance project notes that Yahoo's finance data are intended for personal use only; yfinance is not affiliated with Yahoo.",
+          "citation_by": "e2er",
+          "link": "https://finance.yahoo.com/quote/BNB-USD",
+          "files": []
+        },
+        {
+          "connector": "yfinance",
+          "dataset": "Yahoo Finance (through yfinance)",
+          "saved_to": "data/px_ADA_USD.csv",
+          "licence": "Yahoo terms of service (https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html). The data are read through yfinance, which is not affiliated with Yahoo; its documentation refers users to Yahoo's terms for their rights to use the data and notes that the data are intended for personal use only.",
+          "terms": "https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html",
+          "citation": "Yahoo Finance, ADA-USD daily prices, retrieved through yfinance on 2026-10-05, https://finance.yahoo.com/quote/ADA-USD.",
+          "series": "ADA-USD daily prices",
+          "retrieved_at": "2026-10-05T07:57:31Z",
+          "terms_summary": "Yahoo's terms of use apply. The yfinance project notes that Yahoo's finance data are intended for personal use only; yfinance is not affiliated with Yahoo.",
+          "citation_by": "e2er",
+          "link": "https://finance.yahoo.com/quote/ADA-USD",
+          "files": []
+        },
+        {
+          "connector": "yfinance",
+          "dataset": "Yahoo Finance (through yfinance)",
+          "saved_to": "data/px_DOGE_USD.csv",
+          "licence": "Yahoo terms of service (https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html). The data are read through yfinance, which is not affiliated with Yahoo; its documentation refers users to Yahoo's terms for their rights to use the data and notes that the data are intended for personal use only.",
+          "terms": "https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html",
+          "citation": "Yahoo Finance, DOGE-USD daily prices, retrieved through yfinance on 2026-10-05, https://finance.yahoo.com/quote/DOGE-USD.",
+          "series": "DOGE-USD daily prices",
+          "retrieved_at": "2026-10-05T07:57:32Z",
+          "terms_summary": "Yahoo's terms of use apply. The yfinance project notes that Yahoo's finance data are intended for personal use only; yfinance is not affiliated with Yahoo.",
+          "citation_by": "e2er",
+          "link": "https://finance.yahoo.com/quote/DOGE-USD",
+          "files": []
+        },
+        {
+          "connector": "yfinance",
+          "dataset": "Yahoo Finance (through yfinance)",
+          "saved_to": "data/px_BCH_USD.csv",
+          "licence": "Yahoo terms of service (https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html). The data are read through yfinance, which is not affiliated with Yahoo; its documentation refers users to Yahoo's terms for their rights to use the data and notes that the data are intended for personal use only.",
+          "terms": "https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html",
+          "citation": "Yahoo Finance, BCH-USD daily prices, retrieved through yfinance on 2026-10-05, https://finance.yahoo.com/quote/BCH-USD.",
+          "series": "BCH-USD daily prices",
+          "retrieved_at": "2026-10-05T07:57:34Z",
+          "terms_summary": "Yahoo's terms of use apply. The yfinance project notes that Yahoo's finance data are intended for personal use only; yfinance is not affiliated with Yahoo.",
+          "citation_by": "e2er",
+          "link": "https://finance.yahoo.com/quote/BCH-USD",
+          "files": []
+        },
+        {
+          "connector": "yfinance",
+          "dataset": "Yahoo Finance (through yfinance)",
+          "saved_to": "data/px_LINK_USD.csv",
+          "licence": "Yahoo terms of service (https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html). The data are read through yfinance, which is not affiliated with Yahoo; its documentation refers users to Yahoo's terms for their rights to use the data and notes that the data are intended for personal use only.",
+          "terms": "https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html",
+          "citation": "Yahoo Finance, LINK-USD daily prices, retrieved through yfinance on 2026-10-05, https://finance.yahoo.com/quote/LINK-USD.",
+          "series": "LINK-USD daily prices",
+          "retrieved_at": "2026-10-05T07:57:36Z",
+          "terms_summary": "Yahoo's terms of use apply. The yfinance project notes that Yahoo's finance data are intended for personal use only; yfinance is not affiliated with Yahoo.",
+          "citation_by": "e2er",
+          "link": "https://finance.yahoo.com/quote/LINK-USD",
+          "files": []
+        },
+        {
+          "connector": "yfinance",
+          "dataset": "Yahoo Finance (through yfinance)",
+          "saved_to": "data/px_AVAX_USD.csv",
+          "licence": "Yahoo terms of service (https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html). The data are read through yfinance, which is not affiliated with Yahoo; its documentation refers users to Yahoo's terms for their rights to use the data and notes that the data are intended for personal use only.",
+          "terms": "https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html",
+          "citation": "Yahoo Finance, AVAX-USD daily prices, retrieved through yfinance on 2026-10-05, https://finance.yahoo.com/quote/AVAX-USD.",
+          "series": "AVAX-USD daily prices",
+          "retrieved_at": "2026-10-05T07:57:37Z",
+          "terms_summary": "Yahoo's terms of use apply. The yfinance project notes that Yahoo's finance data are intended for personal use only; yfinance is not affiliated with Yahoo.",
+          "citation_by": "e2er",
+          "link": "https://finance.yahoo.com/quote/AVAX-USD",
+          "files": []
+        },
+        {
+          "connector": "yfinance",
+          "dataset": "Yahoo Finance (through yfinance)",
+          "saved_to": "data/px_DOT_USD.csv",
+          "licence": "Yahoo terms of service (https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html). The data are read through yfinance, which is not affiliated with Yahoo; its documentation refers users to Yahoo's terms for their rights to use the data and notes that the data are intended for personal use only.",
+          "terms": "https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html",
+          "citation": "Yahoo Finance, DOT-USD daily prices, retrieved through yfinance on 2026-10-05, https://finance.yahoo.com/quote/DOT-USD.",
+          "series": "DOT-USD daily prices",
+          "retrieved_at": "2026-10-05T07:57:39Z",
+          "terms_summary": "Yahoo's terms of use apply. The yfinance project notes that Yahoo's finance data are intended for personal use only; yfinance is not affiliated with Yahoo.",
+          "citation_by": "e2er",
+          "link": "https://finance.yahoo.com/quote/DOT-USD",
+          "files": []
+        },
+        {
+          "connector": "yfinance",
+          "dataset": "Yahoo Finance (through yfinance)",
+          "saved_to": "data/px_XLM_USD.csv",
+          "licence": "Yahoo terms of service (https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html). The data are read through yfinance, which is not affiliated with Yahoo; its documentation refers users to Yahoo's terms for their rights to use the data and notes that the data are intended for personal use only.",
+          "terms": "https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html",
+          "citation": "Yahoo Finance, XLM-USD daily prices, retrieved through yfinance on 2026-10-05, https://finance.yahoo.com/quote/XLM-USD.",
+          "series": "XLM-USD daily prices",
+          "retrieved_at": "2026-10-05T07:57:40Z",
+          "terms_summary": "Yahoo's terms of use apply. The yfinance project notes that Yahoo's finance data are intended for personal use only; yfinance is not affiliated with Yahoo.",
+          "citation_by": "e2er",
+          "link": "https://finance.yahoo.com/quote/XLM-USD",
+          "files": []
+        },
+        {
+          "connector": "yfinance",
+          "dataset": "Yahoo Finance (through yfinance)",
+          "saved_to": "data/px_SPY.csv",
+          "licence": "Yahoo terms of service (https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html). The data are read through yfinance, which is not affiliated with Yahoo; its documentation refers users to Yahoo's terms for their rights to use the data and notes that the data are intended for personal use only.",
+          "terms": "https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html",
+          "citation": "Yahoo Finance, SPY daily prices, retrieved through yfinance on 2026-10-05, https://finance.yahoo.com/quote/SPY.",
+          "series": "SPY daily prices",
+          "retrieved_at": "2026-10-05T07:57:42Z",
+          "terms_summary": "Yahoo's terms of use apply. The yfinance project notes that Yahoo's finance data are intended for personal use only; yfinance is not affiliated with Yahoo.",
+          "citation_by": "e2er",
+          "link": "https://finance.yahoo.com/quote/SPY",
+          "files": []
+        },
+        {
+          "connector": "yfinance",
+          "dataset": "Yahoo Finance (through yfinance)",
+          "saved_to": "data/px_QQQ.csv",
+          "licence": "Yahoo terms of service (https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html). The data are read through yfinance, which is not affiliated with Yahoo; its documentation refers users to Yahoo's terms for their rights to use the data and notes that the data are intended for personal use only.",
+          "terms": "https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html",
+          "citation": "Yahoo Finance, QQQ daily prices, retrieved through yfinance on 2026-10-05, https://finance.yahoo.com/quote/QQQ.",
+          "series": "QQQ daily prices",
+          "retrieved_at": "2026-10-05T07:57:44Z",
+          "terms_summary": "Yahoo's terms of use apply. The yfinance project notes that Yahoo's finance data are intended for personal use only; yfinance is not affiliated with Yahoo.",
+          "citation_by": "e2er",
+          "link": "https://finance.yahoo.com/quote/QQQ",
+          "files": []
+        },
+        {
+          "connector": "yfinance",
+          "dataset": "Yahoo Finance (through yfinance)",
+          "saved_to": "data/px_IWM.csv",
+          "licence": "Yahoo terms of service (https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html). The data are read through yfinance, which is not affiliated with Yahoo; its documentation refers users to Yahoo's terms for their rights to use the data and notes that the data are intended for personal use only.",
+          "terms": "https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html",
+          "citation": "Yahoo Finance, IWM daily prices, retrieved through yfinance on 2026-10-05, https://finance.yahoo.com/quote/IWM.",
+          "series": "IWM daily prices",
+          "retrieved_at": "2026-10-05T07:57:45Z",
+          "terms_summary": "Yahoo's terms of use apply. The yfinance project notes that Yahoo's finance data are intended for personal use only; yfinance is not affiliated with Yahoo.",
+          "citation_by": "e2er",
+          "link": "https://finance.yahoo.com/quote/IWM",
+          "files": []
+        },
+        {
+          "connector": "yfinance",
+          "dataset": "Yahoo Finance (through yfinance)",
+          "saved_to": "data/px_ARKK.csv",
+          "licence": "Yahoo terms of service (https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html). The data are read through yfinance, which is not affiliated with Yahoo; its documentation refers users to Yahoo's terms for their rights to use the data and notes that the data are intended for personal use only.",
+          "terms": "https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html",
+          "citation": "Yahoo Finance, ARKK daily prices, retrieved through yfinance on 2026-10-05, https://finance.yahoo.com/quote/ARKK.",
+          "series": "ARKK daily prices",
+          "retrieved_at": "2026-10-05T07:57:47Z",
+          "terms_summary": "Yahoo's terms of use apply. The yfinance project notes that Yahoo's finance data are intended for personal use only; yfinance is not affiliated with Yahoo.",
+          "citation_by": "e2er",
+          "link": "https://finance.yahoo.com/quote/ARKK",
+          "files": []
+        },
+        {
+          "connector": "yfinance",
+          "dataset": "Yahoo Finance (through yfinance)",
+          "saved_to": "data/px_XLK.csv",
+          "licence": "Yahoo terms of service (https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html). The data are read through yfinance, which is not affiliated with Yahoo; its documentation refers users to Yahoo's terms for their rights to use the data and notes that the data are intended for personal use only.",
+          "terms": "https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html",
+          "citation": "Yahoo Finance, XLK daily prices, retrieved through yfinance on 2026-10-05, https://finance.yahoo.com/quote/XLK.",
+          "series": "XLK daily prices",
+          "retrieved_at": "2026-10-05T07:57:48Z",
+          "terms_summary": "Yahoo's terms of use apply. The yfinance project notes that Yahoo's finance data are intended for personal use only; yfinance is not affiliated with Yahoo.",
+          "citation_by": "e2er",
+          "link": "https://finance.yahoo.com/quote/XLK",
+          "files": []
+        },
+        {
+          "connector": "yfinance",
+          "dataset": "Yahoo Finance (through yfinance)",
+          "saved_to": "data/px_ACWX.csv",
+          "licence": "Yahoo terms of service (https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html). The data are read through yfinance, which is not affiliated with Yahoo; its documentation refers users to Yahoo's terms for their rights to use the data and notes that the data are intended for personal use only.",
+          "terms": "https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html",
+          "citation": "Yahoo Finance, ACWX daily prices, retrieved through yfinance on 2026-10-05, https://finance.yahoo.com/quote/ACWX.",
+          "series": "ACWX daily prices",
+          "retrieved_at": "2026-10-05T07:57:50Z",
+          "terms_summary": "Yahoo's terms of use apply. The yfinance project notes that Yahoo's finance data are intended for personal use only; yfinance is not affiliated with Yahoo.",
+          "citation_by": "e2er",
+          "link": "https://finance.yahoo.com/quote/ACWX",
+          "files": []
+        },
+        {
+          "connector": "yfinance",
+          "dataset": "Yahoo Finance (through yfinance)",
+          "saved_to": "data/px_GLD.csv",
+          "licence": "Yahoo terms of service (https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html). The data are read through yfinance, which is not affiliated with Yahoo; its documentation refers users to Yahoo's terms for their rights to use the data and notes that the data are intended for personal use only.",
+          "terms": "https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html",
+          "citation": "Yahoo Finance, GLD daily prices, retrieved through yfinance on 2026-10-05, https://finance.yahoo.com/quote/GLD.",
+          "series": "GLD daily prices",
+          "retrieved_at": "2026-10-05T07:57:52Z",
+          "terms_summary": "Yahoo's terms of use apply. The yfinance project notes that Yahoo's finance data are intended for personal use only; yfinance is not affiliated with Yahoo.",
+          "citation_by": "e2er",
+          "link": "https://finance.yahoo.com/quote/GLD",
+          "files": []
+        },
+        {
+          "connector": "yfinance",
+          "dataset": "Yahoo Finance (through yfinance)",
+          "saved_to": "data/px_SLV.csv",
+          "licence": "Yahoo terms of service (https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html). The data are read through yfinance, which is not affiliated with Yahoo; its documentation refers users to Yahoo's terms for their rights to use the data and notes that the data are intended for personal use only.",
+          "terms": "https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html",
+          "citation": "Yahoo Finance, SLV daily prices, retrieved through yfinance on 2026-10-05, https://finance.yahoo.com/quote/SLV.",
+          "series": "SLV daily prices",
+          "retrieved_at": "2026-10-05T07:57:53Z",
+          "terms_summary": "Yahoo's terms of use apply. The yfinance project notes that Yahoo's finance data are intended for personal use only; yfinance is not affiliated with Yahoo.",
+          "citation_by": "e2er",
+          "link": "https://finance.yahoo.com/quote/SLV",
+          "files": []
+        },
+        {
+          "connector": "yfinance",
+          "dataset": "Yahoo Finance (through yfinance)",
+          "saved_to": "data/px_GSPC.csv",
+          "licence": "Yahoo terms of service (https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html). The data are read through yfinance, which is not affiliated with Yahoo; its documentation refers users to Yahoo's terms for their rights to use the data and notes that the data are intended for personal use only.",
+          "terms": "https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html",
+          "citation": "Yahoo Finance, ^GSPC daily prices, retrieved through yfinance on 2026-10-05, https://finance.yahoo.com/quote/^GSPC.",
+          "series": "^GSPC daily prices",
+          "retrieved_at": "2026-10-05T07:57:54Z",
+          "terms_summary": "Yahoo's terms of use apply. The yfinance project notes that Yahoo's finance data are intended for personal use only; yfinance is not affiliated with Yahoo.",
+          "citation_by": "e2er",
+          "link": "https://finance.yahoo.com/quote/^GSPC",
+          "files": []
+        },
+        {
+          "connector": "yfinance",
+          "dataset": "Yahoo Finance (through yfinance)",
+          "saved_to": "data/px_VIX.csv",
+          "licence": "Yahoo terms of service (https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html). The data are read through yfinance, which is not affiliated with Yahoo; its documentation refers users to Yahoo's terms for their rights to use the data and notes that the data are intended for personal use only.",
+          "terms": "https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html",
+          "citation": "Yahoo Finance, ^VIX daily prices, retrieved through yfinance on 2026-10-05, https://finance.yahoo.com/quote/^VIX.",
+          "series": "^VIX daily prices",
+          "retrieved_at": "2026-10-05T07:57:56Z",
+          "terms_summary": "Yahoo's terms of use apply. The yfinance project notes that Yahoo's finance data are intended for personal use only; yfinance is not affiliated with Yahoo.",
+          "citation_by": "e2er",
+          "link": "https://finance.yahoo.com/quote/^VIX",
+          "files": []
+        },
+        {
+          "connector": "yfinance",
+          "dataset": "Yahoo Finance (through yfinance)",
+          "saved_to": "data/px_MOVE.csv",
+          "licence": "Yahoo terms of service (https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html). The data are read through yfinance, which is not affiliated with Yahoo; its documentation refers users to Yahoo's terms for their rights to use the data and notes that the data are intended for personal use only.",
+          "terms": "https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html",
+          "citation": "Yahoo Finance, ^MOVE daily prices, retrieved through yfinance on 2026-10-05, https://finance.yahoo.com/quote/^MOVE.",
+          "series": "^MOVE daily prices",
+          "retrieved_at": "2026-10-05T07:57:58Z",
+          "terms_summary": "Yahoo's terms of use apply. The yfinance project notes that Yahoo's finance data are intended for personal use only; yfinance is not affiliated with Yahoo.",
+          "citation_by": "e2er",
+          "link": "https://finance.yahoo.com/quote/^MOVE",
+          "files": []
+        },
+        {
+          "connector": "yfinance",
+          "dataset": "Yahoo Finance (through yfinance)",
+          "saved_to": "data/px_TNX.csv",
+          "licence": "Yahoo terms of service (https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html). The data are read through yfinance, which is not affiliated with Yahoo; its documentation refers users to Yahoo's terms for their rights to use the data and notes that the data are intended for personal use only.",
+          "terms": "https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html",
+          "citation": "Yahoo Finance, ^TNX daily prices, retrieved through yfinance on 2026-10-05, https://finance.yahoo.com/quote/^TNX.",
+          "series": "^TNX daily prices",
+          "retrieved_at": "2026-10-05T07:58:00Z",
+          "terms_summary": "Yahoo's terms of use apply. The yfinance project notes that Yahoo's finance data are intended for personal use only; yfinance is not affiliated with Yahoo.",
+          "citation_by": "e2er",
+          "link": "https://finance.yahoo.com/quote/^TNX",
+          "files": []
+        },
+        {
+          "connector": "yfinance",
+          "dataset": "Yahoo Finance (through yfinance)",
+          "saved_to": "data/px_DXY.csv",
+          "licence": "Yahoo terms of service (https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html). The data are read through yfinance, which is not affiliated with Yahoo; its documentation refers users to Yahoo's terms for their rights to use the data and notes that the data are intended for personal use only.",
+          "terms": "https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html",
+          "citation": "Yahoo Finance, DX-Y.NYB daily prices, retrieved through yfinance on 2026-10-05, https://finance.yahoo.com/quote/DX-Y.NYB.",
+          "series": "DX-Y.NYB daily prices",
+          "retrieved_at": "2026-10-05T07:58:01Z",
+          "terms_summary": "Yahoo's terms of use apply. The yfinance project notes that Yahoo's finance data are intended for personal use only; yfinance is not affiliated with Yahoo.",
+          "citation_by": "e2er",
+          "link": "https://finance.yahoo.com/quote/DX-Y.NYB",
+          "files": []
+        },
+        {
+          "connector": "yfinance",
+          "dataset": "Yahoo Finance (through yfinance)",
+          "saved_to": "data/etf_IBIT.csv",
+          "licence": "Yahoo terms of service (https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html). The data are read through yfinance, which is not affiliated with Yahoo; its documentation refers users to Yahoo's terms for their rights to use the data and notes that the data are intended for personal use only.",
+          "terms": "https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html",
+          "citation": "Yahoo Finance, IBIT daily prices, retrieved through yfinance on 2026-10-05, https://finance.yahoo.com/quote/IBIT.",
+          "series": "IBIT daily prices",
+          "retrieved_at": "2026-10-05T07:58:02Z",
+          "terms_summary": "Yahoo's terms of use apply. The yfinance project notes that Yahoo's finance data are intended for personal use only; yfinance is not affiliated with Yahoo.",
+          "citation_by": "e2er",
+          "link": "https://finance.yahoo.com/quote/IBIT",
+          "files": []
+        },
+        {
+          "connector": "yfinance",
+          "dataset": "Yahoo Finance (through yfinance)",
+          "saved_to": "data/etf_FBTC.csv",
+          "licence": "Yahoo terms of service (https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html). The data are read through yfinance, which is not affiliated with Yahoo; its documentation refers users to Yahoo's terms for their rights to use the data and notes that the data are intended for personal use only.",
+          "terms": "https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html",
+          "citation": "Yahoo Finance, FBTC daily prices, retrieved through yfinance on 2026-10-05, https://finance.yahoo.com/quote/FBTC.",
+          "series": "FBTC daily prices",
+          "retrieved_at": "2026-10-05T07:58:04Z",
+          "terms_summary": "Yahoo's terms of use apply. The yfinance project notes that Yahoo's finance data are intended for personal use only; yfinance is not affiliated with Yahoo.",
+          "citation_by": "e2er",
+          "link": "https://finance.yahoo.com/quote/FBTC",
+          "files": []
+        },
+        {
+          "connector": "yfinance",
+          "dataset": "Yahoo Finance (through yfinance)",
+          "saved_to": "data/etf_GBTC.csv",
+          "licence": "Yahoo terms of service (https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html). The data are read through yfinance, which is not affiliated with Yahoo; its documentation refers users to Yahoo's terms for their rights to use the data and notes that the data are intended for personal use only.",
+          "terms": "https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html",
+          "citation": "Yahoo Finance, GBTC daily prices, retrieved through yfinance on 2026-10-05, https://finance.yahoo.com/quote/GBTC.",
+          "series": "GBTC daily prices",
+          "retrieved_at": "2026-10-05T07:58:05Z",
+          "terms_summary": "Yahoo's terms of use apply. The yfinance project notes that Yahoo's finance data are intended for personal use only; yfinance is not affiliated with Yahoo.",
+          "citation_by": "e2er",
+          "link": "https://finance.yahoo.com/quote/GBTC",
+          "files": []
+        },
+        {
+          "connector": "yfinance",
+          "dataset": "Yahoo Finance (through yfinance)",
+          "saved_to": "data/etf_ARKB.csv",
+          "licence": "Yahoo terms of service (https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html). The data are read through yfinance, which is not affiliated with Yahoo; its documentation refers users to Yahoo's terms for their rights to use the data and notes that the data are intended for personal use only.",
+          "terms": "https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html",
+          "citation": "Yahoo Finance, ARKB daily prices, retrieved through yfinance on 2026-10-05, https://finance.yahoo.com/quote/ARKB.",
+          "series": "ARKB daily prices",
+          "retrieved_at": "2026-10-05T07:58:07Z",
+          "terms_summary": "Yahoo's terms of use apply. The yfinance project notes that Yahoo's finance data are intended for personal use only; yfinance is not affiliated with Yahoo.",
+          "citation_by": "e2er",
+          "link": "https://finance.yahoo.com/quote/ARKB",
+          "files": []
+        },
+        {
+          "connector": "yfinance",
+          "dataset": "Yahoo Finance (through yfinance)",
+          "saved_to": "data/etf_BITB.csv",
+          "licence": "Yahoo terms of service (https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html). The data are read through yfinance, which is not affiliated with Yahoo; its documentation refers users to Yahoo's terms for their rights to use the data and notes that the data are intended for personal use only.",
+          "terms": "https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html",
+          "citation": "Yahoo Finance, BITB daily prices, retrieved through yfinance on 2026-10-05, https://finance.yahoo.com/quote/BITB.",
+          "series": "BITB daily prices",
+          "retrieved_at": "2026-10-05T07:58:09Z",
+          "terms_summary": "Yahoo's terms of use apply. The yfinance project notes that Yahoo's finance data are intended for personal use only; yfinance is not affiliated with Yahoo.",
+          "citation_by": "e2er",
+          "link": "https://finance.yahoo.com/quote/BITB",
+          "files": []
+        },
+        {
+          "connector": "yfinance",
+          "dataset": "Yahoo Finance (through yfinance)",
+          "saved_to": "data/etf_BTCO.csv",
+          "licence": "Yahoo terms of service (https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html). The data are read through yfinance, which is not affiliated with Yahoo; its documentation refers users to Yahoo's terms for their rights to use the data and notes that the data are intended for personal use only.",
+          "terms": "https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html",
+          "citation": "Yahoo Finance, BTCO daily prices, retrieved through yfinance on 2026-10-05, https://finance.yahoo.com/quote/BTCO.",
+          "series": "BTCO daily prices",
+          "retrieved_at": "2026-10-05T07:58:10Z",
+          "terms_summary": "Yahoo's terms of use apply. The yfinance project notes that Yahoo's finance data are intended for personal use only; yfinance is not affiliated with Yahoo.",
+          "citation_by": "e2er",
+          "link": "https://finance.yahoo.com/quote/BTCO",
+          "files": []
+        },
+        {
+          "connector": "yfinance",
+          "dataset": "Yahoo Finance (through yfinance)",
+          "saved_to": "data/etf_EZBC.csv",
+          "licence": "Yahoo terms of service (https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html). The data are read through yfinance, which is not affiliated with Yahoo; its documentation refers users to Yahoo's terms for their rights to use the data and notes that the data are intended for personal use only.",
+          "terms": "https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html",
+          "citation": "Yahoo Finance, EZBC daily prices, retrieved through yfinance on 2026-10-05, https://finance.yahoo.com/quote/EZBC.",
+          "series": "EZBC daily prices",
+          "retrieved_at": "2026-10-05T07:58:12Z",
+          "terms_summary": "Yahoo's terms of use apply. The yfinance project notes that Yahoo's finance data are intended for personal use only; yfinance is not affiliated with Yahoo.",
+          "citation_by": "e2er",
+          "link": "https://finance.yahoo.com/quote/EZBC",
+          "files": []
+        },
+        {
+          "connector": "yfinance",
+          "dataset": "Yahoo Finance (through yfinance)",
+          "saved_to": "data/etf_BRRR.csv",
+          "licence": "Yahoo terms of service (https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html). The data are read through yfinance, which is not affiliated with Yahoo; its documentation refers users to Yahoo's terms for their rights to use the data and notes that the data are intended for personal use only.",
+          "terms": "https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html",
+          "citation": "Yahoo Finance, BRRR daily prices, retrieved through yfinance on 2026-10-05, https://finance.yahoo.com/quote/BRRR.",
+          "series": "BRRR daily prices",
+          "retrieved_at": "2026-10-05T07:58:13Z",
+          "terms_summary": "Yahoo's terms of use apply. The yfinance project notes that Yahoo's finance data are intended for personal use only; yfinance is not affiliated with Yahoo.",
+          "citation_by": "e2er",
+          "link": "https://finance.yahoo.com/quote/BRRR",
+          "files": []
+        },
+        {
+          "connector": "yfinance",
+          "dataset": "Yahoo Finance (through yfinance)",
+          "saved_to": "data/etf_HODL.csv",
+          "licence": "Yahoo terms of service (https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html). The data are read through yfinance, which is not affiliated with Yahoo; its documentation refers users to Yahoo's terms for their rights to use the data and notes that the data are intended for personal use only.",
+          "terms": "https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html",
+          "citation": "Yahoo Finance, HODL daily prices, retrieved through yfinance on 2026-10-05, https://finance.yahoo.com/quote/HODL.",
+          "series": "HODL daily prices",
+          "retrieved_at": "2026-10-05T07:58:15Z",
+          "terms_summary": "Yahoo's terms of use apply. The yfinance project notes that Yahoo's finance data are intended for personal use only; yfinance is not affiliated with Yahoo.",
+          "citation_by": "e2er",
+          "link": "https://finance.yahoo.com/quote/HODL",
+          "files": []
+        },
+        {
+          "connector": "yfinance",
+          "dataset": "Yahoo Finance (through yfinance)",
+          "saved_to": "data/etf_BTCW.csv",
+          "licence": "Yahoo terms of service (https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html). The data are read through yfinance, which is not affiliated with Yahoo; its documentation refers users to Yahoo's terms for their rights to use the data and notes that the data are intended for personal use only.",
+          "terms": "https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html",
+          "citation": "Yahoo Finance, BTCW daily prices, retrieved through yfinance on 2026-10-05, https://finance.yahoo.com/quote/BTCW.",
+          "series": "BTCW daily prices",
+          "retrieved_at": "2026-10-05T07:58:16Z",
+          "terms_summary": "Yahoo's terms of use apply. The yfinance project notes that Yahoo's finance data are intended for personal use only; yfinance is not affiliated with Yahoo.",
+          "citation_by": "e2er",
+          "link": "https://finance.yahoo.com/quote/BTCW",
+          "files": []
+        },
+        {
+          "connector": "yfinance",
+          "dataset": "Yahoo Finance (through yfinance)",
+          "saved_to": "data/etf_BITO.csv",
+          "licence": "Yahoo terms of service (https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html). The data are read through yfinance, which is not affiliated with Yahoo; its documentation refers users to Yahoo's terms for their rights to use the data and notes that the data are intended for personal use only.",
+          "terms": "https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html",
+          "citation": "Yahoo Finance, BITO daily prices, retrieved through yfinance on 2026-10-05, https://finance.yahoo.com/quote/BITO.",
+          "series": "BITO daily prices",
+          "retrieved_at": "2026-10-05T07:58:18Z",
+          "terms_summary": "Yahoo's terms of use apply. The yfinance project notes that Yahoo's finance data are intended for personal use only; yfinance is not affiliated with Yahoo.",
+          "citation_by": "e2er",
+          "link": "https://finance.yahoo.com/quote/BITO",
+          "files": []
+        }
+      ],
+      "workflow": [
+        {
+          "type": "specialist",
+          "phase": "initial",
+          "specialist": "idea_developer",
+          "segment": 0,
+          "backend": "claude_code",
+          "model": "claude-sonnet-4-5",
+          "started": "2026-09-11T09:48:20Z",
+          "ended": "2026-09-11T09:50:45Z",
+          "accepted": true,
+          "output": {
+            "file": "design/paper_plan.md",
+            "recorded": false,
+            "exported": true,
+            "sha256_at_export": "a480534a2cc7dacb2c7783c5413fea04f6969c7bf3b2eafa0e2f3714322442cf"
+          }
+        },
+        {
+          "type": "specialist",
+          "phase": "initial",
+          "specialist": "literature_scanner",
+          "segment": 0,
+          "backend": "claude_code",
+          "model": "claude-sonnet-4-5",
+          "started": "2026-09-11T09:50:45Z",
+          "ended": "2026-09-11T09:55:26Z",
+          "accepted": true,
+          "output": {
+            "file": "design/literature_review.md",
+            "recorded": false,
+            "exported": true,
+            "sha256_at_export": "e519715654e6f5358360d57b013437819410fa54af546865b0c42a236379a585"
+          }
+        },
+        {
+          "type": "specialist",
+          "phase": "initial",
+          "specialist": "identification_strategist",
+          "segment": 0,
+          "backend": "claude_code",
+          "model": "claude-sonnet-4-5",
+          "started": "2026-09-11T09:55:26Z",
+          "ended": "2026-09-11T09:58:02Z",
+          "accepted": true,
+          "output": {
+            "file": "design/identification_strategy.md",
+            "recorded": false,
+            "exported": true,
+            "sha256_at_export": "42aa7aa611a4155a12cab1cadf7cc8348772326b710bda981ecb32f8b18035fb"
+          }
+        },
+        {
+          "type": "specialist",
+          "phase": "initial",
+          "specialist": "data_architect",
+          "segment": 0,
+          "backend": "claude_code",
+          "model": "claude-sonnet-4-5",
+          "started": "2026-09-11T09:58:02Z",
+          "ended": "2026-09-11T10:02:15Z",
+          "accepted": true,
+          "output": {
+            "file": "data/data_dictionary.json",
+            "recorded": false,
+            "exported": true,
+            "sha256_at_export": "3b54e0ba62778644a81195d77c630540aa2a38edf97a9ede570058d328ba19bf"
+          }
+        },
+        {
+          "type": "specialist",
+          "phase": "initial",
+          "specialist": "data_analyst",
+          "segment": 0,
+          "backend": "claude_code",
+          "model": "claude-sonnet-4-5",
+          "started": "2026-09-11T10:02:15Z",
+          "ended": "2026-09-11T10:08:09Z",
+          "accepted": true,
+          "output": {
+            "file": "data/data_summary.md",
+            "recorded": false,
+            "exported": true,
+            "sha256_at_export": "285377de56fb3d7802ea146bcaa3f689ea028c406d8aaebfb24a2ec0a1ef1966"
+          }
+        },
+        {
+          "type": "specialist",
+          "phase": "initial",
+          "specialist": "econometrics_specialist",
+          "segment": 0,
+          "backend": "claude_code",
+          "model": "claude-sonnet-4-5",
+          "started": "2026-09-11T10:08:09Z",
+          "ended": "2026-09-11T10:18:38Z",
+          "accepted": true,
+          "output": {
+            "file": "design/econometric_spec.md",
+            "recorded": false,
+            "exported": true,
+            "sha256_at_export": "ae90ccb7350cd91962305222186259ceb37394abbc47bdb5c186331fb625e5ec"
+          }
+        },
+        {
+          "type": "check",
+          "phase": "initial",
+          "check": "contracts",
+          "segment": 0,
+          "passed": false,
+          "enforced": true,
+          "at": "2026-09-11T10:27:00Z",
+          "detail": "paper_draft.tex: 2 inline tabular environment(s) in the draft (14 \\input reference(s)) — tables must come from tables/*.tex via \\input so their numbers trace to result files, not from the draft itself"
+        },
+        {
+          "type": "specialist",
+          "phase": "initial",
+          "specialist": "paper_drafter",
+          "segment": 0,
+          "backend": "claude_code",
+          "model": "claude-sonnet-4-5",
+          "started": "2026-09-11T10:18:38Z",
+          "ended": "2026-09-11T10:27:00Z",
+          "accepted": false,
+          "stopped_by": "contract violation: paper_draft.tex: 2 inline tabular environment(s) in the draft (14 \\input reference(s)) — tables must come from tables/*.tex via \\input so their numbers trace to result files, not from the draft itself",
+          "output": {
+            "file": "paper/paper.tex",
+            "recorded": false,
+            "exported": true
+          }
+        },
+        {
+          "type": "specialist",
+          "phase": "initial",
+          "specialist": "abstract_writer",
+          "segment": 0,
+          "backend": "claude_code",
+          "model": "claude-sonnet-4-5",
+          "started": "2026-09-11T10:27:00Z",
+          "ended": "2026-09-11T10:28:02Z",
+          "accepted": true,
+          "output": {
+            "file": "paper/abstract.tex",
+            "recorded": false,
+            "exported": true,
+            "sha256_at_export": "4e6faf86b4ddbda0af257bc748c56f399ed1df4cf62a025c7b90aad62411cef1"
+          }
+        },
+        {
+          "type": "specialist",
+          "phase": "initial",
+          "specialist": "paper_drafter",
+          "segment": 0,
+          "backend": "claude_code",
+          "model": "claude-sonnet-4-5",
+          "started": "2026-09-11T10:28:02Z",
+          "ended": "2026-09-11T10:29:22Z",
+          "accepted": true,
+          "output": {
+            "file": "paper/paper.tex",
+            "recorded": false,
+            "exported": true,
+            "sha256_at_export": "c4c3aa51a178255f12678c4a8e84c12fcad21dddb8571bb99781a5d586d49c10"
+          }
+        },
+        {
+          "type": "check",
+          "phase": "review",
+          "check": "numbers",
+          "segment": 0,
+          "passed": true,
+          "enforced": true,
+          "at": "2026-09-11T10:29:23Z"
+        },
+        {
+          "type": "check",
+          "phase": "review",
+          "check": "citations",
+          "segment": 0,
+          "passed": true,
+          "enforced": true,
+          "at": "2026-09-11T10:29:30Z"
+        },
+        {
+          "type": "specialist",
+          "phase": "review",
+          "specialist": "mechanism_reviewer",
+          "segment": 0,
+          "backend": "claude_code",
+          "model": "claude-sonnet-4-5",
+          "started": "2026-09-11T10:29:30Z",
+          "ended": "2026-09-11T10:31:03Z",
+          "accepted": true,
+          "output": {
+            "file": "reviews/review_mechanism.md",
+            "recorded": false,
+            "exported": true,
+            "sha256_at_export": "98dc62fc705b446d20fa4bc1b6e92c07ecefba05a497d6cfd114ee65d790155d"
+          }
+        },
+        {
+          "type": "specialist",
+          "phase": "review",
+          "specialist": "technical_reviewer",
+          "segment": 0,
+          "backend": "claude_code",
+          "model": "claude-sonnet-4-5",
+          "started": "2026-09-11T10:31:03Z",
+          "ended": "2026-09-11T10:35:41Z",
+          "accepted": true,
+          "output": {
+            "file": "reviews/review_technical.md",
+            "recorded": false,
+            "exported": true,
+            "sha256_at_export": "c62e143a76fd755aa31e4daba8c559e96ab9973dff914bc9d8ef3cbc03e0143b"
+          }
+        },
+        {
+          "type": "specialist",
+          "phase": "review",
+          "specialist": "literature_reviewer",
+          "segment": 0,
+          "backend": "claude_code",
+          "model": "claude-sonnet-4-5",
+          "started": "2026-09-11T10:35:41Z",
+          "ended": "2026-09-11T10:37:27Z",
+          "accepted": true,
+          "output": {
+            "file": "reviews/review_literature.md",
+            "recorded": false,
+            "exported": true,
+            "sha256_at_export": "74b218dd43979dfc49a6e6ff045c86e7df35cb6a50ffc39480ae0f7dba5e99cb"
+          }
+        },
+        {
+          "type": "specialist",
+          "phase": "review",
+          "specialist": "writing_reviewer",
+          "segment": 0,
+          "backend": "claude_code",
+          "model": "claude-sonnet-4-5",
+          "started": "2026-09-11T10:37:27Z",
+          "ended": "2026-09-11T10:41:02Z",
+          "accepted": true,
+          "output": {
+            "file": "reviews/review_writing.md",
+            "recorded": false,
+            "exported": true,
+            "sha256_at_export": "0dda5ad6e67720a30d0d3cfd00857cc2a4e6a4805c6dc276675d608fcb08e0ff"
+          }
+        },
+        {
+          "type": "specialist",
+          "phase": "review",
+          "specialist": "data_reviewer",
+          "segment": 0,
+          "backend": "claude_code",
+          "model": "claude-sonnet-4-5",
+          "started": "2026-09-11T10:41:02Z",
+          "ended": "2026-09-11T10:44:43Z",
+          "accepted": true,
+          "output": {
+            "file": "reviews/review_data.md",
+            "recorded": false,
+            "exported": true,
+            "sha256_at_export": "db8ed1e8bca1dc80ffe44c3bf630b8bc1dd14048789cb58b8c63a00f56dde76d"
+          }
+        },
+        {
+          "type": "specialist",
+          "phase": "review",
+          "specialist": "identification_reviewer",
+          "segment": 0,
+          "backend": "claude_code",
+          "model": "claude-sonnet-4-5",
+          "started": "2026-09-11T10:44:43Z",
+          "ended": "2026-09-11T10:48:14Z",
+          "accepted": true,
+          "output": {
+            "file": "reviews/review_identification.md",
+            "recorded": false,
+            "exported": true,
+            "sha256_at_export": "6a89ce9028285c09f8ac57f48e22635fe772bed6833eb1384314c7e252f2ba9e"
+          }
+        },
+        {
+          "type": "specialist",
+          "phase": "revision",
+          "specialist": "patch_revisor",
+          "segment": 0,
+          "backend": "claude_code",
+          "model": "claude-sonnet-4-5",
+          "started": "2026-09-11T10:48:14Z",
+          "ended": "2026-09-11T10:51:38Z",
+          "accepted": true,
+          "output": {
+            "file": "misc/paper_draft.tex.edits.json",
+            "recorded": false,
+            "exported": true,
+            "sha256_at_export": "ec4f6503f012e85539017aa71ed0f03d4035c4d9dcb16710c095400c5db944ce"
+          }
+        },
+        {
+          "type": "specialist",
+          "phase": "replication",
+          "specialist": "replication_packager",
+          "segment": 0,
+          "backend": "claude_code",
+          "model": "claude-sonnet-4-5",
+          "started": "2026-09-11T10:51:38Z",
+          "ended": "2026-09-11T10:55:37Z",
+          "accepted": true,
+          "output": {
+            "file": "replication/estimation.py",
+            "recorded": false,
+            "exported": true,
+            "sha256_at_export": "4e1399297feea7777aeb12ec4f81726d7fc8325ae2e1abd5109c57f92c6ed0cb"
+          }
+        },
+        {
+          "type": "researcher",
+          "action": "supplied_input",
+          "phase": "replication",
+          "step": "reproduction_kit",
+          "segment": 0,
+          "at": "2026-10-05T07:58:33Z",
+          "file": "code/get_data.py",
+          "sha256": "c705f8cb89d34e12b29907f0f603081fc876c97c830cfe9ef256cc1aa3a843ae",
+          "supplied_by": "researcher"
+        },
+        {
+          "type": "researcher",
+          "action": "supplied_input",
+          "phase": "replication",
+          "step": "reproduction_kit",
+          "segment": 0,
+          "at": "2026-10-05T07:58:33Z",
+          "file": "code/requirements.txt",
+          "sha256": "6a0419ca62745da7b528309c164e8757994117b1ee5efc4eae8e9f9a1d91d807",
+          "supplied_by": "researcher"
+        },
+        {
+          "type": "researcher",
+          "action": "supplied_input",
+          "phase": "replication",
+          "step": "reproduction_kit",
+          "segment": 0,
+          "at": "2026-10-05T07:58:33Z",
+          "file": "reproduce.json",
+          "sha256": "842633d4f3628ea8caca5f5b49078059c27923a224b7c47ee67c20f7d3077237",
+          "supplied_by": "researcher"
+        },
+        {
+          "type": "researcher",
+          "action": "supplied_input",
+          "phase": "replication",
+          "step": "reproduction_kit",
+          "segment": 0,
+          "at": "2026-10-05T07:58:33Z",
+          "file": "data/data_sources.json",
+          "sha256": "57a6bb75a18c8a27823984465fbae4d4afc01dbbf639d8de3b57ee86cf4518f5",
+          "supplied_by": "researcher"
+        }
+      ],
+      "availability": {
+        "data": {
+          "access": "private"
+        },
+        "code": {
+          "access": "public",
+          "url": "https://github.com/bhanneke/E2ER-project"
+        }
+      },
+      "purpose": "demonstration",
+      "amendments": [
+        {
+          "path": "paper/refs.bib",
+          "sha256_before": "d89feb69a8afde2bc5b50414060982891b38e8edf57231652f732536f2c9043a",
+          "sha256_after": "ac1a3e8e7085ab21a9c3c81d5b1c82a2980b4fc321691d9d5299d3cf179ba5b2",
+          "reason": "escaped & % # so the paper compiles",
+          "at": "2026-10-05T08:01:12Z"
+        }
+      ]
+    }
+  }
+}

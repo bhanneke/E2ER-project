@@ -127,16 +127,16 @@
       "bytes": 2855
     },
     "paper/paper.pdf": {
-      "sha256": "03d0d112ab8fdfc53c88d5a1b2087b910807c67702f0fe0eea58465de8c8625e",
-      "bytes": 461478
+      "sha256": "1be5f26889cfca202b664e8fed3569bf6d1a5aafaffeb0bb70f59d1fd65f9a56",
+      "bytes": 467295
     },
     "paper/paper.tex": {
-      "sha256": "c4c3aa51a178255f12678c4a8e84c12fcad21dddb8571bb99781a5d586d49c10",
-      "bytes": 104558
+      "sha256": "178f3309267e80e50e462c03599315c5504ae89b15f434b8b19de3f3a1ccff97",
+      "bytes": 105148
     },
     "paper/refs.bib": {
-      "sha256": "d89feb69a8afde2bc5b50414060982891b38e8edf57231652f732536f2c9043a",
-      "bytes": 17548
+      "sha256": "ac1a3e8e7085ab21a9c3c81d5b1c82a2980b4fc321691d9d5299d3cf179ba5b2",
+      "bytes": 17553
     },
     "paper/tables/complementary.tex": {
       "sha256": "2e11bb3df83fa49f7151a6f2f338be8da21e1c06ec92c5e786f99802508f694c",
@@ -3365,6 +3365,31 @@
       "type": "estimation",
       "output": "results/estimation_results.json",
       "script": "code/run_estimation.py"
+    }
+  ],
+  "amendments": [
+    {
+      "path": "paper/refs.bib",
+      "sha256_before": "d89feb69a8afde2bc5b50414060982891b38e8edf57231652f732536f2c9043a",
+      "sha256_after": "ac1a3e8e7085ab21a9c3c81d5b1c82a2980b4fc321691d9d5299d3cf179ba5b2",
+      "reason": "escaped & % # so the paper compiles",
+      "at": "2026-10-05T08:01:12Z"
+    },
+    {
+      "path": "paper/paper.tex",
+      "sha256_before": "c4c3aa51a178255f12678c4a8e84c12fcad21dddb8571bb99781a5d586d49c10",
+      "sha256_after": "178f3309267e80e50e462c03599315c5504ae89b15f434b8b19de3f3a1ccff97",
+      "reason": "stamped with the dossier link",
+      "at": "2026-10-05T08:01:16Z",
+      "kind": "stamp"
+    },
+    {
+      "path": "paper/paper.pdf",
+      "sha256_before": "03d0d112ab8fdfc53c88d5a1b2087b910807c67702f0fe0eea58465de8c8625e",
+      "sha256_after": "1be5f26889cfca202b664e8fed3569bf6d1a5aafaffeb0bb70f59d1fd65f9a56",
+      "reason": "recompiled with the dossier link",
+      "at": "2026-10-05T08:01:16Z",
+      "kind": "stamp"
     }
   ]
 }
