@@ -12,9 +12,9 @@ Thanks for your interest. This document covers the most common contribution path
 ```bash
 git clone https://github.com/bhanneke/E2ER-project.git
 cd E2ER-project
-pip install -e ".[pgvector,dev]"
-docker compose -f docker/docker-compose.yml up -d db
-python scripts/migrate.py
+pip install -e ".[dev]"
+# Optional, only for the Postgres code path (default is SQLite): see docker/README.md
+#   docker compose -f docker/docker-compose.yml up -d db && python scripts/migrate.py
 bash scripts/vendor_htmx.sh
 make hooks      # install pre-commit hooks (ruff + mypy on every commit)
 pytest tests/

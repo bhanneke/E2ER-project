@@ -15,12 +15,12 @@ Two env vars (in `.env` or the shell):
 ```bash
 # Your data files — CSV / TSV / Parquet / XLSX / JSONL. Imported into the
 # paper's data.db as queryable SQL tables.
-LOCAL_DATA_DIR=~/Documents/Academic/ResearchData
+LOCAL_DATA_DIR=~/research/data
 
 # Your papers — either a plain folder of PDFs, OR a Zotero data folder
 # (one containing zotero.sqlite + storage/). Auto-detected. Falls back to
 # LOCAL_DATA_DIR if unset.
-LITERATURE_DIR=~/Documents/Academic/Literature   # or: ~/Zotero
+LITERATURE_DIR=~/research/literature   # or: ~/Zotero
 ```
 
 No `DATABASE_URL` → SQLite at `~/.e2er/papers.db`. Leave `ALLIUM_API_KEY` /

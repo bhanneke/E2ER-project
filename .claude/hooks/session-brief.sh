@@ -31,7 +31,7 @@ you have a working model of the codebase. This is a hard requirement.
    public contracts, release procedure, hard rules.
 2. `CLAUDE.md` — Claude-specific notes: pipeline mechanics, hot-spots,
    Allium gatekeeper, CLI-backend gotchas.
-3. `docs/NEXT_STEPS.md` — current snapshot of in-flight work + open issues.
+3. `docs/internal/NEXT_STEPS.md` — current snapshot of in-flight work + open issues.
 
 ## Skim (glance, don't deep-read)
 

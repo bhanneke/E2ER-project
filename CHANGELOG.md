@@ -59,6 +59,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   only when the change differs from the one already reported (`scripts/check_allium_drift.py`).
   The fixtures stay as they are: the current specs are not publicly available to refresh them.
 
+- **Internal planning notes moved to `docs/internal/`.** Version plans, run diagnoses and reviews
+  sat next to the user documentation; they are now in `docs/internal/` with a note on what they
+  are, and references point there. `docs/NEW_USER_WALKTHROUGH.md` no longer shows paths from the
+  maintainer's computer. `docker/` has a README saying it is an optional Postgres stack for
+  development, not needed to use e2er.
+
 ## [0.13.6] — 2026-10-05
 
 - **The paper can be published with the study, and publish says what readers see for what stays
@@ -1250,7 +1256,7 @@ wrong null.
 
 - **Hardens the runner-side execution from the previous entry** after the
   M5 re-run failed in the design phase
-  ([`docs/M4_RERUN_FINDINGS.md`](docs/M4_RERUN_FINDINGS.md)). The first
+  ([`docs/internal/M4_RERUN_FINDINGS.md`](docs/internal/M4_RERUN_FINDINGS.md)). The first
   version keyed on a single hardcoded `run_estimation.py` /
   `estimation_results.json`; the re-run's specialist named its script
   `analyze.py` writing `analysis_output.json`, so the runner found
@@ -1290,7 +1296,7 @@ wrong null.
   declared script via `subprocess.run` before M4.3's contract check
   fires, when the script is on disk but the sidecar is empty. Closes
   the load-bearing M5 prerequisite identified in
-  [`docs/M4_DIAGNOSIS.md`](docs/M4_DIAGNOSIS.md): in the M4 paper run,
+  [`docs/internal/M4_DIAGNOSIS.md`](docs/internal/M4_DIAGNOSIS.md): in the M4 paper run,
   the econometrics specialist wrote a correct `run_estimation.py` and
   then chose to write `estimation_results.json` as `{}` (per the
   skill file's *"don't fabricate, write empty"* rule), so the paper
@@ -1327,15 +1333,15 @@ wrong null.
 
 Cumulative bugfix + capability release on the v0.8 line. Contains the
 seven milestones (M1-M3 + M4.1-M4.3) that were developed against the
-v0.9 plan in [`docs/V0.9_PLAN.md`](docs/V0.9_PLAN.md). They ship in
+v0.9 plan in [`docs/internal/V0.9_PLAN.md`](docs/internal/V0.9_PLAN.md). They ship in
 v0.8.2 because **the v0.9.0 tag is now gated on M5 producing a paper
 that survives review under real conditions** — the v0.9 plan's own
 *"install → trust loop closed"* bar. M1-M4.x are necessary but not
 sufficient for that gate: the orchestration layer caught its own
 failures correctly in the M4 live run, but the pipeline has never
 produced a successful end-to-end paper. See
-[`docs/VERSIONING_RESET.md`](docs/VERSIONING_RESET.md) for the
-argument and [`docs/M4_FINDINGS.md`](docs/M4_FINDINGS.md) for the
+[`docs/internal/VERSIONING_RESET.md`](docs/internal/VERSIONING_RESET.md) for the
+argument and [`docs/internal/M4_FINDINGS.md`](docs/internal/M4_FINDINGS.md) for the
 live-run findings the M4.x fixes close.
 
 The `Mi (v0.9 plan)` subsection headings below preserve the
@@ -1664,7 +1670,7 @@ Both lanes are now registry-pluggable, so new providers are drop-in.
 ### Lane C — Data
 
 - **Allium folded behind a `Warehouse` capability (M3b of
-  `docs/MODULARIZATION_PLAN.md`).** Allium is now a first-class registered
+  `docs/internal/MODULARIZATION_PLAN.md`).** Allium is now a first-class registered
   provider: `AlliumWarehouse` owns its `card()`, `tools()` (→ `ALLIUM_TOOLS`)
   and `handler()` (→ `DeferredAlliumToolHandler`); `_run_pipeline` assembles
   it by iterating `warehouses(settings)` instead of hardcoding, and the
@@ -1673,7 +1679,7 @@ Both lanes are now registry-pluggable, so new providers are drop-in.
   approval flow are untouched**, and `has_allium`/`data_module_enabled` are
   unchanged. Completes the Lane-C registry (series + warehouse).
 - **Series data in the agent loop + RQ-aware discovery (M3a of
-  `docs/MODULARIZATION_PLAN.md`).** FRED and yfinance are no longer
+  `docs/internal/MODULARIZATION_PLAN.md`).** FRED and yfinance are no longer
   CLI-only — specialists reach them in the tool loop. New `SeriesFetcher`
   capability + data registry (`providers.py`, `registry.py`) mirror the
   Lane-B pattern. Two new tools: `list_data_sources` (serves the registry
@@ -1694,7 +1700,7 @@ Both lanes are now registry-pluggable, so new providers are drop-in.
   present-but-null value. Both parsers now guard with `or {}` / `or []`.
   Regression tests added (the mocked payloads previously only used
   well-formed fields, so the bug only surfaced live).
-- **Full-text `read_reference` tool (M2.5 of `docs/MODULARIZATION_PLAN.md`).**
+- **Full-text `read_reference` tool (M2.5 of `docs/internal/MODULARIZATION_PLAN.md`).**
   Specialists can now read a reference's PDF in full to deepen the lit
   review, not just its abstract. New `read_reference` literature tool takes
   a `pdf_url` (surfaced in search/fetch results and on `[PDF]`-marked
@@ -1713,7 +1719,7 @@ Both lanes are now registry-pluggable, so new providers are drop-in.
   Unset → no-op. Sync `fetch_text_sync` helper added for the (sync)
   reference-library path. Degrades to `[]` on any Zotero error — can't
   break paper creation.
-- **Provider interface + registry (M1 of `docs/MODULARIZATION_PLAN.md`).**
+- **Provider interface + registry (M1 of `docs/internal/MODULARIZATION_PLAN.md`).**
   Formalized the de-facto interface the source modules already shared into
   capability sub-types — `SearchSource` (web discovery; OpenAlex, arXiv,
   Semantic Scholar) and `ReferenceLibrary` (the researcher's own corpus;
@@ -1937,7 +1943,7 @@ Full mocked suite: 525 passed (was 521 in v0.6.0; +4 here).
 ## v0.6.0 — 2026-05-23
 
 **Targeted-revision discipline.** Closes the three drift sources
-identified in `docs/V0.6_PLAN.md`: full-rewrite `revisor` on
+identified in `docs/internal/V0.6_PLAN.md`: full-rewrite `revisor` on
 MAJOR_REVISION, parallel-`revisor` write race in self-attack, and
 unconstrained `paper_drafter` re-dispatch in the iterative phase.
 Validated end-to-end on paper `3bc58e8d` (2026-05-22, 38 min,
@@ -2035,10 +2041,10 @@ $12.36 est., Sonnet via Claude Code CLI).
 ## v0.5.0 — 2026-05-21
 
 **Anti-hallucination & methodology-aware pipeline.** Full design
-record at `docs/V0.5_PLAN.md`. Motivated by v0.4.5 live tests on
+record at `docs/internal/V0.5_PLAN.md`. Motivated by v0.4.5 live tests on
 papers `a6182f08`, `cbe8048f`, `eea5379b`, and validated end-to-end
 against fresh live runs on 2026-05-20 (`234a11ea`, `fd6bf64d`) and
-2026-05-21 (`525fa03c`) — see `docs/V0.5_LIVE_VALIDATION.md`.
+2026-05-21 (`525fa03c`) — see `docs/internal/V0.5_LIVE_VALIDATION.md`.
 
 ### Lane A — Pipeline
 
