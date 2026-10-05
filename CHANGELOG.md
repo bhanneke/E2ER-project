@@ -20,6 +20,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Docker check now asks the Docker daemon whether it runs; an installed but stopped Docker is no
   longer reported as available.
 
+- **`e2er skills list` and `e2er skills install` work without a local RISE checkout.** The
+  default catalogue was a folder on the maintainer's computer (`~/Documents/Projects/RISE`). e2er
+  now downloads the pack list from the public catalogue at github.com/bhanneke/RISE into
+  `~/.e2er/cache/rise` (refreshed once a day; an older copy is used when GitHub cannot be
+  reached). `RISE_PATH` and `--catalogue` still point to a local clone, and when neither works
+  the error says how to set one.
+
 ## [0.13.6] — 2026-10-05
 
 - **The paper can be published with the study, and publish says what readers see for what stays

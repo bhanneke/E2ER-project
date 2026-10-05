@@ -248,3 +248,67 @@ def test_a_bundled_skill_wins_over_an_installed_one():
 
     installed_at = next(i for i, d in enumerate(_SKILLS_DIRS) if ".e2er" in str(d))
     assert installed_at == len(_SKILLS_DIRS) - 1
+
+
+# ---------------------------------------------------------------------------
+# Default: the public catalogue on GitHub, not a path on one person's machine
+# ---------------------------------------------------------------------------
+
+
+def _tarball(files: dict[str, str]) -> bytes:
+    import io
+    import tarfile
+
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+        for name, text in files.items():
+            data = text.encode()
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            tar.addfile(info, io.BytesIO(data))
+    return buf.getvalue()
+
+
+def test_without_a_checkout_the_catalogue_comes_from_github(tmp_path, monkeypatch):
+    import httpx
+
+    from src.modules import skills_catalogue as sc
+
+    monkeypatch.setattr(sc, "catalogue_path", lambda explicit=None: tmp_path / "cache")
+    monkeypatch.setattr(sc, "downloaded_catalogue_dir", lambda: tmp_path / "cache")
+    calls = []
+
+    def fake_get(url, **_kw):
+        calls.append(url)
+        body = _tarball({"RISE-main/skills/demo.yml": PACK_YML, "RISE-main/README.md": "x"})
+        return httpx.Response(200, content=body, request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+    assert [p.slug for p in read_catalogue()] == ["demo"]
+    assert calls and "bhanneke/RISE" in calls[0]
+    read_catalogue()  # a fresh copy is reused
+    assert len(calls) == 1
+
+
+def test_no_network_and_no_copy_says_how_to_point_to_a_catalogue(tmp_path, monkeypatch):
+    import httpx
+
+    from src.modules import skills_catalogue as sc
+
+    monkeypatch.setattr(sc, "catalogue_path", lambda explicit=None: tmp_path / "cache")
+    monkeypatch.setattr(sc, "downloaded_catalogue_dir", lambda: tmp_path / "cache")
+
+    def offline(url, **_kw):
+        raise httpx.ConnectError("offline")
+
+    monkeypatch.setattr(httpx, "get", offline)
+    with pytest.raises(CatalogueError, match="RISE_PATH"):
+        read_catalogue()
+
+
+def test_the_default_path_is_not_a_personal_folder(monkeypatch):
+    from src.modules import skills_catalogue as sc
+
+    monkeypatch.setattr("src.config.get_settings", lambda: type("S", (), {"rise_path": None})())
+    assert sc.catalogue_path() == sc.downloaded_catalogue_dir()
+    assert "Documents" not in str(sc.catalogue_path())

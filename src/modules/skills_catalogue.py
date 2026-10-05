@@ -89,8 +89,21 @@ class SkillPack:
 # ── reading the catalogue ────────────────────────────────────────────────────
 
 
+#: The public RISE catalogue, read when no local checkout is configured.
+RISE_REPO = "https://github.com/bhanneke/RISE"
+_RISE_TARBALL = "https://codeload.github.com/bhanneke/RISE/tar.gz/refs/heads/main"
+#: A downloaded copy older than this is fetched again.
+_REFRESH_SECONDS = 24 * 3600
+_MAX_TARBALL_BYTES = 200 * 1024 * 1024
+
+
+def downloaded_catalogue_dir() -> Path:
+    """Where e2er keeps its copy of the catalogue's pack list from GitHub."""
+    return Path.home() / ".e2er" / "cache" / "rise"
+
+
 def catalogue_path(explicit: str | Path | None = None) -> Path:
-    """Where the RISE checkout lives."""
+    """Where the catalogue is read from: --catalogue, else RISE_PATH, else e2er's downloaded copy."""
     if explicit:
         return Path(explicit).expanduser()
 
@@ -103,7 +116,61 @@ def catalogue_path(explicit: str | Path | None = None) -> Path:
 
     if configured:
         return Path(configured).expanduser()
-    return Path.home() / "Documents" / "Projects" / "RISE"
+    return downloaded_catalogue_dir()
+
+
+def _download_catalogue(root: Path) -> None:
+    """Fetch the pack manifests (skills/*.yml) of the public RISE catalogue into ``root``.
+
+    Only the manifests are kept: packs are installed from their own sources.
+    A fresh copy (under a day old) is reused. When GitHub cannot be reached, an
+    older copy is used with a warning; with no copy at all, the error says how to
+    point e2er to a catalogue instead.
+    """
+    import io
+    import tarfile
+    import time
+
+    import httpx
+
+    skills_dir = root / "skills"
+    stamp = root / ".downloaded"
+    if stamp.is_file() and time.time() - stamp.stat().st_mtime < _REFRESH_SECONDS and skills_dir.is_dir():
+        return
+    try:
+        resp = httpx.get(_RISE_TARBALL, follow_redirects=True, timeout=60)
+        resp.raise_for_status()
+        if len(resp.content) > _MAX_TARBALL_BYTES:
+            raise CatalogueError("the RISE download is larger than expected")
+        manifests: dict[str, bytes] = {}
+        with tarfile.open(fileobj=io.BytesIO(resp.content), mode="r:gz") as tar:
+            for member in tar.getmembers():
+                parts = member.name.split("/")
+                # <repo>-main/skills/<pack>.yml
+                if member.isfile() and len(parts) == 3 and parts[1] == "skills" and parts[2].endswith(".yml"):
+                    fh = tar.extractfile(member)
+                    if fh is not None and "/" not in parts[2] and not parts[2].startswith("."):
+                        manifests[parts[2]] = fh.read()
+    except Exception as e:  # noqa: BLE001 — any failure ends in the same advice
+        if skills_dir.is_dir() and any(skills_dir.glob("*.yml")):
+            logger.warning("could not refresh the RISE catalogue from GitHub (%s); using the copy in %s", e, root)
+            return
+        raise CatalogueError(
+            f"could not download the RISE catalogue from {RISE_REPO} ({e}). Check the internet connection, "
+            "or clone the repository and point e2er to it: set RISE_PATH=/path/to/RISE in .env, or pass "
+            "--catalogue /path/to/RISE."
+        ) from e
+    if not manifests:
+        raise CatalogueError(
+            f"the download from {RISE_REPO} held no skill packs. Clone the repository and set RISE_PATH, "
+            "or pass --catalogue /path/to/RISE."
+        )
+    skills_dir.mkdir(parents=True, exist_ok=True)
+    for old in skills_dir.glob("*.yml"):
+        old.unlink()
+    for name, data in manifests.items():
+        (skills_dir / name).write_bytes(data)
+    stamp.write_text(time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), encoding="utf-8")
 
 
 def _pack_from(raw: dict[str, Any], slug: str) -> SkillPack:
@@ -140,10 +207,14 @@ def read_catalogue(path: str | Path | None = None) -> list[SkillPack]:
     import yaml
 
     root = catalogue_path(path)
+    if root == downloaded_catalogue_dir():
+        _download_catalogue(root)
     skills_dir = root / "skills"
     if not skills_dir.is_dir():
         raise CatalogueError(
-            f"no RISE catalogue at {root}. Clone github.com/bhanneke/RISE and set RISE_PATH, or pass --catalogue."
+            f"no RISE catalogue at {root}: the folder has no skills/ list. Point e2er to a clone of "
+            f"{RISE_REPO} with RISE_PATH=/path/to/RISE in .env or --catalogue /path/to/RISE, or unset "
+            "RISE_PATH to use e2er's own copy from GitHub."
         )
 
     packs: list[SkillPack] = []
