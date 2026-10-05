@@ -194,6 +194,11 @@ def run_env(
                 env[key] = value
     except Exception:  # noqa: BLE001 — a missing or unreadable .env is normal
         pass
+    # What controls e2er itself (the dashboard's session, the API token, the
+    # e2er.org sign-in) is not the specialists' business: no wrapper reads it,
+    # and under Codex or Gemini a model's shell command could use it.
+    for key in _CONTROL_VARS:
+        env.pop(key, None)
     db = db_path(settings)
     if db is not None:
         env["DATABASE_URL"] = f"sqlite:///{db}"
@@ -205,9 +210,23 @@ def run_env(
         env["E2ER_PAPER_ID"] = paper_id
     if specialist:
         env["E2ER_SPECIALIST"] = specialist
+    # Marks every AI CLI call, tool-less strategist calls included: `e2er`
+    # itself refuses to run under it (src/__main__.py).
+    env["E2ER_AI_STEP"] = specialist or "strategist"
     if workspace_root_abs is not None:
         env["E2ER_WORKSPACE_ROOT"] = str(workspace_root_abs)
     return env
+
+
+#: Variables that control e2er (its API, the dashboard session, the e2er.org
+#: sign-in), kept from the CLI subprocess.
+_CONTROL_VARS = (
+    "E2ER_SESSION_TOKEN",
+    "E2ER_API_TOKEN",
+    "E2ER_API_URL",
+    "E2ER_CREDENTIALS",
+    "API_AUTH_TOKEN",
+)
 
 
 def db_path(settings: Any) -> Path | None:

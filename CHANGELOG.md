@@ -49,6 +49,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   computer, not all three. `matrix.json` and `e2er compare` name each run's model.
 - `e2er-data fred series --help` crashed on a `%` in its help text; a model that asked for help
   got a traceback.
+- **A deep revision round no longer fails the run when the revised analysis renames its result
+  keys.** Seen live on Claude Code (Sonnet): the re-run econometrics specialist wrote
+  `pooled_hac_lag_20` where `table_spec.json` still asked for `hac_lag_20`, and the render check
+  failed the run before the section writer, which repairs `table_spec.json`, could run. The
+  writer is now told which references no longer resolve, and the check comes after it.
+- The CLI backends no longer pass e2er's own control settings (the dashboard session token, the
+  API token and address, the e2er.org sign-in file) to the AI CLI; no e2er command a specialist
+  runs needs them.
+- `e2er run` said it started the server "on :8280" whatever port was configured.
+- **`e2er` refuses to run inside a study's AI step.** Seen live on Codex: while a study was in
+  its review step, a reviewer's shell started a second study on the same server with `e2er run`.
+  Every AI CLI call now carries `E2ER_AI_STEP`, and `e2er` exits with a one-line message under it.
+  The step's own commands (`e2er-data`, `e2er-lit`, `e2er-run`, `e2er-check-tables`) are separate
+  and unaffected.
+- **A re-done analysis that fails its output contract stops the run for the researcher.** In the
+  deep revision round the data analyst and the econometrics specialist got one attempt and their
+  contract result was ignored; seen live on Codex, the revised `estimation_results.json` lacked
+  `n_clusters`, the study completed, and `e2er verify` failed the export. They now get the usual
+  attempts and, if those fail, the same stop as everywhere else.
+- Codex: "Selected model is at capacity" is retried.
 
 - **`e2er reproduce <study folder>` runs a study's code again and compares the results.** A
   study's `reproduce.json` names the pinned requirements, the steps, the inputs with their

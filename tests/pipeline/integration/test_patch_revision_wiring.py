@@ -653,3 +653,39 @@ async def test_deep_revision_lets_the_writer_repair_tables_before_the_render_che
 
     assert order == ["data_analyst", "econometrics_specialist", "render_all", "section_writer", "render_all_or_halt"]
     assert "main.tex:hac_lag_20" in focus["section_writer"] and "table_spec.json" in focus["section_writer"]
+
+
+@pytest.mark.asyncio
+async def test_deep_revision_stops_for_the_researcher_when_the_redone_analysis_fails_its_contract(tmp_path, mock_llm):
+    """Live on Codex, 2026-10-05: the re-done estimation_results.json failed its
+    contract (no n_clusters), the deep round ignored it, the run completed and
+    `e2er verify` failed the export. Now: retried, then a stop for the researcher."""
+    from src.core.specialists.dispatcher import ContractFailureError
+
+    runner = _runner(tmp_path, mock_llm)
+    calls: list[str] = []
+
+    async def _capture(work_order, *args, **kwargs):
+        calls.append(work_order.specialist)
+        ok = work_order.specialist != "econometrics_specialist"
+        return Contribution(
+            paper_id=runner._paper_id,
+            specialist=work_order.specialist,
+            output="ok",
+            success=ok,
+            error="" if ok else "contract violation: main.n_clusters is missing",
+            contract_violations=[] if ok else ["main.n_clusters is missing"],
+        )
+
+    async def _noop(*a, **k):
+        return None
+
+    with (
+        patch("src.core.specialists.dispatcher.execute_work_order", side_effect=_capture),
+        patch("src.modules.tracking.usage.check_budget_by_paper_id", new=_noop),
+        pytest.raises(ContractFailureError),
+    ):
+        await runner._run_deep_revision_round()
+
+    assert calls.count("econometrics_specialist") == 3  # the usual attempts
+    assert "section_writer" not in calls  # nothing is written over a failed analysis

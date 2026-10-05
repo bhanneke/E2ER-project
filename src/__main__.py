@@ -3,11 +3,35 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
+#: Set by e2er in the environment of every AI CLI call (modules/llm/cli_support.run_env).
+_INSIDE_AI_STEP = "E2ER_AI_STEP"
+
+
+def _refuse_inside_a_specialist() -> None:
+    """`e2er` itself is not a specialist's tool.
+
+    Seen live on Codex (2026-10-05): while a study was in its review step, a
+    reviewer's shell started a second study on the same server with `e2er run`.
+    Claude Code's allowlist never lets a specialist reach `e2er`; Codex and
+    Gemini have no allowlist (docs/BACKENDS.md). A specialist's tools are
+    e2er-data, e2er-lit, e2er-run and e2er-check-tables, separate commands.
+    """
+    who = os.environ.get(_INSIDE_AI_STEP)
+    if who:
+        print(
+            f"e2er: this command does not run inside a study's step (the {who} step is running). "
+            "A step uses e2er-data, e2er-lit, e2er-run and e2er-check-tables.",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+
 
 def main() -> None:
+    _refuse_inside_a_specialist()
     # `e2er corpus …` delegates wholesale to its own parser. Done before the
     # main parser sees anything, so `corpus search --limit 5` and
     # `corpus --help` reach cli_corpus intact instead of being claimed here.

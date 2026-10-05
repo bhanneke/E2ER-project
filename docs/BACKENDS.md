@@ -35,8 +35,12 @@ command. What does hold:
   `--ignore-rules`): not your model, reasoning effort, plugins, MCP servers or
   notification hooks. It leaves no session history (`--ephemeral`). Sign-in
   still comes from `~/.codex/auth.json` (or `$CODEX_HOME`).
-- Every variable in e2er's environment, keys included, is visible to the
-  model's shell commands, because the e2er commands need the data keys.
+- Every variable in e2er's environment, data keys included, is visible to the
+  model's shell commands, because the e2er commands need the data keys. e2er's
+  own control settings (dashboard session, API token and address, e2er.org
+  sign-in file) are removed first. The local e2er server itself has no
+  password unless `API_AUTH_TOKEN` is set, so a shell command on this computer
+  could still reach it.
 
 **Gemini** runs with `--approval-mode yolo`, so its shell tool can run any
 command too, and it has no sandbox unless you start it with one. The Gemini

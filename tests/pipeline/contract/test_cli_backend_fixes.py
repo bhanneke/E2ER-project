@@ -271,6 +271,7 @@ async def test_codex_failure_keeps_usage_and_clips_the_error(cfg):
         ("stream disconnected before completion", True),
         ("exceeded retry limit, last status: 503 Service Unavailable", True),
         ("error sending request for url", True),
+        ("Selected model is at capacity. Please try a different model.", True),  # live E2E-01, 2026-10-05
         ("You've hit your usage limit. Try again in 3 hours.", False),
         ("429 Too Many Requests: usage_limit_reached", False),
         ("invalid model gpt-nope", False),
@@ -592,3 +593,38 @@ def test_only_a_real_choice_overrides_the_backends_model(cfg, backend, model, ex
 
     cfg(ANTHROPIC_MODEL="claude-sonnet-4-5")
     assert model_override(get_settings(), backend, model) == expected
+
+
+async def test_e2er_control_credentials_do_not_reach_the_cli(cfg, monkeypatch):
+    """No wrapper reads e2er's own control settings; under Codex or Gemini a
+    model's shell command could use them."""
+    for k in ("E2ER_SESSION_TOKEN", "E2ER_API_TOKEN", "E2ER_API_URL", "E2ER_CREDENTIALS", "API_AUTH_TOKEN"):
+        monkeypatch.setenv(k, "x")
+    fake, calls = _fake_proc(_OK_EVENTS)
+    with patch("src.modules.llm.codex.asyncio.create_subprocess_exec", new=fake):
+        await _call(CodexBackend(), paper_id="p1")
+    env = calls["kwargs"]["env"]
+    for k in ("E2ER_SESSION_TOKEN", "E2ER_API_TOKEN", "E2ER_API_URL", "E2ER_CREDENTIALS", "API_AUTH_TOKEN"):
+        assert k not in env
+
+
+def test_e2er_refuses_to_run_inside_an_ai_step(monkeypatch, capsys):
+    """Live on Codex, 2026-10-05: a reviewer's shell started a second study on
+    the lab's server with `e2er run` while the first was in its review step."""
+    import sys as _sys
+
+    from src import __main__ as cli
+
+    monkeypatch.setenv("E2ER_AI_STEP", "writing_reviewer")
+    monkeypatch.setattr(_sys, "argv", ["e2er", "run", "Does X affect Y?"])
+    with pytest.raises(SystemExit) as e:
+        cli.main()
+    assert e.value.code == 2
+    assert "does not run inside a study's step" in capsys.readouterr().err
+
+
+async def test_every_cli_call_is_marked_as_an_ai_step(cfg):
+    fake, calls = _fake_proc(_OK_EVENTS)
+    with patch("src.modules.llm.codex.asyncio.create_subprocess_exec", new=fake):
+        await _call(CodexBackend())  # a tool-less strategist call: no specialist
+    assert calls["kwargs"]["env"]["E2ER_AI_STEP"] == "strategist"

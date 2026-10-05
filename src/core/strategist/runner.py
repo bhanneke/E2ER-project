@@ -2018,7 +2018,7 @@ class PipelineRunner:
         the prose in line with the revised analysis.
         """
         from ..renderer.complete import render_all, render_all_or_halt
-        from ..specialists.dispatcher import execute_work_order
+        from ..specialists.dispatcher import execute_work_order, raise_contract_failure, run_with_attempts
 
         feedback = self._referee_feedback_text()
         research_focus = (
@@ -2030,9 +2030,14 @@ class PipelineRunner:
             "and apply the standard corrections they cite. Rewrite your "
             "script/output accordingly.\n\n=== Referee reports ===\n" + feedback
         )
+        # Same attempts and the same stop as everywhere else: a re-done
+        # analysis that still fails its output contract stops the run for the
+        # researcher. It used to be appended and ignored — seen live on Codex
+        # (2026-10-05): the revised estimation_results.json lacked n_clusters,
+        # the run completed, and `e2er verify` failed the exported study.
         for spec in ("data_analyst", "econometrics_specialist"):
             order = WorkOrder(paper_id=self._paper_id, specialist=spec, focus=research_focus, context_tier=2)
-            c = await execute_work_order(
+            c = await run_with_attempts(
                 order,
                 self._backend,
                 self._workspace,
@@ -2043,6 +2048,7 @@ class PipelineRunner:
                 self._governance,
             )
             self._contributions.append(c)
+            raise_contract_failure([order], [c])
 
         # Tables follow the revised JSON; re-render before the writer edits
         # prose. The revised analysis may rename its result keys (seen live

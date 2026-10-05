@@ -81,6 +81,7 @@ _TRANSIENT_MARKERS = (
     "504 gateway timeout",
     "server_error",
     "overloaded",
+    "at capacity",
     "please try again",
 )
 _NOT_TRANSIENT_MARKERS = ("usage limit", "usage_limit", "quota", "not logged in", "unauthorized", "401")
