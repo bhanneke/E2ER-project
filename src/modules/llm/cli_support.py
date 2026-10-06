@@ -9,6 +9,7 @@ two backends; keeping one copy here stops the copies drifting apart again.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -150,6 +151,12 @@ def cli_version(cli_path: str) -> str | None:
         return None
     line = (out.stdout or out.stderr or "").strip().splitlines()
     return line[0].strip() if line and out.returncode == 0 else None
+
+
+def cli_name(cli_path: str) -> str:
+    """The CLI's program name (``claude``), never where it is installed: the run
+    record goes into the dossier, and an install path names this machine."""
+    return re.split(r"[\\/]", cli_path.rstrip("/\\"))[-1] or cli_path
 
 
 def workspace_cwd(settings: Any, paper_id: str | None, fallback: str) -> tuple[str, Path | None]:
