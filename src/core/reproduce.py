@@ -35,6 +35,7 @@ import json
 import logging
 import math
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -70,6 +71,10 @@ LABEL_WORDS = {
     MISSING: "missing from the rerun",
     NEW: "only in the rerun",
 }
+
+
+#: A compared result file the rerun did not write.
+NOT_WRITTEN = "the rerun did not write it"
 
 
 class RecipeError(Exception):
@@ -248,7 +253,7 @@ def compare_json(published_path: Path, produced_path: Path, published: str, prod
         fc.problem = f"the published file cannot be read: {e}"
         return fc
     if not produced_path.is_file():
-        fc.problem = "the rerun did not write it"
+        fc.problem = NOT_WRITTEN
         return fc
     try:
         new = json.loads(produced_path.read_text(encoding="utf-8"))
@@ -369,10 +374,10 @@ def make_environment(run_dir: Path, recipe: dict[str, Any], folder: Path, logs: 
             )
         create = [sys.executable, "-m", "venv", str(venv)]
         install = [str(_venv_python(venv)), "-m", "pip", "install", "--quiet", "-r", str(requirements)]
-    code, tail = _run(create, cwd=run_dir, env=None, timeout=600, log=logs / "environment-create.log")
+    code, tail = _run(create, cwd=run_dir, env=minimal_env(), timeout=600, log=logs / "environment-create.log")
     if code != 0:
         raise RecipeError(f"could not create the environment: {tail}")
-    code, tail = _run(install, cwd=run_dir, env=None, timeout=1800, log=logs / "environment-install.log")
+    code, tail = _run(install, cwd=run_dir, env=minimal_env(), timeout=1800, log=logs / "environment-install.log")
     if code != 0:
         raise RecipeError(f"could not install {recipe['requirements']}: {tail}")
     py = _venv_python(venv)
@@ -381,7 +386,9 @@ def make_environment(run_dir: Path, recipe: dict[str, Any], folder: Path, logs: 
         "print(json.dumps({'python': sys.version.split()[0], "
         "'packages': {d.metadata['Name']: d.version for d in m.distributions()}}))"
     )
-    out = subprocess.run([str(py), "-I", "-c", probe], cwd=run_dir, capture_output=True, text=True, timeout=120)
+    out = subprocess.run(
+        [str(py), "-I", "-c", probe], cwd=run_dir, env=minimal_env(), capture_output=True, text=True, timeout=120
+    )
     try:
         info = json.loads(out.stdout)
     except ValueError:
@@ -390,9 +397,36 @@ def make_environment(run_dir: Path, recipe: dict[str, Any], folder: Path, logs: 
     return py, info
 
 
+#: What the study's code and its installer get from e2er's environment: where things are, the
+#: language, temporary folders, proxies and certificates. No API key, token or e2er setting:
+#: the code is someone else's, and it runs on this machine.
+_PASSED_ON = frozenset(
+    {
+        "PATH", "HOME", "USER", "LOGNAME", "SHELL", "TERM", "TZ", "LANG", "LANGUAGE", "LC_ALL", "LC_CTYPE",
+        "TMPDIR", "TEMP", "TMP", "XDG_CACHE_HOME",
+        "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "no_proxy", "all_proxy",
+        "SSL_CERT_FILE", "SSL_CERT_DIR", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE",
+        "SYSTEMROOT", "SYSTEMDRIVE", "WINDIR", "COMSPEC", "PATHEXT", "APPDATA", "LOCALAPPDATA", "USERPROFILE",
+        "PROGRAMDATA", "PROGRAMFILES",
+    }
+)  # fmt: skip
+#: The installers' own settings (an index mirror, a cache folder), unless they hold a credential.
+_INSTALLER_PREFIXES = ("UV_", "PIP_")
+_CREDENTIAL = re.compile(r"TOKEN|PASSWORD|SECRET|KEY|AUTH|CREDENTIAL", re.I)
+
+
+def minimal_env() -> dict[str, str]:
+    """The environment someone else's code (and the installation of its packages) runs with."""
+    return {
+        k: v
+        for k, v in os.environ.items()
+        if k in _PASSED_ON or (k.startswith(_INSTALLER_PREFIXES) and not _CREDENTIAL.search(k))
+    }
+
+
 def step_env(venv_python: Path) -> dict[str, str]:
-    """The steps' environment: the new environment first; e2er-data from the running e2er."""
-    env = {k: v for k, v in os.environ.items() if k not in ("PYTHONPATH", "PYTHONHOME", "VIRTUAL_ENV", "CONDA_PREFIX")}
+    """The steps' environment: the minimal one (no keys), the new environment first; e2er-data from the running e2er."""
+    env = minimal_env()
     venv_bin = venv_python.parent
     scripts = sysconfig.get_path("scripts") or str(Path(sys.executable).parent)
     env["PATH"] = os.pathsep.join([str(venv_bin), scripts, env.get("PATH", "")])
@@ -404,18 +438,32 @@ def step_env(venv_python: Path) -> dict[str, str]:
     return env
 
 
-def lay_out(folder: Path, run_dir: Path, recipe: dict[str, Any]) -> None:
+def lay_out(folder: Path, run_dir: Path, recipe: dict[str, Any]) -> list[str]:
+    """Lay out the run folder; returns the result files that were removed from it.
+
+    Every file the rerun is to write (``compare`` → ``produced``) is taken out of
+    the run folder before the steps run. Copied with the study, a published result
+    would otherwise be there already, and a script that writes nothing would be
+    compared with the published file itself and "reproduce" it.
+    """
     files = recipe.get("files")
     if not files:
         shutil.copytree(folder, run_dir, dirs_exist_ok=True, ignore=shutil.ignore_patterns(".git", ".venv"))
-        return
-    for dst, src in files.items():
-        source, target = folder / src, run_dir / dst
-        target.parent.mkdir(parents=True, exist_ok=True)
-        if source.is_dir():
-            shutil.copytree(source, target, dirs_exist_ok=True)
-        else:
-            shutil.copy2(source, target)
+    else:
+        for dst, src in files.items():
+            source, target = folder / src, run_dir / dst
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if source.is_dir():
+                shutil.copytree(source, target, dirs_exist_ok=True)
+            else:
+                shutil.copy2(source, target)
+    removed = []
+    for c in recipe.get("compare") or []:
+        produced = run_dir / c["produced"]
+        if produced.is_file():
+            produced.unlink()
+            removed.append(c["produced"])
+    return removed
 
 
 @dataclass
@@ -457,11 +505,28 @@ def run_steps(run_dir: Path, recipe: dict[str, Any], env: dict[str, str], logs: 
     return results
 
 
-def verdict(files: list[FileComparison], tables: dict[str, Any] | None, steps: list[StepResult]) -> tuple[str, int]:
-    """(one plain sentence, exit code): 0 reproduced, 1 differences, 2 could not run."""
+def verdict(
+    files: list[FileComparison],
+    tables: dict[str, Any] | None,
+    steps: list[StepResult],
+    inputs: list[dict[str, Any]] | None = None,
+) -> tuple[str, int]:
+    """(one plain sentence, exit code): 0 reproduced, 1 differences, 2 could not run.
+
+    "Reproduced" needs every compared value to match, every table to render the
+    same and every declared input to be the study's own file: the same results
+    from other data are not a reproduction of the study.
+    """
     if any(s.exit_code for s in steps):
         failed = next(s for s in steps if s.exit_code)
         return f"Could not reproduce: the step `{failed.command}` failed.", 2
+    unwritten = [f.published for f in files if f.problem == NOT_WRITTEN]
+    if files and len(unwritten) == len(files):
+        return (
+            "Not reproduced: the study's code ran but wrote none of the result files it is compared on "
+            f"({', '.join(f.produced for f in files)}).",
+            1,
+        )
     compared = [f for f in files if f.problem is None]
 
     def count(label: str) -> int:
@@ -469,7 +534,14 @@ def verdict(files: list[FileComparison], tables: dict[str, Any] | None, steps: l
 
     bad_files = [f.published for f in files if f.problem]
     bad_tables = len((tables or {}).get("differ") or []) + len((tables or {}).get("not_shipped") or [])
-    if not any(count(k) for k in LABELS if k not in MATCHING) and not bad_files and not bad_tables:
+    other = [i for i in inputs or [] if i.get("status") == "differs"]
+    absent = [i for i in inputs or [] if i.get("status") == "missing"]
+    if (
+        not any(count(k) for k in LABELS if k not in MATCHING)
+        and not bad_files
+        and not bad_tables
+        and not (other or absent)
+    ):
         tail = " and every table renders the same" if tables and tables.get("rendered") else ""
         return f"Reproduced: every compared value is identical or the same at the published precision{tail}.", 0
     parts = []
@@ -483,4 +555,8 @@ def verdict(files: list[FileComparison], tables: dict[str, Any] | None, steps: l
         parts.append(f"{len(bad_files)} result file(s) could not be compared ({', '.join(bad_files)})")
     if bad_tables:
         parts.append(f"{bad_tables} table(s) render differently")
+    if other:
+        parts.append(f"{len(other)} input file(s) differ from the study's ({', '.join(i['path'] for i in other[:3])})")
+    if absent:
+        parts.append(f"{len(absent)} input file(s) are missing ({', '.join(i['path'] for i in absent[:3])})")
     return "Not reproduced exactly: " + "; ".join(parts) + ".", 1

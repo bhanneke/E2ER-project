@@ -8,6 +8,7 @@ two backends; keeping one copy here stops the copies drifting apart again.
 
 from __future__ import annotations
 
+import asyncio
 import os
 import re
 import shutil
@@ -142,6 +143,20 @@ def kill_process_group(proc: Any) -> None:
         pass
 
 
+async def stop_on_cancel(proc: Any) -> None:
+    """The run was cancelled while the CLI ran: kill it and everything it started, then let it go.
+
+    Called from an ``except asyncio.CancelledError`` block, which re-raises. A
+    cancelled run must not leave the CLI (or a script it started) working on in
+    the background.
+    """
+    kill_process_group(proc)
+    try:
+        await asyncio.wait_for(proc.wait(), timeout=5)
+    except BaseException:  # noqa: BLE001,S110 — a second cancel or a slow exit: the kill was sent
+        pass
+
+
 @lru_cache(maxsize=8)
 def cli_version(cli_path: str) -> str | None:
     """`<cli> --version`, first line; None when it cannot be read."""
@@ -179,8 +194,14 @@ def run_env(
     paper_id: str | None,
     specialist: str | None,
     workspace_root_abs: Path | None,
+    cli_keys: tuple[str, ...] = (),
 ) -> dict[str, str]:
     """Environment for the CLI subprocess and the e2er-* wrappers it runs.
+
+    The model's shell commands run in it, so it holds only the credentials the
+    wrappers need (the data and literature keys in ``WRAPPER_KEYS``) and the
+    CLI's own sign-in (``cli_keys``): no other provider's API key, no GitHub,
+    Zenodo or e2er.org token, nothing else that looks like a credential.
 
     The wrappers are separate Python processes. They read their settings from
     the environment and from a `.env` in *their* working directory, which is
@@ -206,6 +227,8 @@ def run_env(
     # and under Codex or Gemini a model's shell command could use it.
     for key in _CONTROL_VARS:
         env.pop(key, None)
+    for key in [k for k in env if _CREDENTIAL_NAME.search(k) and k not in WRAPPER_KEYS and k not in cli_keys]:
+        env.pop(key)
     db = db_path(settings)
     if db is not None:
         env["DATABASE_URL"] = f"sqlite:///{db}"
@@ -234,6 +257,20 @@ _CONTROL_VARS = (
     "E2ER_CREDENTIALS",
     "API_AUTH_TOKEN",
 )
+
+
+#: Credentials the e2er-* wrappers read from the environment (data and literature sources).
+WRAPPER_KEYS = frozenset(
+    {
+        "FRED_API_KEY",
+        "ALLIUM_API_KEY",
+        "SEMANTIC_SCHOLAR_API_KEY",
+        "ZOTERO_API_KEY",
+        "DB_PASSWORD",  # the run database (Postgres), where the wrappers record what they load
+    }
+)
+#: A variable that holds a credential, by its name (API keys, tokens, secrets, passwords).
+_CREDENTIAL_NAME = re.compile(r"(^|_)(TOKEN|KEY|API_KEY|SECRET|PASSWORD|PASSWD|CREDENTIALS?|PAT)(_|$)", re.I)
 
 
 def db_path(settings: Any) -> Path | None:

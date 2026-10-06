@@ -42,6 +42,7 @@ import json
 import os
 import tempfile
 import time
+from dataclasses import replace
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -58,10 +59,14 @@ from .cli_support import (
     flatten_prompt,
     kill_process_group,
     run_env,
+    stop_on_cancel,
     workspace_cwd,
 )
 
 logger = get_logger(__name__)
+
+#: The CLI's own sign-in, the only credentials besides the wrappers' that reach its shell (run_env).
+CLI_KEYS = ("OPENAI_API_KEY", "CODEX_API_KEY")
 
 #: Item types in `--json` events that are a tool use (one per command, file
 #: edit, MCP call or web search).
@@ -202,7 +207,7 @@ class CodexBackend(LLMBackend):
         settings = get_settings()
         prompt = flatten_prompt(system, messages)
         cwd, root = workspace_cwd(settings, paper_id, self._cwd)
-        env = run_env(settings, paper_id=paper_id, specialist=specialist, workspace_root_abs=root)
+        env = run_env(settings, paper_id=paper_id, specialist=specialist, workspace_root_abs=root, cli_keys=CLI_KEYS)
         extra_dirs: list[str] = []
         db = db_path(settings)
         if db is not None and not _inside(db.parent, Path(cwd)):
@@ -211,8 +216,14 @@ class CodexBackend(LLMBackend):
 
         retry_delays = [5.0, 20.0]
         result: ToolLoopResult | None = None
+        # Every attempt's usage counts (a retried call used tokens too); the result carries the sum.
+        spent = TokenUsage()
+        calls = 0
         for attempt in range(len(retry_delays) + 1):
             result = await self._invoke_once(prompt, cwd, env, extra_dirs)
+            spent = spent + result.usage
+            calls += result.tool_calls_made
+            result = replace(result, usage=spent, tool_calls_made=calls)
             if result.success or not is_transient_codex_error(result.error or ""):
                 return result
             if attempt >= len(retry_delays):
@@ -269,6 +280,9 @@ class CodexBackend(LLMBackend):
                     proc.communicate(input=prompt.encode("utf-8")),
                     timeout=self._timeout,
                 )
+            except asyncio.CancelledError:
+                await stop_on_cancel(proc)
+                raise
             except TimeoutError:
                 kill_process_group(proc)
                 await proc.wait()

@@ -296,6 +296,35 @@ def rerunnable_steps(spec: Any, mode: str) -> list[str]:
     return [s.name for s in spec.steps if s.kind not in _NOT_RERUNNABLE and not s.after and s.applies_to(mode)]
 
 
+def _withdraw_check_approvals(state: PipelineState, spec: Any, later: list[str]) -> None:
+    """The researcher's approvals at the checks of the steps that run again are withdrawn.
+
+    Table numbers continued with at the number check (it runs in the review
+    step, or in a check step of its own) and outputs kept as they are at a
+    contract stop: the steps produce new output, so the checks decide afresh
+    and stop again where they find something.
+    """
+    meta = state.metadata
+
+    def is_number_check(name: str) -> bool:
+        step = spec.step(name)
+        return name == "review" or (step is not None and getattr(step, "check", None) == "numbers")
+
+    if any(is_number_check(n) for n in later):
+        meta.pop("numbers_accepted", None)
+        meta.pop("numbers_patch_tried", None)
+        meta.pop("number_check", None)
+    if "initial" in later:
+        meta.pop("contract_accepted_orders", None)
+    skips = [p for p in meta.get("contract_accepted_skip") or [] if p.get("phase") not in later]
+    if skips:
+        meta["contract_accepted_skip"] = skips
+    else:
+        meta.pop("contract_accepted_skip", None)
+    if "revision" in later:
+        meta.pop("deep_revision", None)  # a new revision step may run its deep revision round again
+
+
 def apply_rerun(workspace: Path, state: PipelineState, spec: Any, step: str, remark: str) -> dict[str, Any]:
     """Send a study back to ``step``: it and every later step run again with ``remark``.
 
@@ -344,6 +373,7 @@ def apply_rerun(workspace: Path, state: PipelineState, spec: Any, step: str, rem
         for key in ("contract_pause", "preregistration_deviation"):
             state.metadata.pop(key, None)
     state.approved_stages = [a for a in state.approved_stages if a not in later]
+    _withdraw_check_approvals(state, spec, later)
     step_done = state.metadata.get("step_done")
     if isinstance(step_done, dict):
         for name in later:  # a step run again runs all of its specialists

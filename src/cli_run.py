@@ -74,6 +74,32 @@ def _api_root() -> str:
     return f"http://127.0.0.1:{_api_port()}"
 
 
+def api_headers() -> dict[str, str]:
+    """Headers that let an `e2er` command steer the runs of the e2er server it talks to.
+
+    The server's session token (``E2ER_SESSION_TOKEN`` in this process, else the
+    session file the server wrote for its port, ``~/.e2er/session-<port>.json``)
+    and, when set, the bearer token ``E2ER_API_TOKEN``.
+    """
+    from urllib.parse import urlparse
+
+    from .api import local_session as ls
+
+    headers: dict[str, str] = {}
+    if token := os.environ.get("E2ER_API_TOKEN"):
+        headers["Authorization"] = f"Bearer {token}"
+    session = os.environ.get(ls.ENV_TOKEN)
+    if not session:
+        try:
+            port = urlparse(_api_root()).port or _api_port()
+        except ValueError:
+            port = _api_port()
+        session = ls.read_session_token(port)
+    if session:
+        headers[ls.HEADER] = session
+    return headers
+
+
 def _api_reachable(timeout: float = 1.5) -> bool:
     import httpx
 
@@ -211,11 +237,8 @@ def _submit_paper(
         # Recorded in the study's manifest.json at start: export, publish, the
         # paper's footnote, the reproduction report and the dossier take it from there.
         body["purpose"] = "demonstration"
-    headers = {}
-    if token := os.environ.get("E2ER_API_TOKEN"):
-        headers["Authorization"] = f"Bearer {token}"
     try:
-        r = httpx.post(f"{_api_root()}/api/papers", json=body, headers=headers, timeout=30.0)
+        r = httpx.post(f"{_api_root()}/api/papers", json=body, headers=api_headers(), timeout=30.0)
     except httpx.HTTPError as e:
         print(f"  ✗ POST /api/papers failed: {e}", file=sys.stderr)
         return None

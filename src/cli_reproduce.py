@@ -120,7 +120,7 @@ def reproduce(folder: str, *, keep: bool = False, json_out: str | None = None) -
     files: list[rp.FileComparison] = []
     tables: dict[str, Any] | None = None
     try:
-        rp.lay_out(root, run_dir, recipe)
+        rp.lay_out(root, run_dir, recipe)  # without the results it is to write: the rerun must write them
         python, env_info = rp.make_environment(run_dir, recipe, root, logs)
         steps = rp.run_steps(run_dir, recipe, rp.step_env(python), logs, python)
     except rp.RecipeError as e:
@@ -134,7 +134,7 @@ def reproduce(folder: str, *, keep: bool = False, json_out: str | None = None) -
             for c in recipe["compare"]
         ]
         tables = rp.compare_tables(root, run_dir, recipe["compare"])
-    verdict, code = rp.verdict(files, tables, steps)
+    verdict, code = rp.verdict(files, tables, steps, inputs)
     print()
     print(render(root, recipe, env_info, steps, inputs, files, tables, verdict), end="")
     if json_out:

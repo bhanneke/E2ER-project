@@ -6,6 +6,7 @@ import asyncio
 import io
 import json
 import mimetypes
+import secrets
 import tarfile
 from datetime import UTC, datetime
 from pathlib import Path
@@ -41,22 +42,35 @@ def _validate_uuid(paper_id: str) -> str:
     return paper_id
 
 
-def require_auth(authorization: str | None = Header(default=None)) -> None:
-    """Bearer-token auth for mutating endpoints.
+def require_auth(request: Request, authorization: str | None = Header(default=None)) -> None:
+    """Who may start, steer, stop or change a run: the e2er that runs this server.
 
-    No-op when `api_auth_token` is unset (dev mode). When set, requires
-    `Authorization: Bearer <token>` and returns 401 on mismatch.
+    A request passes with this server's session token (the dashboard's cookie,
+    set from the link `e2er` opened, or the ``X-E2ER-Token`` header the `e2er`
+    commands send; see local_session.py) or, when ``API_AUTH_TOKEN`` is set,
+    with ``Authorization: Bearer <token>``. Before 0.13.8 these endpoints were
+    open to anything on this computer without ``API_AUTH_TOKEN``, the shell
+    commands of a run's own AI model included; those never get the token.
     """
-    # getattr keeps test stubs of get_settings() that omit this field working;
-    # treat missing field as "auth disabled" (dev default).
+    from . import local_session as ls
+
+    # getattr keeps test stubs of get_settings() that omit this field working.
     expected = getattr(get_settings(), "api_auth_token", None)
-    if not expected:
-        return  # auth disabled in dev
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Missing bearer token")
-    presented = authorization[len("Bearer ") :].strip()
-    if presented != expected:
+    if authorization and authorization.startswith("Bearer ") and expected:
+        if secrets.compare_digest(authorization[len("Bearer ") :].strip(), expected):
+            return
         raise HTTPException(status_code=401, detail="Invalid bearer token")
+    if ls.has_session(request):
+        return
+    if expected:
+        raise HTTPException(status_code=401, detail="Missing bearer token")
+    raise HTTPException(
+        status_code=403,
+        detail=(
+            "This works only from the e2er that runs this dashboard: open the dashboard from the link e2er "
+            "printed, or use the e2er commands in the terminal."
+        ),
+    )
 
 
 _API_DIR = Path(__file__).resolve().parent
@@ -1821,7 +1835,7 @@ async def dashboard_skills(request: Request, message: str = "") -> Any:
     return templates.TemplateResponse(request, "skills.html", _skills_view(message))
 
 
-@app.post("/skills/install")
+@app.post("/skills/install", dependencies=[Depends(require_auth)])
 async def install_skill_pack(pack: str = Form(...)) -> Any:
     """Fetch one pack from its own source.
 
@@ -1924,7 +1938,7 @@ def _pipeline_choices() -> list[dict[str, Any]]:
     return out
 
 
-@app.post("/papers")
+@app.post("/papers", dependencies=[Depends(require_auth)])
 async def submit_new_paper(
     request: Request,
     research_question: str = Form(...),

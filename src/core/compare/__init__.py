@@ -151,9 +151,11 @@ def _agreement(records: list[dict], field: str) -> dict:
         score = statistics.mean(_jaccard(sets[i], sets[j]) for i, j in pairs) if pairs else 1.0
         modal_key = Counter(frozenset(s) for s in sets).most_common(1)[0][0]
         return {"kind": "set", "score": score, "modal": sorted(modal_key)}
-    # A run that does not report a field differs from one that does: count
-    # "not reported" as a value of its own, or one run's SE "agrees" 1.00.
-    counts = Counter(_hashable(v) for v in values)
+    # The most common reported value, and the share of ALL runs that report it:
+    # a run that does not report a field does not agree with one that does (one
+    # run's SE alone "agreed" 1.00), and "not reported" is no value runs can
+    # agree on (two runs without an SE "agreed" 0.67 on nothing).
+    counts = Counter(_hashable(v) for v in present)
     modal, cnt = counts.most_common(1)[0]
     return {"kind": "scalar", "score": cnt / len(values), "modal": modal}
 

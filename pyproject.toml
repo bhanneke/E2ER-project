@@ -1,6 +1,6 @@
 [project]
 name = "e2er"
-version = "0.13.8"
+version = "0.13.9"
 description = "e2er is the open infrastructure for publishing, verifying, reproducing and reusing AI-enabled research."
 requires-python = ">=3.11"
 readme = "README.md"

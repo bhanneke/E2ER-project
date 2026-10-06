@@ -290,8 +290,12 @@ SPECIALIST_NEEDS: dict[str, tuple[str, ...]] = {
 #: Specialists that write their output files whole on every attempt. Before an
 #: attempt their earlier files are moved to `<name>.previous` (see
 #: specialists/base.py), so a retry or a send-back never trips over, or passes
-#: with, a file from before.
-SPECIALIST_REWRITES_OUTPUTS: frozenset[str] = frozenset({"replication_planner", "reproduction_comparer"})
+#: with, a file from before. The reviewers are among them: a review run again
+#: (after a deep revision, or a rerun from the review step) must never be
+#: scored from the review file of the round before.
+SPECIALIST_REWRITES_OUTPUTS: frozenset[str] = frozenset(
+    {"replication_planner", "reproduction_comparer", *REVIEWER_SPECIALISTS}
+)
 
 #: The work order a fixed `specialists` step of a template gives a specialist
 #: when the runner has no phase of its own for that step (the strategist writes

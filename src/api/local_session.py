@@ -81,8 +81,9 @@ def _client_is_loopback(request: Request) -> bool:
 
 def has_session(request: Request) -> bool:
     """Does this request carry the session token (cookie or header)?"""
-    presented = request.headers.get(HEADER) or request.cookies.get(cookie_name(request)) or ""
-    return bool(presented) and secrets.compare_digest(presented, session_token())
+    token = session_token()
+    presented = (request.headers.get(HEADER), request.cookies.get(cookie_name(request)))
+    return any(p and secrets.compare_digest(p, token) for p in presented)
 
 
 def local_problem(request: Request) -> str:

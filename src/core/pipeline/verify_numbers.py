@@ -293,6 +293,34 @@ def _matches_rounded(num_str: str, source_val: float) -> bool:
     return abs(draft_val - source_val) <= half * (1 + 1e-9) + 1e-12 * max(1.0, abs(source_val))
 
 
+_FULL_RULE_RE = re.compile(r"\\(?:hline|midrule|toprule|bottomrule)(?![A-Za-z])")
+
+
+def _header_rows(table_body: str, rule_re: re.Pattern[str]) -> int:
+    """How many rows (counted by ``\\\\``) at the top of a tabular are its column headers.
+
+    The headers end at the first full rule (``\\midrule`` or ``\\hline``) that
+    follows a row with content and has rows after it: the column-header row and
+    any header rows above it. A rule at the very top (``\\toprule``, a first
+    ``\\hline``) comes before the headers; partial rules (``\\cmidrule``,
+    ``\\cline``) sit between header rows and end nothing. A table whose only rule
+    after its rows closes it (``\\bottomrule``, a last ``\\hline``) has no
+    header rows set apart, so every row is read. Up to 0.13.7 the headers were
+    everything above the first ``\\midrule``: a table ruled with ``\\hline``
+    and a ``\\midrule`` lower down lost its data rows above it.
+    """
+
+    def has_content(text: str) -> bool:
+        return any(chunk.strip() for chunk in rule_re.sub("", text).split("\\\\"))
+
+    for m in _FULL_RULE_RE.finditer(table_body):
+        before, after = table_body[: m.start()], table_body[m.end() :]
+        if not has_content(before):
+            continue
+        return before.count("\\\\") if has_content(after) else 0
+    return 0
+
+
 def _extract_table_numbers(tex_content: str, *, zeros: bool = False) -> list[tuple[str, str]]:
     """Extract all numbers from LaTeX tabular environments.
 
@@ -329,7 +357,7 @@ def _extract_table_numbers(tex_content: str, *, zeros: bool = False) -> list[tup
         # as values they "mismatched" the nearest number in the results (live
         # run 2026-10-04: all three critical mismatches were header cells, and
         # the run stopped on a correct paper).
-        header_rows = table_body.split("\\midrule", 1)[0].count("\\\\") if "\\midrule" in table_body else 0
+        header_rows = _header_rows(table_body, rule_re)
         table_body = rule_re.sub("", table_body)
         rows = table_body.split("\\\\")
         for row_idx, row in enumerate(rows):

@@ -519,3 +519,23 @@ def _block_real_db_pool(monkeypatch):
     # Tests that exercise audit-module logic directly (test_audit.py) get
     # the real fetch_all mock that returns canned rows.
     yield
+
+
+#: The session token the test API server runs with; the TestClient sends it as the `e2er` commands do.
+TEST_SESSION_TOKEN = "test-session-token"
+
+
+@pytest.fixture(autouse=True)
+def _the_local_session(monkeypatch):
+    """Requests to the local API carry the server's session token (X-E2ER-Token), as the `e2er`
+    commands and the dashboard do; since 0.13.8 the endpoints that start, steer or stop a run
+    refuse a request without it. A test of the refusal builds its client with ``headers={"x-e2er-token": ""}``."""
+    from starlette.testclient import TestClient
+
+    monkeypatch.setenv("E2ER_SESSION_TOKEN", TEST_SESSION_TOKEN)
+    real = TestClient.__init__
+
+    def init(self, *args, headers=None, **kwargs):
+        real(self, *args, headers={"x-e2er-token": TEST_SESSION_TOKEN, **(headers or {})}, **kwargs)
+
+    monkeypatch.setattr(TestClient, "__init__", init)
