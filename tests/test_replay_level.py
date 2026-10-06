@@ -97,6 +97,89 @@ async def test_overrides_vary_one_attempt_and_then_replay_the_recording(tmp_path
     assert '"2020-03-16"' in (ws / "event_design.json").read_text(encoding="utf-8")
 
 
+async def test_the_replay_stands_in_for_the_backend_and_model_the_run_names(tmp_path: Path, monkeypatch):
+    """A run on codex under the replay level is recorded as a run on codex with its model (`backend_identity`)."""
+    from src.config import get_settings
+    from src.modules.llm import registry
+    from tests.replay.harness import _patch_backend
+
+    monkeypatch.setattr(registry, "get_backend", registry.get_backend)  # restored after the test
+    monkeypatch.setenv("CODEX_MODEL", "gpt-6-luna")
+    get_settings.cache_clear()
+    try:
+        _patch_backend()
+        settings = get_settings()
+        b = registry.get_backend(settings, "codex", "gpt-6-luna")
+        assert isinstance(b, ReplayBackend)
+        assert b.identity() == {"backend": "codex", "model": "gpt-6-luna", "replay": "fomc"}
+        # No model named: the backend's configured one, as the real registry resolves it.
+        assert registry.get_backend(settings, "codex").identity()["model"] == "gpt-6-luna"
+        assert registry.get_backend(settings, "claude_code", "sonnet").identity()["backend"] == "claude_code"
+    finally:
+        get_settings.cache_clear()
+    # Without a backend (the unit tests' own instances): the recording's model.
+    assert ReplayBackend("fomc").identity()["model"] == FOMC["model"]
+
+
+async def test_overrides_under_backends_vary_only_that_backends_runs(tmp_path: Path, monkeypatch):
+    ReplayBackend._attempts.clear()
+    over = tmp_path / "over.json"
+    over.write_text(
+        json.dumps(
+            {
+                "identification_strategist": {"attempts": [{"fail": "top level"}]},
+                "backends": {
+                    "codex": {
+                        "identification_strategist": {
+                            "attempts": [
+                                {"replace": {"identification_spec.json": [['"outcome": "car",', '"outcome": "x",']]}}
+                            ]
+                        }
+                    }
+                },
+            }
+        )
+    )
+    monkeypatch.setenv("E2ER_REPLAY_OVERRIDES", str(over))
+    codex, claude = tmp_path / "codex", tmp_path / "claude"
+    assert (await _call(ReplayBackend("fomc", backend="codex"), codex, "identification_strategist")).success
+    assert '"outcome": "x"' in (codex / "identification_spec.json").read_text(encoding="utf-8")
+    # Another backend (and a paper of its own) gets the top-level entry.
+    r = await _call(ReplayBackend("fomc", backend="claude_code"), claude, "identification_strategist", paper_id="p-2")
+    assert not r.success and r.error == "replay: top level"
+
+
+async def test_the_two_backend_fixture_gives_compare_a_real_difference(tmp_path: Path, monkeypatch):
+    """tests/fixtures/replay/fomc/two-backends.json (E2E-20): one run reports the declared treatment term with its
+    standard error, the other three means; `e2er compare` marks the second with † and counts the gaps as differences."""
+    from src.core.compare import build_comparison, load_run_record, render_report
+
+    ReplayBackend._attempts.clear()
+    monkeypatch.setenv("E2ER_REPLAY_OVERRIDES", str(FIXTURES / "fomc" / "two-backends.json"))
+    records = []
+    for backend, model in (("claude_code", "sonnet"), ("codex", "gpt-6-luna")):
+        ws, bundle = tmp_path / backend / "ws", tmp_path / backend / "bundle"
+        b = ReplayBackend("fomc", backend=backend, model=model)
+        for sp in ("identification_strategist", "econometrics_specialist", "idea_developer"):
+            assert (await _call(b, ws, sp, paper_id=backend)).success
+        (bundle / "design").mkdir(parents=True)
+        (bundle / "results").mkdir()
+        shutil.copy(ws / "identification_spec.json", bundle / "design")
+        shutil.copy(ws / "paper_plan.md", bundle / "design")
+        shutil.copy(ws / "estimation_results.json", bundle / "results")
+        records.append(load_run_record(bundle, f"{backend}/rep-1", backend_hint=backend, model_hint=model))
+    comparison = build_comparison(records)
+    assert comparison["divergent_fields"] == ["outcome", "coef_term", "coef_estimate", "coef_se", "coef_p_value"]
+    assert [r["coef_fallback"] for r in comparison["runs"]] == [False, True]
+    assert not comparison["variance"]["available"]
+    report = render_report(comparison)
+    # A bare bundle has no provenance.json, so no governance.
+    assert "| claude_code/rep-1 | claude_code | sonnet | n/a |" in report
+    assert "| codex/rep-1 | codex | gpt-6-luna | n/a |" in report
+    assert "| `coef_estimate` ⚠️ | 0.50 | -0.02084 | -0.7108 † |" in report
+    assert "| `coef_se` ⚠️ | 0.50 | 0.04367 | n/a † |" in report
+
+
 def _fetched_replication(ws: Path) -> None:
     """The package of the replication fixture as the fetch step leaves it (without Zenodo)."""
     from src.core.pipeline.replication import hash_tree

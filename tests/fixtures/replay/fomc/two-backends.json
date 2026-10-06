@@ -1,0 +1,51 @@
+{
+  "_about": "Replay overrides for two runs of the FOMC question on two backends (`e2er run-matrix`, end-to-end story E2E-20). Both runs replay the FOMC recording; each run's estimation adds the headline 'main' entry `e2er compare` reads. On claude_code it is the regression on the declared treatment term (dgs2_change_day0) with its standard error; on codex it is three means (all, hikes, cuts) without the treatment term or a standard error, and the design names another outcome, the way the two live runs of 2026-10-05 differed.",
+  "backends": {
+    "claude_code": {
+      "econometrics_specialist": {
+        "attempts": [
+          {
+            "replace": {
+              "estimation_results.json": [
+                [
+                  "{\n  \"h1_pooled_m1p1\": {",
+                  "{\n  \"main\": {\n    \"specification\": \"H2: CAR_i[-1,+1] = alpha + beta * dDGS2_0,i, pooled over all 31 events (the declared treatment term)\",\n    \"estimator\": \"ols\",\n    \"n_observations\": 31,\n    \"df\": 29,\n    \"coefficients\": {\n      \"dgs2_change_day0\": {\n        \"estimate\": -0.0208372989042048,\n        \"se\": 0.043672009547247044,\n        \"t_stat\": -0.47713167129764744,\n        \"p_value\": 0.636844547700604\n      }\n    }\n  },\n  \"h1_pooled_m1p1\": {"
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "codex": {
+      "identification_strategist": {
+        "attempts": [
+          {
+            "replace": {
+              "identification_spec.json": [
+                [
+                  "\"outcome\": \"car\",",
+                  "\"outcome\": \"car_m1p1\","
+                ]
+              ]
+            }
+          }
+        ]
+      },
+      "econometrics_specialist": {
+        "attempts": [
+          {
+            "replace": {
+              "estimation_results.json": [
+                [
+                  "{\n  \"h1_pooled_m1p1\": {",
+                  "{\n  \"main\": {\n    \"specification\": \"Mean CAR over [-1,+1]: all 31 events, the 20 hikes and the 11 cuts\",\n    \"estimator\": \"mean\",\n    \"n_observations\": 31,\n    \"coefficients\": {\n      \"mean_car_all\": {\n        \"estimate\": -0.7108317348501935\n      },\n      \"mean_car_hikes\": {\n        \"estimate\": -1.0588293600319225\n      },\n      \"mean_car_cuts\": {\n        \"estimate\": -0.07810877997432218\n      }\n    }\n  },\n  \"h1_pooled_m1p1\": {"
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    }
+  }
+}

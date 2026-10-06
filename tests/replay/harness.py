@@ -4,7 +4,9 @@ Called by ``python -m tests.replay.cli …`` before e2er's own ``main()``.
 Every change is test-only and named here:
 
 * the AI backend: ``get_backend`` returns :class:`ReplayBackend` for the
-  scenario in ``E2ER_REPLAY_SCENARIO``, whatever backend the run names;
+  scenario in ``E2ER_REPLAY_SCENARIO``, standing in for the backend and
+  model the run names (so a run on ``codex`` is recorded as a run on Codex
+  with its model, and overrides can vary one backend's runs);
 * Zenodo: the keyless record fetch (replication template) and the deposit
   API (``e2er publish --zenodo``, ``e2er preregister deposit``) go to the
   fake server at ``E2ER_REPLAY_ZENODO_URL``;
@@ -67,7 +69,8 @@ def _patch_backend() -> None:
     from .backend import ReplayBackend
 
     def get_backend(settings: Any, name: str | None = None, model: str | None = None) -> Any:
-        return ReplayBackend()
+        backend = name or settings.llm_backend
+        return ReplayBackend(backend=backend, model=model or settings.default_model_for(backend))
 
     registry.get_backend = get_backend  # type: ignore[assignment]
 
