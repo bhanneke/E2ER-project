@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.8] — 2026-10-06
+
 - **Claude Code runs made with 0.13.7 can be published again.** 0.13.7 recorded where the CLI is
   installed (`/Users/<name>/.local/bin/claude`) in the run's `backend_identity` event, the dossier
   copied the event as it was, and `e2er publish` refused every Claude Code run with "the dossier
