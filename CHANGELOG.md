@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.8] — 2026-10-06
+
+- **Claude Code runs made with 0.13.7 can be published again.** 0.13.7 recorded where the CLI is
+  installed (`/Users/<name>/.local/bin/claude`) in the run's `backend_identity` event, the dossier
+  copied the event as it was, and `e2er publish` refused every Claude Code run with "the dossier
+  names a path on this machine". The Claude Code, Codex and Gemini backends now record the CLI's
+  name and version only (`"cli": "claude"`). When the dossier is built, any path on this machine
+  in what the run recorded (events, failed steps, the run's last error, researcher steps) is cut
+  to its last part (`…/claude`, `…/data.csv`), so runs recorded before this release publish too.
+  A record without such a path reads exactly as before, so dossiers already issued keep their
+  address. A path anywhere else in the dossier (for example in `data/data_sources.json`) still
+  stops publish.
+- **The replay level can stand in for a named backend and model** (tests only, for the end-to-end
+  story E2E-20: `e2er run-matrix` on two backends, then `e2er compare`). Under `tests/replay` the
+  replayed backend now takes the backend and model the run names, so a run on `codex` with
+  `--models codex=gpt-6-luna` records `codex` and `gpt-6-luna` in its `backend_identity` event, as
+  a real Codex run does (before, the replay ignored both and recorded no model). Replay overrides
+  under `"backends"` apply only to the runs on that backend, so two runs of one question can
+  differ. `tests/fixtures/replay/fomc/two-backends.json` is the variation the story uses: the
+  run on `claude_code` reports the declared treatment term with its standard error, the run on
+  `codex` reports three means and names another outcome, as the live runs of 2026-10-05 did.
+
 ## [0.13.7] — 2026-10-06
 
 - **Yahoo Finance data get the GMD's treatment.** Yahoo's terms allow personal use only, so data

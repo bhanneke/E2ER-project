@@ -29,6 +29,7 @@ from ...config import get_settings
 from ...logging_config import get_logger
 from .base import LLMBackend, TokenUsage, ToolHandler, ToolLoopResult
 from .cli_support import (
+    cli_name,
     cli_path_or_setting,
     cli_version,
     clip,
@@ -93,7 +94,7 @@ class GeminiBackend(LLMBackend):
         return {
             "backend": "gemini",
             "model": self._model or None,
-            "cli": self._cli_path,
+            "cli": cli_name(self._cli_path),
             "cli_version": cli_version(self._cli_path),
         }
 

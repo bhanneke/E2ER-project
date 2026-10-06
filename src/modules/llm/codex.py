@@ -50,6 +50,7 @@ from ...config import get_settings
 from ...logging_config import get_logger
 from .base import LLMBackend, TokenUsage, ToolHandler, ToolLoopResult
 from .cli_support import (
+    cli_name,
     cli_path_or_setting,
     cli_version,
     clip,
@@ -147,7 +148,7 @@ class CodexBackend(LLMBackend):
             "backend": "codex",
             "model": self._model or None,
             "reasoning_effort": self._effort or None,
-            "cli": self._cli_path,
+            "cli": cli_name(self._cli_path),
             "cli_version": cli_version(self._cli_path),
             "sandbox": self._sandbox,
         }

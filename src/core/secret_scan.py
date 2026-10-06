@@ -37,6 +37,16 @@ _LOCAL_PATH = re.compile(
 )
 
 
+#: The same places as `_LOCAL_PATH`, each matched to the end of the path (a home
+#: directory included), so the whole path can be taken out of a string.
+_LOCAL_PATH_WHOLE = re.compile(
+    r"(?:/Users|/home)/[^/\s\"']+[^\s\"']*"
+    r"|(?<![\w:/.~\\-])/(?:root|private|var|tmp|opt|mnt|Volumes|media|srv|etc|usr|nix|run|workspaces?)/[^\s\"']*"
+    r"|(?<![\w])[A-Za-z]:[\\/][^\s\"']+"
+    r"|\\\\[A-Za-z0-9._-]+\\[^\s\"']+"
+)
+
+
 def _entropy(s: str) -> float:
     n = len(s)
     return -sum(c / n * math.log2(c / n) for c in Counter(s).values())
@@ -89,4 +99,32 @@ def sanitize(value: Any, bundle: Path | None = None) -> Any:
         return [sanitize(v, bundle) for v in value]
     if isinstance(value, dict):
         return {k: sanitize(v, bundle) for k, v in value.items()}
+    return value
+
+
+def strip_local_paths(value: Any) -> Any:
+    """A copy in which every path on this machine (what `find_local_paths` finds) is cut
+    to its last part: ``/Users/ann/.local/bin/claude`` becomes ``…/claude``.
+
+    Strings without such a path come back unchanged, so a record that had none reads
+    exactly as before.
+    """
+
+    def cut(m: re.Match[str]) -> str:
+        whole = m.group(0).rstrip("/\\")
+        if _HOME_PATH.fullmatch(whole):  # a home directory itself: its last part is the user name
+            return "~"
+        tail = re.split(r"[\\/]", whole)[-1]
+        return f"…/{tail}" if tail else "…"
+
+    if isinstance(value, str):
+        if not _LOCAL_PATH.search(value):
+            return value
+        out = _LOCAL_PATH_WHOLE.sub(cut, value)
+        # Whatever the whole-path pattern missed still goes.
+        return _LOCAL_PATH.sub("…", out) if _LOCAL_PATH.search(out) else out
+    if isinstance(value, list):
+        return [strip_local_paths(v) for v in value]
+    if isinstance(value, dict):
+        return {k: strip_local_paths(v) for k, v in value.items()}
     return value

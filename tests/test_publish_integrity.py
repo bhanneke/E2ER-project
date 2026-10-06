@@ -326,7 +326,10 @@ def test_a_purpose_recorded_on_the_study_is_honoured_without_the_flag(tmp_path: 
 # ── 21: no local path reaches the dossier ────────────────────────────────────
 
 
-def test_a_local_path_in_the_runs_record_stops_publish(bundle: Path, tmp_path: Path, capsys):
+def test_a_local_path_in_the_runs_record_is_cut_to_its_last_part(bundle: Path, tmp_path: Path, capsys):
+    """Since 0.13.8: the run's record cannot be edited, so a path in it no longer
+    makes the study unpublishable; it reaches the dossier as its last part only
+    (a path elsewhere still stops publish: test_publish_local_paths)."""
     import sqlite3
 
     db = make_run_db(tmp_path / "study", paper_id_of(bundle))
@@ -338,9 +341,12 @@ def test_a_local_path_in_the_runs_record_stops_publish(bundle: Path, tmp_path: P
     )
     con.commit()
     con.close()
-    assert publish(str(bundle), **ARGS, out=str(tmp_path / "e")) == 1
-    assert "names a path on this machine" in capsys.readouterr().out
-    assert not (bundle / "e2er.json").exists()
+    assert publish(str(bundle), **ARGS, out=str(tmp_path / "e")) == 0
+    assert "names a path on this machine" not in capsys.readouterr().out
+    doc = _manifest(bundle)["dossier"]["doc"]
+    assert "/private/" not in json.dumps(doc)
+    texts = [s.get("text") for s in doc["workflow"] if s["type"] == "researcher"]
+    assert "Use …/data.csv" in texts
 
 
 # ── 24, 27: the dossier link without --name, and a footnote that does not overclaim ─

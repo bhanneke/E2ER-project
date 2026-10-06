@@ -32,6 +32,16 @@ the server runs::
 
 Attempt *n* (counted per paper and specialist in this process) uses entry
 *n* of ``attempts``; later attempts replay the recording unchanged.
+
+The replay stands in for the backend and model the run names (``get_backend``
+in the harness passes them): :meth:`ReplayBackend.identity` reports them, so
+the run's ``backend_identity`` event and its export name e.g. ``codex`` and
+``gpt-6-luna``. Overrides under ``"backends"`` apply only to the runs on that
+backend and take the place of the top-level entry for the same specialist, so
+two runs of one question (``e2er run-matrix``) can differ::
+
+    {"backends": {"codex": {"econometrics_specialist": {"attempts": [
+        {"replace": {"estimation_results.json": [["old", "new"]]}}]}}}}
 """
 
 from __future__ import annotations
@@ -88,10 +98,23 @@ class ReplayBackend(LLMBackend):
     #: Every call, in order, for assertions: (paper id, specialist or strategist kind).
     calls: list[tuple[str, str]] = []
 
-    def __init__(self, scenario: str | Path | None = None) -> None:
+    def __init__(
+        self, scenario: str | Path | None = None, *, backend: str | None = None, model: str | None = None
+    ) -> None:
         name = str(scenario or os.environ.get(ENV_SCENARIO) or "fomc")
         self.root = scenario_dir(name)
         self.scenario: dict[str, Any] = json.loads((self.root / "scenario.json").read_text(encoding="utf-8"))
+        #: The backend and model this replay stands in for (None: the recording's own model).
+        self.backend = backend
+        self._model = model
+
+    def identity(self) -> dict[str, Any]:
+        """The backend and model the run named, as the real backend would report them."""
+        return {
+            "backend": self.backend,
+            "model": self._model or self.scenario.get("model"),
+            "replay": self.scenario.get("name"),
+        }
 
     # ── overrides ──────────────────────────────────────────────────────────
 
@@ -110,7 +133,9 @@ class ReplayBackend(LLMBackend):
         key = (paper_id, specialist)
         n = ReplayBackend._attempts.get(key, 0)
         ReplayBackend._attempts[key] = n + 1
-        attempts = ((self._overrides().get(specialist) or {}).get("attempts")) or []
+        over = self._overrides()
+        scoped = ((over.get("backends") or {}).get(self.backend or "") or {}).get(specialist)
+        attempts = ((scoped if scoped is not None else over.get(specialist)) or {}).get("attempts") or []
         return attempts[n] if n < len(attempts) and isinstance(attempts[n], dict) else {}
 
     # ── the backend ────────────────────────────────────────────────────────

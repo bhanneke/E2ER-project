@@ -43,6 +43,7 @@ from ..skills.loader import skill_component
 from .availability import any_public
 from .demonstration import DEMONSTRATION, disclaimer
 from .run_outcome import effective_status, internal_review, read_aggregation
+from .secret_scan import strip_local_paths
 
 SCHEMA = "e2er-dossier/0.3"
 #: Used only when a dossier records researcher steps or a pre-registration, so a
@@ -758,6 +759,14 @@ def read_run(db: Path, paper_id: str, files: dict[str, Any] | None = None, bundl
                     if i not in segs:
                         segs.append(i)
         segment["steps"] = sum(1 for s in rec.workflow if s.get("segment") == i)
+    # What the run recorded may name paths on the machine that ran it: the CLI
+    # (backend_identity), a file an error message quotes, the workspace. They are
+    # cut to their last part here, for runs recorded before e2er 0.13.8 too;
+    # a record without such a path stays exactly as it was.
+    rec.segments = strip_local_paths(rec.segments)
+    rec.workflow = strip_local_paths(rec.workflow)
+    rec.events = strip_local_paths(rec.events)
+    rec.outcome = strip_local_paths(rec.outcome)
     return rec
 
 
