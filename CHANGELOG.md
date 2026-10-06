@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.9] — 2026-10-07
+
 - **A review run again is scored from its own files.** The reviewers now rewrite their files whole:
   before a reviewer runs again (after a deep revision, or a rerun from the review step) its earlier
   review is moved to `<file>.previous`, and only each reviewer's latest reply can stand in for a
