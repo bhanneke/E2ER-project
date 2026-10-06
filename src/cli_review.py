@@ -24,12 +24,12 @@ from typing import Any
 def _client() -> Any:
     import httpx
 
-    from .cli_run import _api_root, _ensure_api_up
+    from .cli_run import _api_root, _ensure_api_up, api_headers
 
     ok, err = _ensure_api_up()
     if not ok:
         raise SystemExit(f"e2er review: {err}")
-    return httpx.Client(base_url=_api_root(), timeout=30.0)
+    return httpx.Client(base_url=_api_root(), headers=api_headers(), timeout=30.0)
 
 
 def _post(http: Any, paper_id: str, body: dict[str, Any]) -> int:

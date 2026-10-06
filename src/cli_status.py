@@ -29,7 +29,7 @@ import time
 # Reused from cli_run to avoid duplicating connection logic. These
 # helpers are also used by tests; importing here keeps the module
 # graph flat.
-from .cli_run import _api_reachable, _api_root, _poll_status
+from .cli_run import _api_reachable, _api_root, _poll_status, api_headers
 from .core.run_outcome import score_words, status_words
 
 
@@ -294,7 +294,7 @@ def cancel(paper_id: str, yes: bool = False) -> int:
             return 0
 
     try:
-        r = httpx.post(f"{_api_root()}/api/papers/{paper_id}/cancel", timeout=10.0)
+        r = httpx.post(f"{_api_root()}/api/papers/{paper_id}/cancel", headers=api_headers(), timeout=10.0)
     except Exception as e:
         print(f"e2er cancel: POST failed: {e}", file=sys.stderr)
         return 3
@@ -411,6 +411,7 @@ def resume(
         r = httpx.post(
             f"{_api_root()}/api/papers/{paper_id}/resume",
             json=body,
+            headers=api_headers(),
             timeout=10.0,
         )
     except Exception as e:

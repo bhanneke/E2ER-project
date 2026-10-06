@@ -32,9 +32,12 @@ from typing import Any
 from ...config import get_settings
 from ...logging_config import get_logger
 from .base import LLMBackend, TokenUsage, ToolHandler, ToolLoopResult
-from .cli_support import cli_name, cli_path_or_setting, cli_version, run_env
+from .cli_support import cli_name, cli_path_or_setting, cli_version, kill_process_group, run_env, stop_on_cancel
 
 logger = get_logger(__name__)
+
+#: The CLI's own sign-in, the only credentials besides the wrappers' that reach its shell (run_env).
+CLI_KEYS = ("ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_AUTH_TOKEN")
 
 
 # Default CLI tool allowlist for an empirical research specialist.
@@ -360,6 +363,7 @@ async def _invoke_cli(
         paper_id=paper_id,
         specialist=specialist,
         workspace_root_abs=workspace_root_abs,
+        cli_keys=CLI_KEYS,
     )
 
     try:
@@ -370,6 +374,9 @@ async def _invoke_cli(
             stderr=asyncio.subprocess.PIPE,
             cwd=cwd,
             env=env,
+            # Its own session: a timeout or a cancel kills the CLI with every
+            # command it started (kill_process_group), not the CLI alone.
+            start_new_session=True,
         )
     except FileNotFoundError:
         return ToolLoopResult(
@@ -394,6 +401,9 @@ async def _invoke_cli(
             proc.communicate(input=prompt.encode("utf-8")),
             timeout=timeout,
         )
+    except asyncio.CancelledError:
+        await stop_on_cancel(proc)
+        raise
     except TimeoutError:
         # B-6. Since Python 3.11 `asyncio.TimeoutError` IS the builtin
         # `TimeoutError`, which is also an `OSError` subclass — so a socket or
@@ -403,7 +413,7 @@ async def _invoke_cli(
         # out after 69s (limit 1800s)") and sent us looking for a hung CLI
         # that was never hung. Distinguish by elapsed time: only the outer
         # `wait_for` can fire at (or after) the limit.
-        proc.kill()
+        kill_process_group(proc)
         await proc.wait()
         elapsed = time.monotonic() - start
         deadline_fired = elapsed >= timeout * 0.95

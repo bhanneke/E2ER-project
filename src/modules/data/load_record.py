@@ -27,8 +27,13 @@ An entry names what the page needs, in the same keys for every connector:
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
+import os
+import shutil
+import time
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -275,6 +280,60 @@ def _key(entry: dict[str, Any]) -> tuple[Any, ...]:
     return ("source", entry.get("connector"), entry.get("series"), entry.get("query"))
 
 
+@contextlib.contextmanager
+def _locked(path: Path) -> Iterator[None]:
+    """An exclusive lock on ``.<name>.lock`` beside the file while the block runs (parallel loads of a study)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path.with_name(f".{path.name}.lock"), "a+b") as fh:
+        try:
+            import fcntl
+
+            fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+        except ImportError:  # Windows
+            import msvcrt
+
+            fh.seek(0)
+            while True:
+                try:
+                    msvcrt.locking(fh.fileno(), msvcrt.LK_LOCK, 1)  # type: ignore[attr-defined]
+                    break
+                except OSError:
+                    time.sleep(0.05)
+        yield  # the lock goes with the file handle
+
+
+def _read_loads(path: Path) -> list[Any]:
+    """The loads already recorded: the file, else its backup; a file that cannot be read is kept aside, never wiped."""
+    if not path.is_file():
+        return []
+    for attempt in range(3):
+        try:
+            loaded = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict) and isinstance(loaded.get("loads"), list):
+                return list(loaded["loads"])
+            break
+        except (OSError, ValueError):
+            time.sleep(0.05 * (attempt + 1))  # a writer that does not lock may be halfway through
+    aside = path.with_name(f".{path.name}.unreadable-{datetime.now(UTC).strftime('%Y%m%dT%H%M%S%f')}")
+    try:
+        path.replace(aside)
+    except OSError:
+        pass
+    backup = path.with_name(f".{path.name}.bak")
+    try:
+        loaded = json.loads(backup.read_text(encoding="utf-8"))
+        loads = list(loaded["loads"]) if isinstance(loaded, dict) and isinstance(loaded.get("loads"), list) else []
+    except (OSError, ValueError):
+        loads = []
+    logger.warning(
+        "%s could not be read; it was kept as %s and the record continues from %s",
+        path,
+        aside.name,
+        f"its backup ({len(loads)} loads)" if loads else "nothing",
+    )
+    return loads
+
+
 def record_load(workspace: Path, record: dict[str, Any]) -> Path:
     """Write ``record`` into the study's ``data_sources.json`` (one entry per table or saved file).
 
@@ -282,28 +341,30 @@ def record_load(workspace: Path, record: dict[str, Any]) -> Path:
     series from the same source when nothing was saved) replaces the earlier
     entry; everything else is kept. Export ships the file as
     ``data/data_sources.json`` and the dossier lists its entries.
+
+    Parallel loads of one study (specialists run side by side) each hold a lock
+    on the file while they read and rewrite it, and the file is replaced whole
+    (written next to it, then renamed), so no load is lost and no reader sees
+    half a file. The previous version is kept as ``.data_sources.json.bak``. The side files start
+    with a dot, so export leaves them out of the study folder.
     """
     path = Path(workspace) / DATA_SOURCES_FILE
-    loads: list[Any] = []
-    if path.is_file():
-        try:
-            loaded = json.loads(path.read_text(encoding="utf-8"))
-            if isinstance(loaded, dict) and isinstance(loaded.get("loads"), list):
-                loads = loaded["loads"]
-        except (OSError, ValueError):
-            logger.warning("%s is unreadable; starting it again", path)
-    doc: dict[str, Any] = {
-        "$comment": (
-            "Written by e2er-data: one entry per external-source load, with the source version, "
-            "the URL and SHA-256 of every file read."
-        ),
-        "loads": loads,
-    }
     record = {k: v for k, v in record.items() if v is not None}
     key = _key(record)
-    doc["loads"] = [a for a in doc["loads"] if not (isinstance(a, dict) and _key(a) == key)] + [record]
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(doc, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    with _locked(path):
+        loads = _read_loads(path)
+        doc: dict[str, Any] = {
+            "$comment": (
+                "Written by e2er-data: one entry per external-source load, with the source version, "
+                "the URL and SHA-256 of every file read."
+            ),
+            "loads": [a for a in loads if not (isinstance(a, dict) and _key(a) == key)] + [record],
+        }
+        tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+        tmp.write_text(json.dumps(doc, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        if path.is_file():
+            shutil.copyfile(path, path.with_name(f".{path.name}.bak"))
+        os.replace(tmp, path)
     return path
 
 

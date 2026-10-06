@@ -36,10 +36,14 @@ from .cli_support import (
     flatten_prompt,
     kill_process_group,
     run_env,
+    stop_on_cancel,
     workspace_cwd,
 )
 
 logger = get_logger(__name__)
+
+#: The CLI's own sign-in, the only credentials besides the wrappers' that reach its shell (run_env).
+CLI_KEYS = ("GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_APPLICATION_CREDENTIALS")
 
 #: Flags found in `gemini --help`, per CLI path. Only a probe that actually
 #: read the help text is kept; a slow or failed probe is retried next time
@@ -122,7 +126,7 @@ class GeminiBackend(LLMBackend):
         settings = get_settings()
         prompt = flatten_prompt(system, messages)
         cwd, root = workspace_cwd(settings, paper_id, self._cwd)
-        env = run_env(settings, paper_id=paper_id, specialist=specialist, workspace_root_abs=root)
+        env = run_env(settings, paper_id=paper_id, specialist=specialist, workspace_root_abs=root, cli_keys=CLI_KEYS)
         # The probe is a blocking subprocess; keep it off the event loop.
         approval_mode, output_format = await asyncio.to_thread(_probe_gemini_flags, self._cli_path)
         cmd = self.build_cmd(approval_mode, output_format)
@@ -163,6 +167,9 @@ class GeminiBackend(LLMBackend):
                 proc.communicate(input=prompt.encode("utf-8")),
                 timeout=self._timeout,
             )
+        except asyncio.CancelledError:
+            await stop_on_cancel(proc)
+            raise
         except TimeoutError:
             kill_process_group(proc)
             await proc.wait()

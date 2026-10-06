@@ -267,6 +267,7 @@ class PipelineRunner:
             state.last_status = status.value
             state.contributions_count = prior_contributions + len(self._contributions)
             state.mark_complete("revision")
+            self._drop_accepted_skips("revision")
             state.save(self._workspace)
             if self._should_pause_for_review("revision", state):
                 state.pending_review_stage = "revision"
@@ -291,6 +292,7 @@ class PipelineRunner:
             else:
                 raise RuntimeError(f"step {name!r} ({step.kind}) has no phase in this runner")
         result = await _phase(name, handler)
+        self._drop_accepted_skips(name)
 
         if effects.captures_status and isinstance(result, PaperStatus):
             status = result
@@ -1224,6 +1226,9 @@ class PipelineRunner:
         if state.pending_review_stage and state.pending_review_stage != CONTRACT_STEP:
             # Stopped from a send-back at another researcher step: come back to it afterwards.
             state.metadata["contract_pause"]["return_to"] = state.pending_review_stage
+        elif previous.get("return_to"):
+            # A second stop while the first was being settled: the step to come back to stays.
+            state.metadata["contract_pause"]["return_to"] = previous["return_to"]
         if CONTRACT_STEP in state.approved_stages:
             state.approved_stages.remove(CONTRACT_STEP)
         state.pending_review_stage = CONTRACT_STEP
@@ -1279,6 +1284,13 @@ class PipelineRunner:
             for f in failed:
                 keys.append(self._order_key(WorkOrder(**f["order"])))
                 mark_done(f["order"], f["specialist"])
+                if phase and phase != "initial":
+                    # A phase that plans its work orders again on resume (revision, an iteration,
+                    # a pivot): its next dispatch of this specialist keeps the approved output. (A
+                    # fixed specialists step skips it by step_done; the entry then lapses at its end.)
+                    state.metadata.setdefault("contract_accepted_skip", []).append(
+                        {"phase": phase, "specialist": f["specialist"]}
+                    )
         else:
             step_names = [s.name for s in self._spec.steps]
             sent: set[str] = set()
@@ -1845,7 +1857,21 @@ class PipelineRunner:
         whose canonical file is absent (e.g. a specialist hard-failed
         before writing). Reviewers are tolerant of partial failure in the
         cascade-detection layer, so missing files don't halt the pipeline.
+
+        The deep revision's progress is kept in the state file
+        (``metadata["deep_revision"]``: the round and whether its research or
+        its re-review is under way), so a resume after a stop inside it (the
+        number check of the re-review, say) goes on from there instead of
+        scoring the old reviews again and repeating the round.
         """
+        meta = self._state_metadata()
+        found = meta.get("deep_revision")
+        deep: dict[str, Any] = found if isinstance(found, dict) else {}
+        self._deep_revision_count = max(self._deep_revision_count, int(deep.get("round") or 0))
+        if deep.get("step") == "research":
+            return await self._deep_revision(current_status, run_research=True)
+        if deep.get("step") == "review":
+            return await self._deep_revision(current_status, run_research=False)
         scores = self._read_review_scores()
         if not scores:
             # Auto-completing on missing review evidence is dangerous: it
@@ -1886,15 +1912,7 @@ class PipelineRunner:
                 _MAX_DEEP_REVISIONS,
                 self._paper_id,
             )
-            await self._run_deep_revision_round()
-            # Re-run the full review machinery (re-render + gates + reviewers)
-            # on the revised research, then re-decide from the fresh scores.
-            review_status = await self._run_review_phase()
-            if review_status != PaperStatus.REVIEW:
-                # A gate rejected the re-analyzed draft (e.g. verify_numbers
-                # critical after re-estimation) — terminal this round.
-                return review_status
-            return await self._run_revision_phase(current_status)
+            return await self._deep_revision(current_status, run_research=True)
 
         # MAJOR_REVISION → the existing light prose patch (unchanged).
         if result.verdict == "MAJOR_REVISION":
@@ -1930,8 +1948,10 @@ class PipelineRunner:
                     if score:
                         scores.append(score)
                         seen.add(reviewer)
-        for c in self._contributions:
-            if c.specialist in REVIEWER_SPECIALISTS and c.specialist not in seen:
+        # Only each reviewer's latest reply: an earlier round's reply never stands in for this one.
+        latest = {c.specialist: c for c in self._contributions if c.specialist in REVIEWER_SPECIALISTS}
+        for c in latest.values():
+            if c.specialist not in seen:
                 score = parse_review_output(c.specialist, c.output)
                 if score:
                     # Salvaged from the reply text because no file was written.
@@ -2007,6 +2027,35 @@ class PipelineRunner:
                 parts.append(f"## {reviewer}\n{txt}")
         blob = "\n\n".join(parts)
         return blob[:max_chars]
+
+    def _state_metadata(self) -> dict[str, Any]:
+        """The run's state metadata (an empty dict, not saved, when the runner has no state)."""
+        state = getattr(self, "_state", None)
+        meta = getattr(state, "metadata", None)
+        return meta if isinstance(meta, dict) else {}
+
+    def _save_deep_revision(self, step: str) -> None:
+        self._state_metadata()["deep_revision"] = {"round": self._deep_revision_count, "step": step}
+        state = getattr(self, "_state", None)
+        if state is not None and hasattr(state, "save"):
+            state.save(self._workspace)
+
+    async def _deep_revision(self, current_status: PaperStatus, *, run_research: bool) -> PaperStatus:
+        """One deep revision round: the research again on the referee findings, then the full review again."""
+        if run_research:
+            self._save_deep_revision("research")
+            await self._run_deep_revision_round()
+        # Re-run the full review machinery (re-render + gates + reviewers)
+        # on the revised research, then re-decide from the fresh scores.
+        self._save_deep_revision("review")
+        review_status = await self._run_review_phase()
+        if review_status != PaperStatus.REVIEW:
+            # A gate rejected the re-analyzed draft (e.g. verify_numbers
+            # critical after re-estimation) — terminal this round.
+            return review_status
+        # The round is done; its count stays (no second round on a resume).
+        self._save_deep_revision("done")
+        return await self._run_revision_phase(current_status)
 
     async def _run_deep_revision_round(self) -> None:
         """Re-do the RESEARCH (not just the prose) in response to the referees,
@@ -2796,7 +2845,62 @@ class PipelineRunner:
             for o in orders
         ]
 
+    def _drop_accepted_skips(self, phase: str) -> None:
+        """A phase that ended without dispatching an approved specialist again leaves no approval behind."""
+        meta = self._state_metadata()
+        pending = [p for p in meta.get("contract_accepted_skip") or [] if p.get("phase") != phase]
+        if pending:
+            meta["contract_accepted_skip"] = pending
+        else:
+            meta.pop("contract_accepted_skip", None)
+
+    def _take_accepted_outputs(self, orders: list[WorkOrder]) -> tuple[list[WorkOrder], list[Contribution]]:
+        """Orders whose output the researcher approved as it is at a contract stop in this phase.
+
+        Each approval (``contract_accepted_skip``, from _settle_contract) is used
+        once: the specialist does not run again, and its output stands.
+        """
+        meta = self._state_metadata()
+        pending = meta.get("contract_accepted_skip")
+        if not pending:
+            return orders, []
+        phase = getattr(self, "_current_step", None)
+        keep: list[WorkOrder] = []
+        kept: list[Contribution] = []
+        for wo in orders:
+            hit = next((p for p in pending if p.get("phase") == phase and p.get("specialist") == wo.specialist), None)
+            if hit is None:
+                keep.append(wo)
+                continue
+            pending.remove(hit)
+            kept.append(
+                Contribution(
+                    paper_id=self._paper_id,
+                    specialist=wo.specialist,
+                    output="Kept as it is: the researcher approved this output although it failed its contract.",
+                    output_file=wo.output_file or SPECIALIST_ARTIFACTS.get(wo.specialist, ""),
+                    success=True,
+                )
+            )
+        if not pending:
+            meta.pop("contract_accepted_skip", None)
+        state = getattr(self, "_state", None)
+        if kept and state is not None and hasattr(state, "save"):
+            state.save(self._workspace)
+        return keep, kept
+
     async def _execute_orders(self, contract_orders: list[WorkOrder]) -> list[Contribution]:
+        """Run work orders (one alone, or grouped), stopping at researcher steps between groups.
+
+        An order whose output the researcher approved as it is at a contract stop in
+        this phase does not run again (see _take_accepted_outputs).
+        """
+        contract_orders, kept = self._take_accepted_outputs(contract_orders)
+        if not contract_orders:
+            return kept
+        return kept + await self._dispatch_orders(contract_orders)
+
+    async def _dispatch_orders(self, contract_orders: list[WorkOrder]) -> list[Contribution]:
         """Run work orders (one alone, or grouped), stopping at researcher steps between groups."""
         contract_orders = self._order_for_researcher_steps(contract_orders)
         state = getattr(self, "_state", None)

@@ -29,12 +29,11 @@ CONNECTORS: dict[str, tuple[str, str] | None] = {
     "fred": ("fred_api_key", "FRED_API_KEY"),
     "allium": ("allium_api_key", "ALLIUM_API_KEY"),
 }
+#: Other names for a connector, written as _norm writes them (lower case, "_" for spaces and dashes).
 _ALIASES = {
     "yahoo": "yfinance",
     "yahoo_finance": "yfinance",
-    "yahoo finance": "yfinance",
     "global_macro_database": "gmd",
-    "global macro database": "gmd",
 }
 #: A table from the study's own files.
 LOCAL_SOURCES = frozenset(
@@ -46,7 +45,7 @@ _TABULAR = frozenset({".csv", ".tsv", ".parquet", ".xlsx", ".xls", ".json", ".js
 @dataclass(frozen=True)
 class Sources:
     connectors: dict[str, bool]  # name -> usable now
-    files: tuple[str, ...]  # data files in the study's data folder(s), by name
+    files: tuple[str, ...]  # data files in the study's data folder(s), by their path inside it
     tables: frozenset[str]  # tables already in data.db (the researcher's own data)
 
 
@@ -70,14 +69,26 @@ def available_sources(workspace: Path, settings: Any = None) -> Sources:
     files: list[str] = []
     for d in _data_dirs(workspace, settings):
         if d.is_dir():
-            files += [p.name for p in sorted(d.iterdir()) if p.is_file() and p.suffix.lower() in _TABULAR]
+            # Files in subfolders too (data/raw/x.csv), by their path inside the data folder.
+            for p in sorted(d.rglob("*")):
+                rel = p.relative_to(d)
+                if p.is_file() and p.suffix.lower() in _TABULAR and not any(x.startswith(".") for x in rel.parts):
+                    files.append(rel.as_posix())
     return Sources(connectors, tuple(dict.fromkeys(files)), frozenset(table_row_counts(workspace)))
 
 
 def _norm(source: Any) -> str:
-    s = str(source or "").strip().lower()
-    s = _ALIASES.get(s, s)
-    return s.replace("-", "_").replace(" ", "_")
+    """A source as named in the data dictionary, in one spelling: "Yahoo-Finance" and "yahoo finance" are yfinance."""
+    s = "_".join(str(source or "").strip().lower().replace("-", " ").replace("_", " ").split())
+    return _ALIASES.get(s, s)
+
+
+def _has_file(wanted: str, files: tuple[str, ...]) -> bool:
+    """Is the named file in the data folder? By its path there (``raw/x.csv`` or ``data/raw/x.csv``) or its name."""
+    w = wanted.replace("\\", "/").strip().lstrip("./")
+    if w.startswith("data/"):
+        w = w[len("data/") :]
+    return any(f == w or f.endswith("/" + w) for f in files) or Path(w).name in {Path(f).name for f in files}
 
 
 def why_unavailable(entry: dict[str, Any], sources: Sources) -> str | None:
@@ -96,7 +107,7 @@ def why_unavailable(entry: dict[str, Any], sources: Sources) -> str | None:
     if source in LOCAL_SOURCES:
         wanted = str(entry.get("file") or "").strip()
         # The named file, or else a file named like the table (fomc_dates.csv for fomc_dates).
-        if wanted and Path(wanted).name in sources.files:
+        if wanted and _has_file(wanted, sources.files):
             return None
         if not wanted and any(Path(f).stem == name for f in sources.files):
             return None

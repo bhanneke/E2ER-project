@@ -7,6 +7,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **A review run again is scored from its own files.** The reviewers now rewrite their files whole:
+  before a reviewer runs again (after a deep revision, or a rerun from the review step) its earlier
+  review is moved to `<file>.previous`, and only each reviewer's latest reply can stand in for a
+  missing file. Before, a reviewer that wrote nothing in the second round was scored from the
+  first round's file, and the "no reviewer produced a score" check could not fire.
+- **The deep revision survives a stop.** Its round and whether its research or its re-review is
+  under way are kept in the run's state file. A resume after a stop inside the re-review (the
+  number check, say) runs the review again and decides; it no longer repeats the whole deep
+  revision. A finished deep revision is not repeated on a resume. `e2er rerun` from the revision
+  step or earlier allows one again.
+- **Approving output that failed its contract works in every phase.** In the revision, an
+  iteration or a pivot, the approved specialist is not run again when the phase is planned anew
+  on resume; its output stands (each approval is used once and lapses when its phase ends). A
+  second contract stop while the first is being settled keeps the researcher step to come back to.
+- **`e2er rerun` withdraws the approvals at the checks it runs again**: table numbers continued
+  with at the number check (when the review step runs again), outputs kept as they are at a
+  contract stop (in the steps that run again). `e2er verify` now accepts a table cell the
+  researcher continued with only for the same cell, value and source key, as the run does
+  (records written before the run kept a source key: cell and value).
+- **`e2er reproduce` no longer reports "Reproduced" when the study's code wrote nothing.** The
+  files the rerun is to write are taken out of the run folder before the steps run, so a published
+  file is never compared with itself; a rerun that writes none of them is "Not reproduced". An
+  input file that differs from the study's, or is missing, now counts against "Reproduced". The
+  study's code and the installation of its packages run with a minimal environment (PATH, HOME,
+  language, temporary folder, proxies and certificates, the installers' own settings without
+  credentials): no API key, token or e2er setting reaches someone else's code.
+- **The number check reads every data row of a table ruled with `\hline`.** The header rows are
+  the rows above the first full rule that follows a row (a rule at the very top or one that only
+  closes the table sets nothing apart); `\cmidrule` between header rows ends nothing. Before, a
+  table with `\hline` rules and a `\midrule` lower down lost every data row above the `\midrule`.
+- **`data_sources.json` keeps every load when data are loaded in parallel**: each write holds a
+  lock and replaces the file whole, with the previous version as `.data_sources.json.bak`. A file
+  that cannot be read is kept as `.data_sources.json.unreadable-<time>` and the record continues
+  from the backup, instead of starting again empty (a lost GMD or Yahoo entry defeated their terms
+  checks at publish).
+- **The AI CLIs stop with everything they started.** Claude Code now runs in its own process group
+  like Codex and Gemini, and on a timeout the whole group is killed. A cancelled run kills the CLI's
+  process group on all three backends; before, the CLI (and a script it had started) ran on.
+- **The model's shell gets no credentials it does not need.** The Claude Code, Codex and Gemini
+  CLIs, and the shell commands they run, get the data and literature keys the e2er wrappers read
+  (FRED, Allium, Semantic Scholar, Zotero, the database password) and the CLI's own sign-in only;
+  other providers' API keys, GitHub, Zenodo and e2er.org tokens and anything else named like a
+  credential are left out.
+- **Starting, steering or stopping a run needs this server's session token.** `POST /api/papers`,
+  resume, cancel, review, rerun, file uploads, query approvals, the new-study form and skill
+  installation now need the session token `e2er` makes at start (the dashboard's cookie from the
+  link `e2er` opens, or the `X-E2ER-Token` header the `e2er` commands send, read from
+  `~/.e2er/session-<port>.json` or `E2ER_SESSION_TOKEN`), or the bearer `API_AUTH_TOKEN` when one
+  is set. Before, they were open to any process on the computer, a run's own model shell included
+  (which never gets the token). A request without it is refused with a note on how to open the
+  dashboard from the link `e2er` printed.
+- **Small fixes.** A data source is normalised before its other names are looked up
+  ("Yahoo-Finance" is yfinance), and files in subfolders of the data folder count as available
+  (`raw/x.csv`). `e2er compare` no longer counts "not reported" as a value runs agree on. Codex
+  usage is the sum over its retries of a call.
+
 ## [0.13.8] — 2026-10-06
 
 - **Claude Code runs made with 0.13.7 can be published again.** 0.13.7 recorded where the CLI is

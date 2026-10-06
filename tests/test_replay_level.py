@@ -261,6 +261,7 @@ def test_the_fomc_event_study_replays_to_the_end_through_the_server(tmp_path: Pa
         "E2ER_REPLAY_SCENARIO": "fomc",
         "E2ER_REPLAY_NETLOG": str(tmp_path / "net.txt"),
         "E2ER_SKIP_SETUP_REDIRECT": "1",
+        "E2ER_SESSION_TOKEN": "replay-session",
         "HTTPS_PROXY": "http://127.0.0.1:9",
         "HTTP_PROXY": "http://127.0.0.1:9",
         "NO_PROXY": "127.0.0.1,localhost",
@@ -289,7 +290,9 @@ def test_the_fomc_event_study_replays_to_the_end_through_the_server(tmp_path: Pa
             "acknowledge_unproven_tuple": True,
             "max_cost_usd": 5,
         }
-        pid = httpx.post(f"{api}/api/papers", json=body, timeout=30).json()["paper_id"]
+        pid = httpx.post(f"{api}/api/papers", json=body, headers={"x-e2er-token": "replay-session"}, timeout=30).json()[
+            "paper_id"
+        ]
         stops = []
         for _ in range(8):
             p = _wait(api, pid)
@@ -297,7 +300,12 @@ def test_the_fomc_event_study_replays_to_the_end_through_the_server(tmp_path: Pa
                 break
             stage = httpx.get(f"{api}/api/papers/{pid}/review", timeout=10).json()["pending"]["stage"]
             stops.append(stage)
-            r = httpx.post(f"{api}/api/papers/{pid}/review", json={"action": "approve"}, timeout=30)
+            r = httpx.post(
+                f"{api}/api/papers/{pid}/review",
+                json={"action": "approve"},
+                headers={"x-e2er-token": "replay-session"},
+                timeout=30,
+            )
             assert r.status_code == 200, r.text
         assert p["status"] == "completed", p
         assert stops == ["review_design", "preregister", "review_draft"]
