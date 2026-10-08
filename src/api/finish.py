@@ -152,6 +152,7 @@ async def finish_page(request: Request, paper_id: str) -> Any:
         {
             "paper": _with_outcome(dict(paper)),
             "export": str(export) if export else "",
+            **_folders_view(paper_id),
             "data_terms": _terms(export),
             "output_root": str(settings.resolved_output_root()),
             "platform": base,
@@ -169,7 +170,7 @@ async def finish_page(request: Request, paper_id: str) -> Any:
 @router.post("/api/papers/{paper_id}/export", dependencies=[Depends(require_local_session)])
 async def export_study(paper_id: str) -> dict[str, Any]:
     from ..config import get_settings
-    from ..core.export.structured import export_paper
+    from ..core.export.current import export_current
 
     paper = await _paper(paper_id)
     from .app import _paper_workspace
@@ -177,14 +178,75 @@ async def export_study(paper_id: str) -> dict[str, Any]:
     workspace = _paper_workspace(paper)
     if not workspace.is_dir():
         raise HTTPException(status_code=404, detail=f"The study's working folder is gone: {workspace}")
-    out = await asyncio.to_thread(
-        export_paper,
+    out, state = await asyncio.to_thread(
+        export_current,
         workspace,
         get_settings().resolved_output_root(),
+        paper_id=paper_id,
         date_str=datetime.now().strftime("%Y%m%d"),
         template=paper.get("pipeline") or None,
     )
-    return {"path": str(out), "data_terms": _terms(Path(out))}
+    return {
+        "path": str(out),
+        "state": state,
+        "note": _EXPORT_NOTES[state],
+        "data_terms": _terms(Path(out)),
+        **_folders_view(paper_id),
+    }
+
+
+#: What "Prepare the folder" did, in one sentence (export/current.py).
+_EXPORT_NOTES = {
+    "unchanged": "Nothing changed since the folder was prepared: it is still the current one.",
+    "replaced": "The folder now holds the study as it is now (the earlier, unpublished copy was replaced).",
+    "new": "This is the current folder. The published version keeps its own folder.",
+}
+
+
+def _folders_view(paper_id: str) -> dict[str, Any]:
+    """The run's exported folders for the page: the current one, the published one, the older copies."""
+    from ..config import get_settings
+    from ..core.export import current as cur
+
+    root = get_settings().resolved_output_root()
+    mine = cur.exports_of(root, paper_id)
+    published = [d for d in mine if cur.is_published(d)]
+    pub = published[-1] if published else None
+    link = cur.published_link(pub) if pub else None
+    view: dict[str, Any] = {
+        "older_copies": len(cur.older_copies(root, paper_id)),
+        "published": None,
+        "current_published": bool(mine) and cur.is_published(mine[-1]),
+    }
+    if link:
+        base = str(link.get("platform_url") or "").rstrip("/")
+        did = str(link.get("dossier_id") or "")
+        view["published"] = {
+            "owner_project": link.get("owner_project"),
+            "version": link.get("version"),
+            "study_url": f"{base}/{link.get('owner_project')}" if base else "",
+            "dossier_url": f"{base}/d/{did.removeprefix('sha256:')[:16]}" if base and did else "",
+            "folder": str(pub),
+        }
+    return view
+
+
+@router.post("/api/papers/{paper_id}/exports/remove-older", dependencies=[Depends(require_local_session)])
+async def remove_older_exports(paper_id: str) -> dict[str, Any]:
+    """Remove the earlier copies of the run's folder: never the current one, never a published one."""
+    from ..config import get_settings
+    from ..core.export.current import remove_older_copies
+
+    await _paper(paper_id)
+    removed = await asyncio.to_thread(remove_older_copies, get_settings().resolved_output_root(), paper_id)
+    n = len(removed)
+    return {
+        "removed": n,
+        "note": f"Removed {n} older cop{'y' if n == 1 else 'ies'}. The current folder and the published one stay."
+        if n
+        else "There were no older copies to remove.",
+        **_folders_view(paper_id),
+    }
 
 
 def _bundle(paper_id: str) -> Path:
@@ -323,7 +385,7 @@ async def publish_study(paper_id: str, req: PublishRequest) -> dict[str, Any]:
         derived_from=[d.strip() for d in req.derived_from if d.strip()] or None,
         demonstration=req.demonstration,
         interactive=False,
-        out=str(bundle.parent / f"{bundle.name}-registry-entry"),
+        out=None,
         site=base,
         db=_server_db(),
     )
@@ -336,15 +398,59 @@ async def publish_study(paper_id: str, req: PublishRequest) -> dict[str, Any]:
                 output = (output[:start] + output[start + end :]).strip()
             except ValueError:
                 request_body = None
+    missing = _terms_missing(bundle, req) if code != 0 else []
     return {
         "ok": code == 0,
-        "output": output.strip(),
+        # What `e2er publish` printed, with this computer's paths and full ids shortened (Technical details).
+        "output": shorten(output.strip()),
+        # A refusal in one plain sentence, shown first.
+        **({} if code == 0 else {"reason": plain_failure(output, missing, base)}),
         "request": request_body,
         "platform": base,
         # The terms boxes still unticked while the data are public: the page marks them.
-        "terms_missing": _terms_missing(bundle, req) if code != 0 else [],
+        "terms_missing": missing,
         **({} if req.dry_run or code != 0 else _published_links(output)),
+        **({} if req.dry_run or code != 0 else _folders_view(paper_id)),
     }
+
+
+_UUID = re.compile(r"\b([0-9a-f]{8})-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b")
+_SHA = re.compile(r"\bsha256:([0-9a-f]{12})[0-9a-f]{52}\b")
+
+
+def shorten(text: str) -> str:
+    """Paths on this computer cut to their last part, full ids and fingerprints to their first characters."""
+    from ..core.secret_scan import strip_local_paths
+
+    out = str(strip_local_paths(text))
+    out = _UUID.sub(lambda m: f"{m.group(1)}…", out)
+    return _SHA.sub(lambda m: f"sha256:{m.group(1)}…", out)
+
+
+def plain_failure(output: str, terms_missing: list[str], base: str) -> str:
+    """Why `e2er publish` refused, in one sentence for the page (the full output stays folded)."""
+    from ..cli_publish import LATEX_OFFLINE
+
+    if terms_missing:
+        return (
+            "The data are set to public, but the terms of a source are not confirmed: tick the box under its "
+            "terms, or keep the data private."
+        )
+    if LATEX_OFFLINE in output:
+        return LATEX_OFFLINE
+    first = next(
+        (ln.strip()[len("error:") :].strip() for ln in output.splitlines() if ln.strip().startswith("error:")), ""
+    )
+    low = first.lower()
+    if "not signed in" in low:
+        return f"Sign in to {base} first (the button below)."
+    if low.startswith("could not reach"):
+        return f"{base} could not be reached. Check the internet connection and try again."
+    if not first:
+        return "e2er could not publish the study. The technical details below say why."
+    sentence = shorten(first)
+    sentence = sentence[0].upper() + sentence[1:]
+    return sentence if sentence.endswith((".", "!", "?")) else sentence + "."
 
 
 def _terms_missing(bundle: Path, req: PublishRequest) -> list[str]:

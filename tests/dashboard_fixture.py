@@ -348,6 +348,31 @@ async def _populate(fx: Fixture) -> None:
     await client.close_pool()
 
 
+def _exports(fx: Fixture) -> None:
+    """The finished study's folders: two older copies, then the current one, published as version 2."""
+    import time
+
+    from src.core.export.structured import export_paper
+
+    pid = fx.ids["finished"]
+    ws = fx.study / "workspaces" / pid
+    for _ in range(3):
+        out = export_paper(ws, fx.study / "exports", date_str="20261008")
+        time.sleep(0.01)
+    (out / ".e2er").mkdir()
+    (out / ".e2er" / "link.json").write_text(
+        json.dumps(
+            {
+                "platform_url": "https://e2er.org",
+                "owner_project": "kim-dash/fomc-bank-stocks",
+                "version": 2,
+                "dossier_id": "sha256:" + "b" * 64,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
 def build(folder: Path) -> Fixture:
     """Write the fixture into ``folder``. The environment must already point at it (:func:`env_for`)."""
     folder = folder.resolve()
@@ -357,6 +382,7 @@ def build(folder: Path) -> Fixture:
     (study / ".env").write_text("".join(f"{k}={v}\n" for k, v in env.items()), encoding="utf-8")
     fx = Fixture(folder=folder, study=study, db=folder / "papers.db")
     asyncio.run(_populate(fx))
+    _exports(fx)
     (folder / "fixture.json").write_text(json.dumps({"ids": fx.ids, "keys": fx.keys}, indent=2), encoding="utf-8")
     return fx
 

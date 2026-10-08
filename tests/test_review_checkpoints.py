@@ -140,6 +140,10 @@ async def test_pause_then_resume_cycle(tmp_path: Path, monkeypatch):
     assert st.is_complete("initial") and st.pending_review_stage == "initial"
     assert r._run_review_phase.await_count == 0  # downstream never ran
     assert r._run_initial_phase.await_count == 1
+    # The run's status text is for the researcher: the step by name, no endpoint, no command.
+    paused = [c for c in r._update_status.await_args_list if c.args and c.args[0] == PaperStatus.PAUSED]
+    error = paused[-1].kwargs["error"]
+    assert error == "Stopped for you at Design, data, estimation and draft. Open the run to continue."
 
     # Simulate the resume endpoint approving the pending checkpoint.
     st.approve("initial")

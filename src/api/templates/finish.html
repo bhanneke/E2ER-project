@@ -26,6 +26,12 @@
     <button type="button" class="btn" id="do-export" {% if not session_ok %}disabled{% endif %}>{{ "Prepare again" if export else "Prepare the folder" }}</button>
   </div>
   <p class="found" id="export-msg"></p>
+  <p class="small muted" id="export-current" {% if not export %}hidden{% endif %}>This is the current folder: verifying and publishing use it.</p>
+  <p class="small" id="older-box" {% if not older_copies %}hidden{% endif %}>
+    <span id="older-text">{{ older_copies }} older cop{{ "y" if older_copies == 1 else "ies" }} of this folder, from earlier stops or exports.</span>
+    <button type="button" class="btn btn-small" id="do-remove-older" {% if not session_ok %}disabled{% endif %}>Remove older copies</button>
+    <span class="muted">The current folder and the published one are never removed.</span>
+  </p>
 </section>
 
 <section class="card" id="card-verify" data-state="none">
@@ -46,10 +52,14 @@
   <header class="card-h">
     <span class="dot" aria-hidden="true"></span>
     <h2>Publish to e2er.org</h2>
-    <span class="card-status" id="publish-status">Not published</span>
+    <span class="card-status" id="publish-status">{% if published %}Published, version {{ published.version }}{% else %}Not published{% endif %}</span>
   </header>
   <p class="card-note">Publishing sends the study's description, its record and the fingerprints of its files to
     <code>{{ platform }}</code>. The files themselves stay on this computer. You see the exact request first.</p>
+  <p class="done-box" id="published-box" {% if not published %}hidden{% endif %}>
+    <span>Published as <a id="published-link" href="{{ published.study_url if published else '' }}" target="_blank" rel="noopener">{{ published.owner_project if published else '' }}</a>, version <span id="published-version">{{ published.version if published else '' }}</span>.</span>
+    <a class="btn" id="published-dossier" href="{{ published.dossier_url if published else '' }}" target="_blank" rel="noopener">Open its dossier</a>
+  </p>
 
   <div class="field-grid">
     <label class="field">
@@ -142,9 +152,10 @@
 
   <div class="save-row">
     <button type="button" class="btn" id="do-preview" {% if not session_ok %}disabled{% endif %}>Preview the request</button>
-    <button type="button" class="btn-primary" id="do-publish" disabled>Publish</button>
+    <button type="button" class="btn-primary" id="do-publish" disabled>{{ "Publish a new version" if published and not current_published else "Publish" }}</button>
     <span class="form-note" id="pub-msg" role="status"></span>
   </div>
+  <p class="small muted" id="publish-why" {% if not current_published %}hidden{% endif %}>Nothing changed since this folder was published. To publish a new version, change the study (for instance run a step again), then prepare the folder again.</p>
 
   <div id="signin" {% if signed_in %}hidden{% endif %}>
     <p class="card-note">Publishing needs you signed in to {{ platform }}. You approve a code in the browser; no password goes through e2er.</p>
@@ -165,8 +176,40 @@
 
   document.getElementById('do-export').addEventListener('click', async () => {
     const m = document.getElementById('export-msg'); m.textContent = 'Preparing…';
-    try { const d = await call('POST', '/api/papers/' + pid + '/export'); document.getElementById('export-path').textContent = d.path; showTerms(d.data_terms); m.textContent = 'Ready.'; card('card-folder', 'ok', 'Ready'); }
+    try {
+      const d = await call('POST', '/api/papers/' + pid + '/export');
+      document.getElementById('export-path').textContent = d.path; showTerms(d.data_terms);
+      m.textContent = 'Ready.'; card('card-folder', 'ok', 'Ready');
+      document.getElementById('export-current').hidden = false;
+      document.getElementById('export-current').textContent = d.note + ' Verifying and publishing use it.';
+      showFolders(d);
+    }
     catch (e) { m.textContent = e.message; card('card-folder', 'bad', 'Could not prepare'); }
+  });
+  // The run's folders: older copies (with the button that removes them) and the published state.
+  let currentPublished = {{ "true" if current_published else "false" }};
+  function showFolders(d) {
+    const n = d.older_copies || 0;
+    document.getElementById('older-box').hidden = !n;
+    document.getElementById('older-text').textContent = n + ' older cop' + (n === 1 ? 'y' : 'ies') + ' of this folder, from earlier stops or exports.';
+    currentPublished = !!d.current_published;
+    const p = d.published;
+    document.getElementById('published-box').hidden = !p;
+    if (p) {
+      const a = document.getElementById('published-link'); a.href = p.study_url; a.textContent = p.owner_project;
+      document.getElementById('published-version').textContent = p.version;
+      document.getElementById('published-dossier').href = p.dossier_url;
+      document.getElementById('publish-status').textContent = 'Published, version ' + p.version;
+    }
+    document.getElementById('publish-why').hidden = !currentPublished;
+    const btn = document.getElementById('do-publish');
+    btn.textContent = p && !currentPublished ? 'Publish a new version' : 'Publish';
+    if (currentPublished) btn.disabled = true;
+  }
+  document.getElementById('do-remove-older').addEventListener('click', async () => {
+    const m = document.getElementById('export-msg');
+    try { const d = await call('POST', '/api/papers/' + pid + '/exports/remove-older'); m.textContent = d.note; showFolders(d); }
+    catch (e) { m.textContent = e.message; }
   });
 
   document.getElementById('do-verify').addEventListener('click', async () => {
@@ -232,7 +275,9 @@
     });
   };
   // What `e2er publish` printed, folded: the page leads with the outcome.
-  const folded = (text) => text ? '<details class="tech"><summary>What e2er printed</summary><pre class="preview">' + esc(text) + '</pre></details>' : '';
+  const folded = (text) => text ? '<details class="tech"><summary>Technical details</summary><pre class="preview">' + esc(text) + '</pre></details>' : '';
+  // A refusal: its reason in one sentence first, what e2er printed folded below it.
+  const refused = (d) => '<p class="error pub-reason">' + esc(d.reason || 'e2er could not publish the study.') + '</p>' + folded(d.output);
   document.getElementById('do-preview').addEventListener('click', async () => {
     const out = document.getElementById('pub-out'); pubMsg.textContent = 'Preparing the preview…';
     try {
@@ -240,10 +285,11 @@
       markTerms(d.terms_missing);
       out.innerHTML = '<h3 class="h3">The request that would be sent to ' + esc(d.platform) + '</h3>' +
         (d.request ? '<details class="tech" open><summary>The request</summary><pre class="preview">' + esc(JSON.stringify(d.request, null, 2)) + '</pre></details>' : '') +
-        (d.ok ? folded(d.output) : '<pre class="preview">' + esc(d.output) + '</pre>');
+        (d.ok ? folded(d.output) : '');
+      if (!d.ok) out.innerHTML = refused(d);
       pubMsg.textContent = d.ok ? 'Nothing was sent. Publish when it looks right.' : 'The preview found a problem; see below.';
       previewOk = d.ok;
-      pubBtn.disabled = !d.ok || document.getElementById('signin').hidden === false;
+      pubBtn.disabled = !d.ok || document.getElementById('signin').hidden === false || currentPublished;
     } catch (e) { pubMsg.textContent = e.message; }
   });
   pubBtn.addEventListener('click', async () => {
@@ -253,9 +299,14 @@
       markTerms(d.terms_missing);
       const links = (d.study_url ? '<p><a class="btn-primary" href="' + esc(d.study_url) + '" target="_blank" rel="noopener">Open the study on e2er.org</a> ' : '<p>') +
         (d.dossier_url ? '<a class="btn" href="' + esc(d.dossier_url) + '" target="_blank" rel="noopener">Open its dossier</a>' : '') + '</p>';
-      document.getElementById('pub-out').innerHTML = d.ok ? links + folded(d.output) : '<pre class="preview">' + esc(d.output) + '</pre>';
+      document.getElementById('pub-out').innerHTML = d.ok ? links + folded(d.output) : refused(d);
       pubMsg.textContent = d.ok ? 'Published.' : 'Not published; see below.';
       card('card-publish', d.ok ? 'ok' : 'bad', d.ok ? 'Published' : 'Not published');
+      if (d.ok) {
+        showFolders(d);
+        // The record on e2er.org now exists: check the folder against it again.
+        document.getElementById('do-verify').click();
+      }
     } catch (e) { pubMsg.textContent = e.message; }
   });
 

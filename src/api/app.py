@@ -1042,10 +1042,18 @@ async def get_paper(paper_id: str = Depends(_validate_uuid)) -> dict[str, Any]:
         backend_used = (row.get("backend") if isinstance(row, dict) else None) or get_settings().llm_backend
         if usage:
             usage["cost_is_estimate"] = backend_used in {"claude_code", "codex", "gemini"}
-        return {**_with_outcome(dict(row)), "usage": usage or {}}
+        return {**_with_outcome(dict(row)), **_how_to_continue(dict(row)), "usage": usage or {}}
     except Exception as e:
         logger.warning("get_paper usage fetch failed for paper_id=%s: %s", paper_id, e)
-        return {**_with_outcome(dict(row)), "usage": {}}
+        return {**_with_outcome(dict(row)), **_how_to_continue(dict(row)), "usage": {}}
+
+
+def _how_to_continue(row: dict[str, Any]) -> dict[str, Any]:
+    """For scripts: how a paused run continues (the page says it in words, last_error stays plain)."""
+    if row.get("status") != "paused":
+        return {}
+    pid = row.get("id")
+    return {"resume_endpoint": f"POST /api/papers/{pid}/resume", "review_endpoint": f"/api/papers/{pid}/review"}
 
 
 @app.get("/api/papers/{paper_id}/artifacts")
@@ -2013,7 +2021,16 @@ def _skills_view(message: str = "") -> dict[str, Any]:
     try:
         packs = sc.read_catalogue()
     except sc.CatalogueError as e:
-        view["error"] = str(e)
+        from ..core.labels import NETWORK_ERROR
+
+        # A network error in words; what went wrong stays under Technical details.
+        view["error"] = (
+            "The skills catalogue (RISE, on GitHub) could not be reached. Check the internet connection and open "
+            "this page again. Without the internet, copy the catalogue once and point e2er to it:"
+            if NETWORK_ERROR.search(str(e))
+            else str(e)
+        )
+        view["error_detail"] = str(e)
         return view
 
     view["packs"] = [
@@ -2054,7 +2071,13 @@ async def install_skill_pack(pack: str = Form(...)) -> Any:
         report = await sc.install_pack(found)
         note = f"{found.name}: {report['installed']} installed, {report['failed']} failed."
     except sc.CatalogueError as e:
-        note = f"Could not install {pack}: {e}"
+        from ..core.labels import NETWORK_ERROR
+
+        note = (
+            f"Could not install {pack}: GitHub could not be reached. Check the internet connection and try again."
+            if NETWORK_ERROR.search(str(e))
+            else f"Could not install {pack}: {e}"
+        )
     except Exception as e:  # noqa: BLE001 — a bad pack must not 500 the dashboard
         logger.warning("skill pack install failed for %s: %s", pack, e)
         note = f"Could not install {pack}: {e}"

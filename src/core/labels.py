@@ -313,6 +313,31 @@ _DETAILS: list[tuple[str, str, str]] = [
 ]
 
 
+#: What a check that could not reach its service is called in the sentence that says so.
+_REACHED: dict[str, str] = {
+    "data.yfinance.history": "Yahoo Finance",
+    "data.fred.observations": "FRED",
+    "data.gmd.versions": "The Global Macro Database",
+    "data.allium.list_tables": "Allium",
+    "lit.search_papers": "The literature search (OpenAlex, arXiv)",
+    "lit.read_reference (OA PDF)": "The server of the open-access PDF",
+    "lit.zotero.library": "The Zotero web library",
+}
+
+#: The marks of a network error in a check's text (curl, httpx, requests, DNS, a proxy).
+NETWORK_ERROR = re.compile(
+    r"ConnectionError|ConnectError|ConnectTimeout|connection attempts failed|Failed to connect|curl: \(\d+\)|"
+    r"transport error|timed out|Name or service not known|nodename nor servname|Network is unreachable|"
+    r"could not download|Temporary failure in name resolution|getaddrinfo|Max retries exceeded|"
+    r"Connection refused|SSLError|ProxyError|\[Errno (?:8|49|50|51|60|61|64|65)\]",
+    re.IGNORECASE,
+)
+
+
+def unreachable_sentence(what: str) -> str:
+    return f"{what} could not be reached. Check the internet connection; e2er tries again when you start a study."
+
+
 def check_detail(name: str, detail: str) -> str:
     """`e2er doctor`'s text for one check, as the dashboard says it: no setting names, no code paths.
 
@@ -320,6 +345,15 @@ def check_detail(name: str, detail: str) -> str:
     under "Technical details".
     """
     text = (detail or "").strip()
+    if NETWORK_ERROR.search(text):
+        return unreachable_sentence(_REACHED.get(name) or check(name))
+    if re.match(r"^[A-Z]\w*(Error|Exception)\(", text):
+        return "This check could not run. The technical details say why."
+    if name == "lit.search_papers" and re.match(r"0 papers via", text):
+        return (
+            "The literature search found no papers: OpenAlex and arXiv could not be reached or answered nothing. "
+            "Check the internet connection; e2er tries again when you start a study."
+        )
     for check_name, start, plain in _DETAILS:
         if (name == check_name or (check_name.endswith(".") and name.startswith(check_name))) and text.startswith(
             start

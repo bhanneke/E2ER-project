@@ -832,6 +832,21 @@ def _send(b: Path, manifest: dict[str, Any], to_url: str) -> int:
     return 0
 
 
+#: Publishing offline before tectonic ever downloaded its LaTeX packages.
+LATEX_OFFLINE = (
+    "The PDF needs a one-time download of LaTeX packages, and this computer could not reach the internet. "
+    "Connect to the internet once and publish again; nothing was changed."
+)
+
+
+def latex_packages_missing(output: str) -> bool:
+    """Did tectonic fail because its package bundle is not cached and could not be downloaded?"""
+    low = output.lower()
+    return "bundle isn't cached" in low or (
+        "bundle" in low and any(w in low for w in ("error sending request", "couldn't get it from the internet", "dns"))
+    )
+
+
 def _stamp_and_compile(
     bundle: Path,
     author: str | None,
@@ -869,7 +884,7 @@ def _stamp_and_compile(
             (work / "paper.pdf").unlink(missing_ok=True)  # only a PDF this compile writes counts
             # As the run compiled it (renderer/compiler.py): tectonic continues past
             # non-fatal errors (a package option xetex ignores, a missing figure).
-            subprocess.run(
+            run = subprocess.run(
                 ["tectonic", "--keep-intermediates", "-Z", "continue-on-errors", "paper.tex"],
                 cwd=work,
                 capture_output=True,
@@ -877,6 +892,9 @@ def _stamp_and_compile(
             )
             produced = (work / "paper.pdf").is_file()
             missing = unresolved_citations(work) if produced else []
+            if not produced and latex_packages_missing(f"{run.stdout}\n{run.stderr}"):
+                tex.write_text(old, encoding="utf-8")
+                raise PublishError(LATEX_OFFLINE)
             if not produced or missing:
                 tex.write_text(old, encoding="utf-8")
                 why = (

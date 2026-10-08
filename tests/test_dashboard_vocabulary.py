@@ -55,6 +55,11 @@ JARGON = {
 
 _UUID = re.compile(r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b")
 _JSON_ERROR = re.compile(r'\{\s*"detail"\s*:')
+#: Raw error text and instructions for scripts: never outside "Technical details".
+_RAW = re.compile(
+    r"ConnectionError|ConnectError|curl: \(\d+\)|Traceback \(most recent|\[Errno|POST /api/|`e2er resume`|"
+    r"\b[A-Z]\w*Error\(|Paused for human review|Circuit breaker:"
+)
 
 
 def _internal_ids() -> set[str]:
@@ -133,6 +138,8 @@ def problems(html: str) -> list[str]:
     for word, instead in JARGON.items():
         if m := re.search(rf"(?<![\w-]){re.escape(word)}(?![\w-])", low):
             found.append(f"{word!r} (say {instead!r}) in “…{text[max(0, m.start() - 60) : m.end() + 40]}…”")
+    if m := _RAW.search(text):
+        found.append(f"raw error text {m.group(0)!r} in “…{text[max(0, m.start() - 60) : m.end() + 40]}…”")
     if _JSON_ERROR.search(html):
         found.append("a raw JSON error body")
     if m := _UUID.search(text):
@@ -206,12 +213,26 @@ def client(fx, monkeypatch) -> TestClient:
                 {"name": "data.fred.key", "status": "SKIP", "detail": "FRED_API_KEY not set"},
                 {"name": "data.allium.list_tables", "status": "SKIP", "detail": "ALLIUM_API_KEY not set"},
                 {"name": "lit.zotero.library", "status": "SKIP", "detail": "ZOTERO_API_KEY + user/group id not set"},
+                # A computer that cannot reach a service: the raw error only under Technical details.
+                {
+                    "name": "data.yfinance.history",
+                    "status": "FAIL",
+                    "detail": "ConnectionError: Failed to perform, curl: (7) Failed to connect to "
+                    "query2.finance.yahoo.com:443 over proxy 127.0.0.1 after 0 ms",
+                },
+                {
+                    "name": "data.fred.observations",
+                    "status": "FAIL",
+                    "detail": "transport error: All connection attempts failed",
+                },
+                {"name": "lit.search_papers", "status": "FAIL", "detail": "0 papers via arxiv"},
+                {"name": "data.list_data_sources", "status": "FAIL", "detail": "RuntimeError('catalog broken')"},
             ],
             "ready": True,
-            "blockers": [],
             "n_pass": 4,
             "n_skip": 5,
-            "n_fail": 0,
+            "n_fail": 4,
+            "blockers": [],
             "error": "",
         }
 
@@ -387,3 +408,34 @@ def test_preflight_says_the_doctor_text_plainly(name, detail, plain):
     text = labels.check_detail(name, detail)
     assert plain in text
     assert not problems(f"<p>{text}</p>"), text
+
+
+def test_the_finish_page_of_a_published_study_says_so_and_offers_to_remove_older_copies(client, fx):
+    """Published, nothing changed since: the page names the version with its links, Publish waits with a reason,
+    and the two older copies can go (never the published folder)."""
+    html = client.get(f"/papers/{fx.ids['finished']}/finish").text
+    text = re.sub(r"\s+([,.])", r"\1", visible_text(html))  # the parser joins the link and the text with spaces
+    assert "Published as kim-dash/fomc-bank-stocks, version 2." in text
+    assert (
+        'href="https://e2er.org/kim-dash/fomc-bank-stocks"' in html
+        and 'href="https://e2er.org/d/bbbbbbbbbbbbbbbb"' in html
+    )
+    assert re.search(r'<button[^>]*id="do-publish"[^>]*disabled[^>]*>Publish</button>', html)
+    assert "Nothing changed since this folder was published." in text
+    assert "2 older copies of this folder" in text and "Remove older copies" in text
+    assert not problems(html)
+
+
+def test_skills_without_the_internet_says_so_plainly(client, monkeypatch):
+    from src.modules import skills_catalogue as sc
+
+    def offline():
+        raise sc.CatalogueError(
+            "could not download the RISE catalogue from https://github.com/bhanneke/RISE ([Errno 61] Connection "
+            "refused). Check the internet connection, or clone the repository."
+        )
+
+    monkeypatch.setattr(sc, "read_catalogue", offline)
+    html = client.get("/skills").text
+    assert "The skills catalogue (RISE, on GitHub) could not be reached." in visible_text(html)
+    assert not problems(html)

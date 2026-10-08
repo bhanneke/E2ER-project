@@ -19,6 +19,9 @@
     <p class="muted">{{ error }}</p>
     <pre><code>git clone https://github.com/bhanneke/RISE
 export RISE_PATH=/path/to/RISE</code></pre>
+    {% if error_detail and error_detail != error %}
+      <details class="tech"><summary>Technical details</summary><p class="small mono">{{ error_detail }}</p></details>
+    {% endif %}
   </section>
 
 {% else %}

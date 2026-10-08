@@ -10,6 +10,7 @@ from typing import Any
 
 from ...logging_config import get_logger
 from ...modules.llm.base import LLMBackend, ToolHandler
+from .. import labels as _labels
 from ..governance import DEFAULT_REGIME, KIND_RELIABILITY
 from ..governance import enforces as governance_enforces
 from ..pipeline.fieldmap_checks import FILES as _FIELDMAP_FILES
@@ -478,8 +479,8 @@ class PipelineRunner:
             await self._best_effort_finalize()
             await self._update_status(
                 PaperStatus.PAUSED,
-                error=f"Circuit breaker: {cb.specialist} failed {cb.attempts} times. "
-                "Fix the underlying issue, then POST /api/papers/{id}/resume.",
+                error=f"Stopped: {_labels.specialist(cb.specialist)} failed {cb.attempts} times in a row. "
+                "Open the run to see why, fix it, then resume the run.",
             )
             return {
                 "status": "paused",
@@ -563,10 +564,7 @@ class PipelineRunner:
             await log_event(self._paper_id, "awaiting_review", stage=hr.stage, payload={"stage": hr.stage})
             await self._update_status(
                 PaperStatus.PAUSED,
-                error=(
-                    f"Paused for human review after stage '{hr.stage}'. Inspect the workspace, "
-                    f"edit artifacts if needed, then resume (POST /api/papers/{{id}}/resume or `e2er resume`)."
-                ),
+                error=f"Stopped for you at {_labels.step(hr.stage, self._spec)}. Open the run to continue.",
             )
             return {"status": "paused", "reason": "awaiting_review", "stage": hr.stage}
         except Exception as e:
@@ -622,17 +620,23 @@ class PipelineRunner:
         from datetime import datetime
 
         from ...config import get_settings
-        from ..export.structured import export_paper
+        from ..export.current import export_current
 
         settings = get_settings()
         if not settings.export_enabled:
             return
         date_str = datetime.now().strftime("%Y%m%d")
         dest_root = settings.resolved_output_root()
-        out = await asyncio.to_thread(
-            export_paper, self._workspace, dest_root, date_str=date_str, template=self._spec.name
+        # One current folder per run (export/current.py): a stop does not add another numbered copy.
+        out, state = await asyncio.to_thread(
+            export_current,
+            self._workspace,
+            dest_root,
+            paper_id=self._paper_id,
+            date_str=date_str,
+            template=self._spec.name,
         )
-        logger.info("Structured export for paper %s → %s", self._paper_id, out)
+        logger.info("Structured export for paper %s → %s (%s)", self._paper_id, out, state)
 
     async def _export_audit_log_only(self) -> None:
         """Write replication/audit_log.csv + data_queries.sql from the DB.
@@ -1235,7 +1239,7 @@ class PipelineRunner:
         state.pending_review_stage = CONTRACT_STEP
         state.metadata["review"] = {"kind": "contract", "files": files, "reasons": reasons}
         state.save(self._workspace)
-        names = ", ".join(f["specialist"] for f in cf.failures)
+        names = ", ".join(_labels.specialist(f["specialist"]) for f in cf.failures)
         logger.warning("Pipeline stopped for the researcher (output contract) for paper %s: %s", self._paper_id, names)
         await log_event(
             self._paper_id,
@@ -1252,8 +1256,8 @@ class PipelineRunner:
             PaperStatus.PAUSED,
             error=(
                 f"Stopped for you: the output of {names} did not pass its contract check after "
-                f"{MAX_SPECIALIST_ATTEMPTS} attempts. Review it with `e2er review {self._paper_id}`: approve the "
-                "output as it is, edit a file, give an instruction, or send the specialist back with a remark."
+                f"{MAX_SPECIALIST_ATTEMPTS} attempts. Open the run to review it: keep the output as it is, edit a "
+                "file, give an instruction, or send the specialist back with a remark."
             ),
         )
         return {"status": "paused", "reason": "contract", "specialists": [f["specialist"] for f in cf.failures]}
