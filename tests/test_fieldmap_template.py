@@ -532,8 +532,8 @@ def test_the_credit_shows_in_the_skill_readme_and_changelog():
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     assert "field-map" in readme and ARTICLE_URL in readme and "Hron" in readme
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-    unreleased = changelog.split("## [Unreleased]", 1)[1].split("\n## [", 1)[0]
-    assert "field-map" in unreleased and "Hron" in unreleased and ARTICLE_URL in unreleased
+    # The entry moves from [Unreleased] to a release heading when e2er is released, so check the whole file.
+    assert "field-map" in changelog and "Hron" in changelog and ARTICLE_URL in changelog
     assert ARTICLE_URL in TEMPLATE.read_text(encoding="utf-8")
 
 
