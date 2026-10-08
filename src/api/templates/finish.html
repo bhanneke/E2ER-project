@@ -48,7 +48,7 @@
   <div id="verify-out"></div>
 </section>
 
-<section class="card" id="card-publish" data-state="none">
+<section class="card" id="card-publish" data-state="{{ 'ok' if published else 'none' }}">
   <header class="card-h">
     <span class="dot" aria-hidden="true"></span>
     <h2>Publish to e2er.org</h2>

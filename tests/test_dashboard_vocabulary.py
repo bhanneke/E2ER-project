@@ -423,6 +423,10 @@ def test_the_finish_page_of_a_published_study_says_so_and_offers_to_remove_older
     assert re.search(r'<button[^>]*id="do-publish"[^>]*disabled[^>]*>Publish</button>', html)
     assert "Nothing changed since this folder was published." in text
     assert "2 older copies of this folder" in text and "Remove older copies" in text
+    # A new version goes to the same place: owner and project as published.
+    assert (
+        'name="owner" id="pub-owner" value="kim-dash"' in html and 'id="pub-project" value="fomc-bank-stocks"' in html
+    )
     assert not problems(html)
 
 

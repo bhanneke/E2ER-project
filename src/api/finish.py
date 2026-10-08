@@ -146,20 +146,24 @@ async def finish_page(request: Request, paper_id: str) -> Any:
         demo = study_purpose(workspace) == "demonstration"
     except ValueError:
         demo = False
+    folders = _folders_view(paper_id)
+    # A published study keeps its owner and project: a new version goes to the same place.
+    published_as = str((folders.get("published") or {}).get("owner_project") or "")
+    owner_published, _, project_published = published_as.partition("/")
     return templates.TemplateResponse(
         request,
         "finish.html",
         {
             "paper": _with_outcome(dict(paper)),
             "export": str(export) if export else "",
-            **_folders_view(paper_id),
+            **folders,
             "data_terms": _terms(export),
             "output_root": str(settings.resolved_output_root()),
             "platform": base,
             "signed_in": _signed_in(base),
-            "owner": (settings.github_username or "").lower(),
+            "owner": owner_published or (settings.github_username or "").lower(),
             "n_checks": 6,
-            "project": _slug(str(paper.get("title") or "")),
+            "project": project_published or _slug(str(paper.get("title") or "")),
             "demonstration": demo,
             "session_ok": not local_problem(request),
             "session_problem": local_problem(request),
