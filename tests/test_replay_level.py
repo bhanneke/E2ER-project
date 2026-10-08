@@ -97,6 +97,20 @@ async def test_overrides_vary_one_attempt_and_then_replay_the_recording(tmp_path
     assert '"2020-03-16"' in (ws / "event_design.json").read_text(encoding="utf-8")
 
 
+async def test_a_wait_override_makes_the_attempt_take_that_long(tmp_path: Path, monkeypatch):
+    ReplayBackend._attempts.clear()
+    over = tmp_path / "over.json"
+    over.write_text(json.dumps({"idea_developer": {"attempts": [{"wait": 0.3}]}}))
+    monkeypatch.setenv("E2ER_REPLAY_OVERRIDES", str(over))
+    b = ReplayBackend("fomc")
+    t0 = time.monotonic()
+    assert (await _call(b, tmp_path / "ws", "idea_developer")).success
+    assert time.monotonic() - t0 >= 0.3
+    t0 = time.monotonic()
+    assert (await _call(b, tmp_path / "ws", "idea_developer")).success
+    assert time.monotonic() - t0 < 0.3
+
+
 async def test_the_replay_stands_in_for_the_backend_and_model_the_run_names(tmp_path: Path, monkeypatch):
     """A run on codex under the replay level is recorded as a run on codex with its model (`backend_identity`)."""
     from src.config import get_settings
