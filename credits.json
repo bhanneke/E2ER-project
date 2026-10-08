@@ -1,0 +1,133 @@
+{
+  "$comment": "Work e2er's parts are based on, draw from or cite: the creator, the role, the relation, the work's title and address, when it was published and read, and where it was found. This is the credit data for e2er.org's catalogue: a `based_on` entry is meant to show on the part's page as \"Based on\" with its link, its creator as an external creator (not an e2er account). Templates carry the same entries in their own [[credit]] tables; tests/test_fieldmap_template.py keeps the two equal. A credit says where an idea came from; it does not say the creator endorses the part.",
+  "parts": {
+    "template:field-map": [
+      {
+        "creator": "Michal Hron",
+        "role": "conceptualization",
+        "relation": "based_on",
+        "kind": "article",
+        "title": "Map a research field with Claude: main path analysis, step by step",
+        "publisher": "LinkedIn Pulse",
+        "published": "2026-10-08",
+        "url": "https://www.linkedin.com/pulse/map-research-field-claude-main-path-analysis-step-michal-hron-jm2ge/",
+        "accessed": "2026-10-08",
+        "found_via": "shared by Björn Hanneke",
+        "adopted": "The six-step workflow: a boundary of search terms and journals, the internal citation network with completeness checks, SPC weights, the main path with key routes, robustness across alternative journal sets, and a map with topic lanes named as questions; and the pitfalls the article lists.",
+        "own": "The code (OpenAlex retrieval, network, SPC, main paths, key routes, cycle handling, robustness, exports, map), the template's steps and researcher stops, the specialists' instructions, and the field review whose numbers e2er checks.",
+        "statement": "The workflow follows Michal Hron's article \"Map a research field with Claude: main path analysis, step by step\" (LinkedIn Pulse, 8 October 2026); this implementation is independent and uses OpenAlex."
+      },
+      {
+        "creator": "Michal Hron",
+        "role": "related work",
+        "relation": "related_work",
+        "kind": "software",
+        "title": "scopus-plus-mcp (Scopus MCP server with a main-path skill)",
+        "url": "https://github.com/michalhron/scopus-plus-mcp",
+        "licence": "MIT",
+        "accessed": "2026-10-08",
+        "note": "Hron's implementation on Scopus. Not used and not copied; e2er's implementation is independent and uses OpenAlex."
+      },
+      {
+        "creator": "Norman P. Hummon and Patrick Doreian",
+        "role": "method",
+        "relation": "cites",
+        "kind": "article",
+        "title": "Connectivity in a citation network: The development of DNA theory",
+        "publisher": "Social Networks 11(1), 39-63",
+        "published": "1989-03-01",
+        "url": "https://doi.org/10.1016/0378-8733(89)90017-8",
+        "accessed": "2026-10-08",
+        "cite_key": "hummon1989connectivity"
+      },
+      {
+        "creator": "Vladimir Batagelj",
+        "role": "method",
+        "relation": "cites",
+        "kind": "preprint",
+        "title": "Efficient algorithms for citation network analysis",
+        "publisher": "arXiv cs/0309023",
+        "published": "2003-09-14",
+        "url": "https://doi.org/10.48550/arXiv.cs/0309023",
+        "accessed": "2026-10-08",
+        "cite_key": "batagelj2003efficient"
+      },
+      {
+        "creator": "John S. Liu and Louis Y. Y. Lu",
+        "role": "method",
+        "relation": "cites",
+        "kind": "article",
+        "title": "An integrated approach for main path analysis: Development of the Hirsch index as an example",
+        "publisher": "Journal of the American Society for Information Science and Technology 63(3), 528-542",
+        "published": "2012-03-01",
+        "url": "https://doi.org/10.1002/asi.21692",
+        "accessed": "2026-10-08",
+        "cite_key": "liu2012integrated"
+      }
+    ],
+    "skill:e2er/synthesis/main-path-analysis": [
+      {
+        "creator": "Michal Hron",
+        "role": "conceptualization",
+        "relation": "based_on",
+        "kind": "article",
+        "title": "Map a research field with Claude: main path analysis, step by step",
+        "publisher": "LinkedIn Pulse",
+        "published": "2026-10-08",
+        "url": "https://www.linkedin.com/pulse/map-research-field-claude-main-path-analysis-step-michal-hron-jm2ge/",
+        "accessed": "2026-10-08",
+        "found_via": "shared by Björn Hanneke",
+        "adopted": "The six-step workflow: a boundary of search terms and journals, the internal citation network with completeness checks, SPC weights, the main path with key routes, robustness across alternative journal sets, and a map with topic lanes named as questions; and the pitfalls the article lists.",
+        "own": "The code (OpenAlex retrieval, network, SPC, main paths, key routes, cycle handling, robustness, exports, map), the template's steps and researcher stops, the specialists' instructions, and the field review whose numbers e2er checks.",
+        "statement": "The workflow follows Michal Hron's article \"Map a research field with Claude: main path analysis, step by step\" (LinkedIn Pulse, 8 October 2026); this implementation is independent and uses OpenAlex."
+      },
+      {
+        "creator": "Michal Hron",
+        "role": "related work",
+        "relation": "related_work",
+        "kind": "software",
+        "title": "scopus-plus-mcp (Scopus MCP server with a main-path skill)",
+        "url": "https://github.com/michalhron/scopus-plus-mcp",
+        "licence": "MIT",
+        "accessed": "2026-10-08",
+        "note": "Hron's implementation on Scopus. Not used and not copied; e2er's implementation is independent and uses OpenAlex."
+      },
+      {
+        "creator": "Norman P. Hummon and Patrick Doreian",
+        "role": "method",
+        "relation": "cites",
+        "kind": "article",
+        "title": "Connectivity in a citation network: The development of DNA theory",
+        "publisher": "Social Networks 11(1), 39-63",
+        "published": "1989-03-01",
+        "url": "https://doi.org/10.1016/0378-8733(89)90017-8",
+        "accessed": "2026-10-08",
+        "cite_key": "hummon1989connectivity"
+      },
+      {
+        "creator": "Vladimir Batagelj",
+        "role": "method",
+        "relation": "cites",
+        "kind": "preprint",
+        "title": "Efficient algorithms for citation network analysis",
+        "publisher": "arXiv cs/0309023",
+        "published": "2003-09-14",
+        "url": "https://doi.org/10.48550/arXiv.cs/0309023",
+        "accessed": "2026-10-08",
+        "cite_key": "batagelj2003efficient"
+      },
+      {
+        "creator": "John S. Liu and Louis Y. Y. Lu",
+        "role": "method",
+        "relation": "cites",
+        "kind": "article",
+        "title": "An integrated approach for main path analysis: Development of the Hirsch index as an example",
+        "publisher": "Journal of the American Society for Information Science and Technology 63(3), 528-542",
+        "published": "2012-03-01",
+        "url": "https://doi.org/10.1002/asi.21692",
+        "accessed": "2026-10-08",
+        "cite_key": "liu2012integrated"
+      }
+    ]
+  }
+}

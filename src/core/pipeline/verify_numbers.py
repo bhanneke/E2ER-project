@@ -146,6 +146,8 @@ _SOURCE_JSON_FILES = (
     "estimation_results.json",
     "robustness_results.json",
     "figure_spec.json",
+    # The field map's results (src/modules/fieldmap/workflow.py), written by code.
+    "field_map_results.json",
 )
 
 # Regex to extract content of \begin{tabular}...\end{tabular}

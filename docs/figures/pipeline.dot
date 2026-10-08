@@ -121,6 +121,9 @@ digraph e2er_pipeline {
   n_artifact_figure_spec_json [label="figure_spec.json", shape=note, fillcolor="#fff7cc", color="#b8860b", fontsize=9];
   n_data_analyst -> n_artifact_figure_spec_json [color="#b8860b", arrowhead=open, constraint=false];
   n_artifact_figure_spec_json -> n_verify_numbers [color="#b8860b", arrowhead=open, constraint=false, label="consumed by"];
+  n_artifact_identification_spec_json [label="identification_spec.json", shape=note, fillcolor="#fff7cc", color="#b8860b", fontsize=9];
+  n_identification_strategist -> n_artifact_identification_spec_json [color="#b8860b", arrowhead=open, constraint=false];
+  n_artifact_identification_spec_json -> n_verify_numbers [color="#b8860b", arrowhead=open, constraint=false, label="consumed by"];
   n_artifact_estimation_results_json [label="estimation_results.json", shape=note, fillcolor="#fff7cc", color="#b8860b", fontsize=9];
   n_econometrics_specialist -> n_artifact_estimation_results_json [color="#b8860b", arrowhead=open, constraint=false];
   n_artifact_estimation_results_json -> n_table_renderer [color="#b8860b", arrowhead=open, constraint=false, label="consumed by"];
@@ -131,6 +134,18 @@ digraph e2er_pipeline {
   n_artifact_robustness_results_json -> n_table_renderer [color="#b8860b", arrowhead=open, constraint=false, label="consumed by"];
   n_econometrics_specialist -> n_artifact_robustness_results_json [color="#b8860b", arrowhead=open, constraint=false];
   n_artifact_robustness_results_json -> n_verify_numbers [color="#b8860b", arrowhead=open, constraint=false, label="consumed by"];
+  n_artifact_replication_plan_json [label="replication_plan.json", shape=note, fillcolor="#fff7cc", color="#b8860b", fontsize=9];
+  n_replication_planner -> n_artifact_replication_plan_json [color="#b8860b", arrowhead=open, constraint=false];
+  n_artifact_replication_plan_json -> n_verify_numbers [color="#b8860b", arrowhead=open, constraint=false, label="consumed by"];
+  n_artifact_reproduction_report_json [label="reproduction_report.json", shape=note, fillcolor="#fff7cc", color="#b8860b", fontsize=9];
+  n_reproduction_comparer -> n_artifact_reproduction_report_json [color="#b8860b", arrowhead=open, constraint=false];
+  n_artifact_reproduction_report_json -> n_verify_numbers [color="#b8860b", arrowhead=open, constraint=false, label="consumed by"];
+  n_artifact_field_boundary_json [label="field_boundary.json", shape=note, fillcolor="#fff7cc", color="#b8860b", fontsize=9];
+  n_field_boundary_designer -> n_artifact_field_boundary_json [color="#b8860b", arrowhead=open, constraint=false];
+  n_artifact_field_boundary_json -> n_verify_numbers [color="#b8860b", arrowhead=open, constraint=false, label="consumed by"];
+  n_artifact_field_lanes_json [label="field_lanes.json", shape=note, fillcolor="#fff7cc", color="#b8860b", fontsize=9];
+  n_field_lane_mapper -> n_artifact_field_lanes_json [color="#b8860b", arrowhead=open, constraint=false];
+  n_artifact_field_lanes_json -> n_verify_numbers [color="#b8860b", arrowhead=open, constraint=false, label="consumed by"];
   n_artifact_table_spec_json [label="table_spec.json", shape=note, fillcolor="#fff7cc", color="#b8860b", fontsize=9];
   n_paper_drafter -> n_artifact_table_spec_json [color="#b8860b", arrowhead=open, constraint=false];
   n_artifact_table_spec_json -> n_table_renderer [color="#b8860b", arrowhead=open, constraint=false, label="consumed by"];

@@ -66,6 +66,16 @@ EXPORT_MAP: dict[str, list[tuple[str, str | None]]] = {
         ("figure_spec.json", None),
         ("table_spec.json", None),
         ("table_render_report.json", None),
+        # The field map (field-map template): computed by code, read by the number check.
+        ("field_map_results.json", None),
+        ("completeness_report.json", None),
+        ("completeness_report.md", None),
+        ("main_path.json", None),
+        ("main_path.md", None),
+        ("robustness.json", None),
+        ("robustness.md", None),
+        ("field_boundary_counts.json", None),
+        ("reading_list.json", None),
         ("*.csv", None),  # model-generated intermediate outputs at workspace root
     ],
     "design": [
@@ -86,6 +96,11 @@ EXPORT_MAP: dict[str, list[tuple[str, str | None]]] = {
         ("preregistration.md", None),
         ("preregistration.lock.json", None),
         ("researcher_instructions.md", None),
+        # The field map's judgement files: the boundaries and the lanes.
+        ("field_boundary.json", None),
+        ("field_boundary.md", None),
+        ("field_lanes.json", None),
+        ("field_lanes.md", None),
     ],
     # Loose exploration scripts + logs the model writes (analysis.py, explore.py,
     # q.py, run_estimation.log, …). The broad globs run last so canonical files
@@ -159,10 +174,12 @@ def _leaves_workspace(path: Path, workspace: Path) -> bool:
 def _skip(src: Path, workspace: Path) -> str | None:
     """Why ``src`` is not exported, or None. Never exported: OS clutter, dotfiles
     (``.env`` holds keys), key files, and links that lead out of the workspace."""
-    from .bundle_files import never_exported
+    from .bundle_files import is_leftover, never_exported
 
     if never_exported(src.name):
         return "a dotfile, key file or operating-system file"
+    if is_leftover(src.name):
+        return "a backup, lock file or earlier version of an output"
     if _leaves_workspace(src, workspace):
         return "a link to something outside the workspace"
     return None
@@ -436,6 +453,14 @@ def export_paper(
     if tbl_src.is_dir():
         _copytree(tbl_src, out / "paper" / "tables", workspace)
 
+    # The field map: the network for other tools (Pajek, GEXF, VOSviewer, CSV)
+    # and the papers retrieved from OpenAlex for each boundary (CC0), which the
+    # main paths are computed from. The page cache is left behind.
+    if (workspace / "exports").is_dir():
+        _copytree(workspace / "exports", out / "results" / "exports", workspace)
+    if (workspace / "fieldmap" / "boundaries").is_dir():
+        _copytree(workspace / "fieldmap" / "boundaries", out / "data" / "fieldmap", workspace)
+
     # Replication: the audit log + query SQL + replication estimation script
     # (audit_log.csv, data_queries.sql, estimation.py). Previously dropped
     # entirely — it is the backbone of a reproducible bundle.
@@ -451,6 +476,8 @@ def export_paper(
     # misc/ — top-level files we didn't map (no silent loss), minus internal ones.
     for src in sorted(workspace.iterdir()):
         if not src.is_file() or src.name in copied_names or src.name in _MISC_EXCLUDE or src.name.startswith("."):
+            continue
+        if _skip(src, workspace):
             continue
         _copy_matches(workspace, out / "misc", glob.escape(src.name), None, copied_names, notes)
 

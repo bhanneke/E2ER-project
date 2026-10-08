@@ -30,6 +30,9 @@ the server runs::
     ]},
      "econometrics_specialist": {"attempts": [{"fail": "no data"}]}}
 
+``{"wait": seconds}`` makes the attempt take that long before it answers, the
+way a slow model call does, so a story can cancel a run while it works.
+
 Attempt *n* (counted per paper and specialist in this process) uses entry
 *n* of ``attempts``; later attempts replay the recording unchanged.
 
@@ -46,6 +49,7 @@ two runs of one question (``e2er run-matrix``) can differ::
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import re
@@ -167,6 +171,8 @@ class ReplayBackend(LLMBackend):
                 duration_seconds=time.time() - t0,
             )
         variant = self._variant(paper_id or "", specialist)
+        if variant.get("wait"):
+            await asyncio.sleep(float(variant["wait"]))
         if variant.get("fail"):
             return ToolLoopResult(
                 success=False, output="", error=f"replay: {variant['fail']}", duration_seconds=time.time() - t0

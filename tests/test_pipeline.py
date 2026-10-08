@@ -1469,7 +1469,7 @@ def test_dashboard_index_renders(monkeypatch):
     body = resp.text
     assert "Test paper" in body
     assert "completed" in body
-    assert "1 attempt" in body  # one row per study; the cost is on the paper page
+    assert "1 run" in body  # one row per study; the cost is on the paper page
     # htmx + style sheet referenced
     assert "/static/htmx.min.js" in body
     assert "/static/style.css" in body
@@ -1571,8 +1571,8 @@ def test_live_fragment_renders_status_and_events(monkeypatch):
     assert resp.status_code == 200
     assert "in_progress" in resp.text
     assert "$12.50" in resp.text
-    assert "phase_start" in resp.text
-    assert "idea_developer" in resp.text
+    assert "Step started" in resp.text and "phase_start" not in resp.text  # events by their plain names
+    assert "Research plan" in resp.text and "idea_developer" not in resp.text
 
 
 def test_artifact_streaming_rejects_traversal(tmp_path, monkeypatch):

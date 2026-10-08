@@ -87,7 +87,9 @@ _REGRESSION_REQUIRED: dict[str, str] = {"econometrics_specialist": "estimation_r
 # carried four inline `tabular` blocks under the SAME labels, with numbers the
 # model wrote itself. 53 of 110 values traced to nothing. The gate that
 # checks numbers ran afterwards and could only report the damage.
-_NO_INLINE_TABLES: frozenset[str] = frozenset({"paper_drafter", "section_writer", "latex_formatter", "revisor"})
+_NO_INLINE_TABLES: frozenset[str] = frozenset(
+    {"paper_drafter", "section_writer", "latex_formatter", "revisor", "field_review_writer"}
+)
 
 _TABULAR_RE = re.compile(r"\\begin\{tabular\}")
 _TABLE_INPUT_RE = re.compile(r"\\input\{[^}]*\}")
@@ -489,6 +491,18 @@ def _plan_problems(workspace: Path) -> list[str]:
     return check_plan(workspace)
 
 
+def _boundary_problems(workspace: Path) -> list[str]:
+    from ...modules.fieldmap.workflow import boundary_problems
+
+    return boundary_problems(workspace)
+
+
+def _lanes_problems(workspace: Path) -> list[str]:
+    from ...modules.fieldmap.workflow import lanes_problems
+
+    return lanes_problems(workspace)
+
+
 def _report_problems(workspace: Path) -> list[str]:
     from ..pipeline.reproduction import check_report
 
@@ -499,6 +513,8 @@ def _report_problems(workspace: Path) -> list[str]:
 _STRUCTURAL_CHECKS: dict[str, tuple[str, Any]] = {
     "replication_planner": ("replication_plan.json", _plan_problems),
     "reproduction_comparer": ("reproduction_report.json", _report_problems),
+    "field_boundary_designer": ("field_boundary.json", _boundary_problems),
+    "field_lane_mapper": ("field_lanes.json", _lanes_problems),
 }
 
 DATA_DICTIONARY_FILE = "data_dictionary.json"

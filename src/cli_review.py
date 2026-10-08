@@ -156,9 +156,9 @@ def format_pending(data: dict[str, Any]) -> str:
         if pending.get("auto_patch"):
             lines.append(f"  The automatic correction did not fix them: {pending['auto_patch']}.")
         lines.append(
-            "  Edit the draft or a results file, give an instruction, or send back paper_drafter, "
-            "section_writer (table layout) or econometrics_specialist; the check then runs again. "
-            "Approve to continue with these mismatches: the dossier records them as your decision. "
+            "  Edit the draft or a results file, give an instruction, or send back the paper draft, "
+            "the table layout or the estimation; the check then runs again. "
+            "Approve to continue with these differences: the dossier records them as your decision. "
             "The reviewers run after that."
         )
     else:

@@ -6,6 +6,7 @@
   <title>{% block title %}e2er{% endblock %}</title>
   <link rel="stylesheet" href="/static/style.css" />
   <script src="/static/htmx.min.js" defer></script>
+  <script src="/static/e2er.js"></script>
 </head>
 <body>
   <header class="topbar">
@@ -23,5 +24,11 @@
   <main>
     {% block content %}{% endblock %}
   </main>
+  {% set af = active_folder() %}
+  <footer class="foot">
+    {% if af.kind == "studies" %}Your studies folder: <code class="path">{{ af.path }}</code>
+    {% elif af.kind == "project" %}Settings and studies of this folder: <code class="path">{{ af.path }}</code> (it has its own settings)
+    {% else %}No studies folder yet: <a href="/setup">choose one</a>{% endif %}
+  </footer>
 </body>
 </html>

@@ -7,6 +7,94 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.0] — 2026-10-08
+
+The local dashboard works end to end on 127.0.0.1, and every page reads plainly.
+
+### Studies folder
+- **One home for studies.** Setup asks once for a studies folder (default `~/e2er-studies`) and
+  remembers it in `~/.e2er/settings.json`. `e2er` started from any folder uses it: its `.env`, its
+  studies (`workspaces/`) and its exports (`exports/`). A folder with its own `.env` still works as a
+  project of its own, exactly as before; Setup offers to make it the studies folder. Studies made
+  before keep working from anywhere (the database records their folders). The foot of every page
+  says which folder is in use.
+- **Readable folder names.** A new run's folder is named after the date and the title
+  (`2026-10-08-fomc-and-bank-stocks`); the run's id is in its `manifest.json`. The AI providers'
+  commands get the folder in `E2ER_WORKSPACE`.
+- **Exports never land in the data folder.** Without `OUTPUT_DIR` they go to `exports/` in the
+  studies folder (before: `e2er_papers/` inside the data folder).
+
+### Fixed
+- **Publishing from the browser no longer hangs.** With public data and a data source's terms box
+  unticked, the server asked `[y/N]` on its own terminal. The server never asks; the finish page
+  says next to each unticked box what is missing.
+- **A tab left open across a restart keeps working.** The session secret is made once per computer
+  (`~/.e2er/session-secret`, mode 600) and the cookie lasts a year; a `localhost` page is sent to
+  `127.0.0.1`, so one tab never holds two sessions. The session file a second `e2er` reads is written
+  only once this server has the port.
+- **No silent failures.** A wrong address, a refused form or an error shows a page with one plain
+  sentence and "Back to your studies"; the API keeps answering JSON. A button or the live panel that
+  cannot reach e2er shows a notice saying so.
+- **The Zenodo key saved under Settings is used** for deposits (it was read from the environment
+  only). Setup has a field for it, and one for the GitHub login used as owner when publishing.
+- **"Also stop for you after these steps" lists the chosen template's own steps** (it showed the
+  empirical steps for every template, and the replication steps were refused).
+- **"Open it there"** for a run in another e2er says how to open that dashboard signed in.
+
+### Plain pages
+- One set of names for steps, specialists, templates, actions, events, checks and statuses
+  (`src/core/labels.py`; a template can name itself with `title` and its steps with `label`). Ids
+  appear only under "Technical details".
+- The stop page leads with the decision: why the run stopped, the table of differences, the
+  button; then send back, instruction, and the files, folded and readable, with "Edit this file".
+  A stop you asked for lists the files the step wrote.
+- One vocabulary: study, run, step, specialist, stopped for you, spending limit, files, "Download
+  all files" (every file of the run, without its hidden ones).
+- The publish result links to the study and its dossier; what `e2er publish` printed is folded.
+- Setup shows the exact command that signs in Claude Code, Codex or Gemini, with a copy button
+  (the full path for the Codex inside the ChatGPT app).
+- Subscription providers show "No spending limit" in place of a $0 meter; one default limit.
+- Earlier versions of rewritten outputs go to the hidden `.history/` folder (before:
+  `<file>.previous` next to the output); backups, lock files and `.previous` files are never
+  exported.
+- `/docs` names e2er and its version; styles for the Library, Skills and Workflow pages, the status
+  colours and the study page.
+
+### Mapping a research field
+
+- **New template `field-map`: map a research field by main path analysis.** A specialist proposes
+  the boundary (search terms with the topic's older names, a journal set, years, and two to six
+  alternative boundaries); the researcher approves it with the paper counts. Code retrieves the
+  papers from OpenAlex (paged, cached in the study, with a request ceiling, `OPENALEX_API_KEY` as
+  a bearer token when set; every load recorded in `data_sources.json` as OpenAlex, CC0), builds
+  the network of citations inside the boundary with a completeness report (papers without
+  internal links or references, short reference lists, duplicates, notices, broken cycles),
+  computes search path count weights (exact integers), the global and local main paths and the
+  key routes, and repeats this on the alternative boundaries to show which papers are on every
+  main path. A specialist names lanes as questions; the researcher approves them; code draws the
+  map by year and lane and writes the reading list, Pajek, GEXF, VOSviewer and CSV exports, two
+  LaTeX tables and `field_map_results.json`. A specialist drafts a short field review, and the
+  number check and the citation check run on it as steps of their own. Nothing is estimated: the
+  template has no estimation gate and no econometrics step.
+- The workflow follows Michal Hron's article "Map a research field with Claude: main path
+  analysis, step by step" (LinkedIn Pulse, 8 October 2026,
+  https://www.linkedin.com/pulse/map-research-field-claude-main-path-analysis-step-michal-hron-jm2ge/,
+  shared by Björn Hanneke); this implementation is independent and uses OpenAlex. Adopted: the
+  six-step workflow and the pitfalls it lists. e2er's own: the code, the OpenAlex retrieval, the
+  cycle handling, the exports, the template's steps and stops, and the number-checked review.
+  The methods: Hummon and Doreian (1989), Batagelj (2003), Liu and Lu (2012).
+- **New skill `synthesis/main-path-analysis`**: the method step by step, the choices and what they
+  change, the pitfalls, how to read the map, and the sources.
+- **New specialists** `field_boundary_designer`, `field_lane_mapper` and `field_review_writer`, and
+  the command `e2er-fieldmap` (count, sources, boundary, network, mainpath, robustness, papers,
+  map, export, all), allow-listed for those three.
+- **Templates can credit the work they are based on** in `[[credit]]` tables (creator, role,
+  relation, title, address, publication and access dates, where it was found), checked when the
+  template loads. `credits.json` lists the credit of e2er's own parts for the catalogue of
+  e2er.org.
+- The checks `numbers` and `citations` can run as steps of their own in a template without a
+  review step.
+
 ## [0.13.9] — 2026-10-07
 
 - **A review run again is scored from its own files.** The reviewers now rewrite their files whole:

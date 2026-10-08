@@ -58,6 +58,8 @@ NUMBERS_STEP = "number_check"
 NUMBERS_SENDABLE = ("paper_drafter", "section_writer", "econometrics_specialist", "data_analyst")
 ACTIONS = ("approve", "edit", "instruction", "send_back")
 _EDITABLE_SUFFIXES = (".md", ".tex", ".json", ".txt", ".bib")
+#: e2er's own record of the run, never offered for editing at a stop.
+_NOT_THE_STUDYS = frozenset({"manifest.json"})
 
 
 class ResearcherActionError(ValueError):
@@ -186,7 +188,10 @@ def pending_review(
             sorted(
                 p.name
                 for p in workspace.iterdir()
-                if p.is_file() and p.suffix in _EDITABLE_SUFFIXES and not p.name.startswith(".")
+                if p.is_file()
+                and p.suffix in _EDITABLE_SUFFIXES
+                and not p.name.startswith(".")
+                and p.name not in _NOT_THE_STUDYS
             )
         )
     return PendingReview(stage=stage, kind=kind, files=files)

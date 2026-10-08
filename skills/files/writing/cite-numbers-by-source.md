@@ -26,6 +26,9 @@ The sidecars are:
 - `robustness_results.json` — same shape as estimation_results, used
   for the robustness section.
 - `figure_spec.json` — numeric values that appear in figures.
+- `field_map_results.json` — the field map's counts (boundary, network,
+  main path, key routes, robustness), written by code in the `field-map`
+  template.
 
 If a number in your draft does not appear in one of these files, you
 either invented it or you're citing a derived quantity that you have

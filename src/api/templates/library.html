@@ -1,26 +1,25 @@
 {% extends "base.html" %}
-{% block title %}Library — e2er{% endblock %}
+{% block title %}Library · e2er{% endblock %}
 
 {% block content %}
 <h1>Library</h1>
 <p class="sub">
-  What the papers you have read actually claim. Every entry is a statement plus
-  the verbatim sentence it came from, checked against the paper — a claim whose
-  quote could not be found was discarded rather than stored.
+  What the papers you have read claim. Every entry is a statement and the sentence it was taken from, word for
+  word, checked against the paper. A claim whose sentence could not be found in the paper is not kept.
 </p>
 
 {% if not exists %}
   <section class="empty">
     <h2>No library yet</h2>
     <p>
-      Point e2er at a folder of PDFs and it will read them into a library you can
-      search by claim. Your own papers work best: they are always readable,
-      whereas roughly two in five papers found on the web are behind a paywall.
+      Give e2er a folder of PDFs and it reads them into a library you can search by claim. Your own copies work
+      best: about two in five papers found on the web are behind a paywall.
     </p>
-    <pre><code>e2er corpus add ~/path/to/your/papers/</code></pre>
+    <p>Adding papers runs in a terminal for now:</p>
+    <div class="copy-row"><code class="cmd">e2er corpus add ~/path/to/your/papers/</code><button type="button" class="btn-ghost btn-small" data-copy="e2er corpus add ~/path/to/your/papers/">Copy</button></div>
     <p class="muted">
-      It will live at <code>{{ path }}</code> and accumulate across every project.
-      A paper run reads it automatically.
+      The library is kept in <code class="path">{{ path }}</code> and grows with every folder you add.
+      Every study reads it.
     </p>
   </section>
 
@@ -63,7 +62,7 @@
             <span class="field-tag">{{ h.field }}</span>
           </div>
           <p class="claim-text">{{ h.text }}</p>
-          <blockquote>“{{ h.quote }}”{% if h.locator %} <span class="muted">— {{ h.locator }}</span>{% endif %}</blockquote>
+          <blockquote>“{{ h.quote }}”{% if h.locator %} <span class="muted">({{ h.locator }})</span>{% endif %}</blockquote>
           {% if h.doi %}<p class="muted mono">{{ h.doi }}</p>{% endif %}
         </article>
       {% endfor %}
@@ -72,9 +71,8 @@
         <h2>Nothing matches “{{ query }}”</h2>
         <p class="muted">
           The library holds {{ stats.claims if stats else 0 }} claims from
-          {{ stats.papers if stats else 0 }} papers. Searching matches the claim
-          text and the quoted sentence, not the title — so try wording that
-          might appear <em>inside</em> a paper.
+          {{ stats.papers if stats else 0 }} papers. The search reads the claims and the quoted sentences,
+          not the titles: try words that might appear <em>inside</em> a paper.
         </p>
       </section>
     {% endif %}
@@ -87,7 +85,7 @@
         {% for p in papers %}
           <tr>
             <td class="num">{{ p.n_claims }}</td>
-            <td class="num">{{ p.year or '—' }}</td>
+            <td class="num">{{ p.year or '' }}</td>
             <td>{{ p.title }}</td>
             <td class="mono muted">{{ p.doi or '' }}</td>
           </tr>
@@ -100,8 +98,13 @@
   {% endif %}
 
   <p class="muted">
-    Add more with <code>e2er corpus add &lt;folder|DOI|file.pdf&gt;</code>.
-    A paper run also reads its own <code>literature/</code> folder automatically.
+    Add more in a terminal with <code class="tick">e2er corpus add</code> and a folder, a DOI or a PDF.
+    A study also reads the PDFs in its own literature folder.
   </p>
+  <script>
+    document.querySelectorAll('[data-copy]').forEach((b) => b.addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(b.dataset.copy); b.textContent = 'Copied'; } catch (e) { b.textContent = 'Select it and copy'; }
+    }));
+  </script>
 {% endif %}
 {% endblock %}

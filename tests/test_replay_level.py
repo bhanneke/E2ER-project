@@ -97,6 +97,20 @@ async def test_overrides_vary_one_attempt_and_then_replay_the_recording(tmp_path
     assert '"2020-03-16"' in (ws / "event_design.json").read_text(encoding="utf-8")
 
 
+async def test_a_wait_override_makes_the_attempt_take_that_long(tmp_path: Path, monkeypatch):
+    ReplayBackend._attempts.clear()
+    over = tmp_path / "over.json"
+    over.write_text(json.dumps({"idea_developer": {"attempts": [{"wait": 0.3}]}}))
+    monkeypatch.setenv("E2ER_REPLAY_OVERRIDES", str(over))
+    b = ReplayBackend("fomc")
+    t0 = time.monotonic()
+    assert (await _call(b, tmp_path / "ws", "idea_developer")).success
+    assert time.monotonic() - t0 >= 0.3
+    t0 = time.monotonic()
+    assert (await _call(b, tmp_path / "ws", "idea_developer")).success
+    assert time.monotonic() - t0 < 0.3
+
+
 async def test_the_replay_stands_in_for_the_backend_and_model_the_run_names(tmp_path: Path, monkeypatch):
     """A run on codex under the replay level is recorded as a run on codex with its model (`backend_identity`)."""
     from src.config import get_settings
@@ -262,6 +276,9 @@ def test_the_fomc_event_study_replays_to_the_end_through_the_server(tmp_path: Pa
         "E2ER_REPLAY_NETLOG": str(tmp_path / "net.txt"),
         "E2ER_SKIP_SETUP_REDIRECT": "1",
         "E2ER_SESSION_TOKEN": "replay-session",
+        # Matplotlib builds its font cache in a fresh HOME, inside the server's event loop: about ten
+        # seconds in which the server does not answer. Its cache of the real home is reused.
+        "MPLCONFIGDIR": os.environ.get("MPLCONFIGDIR") or str(Path.home() / ".matplotlib"),
         "HTTPS_PROXY": "http://127.0.0.1:9",
         "HTTP_PROXY": "http://127.0.0.1:9",
         "NO_PROXY": "127.0.0.1,localhost",
@@ -309,7 +326,8 @@ def test_the_fomc_event_study_replays_to_the_end_through_the_server(tmp_path: Pa
             assert r.status_code == 200, r.text
         assert p["status"] == "completed", p
         assert stops == ["review_design", "preregister", "review_draft"]
-        ws = study / "workspaces" / pid
+        ws = Path(p["workspace"])  # named after the date and title since 0.14.0
+        assert ws.parent == (study / "workspaces").resolve() and ws.name != pid
         assert json.loads((ws / "estimation_results.json").read_text(encoding="utf-8")) == json.loads(
             (FIXTURES / "fomc/files/econometrics_specialist/estimation_results.json").read_text(encoding="utf-8")
         )
@@ -323,7 +341,7 @@ def test_the_fomc_event_study_replays_to_the_end_through_the_server(tmp_path: Pa
 
 def _wait(api: str, pid: str) -> dict:
     for _ in range(600):
-        p = httpx.get(f"{api}/api/papers/{pid}", timeout=10).json()
+        p = httpx.get(f"{api}/api/papers/{pid}", timeout=30).json()
         if p["status"] in {"paused", "completed", "failed", "rejected", "cancelled"} and not p.get("run_owner"):
             return p
         time.sleep(0.2)

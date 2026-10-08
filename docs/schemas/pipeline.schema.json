@@ -15,6 +15,10 @@
       "pattern": "^[a-z0-9][a-z0-9_-]*$",
       "description": "Filename stem and the identifier passed to `e2er run --pipeline`."
     },
+    "title": {
+      "type": "string",
+      "description": "The template's name on the dashboard, such as \"Empirical study\"."
+    },
     "description": {
       "type": "string"
     },
@@ -52,6 +56,82 @@
     "sidecars": {
       "$ref": "#/$defs/components",
       "description": "Machine-readable files this template asks a specialist to write next to its main output, as specialist = [\"file.json\", ...]. Merged after the specialist's own sidecars; a check of the template reads them (e.g. event_design.json for the event_window check)."
+    },
+    "credit": {
+      "type": "array",
+      "description": "Work this template is based on, draws from or cites: the creator, their role (e.g. conceptualization, method, related work), the relation (based_on, related_work, cites), the work's title and address, when it was published and read, and where it was found. e2er.org shows a `based_on` entry as \"Based on\" with the link; the creator is an external creator, not an e2er account. A credit says where an idea came from; it does not say the creator endorses the template.",
+      "items": {
+        "type": "object",
+        "required": [
+          "creator",
+          "role",
+          "relation",
+          "title",
+          "url",
+          "accessed"
+        ],
+        "properties": {
+          "creator": {
+            "type": "string",
+            "minLength": 1
+          },
+          "role": {
+            "type": "string",
+            "minLength": 1
+          },
+          "relation": {
+            "enum": [
+              "based_on",
+              "related_work",
+              "cites"
+            ]
+          },
+          "kind": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "publisher": {
+            "type": "string"
+          },
+          "published": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "url": {
+            "type": "string",
+            "pattern": "^https://"
+          },
+          "accessed": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "found_via": {
+            "type": "string"
+          },
+          "adopted": {
+            "type": "string"
+          },
+          "own": {
+            "type": "string"
+          },
+          "statement": {
+            "type": "string"
+          },
+          "licence": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "cite_key": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
     }
   },
   "$defs": {
@@ -106,9 +186,14 @@
             "event_window",
             "package_integrity",
             "sandbox",
-            "reproduction"
+            "reproduction",
+            "field_retrieve",
+            "field_network",
+            "field_main_path",
+            "field_robustness",
+            "field_map"
           ],
-          "description": "Which deterministic check to run. Required for `gate`. event_window verifies an event study's design (event_design.json) before estimation: estimation window length and gap, overlapping events, event dates in the data calendar. package_integrity, sandbox and reproduction run as steps of their own in the replication template (no `after`): package_integrity downloads the Zenodo record the question names and verifies every file against Zenodo's checksum (SHA-256 recorded); sandbox runs the plan's entry points in Docker (pinned image, --network none, read-only package, limits); reproduction re-reads every number of reproduction_report.json from the run's output files. package_integrity and sandbox block in every governance regime."
+          "description": "Which deterministic check to run. Required for `gate`. event_window verifies an event study's design (event_design.json) before estimation: estimation window length and gap, overlapping events, event dates in the data calendar. package_integrity, sandbox and reproduction run as steps of their own in the replication template (no `after`): package_integrity downloads the Zenodo record the question names and verifies every file against Zenodo's checksum (SHA-256 recorded); sandbox runs the plan's entry points in Docker (pinned image, --network none, read-only package, limits); reproduction re-reads every number of reproduction_report.json from the run's output files. package_integrity and sandbox block in every governance regime. field_retrieve, field_network, field_main_path, field_robustness and field_map run as steps of their own in the field-map template: retrieval of the boundaries from OpenAlex, the citation network with its completeness check, SPC main paths and key routes, the same on every alternative boundary, and the map with its exports. field_network can be shadowed by a governance regime; the other four block in every regime. numbers and citations may also run as steps of their own (the field-map template has no review step to run them in)."
         },
         "on_fail": {
           "enum": [
@@ -156,7 +241,7 @@
         },
         "settings": {
           "type": "object",
-          "description": "gate steps: parameters of the check. event_window takes min_estimation_days (default 120), min_gap_days (default 10) and max_overlap_share (0 to 1, default 0). package_integrity takes max_mb (default 1000). sandbox takes cpus (default 2), memory_gb (default 4), timeout_minutes per entry point (default 60) install_timeout_minutes (default 45) and snapshot (package-date, latest or YYYY-MM-DD; default package-date). reproduction takes minor_rel_tolerance (0 to 1, default 0.10).",
+          "description": "gate steps: parameters of the check. event_window takes min_estimation_days (default 120), min_gap_days (default 10) and max_overlap_share (0 to 1, default 0). package_integrity takes max_mb (default 1000). sandbox takes cpus (default 2), memory_gb (default 4), timeout_minutes per entry point (default 60) install_timeout_minutes (default 45) and snapshot (package-date, latest or YYYY-MM-DD; default package-date). reproduction takes minor_rel_tolerance (0 to 1, default 0.10). field_retrieve takes max_papers (default 5000; a boundary above it is refused before its pages are read) and max_requests (default 300). field_network takes max_isolated_share (0 to 1, default 0.6), max_missing_refs_share (0 to 1, default 0.25) and min_papers (default 100). field_main_path takes key_routes (default 10).",
           "properties": {
             "min_estimation_days": {
               "type": "integer",
@@ -199,9 +284,39 @@
             "snapshot": {
               "type": "string",
               "pattern": "^(package-date|latest|\\d{4}-\\d{2}-\\d{2})$"
+            },
+            "max_papers": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "max_requests": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "max_isolated_share": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "max_missing_refs_share": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "min_papers": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "key_routes": {
+              "type": "integer",
+              "minimum": 0
             }
           },
           "additionalProperties": false
+        },
+        "label": {
+          "type": "string",
+          "description": "The step's name on the dashboard, such as \"Design review\"."
         }
       }
     }

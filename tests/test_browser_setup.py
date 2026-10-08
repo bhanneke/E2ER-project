@@ -212,7 +212,7 @@ def test_path_flags_are_cleaned(monkeypatch, tmp_path):
 def test_browse_needs_the_session_token(home, session):
     r = _client(cookie=False).get("/api/local/browse")
     assert r.status_code == 403
-    assert "link e2er opened" in r.json()["detail"]
+    assert "not signed in" in r.json()["detail"]
 
 
 def test_browse_with_the_token_lists_home(home, session):
@@ -357,7 +357,7 @@ def test_setup_page_offers_backends_docker_and_instructions(project, session, mo
     assert "https://code.claude.com/docs/en/setup" in html
     assert "https://console.anthropic.com/settings/keys" in html and "https://openrouter.ai/keys" in html
     assert "Only the replication template needs Docker" in html
-    assert "Haiku — cheapest" in html
+    assert "Haiku: cheapest" in html
 
 
 def test_setup_writes_env_mode_600_and_masks_keys(project, session):
@@ -372,6 +372,7 @@ def test_setup_writes_env_mode_600_and_masks_keys(project, session):
             "data_dir": str(project.parent / "Data"),
             "keys": {"FRED_API_KEY": "fredkey-1234567890abcd"},
             "create_folders": True,
+            "studies_folder": str(project),
         },
         headers={"origin": BASE},
     )
@@ -561,7 +562,12 @@ def test_a_study_starts_from_the_form_and_stops_at_its_first_review(live_db):
         assert paper["status"] == "paused", paper.get("last_error")
         assert paper["pipeline"] == "empirical-preregistered"
         assert paper["title"] == "Does X affect Y"  # the first sentence, as `e2er run` names it
-        manifest = json.loads((live_db / "workspaces" / pid / "manifest.json").read_text())
+        from src.home import find_workspace
+
+        folder = find_workspace(pid, live_db / "workspaces")
+        assert folder.name.endswith("-does-x-affect-y"), folder  # a readable name, the id inside
+        manifest = json.loads((folder / "manifest.json").read_text())
+        assert manifest["paper_id"] == pid
         assert manifest["purpose"] == "demonstration"
 
         # The review is offered once the run task has wound down, not the moment
@@ -570,16 +576,17 @@ def test_a_study_starts_from_the_form_and_stops_at_its_first_review(live_db):
         live = ""
         while time.time() < deadline:
             live = c.get(f"/htmx/papers/{pid}/live").text
-            if "The study is waiting for you" in live:
+            if "The run stopped for you" in live:
                 break
             time.sleep(0.2)
-        assert "The study is waiting for you" in live
+        assert "The run stopped for you" in live
         assert f'href="/papers/{pid}/review"' in live
         # The mock strategist never dispatches data_architect, so the design
         # review (which waits for it) never fires; the draft review is the first stop.
         assert "Draft review" in live and "waiting for you" in live
         assert "Design, data, estimation and draft" in live
-        assert "idea_developer" in live  # specialists done
+        assert "Research plan" in live  # specialists done (idea_developer), by their plain names
+        assert "idea_developer" not in live
 
         review = c.get(f"/papers/{pid}/review").text
         assert "Researcher step: review_draft" in review

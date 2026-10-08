@@ -35,6 +35,7 @@
 # Maintained by the e2er contributors.
 
 name = "replication"
+title = "Replication of a published study"
 description = "Computational reproduction of a published study from its Zenodo replication package: fetch and verify the package, plan, run it in a Docker sandbox, and compare every reported number with what the rerun produced."
 methodologies = ["empirical", "replication"]
 

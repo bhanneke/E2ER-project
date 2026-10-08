@@ -101,7 +101,7 @@ e2er doctor              # checks the setup
 e2er --version           # prints the installed version
 ```
 
-`e2er init` asks which AI access to use and checks that it is installed. The command then creates the folders `data/` and `literature/` and writes the settings to `.env` in the current folder; `--force` overwrites an existing `.env`. For Claude Code, Codex or Gemini it asks before copying e2er's skill files into that CLI's skills folder (`~/.claude/skills`, `~/.codex/skills` or `~/.gemini/skills`); `--defaults` copies them into `~/.claude/skills` only. Other CLIs' folders are left alone. The setup page in the browser writes the same file. `e2er doctor` reports the AI access, the database and the data and literature it finds.
+`e2er init` asks which AI access to use and checks that it is installed. The command then creates the folders `data/` and `literature/` and writes the settings to `.env` in the current folder; `--force` overwrites an existing `.env`. For Claude Code, Codex or Gemini it asks before copying e2er's skill files into that CLI's skills folder (`~/.claude/skills`, `~/.codex/skills` or `~/.gemini/skills`); `--defaults` copies them into `~/.claude/skills` only. Other CLIs' folders are left alone. The setup page in the browser writes the same file; the first time, it asks for a studies folder (default `~/e2er-studies`) and remembers it, so `e2er` started from any folder uses that folder's settings, studies and exports. A folder with its own `.env` keeps working as a project of its own. `e2er doctor` reports the AI access, the database and the data and literature it finds.
 
 Studies are recorded in a SQLite database at `~/.e2er/papers.db`. Setting `DATABASE_URL` to a Postgres address switches e2er to Postgres, and `e2er migrate` then creates the tables.
 
@@ -172,7 +172,7 @@ e2er login
 e2er publish <study folder> --owner <github-login> --project <name> --to https://e2er.org
 ```
 
-`e2er export` writes the study folder with the subfolders `paper/`, `code/`, `data/`, `results/`, `design/` and `reviews/`. The file `provenance.json` in it lists every file with its hash value. `--to` sets where the folder is written (default: `OUTPUT_DIR`, else `e2er_papers/` in the data folder, which is never read back in as data). The command works from any folder and takes the first characters of the paper id when they are unique.
+`e2er export` writes the study folder with the subfolders `paper/`, `code/`, `data/`, `results/`, `design/` and `reviews/`. The file `provenance.json` in it lists every file with its hash value. `--to` sets where the folder is written (default: `OUTPUT_DIR`, else `exports/` in the studies folder, never inside the data folder). The command works from any folder and takes the first characters of the paper id when they are unique.
 
 `e2er verify` runs the check offline and without API keys. The check recomputes the hash values, rebuilds the tables from the estimation results, recomputes t and p values, compares the estimation with the declared identification strategy and confirms that every citation is in the bibliography. A pre-registration or a reproduction in the folder is checked as well. `--online` also looks up the citations in OpenAlex, Semantic Scholar and Crossref. `--against` compares the folder with the study or dossier that e2er.org published and only reads from e2er.org.
 
@@ -184,16 +184,17 @@ e2er publish <study folder> --owner <github-login> --project <name> --to https:/
 
 ## Templates
 
-A template is a `.toml` file. e2er ships four in [`pipelines/`](https://github.com/bhanneke/E2ER-project/tree/main/pipelines):
+A template is a `.toml` file. e2er ships five in [`pipelines/`](https://github.com/bhanneke/E2ER-project/tree/main/pipelines):
 
 - `empirical` (default): from a research question and data to an empirical paper.
 - `empirical-preregistered`: `empirical` with three pauses for the researcher (design review, pre-registration frozen before any estimation, draft review).
 - `event-study-finance`: abnormal-return event studies around announcements, with the pauses of `empirical-preregistered`. A check before estimation tests the estimation window, the overlap between events and the event dates.
 - `replication`: reproduction of a published study from its replication package on Zenodo, executed in a Docker container (R or Python code only). The result is a reproduction report.
+- `field-map`: a map of a research field by main path analysis. A specialist proposes the boundary (search terms with the topic's older names, a journal set, years, and two to six alternative boundaries), and the researcher approves it with the paper counts. Code retrieves the papers from OpenAlex, builds the network of citations inside the boundary with a completeness report, weights each citation by search path count, finds the main path and the key routes, and repeats this on the alternative boundaries to show which papers hold. A specialist names lanes as questions, the researcher approves them, and code draws the map by year and lane and writes a reading list, Pajek, GEXF, VOSviewer and CSV files, and the numbers of a short field review, which the number check verifies. The workflow follows Michal Hron's article "Map a research field with Claude: main path analysis, step by step" (LinkedIn Pulse, 8 October 2026, [link](https://www.linkedin.com/pulse/map-research-field-claude-main-path-analysis-step-michal-hron-jm2ge/)); this implementation is independent and uses OpenAlex. The methods are those of Hummon and Doreian (1989), Batagelj (2003) and Liu and Lu (2012); the skill `synthesis/main-path-analysis` describes them.
 
 The three empirical templates end with e2er's internal quality review. Six reviewer specialists each score the draft from one angle on a scale of 0 to 10. The six angles are data, identification, literature, mechanism, technical quality and writing. The score is their weighted average. The score decides whether the draft is revised before the study ends, and the study reports it, for example "e2er's internal quality review: 6.1 of 10". A study that finishes its steps is completed whatever its score.
 
-e2er ships with 63 skill files and 28 specialist roles. `e2er run --template NAME` looks for a template in `./pipelines`, then in `~/.e2er/pipelines`, then among the four above. [docs/templates.md](https://github.com/bhanneke/E2ER-project/blob/main/docs/templates.md) describes the file format, and [docs/researcher-step.md](https://github.com/bhanneke/E2ER-project/blob/main/docs/researcher-step.md) describes the pauses. `e2er skills list` and `e2er skills install` read the [RISE catalogue](https://github.com/bhanneke/RISE) of skill packs: e2er downloads its pack list from GitHub (refreshed daily), or reads a local clone named by `RISE_PATH` or `--catalogue`. Packs are installed from their own sources.
+e2er ships with 64 skill files and 31 specialist roles. `e2er run --template NAME` looks for a template in `./pipelines`, then in `~/.e2er/pipelines`, then among the five above. [docs/templates.md](https://github.com/bhanneke/E2ER-project/blob/main/docs/templates.md) describes the file format, and [docs/researcher-step.md](https://github.com/bhanneke/E2ER-project/blob/main/docs/researcher-step.md) describes the pauses. `e2er skills list` and `e2er skills install` read the [RISE catalogue](https://github.com/bhanneke/RISE) of skill packs: e2er downloads its pack list from GitHub (refreshed daily), or reads a local clone named by `RISE_PATH` or `--catalogue`. Packs are installed from their own sources.
 
 ## Data sources
 
@@ -279,7 +280,7 @@ make smoke-paid   # one real study on Claude Haiku 4.5 (needs ANTHROPIC_API_KEY,
   title        = {{e2er (End-to-End Research): The Open Infrastructure for
                    Publishing, Verifying, Reproducing and Reusing AI-Enabled Research}},
   year         = {2026},
-  version      = {0.13.9},
+  version      = {0.14.0},
   url          = {https://github.com/bhanneke/E2ER-project},
   doi          = {10.5281/zenodo.20187238},
   license      = {MIT},

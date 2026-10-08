@@ -1,10 +1,10 @@
 {% extends "base.html" %}
-{% block title %}{{ paper.title[:70] }} — e2er{% endblock %}
+{% block title %}{{ paper.title[:70] }} · e2er{% endblock %}
 
 {% block content %}
 {% if study %}
 <p class="crumb">
-  <a href="/studies/{{ study.key }}">{{ study.title }}</a> · v{{ study.version }} of {{ study.of }}
+  <a href="/studies/{{ study.key }}">{{ study.title }}</a> · run {{ study.version }} of {{ study.of }}
   {% if study.archived %} · <span class="muted">archived</span>{% endif %}
 </p>
 {% endif %}
@@ -12,7 +12,7 @@
 <p class="sub">{{ paper.research_question }}</p>
 {% if demonstration %}<p><span class="tag" id="demo-label">Demonstration or test run</span> <span class="muted">published as is and marked as not a research contribution</span></p>{% endif %}
 <p class="muted">
-  Template: {{ paper.pipeline or "empirical" }} · {{ (paper.mode or "single_pass") | replace("_", " ") }}
+  Template: {{ template_label }} · {{ "one pass" if (paper.mode or "single_pass") == "single_pass" else "iterative (longer)" }}
   {% if paper.github_repo %} · <a href="{{ paper.github_repo }}" target="_blank" rel="noopener">{{ paper.github_repo }}</a>{% endif %}
 </p>
 
@@ -38,8 +38,7 @@
 </section>
 
 <section id="budget-box" class="waiting-box" hidden>
-  <span><strong>The spending limit was reached.</strong> The work done so far is kept. Raise the limit to continue
-    (as <code>e2er resume --max-cost</code>).</span>
+  <span><strong>The spending limit was reached.</strong> The work done so far is kept. Raise the limit to continue.</span>
   <label class="field">
     <span>New spending limit (USD)</span>
     <input type="number" id="budget-cap" min="0.01" step="0.01" value="{{ suggested_cap | round(0) | int }}">
@@ -52,12 +51,11 @@
 <details id="rerun-box" class="card"{% if not rerun_open %} hidden{% endif %}>
   <summary><strong>Run again from a step</strong></summary>
   <p class="card-note">The step you choose and every step after it run again, also after the run failed or
-    stopped. Your remark goes to the specialists and into the dossier, and the run stops again where it waits for you
-    (as <code>e2er rerun --from STEP --remark</code>).</p>
+    stopped. Your remark goes to the specialists and into the dossier, and the run stops again where it waits for you.</p>
   <label class="field">
     <span>Step</span>
     <select id="rerun-step">
-      {% for st in rerun_steps %}<option value="{{ st.name }}">{{ st.label }} ({{ st.name }})</option>{% endfor %}
+      {% for st in rerun_steps %}<option value="{{ st.name }}">{{ st.label }}</option>{% endfor %}
     </select>
   </label>
   <label class="field">
@@ -72,12 +70,12 @@
 {% if prereg %}
 <section class="card" id="prereg-box">
   <h2>Pre-registration</h2>
-  <p class="card-note">Frozen {{ prereg.frozen_at }} · SHA-256 <code>{{ (prereg.sha256 or "")[:16] }}…</code>
+  <p class="card-note">Frozen {{ prereg.frozen_at }} · fingerprint <code>{{ (prereg.sha256 or "")[:16] }}…</code>
     {% if prereg.deposit %} · deposited on {{ prereg.deposit.service }}{% if prereg.deposit.doi %}: doi {{ prereg.deposit.doi }}{% endif %}{% endif %}</p>
   {% if not prereg.deposit %}
-    <p class="card-note">Deposit it on Zenodo with your own account (the token in <code>ZENODO_TOKEN</code>) for a DOI
-      (as <code>e2er preregister deposit</code>).</p>
-    <label class="check"><input type="checkbox" id="prereg-sandbox"> <span>Use Zenodo's test site (sandbox.zenodo.org, token in <code>ZENODO_SANDBOX_TOKEN</code>)</span></label>
+    <p class="card-note">Deposit it on Zenodo with your own account for a DOI. e2er uses the Zenodo key saved under
+      <a href="/setup#card-keys">Settings</a>.</p>
+    <label class="check"><input type="checkbox" id="prereg-sandbox"> <span>Use Zenodo's test site (sandbox.zenodo.org, with its own key)</span></label>
     <button type="button" class="btn" id="prereg-deposit">Deposit on Zenodo</button>
     <p class="form-note" id="prereg-msg" role="status"></p>
   {% endif %}
@@ -87,12 +85,7 @@
 <script>
 (function () {
   const pid = '{{ paper.id }}';
-  async function call(url, body) {
-    const r = await fetch(url, { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body || {}) });
-    const d = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(d.detail || ('Failed (' + r.status + ')'));
-    return d;
-  }
+  const call = (url, body) => e2er.call('POST', url, body || {});
   // The live panel says whether the run is working, and whether the spending limit stopped it.
   function sync() {
     const f = document.getElementById('live-flags');
@@ -122,7 +115,8 @@
     try {
       const d = await call('/api/papers/' + pid + '/rerun', { step, remark });
       const rec = d.recorded || {};
-      say('rerun-msg', 'Running again: ' + (rec.reruns || []).join(', ') + (rec.replaces ? ' (in place of the stop at ' + rec.replaces + ')' : '') + '. Recorded for the dossier.');
+      const names = rec.rerun_labels || rec.reruns || [];
+      say('rerun-msg', 'Running again: ' + names.join(', ') + '. Recorded for the dossier.');
       document.getElementById('rerun-remark').value = '';
     } catch (e) { say('rerun-msg', e.message); }
     rerun.disabled = false;
@@ -139,28 +133,27 @@
     if (!b) return;
     b.disabled = true;
     try { await call('/api/queries/' + b.dataset.query + '/approve', { approved: b.dataset.approve === '1' }); b.closest('li').remove(); }
-    catch (e) { alert(e.message); b.disabled = false; }
+    catch (e) { e2er.notice(e.message); b.disabled = false; }
   });
 })();
 </script>
 
 <section>
-  <h2>Artifacts</h2>
+  <h2>Files</h2>
   {% if not groups %}
-    <p class="muted">No artifacts yet.</p>
+    <p class="muted">No files yet.</p>
   {% else %}
   <p class="muted">
-    Grouped by the phase that produced them. A file a specialist declared and
-    never wrote is shown in red.
+    Grouped by the part of the study that wrote them. A file that should have been written and was not is shown in red.
   </p>
   {% for g in groups %}
     <details class="ag ag-{{ g.status }}"{% if g.status == "fail" %} open{% endif %}>
       <summary>
         <span class="ag-name">{{ g.name }}</span>
         <span class="ag-badge b-{{ g.status }}">
-          {%- if g.status == "pass" -%}passed
-          {%- elif g.status == "fail" -%}attention
-          {%- else -%}—{%- endif -%}
+          {%- if g.status == "pass" -%}complete
+          {%- elif g.status == "fail" -%}incomplete
+          {%- else -%}·{%- endif -%}
         </span>
         <span class="ag-note">{{ g.note }}</span>
       </summary>
@@ -173,7 +166,7 @@
               <a class="f-path" href="/api/papers/{{ paper.id }}/artifacts/{{ f.p }}" target="_blank" rel="noopener">{{ f.p }}</a>
             {% endif %}
             {% if f.note %}<span class="f-note">{{ f.note }}</span>{% endif %}
-            <span class="f-size">{% if f.status == "missing" %}—{% else %}{{ (f.b / 1000) | round | int }} KB{% endif %}</span>
+            <span class="f-size">{% if f.status in ("missing", "none") %}·{% else %}{{ f.b | filesize }}{% endif %}</span>
           </li>
         {% endfor %}
       </ul>
@@ -181,7 +174,13 @@
   {% endfor %}
   {% endif %}
   <p>
-    <a class="btn" href="/api/papers/{{ paper.id }}/audit-bundle">Download audit bundle (.tar.gz)</a>
+    <a class="btn" href="/api/papers/{{ paper.id }}/audit-bundle" id="download-all">Download all files</a>
   </p>
 </section>
+
+<details class="tech">
+  <summary>Technical details</summary>
+  <p class="small mono">Run id {{ paper.id }} · template {{ paper.pipeline or "empirical" }} · mode {{ paper.mode or "single_pass" }} · {{ paper.backend or "" }} {{ paper.model or "" }}</p>
+  <p class="small mono">Folder {{ paper.workspace }}</p>
+</details>
 {% endblock %}

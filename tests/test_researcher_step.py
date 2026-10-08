@@ -537,7 +537,7 @@ def test_review_endpoints_apply_actions_and_resume(client, tmp_path: Path):
     ):
         got = client.get(f"/api/papers/{PID}/review").json()
         assert (
-            got["pending"] == {"stage": "review_design", "kind": "researcher"}
+            got["pending"] == {"stage": "review_design", "stage_label": "Design review", "kind": "researcher"}
             and got["files"][0]["content"] == "plan v1\n"
         )
         r = client.post(f"/api/papers/{PID}/review", json={"action": "instruction", "text": "Use monthly data."})

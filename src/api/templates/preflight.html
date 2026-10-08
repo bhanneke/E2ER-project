@@ -1,41 +1,43 @@
 {% extends "base.html" %}
-{% block title %}Preflight — e2er{% endblock %}
+{% block title %}Preflight · e2er{% endblock %}
 
 {% block content %}
 <h1>Preflight</h1>
 <p class="sub">
-  The same checks <code>e2er doctor</code> runs, from the same code. A backend
-  that is installed but not logged in is the most common reason a first paper
-  fails several minutes in, for a reason nothing on screen explains.
+  Can this computer run a study? These are the checks <code class="tick">e2er doctor</code> runs. The most common
+  problem is an AI provider that is installed but not signed in: a study then fails a few minutes in.
 </p>
 
 {% if error %}
-  <p class="error">The preflight could not run: {{ error }}</p>
+  <p class="error">The checks could not run: {{ error }}</p>
 {% else %}
 
 <div class="pf-verdict {% if ready %}ok{% else %}bad{% endif %}">
   {% if ready %}
-    <strong>Ready.</strong> Nothing blocks a run on this machine.
+    <strong>Ready.</strong> Nothing stops a study on this computer.
   {% else %}
-    <strong>Not ready.</strong> Fix the failures below before starting a paper —
-    {{ blockers | join(", ") }}.
+    <strong>Not ready.</strong> Fix these first: {{ blockers | map("check_label") | join(", ") }}.
   {% endif %}
-  <span class="muted">{{ n_pass }} passed · {{ n_skip }} skipped · {{ n_fail }} failed</span>
+  <span class="muted">{{ n_pass }} passed · {{ n_skip }} not set up (optional) · {{ n_fail }} failed</span>
 </div>
 
 <div class="pf-list">
   {% for c in checks %}
     <div class="pf pf-{{ c.status | lower }}">
       <span class="pf-mark">{% if c.status == "PASS" %}✓{% elif c.status == "FAIL" %}✗{% else %}·{% endif %}</span>
-      <span class="pf-name">{{ c.name }}</span>
-      <span class="pf-detail">{{ c.detail }}</span>
+      <span class="pf-name">{{ c.name | check_label }}</span>
+      <span class="pf-detail">{{ c.detail | check_detail(c.name) | ticks }}</span>
     </div>
   {% endfor %}
 </div>
 
 <p class="muted" style="margin-top:18px">
-  Skipped checks are optional capabilities you have not configured — a missing
-  FRED key means no macro series, not a broken install.
+  A check that is not set up is optional: without a FRED key, for instance, e2er has no macroeconomic series,
+  and everything else works.
 </p>
+<details class="tech">
+  <summary>Technical details</summary>
+  <p class="small mono">{% for c in checks %}{{ c.name }}: {{ c.status }}: {{ c.detail }}{% if not loop.last %}<br>{% endif %}{% endfor %}</p>
+</details>
 {% endif %}
 {% endblock %}

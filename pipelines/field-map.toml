@@ -1,0 +1,198 @@
+# Map a research field: main path analysis of its citation network.
+#
+# The workflow follows Michal Hron's article "Map a research field with Claude:
+# main path analysis, step by step" (LinkedIn Pulse, 8 October 2026,
+# https://www.linkedin.com/pulse/map-research-field-claude-main-path-analysis-step-michal-hron-jm2ge/,
+# read on 2026-10-08; shared by Björn Hanneke); this implementation is
+# independent and uses OpenAlex. Adopted from the article: the six-step
+# workflow (boundary, internal citation network with completeness checks, SPC
+# weights, main path and key routes, robustness across journal sets, a map with
+# lanes named as questions) and the pitfalls it lists. e2er's own: the code in
+# src/modules/fieldmap, the OpenAlex retrieval, the handling of citation
+# cycles, the exports, these steps and stops, and the number-checked review.
+# Hron's own implementation runs on Scopus (github.com/michalhron/scopus-plus-mcp);
+# nothing of it is used here. The methods: Hummon and Doreian (1989), Batagelj
+# (2003), Liu and Lu (2012); see [[credit]] below and the skill
+# skills/files/synthesis/main-path-analysis.md.
+#
+# Judgement where judgement is needed, code for everything that is counted:
+#
+#   design_boundary    the boundary designer proposes search terms (with the
+#                      topic's older names), a journal set, years, and 2 to 6
+#                      alternative boundaries (field_boundary.json)
+#   retrieve_boundary  code retrieves every boundary from OpenAlex (paged,
+#                      cached, with a request ceiling); runs at every start, so
+#                      an edited boundary is retrieved again
+#   review_boundary    the researcher approves or edits the boundaries, seeing
+#                      the paper counts
+#   citation_network   code builds the network of citations inside the main
+#                      boundary and reports what is missing; stops when too many
+#                      papers have no internal link or no references
+#   main_path          code: SPC weights, the global and local main paths, key
+#                      routes, the heaviest links
+#   robustness         code: the same on every alternative boundary; which
+#                      papers are on every main path
+#   propose_lanes      the lane mapper groups the mapped papers into lanes
+#                      named as questions, from titles and abstracts
+#   review_lanes       the researcher approves or edits the lanes
+#   draw_map           code: the map, reading list, Pajek/GEXF/VOSviewer/CSV
+#                      exports, tables and field_map_results.json
+#   write_review       the review writer drafts a short field review whose
+#                      numbers come from field_map_results.json
+#   number_check       every table value of the draft traced to the results
+#   citation_check     every citation in the bibliography and in an index
+#   review_draft       the researcher reads the draft
+#
+# No estimation, no estimation gate, no econometrics: nothing here is
+# estimated. No review panel: the draft is a description of computed results.
+#
+# Maintained by the e2er contributors.
+
+name = "field-map"
+title = "Map a research field"
+description = "Map a research field: retrieve its papers from OpenAlex, compute the main path of its citation network (SPC weights, key routes), test it on alternative boundaries, and draw the field by year in lanes named as questions, with a reading list, network exports and a short field review."
+methodologies = ["bibliometric", "literature review"]
+
+finalize = ["compile", "audit_export", "github_push", "structured_export"]
+
+[[credit]]
+creator    = "Michal Hron"
+role       = "conceptualization"
+relation   = "based_on"
+kind       = "article"
+title      = "Map a research field with Claude: main path analysis, step by step"
+publisher  = "LinkedIn Pulse"
+published  = "2026-10-08"
+url        = "https://www.linkedin.com/pulse/map-research-field-claude-main-path-analysis-step-michal-hron-jm2ge/"
+accessed   = "2026-10-08"
+found_via  = "shared by Björn Hanneke"
+adopted    = "The six-step workflow: a boundary of search terms and journals, the internal citation network with completeness checks, SPC weights, the main path with key routes, robustness across alternative journal sets, and a map with topic lanes named as questions; and the pitfalls the article lists."
+own        = "The code (OpenAlex retrieval, network, SPC, main paths, key routes, cycle handling, robustness, exports, map), the template's steps and researcher stops, the specialists' instructions, and the field review whose numbers e2er checks."
+statement  = "The workflow follows Michal Hron's article \"Map a research field with Claude: main path analysis, step by step\" (LinkedIn Pulse, 8 October 2026); this implementation is independent and uses OpenAlex."
+
+[[credit]]
+creator   = "Michal Hron"
+role      = "related work"
+relation  = "related_work"
+kind      = "software"
+title     = "scopus-plus-mcp (Scopus MCP server with a main-path skill)"
+url       = "https://github.com/michalhron/scopus-plus-mcp"
+licence   = "MIT"
+accessed  = "2026-10-08"
+note      = "Hron's implementation on Scopus. Not used and not copied; e2er's implementation is independent and uses OpenAlex."
+
+[[credit]]
+creator  = "Norman P. Hummon and Patrick Doreian"
+role     = "method"
+relation = "cites"
+kind     = "article"
+title    = "Connectivity in a citation network: The development of DNA theory"
+publisher = "Social Networks 11(1), 39-63"
+published = "1989-03-01"
+url      = "https://doi.org/10.1016/0378-8733(89)90017-8"
+accessed = "2026-10-08"
+cite_key = "hummon1989connectivity"
+
+[[credit]]
+creator  = "Vladimir Batagelj"
+role     = "method"
+relation = "cites"
+kind     = "preprint"
+title    = "Efficient algorithms for citation network analysis"
+publisher = "arXiv cs/0309023"
+published = "2003-09-14"
+url      = "https://doi.org/10.48550/arXiv.cs/0309023"
+accessed = "2026-10-08"
+cite_key = "batagelj2003efficient"
+
+[[credit]]
+creator  = "John S. Liu and Louis Y. Y. Lu"
+role     = "method"
+relation = "cites"
+kind     = "article"
+title    = "An integrated approach for main path analysis: Development of the Hirsch index as an example"
+publisher = "Journal of the American Society for Information Science and Technology 63(3), 528-542"
+published = "2012-03-01"
+url      = "https://doi.org/10.1002/asi.21692"
+accessed = "2026-10-08"
+cite_key = "liu2012integrated"
+
+[[steps]]
+kind = "specialists"
+name = "design_boundary"
+run  = ["field_boundary_designer"]
+
+[[steps]]
+kind      = "gate"
+name      = "retrieve_boundary"
+check     = "field_retrieve"
+# Runs at every start: a boundary the researcher edited is retrieved again;
+# unchanged boundaries are read from the files already retrieved.
+resumable = false
+
+[steps.settings]
+max_papers   = 5000
+max_requests = 300
+
+[[steps]]
+kind  = "researcher"
+name  = "review_boundary"
+files = ["field_boundary.json", "field_boundary.md", "field_boundary_counts.md"]
+
+[[steps]]
+kind  = "gate"
+name  = "citation_network"
+check = "field_network"
+
+[steps.settings]
+max_isolated_share     = 0.6
+max_missing_refs_share = 0.25
+min_papers             = 100
+
+[[steps]]
+kind  = "gate"
+name  = "main_path"
+check = "field_main_path"
+
+[steps.settings]
+key_routes = 10
+
+[[steps]]
+kind  = "gate"
+name  = "robustness"
+check = "field_robustness"
+
+[[steps]]
+kind = "specialists"
+name = "propose_lanes"
+run  = ["field_lane_mapper"]
+
+[[steps]]
+kind  = "researcher"
+name  = "review_lanes"
+files = ["field_lanes.json", "field_lanes.md", "main_path.md", "robustness.md", "completeness_report.md"]
+
+[[steps]]
+kind  = "gate"
+name  = "draw_map"
+check = "field_map"
+
+[[steps]]
+kind = "specialists"
+name = "write_review"
+run  = ["field_review_writer"]
+
+[[steps]]
+kind  = "gate"
+name  = "number_check"
+check = "numbers"
+
+[[steps]]
+kind  = "gate"
+name  = "citation_check"
+check = "citations"
+
+[[steps]]
+kind  = "researcher"
+name  = "review_draft"
+files = ["paper_draft.tex", "field_map_results.json", "reading_list.csv"]

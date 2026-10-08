@@ -93,7 +93,9 @@ def _export_bundle(paper_id: str, dest_root: Path) -> Path | None:
     from .core.export.structured import export_paper
 
     settings = get_settings()
-    workspace = Path(settings.workspace_root) / paper_id
+    from .home import find_workspace
+
+    workspace = find_workspace(paper_id, settings.workspace_root)
     if not workspace.is_dir():
         return None
     try:

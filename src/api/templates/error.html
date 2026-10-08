@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}{{ heading }} · e2er{% endblock %}
+
+{% block content %}
+<h1>{{ heading }}</h1>
+<p class="sub error-sentence">{{ sentence | ticks }}</p>
+<p><a class="btn-primary" href="/">Back to your studies</a></p>
+{% if detail %}
+<details class="tech">
+  <summary>Technical details</summary>
+  <p class="small mono">{{ status_code }} · {{ path }}</p>
+  <p class="small mono">{{ detail }}</p>
+</details>
+{% endif %}
+{% endblock %}

@@ -184,8 +184,10 @@ def workspace_cwd(settings: Any, paper_id: str | None, fallback: str) -> tuple[s
     """
     if not paper_id:
         return fallback, None
+    from ...home import find_workspace
+
     root = Path(settings.workspace_root).expanduser().resolve()
-    return str(root / paper_id), root
+    return str(find_workspace(paper_id, root).resolve()), root
 
 
 def run_env(
@@ -217,7 +219,9 @@ def run_env(
     try:
         from dotenv import dotenv_values
 
-        for key, value in dotenv_values(Path.cwd() / ".env").items():
+        from ...home import env_file
+
+        for key, value in dotenv_values(env_file()).items():
             if value is not None and key not in env:
                 env[key] = value
     except Exception:  # noqa: BLE001 — a missing or unreadable .env is normal
@@ -245,6 +249,12 @@ def run_env(
     env["E2ER_AI_STEP"] = specialist or "strategist"
     if workspace_root_abs is not None:
         env["E2ER_WORKSPACE_ROOT"] = str(workspace_root_abs)
+        if paper_id:
+            # The run's own folder: since 0.14.0 it is named after the date and
+            # title, so the wrappers no longer derive it from the id.
+            from ...home import find_workspace
+
+            env["E2ER_WORKSPACE"] = str(find_workspace(paper_id, workspace_root_abs).resolve())
     return env
 
 
@@ -266,6 +276,7 @@ WRAPPER_KEYS = frozenset(
         "ALLIUM_API_KEY",
         "SEMANTIC_SCHOLAR_API_KEY",
         "ZOTERO_API_KEY",
+        "OPENALEX_API_KEY",  # e2er-fieldmap
         "DB_PASSWORD",  # the run database (Postgres), where the wrappers record what they load
     }
 )

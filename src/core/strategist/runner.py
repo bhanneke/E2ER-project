@@ -10,8 +10,10 @@ from typing import Any
 
 from ...logging_config import get_logger
 from ...modules.llm.base import LLMBackend, ToolHandler
+from .. import labels as _labels
 from ..governance import DEFAULT_REGIME, KIND_RELIABILITY
 from ..governance import enforces as governance_enforces
+from ..pipeline.fieldmap_checks import FILES as _FIELDMAP_FILES
 from ..pipeline.spec import RESEARCHER_KINDS, SEQUENCE_CHECKS, find_spec
 from ..specialists.contracts import Contribution, WorkOrder
 from ..specialists.dispatcher import (
@@ -477,8 +479,8 @@ class PipelineRunner:
             await self._best_effort_finalize()
             await self._update_status(
                 PaperStatus.PAUSED,
-                error=f"Circuit breaker: {cb.specialist} failed {cb.attempts} times. "
-                "Fix the underlying issue, then POST /api/papers/{id}/resume.",
+                error=f"Stopped: {_labels.specialist(cb.specialist)} failed {cb.attempts} times in a row. "
+                "Open the run to see why, fix it, then resume the run.",
             )
             return {
                 "status": "paused",
@@ -562,10 +564,7 @@ class PipelineRunner:
             await log_event(self._paper_id, "awaiting_review", stage=hr.stage, payload={"stage": hr.stage})
             await self._update_status(
                 PaperStatus.PAUSED,
-                error=(
-                    f"Paused for human review after stage '{hr.stage}'. Inspect the workspace, "
-                    f"edit artifacts if needed, then resume (POST /api/papers/{{id}}/resume or `e2er resume`)."
-                ),
+                error=f"Stopped for you at {_labels.step(hr.stage, self._spec)}. Open the run to continue.",
             )
             return {"status": "paused", "reason": "awaiting_review", "stage": hr.stage}
         except Exception as e:
@@ -621,17 +620,23 @@ class PipelineRunner:
         from datetime import datetime
 
         from ...config import get_settings
-        from ..export.structured import export_paper
+        from ..export.current import export_current
 
         settings = get_settings()
         if not settings.export_enabled:
             return
         date_str = datetime.now().strftime("%Y%m%d")
         dest_root = settings.resolved_output_root()
-        out = await asyncio.to_thread(
-            export_paper, self._workspace, dest_root, date_str=date_str, template=self._spec.name
+        # One current folder per run (export/current.py): a stop does not add another numbered copy.
+        out, state = await asyncio.to_thread(
+            export_current,
+            self._workspace,
+            dest_root,
+            paper_id=self._paper_id,
+            date_str=date_str,
+            template=self._spec.name,
         )
-        logger.info("Structured export for paper %s → %s", self._paper_id, out)
+        logger.info("Structured export for paper %s → %s (%s)", self._paper_id, out, state)
 
     async def _export_audit_log_only(self) -> None:
         """Write replication/audit_log.csv + data_queries.sql from the DB.
@@ -1234,7 +1239,7 @@ class PipelineRunner:
         state.pending_review_stage = CONTRACT_STEP
         state.metadata["review"] = {"kind": "contract", "files": files, "reasons": reasons}
         state.save(self._workspace)
-        names = ", ".join(f["specialist"] for f in cf.failures)
+        names = ", ".join(_labels.specialist(f["specialist"]) for f in cf.failures)
         logger.warning("Pipeline stopped for the researcher (output contract) for paper %s: %s", self._paper_id, names)
         await log_event(
             self._paper_id,
@@ -1251,8 +1256,8 @@ class PipelineRunner:
             PaperStatus.PAUSED,
             error=(
                 f"Stopped for you: the output of {names} did not pass its contract check after "
-                f"{MAX_SPECIALIST_ATTEMPTS} attempts. Review it with `e2er review {self._paper_id}`: approve the "
-                "output as it is, edit a file, give an instruction, or send the specialist back with a remark."
+                f"{MAX_SPECIALIST_ATTEMPTS} attempts. Open the run to review it: keep the output as it is, edit a "
+                "file, give an instruction, or send the specialist back with a remark."
             ),
         )
         return {"status": "paused", "reason": "contract", "specialists": [f["specialist"] for f in cf.failures]}
@@ -1744,8 +1749,8 @@ class PipelineRunner:
                     for m in report.critical_mismatches[:5]
                 )
                 detail_numbers = (
-                    f"{len(report.critical_mismatches)} critical mismatch(es) between "
-                    f"LaTeX tables and source JSON. "
+                    f"{len(report.critical_mismatches)} number(s) in the tables differ from "
+                    f"the results files. "
                     f"First {min(5, len(report.critical_mismatches))}: {summary}"
                 )
             await self._record_gate("numbers", passed=not failed_numbers, detail=detail_numbers)
@@ -2155,8 +2160,8 @@ class PipelineRunner:
             f"Stopped at the number check: {len(reasons)} number(s) in the paper's tables differ from the "
             f"results files, and the automatic correction did not fix them ({tried}). {shown[:1500]}. "
             f"Open the check with `e2er review {self._paper_id}`: edit the draft or a results file, give an "
-            "instruction, send back paper_drafter, section_writer (table layout) or econometrics_specialist, "
-            "or approve to continue with these mismatches recorded in the dossier as your decision. "
+            "instruction, send back the paper draft, the table layout or the estimation, "
+            "or approve to continue with these differences recorded in the dossier as your decision. "
             "The reviewers run after that."
         )
 
@@ -2234,7 +2239,7 @@ class PipelineRunner:
             decision = "recorded_and_continued"
             note = (
                 f"The number check found {len(mismatches)} number(s) in the tables that differ from the results. "
-                f"Under governance '{regime}' this check does not stop the run: the mismatches are recorded "
+                f"Under governance '{regime}' this check does not stop the run: the differences are recorded "
                 "in the dossier and the run continued."
             )
         logger.warning("Paper %s: %s", self._paper_id, note)
@@ -2289,7 +2294,7 @@ class PipelineRunner:
                     "the run stops at the check",
                     len(keys),
                 )
-                self._number_patch_outcome = "already tried for these mismatches"
+                self._number_patch_outcome = "it already ran for these differences"
                 return report
             state.metadata["numbers_patch_tried"] = sorted(tried | keys)
             state.save(self._workspace)
@@ -2321,7 +2326,7 @@ class PipelineRunner:
                 "verify_numbers auto-patch: patch_revisor produced no patch file (%s) — the run stops at the check",
                 e,
             )
-            self._number_patch_outcome = "patch_revisor wrote no patch file"
+            self._number_patch_outcome = "it wrote no correction"
             return report
 
         if not merge_result.fully_applied:
@@ -2343,10 +2348,9 @@ class PipelineRunner:
                 len(new_report.critical_mismatches),
             )
             self._number_patch_outcome = (
-                f"patch_revisor applied {merge_result.n_applied} edit(s); "
-                f"{len(new_report.critical_mismatches)} mismatch(es) remain"
+                f"it made {merge_result.n_applied} edit(s); {len(new_report.critical_mismatches)} difference(s) remain"
                 if merge_result.n_applied
-                else "patch_revisor made no edits"
+                else "it made no edits"
             )
         else:
             logger.info(
@@ -3127,6 +3131,7 @@ _SEQUENCE_CHECK_FILES: dict[str, tuple[str, ...]] = {
     "package_integrity": ("package_manifest.json",),
     "sandbox": ("replication_plan.json", "sandbox_log.json"),
     "reproduction": ("reproduction_report.json", "reproduction_check.json"),
+    **_FIELDMAP_FILES,
 }
 
 
@@ -3164,6 +3169,10 @@ def _sequence_check(check: str) -> Any:
         from ..pipeline.reproduction import check_reproduction
 
         return _reproduction_with_disclaimer(check_reproduction)
+    from ..pipeline.fieldmap_checks import CHECKS as _FIELDMAP_CHECKS
+
+    if check in _FIELDMAP_CHECKS:
+        return _FIELDMAP_CHECKS[check]
     raise ValueError(f"check {check!r} cannot run as a step of its own")
 
 

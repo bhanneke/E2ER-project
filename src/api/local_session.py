@@ -21,6 +21,11 @@ guarded by four rules together:
 The token lives in the process environment (``E2ER_SESSION_TOKEN``) so the
 uvicorn worker sees the one `e2er` printed, and in ``~/.e2er/session-<port>.json``
 (mode 600) so a second `e2er` can open the running dashboard with it.
+
+Since 0.14.0 `e2er` takes the token from ``~/.e2er/session-secret`` (mode 600,
+made once per computer) and the cookie lasts a year, so a tab left open across
+a restart of e2er keeps working. A second cookie without the port in its name
+lets the link to a dashboard on another port work in the same browser.
 """
 
 from __future__ import annotations
@@ -30,10 +35,15 @@ import json
 import os
 import secrets
 from pathlib import Path
+from typing import Any
 
 from fastapi import HTTPException, Request
 
 ENV_TOKEN = "E2ER_SESSION_TOKEN"
+#: The cookie shared by every e2er dashboard on this computer (cookies ignore ports).
+SHARED_COOKIE = "e2er_session"
+#: How long the session cookie lasts: a year, so an open tab survives restarts.
+COOKIE_MAX_AGE = 365 * 24 * 3600
 HEADER = "x-e2er-token"
 QUERY = "t"
 
@@ -55,6 +65,36 @@ def session_token() -> str:
 
 def new_token() -> str:
     return secrets.token_urlsafe(24)
+
+
+def secret_file() -> Path:
+    return Path.home() / ".e2er" / "session-secret"
+
+
+def stable_token() -> str:
+    """This computer's session secret: made once, kept in ``~/.e2er/session-secret`` (mode 600).
+
+    The same token after every start of e2er, so an open dashboard tab and its
+    cookie stay valid across restarts. Falls back to a fresh token when the
+    file cannot be written (the dashboard then works until the next restart).
+    """
+    p = secret_file()
+    try:
+        token = p.read_text(encoding="utf-8").strip()
+        if len(token) >= 24:
+            return token
+    except OSError:
+        pass
+    token = new_token()
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(token + "\n")
+        os.chmod(p, 0o600)
+    except OSError:
+        pass
+    return token
 
 
 def cookie_name(request: Request) -> str:
@@ -82,7 +122,11 @@ def _client_is_loopback(request: Request) -> bool:
 def has_session(request: Request) -> bool:
     """Does this request carry the session token (cookie or header)?"""
     token = session_token()
-    presented = (request.headers.get(HEADER), request.cookies.get(cookie_name(request)))
+    presented = (
+        request.headers.get(HEADER),
+        request.cookies.get(cookie_name(request)),
+        request.cookies.get(SHARED_COOKIE),
+    )
     return any(p and secrets.compare_digest(p, token) for p in presented)
 
 
@@ -99,7 +143,7 @@ def local_problem(request: Request) -> str:
     if request.headers.get("sec-fetch-site", "") == "cross-site":
         return "Requests from other sites are refused."
     if not has_session(request):
-        return "For your safety, this part only works from the link e2er opened. Run `e2er` in the terminal again."
+        return "This browser tab is not signed in to e2er. Run `e2er` in a terminal: it opens the dashboard signed in."
     return ""
 
 
@@ -115,6 +159,12 @@ def require_local_session(request: Request) -> None:
 
 def session_file(port: int) -> Path:
     return Path.home() / ".e2er" / f"session-{port}.json"
+
+
+def set_session_cookies(response: Any, request: Request, token: str) -> None:
+    """The cookies that carry the session: one for this port, one shared by every port."""
+    for name in (cookie_name(request), SHARED_COOKIE):
+        response.set_cookie(name, token, httponly=True, samesite="strict", path="/", max_age=COOKIE_MAX_AGE)
 
 
 def write_session_file(port: int, token: str) -> Path:

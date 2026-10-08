@@ -67,9 +67,9 @@ def test_a_phase_never_dispatched_is_not_a_failure(tmp_path: Path):
     ws, arts = _workspace(tmp_path)
     groups = {g["name"]: g for g in _artifact_groups(ws, arts, "single_pass", "empirical")}
 
-    phase = groups["Self-attack and polish"]
+    phase = groups["Self-critique and polish"]
     assert phase["status"] == "none"
-    assert "not run" in phase["note"]
+    assert "only in the longer, iterative run" in phase["note"]
 
 
 def test_the_theory_specialist_is_not_expected_of_an_empirical_paper(tmp_path: Path):
@@ -116,7 +116,7 @@ def test_gate_reports_carry_their_own_verdict(tmp_path: Path):
     arts.append("number_verification.json")
 
     groups = {g["name"]: g for g in _artifact_groups(ws, arts, "single_pass", "empirical")}
-    gates = groups["Gates"]
+    gates = groups["Checks"]
     assert gates["status"] == "fail"
     assert any("critical" in f["note"] for f in gates["files"])
 
@@ -136,3 +136,16 @@ def test_reading_list_skips_what_was_not_produced(tmp_path: Path):
     paths = {r["path"] for r in _reading_list(arts)}
     assert "paper_draft.pdf" not in paths
     assert "paper_draft.tex" in paths
+
+
+def test_while_the_run_goes_on_a_part_with_no_files_yet_has_not_run(tmp_path: Path):
+    """Waiting at the first stop, the review and revision have not run: not run yet, not red."""
+    ws, arts = _workspace(tmp_path)
+    for rel in [a for a in arts if a.startswith("review_")]:
+        (ws / rel).unlink()
+    arts = [a for a in arts if not a.startswith("review_")]
+    going = {g["name"]: g for g in _artifact_groups(ws, arts, "single_pass", "empirical", unfinished=True)}
+    assert going["Review"]["status"] == "none" and going["Review"]["note"] == "not run yet"
+    assert going["Design"]["status"] == "pass"
+    ended = {g["name"]: g for g in _artifact_groups(ws, arts, "single_pass", "empirical")}
+    assert ended["Review"]["status"] == "fail"

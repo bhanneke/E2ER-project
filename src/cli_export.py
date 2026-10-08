@@ -58,7 +58,9 @@ def resolve_workspace(ref: str, settings) -> tuple[str, Path]:
     stored = str(hits[0].get("workspace") or "") if hits else ""
     if stored:
         candidates.append(Path(stored).expanduser())
-    candidates.append(root / paper_id)
+    from .home import find_workspace
+
+    candidates.append(find_workspace(paper_id, root))
     if not hits and len(ref) >= 4 and root.is_dir():
         # No database row: a unique prefix among the workspace folders.
         folders = [p for p in root.iterdir() if p.is_dir() and p.name.startswith(ref)]

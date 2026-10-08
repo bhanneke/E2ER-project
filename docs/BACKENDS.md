@@ -19,7 +19,8 @@ the model may do there.
 
 **Claude Code** is started with a list of allowed tools: reading and writing
 files, and the e2er commands (`e2er-data`, `e2er-lit`, `e2er-run`,
-`e2er-check-tables`). Any other shell command is refused.
+`e2er-check-tables`, and `e2er-fieldmap` for the field-map template's
+specialists). Any other shell command is refused.
 
 **Codex** has no such list for a single run. Its command rules are read only
 from the user's own `~/.codex/rules` folder or a trusted project, and a rule can

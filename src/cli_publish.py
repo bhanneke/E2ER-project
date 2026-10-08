@@ -683,6 +683,9 @@ def problems(body: dict[str, Any]) -> list[str]:
 def publish(bundle: str, *, dry_run: bool = False, to_url: str | None = None, offline: bool = False, **kw: Any) -> int:
     """`e2er publish`: describe, stamp and verify; optionally rehearse (`dry_run`) or send (`to_url`).
 
+    ``interactive=False`` never asks on the terminal (the dashboard's server);
+    by default it asks only when standard input is a terminal.
+
     `offline` prepares the folder for publishing in the browser: it writes the
     dossier and e2er.json, makes no network request and names the next step.
     """
@@ -700,10 +703,15 @@ def publish(bundle: str, *, dry_run: bool = False, to_url: str | None = None, of
         if run_db is not None:
             kw["db"] = str(run_db)
     kw.setdefault("study_folder", _study_folder(b))
-    if kw.get("data") is None and kw.get("code") is None and sys.stdin.isatty():
+    # The dashboard calls this from its server (interactive=False): a question on
+    # the server's terminal would hang the page, so nothing is ever asked there.
+    interactive = kw.pop("interactive", None)
+    if interactive is None:
+        interactive = sys.stdin.isatty()
+    if kw.get("data") is None and kw.get("code") is None and interactive:
         kw["data"] = _ask("Are the study's data public or private?")
         kw["code"] = _ask("Is the study's code public or private?")
-    if kw.get("data") == "public" and sys.stdin.isatty() and (b / "provenance.json").is_file():
+    if kw.get("data") == "public" and interactive and (b / "provenance.json").is_file():
         # Data loaded under a source's own terms: the researcher confirms them before they are published.
         accepted = list(kw.get("accept_data_terms") or [])
         for use in data_terms.missing_confirmation(data_terms.uses(b), accepted):
@@ -824,6 +832,21 @@ def _send(b: Path, manifest: dict[str, Any], to_url: str) -> int:
     return 0
 
 
+#: Publishing offline before tectonic ever downloaded its LaTeX packages.
+LATEX_OFFLINE = (
+    "The PDF needs a one-time download of LaTeX packages, and this computer could not reach the internet. "
+    "Connect to the internet once and publish again; nothing was changed."
+)
+
+
+def latex_packages_missing(output: str) -> bool:
+    """Did tectonic fail because its package bundle is not cached and could not be downloaded?"""
+    low = output.lower()
+    return "bundle isn't cached" in low or (
+        "bundle" in low and any(w in low for w in ("error sending request", "couldn't get it from the internet", "dns"))
+    )
+
+
 def _stamp_and_compile(
     bundle: Path,
     author: str | None,
@@ -861,7 +884,7 @@ def _stamp_and_compile(
             (work / "paper.pdf").unlink(missing_ok=True)  # only a PDF this compile writes counts
             # As the run compiled it (renderer/compiler.py): tectonic continues past
             # non-fatal errors (a package option xetex ignores, a missing figure).
-            subprocess.run(
+            run = subprocess.run(
                 ["tectonic", "--keep-intermediates", "-Z", "continue-on-errors", "paper.tex"],
                 cwd=work,
                 capture_output=True,
@@ -869,6 +892,9 @@ def _stamp_and_compile(
             )
             produced = (work / "paper.pdf").is_file()
             missing = unresolved_citations(work) if produced else []
+            if not produced and latex_packages_missing(f"{run.stdout}\n{run.stderr}"):
+                tex.write_text(old, encoding="utf-8")
+                raise PublishError(LATEX_OFFLINE)
             if not produced or missing:
                 tex.write_text(old, encoding="utf-8")
                 why = (

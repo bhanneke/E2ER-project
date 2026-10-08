@@ -255,9 +255,9 @@ def test_archive_refuses_running_and_paused_attempts(db: Path, status: str):
     with pytest.raises(st.StudyError) as e:
         _run(st.archive_attempt(pid))
     msg = str(e.value)
-    assert "v1" in msg
+    assert "Run 1" in msg
     assert ("paused" in msg) if status == "paused" else ("running" in msg or "approval" in msg)
-    assert "only takes attempts that have ended" in msg
+    assert "Only runs that have ended can be archived" in msg
     assert _archived(db) == set()
 
 
@@ -266,7 +266,7 @@ def test_archive_study_refuses_when_one_attempt_is_paused(db: Path):
     _run(_add(status="paused", created="2026-06-02 10:00:00"))
     with pytest.raises(st.StudyError) as e:
         _run(st.archive_study(a))
-    assert str(e.value).startswith("Nothing was archived: v2 (")
+    assert str(e.value).startswith("Nothing was archived: Run 2 is")
     assert "is paused and can still be resumed" in str(e.value)
     assert _archived(db) == set()
 
@@ -410,7 +410,7 @@ def test_dashboard_archive_flow(db: Path, monkeypatch):
     c = _http(cookie=True)
 
     page = c.get("/").text
-    assert "4 attempts" in page and "Archive failed and cancelled attempts" in page
+    assert "4 runs" in page and "Archive failed and cancelled runs" in page
     assert page.count('href="/studies/') == 3
 
     preview = c.get("/api/archive/failed").json()
@@ -428,8 +428,8 @@ def test_dashboard_archive_flow(db: Path, monkeypatch):
 
     key = st.study_key(Q, "empirical")
     study = c.get(f"/studies/{key}").text
-    assert "Move to study…" in study and "v3" in study and "v2" not in study.split("<tbody>")[1]
-    assert "v2" in c.get(f"/studies/{key}?archived=1").text
+    assert "Move to study…" in study and "Run 3" in study and "Run 2" not in study.split("<tbody>")[1]
+    assert "Run 2" in c.get(f"/studies/{key}?archived=1").text
     assert c.get("/studies/zzzz").status_code == 404
 
     assert c.post(f"/api/studies/{key}/unarchive").json()["unarchived"] == 2
@@ -437,7 +437,7 @@ def test_dashboard_archive_flow(db: Path, monkeypatch):
     assert moved["study"] != key
 
     paper = c.get(f"/papers/{ids['v3']}").text
-    assert "v2 of 3" in paper  # v1 was split off, so v3 is now the second of three
+    assert "run 2 of 3" in paper  # run 1 was split off, so run 3 is now the second of three
 
 
 # ── cancelling a paused attempt ──────────────────────────────────────────────
@@ -516,7 +516,7 @@ def test_cancel_refuses_an_attempt_another_live_process_owns(db: Path):
     _run(_client.execute("UPDATE papers SET run_owner = %(o)s WHERE id = %(id)s", {"o": json.dumps(other), "id": pid}))
     with pytest.raises(st.StudyError) as e:
         _run(st.cancel_attempt(pid))
-    assert "another e2er process" in str(e.value) and "port 8280" in str(e.value)
+    assert "another e2er window" in str(e.value) and "port 8280" in str(e.value)
     with sqlite3.connect(db) as c:
         assert c.execute("SELECT status FROM papers WHERE id = ?", (pid,)).fetchone()[0] == "paused"
 
@@ -545,7 +545,7 @@ def test_dashboard_cancel_attempt(db: Path, monkeypatch):
     assert _http(cookie=False).post(f"/api/papers/{pid}/cancel-attempt").status_code == 403
     c = _http(cookie=True)
     key = st.study_key(Q, "empirical")
-    assert "Cancel attempt" in c.get(f"/studies/{key}").text
+    assert "Cancel run" in c.get(f"/studies/{key}").text
     assert "cancel-attempt" in c.get(f"/htmx/papers/{pid}/live").text
     r = c.post(f"/api/papers/{pid}/cancel-attempt")
     assert r.status_code == 200 and "files are kept" in r.json()["message"]

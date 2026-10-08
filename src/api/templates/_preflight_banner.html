@@ -1,14 +1,14 @@
 {% if error %}
-  <div class="pf-banner bad">Preflight could not run: {{ error }}</div>
+  <div class="pf-banner bad">The checks could not run: {{ error }}</div>
 {% elif not ready %}
   <div class="pf-banner bad">
-    <strong>This machine is not ready to run a paper.</strong>
-    {{ blockers | join(", ") }} failed — a run started now will fail several
-    minutes in. <a href="/preflight">See what is wrong</a>.
+    <strong>This computer is not ready to run a study.</strong>
+    Fix these first: {{ blockers | map("check_label") | join(", ") }}. A study started now fails a few minutes in.
+    <a href="/preflight">See what is wrong</a>.
   </div>
 {% else %}
   <div class="pf-banner ok">
-    Ready — {{ n_pass }} checks passed{% if n_skip %}, {{ n_skip }} optional skipped{% endif %}.
+    Ready: {{ n_pass }} checks passed{% if n_skip %}, {{ n_skip }} optional ones not set up{% endif %}.
     <a href="/preflight">Details</a>
   </div>
 {% endif %}

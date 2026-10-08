@@ -188,7 +188,7 @@ def test_list_artifacts_returns_file_list(client, tmp_path):
     (ws / "paper_draft.tex").write_text("\\documentclass{article}")
     (ws / ".gitignore").write_text("*.aux")  # hidden files excluded
 
-    with patch("src.config.get_settings") as mock_settings:
+    with patch("src.api.app.get_settings") as mock_settings:
         mock_settings.return_value.workspace_root = str(tmp_path / "workspaces")
         resp = client.get(f"/api/papers/{paper_id}/artifacts")
 

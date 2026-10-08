@@ -46,10 +46,19 @@ def base_url(sandbox: bool = False) -> str:
 
 
 def load_token(sandbox: bool = False) -> str | None:
-    """The researcher's Zenodo token: environment first, then the system keychain."""
+    """The researcher's Zenodo token: environment first, then the settings file Setup writes, then the keychain."""
     env = (os.environ.get("ZENODO_SANDBOX_TOKEN" if sandbox else "ZENODO_TOKEN") or "").strip()
     if env:
         return env
+    try:
+        from ..config import get_settings
+
+        settings = get_settings()
+        saved = (getattr(settings, "zenodo_sandbox_token" if sandbox else "zenodo_token", None) or "").strip()
+    except Exception:  # noqa: BLE001 - an unreadable settings file means "not saved there"
+        saved = ""
+    if saved:
+        return saved
     try:
         import keyring  # type: ignore[import-not-found]
     except ImportError:

@@ -1,13 +1,13 @@
 {% extends "base.html" %}
-{% block title %}{{ study.title[:70] }} — e2er{% endblock %}
+{% block title %}{{ study.title[:70] }} · e2er{% endblock %}
 
 {% block content %}
 <p class="crumb"><a href="/{% if show_archived %}?archived=1{% endif %}">← Studies</a></p>
 <h1>{{ study.title }}</h1>
 {% if study.question %}<p class="sub">{{ study.question }}</p>{% endif %}
 <p class="muted">
-  Template: {{ study.template }} · {{ study.total }} attempt{{ "" if study.total == 1 else "s" }}
-  {% if study.archived %} · {{ study.archived }} archived{% endif %} · study {{ study.key }}
+  Template: {{ study.template | template_label }} · {{ study.total }} run{{ "" if study.total == 1 else "s" }}
+  {% if study.archived %} · {{ study.archived }} archived{% endif %}
 </p>
 <p class="muted">{{ study.summary }}</p>
 
@@ -32,15 +32,15 @@
 <p id="study-msg" class="msg" role="status"></p>
 
 {% if not attempts %}
-  <p class="empty">Every attempt of this study is archived. <a href="/studies/{{ study.key }}?archived=1">Show them</a>.</p>
+  <p class="empty">Every run of this study is archived. <a href="/studies/{{ study.key }}?archived=1">Show them</a>.</p>
 {% else %}
 <table class="papers attempts">
   <thead>
     <tr>
-      <th>Version</th>
+      <th>Run</th>
       <th>Status</th>
       <th>Dates</th>
-      <th>Model</th>
+      <th>AI model</th>
       <th></th>
     </tr>
   </thead>
@@ -48,8 +48,7 @@
     {% for a in attempts %}
     <tr{% if a.archived %} class="is-archived"{% endif %}>
       <td class="c-version">
-        <a href="/papers/{{ a.id }}"><strong>v{{ a.version }}</strong></a>
-        <span class="muted">{{ a.short_id }}</span>
+        <a href="/papers/{{ a.id }}"><strong>Run {{ a.version }}</strong></a>
         {% if a.title != study.title %}<span class="attempt-title">{{ a.title }}</span>{% endif %}
         {% if a.moved %}<span class="muted">moved here</span>{% endif %}
       </td>
@@ -57,11 +56,11 @@
         <span class="status status-{{ a.status }}">{{ a.status | status_words }}</span>
         {% if a.archived %}<span class="muted">archived</span>{% endif %}
       </td>
-      <td class="c-dates muted"><span class="d">started {{ a.created_at[:16] }}</span> <span class="d">updated {{ a.updated_at[:16] }}</span></td>
-      <td class="c-model muted"><span class="d">{{ a.model or "—" }}</span>{% if a.backend %} <span class="d">{{ a.backend }}</span>{% endif %}</td>
+      <td class="c-dates muted"><span class="d">started {{ a.created_at[:16] }}</span> <span class="d">last change {{ a.updated_at[:16] }}</span></td>
+      <td class="c-model muted"><span class="d">{{ a.model or "not recorded" }}</span>{% if a.backend %} <span class="d">through {{ a.backend | backend_label }}</span>{% endif %}</td>
       <td class="c-action">
         {% if a.status == "paused" %}
-          <button type="button" class="btn btn-small" data-cancel="{{ a.id }}" data-v="{{ a.version }}">Cancel attempt</button>
+          <button type="button" class="btn btn-small" data-cancel="{{ a.id }}" data-v="{{ a.version }}">Cancel run</button>
         {% endif %}
         {% if a.archived %}
           <button type="button" class="btn btn-small" data-unarchive="{{ a.id }}">Unarchive</button>
@@ -71,10 +70,10 @@
         <details class="move">
           <summary>Move to study…</summary>
           <div class="move-body">
-            <select aria-label="Move v{{ a.version }} to">
+            <select aria-label="Move run {{ a.version }} to">
               <option value="new">A study of its own (split off)</option>
               {% for o in others %}
-                <option value="{{ o.key }}">{{ o.title[:70] }} ({{ o.template }})</option>
+                <option value="{{ o.key }}">{{ o.title[:70] }} ({{ o.template | template_label }})</option>
               {% endfor %}
             </select>
             <button type="button" class="btn btn-small" data-move="{{ a.id }}">Move</button>
@@ -87,16 +86,16 @@
 </table>
 {% endif %}
 
+<details class="tech">
+  <summary>Technical details</summary>
+  <p class="small mono">Study key {{ study.key }}{% for a in attempts %} · run {{ a.version }}: {{ a.id }}{% endfor %}</p>
+</details>
+
 <script>
 (() => {
   const key = {{ study.key | tojson }};
   const msg = document.getElementById('study-msg');
-  async function call(method, url, body) {
-    const r = await fetch(url, { method, credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
-    const d = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(d.detail || ('Failed (' + r.status + ')'));
-    return d;
-  }
+  const call = (method, url, body) => e2er.call(method, url, body);
   const act = async (button, fn) => {
     button.disabled = true; msg.className = 'msg'; msg.textContent = '';
     try { await fn(); location.reload(); }
@@ -105,17 +104,17 @@
   const archiveStudy = document.getElementById('study-archive');
   if (archiveStudy) archiveStudy.addEventListener('click', () => {
     const n = archiveStudy.dataset.count;
-    if (!confirm('Archive all ' + n + ' attempt' + (n === '1' ? '' : 's') + ' of this study? Nothing is deleted; you can unarchive them.')) return;
+    if (!confirm('Archive all ' + n + ' run' + (n === '1' ? '' : 's') + ' of this study? Nothing is deleted; you can unarchive them.')) return;
     act(archiveStudy, () => call('POST', '/api/studies/' + key + '/archive'));
   });
   const unarchiveStudy = document.getElementById('study-unarchive');
   if (unarchiveStudy) unarchiveStudy.addEventListener('click', () => act(unarchiveStudy, () => call('POST', '/api/studies/' + key + '/unarchive')));
   document.querySelectorAll('[data-archive]').forEach((b) => b.addEventListener('click', () => {
-    if (!confirm('Archive v' + b.dataset.v + '? Nothing is deleted; you can unarchive it.')) return;
+    if (!confirm('Archive run ' + b.dataset.v + '? Nothing is deleted; you can unarchive it.')) return;
     act(b, () => call('POST', '/api/papers/' + b.dataset.archive + '/archive'));
   }));
   document.querySelectorAll('[data-cancel]').forEach((b) => b.addEventListener('click', () => {
-    if (!confirm('Cancel v' + b.dataset.v + '? It stops for good and cannot be resumed. Its files are kept, and you can archive it afterwards.')) return;
+    if (!confirm('Cancel run ' + b.dataset.v + ' for good? It cannot be resumed afterwards. Its files are kept, and you can archive it.')) return;
     act(b, () => call('POST', '/api/papers/' + b.dataset.cancel + '/cancel-attempt'));
   }));
   document.querySelectorAll('[data-unarchive]').forEach((b) => b.addEventListener('click', () => act(b, () => call('POST', '/api/papers/' + b.dataset.unarchive + '/unarchive'))));

@@ -96,8 +96,10 @@ def _resolve_workspace(paper_id: str) -> Path:
     fallback in estimation.py. The env var makes the resolution stable
     regardless of subprocess cwd.
     """
+    from ...home import find_workspace
+
     root = os.environ.get("E2ER_WORKSPACE_ROOT") or get_settings().workspace_root
-    return Path(root) / paper_id
+    return find_workspace(paper_id, root)
 
 
 async def _run_feasibility(args: argparse.Namespace) -> str:
