@@ -240,7 +240,9 @@
     document.getElementById(c.status).textContent = status;
   }
 
-  async function choose(which, path) {
+  // `saved`: the choice already in the settings, shown when the page opens. A folder e2er made for the
+  // researcher and that is still empty is not an error: it waits for files.
+  async function choose(which, path, saved = false) {
     const c = cfg[which];
     if (c.kind === 'folder') {
       c.input.value = path;
@@ -260,6 +262,7 @@
       } else {
         found.textContent = d.message;
       }
+      if (!d.ok && saved) { setCard(which, 'none', 'Empty for now'); return false; }
       if (!d.ok) { setCard(which, 'bad', 'Not usable'); return false; }
       c.input.value = d.path;
       document.getElementById(c.path).textContent = d.path;
@@ -327,8 +330,8 @@
   }));
 
   // Show what the stored choices hold.
-  if (form.literature.value && !document.getElementById('session-note')) choose('lit', form.literature.value);
-  if (form.data_dir.value && !document.getElementById('session-note')) choose('data', form.data_dir.value);
+  if (form.literature.value && !document.getElementById('session-note')) choose('lit', form.literature.value, true);
+  if (form.data_dir.value && !document.getElementById('session-note')) choose('data', form.data_dir.value, true);
 
   // ── save ──
   const msg = document.getElementById('save-msg');

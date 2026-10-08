@@ -2253,6 +2253,8 @@ async def paper_detail(request: Request, paper_id: str = Depends(_validate_uuid)
                 artifacts,
                 str(paper.get("mode") or ""),
                 str(paper.get("methodology") or ""),
+                unfinished=str(paper.get("status") or "")
+                not in {"completed", "failed", "cancelled", "rejected", "stopped"},
             )
             if workspace.exists()
             else [],
@@ -2422,8 +2424,12 @@ def _artifact_groups(
     artifacts: list[str],
     mode: str = "",
     methodology: str = "",
+    unfinished: bool = False,
 ) -> list[dict[str, Any]]:
     """Sort a paper's files under the phase that produced them, with a status.
+
+    While the run is still going (``unfinished``: working, or waiting at a stop), a part
+    with none of its files yet has not run: it is shown as "not run yet", not in red.
 
     A declared artifact that is absent is reported as a missing row rather than
     left out, because "the drafter never wrote paper_draft.tex" is the single
@@ -2487,6 +2493,16 @@ def _artifact_groups(
                     "name": phase_name,
                     "status": "none",
                     "note": "only in the longer, iterative run",
+                    "files": [dict(r, status="none", note="") for r in rows],
+                }
+            )
+            continue
+        if unfinished and all(r["status"] == "missing" for r in rows):
+            groups.append(
+                {
+                    "name": phase_name,
+                    "status": "none",
+                    "note": "not run yet",
                     "files": [dict(r, status="none", note="") for r in rows],
                 }
             )
