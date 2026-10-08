@@ -146,6 +146,7 @@ def test_main_path_robustness_map_and_results(ws: Path, fake: FakeOpenAlex):
     for f in (
         "figures/field_map.png",
         "figures/field_map.pdf",
+        "figures/field_map.svg",
         "reading_list.csv",
         "reading_list.json",
         "exports/field_network.net",

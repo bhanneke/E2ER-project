@@ -76,7 +76,7 @@ and the number-checked review. Hron's own implementation runs on Scopus
 | `robustness` | check `field_robustness` | The same on every alternative boundary; papers on the main path of every boundary are robust (`robustness.md`). |
 | `propose_lanes` | specialist | The lane mapper groups the mapped papers into 2 to 8 lanes named as questions (`field_lanes.json`), from titles and abstracts. |
 | `review_lanes` | researcher | Approve or edit the lanes. |
-| `draw_map` | check `field_map` | `figures/field_map.png`/`.pdf`, `reading_list.csv`/`.json`, `exports/` (Pajek `.net`, GEXF, VOSviewer map and network, CSV edges), `tables/field_map_summary.tex`, `tables/main_path_list.tex`, `field_map_results.json`; the methods' references go into `literature.bib`. |
+| `draw_map` | check `field_map` | `figures/field_map.png`/`.svg`/`.pdf`, `reading_list.csv`/`.json`, `exports/` (Pajek `.net`, GEXF, VOSviewer map and network, CSV edges), `tables/field_map_summary.tex`, `tables/main_path_list.tex`, `field_map_results.json`; the methods' references go into `literature.bib`. |
 | `write_review` | specialist | The review writer drafts `paper_draft.tex`, with every number from `field_map_results.json`. |
 | `number_check`, `citation_check` | checks `numbers`, `citations` | The number check and the citation check on the draft, as steps of their own. |
 | `review_draft` | researcher | Read the draft. |

@@ -20,7 +20,7 @@ Files, all in the workspace:
   routes and the heaviest links of the main boundary;
 - ``robustness.json`` / ``.md``: the main path of every boundary, paper by paper;
 - ``field_lanes.json`` (the lane mapper): lanes as questions with their papers;
-- ``figures/field_map.png`` / ``.pdf``, ``reading_list.csv`` / ``.json``,
+- ``figures/field_map.png`` / ``.svg`` / ``.pdf``, ``reading_list.csv`` / ``.json``,
   ``exports/`` (Pajek, GEXF, VOSviewer, CSV), ``tables/field_map_summary.tex``,
   ``tables/main_path_list.tex``;
 - ``field_map_results.json``: every number the field review may state, read by
@@ -553,7 +553,9 @@ def map_step(ws: Path, *, require_lanes: bool = True) -> Verdict:
     arcs = [
         {"cited": u, "citing": v, "spc": s, "share": round(w.share((u, v)), 6)} for (u, v), s in sorted(w.spc.items())
     ]
+    # The map draws one main path; the other paths of the same weight (if any) are drawn lighter.
     main_arcs = [(a["cited"], a["citing"]) for a in res["global_main_path"]["network_arcs"]]
+    chain_arcs = [(a["cited"], a["citing"]) for a in res["global_main_path"]["arcs"]]
     key_arcs = [(a["cited"], a["citing"]) for a in res["key_routes"]["arcs"]]
     # Every paper on any of the tied heaviest paths counts as on the main path (usually one path).
     main_ids = res["global_main_path"]["network_papers"]
@@ -564,12 +566,15 @@ def map_step(ws: Path, *, require_lanes: bool = True) -> Verdict:
     rows = exports.reading_list(papers, main_ids, key_ids, counts, lane_of)
     fig = draw_map(
         papers,
-        main_arcs,
+        chain_arcs,
         key_arcs,
         lanes,
         ws / FIGURE,
         ws / FIGURE.replace(".png", ".pdf"),
         numbers={r["openalex_id"]: r["order"] for r in rows},
+        tied_arcs=main_arcs,
+        robust=set(rob.get("robust_ids") or []),
+        out_svg=ws / FIGURE.replace(".png", ".svg"),
     )
     exports.write_text(ws / READING_LIST, exports.reading_list_csv(rows))
     exports.write_json(ws / "reading_list.json", rows)
