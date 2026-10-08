@@ -1744,8 +1744,8 @@ class PipelineRunner:
                     for m in report.critical_mismatches[:5]
                 )
                 detail_numbers = (
-                    f"{len(report.critical_mismatches)} critical mismatch(es) between "
-                    f"LaTeX tables and source JSON. "
+                    f"{len(report.critical_mismatches)} number(s) in the tables differ from "
+                    f"the results files. "
                     f"First {min(5, len(report.critical_mismatches))}: {summary}"
                 )
             await self._record_gate("numbers", passed=not failed_numbers, detail=detail_numbers)
@@ -2155,8 +2155,8 @@ class PipelineRunner:
             f"Stopped at the number check: {len(reasons)} number(s) in the paper's tables differ from the "
             f"results files, and the automatic correction did not fix them ({tried}). {shown[:1500]}. "
             f"Open the check with `e2er review {self._paper_id}`: edit the draft or a results file, give an "
-            "instruction, send back paper_drafter, section_writer (table layout) or econometrics_specialist, "
-            "or approve to continue with these mismatches recorded in the dossier as your decision. "
+            "instruction, send back the paper draft, the table layout or the estimation, "
+            "or approve to continue with these differences recorded in the dossier as your decision. "
             "The reviewers run after that."
         )
 
@@ -2234,7 +2234,7 @@ class PipelineRunner:
             decision = "recorded_and_continued"
             note = (
                 f"The number check found {len(mismatches)} number(s) in the tables that differ from the results. "
-                f"Under governance '{regime}' this check does not stop the run: the mismatches are recorded "
+                f"Under governance '{regime}' this check does not stop the run: the differences are recorded "
                 "in the dossier and the run continued."
             )
         logger.warning("Paper %s: %s", self._paper_id, note)
@@ -2289,7 +2289,7 @@ class PipelineRunner:
                     "the run stops at the check",
                     len(keys),
                 )
-                self._number_patch_outcome = "already tried for these mismatches"
+                self._number_patch_outcome = "it already ran for these differences"
                 return report
             state.metadata["numbers_patch_tried"] = sorted(tried | keys)
             state.save(self._workspace)
@@ -2321,7 +2321,7 @@ class PipelineRunner:
                 "verify_numbers auto-patch: patch_revisor produced no patch file (%s) — the run stops at the check",
                 e,
             )
-            self._number_patch_outcome = "patch_revisor wrote no patch file"
+            self._number_patch_outcome = "it wrote no correction"
             return report
 
         if not merge_result.fully_applied:
@@ -2343,10 +2343,9 @@ class PipelineRunner:
                 len(new_report.critical_mismatches),
             )
             self._number_patch_outcome = (
-                f"patch_revisor applied {merge_result.n_applied} edit(s); "
-                f"{len(new_report.critical_mismatches)} mismatch(es) remain"
+                f"it made {merge_result.n_applied} edit(s); {len(new_report.critical_mismatches)} difference(s) remain"
                 if merge_result.n_applied
-                else "patch_revisor made no edits"
+                else "it made no edits"
             )
         else:
             logger.info(

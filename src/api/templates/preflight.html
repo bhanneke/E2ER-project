@@ -26,7 +26,7 @@
     <div class="pf pf-{{ c.status | lower }}">
       <span class="pf-mark">{% if c.status == "PASS" %}✓{% elif c.status == "FAIL" %}✗{% else %}·{% endif %}</span>
       <span class="pf-name">{{ c.name | check_label }}</span>
-      <span class="pf-detail">{{ c.detail | ticks }}</span>
+      <span class="pf-detail">{{ c.detail | check_detail(c.name) | ticks }}</span>
     </div>
   {% endfor %}
 </div>
@@ -37,7 +37,7 @@
 </p>
 <details class="tech">
   <summary>Technical details</summary>
-  <p class="small mono">{% for c in checks %}{{ c.name }}: {{ c.status }}{% if not loop.last %} · {% endif %}{% endfor %}</p>
+  <p class="small mono">{% for c in checks %}{{ c.name }}: {{ c.status }}: {{ c.detail }}{% if not loop.last %}<br>{% endif %}{% endfor %}</p>
 </details>
 {% endif %}
 {% endblock %}

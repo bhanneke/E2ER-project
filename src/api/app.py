@@ -107,6 +107,16 @@ def _ticks(text: object) -> Any:
 templates.env.filters["ticks"] = _ticks
 
 
+def _check_detail(detail: object, name: str) -> str:
+    """`e2er doctor`'s text for a check, said plainly (no setting names); the terminal keeps the original."""
+    from ..core.labels import check_detail
+
+    return check_detail(name, str(detail or ""))
+
+
+templates.env.filters["check_detail"] = _check_detail
+
+
 def _status_words(value: object) -> str:
     """The status as shown: ``stopped`` → ``stopped by a check`` (core/run_outcome.py)."""
     from ..core.labels import status
@@ -2477,7 +2487,7 @@ def _artifact_groups(
                     "name": phase_name,
                     "status": "none",
                     "note": "only in the longer, iterative run",
-                    "files": [dict(r, status="none", note="not part of this run") for r in rows],
+                    "files": [dict(r, status="none", note="") for r in rows],
                 }
             )
             continue
@@ -2697,13 +2707,11 @@ def _step_row(
     if not st.applies_to(mode):
         state, note = "skipped", "only in the longer, iterative run" if mode == "single_pass" else "not in this run"
     elif pending == st.name and status == "paused":
-        state, note = (
-            ("failed", "check failed; waiting for you") if st.name in halted else ("waiting", "waiting for you")
-        )
+        state, note = ("failed", "failed; waiting for you") if st.name in halted else ("waiting", "waiting for you")
     elif st.name in completed or (st.name in finished and st.name != pending):
         state, note = "done", ""
     elif st.name in halted and status in {"paused", "rejected", "failed"}:
-        state, note = "failed", "check failed"
+        state, note = "failed", "failed"
     elif st.name in opened and status not in {"completed", "failed", "cancelled", "rejected", "paused"}:
         state, note = "running", "running now"
     else:

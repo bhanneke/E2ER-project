@@ -69,7 +69,7 @@
     {% endif %}
 
     <div class="decision-actions">
-      <button class="btn-primary" id="approve">{% if pending.kind == "contract" %}Keep the output as it is and continue{% elif pending.kind == "numbers" %}Continue with these mismatches{% elif pending.kind == "deviation" %}Approve the deviation and continue{% elif pending.kind == "gate" %}Continue: run the check again{% elif pending.kind == "preregister" %}Approve and freeze{% else %}Approve and continue{% endif %}</button>
+      <button class="btn-primary" id="approve">{% if pending.kind == "contract" %}Keep the output as it is and continue{% elif pending.kind == "numbers" %}Continue with these differences{% elif pending.kind == "deviation" %}Approve the deviation and continue{% elif pending.kind == "gate" %}Continue: run the check again{% elif pending.kind == "preregister" %}Approve and freeze{% else %}Approve and continue{% endif %}</button>
       <p class="form-note" id="rv-msg" role="status" hidden></p>
     </div>
   </section>
@@ -130,7 +130,7 @@
 
 {% if actions %}
   <h2>What you did at earlier stops</h2>
-  <ul class="history">{% for a in actions %}<li class="small">{{ (a.created_at | string)[:16] }} · {{ a.stage | step_label }}: {{ a.payload.action | action_label }}{% if a.payload.file %} {{ a.payload.file }}{% endif %}{% if a.payload.target or a.payload.step and a.payload.action == "send_back" %} ({{ (a.payload.target or a.payload.step) | step_label }}){% endif %}{% if a.payload.text or a.payload.remark %}: “{{ a.payload.text or a.payload.remark }}”{% endif %}</li>{% endfor %}</ul>
+  <ul class="history">{% for a in actions %}<li class="small">{{ (a.created_at | string)[:16] }} · {{ a.stage | step_label }}: {% if a.payload.decision == "numbers_accepted" %}Continued with {{ a.payload.mismatches | length }} difference(s){% else %}{{ a.payload.action | action_label }}{% endif %}{% if a.payload.file %} {{ a.payload.file }}{% endif %}{% if a.payload.target or a.payload.step and a.payload.action == "send_back" %} ({{ (a.payload.target or a.payload.step) | step_label }}){% endif %}{% if a.payload.text or a.payload.remark %}: “{{ a.payload.text or a.payload.remark }}”{% endif %}</li>{% endfor %}</ul>
 {% endif %}
 
 <script>

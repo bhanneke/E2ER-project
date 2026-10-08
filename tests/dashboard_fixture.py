@@ -140,7 +140,7 @@ def _studies() -> dict[str, dict[str, Any]]:
                             "key": "summary_statistics.json.price_series.kbe.mean|41.20",
                         }
                     ],
-                    "auto_patch": "the automatic correction changed nothing",
+                    "auto_patch": "it made no edits",
                 }
             },
         },

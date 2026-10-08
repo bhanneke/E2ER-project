@@ -166,7 +166,7 @@
               <a class="f-path" href="/api/papers/{{ paper.id }}/artifacts/{{ f.p }}" target="_blank" rel="noopener">{{ f.p }}</a>
             {% endif %}
             {% if f.note %}<span class="f-note">{{ f.note }}</span>{% endif %}
-            <span class="f-size">{% if f.status == "missing" %}·{% else %}{{ f.b | filesize }}{% endif %}</span>
+            <span class="f-size">{% if f.status in ("missing", "none") %}·{% else %}{{ f.b | filesize }}{% endif %}</span>
           </li>
         {% endfor %}
       </ul>

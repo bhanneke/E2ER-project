@@ -49,6 +49,8 @@ JARGON = {
     "attempts of": "runs of",
     "single pass": "one pass",
     "gates": "checks",
+    "mismatch": "difference",
+    "mismatches": "differences",
 }
 
 _UUID = re.compile(r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b")
@@ -70,6 +72,7 @@ def _internal_ids() -> set[str]:
         "FRED_API_KEY",
         "ZENODO_TOKEN",
         "ZENODO_SANDBOX_TOKEN",
+        *labels.SETTINGS,
         "single_pass",
         "review_at",
         "send_back",
@@ -181,15 +184,33 @@ def client(fx, monkeypatch) -> TestClient:
     async def _checks():  # the doctor's network checks are not this test's business
         return {
             "checks": [
-                {"name": "python", "status": "PASS", "detail": "Python 3.12"},
-                {"name": "backend.claude_code", "status": "PASS", "detail": "`claude` found; signed in"},
-                {"name": "skills.installed", "status": "PASS", "detail": "152 instruction files"},
-                {"name": "data.fred.key", "status": "SKIP", "detail": "no FRED key"},
+                # `e2er doctor`'s own text, as the terminal prints it: the page says it plainly.
+                {"name": "python", "status": "PASS", "detail": "Python 3.12.4"},
+                {
+                    "name": "backend.claude_code",
+                    "status": "PASS",
+                    "detail": "CLI at /usr/local/bin/claude ($0 on the subscription); signed in",
+                },
+                {"name": "skills.installed", "status": "PASS", "detail": "152 skill files under src/skills/files/"},
+                {"name": "db", "status": "PASS", "detail": "SQLite default (auto-created at /h/.e2er/papers.db)"},
+                {
+                    "name": "byod.literature",
+                    "status": "SKIP",
+                    "detail": "no LITERATURE_BIBTEX_FILE / LITERATURE_DIR / LOCAL_DATA_DIR — OpenAlex-only",
+                },
+                {
+                    "name": "byod.local_data_dir",
+                    "status": "SKIP",
+                    "detail": "LOCAL_DATA_DIR not set (no bring-your-own datasets)",
+                },
+                {"name": "data.fred.key", "status": "SKIP", "detail": "FRED_API_KEY not set"},
+                {"name": "data.allium.list_tables", "status": "SKIP", "detail": "ALLIUM_API_KEY not set"},
+                {"name": "lit.zotero.library", "status": "SKIP", "detail": "ZOTERO_API_KEY + user/group id not set"},
             ],
             "ready": True,
             "blockers": [],
-            "n_pass": 3,
-            "n_skip": 1,
+            "n_pass": 4,
+            "n_skip": 5,
             "n_fail": 0,
             "error": "",
         }
@@ -327,3 +348,42 @@ def test_a_stop_you_asked_for_lists_the_steps_outputs(client, fx):
     data = client.get(f"/api/papers/{fx.ids['asked_stop']}/review").json()
     names = [f["name"] for f in data["files"]]
     assert names == ["review_technical.md"], names
+
+
+@pytest.mark.parametrize(
+    "name, detail, plain",
+    [
+        (
+            "backend",
+            "no AI access is set up in this folder (no LLM_BACKEND here or in .env). run `e2er`",
+            "No AI provider",
+        ),
+        ("backend.anthropic", "ANTHROPIC_API_KEY not set — `e2er run` will fail", "No API key saved"),
+        ("backend.codex", "CLI at /Applications/ChatGPT.app/codex, but not signed in", "Found, but not signed in"),
+        (
+            "backend.claude_code",
+            "`claude` CLI not found on PATH or at CLAUDE_CODE_PATH — install it (https://x), or see https://y",
+            "`claude` is not installed",
+        ),
+        ("byod.literature", "LITERATURE_BIBTEX_FILE=/x/refs.bib not found", "The .bib file /x/refs.bib was not found"),
+        (
+            "byod.literature",
+            "literature dir /x/pdfs is not a directory",
+            "The literature folder /x/pdfs does not exist",
+        ),
+        ("byod.local_data_dir", "LOCAL_DATA_DIR=/x/data is not a directory", "The data folder /x/data does not exist"),
+        ("data.fred.key", "FRED_API_KEY has the format of a FRED key (…abcd)", "The FRED key has the right format"),
+        ("data.fred.observations", "not requested: the key has the wrong format (data.fred.key)", "Not asked"),
+        ("workspace.writable", "/tmp/my studies is outside the claude_code config tree", "Studies are written to"),
+        (
+            "db",
+            "Postgres unreachable: x — if you didn't intend Postgres, unset DATABASE_URL / POSTGRES_URL to use the "
+            "SQLite default",
+            "remove the database address",
+        ),
+    ],
+)
+def test_preflight_says_the_doctor_text_plainly(name, detail, plain):
+    text = labels.check_detail(name, detail)
+    assert plain in text
+    assert not problems(f"<p>{text}</p>"), text

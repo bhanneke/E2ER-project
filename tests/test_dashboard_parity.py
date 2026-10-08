@@ -162,7 +162,7 @@ def test_the_frozen_preregistration_is_deposited_from_the_page(live_db, session,
         ("gate", "Continue: run the check again", "the check runs again when the run continues"),
         ("deviation", "Approve the deviation and continue", "The pre-registered plan changed"),
         ("contract", "Keep the output as it is and continue", "failed its check in every attempt"),
-        ("numbers", "Continue with these mismatches", "differ from the results files"),
+        ("numbers", "Continue with these differences", "differ from the results files"),
         ("preregister", "Approve and freeze", "freezes it with its fingerprint"),
     ],
 )

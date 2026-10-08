@@ -198,7 +198,7 @@ async def test_a_failed_number_check_stops_the_run_for_the_researcher(study, eve
     # The automatic correction got its attempt (its `[]` is a valid answer, so one
     # attempt, not three); the reviewers did not run.
     assert backend.specialist_calls.count("patch_revisor") == 1
-    assert "patch_revisor made no edits" in error
+    assert "it made no edits" in error
     assert not [s for s in backend.specialist_calls if s.endswith("_reviewer")]
     # The researcher step: kind numbers, the draft and the results file on offer.
     state = _state(ws, pid)
@@ -266,7 +266,7 @@ async def test_a_plain_resume_checks_again_and_stops_again_without_a_second_patc
     out = await run(pid, ws, backend)
     assert out.get("reason") == "number_check"
     assert backend.specialist_calls.count("patch_revisor") == n
-    assert "already tried for these mismatches" in run.last[1]
+    assert "it already ran for these differences" in run.last[1]
 
 
 async def test_sending_the_drafter_back_runs_it_and_then_the_check(study, events):
@@ -424,7 +424,7 @@ def test_e2er_review_names_each_mismatch():
                         "source_key": "summary_statistics.json.n_units",
                     }
                 ],
-                "auto_patch": "patch_revisor made no edits",
+                "auto_patch": "it made no edits",
             },
             "files": [{"name": "paper_draft.tex", "exists": True}],
             "sendable": ["paper_drafter", "section_writer", "econometrics_specialist"],
@@ -435,8 +435,8 @@ def test_e2er_review_names_each_mismatch():
         "tab:robust_samples (Robustness...), row 1, col 3: the table says 15, the results say 17 "
         "(summary_statistics.json.n_units)" in text
     )
-    assert "The automatic correction did not fix them: patch_revisor made no edits." in text
-    assert "Approve to continue with these mismatches: the dossier records them as your decision." in text
+    assert "The automatic correction did not fix them: it made no edits." in text
+    assert "Approve to continue with these differences: the dossier records them as your decision." in text
 
 
 def test_the_dossier_records_the_researchers_decision_on_the_halted_check(tmp_path: Path):
@@ -477,9 +477,9 @@ async def test_the_review_api_page_and_resume_at_the_number_check(study, events)
     pending = got["pending"]
     assert pending["kind"] == "numbers" and pending["stage"] == NUMBERS_STEP
     assert pending["mismatches"][0]["in_table"] == "0.80" and pending["mismatches"][0]["in_results"] == "0.5"
-    assert pending["auto_patch"] == "patch_revisor made no edits"
+    assert pending["auto_patch"] == "it made no edits"
     assert {"paper_drafter", "section_writer", "econometrics_specialist"} <= set(got["sendable"])
-    assert "Continue with these mismatches" in page and "estimation_results.json.main.coef" in page
+    assert "Continue with these differences" in page and "estimation_results.json.main.coef" in page
 
 
 def test_a_plain_resume_never_approves_the_number_check():

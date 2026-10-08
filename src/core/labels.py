@@ -14,6 +14,7 @@ built-in templates.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 #: Steps of the built-in templates, and the stops e2er makes on its own.
@@ -255,6 +256,93 @@ def check(name: str) -> str:
         backend = name.split(".", 1)[1]
         return f"AI provider ({BACKENDS.get(backend, _plain(backend))})"
     return CHECKS.get(name) or _plain(name)
+
+
+#: Setting names in `e2er doctor`'s text, and what the dashboard calls them.
+SETTINGS: dict[str, str] = {
+    "LITERATURE_BIBTEX_FILE": "the .bib file",
+    "LITERATURE_DIR": "the literature folder",
+    "LOCAL_DATA_DIR": "the data folder",
+    "LLM_BACKEND": "the AI provider",
+    "ANTHROPIC_API_KEY": "the Anthropic API key",
+    "OPENROUTER_API_KEY": "the OpenRouter API key",
+    "FRED_API_KEY": "the FRED key",
+    "ALLIUM_API_KEY": "the Allium key",
+    "ZOTERO_API_KEY": "the Zotero key",
+    "SEMANTIC_SCHOLAR_API_KEY": "the Semantic Scholar key",
+    "ZENODO_TOKEN": "the Zenodo key",
+    "CLAUDE_CODE_PATH": "the location of Claude Code",
+    "CODEX_PATH": "the location of the Codex CLI",
+    "GEMINI_PATH": "the location of the Gemini CLI",
+    "DATABASE_URL": "the database address",
+    "POSTGRES_URL": "the database address",
+}
+
+#: `e2er doctor`'s own sentences that the dashboard says differently: (check, start of the text) → plain text.
+_DETAILS: list[tuple[str, str, str]] = [
+    ("backend", "no AI access is set up", "No AI provider is set up yet. Choose one under Settings."),
+    ("backend.", "API key configured", "API key saved. Billed per use."),
+    ("byod.local_data_dir", "LOCAL_DATA_DIR not set", "No data folder chosen. e2er fetches public data."),
+    (
+        "byod.literature",
+        "no LITERATURE_BIBTEX_FILE",
+        "No literature chosen. e2er searches OpenAlex for literature.",
+    ),
+    ("data.fred.key", "FRED_API_KEY not set", "No FRED key saved."),
+    ("data.fred.observations", "FRED_API_KEY not set", "No FRED key saved."),
+    ("data.fred.observations", "not requested", "Not asked: the FRED key has the wrong format."),
+    ("data.allium.list_tables", "ALLIUM_API_KEY not set", "No Allium key saved."),
+    ("lit.zotero.library", "ZOTERO_API_KEY", "No Zotero web library set up."),
+    ("skills.installed", "skill loader importable", "Found."),
+]
+
+
+def check_detail(name: str, detail: str) -> str:
+    """`e2er doctor`'s text for one check, as the dashboard says it: no setting names, no code paths.
+
+    The terminal keeps the doctor's own text; Preflight and Setup show this one and keep the original
+    under "Technical details".
+    """
+    text = (detail or "").strip()
+    for check_name, start, plain in _DETAILS:
+        if (name == check_name or (check_name.endswith(".") and name.startswith(check_name))) and text.startswith(
+            start
+        ):
+            return plain
+    if name.startswith("backend."):
+        # "CLI at /path ($0 on the subscription); signed in" → "found; signed in"
+        if m := re.match(r"CLI at .+?( \(\$0 on the subscription\);|, but|;) (.*)$", text):
+            return f"Found{', but' if m.group(1) == ', but' else ';'} {m.group(2)}"
+        if m := re.match(r"`(\w+)` CLI not found", text):
+            return (
+                f"`{m.group(1)}` is not installed, or e2er cannot find it. "
+                "Install it, or give its location under Settings."
+            )
+        if re.match(r"\w+_API_KEY not set", text):
+            return "No API key saved. Add it under Settings."
+    if name == "skills.installed" and (m := re.match(r"(\d+) skill files", text)):
+        return f"{m.group(1)} instruction files"
+    if name == "db" and text.startswith("SQLite default"):
+        return "Kept on this computer" + (f" ({m.group(1)})" if (m := re.search(r"at (.+)\)$", text)) else "") + "."
+    if name == "workspace.writable":
+        if m := re.match(r"(.+?) (?:\(SDK backend|is outside)", text):
+            return f"Studies are written to {m.group(1)}."
+        text = text.replace("config tree", "settings folder")
+    if name == "data.list_data_sources" and text.startswith("catalog: "):
+        return "Available: " + text[len("catalog: ") :]
+    text = re.sub(r"FRED_API_KEY has the format of a FRED key", "The FRED key has the right format", text)
+    text = re.sub(r"FRED_API_KEY is not a FRED key", "The saved FRED key is not a FRED key", text)
+    text = re.sub(r"LITERATURE_BIBTEX_FILE=(\S+) not found", r"The .bib file \1 was not found", text)
+    text = re.sub(r"LOCAL_DATA_DIR=(\S+) is not a directory", r"The data folder \1 does not exist", text)
+    text = re.sub(r"^literature dir (\S+) is not a directory", r"The literature folder \1 does not exist", text)
+    text = re.sub(r"^bibtex \((\d+) entries\)", r".bib file with \1 entries", text)
+    text = text.replace(
+        "unset DATABASE_URL / POSTGRES_URL to use the SQLite default",
+        "remove the database address from the settings to use the built-in one",
+    )
+    for setting, plain in sorted(SETTINGS.items(), key=lambda kv: -len(kv[0])):
+        text = re.sub(rf"\b{setting}\b", plain, text)
+    return text
 
 
 def verify_check(name: str) -> str:
