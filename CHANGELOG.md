@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.1] — 2026-10-08
+
+- 0.14.1 is 0.14.0 as it was meant to ship. The tag v0.14.0 exists, but its release run stopped at a test that only read the [Unreleased] part of this file, so 0.14.0 was never published on PyPI. That test now reads the whole file.
+
 ## [0.14.0] — 2026-10-08
 
 The local dashboard works end to end on 127.0.0.1, and every page reads plainly.
