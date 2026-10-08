@@ -67,9 +67,9 @@ def test_a_phase_never_dispatched_is_not_a_failure(tmp_path: Path):
     ws, arts = _workspace(tmp_path)
     groups = {g["name"]: g for g in _artifact_groups(ws, arts, "single_pass", "empirical")}
 
-    phase = groups["Self-attack and polish"]
+    phase = groups["Self-critique and polish"]
     assert phase["status"] == "none"
-    assert "not run" in phase["note"]
+    assert "only in the longer, iterative run" in phase["note"]
 
 
 def test_the_theory_specialist_is_not_expected_of_an_empirical_paper(tmp_path: Path):
@@ -116,7 +116,7 @@ def test_gate_reports_carry_their_own_verdict(tmp_path: Path):
     arts.append("number_verification.json")
 
     groups = {g["name"]: g for g in _artifact_groups(ws, arts, "single_pass", "empirical")}
-    gates = groups["Gates"]
+    gates = groups["Checks"]
     assert gates["status"] == "fail"
     assert any("critical" in f["note"] for f in gates["files"])
 

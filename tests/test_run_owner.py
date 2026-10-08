@@ -263,13 +263,13 @@ def test_dashboard_shows_running_elsewhere_and_refuses_resume_and_cancel(db: Pat
     try:
         c = TestClient(app)
         live = c.get(f"/htmx/papers/{running}/live").text
-        assert "Running in another e2er process" in live
+        assert "This run is working in another e2er window" in live
         assert f"PID {other.pid}, port 8280" in live
         assert "/resume" not in live and "/cancel" not in live
         assert "http://127.0.0.1:8280/papers/" in live
 
         r = c.post(f"/api/papers/{running}/resume")
-        assert r.status_code == 409 and "another e2er process" in r.json()["detail"]
+        assert r.status_code == 409 and "the dashboard on port 8280" in r.json()["detail"]
         r = c.post(f"/api/papers/{running}/cancel")
         assert r.status_code == 409 and "Follow or stop it there" in r.json()["detail"]
     finally:
@@ -277,4 +277,4 @@ def test_dashboard_shows_running_elsewhere_and_refuses_resume_and_cancel(db: Pat
         other.wait()
     time.sleep(0.05)
     live = TestClient(app).get(f"/htmx/papers/{running}/live").text
-    assert "Running in another e2er process" not in live
+    assert "This run is working in another e2er window" not in live

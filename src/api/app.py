@@ -1,4 +1,4 @@
-"""FastAPI application — REST API for E2ER v3 pipeline."""
+"""The e2er server: the dashboard (HTML pages) and the API the pages and the `e2er` commands use."""
 
 from __future__ import annotations
 
@@ -20,6 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import AliasChoices, BaseModel, Field
 
+from .. import __version__ as _version
 from ..config import get_settings
 from ..core.run_owner import IN_FLIGHT
 from ..db.studies import study_key
@@ -67,8 +68,8 @@ def require_auth(request: Request, authorization: str | None = Header(default=No
     raise HTTPException(
         status_code=403,
         detail=(
-            "This works only from the e2er that runs this dashboard: open the dashboard from the link e2er "
-            "printed, or use the e2er commands in the terminal."
+            "This browser tab is not signed in to e2er. Run `e2er` in a terminal: it opens the dashboard "
+            "signed in. Scripts use the e2er commands."
         ),
     )
 
@@ -78,7 +79,7 @@ _STATIC_DIR = _API_DIR / "static"
 _TEMPLATES_DIR = _API_DIR / "templates"
 
 logger = get_logger(__name__)
-app = FastAPI(title="e2er v3", version="3.0.0", description="e2er (End-to-End Research) API")
+app = FastAPI(title="e2er", version=_version, description="The API of the local e2er dashboard.")
 
 _cors_origins = [o.strip() for o in get_settings().cors_origins.split(",") if o.strip()]
 app.add_middleware(
@@ -108,16 +109,150 @@ templates.env.filters["ticks"] = _ticks
 
 def _status_words(value: object) -> str:
     """The status as shown: ``stopped`` → ``stopped by a check`` (core/run_outcome.py)."""
-    from ..core.run_outcome import status_words
+    from ..core.labels import status
 
-    return status_words(str(value or ""))
+    return status(str(value or ""))
 
 
 templates.env.filters["status_words"] = _status_words
 
 
+def _active_folder() -> dict[str, str]:
+    """The folder whose settings and studies this dashboard uses, for the line at the foot of every page."""
+    from .. import home
+
+    return {"path": str(home.project_dir()), "kind": home.kind()}
+
+
+from ..core import labels as _labels  # noqa: E402
+
+_labels.register(templates.env)
+
+
+def _filesize(n: object) -> str:
+    """``1234`` → ``1.2 KB``; a file under a kilobyte is ``under 1 KB``, an empty one ``empty``."""
+    try:
+        b = int(n)  # type: ignore[call-overload]
+    except (TypeError, ValueError):
+        return ""
+    if b == 0:
+        return "empty"
+    if b < 1000:
+        return "under 1 KB"
+    if b < 1_000_000:
+        return f"{b / 1000:.0f} KB"
+    return f"{b / 1_000_000:.1f} MB"
+
+
+templates.env.filters["filesize"] = _filesize
+templates.env.globals["active_folder"] = _active_folder
+
+
+# ── error pages ──────────────────────────────────────────────────────────────
+# A page or a form that fails shows a page with one plain sentence and the way
+# back, never a JSON body. The API (/api/…) keeps answering JSON: the pages'
+# scripts and the `e2er` commands read its `detail`.
+
+_ERROR_HEADINGS = {
+    401: "Not signed in",
+    403: "Not signed in",
+    404: "Not found",
+    409: "Not possible right now",
+    422: "Could not use what was sent",
+    400: "Could not use what was sent",
+}
+
+_ERROR_SENTENCES = {
+    404: "There is nothing at this address. The study may have been removed, or the link is incomplete.",
+    500: "Something went wrong inside e2er. The terminal window where e2er runs shows the details.",
+}
+
+
+def _wants_page(request: Request) -> bool:
+    path = request.url.path
+    return not (path.startswith("/api/") or path in {"/health", "/openapi.json"} or path.startswith("/static/"))
+
+
+def _error_response(request: Request, status_code: int, detail: Any) -> Any:
+    detail_text = detail if isinstance(detail, str) else ""
+    if status_code in (401, 403):
+        from . import local_session as ls
+
+        sentence = ls.local_problem(request) or detail_text or "This browser tab is not signed in to e2er."
+    elif status_code in _ERROR_SENTENCES:
+        sentence = _ERROR_SENTENCES[status_code]
+    elif detail_text:
+        sentence = detail_text
+    else:
+        sentence = "That did not work. Go back and try again."
+    context = {
+        "heading": _ERROR_HEADINGS.get(status_code, "Something went wrong"),
+        "sentence": sentence,
+        "detail": detail_text if detail_text != sentence else "",
+        "status_code": status_code,
+        "path": request.url.path,
+    }
+    name = "_error_fragment.html" if request.headers.get("hx-request") else "error.html"
+    return templates.TemplateResponse(request, name, context, status_code=status_code)
+
+
+from fastapi.exception_handlers import (  # noqa: E402
+    http_exception_handler as _default_http_handler,
+)
+from fastapi.exception_handlers import (  # noqa: E402
+    request_validation_exception_handler as _default_validation_handler,
+)
+from fastapi.exceptions import RequestValidationError  # noqa: E402
+from starlette.exceptions import HTTPException as _StarletteHTTPException  # noqa: E402
+
+
+@app.exception_handler(_StarletteHTTPException)
+async def _http_error(request: Request, exc: _StarletteHTTPException) -> Any:
+    if _wants_page(request):
+        return _error_response(request, exc.status_code, exc.detail)
+    return await _default_http_handler(request, exc)
+
+
+@app.exception_handler(RequestValidationError)
+async def _validation_error(request: Request, exc: RequestValidationError) -> Any:
+    if _wants_page(request):
+        return _error_response(request, 422, "Some of the form was missing or not readable. Go back and try again.")
+    return await _default_validation_handler(request, exc)
+
+
+@app.exception_handler(Exception)
+async def _unexpected_error(request: Request, exc: Exception) -> Any:
+    logger.exception("unexpected error on %s %s", request.method, request.url.path)
+    if _wants_page(request):
+        return _error_response(request, 500, "")
+    from fastapi.responses import JSONResponse
+
+    return JSONResponse({"detail": _ERROR_SENTENCES[500]}, status_code=500)
+
+
 def _paper_workspace(paper: dict[str, Any]) -> Path:
-    return Path(str(paper.get("workspace") or Path(get_settings().workspace_root) / str(paper.get("id") or "")))
+    if paper.get("workspace"):
+        return Path(str(paper["workspace"]))
+    return _workspace_of(str(paper.get("id") or ""))
+
+
+def _visible_files(workspace: Path) -> list[str]:
+    """The run's files a researcher sees: no hidden files or folders (saved state, .history), no backups."""
+    from ..core.export.bundle_files import is_leftover
+
+    out = []
+    for f in workspace.rglob("*"):
+        rel = f.relative_to(workspace)
+        if f.is_file() and not any(p.startswith(".") for p in rel.parts) and not is_leftover(f.name):
+            out.append(rel.as_posix())
+    return sorted(out)
+
+
+def _workspace_of(paper_id: str) -> Path:
+    """A run's folder when only its id is at hand (src/home.py finds folders named after the title)."""
+    from ..home import find_workspace
+
+    return find_workspace(paper_id, get_settings().workspace_root)
 
 
 def _with_outcome(paper: dict[str, Any]) -> dict[str, Any]:
@@ -151,6 +286,9 @@ async def _session_from_launch_url(request: Request, call_next):
 
     if run_owner.PORT is None and request.url.port:
         run_owner.PORT = request.url.port  # recorded with each run this process owns
+    canonical = _canonical_url(request)
+    if canonical is not None:
+        return RedirectResponse(url=canonical, status_code=307)
     token = request.query_params.get(ls.QUERY)
     if request.method == "GET" and token is not None:
         import secrets
@@ -161,9 +299,26 @@ async def _session_from_launch_url(request: Request, call_next):
         target = clean.path + (f"?{clean.query}" if clean.query else "")
         resp = RedirectResponse(url=target, status_code=303)
         if secrets.compare_digest(token, ls.session_token()):
-            resp.set_cookie(ls.cookie_name(request), token, httponly=True, samesite="strict", path="/")
+            ls.set_session_cookies(resp, request, token)
         return resp
     return await call_next(request)
+
+
+def _canonical_url(request: Request) -> str | None:
+    """``localhost`` → ``127.0.0.1`` for a page request, so one tab never holds two sessions.
+
+    Cookies belong to a host name: a tab on ``localhost`` and the link e2er
+    opened (``127.0.0.1``) carried different cookies, and every button on the
+    ``localhost`` tab failed. Only GET and HEAD are redirected; a form or an
+    API call is answered where it was sent.
+    """
+    if request.method not in {"GET", "HEAD"} or not _wants_page(request):
+        return None
+    host = (request.headers.get("host") or "").strip().lower()
+    name, _, port = host.partition(":")
+    if name != "localhost":
+        return None
+    return str(request.url.replace(netloc=f"127.0.0.1:{port}" if port else "127.0.0.1"))
 
 
 from .finish import router as _finish_router  # noqa: E402 — needs `templates` above
@@ -522,10 +677,9 @@ async def _graceful_shutdown_runners() -> None:
     from ..core.pipeline.state import PipelineState
     from ..db.client import execute
 
-    settings = get_settings()
     for paper_id in paper_ids:
         try:
-            workspace = Path(settings.workspace_root) / paper_id
+            workspace = _workspace_of(paper_id)
             if workspace.exists():
                 try:
                     state = PipelineState.load(workspace, paper_id, mode="iterative")
@@ -633,11 +787,12 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
     import uuid
 
     from ..db.client import execute
+    from ..home import new_workspace
 
     paper_id = str(uuid.uuid4())
     settings = get_settings()
-    workspace = Path(settings.workspace_root) / paper_id
-    workspace.mkdir(parents=True, exist_ok=True)
+    # A readable folder name (date and title); the id is in its manifest.json.
+    workspace = new_workspace(Path(settings.workspace_root).expanduser(), req.title, paper_id)
 
     # v0.8: stage the user's BYOD corpus into the paper's workspace via
     # symlinks. Data-shaped files (csv/parquet/jsonl/xlsx/tsv/txt) land
@@ -679,16 +834,6 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
         )
     effective_governance = req.governance or settings.governance
 
-    # Human-in-the-loop review points. Validate against real stage names.
-    from ..core.strategist.state import PIPELINE_STAGES
-
-    bad_stages = [s for s in req.review_stages if s not in PIPELINE_STAGES]
-    if bad_stages:
-        raise HTTPException(
-            status_code=422,
-            detail=f"review_stages must be from {'|'.join(PIPELINE_STAGES)}; unknown: {', '.join(bad_stages)}",
-        )
-
     # The pipeline must resolve to a real file NOW, not when the background task
     # gets there. find_spec raises inside the runner, and a task that dies on its
     # first line leaves a paper row sitting at 'idea' with nothing to explain it.
@@ -705,6 +850,16 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
             status_code=422,
             detail=f"unknown pipeline {req.pipeline!r}. Available: {', '.join(sorted(available())) or 'none'}",
         ) from e
+
+    # Human-in-the-loop review points: steps of this template (src/core/strategist/runner.py
+    # stops after any step it runs under its own name).
+    allowed_stops = _review_at_choices(find_spec(req.pipeline))
+    bad_stages = [s for s in req.review_stages if s not in allowed_stops]
+    if bad_stages:
+        raise HTTPException(
+            status_code=422,
+            detail=f"review_stages must be from {'|'.join(allowed_stops)}; unknown: {', '.join(bad_stages)}",
+        )
 
     # First-run guardrail. Inspect the (model, methodology, mode) tuple. If
     # nothing has completed at this combination, force the cap to $1 unless
@@ -884,14 +1039,12 @@ async def get_paper(paper_id: str = Depends(_validate_uuid)) -> dict[str, Any]:
 
 @app.get("/api/papers/{paper_id}/artifacts")
 async def list_artifacts(paper_id: str) -> dict[str, Any]:
-    from ..config import get_settings
 
-    settings = get_settings()
-    workspace = Path(settings.workspace_root) / paper_id
+    workspace = _workspace_of(paper_id)
     if not workspace.exists():
         raise HTTPException(status_code=404, detail="Workspace not found")
 
-    files = [str(f.relative_to(workspace)) for f in workspace.rglob("*") if f.is_file() and not f.name.startswith(".")]
+    files = _visible_files(workspace)
     return {"paper_id": paper_id, "files": files}
 
 
@@ -912,11 +1065,12 @@ def _elsewhere_text(owner: dict[str, Any]) -> str:
 
     if owner.get("legacy"):
         return (
-            f"This paper was active {owner.get('minutes', 0)} min ago and may be running in another e2er "
-            "process. Follow or stop it there; if that process is gone, it can be resumed here after "
+            f"This run was active {owner.get('minutes', 0)} min ago and may be working in another e2er window. "
+            "Follow or stop it there. If that e2er is closed, you can resume the run here after "
             f"{int(run_owner.STALE_AFTER.total_seconds() // 60)} min without activity."
         )
-    return f"This paper is running in another e2er process ({run_owner.describe(owner)}). Follow or stop it there."
+    where = f"the dashboard on port {owner['port']}" if owner.get("port") else "another e2er window"
+    return f"This run is working in {where} ({run_owner.describe(owner)}). Follow or stop it there."
 
 
 @app.post("/api/papers/{paper_id}/cancel", dependencies=[Depends(require_auth)])
@@ -970,6 +1124,25 @@ async def _review_context(paper_id: str) -> tuple[dict[str, Any], Path, Any, Any
     return row, workspace, state, (pending, spec)
 
 
+def _step_outputs(workspace: Path, step: str, events: list[dict[str, Any]], spec: Any) -> list[str]:
+    """The text files a step wrote: the outputs of the specialists that finished in it."""
+    from ..core.pipeline.researcher import _EDITABLE_SUFFIXES
+    from ..core.specialists.registry import SPECIALIST_ARTIFACTS, SPECIALIST_SIDECAR_ARTIFACTS
+
+    who: list[str] = []
+    for e in events:
+        if e.get("event_type") == "specialist_end" and e.get("stage") == step and e.get("specialist"):
+            who.append(str(e["specialist"]))
+    if not who and spec is not None and spec.step(step) is not None:
+        who = list(spec.step(step).run)
+    out: list[str] = []
+    for sp in dict.fromkeys(who):
+        for rel in [SPECIALIST_ARTIFACTS.get(sp, ""), *SPECIALIST_SIDECAR_ARTIFACTS.get(sp, [])]:
+            if rel and "/" not in rel and rel.endswith(_EDITABLE_SUFFIXES) and (workspace / rel).is_file():
+                out.append(rel)
+    return list(dict.fromkeys(out))
+
+
 def _sendable(workspace: Path, state: Any, pending: Any, spec: Any) -> list[str]:
     """What a researcher can send back from here: earlier template steps and specialists with output."""
     from ..core.specialists.registry import SPECIALIST_ARTIFACTS
@@ -1010,8 +1183,12 @@ async def get_review(paper_id: str = Depends(_validate_uuid)) -> dict[str, Any]:
                 e["payload"] = {}
     if pending is None:
         return {"pending": None, "actions": past}
+    shown_files = list(pending.files)
+    if pending.kind == "review_at" and not (state.metadata.get("review") or {}).get("files"):
+        # A stop you asked for: the files this step wrote, not every text file of the study.
+        shown_files = _step_outputs(workspace, pending.stage, await fetch_events(paper_id), spec)
     files = []
-    for name in pending.files:
+    for name in shown_files:
         p = workspace / name
         files.append(
             {
@@ -1041,6 +1218,7 @@ async def get_review(paper_id: str = Depends(_validate_uuid)) -> dict[str, Any]:
         # A halted check says why, so the researcher knows what to fix.
         "pending": {
             "stage": pending.stage,
+            "stage_label": _step_label(pending.stage, spec),
             "kind": pending.kind,
             **({"reasons": reasons} if reasons else {}),
             **extra,
@@ -1130,7 +1308,8 @@ async def rerun_paper(req: RerunRequest, paper_id: str = Depends(_validate_uuid)
         "UPDATE papers SET status = 'paused', last_error = NULL, updated_at = NOW() WHERE id = %(id)s",
         {"id": paper_id},
     )
-    return {"recorded": payload, "resumed": await resume_paper(paper_id)}
+    shown = {**payload, "rerun_labels": [_step_label(n, spec) for n in payload.get("reruns") or []]}
+    return {"recorded": shown, "resumed": await resume_paper(paper_id)}
 
 
 @app.post("/api/papers/{paper_id}/resume", dependencies=[Depends(require_auth)])
@@ -1196,7 +1375,7 @@ async def resume_paper(paper_id: str, req: ResumeRequest | None = None) -> dict[
 
     workspace = Path(row["workspace"])
     mode = row.get("mode") or "single_pass"
-    cap = float(row.get("max_cost_usd") or 25.0)
+    cap = float(row.get("max_cost_usd") or get_settings().default_max_cost_usd)
     methodology = row.get("methodology") or "empirical"
     # Read from the row, never re-chosen: half a run's state on disk was
     # produced by one DAG, and resuming under a different one would skip or
@@ -1305,8 +1484,7 @@ async def failure_bundle(paper_id: str) -> dict[str, Any]:
     from ..core.specialists.registry import SPECIALIST_ARTIFACTS
     from ..db.client import fetch_all, fetch_one
 
-    settings = get_settings()
-    workspace = Path(settings.workspace_root) / paper_id
+    workspace = _workspace_of(paper_id)
 
     try:
         paper_row = await fetch_one(
@@ -1457,20 +1635,18 @@ async def data_queries(paper_id: str) -> dict[str, Any]:
 
 @app.get("/api/papers/{paper_id}/audit-bundle")
 async def audit_bundle(paper_id: str) -> StreamingResponse:
-    """Download a tarball with everything needed to verify the paper's provenance:
-    replication/, contributions.json, events.json, usage.json, manifest.json.
+    """ "Download all files": every file of the run's folder, and its records from the database
+    (manifest.json, contributions.json, events.json, usage.json).
     """
     from ..db.client import fetch_all, fetch_one
     from ..modules.tracking.usage import get_paper_usage as _get_usage
 
-    settings = get_settings()
-    workspace = Path(settings.workspace_root) / paper_id
-    if not workspace.exists():
-        raise HTTPException(status_code=404, detail="Workspace not found")
-
     paper_row = await fetch_one("SELECT * FROM papers WHERE id = %(id)s", {"id": paper_id})
     if not paper_row:
         raise HTTPException(status_code=404, detail="Paper not found")
+    workspace = _paper_workspace(dict(paper_row))
+    if not workspace.exists():
+        raise HTTPException(status_code=404, detail="Workspace not found")
 
     # Pull DB-side audit data (best-effort; missing pieces just become empty).
     try:
@@ -1527,17 +1703,20 @@ async def audit_bundle(paper_id: str) -> StreamingResponse:
             info.size = len(data)
             tar.addfile(info, io.BytesIO(data))
 
-        # Workspace files (replication subtree + any top-level audit artefacts).
-        for sub in ("replication", "audit_log.csv", "data_queries.sql"):
-            path = workspace / sub
-            if path.exists():
-                tar.add(path, arcname=sub)
+        # Every file of the run's folder ("Download all files"), without hidden files: the
+        # run's saved state, earlier versions of outputs (.history) and lock files.
+        records = {"manifest.json", "contributions.json", "events.json", "usage.json"}
+        for arc in _visible_files(workspace):
+            tar.add(workspace / arc, arcname=f"run-{arc}" if arc in records else arc)
 
     buf.seek(0)
+    from ..home import slug
+
+    name = f"e2er-{slug(str(paper_row.get('title') or 'study'))}-files.tar.gz"
     return StreamingResponse(
         buf,
         media_type="application/gzip",
-        headers={"Content-Disposition": f'attachment; filename="audit-bundle-{paper_id}.tar.gz"'},
+        headers={"Content-Disposition": f'attachment; filename="{name}"'},
     )
 
 
@@ -1622,9 +1801,17 @@ async def health():
     """Health plus the identity of THIS process — the authoritative answer to
     "which code is the server actually running?". The server does not reload on
     edit, so a client must ask rather than assume."""
+    import os as _os
+
     from ..core.run_identity import run_identity
 
-    return {"status": "ok", "service": "e2er-v3", "identity": run_identity()}
+    return {
+        "status": "ok",
+        "service": "e2er-v3",  # an id scripts check, kept
+        "identity": run_identity(),
+        # Lets `e2er` tell its own server from another one on the same port (session file).
+        "process": {"pid": _os.getpid(), "ppid": _os.getppid()},
+    }
 
 
 # --- Dashboard (Jinja2 + HTMX) ---
@@ -1861,18 +2048,9 @@ async def install_skill_pack(pack: str = Form(...)) -> Any:
 #: The order the built-in templates are offered in; others follow by name.
 _TEMPLATE_ORDER = ("empirical", "empirical-preregistered", "event-study-finance", "replication")
 
-#: Names for the researcher steps of the built-in templates. Any other step is named from its id.
-_PAUSE_LABELS = {
-    "review_design": "Design review",
-    "preregister": "Pre-registration",
-    "review_draft": "Draft review",
-    "review_plan": "Plan review",
-    "review_report": "Report review",
-}
 
-
-def _step_label(name: str) -> str:
-    return _PAUSE_LABELS.get(name) or name.replace("_", " ").capitalize()
+def _step_label(name: str, spec: Any = None) -> str:
+    return _labels.step(name, spec)
 
 
 def _new_form_context(values: dict[str, Any] | None = None, error: str = "") -> dict[str, Any]:
@@ -1890,10 +2068,7 @@ def _new_form_context(values: dict[str, Any] | None = None, error: str = "") -> 
         "review_at": [],
         **(values or {}),
     }
-    from ..core.strategist.state import PIPELINE_STAGES
-
     return {
-        "review_choices": [{"name": n, "label": _STEP_NAMES.get(n) or _step_label(n)} for n in PIPELINE_STAGES],
         "default_cap": settings.default_max_cost_usd,
         "pipelines": _pipeline_choices(),
         "values": v,
@@ -1921,7 +2096,7 @@ def _pipeline_choices() -> list[dict[str, Any]]:
     nowhere to look; listing it means the error surfaces at submit time, where
     it names the file and the problem.
     """
-    from ..core.pipeline.spec import RESEARCHER_KINDS, PipelineError, available, load_spec
+    from ..core.pipeline.spec import PipelineError, available, load_spec
 
     out: list[dict[str, Any]] = []
     found = available()
@@ -1930,12 +2105,39 @@ def _pipeline_choices() -> list[dict[str, Any]]:
         path = found[name]
         try:
             spec = load_spec(path)
-            pauses = [_step_label(st.name) for st in spec.steps if st.kind in RESEARCHER_KINDS]
-            out.append({"name": name, "description": spec.description, "pauses": pauses})
+            out.append(
+                {
+                    "name": name,
+                    "label": _labels.template(name, spec),
+                    "description": spec.description,
+                    "pauses": [_step_label(st.name, spec) for st in spec.steps if _is_stop(st)],
+                    # "Also stop for you after these steps": this template's own steps.
+                    "review_choices": [{"name": n, "label": _step_label(n, spec)} for n in _review_at_choices(spec)],
+                }
+            )
         except (PipelineError, OSError) as e:
             logger.warning("pipeline %s at %s did not parse: %s", name, path, e)
-            out.append({"name": name, "description": "(this file did not parse)", "pauses": []})
+            out.append(
+                {
+                    "name": name,
+                    "label": _labels.template(name),
+                    "description": "(this file did not parse)",
+                    "pauses": [],
+                    "review_choices": [],
+                }
+            )
     return out
+
+
+def _is_stop(st: Any) -> bool:
+    from ..core.pipeline.spec import RESEARCHER_KINDS
+
+    return st.kind in RESEARCHER_KINDS
+
+
+def _review_at_choices(spec: Any) -> list[str]:
+    """Steps a researcher may ask the run to stop after: the template's own, not its stops or inner checks."""
+    return [st.name for st in spec.steps if not _is_stop(st) and not st.after]
 
 
 @app.post("/papers", dependencies=[Depends(require_auth)])
@@ -2016,12 +2218,9 @@ async def paper_detail(request: Request, paper_id: str = Depends(_validate_uuid)
         raise HTTPException(status_code=404, detail="Paper not found")
 
     # Best-effort artifact list (workspace may not exist if DB-only ghost).
-    settings = get_settings()
-    workspace = Path(settings.workspace_root) / paper_id
+    workspace = _paper_workspace(dict(paper))
     if workspace.exists():
-        artifacts = sorted(
-            str(f.relative_to(workspace)) for f in workspace.rglob("*") if f.is_file() and not f.name.startswith(".")
-        )
+        artifacts = _visible_files(workspace)
     else:
         artifacts = []
 
@@ -2057,9 +2256,10 @@ def _study_actions(paper: dict[str, Any], workspace: Path) -> dict[str, Any]:
 
     mode = str(paper.get("mode") or "single_pass")
     try:
-        names = rerunnable_steps(find_spec(str(paper.get("pipeline") or "empirical")), mode)
+        spec = find_spec(str(paper.get("pipeline") or "empirical"))
+        names = rerunnable_steps(spec, mode)
     except Exception:  # noqa: BLE001 — without its template there is nothing to choose from
-        names = []
+        spec, names = None, []
     try:
         demonstration = study_purpose(workspace if workspace.is_dir() else None) == "demonstration"
     except ValueError:
@@ -2071,10 +2271,11 @@ def _study_actions(paper: dict[str, Any], workspace: Path) -> dict[str, Any]:
         except (OSError, ValueError):
             lock = None
     return {
-        "rerun_steps": [{"name": n, "label": _STEP_NAMES.get(n) or _step_label(n)} for n in names],
+        "rerun_steps": [{"name": n, "label": _step_label(n, spec)} for n in names],
         "demonstration": demonstration,
         "prereg": lock,
-        "suggested_cap": round(float(paper.get("max_cost_usd") or 5.0) * 2, 2),
+        "suggested_cap": round(float(paper.get("max_cost_usd") or get_settings().default_max_cost_usd) * 2, 2),
+        "template_label": _labels.template(str(paper.get("pipeline") or "empirical"), spec),
         # The live panel corrects this every few seconds (a run that starts or stops).
         "rerun_open": paper.get("status") in _RERUN_STATUSES and str(paper.get("id")) not in _RUNNING,
     }
@@ -2088,7 +2289,7 @@ _PHASES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("Estimation", ("econometrics_specialist",)),
     ("Drafting", ("paper_drafter", "section_writer", "abstract_writer", "latex_formatter")),
     (
-        "Self-attack and polish",
+        "Self-critique and polish",
         (
             "self_attacker",
             "polish_formula",
@@ -2233,7 +2434,7 @@ def _artifact_groups(
     # reported as such rather than as missing output.
     iterative = (mode or "").lower() == "iterative"
     empirical = (methodology or "empirical").lower() == "empirical"
-    skipped_phases = set() if iterative else {"Self-attack and polish"}
+    skipped_phases = set() if iterative else {"Self-critique and polish"}
     skipped_specialists = {"theory_specialist"} if empirical else set()
 
     for phase_name, specialists in _PHASES:
@@ -2272,8 +2473,8 @@ def _artifact_groups(
                 {
                     "name": phase_name,
                     "status": "none",
-                    "note": f"not run in {mode or 'this'} mode",
-                    "files": [dict(r, status="none", note="phase not run") for r in rows],
+                    "note": "only in the longer, iterative run",
+                    "files": [dict(r, status="none", note="not part of this run") for r in rows],
                 }
             )
             continue
@@ -2303,7 +2504,7 @@ def _artifact_groups(
         checked = [r for r in rows if r["status"] != "none"]
         groups.append(
             {
-                "name": "Gates",
+                "name": "Checks",
                 "status": "fail" if any(r["status"] == "fail" for r in rows) else "pass",
                 "note": f"{sum(1 for r in checked if r['status'] == 'pass')}/{len(checked)} passed",
                 "files": rows,
@@ -2411,35 +2612,6 @@ def _progress(events: list[dict[str, Any]], paper: dict[str, Any]) -> dict[str, 
     }
 
 
-#: Plain names for the template steps of the built-in templates.
-_STEP_NAMES = {
-    "initial": "Design, data, estimation and draft",
-    "iterative": "Improve until it stops getting better",
-    "estimation_gate": "Estimation check",
-    "self_attack": "Self-critique",
-    "polish": "Polish",
-    "review": "Review panel",
-    "revision": "Revision",
-    "replication": "Replication package",
-    "fetch": "Fetch and verify the package",
-    "plan": "Plan the reproduction",
-    "sandbox_run": "Run the code in Docker",
-    "compare": "Compare every number",
-    "reproduction_gate": "Reproduction check",
-    "event_window_gate": "Event-window check",
-    "output_contract": "Output that failed its check",
-}
-
-_STEP_KINDS = {
-    "researcher": "your review",
-    "preregister": "your review; frozen on approval",
-    "gate": "check",
-    "strategist": "specialists",
-    "specialists": "specialists",
-    "aggregate": "reviewers",
-}
-
-
 def _template_progress(paper: dict[str, Any], events: list[dict[str, Any]]) -> dict[str, Any]:
     """The study's template steps with their state, the specialists done, and the checks.
 
@@ -2452,7 +2624,7 @@ def _template_progress(paper: dict[str, Any], events: list[dict[str, Any]]) -> d
     name = str(paper.get("pipeline") or "empirical")
     mode = str(paper.get("mode") or "single_pass")
     status = str(paper.get("status") or "")
-    workspace = Path(str(paper.get("workspace") or Path(get_settings().workspace_root) / str(paper.get("id"))))
+    workspace = _paper_workspace(paper)
     try:
         spec = find_spec(name)
     except Exception:  # noqa: BLE001 — a missing template must not break the page
@@ -2494,14 +2666,18 @@ def _template_progress(paper: dict[str, Any], events: list[dict[str, Any]]) -> d
         for st in spec.steps:
             if st.after:
                 continue
-            steps.append(_step_row(st, mode, status, completed, pending, opened, finished, halted, sub=False))
+            steps.append(
+                _step_row(st, mode, status, completed, pending, opened, finished, halted, sub=False, spec=spec)
+            )
             if st.kind == "strategist" and st.name == "initial":
                 steps.extend(
-                    _step_row(x, mode, status, completed, pending, opened, finished, halted, sub=True) for x in inner
+                    _step_row(x, mode, status, completed, pending, opened, finished, halted, sub=True, spec=spec)
+                    for x in inner
                 )
     current = next((s["label"] for s in steps if s["state"] in {"waiting", "running"}), "")
     return {
         "template": name,
+        "template_label": _labels.template(name, spec),
         "steps": steps,
         "current": current,
         "specialists_done": done_specialists,
@@ -2510,11 +2686,13 @@ def _template_progress(paper: dict[str, Any], events: list[dict[str, Any]]) -> d
     }
 
 
-def _step_row(st, mode, status, completed, pending, opened, finished, halted, *, sub: bool) -> dict[str, Any]:
-    label = _STEP_NAMES.get(st.name) or _step_label(st.name)
-    kind = _STEP_KINDS.get(st.kind, st.kind)
+def _step_row(
+    st, mode, status, completed, pending, opened, finished, halted, *, sub: bool, spec=None
+) -> dict[str, Any]:
+    label = _step_label(st.name, spec)
+    kind = _labels.step_kind(st.kind)
     if not st.applies_to(mode):
-        state, note = "skipped", f"not in {mode.replace('_', ' ')} mode"
+        state, note = "skipped", "only in the longer, iterative run" if mode == "single_pass" else "not in this run"
     elif pending == st.name and status == "paused":
         state, note = (
             ("failed", "check failed; waiting for you") if st.name in halted else ("waiting", "waiting for you")
@@ -2528,6 +2706,27 @@ def _step_row(st, mode, status, completed, pending, opened, finished, halted, *,
     else:
         state, note = "pending", ""
     return {"name": st.name, "label": label, "kind": kind, "state": state, "note": note, "sub": sub}
+
+
+def _plain_error(raw: str) -> str:
+    """The first sentence of a stored error, without the Python class name in front.
+
+    ``BudgetExceededError: spent $0.52 …`` → ``The spending limit was reached.``;
+    ``RuntimeError: All specialists failed …; …`` → ``All specialists failed …``.
+    The stored text stays available under "Technical details".
+    """
+    import re as _re
+
+    text = raw.strip()
+    if text.startswith("BudgetExceededError"):
+        return "The spending limit was reached."
+    if text.startswith("Server shutdown while in-flight") or "the server stopped while" in text:
+        return "e2er was stopped while the run was working."
+    text = _re.sub(r"^[A-Z][A-Za-z]*(Error|Exception)\s*:\s*", "", text)
+    text = text.split(";")[0].strip()
+    for name in sorted(_labels.SPECIALISTS, key=len, reverse=True):
+        text = _re.sub(rf"\b{name}\b", _labels.SPECIALISTS[name], text)
+    return text
 
 
 def _failure_detail(workspace: Path, paper: dict[str, Any], events: list[dict[str, Any]]) -> dict[str, Any]:
@@ -2547,8 +2746,7 @@ def _failure_detail(workspace: Path, paper: dict[str, Any], events: list[dict[st
         return {"failed": False}
 
     raw = str(paper.get("last_error") or "").strip()
-    headline = raw.split(":", 1)[-1].strip() if raw.startswith("RuntimeError:") else raw
-    headline = headline.split(";")[0].strip() if ";" in headline else headline
+    headline = _plain_error(raw)
 
     attempts: dict[str, int] = {}
     for e in events:
@@ -2568,6 +2766,7 @@ def _failure_detail(workspace: Path, paper: dict[str, Any], events: list[dict[st
             specialists.append(
                 {
                     "name": name,
+                    "label": _labels.specialist(name),
                     "violation": violation[:400],
                     "attempts": attempts.get(name, 0),
                 }
@@ -2578,22 +2777,17 @@ def _failure_detail(workspace: Path, paper: dict[str, Any], events: list[dict[st
     unwritten = [s for s in specialists if "file not written" in s["violation"]]
     if unwritten and len(unwritten) == len(specialists) and len(specialists) > 1:
         hints.append(
-            "Every specialist failed the same way — none of them wrote anything. That is "
-            "usually the environment rather than the models: a workspace the CLI backend "
-            "refuses to write to, or a backend that is installed but not logged in. "
-            "Check Preflight."
+            "None of the specialists wrote anything. This usually means the AI provider is installed but not "
+            "signed in, or cannot write to the studies folder. Preflight shows which."
         )
     if status == "stopped":
         hints.append(
-            "Stopped means a check stopped the run rather than the pipeline breaking. "
-            "The check reports in the workspace say which, and resuming without fixing "
-            "what it names will stop the run at the same check."
+            "A check stopped the run. Fix what the check names, then resume: the run stops at the same check "
+            "until it passes."
         )
     if status == "paused":
         hints.append(
-            "Paused means the run stopped with its workspace intact — a cost cap, a "
-            "checkpoint, or a server that was restarted. Resuming picks up at the first "
-            "incomplete phase."
+            "The run is paused and its files are kept. Resume picks up at the first step that has not finished."
         )
 
     return {
@@ -2628,7 +2822,7 @@ async def paper_live_fragment(request: Request, paper_id: str = Depends(_validat
     except Exception as e:
         logger.warning("live-fragment cost fetch failed for %s: %s — showing $0 (may be wrong)", paper_id, e)
         cost_spent = 0.0
-    cap = float(paper.get("max_cost_usd") or 25.0)
+    cap = float(paper.get("max_cost_usd") or get_settings().default_max_cost_usd)
     cost_pct = min(100.0, (cost_spent / cap * 100.0) if cap > 0 else 0.0)
 
     try:
@@ -2659,9 +2853,12 @@ async def paper_live_fragment(request: Request, paper_id: str = Depends(_validat
             "paper": _with_outcome(dict(paper)),
             "progress": _progress(list(events or []), dict(paper)),
             "tp": _template_progress(dict(paper), list(events or [])),
-            "failure": _failure_detail(Path(get_settings().workspace_root) / paper_id, dict(paper), list(events or [])),
+            "failure": _failure_detail(_paper_workspace(dict(paper)), dict(paper), list(events or [])),
             "cost_spent": cost_spent,
             "cost_pct": cost_pct,
+            "cost_cap": cap,
+            # Claude Code, Codex and Gemini run on the researcher's subscription: no spending limit applies.
+            "subscription": str(paper.get("backend") or get_settings().llm_backend) in _SUBSCRIPTION_BACKENDS,
             "events": (events or [])[:50],
             "can_cancel": (paper.get("status") not in _TERMINAL_STATUSES) and (paper_id in _RUNNING),
             # `e2er resume` takes a paused, failed or stopped study; so does the button.
@@ -2678,6 +2875,9 @@ async def paper_live_fragment(request: Request, paper_id: str = Depends(_validat
         },
     )
 
+
+#: Providers that run on the researcher's subscription: nothing is billed, so no spending limit applies.
+_SUBSCRIPTION_BACKENDS = {"claude_code", "codex", "gemini"}
 
 #: What `e2er resume` (and the Resume button) takes: a paused, failed or stopped study.
 _RESUMABLE_STATUSES = {"paused", "failed", "rejected"}
@@ -2714,10 +2914,51 @@ def _awaiting_review(paper: Any) -> str | None:
 @app.get("/papers/{paper_id}/review", response_class=HTMLResponse)
 async def review_page(request: Request, paper_id: str = Depends(_validate_uuid)) -> Any:
     """The researcher step in the dashboard: files in an editor, an instruction, send back, approve."""
+    from ..core.pipeline.spec import find_spec
+    from ..db.client import fetch_one
+
     data = await get_review(paper_id)
+    row = await fetch_one("SELECT title, pipeline FROM papers WHERE id = %(id)s", {"id": paper_id}) or {}
+    try:
+        spec = find_spec(str(row.get("pipeline") or "empirical"))
+    except Exception:  # noqa: BLE001 — the page still works with the plain names
+        spec = None
     stage = (data.get("pending") or {}).get("stage") or ""
-    label = _STEP_NAMES.get(stage) or _step_label(stage) if stage else ""
-    return templates.TemplateResponse(request, "review.html", {"paper_id": paper_id, "step_label": label, **data})
+    for f in data.get("files") or []:
+        f.update(_file_view(f["name"], f.get("content") or ""))
+    return templates.TemplateResponse(
+        request,
+        "review.html",
+        {
+            "paper_id": paper_id,
+            "title": row.get("title") or "",
+            "step_label": _step_label(stage, spec) if stage else "",
+            "sendable_choices": [
+                {"name": n, "label": _labels.step_or_specialist(n, spec)} for n in data.get("sendable") or []
+            ],
+            **data,
+        },
+    )
+
+
+def _file_view(name: str, content: str) -> dict[str, Any]:
+    """How the review page shows a file: what it is, and what editing it means."""
+    suffix = Path(name).suffix.lower()
+    kinds = {
+        ".md": ("text", "You are editing the text (Markdown)."),
+        ".txt": ("text", "You are editing the text."),
+        ".tex": ("LaTeX source", "You are editing the LaTeX source the paper is compiled from."),
+        ".json": ("data file (JSON)", "You are editing the source of this data file (JSON). Keep it valid JSON."),
+        ".bib": ("bibliography (BibTeX)", "You are editing the BibTeX source of the bibliography."),
+    }
+    what, note = kinds.get(suffix, ("file", "You are editing the file as it is stored."))
+    pretty = content
+    if suffix == ".json":
+        try:
+            pretty = json.dumps(json.loads(content), indent=2, ensure_ascii=False)
+        except ValueError:
+            pretty = content
+    return {"what": what, "edit_note": note, "preview": pretty, "lines": content.count("\n") + 1}
 
 
 @app.get("/api/papers/{paper_id}/events")
@@ -2731,8 +2972,7 @@ async def list_events(paper_id: str, since: str | None = None) -> list[dict[str,
 @app.get("/api/papers/{paper_id}/artifacts/{path:path}")
 async def stream_artifact(paper_id: str, path: str) -> FileResponse:
     """Serve a single artifact file from the paper workspace, mimetype-aware."""
-    settings = get_settings()
-    workspace = Path(settings.workspace_root) / paper_id
+    workspace = _workspace_of(paper_id)
     if not workspace.exists():
         raise HTTPException(status_code=404, detail="Workspace not found")
 
@@ -2784,8 +3024,7 @@ async def upload_data_file(paper_id: str, file: UploadFile = File(...)) -> dict[
     Specialists running with `DATA_MODULE_ENABLED=false` (no Allium key) can
     use these files via the standard read_file tool — see the byod skill.
     """
-    settings = get_settings()
-    workspace = Path(settings.workspace_root) / paper_id
+    workspace = _workspace_of(paper_id)
     if not workspace.exists():
         raise HTTPException(status_code=404, detail="Workspace not found")
 

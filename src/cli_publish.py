@@ -683,6 +683,9 @@ def problems(body: dict[str, Any]) -> list[str]:
 def publish(bundle: str, *, dry_run: bool = False, to_url: str | None = None, offline: bool = False, **kw: Any) -> int:
     """`e2er publish`: describe, stamp and verify; optionally rehearse (`dry_run`) or send (`to_url`).
 
+    ``interactive=False`` never asks on the terminal (the dashboard's server);
+    by default it asks only when standard input is a terminal.
+
     `offline` prepares the folder for publishing in the browser: it writes the
     dossier and e2er.json, makes no network request and names the next step.
     """
@@ -700,10 +703,15 @@ def publish(bundle: str, *, dry_run: bool = False, to_url: str | None = None, of
         if run_db is not None:
             kw["db"] = str(run_db)
     kw.setdefault("study_folder", _study_folder(b))
-    if kw.get("data") is None and kw.get("code") is None and sys.stdin.isatty():
+    # The dashboard calls this from its server (interactive=False): a question on
+    # the server's terminal would hang the page, so nothing is ever asked there.
+    interactive = kw.pop("interactive", None)
+    if interactive is None:
+        interactive = sys.stdin.isatty()
+    if kw.get("data") is None and kw.get("code") is None and interactive:
         kw["data"] = _ask("Are the study's data public or private?")
         kw["code"] = _ask("Is the study's code public or private?")
-    if kw.get("data") == "public" and sys.stdin.isatty() and (b / "provenance.json").is_file():
+    if kw.get("data") == "public" and interactive and (b / "provenance.json").is_file():
         # Data loaded under a source's own terms: the researcher confirms them before they are published.
         accepted = list(kw.get("accept_data_terms") or [])
         for use in data_terms.missing_confirmation(data_terms.uses(b), accepted):

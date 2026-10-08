@@ -80,24 +80,24 @@ BACKEND_MODELS: dict[str, tuple[str, list[tuple[str, str]]]] = {
     "claude_code": (
         "CLAUDE_CODE_MODEL",
         [
-            ("haiku", "Haiku — cheapest, uses the least of your plan"),
-            ("sonnet", "Sonnet — recommended"),
-            ("opus", "Opus — strongest, uses the most of your plan"),
+            ("haiku", "Haiku: cheapest, uses the least of your plan"),
+            ("sonnet", "Sonnet: recommended"),
+            ("opus", "Opus: strongest, uses the most of your plan"),
         ],
     ),
     "anthropic": (
         "ANTHROPIC_MODEL",
         [
-            ("claude-haiku-4-5", "Haiku 4.5 — cheapest"),
-            ("claude-sonnet-4-5", "Sonnet 4.5 — recommended"),
-            ("claude-opus-4-7", "Opus 4.7 — strongest, most expensive"),
+            ("claude-haiku-4-5", "Haiku 4.5: cheapest"),
+            ("claude-sonnet-4-5", "Sonnet 4.5: recommended"),
+            ("claude-opus-4-7", "Opus 4.7: strongest, most expensive"),
         ],
     ),
     "openrouter": (
         "OPENROUTER_MODEL",
         [
-            ("anthropic/claude-haiku-4-5", "Claude Haiku 4.5 — cheapest"),
-            ("anthropic/claude-sonnet-4-5", "Claude Sonnet 4.5 — recommended"),
+            ("anthropic/claude-haiku-4-5", "Claude Haiku 4.5: cheapest"),
+            ("anthropic/claude-sonnet-4-5", "Claude Sonnet 4.5: recommended"),
         ],
     ),
     # Filled from the CLI's own model list when it has one (see _codex_models).
@@ -106,7 +106,7 @@ BACKEND_MODELS: dict[str, tuple[str, list[tuple[str, str]]]] = {
         "GEMINI_MODEL",
         [
             ("", "The Gemini CLI's own default"),
-            ("gemini-2.5-flash", "Gemini 2.5 Flash — uses the least of your plan"),
+            ("gemini-2.5-flash", "Gemini 2.5 Flash: uses the least of your plan"),
             ("gemini-2.5-pro", "Gemini 2.5 Pro"),
         ],
     ),
@@ -127,7 +127,7 @@ def _codex_models() -> list[tuple[str, str]]:
     out = [("", f"The Codex CLI's own default ({listed[0]['slug']})")]
     for m in listed:
         desc = str(m.get("description") or "").strip().rstrip(".")
-        out.append((str(m["slug"]), f"{m.get('display_name') or m['slug']} — {desc}" if desc else str(m["slug"])))
+        out.append((str(m["slug"]), f"{m.get('display_name') or m['slug']}: {desc}" if desc else str(m["slug"])))
     return out
 
 
@@ -165,20 +165,41 @@ def cli_signed_in(backend: str, home: Path | None = None) -> tuple[bool | None, 
         if isinstance(data, dict):
             if data.get("oauthAccount"):
                 return True, "signed in"
-            return False, "not signed in — run `claude` once and sign in in the browser"
-        return None, "couldn't check whether it is signed in — run `claude` once to check"
+            return False, "not signed in: run `claude` once and sign in in the browser"
+        return None, "could not tell whether it is signed in: run `claude` once to check"
     if backend == "codex":
         codex_home = Path(os.environ.get("CODEX_HOME") or h / ".codex")
         if os.environ.get("OPENAI_API_KEY") or (codex_home / "auth.json").is_file():
             return True, "signed in"
-        return False, "not signed in — run `codex login`"
+        return False, "not signed in: run `codex login`"
     if backend == "gemini":
         if os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"):
             return True, "signed in with a key from the environment"
         if (h / ".gemini" / "oauth_creds.json").is_file():
             return True, "signed in"
-        return False, "not signed in — run `gemini` once and sign in"
+        return False, "not signed in: run `gemini` once and sign in"
     return None, ""
+
+
+def signin_command(backend: str, path: str | None) -> str:
+    """The command that signs a CLI in, ready to paste into a terminal.
+
+    The bare name when the terminal finds that same program; otherwise the full
+    path (the Codex inside the ChatGPT app is not on PATH).
+    """
+    import shlex
+    import shutil
+
+    exe = _BACKEND_CLI.get(backend)
+    if not exe or not path:
+        return ""
+    on_path = shutil.which(exe)
+    try:
+        same = on_path is not None and Path(on_path).resolve() == Path(path).resolve()
+    except OSError:
+        same = False
+    prog = exe if same else shlex.quote(str(path))
+    return f"{prog} login" if backend == "codex" else prog
 
 
 @dataclass
@@ -194,6 +215,8 @@ class BackendStatus:
     model_setting: str = ""
     models: list[tuple[str, str]] = field(default_factory=list)
     key_setting: str = ""
+    #: The command that signs this CLI in, as the researcher types it (full path when not on PATH).
+    signin_command: str = ""
 
 
 def detect_backends(settings: Any = None) -> list[BackendStatus]:
@@ -223,6 +246,7 @@ def detect_backends(settings: Any = None) -> list[BackendStatus]:
                     info,
                     model_setting,
                     models,
+                    signin_command=signin_command(name, path) if path else "",
                 )
             )
         else:

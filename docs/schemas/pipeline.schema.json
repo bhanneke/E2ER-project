@@ -15,6 +15,10 @@
       "pattern": "^[a-z0-9][a-z0-9_-]*$",
       "description": "Filename stem and the identifier passed to `e2er run --pipeline`."
     },
+    "title": {
+      "type": "string",
+      "description": "The template's name on the dashboard, such as \"Empirical study\"."
+    },
     "description": {
       "type": "string"
     },
@@ -202,6 +206,10 @@
             }
           },
           "additionalProperties": false
+        },
+        "label": {
+          "type": "string",
+          "description": "The step's name on the dashboard, such as \"Design review\"."
         }
       }
     }

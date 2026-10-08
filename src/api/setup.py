@@ -1,8 +1,9 @@
 """First-run setup in the browser: AI provider, literature, data, keys.
 
 Everything a first-time researcher used to do in `e2er init` happens on one
-page. The page writes the same `.env` that `e2er init` writes (in the folder
-e2er was started from, mode 600), then runs the doctor checks.
+page. The page writes the same `.env` that `e2er init` writes (in the studies
+folder, mode 600; see src/home.py), then runs the doctor checks. The first time
+it asks for the studies folder (default ``~/e2er-studies``) and remembers it.
 
 The folder browser lists folders on this computer, so it and the save endpoint
 sit behind :func:`local_session.require_local_session` (token, loopback, local
@@ -49,7 +50,23 @@ OPTIONAL_KEYS: list[tuple[str, str, str]] = [
         "Higher limits when searching Semantic Scholar for literature. Free.",
         "https://www.semanticscholar.org/product/api#api-key-form",
     ),
+    (
+        "ZENODO_TOKEN",
+        "Deposits on Zenodo with your own account (a pre-registration, public data and code). "
+        "Create a personal token with the scope deposit:write.",
+        "https://zenodo.org/account/settings/applications/tokens/new/",
+    ),
 ]
+
+#: Plain names for the keys on the setup page (the setting names stay in the file).
+KEY_LABELS = {
+    "FRED_API_KEY": "FRED key",
+    "ALLIUM_API_KEY": "Allium key",
+    "SEMANTIC_SCHOLAR_API_KEY": "Semantic Scholar key",
+    "ZENODO_TOKEN": "Zenodo key",
+    "ANTHROPIC_API_KEY": "Anthropic API key",
+    "OPENROUTER_API_KEY": "OpenRouter API key",
+}
 
 _API_KEY_SETTINGS = {"ANTHROPIC_API_KEY", "OPENROUTER_API_KEY"}
 _KNOWN_KEYS = {k for k, _, _ in OPTIONAL_KEYS} | _API_KEY_SETTINGS
@@ -57,8 +74,10 @@ _MODEL_SETTINGS = {"CLAUDE_CODE_MODEL", "ANTHROPIC_MODEL", "OPENROUTER_MODEL", "
 
 
 def env_path() -> Path:
-    """The settings file: `.env` in the folder e2er was started from (where pydantic-settings reads it)."""
-    return Path.cwd() / ".env"
+    """The settings file: `.env` in the studies folder, or in a project folder of its own (src/home.py)."""
+    from ..home import env_file
+
+    return env_file()
 
 
 def needs_setup() -> bool:
@@ -112,7 +131,7 @@ def safe_resolve(raw: str | None) -> Path:
 def list_folder(path: Path, kind: str) -> dict[str, Any]:
     """Folders plus the files that matter for ``kind`` (literature: .bib/.pdf; data: data files)."""
     roots = allowed_roots()
-    exts = {".bib", ".pdf"} if kind == "literature" else set(DATA_EXTS) | {".bib"}
+    exts = {".bib", ".pdf"} if kind == "literature" else set() if kind == "folder" else set(DATA_EXTS) | {".bib"}
     if not path.is_dir():
         raise HTTPException(status_code=404, detail="Not a folder.")
     dirs: list[dict[str, Any]] = []
@@ -209,18 +228,40 @@ def setup_view(request: Request, saved: bool = False) -> dict[str, Any]:
         "literature_bib": lit_bib,
         "data_dir": current.get("LOCAL_DATA_DIR", ""),
         "optional_keys": [
-            {"name": k, "what": what, "url": url, "masked": mask(current.get(k) or os.environ.get(k))}
+            {
+                "name": k,
+                "label": KEY_LABELS.get(k, k),
+                "what": what,
+                "url": url,
+                "masked": mask(current.get(k) or os.environ.get(k)),
+            }
             for k, what, url in OPTIONAL_KEYS
         ],
+        "key_labels": KEY_LABELS,
+        "github_login": current.get("GITHUB_USERNAME", ""),
+        **_folder_view(),
         "api_keys": {k: mask(current.get(k) or os.environ.get(k)) for k in _API_KEY_SETTINGS},
         "env_path": str(env_path()),
-        "cwd": str(Path.cwd()),
+        "cwd": str(env_path().parent),
         "exists": env_path().is_file(),
         "home": str(Path.home()),
         "session_ok": not local_problem(request),
         "session_problem": local_problem(request),
         "docker": {"ok": docker.status == "PASS", "detail": docker.detail},
         "saved": saved,
+    }
+
+
+def _folder_view() -> dict[str, Any]:
+    """Which folder holds the settings and studies, for the Studies folder card."""
+    from .. import home
+
+    remembered = home.remembered_studies_folder()
+    return {
+        "folder_kind": home.kind(),
+        "folder": str(home.project_dir()),
+        "studies_folder": str(remembered) if remembered else "",
+        "default_studies_folder": str(home.default_studies_folder()),
     }
 
 
@@ -246,6 +287,22 @@ class SaveSetup(BaseModel):
     data_dir: str = ""
     keys: dict[str, str] = {}  # optional connector keys; blank keeps the stored one
     create_folders: bool = False
+    #: The studies folder, the first time (blank: ~/e2er-studies), or a new one.
+    studies_folder: str = ""
+    #: A project folder with its own settings becomes the studies folder.
+    make_studies_folder: bool = False
+    #: The GitHub login used as the owner when publishing (GITHUB_USERNAME).
+    github_login: str = ""
+
+
+def _github_login(raw: str) -> str:
+    """A GitHub login as typed (``@Kim-Dash`` → ``kim-dash``); refuses anything that cannot be one."""
+    import re
+
+    login = raw.strip().lstrip("@").lower()
+    if login and not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,38})", login):
+        raise HTTPException(status_code=422, detail=f"{raw.strip()!r} is not a GitHub login (letters, digits, -).")
+    return login
 
 
 def build_env(req: SaveSetup, current: dict[str, str], root: Path) -> tuple[str, list[str]]:
@@ -299,7 +356,7 @@ def build_env(req: SaveSetup, current: dict[str, str], root: Path) -> tuple[str,
         bibtex_path=bib,
         database_url=current.get("DATABASE_URL", ""),
         github_token_pat="",
-        github_owner=current.get("GITHUB_USERNAME", ""),
+        github_owner=_github_login(req.github_login) or current.get("GITHUB_USERNAME", ""),
         local_data_dir=data_dir,
         literature_dir=lit_dir,
         model=(model_setting, req.model) if req.model else None,
@@ -334,9 +391,53 @@ async def save_setup(req: SaveSetup) -> dict[str, Any]:
     from ..cli_init import write_env_file
     from ..config import get_settings
 
-    body, notes = build_env(req, _read_env(), Path.cwd())
-    path = env_path()
+    before = _read_env()  # the settings in use now: kept when the studies folder is chosen or changed
+    root, folder_note = _choose_folder(req)
+    current = _read_env_at(root / ".env") or before
+    body, notes = build_env(req, current, root)
+    path = root / ".env"
     write_env_file(path, body)
     get_settings.cache_clear()
     logger.info("setup page wrote %s", path)
-    return {"ok": True, "path": str(path), "notes": notes}
+    return {"ok": True, "path": str(path), "notes": ([folder_note] if folder_note else []) + notes}
+
+
+def _read_env_at(p: Path) -> dict[str, str]:
+    if not p.is_file():
+        return {}
+    from dotenv import dotenv_values
+
+    return {k: v for k, v in dotenv_values(p).items() if v is not None}
+
+
+def _choose_folder(req: SaveSetup) -> tuple[Path, str]:
+    """Where the settings go, and a note for the page when the studies folder changed.
+
+    The first time: the studies folder asked for (default ``~/e2er-studies``),
+    remembered for every later start. A folder with its own settings stays
+    where it is, unless the researcher makes it the studies folder.
+    """
+    from .. import home
+
+    kind = home.kind()
+    asked = clean_path_input(req.studies_folder) if req.studies_folder.strip() else ""
+    if kind == "project" and not req.make_studies_folder:
+        return home.project_dir(), ""
+    if kind == "project":
+        target = home.project_dir()
+    elif kind == "studies" and not asked:
+        return home.project_dir(), ""
+    else:
+        target = Path(asked) if asked else home.default_studies_folder()
+    if not target.is_absolute():
+        raise HTTPException(status_code=422, detail="Give the studies folder as a full path, such as ~/e2er-studies.")
+    if target.exists() and not target.is_dir():
+        raise HTTPException(status_code=422, detail=f"{target} is a file. Choose a folder for your studies.")
+    try:
+        target = home.remember_studies_folder(target)
+    except OSError as e:
+        raise HTTPException(status_code=422, detail=f"e2er could not create {target}: {e.strerror or e}") from e
+    if os.environ.get(home.ENV_PROJECT):
+        # This server was started for the folder it was in; from now on it uses the studies folder.
+        os.environ[home.ENV_PROJECT] = str(target)
+    return target, f"Your studies folder is {target}. e2er uses it from any folder you start it in."

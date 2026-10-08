@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
+from ..core.labels import status as status_words
 from ..db import studies as st
 from ..logging_config import get_logger
 from .local_session import require_local_session
@@ -116,7 +117,7 @@ async def api_archive_attempt(paper_id: str) -> dict[str, Any]:
         a = await st.archive_attempt(paper_id)
     except st.StudyError as e:
         raise _refused(e) from e
-    return {"archived": 1, "id": a["id"], "message": f"Archived v{a['version']}. Nothing was deleted."}
+    return {"archived": 1, "id": a["id"], "message": f"Archived run {a['version']}. Nothing was deleted."}
 
 
 @router.post("/api/papers/{paper_id}/unarchive", dependencies=_GUARD)
@@ -134,7 +135,7 @@ async def api_archive_study(key: str) -> dict[str, Any]:
         study, n = await st.archive_study(key)
     except st.StudyError as e:
         raise _refused(e) from e
-    return {"archived": n, "key": study.key, "message": f"Archived {n} attempt{'s' if n != 1 else ''}."}
+    return {"archived": n, "key": study.key, "message": f"Archived {n} run{'s' if n != 1 else ''}."}
 
 
 @router.post("/api/studies/{key}/unarchive", dependencies=_GUARD)
@@ -153,7 +154,10 @@ async def api_failed_preview() -> dict[str, Any]:
     return {
         "count": len(items),
         "attempts": [
-            {k: a[k] for k in ("id", "short_id", "status", "version", "study_title", "study_key", "created_at")}
+            {
+                **{k: a[k] for k in ("id", "short_id", "status", "version", "study_title", "study_key", "created_at")},
+                "status_words": status_words(a["status"]),
+            }
             for a in items
         ],
     }
@@ -177,7 +181,7 @@ async def api_cancel_attempt(paper_id: str) -> dict[str, Any]:
         a = await st.cancel_attempt(paper_id, via="dashboard")
     except st.StudyError as e:
         raise _refused(e) from e
-    return {"cancelled": 1, "id": a["id"], "message": f"Cancelled v{a['version']}. Its files are kept."}
+    return {"cancelled": 1, "id": a["id"], "message": f"Cancelled run {a['version']}. Its files are kept."}
 
 
 class MoveRequest(BaseModel):

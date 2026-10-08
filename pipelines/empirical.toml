@@ -17,6 +17,7 @@
 # `resumable = false` means the step runs even when state says it is complete.
 
 name = "empirical"
+title = "Empirical study"
 description = "Question and data in, empirical paper out. e2er's default."
 methodologies = ["empirical", "theoretical"]
 

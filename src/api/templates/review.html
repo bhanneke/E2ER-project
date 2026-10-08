@@ -1,92 +1,136 @@
 {% extends "base.html" %}
-{% block title %}Researcher step — e2er{% endblock %}
+{% block title %}Stopped for you · e2er{% endblock %}
 
 {% block content %}
-<p><a href="/papers/{{ paper_id }}">← back to the study</a></p>
+<p class="crumb"><a href="/papers/{{ paper_id }}">← Back to the run</a></p>
 {% if not pending %}
-  <h1>No researcher step</h1>
-  <p class="sub">The run is not stopped at a researcher step.</p>
+  <h1>Nothing to decide here</h1>
+  <p class="sub">This run is not stopped for you. Its page shows what it is doing.</p>
 {% else %}
-  <h1>Your review: {{ step_label or pending.stage }}</h1>
-  <p class="muted">Researcher step: {{ pending.stage }}</p>
-  <p class="sub">
-    {% if pending.kind == "preregister" %}
-      The pre-registration below was assembled from the study's design files. Edit it if needed;
-      approving it freezes it with its fingerprint before any analysis runs.
-    {% elif pending.kind == "contract" %}
-      The output below failed its check in every attempt, so the run stopped for you. Approve to keep it
-      as it is (your decision is recorded in the dossier and the output is marked as failing its check),
-      edit a file, give an instruction, or send the specialist back with a remark for new attempts.
-      The specialists that passed keep their output.
-    {% elif pending.kind == "numbers" %}
-      The number check found numbers in the paper's tables that differ from the results files, and the
-      automatic correction did not fix them{% if pending.auto_patch %} ({{ pending.auto_patch }}){% endif %}.
-      Edit the draft or a results file, give an instruction, or send back paper_drafter, section_writer
-      (table layout) or econometrics_specialist; the check then runs again. Approve to continue with these
-      mismatches: your decision and each mismatch are recorded in the dossier. The reviewers run after that.
-    {% elif pending.kind == "deviation" %}
-      The pre-registered plan changed after it was frozen, so the estimation does not run yet. Approve to keep
-      the change as a deviation from the plan (your decision is recorded in the dossier and the deviation is
-      disclosed), edit the file back to the frozen version, or send back the step that changed it.
-    {% elif pending.kind == "gate" %}
-      A check failed, so the run stopped here. Its reasons are below. Edit a file, give an instruction, or send a
-      step back; the check runs again when the run continues. Continuing does not pass the check.
-    {% else %}
-      The run stopped here for you. Edit a file, give an instruction for the following steps,
-      send a step back, or approve to continue. Everything you do here appears in the study's dossier.
-    {% endif %}
-  </p>
-  {% if pending.kind == "contract" and pending.failures %}
-    {% for f in pending.failures %}
-      <section class="rv-contract">
-        <h2>{{ f.specialist }}: {{ f.attempts|length }} attempts</h2>
-        <ol>{% for a in f.attempts %}<li class="small">{% if a.violations %}{{ a.violations|join("; ") }}{% else %}{{ a.error or "no reason recorded" }}{% endif %}</li>{% endfor %}</ol>
-        {% if f.files %}<p class="muted small">Files: {{ f.files|join(", ") }}</p>{% endif %}
-      </section>
-    {% endfor %}
-  {% elif pending.kind == "numbers" and pending.mismatches %}
-    <table class="small">
-      <thead><tr><th>Table cell</th><th>In the table</th><th>In the results</th><th>Source key</th></tr></thead>
-      <tbody>{% for m in pending.mismatches %}<tr><td>{{ m.cell }}</td><td>{{ m.in_table }}</td><td>{{ m.in_results }}</td><td class="mono">{{ m.source_key }}</td></tr>{% endfor %}</tbody>
-    </table>
-  {% elif pending.reasons %}
-    <ul>{% for r in pending.reasons %}<li class="small">{{ r }}</li>{% endfor %}</ul>
-  {% endif %}
+  <h1>Stopped for you: {{ step_label or (pending.stage | step_label) }}</h1>
+  {% if title %}<p class="sub">{{ title }}</p>{% endif %}
 
-  {% for f in files %}
-    <section class="rv-file">
-      <h2 class="mono">{{ f.name }}</h2>
-      {% if f.exists %}
-        <textarea id="f-{{ loop.index }}" data-file="{{ f.name }}" rows="18" style="width:100%;font-family:var(--mono, monospace)">{{ f.content }}</textarea>
-        <button class="btn-ghost" data-save="f-{{ loop.index }}">Save edit</button>
+  <section class="decision" id="decision">
+    <h2>{{ pending.kind | stop_label }}</h2>
+    <p class="decision-why">
+      {% if pending.kind == "preregister" %}
+        The pre-registration below was put together from the study's design files. Edit it if needed.
+        Approving freezes it with its fingerprint before any analysis runs.
+      {% elif pending.kind == "contract" %}
+        The output below failed its check in every attempt, so the run stopped for you. You can keep it as it is:
+        your decision goes into the dossier and the output is marked as failing its check. You can also edit a file,
+        give an instruction, or send the specialist back with a remark for new attempts. The specialists whose
+        output passed keep it.
+      {% elif pending.kind == "numbers" %}
+        The number check found numbers in the paper's tables that differ from the results files, and the automatic
+        correction did not fix them{% if pending.auto_patch %} ({{ pending.auto_patch }}){% endif %}.
+        You can continue with these differences: your decision and each difference go into the dossier, and the
+        review panel runs next. You can also edit the draft or a results file, give an instruction, or send back
+        the paper draft, the table layout or the estimation; the check then runs again.
+      {% elif pending.kind == "deviation" %}
+        The pre-registered plan changed after it was frozen, so the estimation does not run yet. Approve to keep the
+        change as a deviation from the plan: your decision goes into the dossier and the deviation is disclosed.
+        You can also edit the file back to the frozen version, or send back the step that changed it.
+      {% elif pending.kind == "gate" %}
+        A check failed, so the run stopped here. Its reasons are below. Edit a file, give an instruction, or send a
+        step back; the check runs again when the run continues. Continuing does not pass the check.
+      {% elif pending.kind == "review_at" %}
+        You asked the run to stop after this step. Read what it wrote, edit it if you want, and let the run continue.
       {% else %}
-        <p class="muted">Not written yet.</p>
+        The run stopped here for you. Read the files, edit them if you want, give an instruction for the following
+        steps or send a step back, then approve to continue. Everything you do here goes into the study's dossier.
       {% endif %}
-    </section>
-  {% endfor %}
+    </p>
 
-  <section>
-    <h2>Instruction for the following steps</h2>
-    <textarea id="instr" rows="3" style="width:100%" placeholder="For instance: use monthly data."></textarea>
-    <button class="btn-ghost" id="send-instr">Add instruction</button>
+    {% if pending.kind == "contract" and pending.failures %}
+      {% for f in pending.failures %}
+        <h3 class="h3">{{ f.specialist | specialist_label }}: {{ f.attempts | length }} attempts</h3>
+        <table class="grid">
+          <thead><tr><th>Attempt</th><th>What failed</th></tr></thead>
+          <tbody>
+            {% for a in f.attempts %}
+              <tr><td class="num">{{ a.attempt or loop.index }}</td><td>{% if a.violations %}{{ a.violations | join("; ") }}{% else %}{{ a.error or "no reason recorded" }}{% endif %}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% if f.files %}<p class="muted small">Files: {{ f.files | join(", ") }}</p>{% endif %}
+      {% endfor %}
+    {% elif pending.kind == "numbers" and pending.mismatches %}
+      <table class="grid" id="mismatches">
+        <thead><tr><th>Where in the paper</th><th>In the table</th><th>In the results</th><th>Results file and entry</th></tr></thead>
+        <tbody>
+          {% for m in pending.mismatches %}
+            <tr><td>{{ m.cell }}</td><td class="num">{{ m.in_table }}</td><td class="num">{{ m.in_results }}</td><td class="mono small">{{ m.source_key }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% elif pending.reasons %}
+      <ul class="reasons">{% for r in pending.reasons %}<li>{{ r }}</li>{% endfor %}</ul>
+    {% endif %}
+
+    <div class="decision-actions">
+      <button class="btn-primary" id="approve">{% if pending.kind == "contract" %}Keep the output as it is and continue{% elif pending.kind == "numbers" %}Continue with these mismatches{% elif pending.kind == "deviation" %}Approve the deviation and continue{% elif pending.kind == "gate" %}Continue: run the check again{% elif pending.kind == "preregister" %}Approve and freeze{% else %}Approve and continue{% endif %}</button>
+      <p class="form-note" id="rv-msg" role="status" hidden></p>
+    </div>
   </section>
 
-  {% if sendable %}
-  <section>
+  {% if sendable_choices %}
+  <section class="card">
     <h2>Send a step back</h2>
-    <select id="sb-step">{% for s in sendable %}<option>{{ s }}</option>{% endfor %}</select>
-    <input id="sb-remark" style="width:60%" placeholder="What should change">
-    <button class="btn-ghost" id="send-back">Send back and continue</button>
+    <p class="card-note">The step runs again with your remark, and the run stops here again afterwards.</p>
+    <div class="send-back">
+      <label class="field"><span>Step or specialist</span>
+        <select id="sb-step">{% for s in sendable_choices %}<option value="{{ s.name }}">{{ s.label }}</option>{% endfor %}</select>
+      </label>
+      <label class="field grow"><span>What should change</span>
+        <input id="sb-remark" placeholder="For instance: use the corrected event dates.">
+      </label>
+      <button class="btn" id="send-back">Send back and continue</button>
+    </div>
   </section>
   {% endif %}
 
-  <p><button class="btn-primary" id="approve">{% if pending.kind == "contract" %}Keep the output as it is and continue{% elif pending.kind == "numbers" %}Continue with these mismatches{% elif pending.kind == "deviation" %}Approve the deviation and continue{% elif pending.kind == "gate" %}Continue: run the check again{% elif pending.kind == "preregister" %}Approve and freeze{% else %}Approve and continue{% endif %}</button></p>
-  <p class="form-note" id="rv-msg" hidden></p>
+  <section class="card">
+    <h2>Instruction for the following steps</h2>
+    <p class="card-note">The specialists of the following steps read it. It goes into the dossier.</p>
+    <textarea id="instr" rows="3" placeholder="For instance: use monthly data."></textarea>
+    <button class="btn" id="send-instr">Add instruction</button>
+  </section>
+
+  <section>
+    <h2>Files</h2>
+    {% if not files %}<p class="muted">This stop has no files to read.</p>{% endif %}
+    {% for f in files %}
+      <details class="rv-file">
+        <summary><span class="mono">{{ f.name }}</span> <span class="muted small">{{ f.what }}{% if f.exists %} · {{ f.lines }} lines{% endif %}</span></summary>
+        {% if f.exists %}
+          <pre class="file-preview quoted">{{ f.preview }}</pre>
+          <button type="button" class="btn" data-edit="f-{{ loop.index }}">Edit this file</button>
+          <div class="file-edit quoted" id="edit-f-{{ loop.index }}" hidden>
+            <p class="small muted">{{ f.edit_note }}</p>
+            <textarea id="f-{{ loop.index }}" data-file="{{ f.name }}" rows="18" class="mono">{{ f.content }}</textarea>
+            <button type="button" class="btn-primary" data-save="f-{{ loop.index }}">Save the change</button>
+          </div>
+        {% else %}
+          <p class="muted">Not written yet.</p>
+        {% endif %}
+      </details>
+    {% endfor %}
+  </section>
+
+  <details class="tech">
+    <summary>Technical details</summary>
+    <p class="small mono">Researcher step: {{ pending.stage }} · kind {{ pending.kind }}</p>
+    {% if pending.kind == "contract" and pending.failures %}
+      <p class="small mono">{% for f in pending.failures %}{{ f.specialist }}: {{ f.attempts | length }} attempts{% if not loop.last %}; {% endif %}{% endfor %}</p>
+    {% endif %}
+    {% if sendable %}<p class="small mono">Can be sent back: {{ sendable | join(", ") }}</p>{% endif %}
+  </details>
 {% endif %}
 
 {% if actions %}
-  <h2>What you did at researcher steps</h2>
-  <ul>{% for a in actions %}<li class="small">{{ (a.created_at|string)[:19] }} · {{ a.stage }} · {{ a.payload.action }} {{ a.payload.file or a.payload.target or "" }} {{ a.payload.text or a.payload.remark or "" }}</li>{% endfor %}</ul>
+  <h2>What you did at earlier stops</h2>
+  <ul class="history">{% for a in actions %}<li class="small">{{ (a.created_at | string)[:16] }} · {{ a.stage | step_label }}: {{ a.payload.action | action_label }}{% if a.payload.file %} {{ a.payload.file }}{% endif %}{% if a.payload.target or a.payload.step and a.payload.action == "send_back" %} ({{ (a.payload.target or a.payload.step) | step_label }}){% endif %}{% if a.payload.text or a.payload.remark %}: “{{ a.payload.text or a.payload.remark }}”{% endif %}</li>{% endfor %}</ul>
 {% endif %}
 
 <script>
@@ -94,11 +138,14 @@
     const msg = document.getElementById('rv-msg');
     const say = (t) => { if (msg) { msg.textContent = t; msg.hidden = false; } };
     async function send(body) {
-      const r = await fetch('/api/papers/{{ paper_id }}/review', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
-      const d = await r.json().catch(() => ({}));
-      if (!r.ok) { say(d.detail || ('Failed (' + r.status + ')')); return false; }
-      return d;
+      try { return await e2er.call('POST', '/api/papers/{{ paper_id }}/review', body); }
+      catch (e) { say(e.message); e2er.notice(e.message); return false; }
     }
+    document.querySelectorAll('[data-edit]').forEach((b) => b.addEventListener('click', () => {
+      const box = document.getElementById('edit-' + b.dataset.edit);
+      box.hidden = false; b.hidden = true;
+      document.getElementById(b.dataset.edit).focus();
+    }));
     document.querySelectorAll('[data-save]').forEach((b) => b.addEventListener('click', async () => {
       const t = document.getElementById(b.dataset.save);
       if (await send({ action: 'edit', file: t.dataset.file, content: t.value })) say('Saved ' + t.dataset.file + '.');

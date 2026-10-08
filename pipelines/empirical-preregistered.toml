@@ -15,6 +15,7 @@
 # action appears in the study's dossier. Otherwise this is empirical.toml.
 
 name = "empirical-preregistered"
+title = "Empirical study, pre-registered"
 description = "The empirical template with the researcher in it: a design review, a pre-registration frozen before any estimation, and a review of the draft."
 methodologies = ["empirical"]
 

@@ -243,9 +243,9 @@ def _find_attempt(studies: dict[str, Study], ref: str) -> dict[str, Any]:
         if a["id"] == ref or (len(ref) >= 4 and a["id"].startswith(ref))
     ]
     if not hits:
-        raise StudyError(f"No study or attempt matches {ref!r}.")
+        raise StudyError(f"No study or run matches {ref!r}.")
     if len(hits) > 1:
-        raise StudyError(f"{ref!r} matches {len(hits)} attempts; give more of the id.")
+        raise StudyError(f"{ref!r} matches {len(hits)} runs; give more of the id.")
     return hits[0]
 
 
@@ -256,7 +256,7 @@ async def find_attempt(ref: str) -> tuple[Study, dict[str, Any]]:
     for st in studies.values():
         if attempt in st.attempts:
             return st, attempt
-    raise StudyError(f"No attempt {ref!r}.")  # pragma: no cover
+    raise StudyError(f"No run {ref!r}.")  # pragma: no cover
 
 
 # ── archiving ────────────────────────────────────────────────────────────────
@@ -275,10 +275,10 @@ def _blocker(attempt: dict[str, Any]) -> str:
 
 
 def _label(attempt: dict[str, Any]) -> str:
-    return f"v{attempt['version']} ({attempt['short_id']})"
+    return f"Run {attempt['version']}"
 
 
-_ONLY_ENDED = "Archiving only takes attempts that have ended."
+_ONLY_ENDED = "Only runs that have ended can be archived."
 
 
 def refusal(attempt: dict[str, Any]) -> str:
@@ -401,7 +401,7 @@ async def cancel_attempt(ref: str, via: str = "dashboard") -> dict[str, Any]:
     from .events import log_event
 
     _st, attempt = await find_attempt(ref)
-    label = f"v{attempt['version']} ({attempt['short_id']})"
+    label = _label(attempt)
     row = await client.fetch_one(
         "SELECT status, run_owner, heartbeat_at, workspace, mode FROM papers WHERE id = %(id)s", {"id": attempt["id"]}
     )
@@ -418,7 +418,9 @@ async def cancel_attempt(ref: str, via: str = "dashboard") -> dict[str, Any]:
         seen = await run_owner.last_seen(attempt["id"], (row or {}).get("heartbeat_at"))
         state = run_owner.owner_state(owner, seen)
         if state == "alive":
-            raise StudyError(f"{label} belongs to another e2er process ({run_owner.describe(owner)}). Cancel it there.")
+            raise StudyError(
+                f"{label} is working in another e2er window ({run_owner.describe(owner)}). Cancel it there."
+            )
         if state == "mine":
             raise StudyError(f"{label} is still winding down in this e2er. Try again in a moment.")
 

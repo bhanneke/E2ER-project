@@ -83,7 +83,7 @@ def test_all_specialists_failing_points_at_the_environment(tmp_path: Path):
     detail = _failure_detail(ws, {"status": "failed", "last_error": "x"}, [])
 
     hint = " ".join(detail["hints"]).lower()
-    assert "environment" in hint
+    assert "not signed in" in hint and "studies folder" in hint  # the setup, not the models
     assert "preflight" in hint
 
 
@@ -97,7 +97,7 @@ def test_one_specialist_failing_does_not_blame_the_environment(tmp_path: Path):
         },
     )
     detail = _failure_detail(ws, {"status": "failed", "last_error": "x"}, [])
-    assert not any("environment" in h.lower() for h in detail["hints"])
+    assert not any("signed in" in h.lower() for h in detail["hints"])
 
 
 def test_stopped_is_explained_as_a_check_not_a_crash(tmp_path: Path):

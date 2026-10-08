@@ -1,11 +1,11 @@
 {% extends "base.html" %}
-{% block title %}New study — e2er{% endblock %}
+{% block title %}New study · e2er{% endblock %}
 
 {% block content %}
 <h1>New study</h1>
 
 {% if needs_setup %}
-  <div class="pf-banner bad">e2er is not set up yet. <a href="/setup">Set it up first</a> — it takes a minute.</div>
+  <div class="pf-banner bad">e2er is not set up yet. <a href="/setup">Set it up first</a>: it takes a minute.</div>
 {% else %}
   <div hx-get="/htmx/preflight-banner" hx-trigger="load" hx-swap="innerHTML">
     <div class="pf-banner">Checking this computer…</div>
@@ -30,7 +30,7 @@
       {% for p in pipelines %}
         <label class="tpl">
           <input type="radio" name="pipeline" value="{{ p.name }}" {% if p.name == values.pipeline %}checked{% endif %}>
-          <span class="tpl-name">{{ p.name }}</span>
+          <span class="tpl-name">{{ p.label }}</span>
           <span class="tpl-desc">{{ p.description }}</span>
           <span class="tpl-pauses">
             {% if p.pauses %}<b>Stops for you at:</b> {{ p.pauses | join(", ") }}
@@ -72,20 +72,40 @@
       <label>
         <span>Spending limit (USD)</span>
         <input type="number" name="max_cost_usd" min="0.01" max="500" step="0.01" value="{{ values.max_cost_usd if values.max_cost_usd is not none else default_cap }}" />
-        <small class="muted">{% if billed %}Your provider bills per use; the study stops at this limit.{% else %}Your provider runs on your subscription, so nothing is billed.{% endif %}</small>
+        <small class="muted">{% if billed %}Your provider bills per use; the run stops at this limit.{% else %}Your provider runs on your subscription: nothing is billed, so no spending limit applies.{% endif %}</small>
       </label>
     </div>
     <fieldset class="plain" id="review-at">
       <legend>Also stop for you after these steps</legend>
-      <small class="muted">Besides the stops the template has. The run waits after the step, and you review, edit, instruct or send back as at every stop. A step the template does not have is left out.</small>
-      <div class="radio-row">
-        {% for c in review_choices %}
-          <label><input type="checkbox" name="review_at" value="{{ c.name }}" {% if c.name in values.review_at %}checked{% endif %}> {{ c.label }} <span class="muted mono">{{ c.name }}</span></label>
-        {% endfor %}
-      </div>
+      <small class="muted">Besides the stops the template has. The run waits after the step, and you review, edit, instruct or send back as at every stop.</small>
+      {% for p in pipelines %}
+        <div class="radio-row review-at-set" data-template="{{ p.name }}"{% if p.name != values.pipeline %} hidden{% endif %}>
+          {% for c in p.review_choices %}
+            <label><input type="checkbox" name="review_at" value="{{ c.name }}" {% if p.name == values.pipeline and c.name in values.review_at %}checked{% endif %}{% if p.name != values.pipeline %} disabled{% endif %}> {{ c.label }}</label>
+          {% endfor %}
+          {% if not p.review_choices %}<span class="muted">This template has no steps to stop after.</span>{% endif %}
+        </div>
+      {% endfor %}
     </fieldset>
   </details>
 
   <button type="submit" class="btn-primary">Start</button>
 </form>
+
+<script>
+(function () {
+  // The stops on offer follow the chosen template: only its own steps can be chosen and sent.
+  const form = document.getElementById('new-study');
+  function sync() {
+    const chosen = (form.querySelector('input[name=pipeline]:checked') || {}).value;
+    form.querySelectorAll('.review-at-set').forEach((set) => {
+      const on = set.dataset.template === chosen;
+      set.hidden = !on;
+      set.querySelectorAll('input').forEach((i) => { i.disabled = !on; if (!on) i.checked = false; });
+    });
+  }
+  form.querySelectorAll('input[name=pipeline]').forEach((r) => r.addEventListener('change', sync));
+  sync();
+})();
+</script>
 {% endblock %}

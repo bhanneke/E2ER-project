@@ -1,6 +1,6 @@
 """The finish page: verify a completed study, then publish it to e2er.org.
 
-The page runs the same code as the terminal: `e2er verify` (the five offline
+The page runs the same code as the terminal: `e2er verify` (its offline
 checks) on the study's exported folder, and `e2er publish` with the same
 fields — first as a dry run that shows the exact request, then for real.
 Signing in uses the command line's device flow; the page shows the code and
@@ -157,6 +157,7 @@ async def finish_page(request: Request, paper_id: str) -> Any:
             "platform": base,
             "signed_in": _signed_in(base),
             "owner": (settings.github_username or "").lower(),
+            "n_checks": 6,
             "project": _slug(str(paper.get("title") or "")),
             "demonstration": demo,
             "session_ok": not local_problem(request),
@@ -171,7 +172,9 @@ async def export_study(paper_id: str) -> dict[str, Any]:
     from ..core.export.structured import export_paper
 
     paper = await _paper(paper_id)
-    workspace = Path(str(paper.get("workspace") or Path(get_settings().workspace_root) / paper_id))
+    from .app import _paper_workspace
+
+    workspace = _paper_workspace(paper)
     if not workspace.is_dir():
         raise HTTPException(status_code=404, detail=f"The study's working folder is gone: {workspace}")
     out = await asyncio.to_thread(
@@ -207,7 +210,30 @@ async def verify_study(paper_id: str, req: VerifyRequest | None = None) -> dict[
     bundle = _bundle(paper_id)
     checks = await asyncio.to_thread(_run_checks, bundle, bool(req and req.online))
     verdict, code = _verdict(checks)
-    return {"bundle": str(bundle), "checks": [asdict(c) for c in checks], "verdict": verdict, "verified": code == 0}
+    from ..core.labels import verify_check
+
+    return {
+        "bundle": str(bundle),
+        "checks": [{**asdict(c), "label": verify_check(c.name)} for c in checks],
+        "verdict": verdict,
+        "verdict_plain": _plain_verdict(checks, code == 0),
+        "verified": code == 0,
+    }
+
+
+def _plain_verdict(checks: list[Any], verified: bool) -> str:
+    """The verdict in one sentence, with the checks by their plain names."""
+    from ..core.labels import verify_check
+
+    failed = [verify_check(c.name) for c in checks if c.status == "FAIL"]
+    passed = sum(1 for c in checks if c.status == "PASS")
+    skipped = sum(1 for c in checks if c.status == "SKIP")
+    if failed:
+        return f"Not verified: {len(failed)} check{'s' if len(failed) != 1 else ''} did not pass ({'; '.join(failed)})."
+    if not verified:
+        return "Not verified: too few checks could run on this folder. Prepare the folder again after the run finished."
+    tail = f", {skipped} did not apply" if skipped else ""
+    return f"Verified: {passed} checks passed{tail}."
 
 
 def _server_db() -> str | None:
@@ -296,6 +322,7 @@ async def publish_study(paper_id: str, req: PublishRequest) -> dict[str, Any]:
         path=(req.path or "").strip() or None,
         derived_from=[d.strip() for d in req.derived_from if d.strip()] or None,
         demonstration=req.demonstration,
+        interactive=False,
         out=str(bundle.parent / f"{bundle.name}-registry-entry"),
         site=base,
         db=_server_db(),
@@ -309,7 +336,39 @@ async def publish_study(paper_id: str, req: PublishRequest) -> dict[str, Any]:
                 output = (output[:start] + output[start + end :]).strip()
             except ValueError:
                 request_body = None
-    return {"ok": code == 0, "output": output.strip(), "request": request_body, "platform": base}
+    return {
+        "ok": code == 0,
+        "output": output.strip(),
+        "request": request_body,
+        "platform": base,
+        # The terms boxes still unticked while the data are public: the page marks them.
+        "terms_missing": _terms_missing(bundle, req) if code != 0 else [],
+        **({} if req.dry_run or code != 0 else _published_links(output)),
+    }
+
+
+def _terms_missing(bundle: Path, req: PublishRequest) -> list[str]:
+    from ..core import data_terms
+
+    if req.data != "public":
+        return []
+    accepted = [a for a in req.accept_data_terms if a.strip()]
+    try:
+        return [u.terms.connector for u in data_terms.missing_confirmation(data_terms.uses(bundle), accepted)]
+    except Exception:  # noqa: BLE001 - the page then shows the output alone
+        return []
+
+
+def _published_links(output: str) -> dict[str, Any]:
+    """Where the published study can be read, from what `e2er publish` printed: its page and its dossier."""
+    links: dict[str, Any] = {}
+    page = re.search(r"published as [^:]+: (https?://\S+)", output)
+    dossier = re.search(r"^\s*dossier (https?://\S+)", output, re.MULTILINE)
+    if page:
+        links["study_url"] = page.group(1)
+    if dossier:
+        links["dossier_url"] = dossier.group(1)
+    return links
 
 
 # ── sign in to e2er.org (device flow, in a background thread) ───────────────
@@ -365,8 +424,6 @@ class DepositRequest(BaseModel):
 @router.post("/api/papers/{paper_id}/preregistration/deposit", dependencies=[Depends(require_local_session)])
 async def deposit_preregistration(paper_id: str, req: DepositRequest) -> dict[str, Any]:
     """Deposit the study's frozen pre-registration on Zenodo with the researcher's own token."""
-    import os
-
     from ..core.pipeline.preregistration import ZENODO_SANDBOX_URL, ZENODO_URL, deposit_zenodo, load_lock
 
     paper = await _paper(paper_id)
@@ -380,10 +437,14 @@ async def deposit_preregistration(paper_id: str, req: DepositRequest) -> dict[st
         )
     if lock.get("deposit"):
         raise HTTPException(status_code=409, detail=f"Already deposited: doi {lock['deposit'].get('doi')}.")
-    name = "ZENODO_SANDBOX_TOKEN" if req.sandbox else "ZENODO_TOKEN"
-    token = (os.environ.get(name) or "").strip()
+    from ..core.zenodo import load_token
+
+    token = load_token(sandbox=req.sandbox)
     if not token:
-        raise HTTPException(status_code=422, detail=f"Set {name} to your own Zenodo token, then start e2er again.")
+        where = "Zenodo test site key" if req.sandbox else "Zenodo key"
+        raise HTTPException(
+            status_code=422, detail=f"No {where} is saved yet. Add it under Settings, then deposit again."
+        )
     try:
         dep = await asyncio.to_thread(
             deposit_zenodo, folder, token, base_url=ZENODO_SANDBOX_URL if req.sandbox else ZENODO_URL

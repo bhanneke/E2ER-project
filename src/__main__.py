@@ -6,6 +6,7 @@ import argparse
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 #: Set by e2er in the environment of every AI CLI call (modules/llm/cli_support.run_env).
 _INSIDE_AI_STEP = "E2ER_AI_STEP"
@@ -689,7 +690,7 @@ def main() -> None:
     export_p.add_argument(
         "--to",
         default=None,
-        help="Destination root for the exported folder (default: OUTPUT_DIR / <LOCAL_DATA_DIR>/e2er_papers).",
+        help="Destination root for the exported folder (default: OUTPUT_DIR, else exports/ in the studies folder).",
     )
 
     # Declared so it appears in `e2er --help`; never parsed here. `corpus` owns
@@ -1128,26 +1129,28 @@ def _serve(*, host: str, port: int, reload: bool, no_browser: bool) -> int:
                 pass
         return 0
 
-    token = os.environ.get(ls.ENV_TOKEN) or ls.new_token()
+    token = os.environ.get(ls.ENV_TOKEN) or ls.stable_token()
     os.environ[ls.ENV_TOKEN] = token  # the uvicorn app (and a --reload worker) read it from here
+    from .home import ENV_PROJECT, project_dir
+
+    if reload:
+        # A --reload worker is another process: it uses the studies folder chosen now.
+        os.environ.setdefault(ENV_PROJECT, str(project_dir().resolve()))
     url = _launch_url(host, port, token)
-    try:
-        ls.write_session_file(port, token)
-    except OSError:
-        pass  # only a second `e2er` needs it; the printed address works regardless
 
     if open_it and not reload:
         _open_browser(url)
 
     print(f"e2er is running at {url}")
     print("   (keep this window open while you work; ctrl-c stops e2er)")
+    stop = _write_session_file_when_up(host, port, token)
     try:
         uvicorn.run("src.api.app:app", host=host, port=port, reload=reload, log_level="warning")
     except SystemExit as e:  # uvicorn raises this on a bind failure
         code = e.code if isinstance(e.code, int) else 1
         if code:
             print(
-                f"Could not start on port {port} — something else is using it.\nTry:  e2er --port {port + 1}",
+                f"Could not start on port {port}: something else is using it.\nTry:  e2er --port {port + 1}",
                 file=sys.stderr,
             )
         return code
@@ -1155,8 +1158,48 @@ def _serve(*, host: str, port: int, reload: bool, no_browser: bool) -> int:
         print(f"Could not start on {url}: {e}", file=sys.stderr)
         return 1
     finally:
+        stop.set()
         ls.remove_session_file(port)
     return 0
+
+
+def _write_session_file_when_up(host: str, port: int, token: str) -> Any:
+    """Write ``~/.e2er/session-<port>.json`` once this server answers on the port, never before.
+
+    Written before binding, a second `e2er` started on a port already in use
+    replaced the running server's session file with its own and then failed to
+    start. The file is written when ``/health`` on the port answers from this
+    process (or, with ``--reload``, from its worker). Returns an event that
+    stops the wait.
+    """
+    import os
+    import threading
+
+    from .api import local_session as ls
+
+    stop = threading.Event()
+    mine = {os.getpid()}
+
+    def _ours() -> bool:
+        try:
+            import httpx
+
+            ident = httpx.get(f"http://{host}:{port}/health", timeout=1.0).json().get("process") or {}
+        except Exception:  # noqa: BLE001 - not up yet, or not e2er
+            return False
+        return ident.get("pid") in mine or ident.get("ppid") in mine
+
+    def _wait() -> None:
+        while not stop.wait(0.2):
+            if _ours():
+                try:
+                    ls.write_session_file(port, token)
+                except OSError:
+                    pass  # only a second `e2er` needs it; the printed address works regardless
+                return
+
+    threading.Thread(target=_wait, daemon=True).start()
+    return stop
 
 
 if __name__ == "__main__":

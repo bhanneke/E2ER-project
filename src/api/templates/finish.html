@@ -1,8 +1,8 @@
 {% extends "base.html" %}
-{% block title %}Finish — {{ paper.title[:60] }} — e2er{% endblock %}
+{% block title %}Finish: {{ paper.title[:60] }} · e2er{% endblock %}
 
 {% block content %}
-<p><a href="/papers/{{ paper.id }}">← back to the study</a></p>
+<p class="crumb"><a href="/papers/{{ paper.id }}">← Back to the run</a></p>
 <h1>Finish: verify and publish</h1>
 <p class="sub">{{ paper.title }}</p>
 
@@ -34,9 +34,10 @@
     <h2>Verify</h2>
     <span class="card-status" id="verify-status">Not run</span>
   </header>
-  <p class="card-note">The same five checks as <code>e2er verify</code>, offline: every file matches its fingerprint,
-    every table number traces to its source, the estimation follows the declared design, and every citation is in the bibliography.</p>
-  <label class="check"><input type="checkbox" id="verify-online"> <span>Also check every citation against the live registries (OpenAlex, Semantic Scholar, Crossref), as <code>e2er verify --online</code>.</span></label>
+  <p class="card-note">{{ n_checks }} checks run on this computer (one more for a pre-registered study or a
+    replication): every file matches its fingerprint, every table number traces to its source, the estimation
+    follows the declared design, and every citation is in the bibliography.</p>
+  <label class="check"><input type="checkbox" id="verify-online"> <span>Also check every citation against the registries online (OpenAlex, Semantic Scholar, Crossref).</span></label>
   <button type="button" class="btn-primary" id="do-verify" {% if not session_ok %}disabled{% endif %}>Verify</button>
   <div id="verify-out"></div>
 </section>
@@ -52,7 +53,7 @@
 
   <div class="field-grid">
     <label class="field">
-      <span>Owner (your GitHub login, lower case)</span>
+      <span>Owner (your GitHub login{% if not owner %}; save it under <a href="/setup#card-publish">Settings</a> to fill this in{% endif %})</span>
       <input name="owner" id="pub-owner" value="{{ owner }}" autocomplete="off" spellcheck="false">
     </label>
     <label class="field">
@@ -100,7 +101,7 @@
   </div>
   <label class="check" id="zenodo-field" hidden>
     <input type="checkbox" id="pub-zenodo">
-    <span>Deposit the public data and code on Zenodo with your own token (<code>ZENODO_TOKEN</code>) and record the DOIs.</span>
+    <span>Deposit the public data and code on Zenodo with your own account and record the DOIs (uses the Zenodo key saved under <a href="/setup#card-keys">Settings</a>).</span>
   </label>
 
   <div id="terms-box">
@@ -113,12 +114,15 @@
           <input type="checkbox" class="confirm-terms" value="{{ t.connector }}">
           <span>Publish the {{ t.short }} data with the study {{ t.confirm }} (needed when the data are public).</span>
         </label>
+        <p class="terms-missing error" hidden>Tick this box to publish the data as public, or keep the data private.</p>
       </div>
     {% endfor %}
   </div>
 
   <details class="more">
     <summary>More: your name, ORCID iD, roles, licence, repository, what the study builds on</summary>
+    <p class="card-note">Repository, commit and path are for a study folder you keep in a public repository: readers
+      then find the exact version there. Leave them empty otherwise.</p>
     <div class="field-grid">
       <label class="field"><span>Your name as it should appear in citations</span><input id="pub-name" autocomplete="name"></label>
       <label class="field"><span>ORCID iD</span><input id="pub-orcid" placeholder="0000-0002-1825-0097" autocomplete="off" spellcheck="false"></label>
@@ -156,12 +160,7 @@
 (function () {
   const pid = '{{ paper.id }}';
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  async function call(method, url, body) {
-    const r = await fetch(url, { method, credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
-    const d = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(d.detail || ('Failed (' + r.status + ')'));
-    return d;
-  }
+  const call = (method, url, body) => e2er.call(method, url, body);
   const card = (id, state, status) => { const c = document.getElementById(id); c.dataset.state = state; if (status) c.querySelector('.card-status').textContent = status; };
 
   document.getElementById('do-export').addEventListener('click', async () => {
@@ -176,8 +175,8 @@
       const d = await call('POST', '/api/papers/' + pid + '/verify', { online: document.getElementById('verify-online').checked });
       const mark = { PASS: '✓', FAIL: '✗', SKIP: '·' };
       out.innerHTML = '<div class="vf-list pf-list">' + d.checks.map((c) =>
-        '<div class="pf pf-' + c.status.toLowerCase() + '"><span class="pf-mark">' + mark[c.status] + '</span><span class="pf-name">' + esc(c.name) + '</span><span class="pf-detail">' + esc(c.detail) + '</span></div>').join('') +
-        '</div><p>' + esc(d.verdict) + '</p>';
+        '<div class="pf pf-' + c.status.toLowerCase() + '"><span class="pf-mark">' + mark[c.status] + '</span><span class="pf-name">' + esc(c.label || c.name) + '</span><span class="pf-detail">' + esc(c.detail) + '</span></div>').join('') +
+        '</div><p><strong>' + esc(d.verdict_plain || d.verdict) + '</strong></p>';
       card('card-verify', d.verified ? 'ok' : 'bad', d.verified ? 'Verified' : 'Not verified');
     } catch (e) { out.innerHTML = '<p class="error">' + esc(e.message) + '</p>'; card('card-verify', 'bad', 'Could not run'); }
   });
@@ -219,19 +218,30 @@
       '<div class="pf-banner terms" data-connector="' + esc(t.connector) + '"><p>The study uses data from ' + esc(t.the_label) + '. Its terms:</p><ul>' +
       t.plain.map((l) => '<li>' + esc(l) + '</li>').join('') + '</ul><p class="small">' + (t.citation ? 'Citation: ' + esc(t.citation) + ' · ' : '') +
       '<a href="' + esc(t.terms_url) + '" target="_blank" rel="noopener">Full terms</a></p><label class="check"><input type="checkbox" class="confirm-terms" value="' +
-      esc(t.connector) + '"><span>Publish the ' + esc(t.short) + ' data with the study ' + esc(t.confirm) + ' (needed when the data are public).</span></label></div>').join('');
+      esc(t.connector) + '"><span>Publish the ' + esc(t.short) + ' data with the study ' + esc(t.confirm) + ' (needed when the data are public).</span></label>' +
+      '<p class="terms-missing error" hidden>Tick this box to publish the data as public, or keep the data private.</p></div>').join('');
   };
   const pubMsg = document.getElementById('pub-msg');
   const pubBtn = document.getElementById('do-publish');
   let previewOk = false;
+  // A preview or publish refused for terms not confirmed: say so next to each unticked box.
+  const markTerms = (missing) => {
+    document.querySelectorAll('#terms-box .terms').forEach((box) => {
+      const note = box.querySelector('.terms-missing');
+      if (note) note.hidden = !(missing || []).includes(box.dataset.connector);
+    });
+  };
+  // What `e2er publish` printed, folded: the page leads with the outcome.
+  const folded = (text) => text ? '<details class="tech"><summary>What e2er printed</summary><pre class="preview">' + esc(text) + '</pre></details>' : '';
   document.getElementById('do-preview').addEventListener('click', async () => {
     const out = document.getElementById('pub-out'); pubMsg.textContent = 'Preparing the preview…';
     try {
       const d = await call('POST', '/api/papers/' + pid + '/publish', { ...form(), dry_run: true });
+      markTerms(d.terms_missing);
       out.innerHTML = '<h3 class="h3">The request that would be sent to ' + esc(d.platform) + '</h3>' +
-        (d.request ? '<pre class="preview">' + esc(JSON.stringify(d.request, null, 2)) + '</pre>' : '') +
-        (d.output ? '<pre class="preview">' + esc(d.output) + '</pre>' : '');
-      pubMsg.textContent = d.ok ? 'Nothing was sent. Publish when it looks right.' : 'The preview found a problem; see above.';
+        (d.request ? '<details class="tech" open><summary>The request</summary><pre class="preview">' + esc(JSON.stringify(d.request, null, 2)) + '</pre></details>' : '') +
+        (d.ok ? folded(d.output) : '<pre class="preview">' + esc(d.output) + '</pre>');
+      pubMsg.textContent = d.ok ? 'Nothing was sent. Publish when it looks right.' : 'The preview found a problem; see below.';
       previewOk = d.ok;
       pubBtn.disabled = !d.ok || document.getElementById('signin').hidden === false;
     } catch (e) { pubMsg.textContent = e.message; }
@@ -240,7 +250,10 @@
     pubMsg.textContent = 'Publishing…';
     try {
       const d = await call('POST', '/api/papers/' + pid + '/publish', { ...form(), dry_run: false });
-      document.getElementById('pub-out').innerHTML = '<pre class="preview">' + esc(d.output) + '</pre>';
+      markTerms(d.terms_missing);
+      const links = (d.study_url ? '<p><a class="btn-primary" href="' + esc(d.study_url) + '" target="_blank" rel="noopener">Open the study on e2er.org</a> ' : '<p>') +
+        (d.dossier_url ? '<a class="btn" href="' + esc(d.dossier_url) + '" target="_blank" rel="noopener">Open its dossier</a>' : '') + '</p>';
+      document.getElementById('pub-out').innerHTML = d.ok ? links + folded(d.output) : '<pre class="preview">' + esc(d.output) + '</pre>';
       pubMsg.textContent = d.ok ? 'Published.' : 'Not published; see above.';
       card('card-publish', d.ok ? 'ok' : 'bad', d.ok ? 'Published' : 'Not published');
     } catch (e) { pubMsg.textContent = e.message; }

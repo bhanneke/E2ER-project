@@ -602,3 +602,54 @@ details.move > summary::-webkit-details-marker { display: none; }
 #rerun-box summary { cursor: pointer; }
 #rerun-box .field, #budget-box .field { display: block; margin: 8px 0; }
 #rerun-box select { max-width: 100%; }
+
+/* ── 0.14.0: one look for every page ─────────────────────────────────────── */
+.foot { max-width: 960px; margin: 32px auto 24px; padding: 12px 24px 0; border-top: 1px solid #e5e5e5; font-size: 13px; color: #666; }
+.notice { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 50; max-width: min(720px, calc(100% - 32px));
+  display: flex; gap: 12px; align-items: center; padding: 12px 16px; border-radius: 6px; border: 1px solid var(--danger);
+  border-left-width: 4px; background: #fff2f0; box-shadow: 0 6px 24px rgba(0,0,0,.12); font-size: 14px; }
+.notice[hidden] { display: none; }
+details.tech { margin: 16px 0; font-size: 13px; color: #666; }
+details.tech > summary { cursor: pointer; color: #666; }
+details.tech pre, details.tech p { margin: 6px 0; white-space: pre-wrap; word-break: break-word; }
+.decision { border: 1px solid var(--warn); border-left: 4px solid var(--warn); background: #fffaf0; border-radius: 6px; padding: 14px 18px; margin: 16px 0 20px; }
+.decision h2 { margin-top: 0; }
+.decision-actions { margin-top: 14px; }
+table.grid { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 14px; background: #fff; }
+table.grid th, table.grid td { border: 1px solid #e3e3e3; padding: 6px 10px; text-align: left; vertical-align: top; }
+table.grid th { background: #f5f5f5; font-weight: 600; }
+table.grid td.num, table.grid th.num { text-align: right; font-variant-numeric: tabular-nums; }
+ul.reasons li { margin: 4px 0; }
+.rv-file { border: 1px solid #e3e3e3; border-radius: 6px; background: #fff; margin: 8px 0; padding: 8px 12px; }
+.rv-file > summary { cursor: pointer; }
+.file-preview { max-height: 420px; overflow: auto; background: #fafafa; border: 1px solid #eee; padding: 10px; white-space: pre-wrap; word-break: break-word; font-size: 13px; }
+.file-edit textarea, .card textarea { width: 100%; box-sizing: border-box; }
+.file-edit textarea { font-family: var(--mono, ui-monospace, Menlo, monospace); font-size: 13px; }
+.send-back { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
+.send-back .grow { flex: 1 1 260px; }
+.send-back input { width: 100%; }
+.history li { margin: 3px 0; }
+.signin { display: block; margin-top: 6px; font-size: 13px; }
+.copy-row { display: flex; gap: 8px; align-items: center; margin: 6px 0; flex-wrap: wrap; }
+code.cmd { background: #1e1e1e; color: #f0f0f0; padding: 6px 10px; border-radius: 4px; font-size: 13px; word-break: break-all; }
+.st-sub { padding-left: 34px; }
+.status-paused { background: #f0eefc; color: #5b4bb5; }
+.status-stopped, .status-rejected { background: #fff3e0; color: var(--warn); }
+.status-cancelled { background: #eeeeee; color: #555; }
+.wf-table { border-collapse: collapse; width: 100%; font-size: 14px; margin: 12px 0; background: #fff; }
+.wf-table th, .wf-table td { border-bottom: 1px solid #e8e8e8; padding: 8px 10px; text-align: left; vertical-align: top; }
+.wf-table th { font-weight: 600; background: #f7f7f7; }
+.wf-table td.num, .wf-table th.num { text-align: right; }
+.wf-summary { display: flex; flex-wrap: wrap; gap: 12px; margin: 16px 0; }
+.wf-stat { border: 1px solid #e3e3e3; border-radius: 6px; padding: 10px 14px; background: #fff; min-width: 120px; }
+.wf-stat .n { display: block; font-size: 22px; font-weight: 600; }
+.wf-stat .l { font-size: 13px; color: #666; }
+.wf-stat.warn { border-color: var(--warn); }
+.wf-stat.bad { border-color: var(--danger); }
+.warn-box { border: 1px solid var(--warn); background: #fffaf0; border-radius: 6px; padding: 10px 14px; margin: 12px 0; }
+section.empty { border: 1px dashed #ccc; border-radius: 6px; padding: 16px 20px; background: #fff; }
+.c-action { white-space: nowrap; }
+.c-action .btn-small { margin: 2px 0; }
+table.attempts td, table.studies td { padding-top: 10px; padding-bottom: 10px; }
+.terms-missing { margin: 6px 0 0; }
+@media (max-width: 700px) { .c-action { white-space: normal; } .send-back { flex-direction: column; align-items: stretch; } }

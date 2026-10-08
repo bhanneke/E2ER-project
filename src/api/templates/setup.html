@@ -1,12 +1,12 @@
 {% extends "base.html" %}
-{% block title %}Set up — e2er{% endblock %}
+{% block title %}Set up · e2er{% endblock %}
 
 {% block content %}
 <h1>{% if exists %}Settings{% else %}Set up e2er{% endif %}</h1>
 <p class="sub">
-  Choose how e2er reaches an AI model, and where your literature and data are.
-  Everything is saved in <code class="path">{{ env_path }}</code>, which only you can read.
-  You can change it here later.
+  Choose where your studies are kept, how e2er reaches an AI model, and where your literature and data are.
+  {% if exists %}The settings are saved in <code class="path">{{ env_path }}</code>, which only you can read.{% endif %}
+  You can change everything here later.
 </p>
 
 {% if not session_ok %}
@@ -14,6 +14,34 @@
 {% endif %}
 
 <form id="setup" class="setup" onsubmit="return false">
+
+  {# ── Studies folder ─────────────────────────────────────────────────── #}
+  <section class="card" id="card-folder" data-state="{{ 'ok' if folder_kind != 'none' else 'none' }}">
+    <header class="card-h">
+      <span class="dot" aria-hidden="true"></span>
+      <h2>Studies folder</h2>
+      <span class="card-status" id="folder-status">{% if folder_kind == 'studies' %}Chosen{% elif folder_kind == 'project' %}This folder{% else %}Choose one{% endif %}</span>
+    </header>
+    {% if folder_kind == 'project' %}
+      <p class="card-note">e2er uses the settings in the folder you started it in, <code class="path">{{ folder }}</code>,
+        and keeps this folder's studies and exports there.{% if studies_folder %} Your studies folder is
+        <code class="path">{{ studies_folder }}</code>; start e2er from any other folder to use it.{% endif %}</p>
+      <label class="check">
+        <input type="checkbox" name="make_studies_folder">
+        <span>Make this folder my studies folder, so e2er uses it from any folder I start it in</span>
+      </label>
+    {% else %}
+      <p class="card-note">Your settings, your studies and the folders you export are kept here. e2er uses this
+        folder from any folder you start it in.</p>
+      <div class="picked">
+        <code class="path" id="folder-path">{{ studies_folder or default_studies_folder }}</code>
+        <button type="button" class="btn" data-browse="folder">{% if folder_kind == 'studies' %}Change…{% else %}Choose another…{% endif %}</button>
+      </div>
+      {% if folder_kind == 'studies' %}<p class="small muted">Studies you already made stay where they are and keep working.</p>{% endif %}
+      <div class="fb" id="fb-folder" hidden></div>
+      <input type="hidden" name="studies_folder" value="{{ '' if folder_kind == 'studies' else default_studies_folder }}">
+    {% endif %}
+  </section>
 
   {# ── AI provider ─────────────────────────────────────────────────────── #}
   <section class="card" id="card-ai" data-state="{{ 'ok' if any_backend else 'bad' }}">
@@ -32,11 +60,11 @@
       <div class="nobackend">
         <p><strong>e2er needs one of these.</strong> Install or sign up, then press “Check again”.</p>
         <ul>
-          <li><a href="{{ backend_help.claude_code.url }}" target="_blank" rel="noopener">{{ backend_help.claude_code.label }}</a> — {{ backend_help.claude_code.how | ticks }}</li>
+          <li><a href="{{ backend_help.claude_code.url }}" target="_blank" rel="noopener">{{ backend_help.claude_code.label }}</a>: {{ backend_help.claude_code.how | ticks }}</li>
           <li><a href="{{ backend_help.anthropic.url }}" target="_blank" rel="noopener">{{ backend_help.anthropic.label }}</a> or
-              <a href="{{ backend_help.openrouter.url }}" target="_blank" rel="noopener">{{ backend_help.openrouter.label }}</a> — billed per use. Paste the key below.</li>
-          <li><a href="{{ backend_help.codex.url }}" target="_blank" rel="noopener">{{ backend_help.codex.label }}</a> — {{ backend_help.codex.how | ticks }}</li>
-          <li><a href="{{ backend_help.gemini.url }}" target="_blank" rel="noopener">{{ backend_help.gemini.label }}</a> — {{ backend_help.gemini.how | ticks }}</li>
+              <a href="{{ backend_help.openrouter.url }}" target="_blank" rel="noopener">{{ backend_help.openrouter.label }}</a>: billed per use. Paste the key below.</li>
+          <li><a href="{{ backend_help.codex.url }}" target="_blank" rel="noopener">{{ backend_help.codex.label }}</a>: {{ backend_help.codex.how | ticks }}</li>
+          <li><a href="{{ backend_help.gemini.url }}" target="_blank" rel="noopener">{{ backend_help.gemini.label }}</a>: {{ backend_help.gemini.how | ticks }}</li>
         </ul>
       </div>
     {% endif %}
@@ -48,7 +76,12 @@
           <span class="dot sm" aria-hidden="true"></span>
           <span class="choice-body">
             <span class="choice-title">{{ b.label }}</span>
-            <span class="choice-detail">{{ b.detail | ticks }}{% if not b.installed and b.kind == 'cli' %} — <a href="{{ b.help.url }}" target="_blank" rel="noopener">how to install</a>{% endif %}</span>
+            <span class="choice-detail">{{ b.detail | ticks }}{% if not b.installed and b.kind == 'cli' %}: <a href="{{ b.help.url }}" target="_blank" rel="noopener">how to install</a>{% endif %}</span>
+            {% if b.signin_command and b.signed_in is not true %}
+              <span class="signin">To sign in, paste this into a terminal and follow what it asks:
+                <span class="copy-row"><code class="cmd">{{ b.signin_command }}</code><button type="button" class="btn-ghost btn-small" data-copy="{{ b.signin_command }}">Copy</button></span>
+                Then press “Check again”.</span>
+            {% endif %}
           </span>
         </label>
         <div class="choice-more" data-for="{{ b.name }}" hidden>
@@ -64,9 +97,9 @@
           {% endif %}
           {% if b.kind == 'api' %}
             <label class="field">
-              <span>{{ b.key_setting }}</span>
+              <span>{{ key_labels.get(b.key_setting, b.key_setting) }}</span>
               <input type="password" name="apikey-{{ b.name }}" autocomplete="off" spellcheck="false"
-                     placeholder="{% if api_keys.get(b.key_setting) %}stored ({{ api_keys.get(b.key_setting) }}) — leave empty to keep{% else %}paste your key{% endif %}">
+                     placeholder="{% if api_keys.get(b.key_setting) %}saved ({{ api_keys.get(b.key_setting) }}); leave empty to keep it{% else %}paste your key{% endif %}">
               <small class="muted"><a href="{{ b.help.url }}" target="_blank" rel="noopener">Get a key</a>. Billed per use.</small>
             </label>
           {% endif %}
@@ -114,7 +147,7 @@
     <input type="hidden" name="data_dir" value="{{ data_dir }}">
     <label class="check">
       <input type="checkbox" name="create_folders" {% if not exists %}checked{% endif %}>
-      <span>Create <code class="tick">data</code> and <code class="tick">literature</code> folders in <code class="path">{{ cwd }}</code> to drop files into</span>
+      <span>Create <code class="tick">data</code> and <code class="tick">literature</code> folders in the studies folder to drop files into</span>
     </label>
   </section>
 
@@ -132,6 +165,21 @@
     </p>
   </section>
 
+  {# ── Publishing ─────────────────────────────────────────────────────── #}
+  <section class="card" id="card-publish" data-state="{{ 'ok' if github_login else 'none' }}">
+    <header class="card-h">
+      <span class="dot" aria-hidden="true"></span>
+      <h2>Publishing</h2>
+      <span class="card-status">{{ "Set" if github_login else "Optional" }}</span>
+    </header>
+    <p class="card-note">Your GitHub login names you as the owner of what you publish on e2er.org
+      (its address is e2er.org/your-login/project).</p>
+    <label class="field">
+      <span>GitHub login</span>
+      <input name="github_login" value="{{ github_login }}" autocomplete="off" spellcheck="false" placeholder="for instance kim-dash">
+    </label>
+  </section>
+
   {# ── Optional keys ───────────────────────────────────────────────────── #}
   <section class="card" id="card-keys" data-state="none">
     <header class="card-h">
@@ -139,12 +187,12 @@
       <h2>Optional keys</h2>
       <span class="card-status">Optional</span>
     </header>
-    <p class="card-note">For data sources that need an account. Leave a field empty to keep what is stored.</p>
+    <p class="card-note">For data sources and services that need an account. Leave a field empty to keep what is saved.</p>
     {% for k in optional_keys %}
       <label class="field">
-        <span>{{ k.name }}</span>
+        <span>{{ k.label }}</span>
         <input type="password" name="key-{{ k.name }}" autocomplete="off" spellcheck="false"
-               placeholder="{% if k.masked %}stored ({{ k.masked }}) — leave empty to keep{% else %}not set{% endif %}">
+               placeholder="{% if k.masked %}saved ({{ k.masked }}); leave empty to keep it{% else %}not set{% endif %}">
         <small class="muted">{{ k.what }} <a href="{{ k.url }}" target="_blank" rel="noopener">Get a key</a>.</small>
       </label>
     {% endfor %}
@@ -181,14 +229,10 @@
   const cfg = {
     lit: { kind: 'literature', input: form.literature, path: 'lit-path', found: 'lit-found', card: 'card-lit', status: 'lit-status' },
     data: { kind: 'data', input: form.data_dir, path: 'data-path', found: 'data-found', card: 'card-data', status: 'data-status' },
+    folder: { kind: 'folder', input: form.studies_folder, path: 'folder-path', found: null, card: 'card-folder', status: 'folder-status' },
   };
 
-  async function getJSON(url) {
-    const r = await fetch(url, { credentials: 'same-origin' });
-    const d = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(d.detail || ('Failed (' + r.status + ')'));
-    return d;
-  }
+  const getJSON = (url) => e2er.call('GET', url);
 
   function setCard(which, state, status) {
     const c = cfg[which];
@@ -198,6 +242,13 @@
 
   async function choose(which, path) {
     const c = cfg[which];
+    if (c.kind === 'folder') {
+      c.input.value = path;
+      document.getElementById(c.path).textContent = path;
+      document.getElementById('fb-' + which).hidden = true;
+      setCard(which, 'ok', 'Chosen');
+      return true;
+    }
     const found = document.getElementById(c.found);
     found.textContent = 'Looking…';
     try {
@@ -237,9 +288,10 @@
     if (d.parent) rows.push('<li><button type="button" class="fb-row dir" data-go="' + esc(d.parent) + '">↑ Up</button></li>');
     d.dirs.forEach((x) => rows.push('<li><button type="button" class="fb-row dir" data-go="' + esc(x.path) + '">' + esc(x.name) + '</button></li>'));
     d.files.forEach((x) => rows.push('<li><button type="button" class="fb-row file" data-pick="' + esc(x.path) + '">' + '<span class="ext">' + esc(x.ext) + '</span>' + esc(x.name) + '</button></li>'));
-    if (!d.dirs.length && !d.files.length) rows.push('<li class="muted fb-empty">Empty — no folders or matching files here.</li>');
+    if (!d.dirs.length && !d.files.length) rows.push('<li class="muted fb-empty">Nothing here: no folders or matching files.</li>');
     const hint = c.kind === 'literature'
       ? 'Open a folder and click a .bib file, or use the whole folder (a Zotero export or a folder of PDFs).'
+      : c.kind === 'folder' ? 'Open the folder for your studies, then use it. An empty folder is fine.'
       : 'Open the folder that holds your data files, then use it.';
     box.innerHTML =
       '<div class="fb-top"><div class="crumbs">' + crumbs + '</div>' +
@@ -255,7 +307,8 @@
 
   document.querySelectorAll('[data-browse]').forEach((b) => b.addEventListener('click', () => {
     const which = b.dataset.browse;
-    const cur = cfg[which].input.value;
+    // A studies folder may not exist yet: the browser opens at the folder that holds it.
+    const cur = which === 'folder' ? document.getElementById('folder-path').textContent.replace(/\/[^/]*$/, '') : cfg[which].input.value;
     open(which, cur ? cur.replace(/\/[^/]*\.(bib|pdf)$/i, '') : '');
   }));
   document.querySelectorAll('[data-clear]').forEach((b) => b.addEventListener('click', () => {
@@ -265,6 +318,12 @@
     document.getElementById(c.found).textContent = '';
     b.hidden = true;
     setCard(which, 'none', 'Optional');
+  }));
+
+  // Copy a command (the sign-in command of an AI provider).
+  document.querySelectorAll('[data-copy]').forEach((b) => b.addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(b.dataset.copy); b.textContent = 'Copied'; }
+    catch (e) { b.textContent = 'Select it and copy'; }
   }));
 
   // Show what the stored choices hold.
@@ -281,17 +340,16 @@
     const keys = {};
     form.querySelectorAll('input[name^="key-"]').forEach((i) => { if (i.value.trim()) keys[i.name.slice(4)] = i.value.trim(); });
     msg.textContent = 'Saving…';
-    const r = await fetch('/api/setup/save', {
-      method: 'POST', credentials: 'same-origin',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
+    try {
+      await e2er.call('POST', '/api/setup/save', {
         backend, model: model ? model.value : '', api_key: apikey ? apikey.value : '',
         literature: form.literature.value, data_dir: form.data_dir.value, keys,
         create_folders: form.create_folders.checked,
-      }),
-    });
-    const d = await r.json().catch(() => ({}));
-    if (!r.ok) { msg.textContent = d.detail || ('Could not save (' + r.status + ')'); return; }
+        studies_folder: form.studies_folder ? form.studies_folder.value : '',
+        make_studies_folder: form.make_studies_folder ? form.make_studies_folder.checked : false,
+        github_login: form.github_login.value,
+      });
+    } catch (e) { msg.textContent = e.message; return; }
     location.href = '/setup?saved=1';
   });
 })();

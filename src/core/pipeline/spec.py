@@ -108,6 +108,7 @@ class StepSpec:
     files: tuple[str, ...] = ()  # researcher/preregister: files the researcher sees and may edit
     after: tuple[str, ...] = ()  # researcher/preregister/gate: act right after these specialists
     settings: dict[str, Any] = field(default_factory=dict, hash=False)  # gate: the check's parameters
+    label: str = ""  # the step's name on the dashboard (src/core/labels.py when empty)
 
     def applies_to(self, mode: str) -> bool:
         return not self.modes or mode in self.modes
@@ -127,6 +128,7 @@ class StepSpec:
 class PipelineSpec:
     name: str
     description: str = ""
+    title: str = ""  # the template's name on the dashboard (src/core/labels.py when empty)
     methodologies: tuple[str, ...] = ()
     steps: tuple[StepSpec, ...] = ()
     finalize: tuple[str, ...] = ()
@@ -181,6 +183,7 @@ def _step_from(raw: Any, source: Path | str, index: int) -> StepSpec:
         "files",
         "after",
         "settings",
+        "label",
     }
     if unknown:
         # A typo is a mistake, not an extension point. Silently ignoring
@@ -288,12 +291,13 @@ def _step_from(raw: Any, source: Path | str, index: int) -> StepSpec:
         files=files,
         after=after,
         settings=dict(settings),
+        label=str(raw.get("label", "") or ""),
     )
 
 
 def spec_from_dict(data: dict[str, Any], *, source: Path | str = "<dict>") -> PipelineSpec:
     """Build and validate a spec from parsed TOML."""
-    unknown = set(data) - {"name", "description", "methodologies", "steps", "finalize", "skills", "sidecars"}
+    unknown = set(data) - {"name", "title", "description", "methodologies", "steps", "finalize", "skills", "sidecars"}
     if unknown:
         _fail(source, f"unknown top-level key(s): {', '.join(sorted(unknown))}")
 
@@ -323,6 +327,7 @@ def spec_from_dict(data: dict[str, Any], *, source: Path | str = "<dict>") -> Pi
     return PipelineSpec(
         name=name,
         description=data.get("description", ""),
+        title=str(data.get("title", "") or ""),
         methodologies=tuple(data.get("methodologies", ()) or ()),
         steps=steps,
         finalize=finalize,

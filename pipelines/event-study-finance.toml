@@ -31,6 +31,7 @@
 # Maintained by the e2er contributors.
 
 name = "event-study-finance"
+title = "Event study in finance"
 description = "A fork of the empirical template for abnormal-return event studies around announcements: it checks the estimation window and overlapping events before estimation."
 methodologies = ["empirical", "event study"]
 

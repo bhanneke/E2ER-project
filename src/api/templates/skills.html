@@ -1,13 +1,12 @@
 {% extends "base.html" %}
-{% block title %}Skills — e2er{% endblock %}
+{% block title %}Skills · e2er{% endblock %}
 
 {% block content %}
 <h1>Skills</h1>
 <p class="sub">
-  Skill packs published by other research projects, indexed by
-  <a href="https://github.com/bhanneke/RISE">RISE</a>. e2er installs them from
-  their own repositories rather than shipping copies — most of this catalogue is
-  not e2er's to redistribute, and the authors keep their attribution.
+  Instructions for the specialists, published by other research projects and listed by
+  <a href="https://github.com/bhanneke/RISE">RISE</a>. e2er installs each pack from its own repository, so the
+  authors keep their attribution. Most packs are not e2er's to hand on.
 </p>
 
 {% if message %}
@@ -32,22 +31,21 @@ export RISE_PATH=/path/to/RISE</code></pre>
 
   <table class="wf-table">
     <thead>
-      <tr><th>Pack</th><th>Skills</th><th>Licence</th><th>Bundleable</th><th></th></tr>
+      <tr><th>Pack</th><th class="num">Skills</th><th>Licence</th><th>May be passed on</th><th></th></tr>
     </thead>
     <tbody>
       {% for p in packs %}
         <tr>
           <td>
-            <strong>{{ p.name }}</strong><br>
-            <span class="muted">{{ p.maintainers | join(', ') }}</span>
-            {% if p.notes %}<br><span class="muted">{{ p.notes[:160] }}</span>{% endif %}
+            <span class="quoted"><strong>{{ p.name }}</strong><br>
+            <span class="muted">{{ p.maintainers | join(', ') }}</span></span>
+            {% if p.notes %}<br><span class="muted quoted">{{ p.notes[:160] }}</span>{% endif %}
           </td>
           <td class="num">{{ p.count }}</td>
-          <td>{{ p.license or '—' }}</td>
+          <td>{{ p.license or 'not stated' }}</td>
           <td>
-            {# The question that made this an installer rather than a copy. It
-               never blocks installing: fetching a public file onto your own
-               machine is not redistribution. #}
+            {# Never blocks installing: fetching a public file onto your own
+               computer is not passing it on. #}
             {% if p.redistributable %}yes{% else %}<span class="muted">no</span>{% endif %}
           </td>
           <td>
@@ -56,7 +54,7 @@ export RISE_PATH=/path/to/RISE</code></pre>
             {% else %}
               <form method="post" action="/skills/install" class="inline">
                 <input type="hidden" name="pack" value="{{ p.slug }}">
-                <button type="submit">Install</button>
+                <button type="submit" class="btn btn-small">Install</button>
               </form>
             {% endif %}
           </td>
@@ -66,14 +64,12 @@ export RISE_PATH=/path/to/RISE</code></pre>
   </table>
 
   <p class="muted">
-    Installed packs live in <code>{{ install_root }}</code> and are searched
-    after e2er's own skills, so an installed pack extends the library rather
-    than replacing part of it. Each carries a <code>pack.json</code> recording
-    its source, licence and maintainers.
+    Installed packs are kept in <code class="path">{{ install_root }}</code>. e2er's own instructions come first;
+    an installed pack adds to them. Each pack records its source, licence and maintainers.
   </p>
-  <p class="muted">
-    Catalogue read from <code>{{ catalogue_path }}</code>. Equivalent on the
-    command line: <code>e2er skills list</code>.
-  </p>
+  <details class="tech">
+    <summary>Technical details</summary>
+    <p class="small mono">Catalogue: {{ catalogue_path }}</p>
+  </details>
 {% endif %}
 {% endblock %}

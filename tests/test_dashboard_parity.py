@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sys
 import uuid
 from pathlib import Path
 from typing import Any
@@ -136,8 +137,9 @@ def test_the_frozen_preregistration_is_deposited_from_the_page(live_db, session,
     c = _client()
     assert 'id="prereg-deposit"' in c.get(f"/papers/{PID}").text
     monkeypatch.delenv("ZENODO_TOKEN", raising=False)
+    monkeypatch.setitem(sys.modules, "keyring", None)  # this computer's keychain is not the test's
     r = c.post(f"/api/papers/{PID}/preregistration/deposit", json={})
-    assert r.status_code == 422 and "ZENODO_TOKEN" in r.json()["detail"]
+    assert r.status_code == 422 and "No Zenodo key is saved yet" in r.json()["detail"]
     monkeypatch.setenv("ZENODO_TOKEN", "tok")
     calls: list[Any] = []
 
