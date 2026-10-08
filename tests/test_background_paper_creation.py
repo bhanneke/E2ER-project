@@ -69,3 +69,39 @@ def test_create_paper_does_not_import_on_request_path():
     assert "_prepare_and_run" in src
     # and _prepare_and_run is what actually does the import
     assert "import_corpus_into_data_db" in inspect.getsource(appmod._prepare_and_run)
+
+
+async def test_a_cancel_while_preparing_marks_the_run_cancelled(tmp_path: Path):
+    """Cancel pressed in the first seconds (data and literature still being prepared): the run is
+    cancelled, not left at "idea" for good with nothing to cancel or resume."""
+    import asyncio
+
+    started = asyncio.Event()
+    marked: list[str] = []
+
+    async def slow(*a, **k):
+        started.set()
+        await asyncio.sleep(30)
+
+    async def run(*a, **k):
+        raise AssertionError("the pipeline must not start after a cancel")
+
+    async def mark(paper_id):
+        marked.append(paper_id)
+
+    with (
+        patch("src.modules.data.byod_import.import_corpus_into_data_db", side_effect=slow),
+        patch("src.api.app._run_pipeline", side_effect=run),
+        patch("src.api.app._mark_cancelled_before_start", side_effect=mark),
+    ):
+        s = type("S", (), {"max_rows_per_paper": 1000})()
+        task = asyncio.create_task(appmod._prepare_and_run("pid", tmp_path, s, "single_pass", 5.0, "empirical"))
+        await started.wait()
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        else:
+            raise AssertionError("the task was not cancelled")
+    assert marked == ["pid"]

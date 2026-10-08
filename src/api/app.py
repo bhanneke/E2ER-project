@@ -3098,21 +3098,27 @@ async def _prepare_and_run(
     from ..modules.data.byod_import import import_corpus_into_data_db
 
     try:
-        await import_corpus_into_data_db(workspace, settings.max_rows_per_paper)
-    except Exception as e:  # noqa: BLE001 — best-effort; pipeline still runs
-        logger.warning("BYOD import failed for %s: %s (pipeline continues)", paper_id, e)
-    try:
-        await _ingest_literature_corpus(paper_id, workspace, settings)
-    except Exception as e:  # noqa: BLE001
-        logger.warning("literature ingest failed for %s: %s (pipeline continues)", paper_id, e)
-    # Runs second so the BYOD library above wins; acquisition self-skips when a
-    # bibliography already exists. Must precede _run_pipeline: the drafter reads
-    # literature.bib from the prompt, and a cite with no bib entry is a hard fail
-    # at the citation gate and an undefined reference at compile time.
-    try:
-        await _acquire_literature(paper_id, workspace, settings, research_question, title)
-    except Exception as e:  # noqa: BLE001
-        logger.warning("literature acquisition failed for %s: %s (pipeline continues)", paper_id, e)
+        try:
+            await import_corpus_into_data_db(workspace, settings.max_rows_per_paper)
+        except Exception as e:  # noqa: BLE001 — best-effort; pipeline still runs
+            logger.warning("BYOD import failed for %s: %s (pipeline continues)", paper_id, e)
+        try:
+            await _ingest_literature_corpus(paper_id, workspace, settings)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("literature ingest failed for %s: %s (pipeline continues)", paper_id, e)
+        # Runs second so the BYOD library above wins; acquisition self-skips when a
+        # bibliography already exists. Must precede _run_pipeline: the drafter reads
+        # literature.bib from the prompt, and a cite with no bib entry is a hard fail
+        # at the citation gate and an undefined reference at compile time.
+        try:
+            await _acquire_literature(paper_id, workspace, settings, research_question, title)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("literature acquisition failed for %s: %s (pipeline continues)", paper_id, e)
+    except asyncio.CancelledError:
+        # Cancel pressed in the first seconds, before the run itself started: the runner's own
+        # handler never ran, and the run would stay "idea" for good with nothing to resume.
+        await _mark_cancelled_before_start(paper_id)
+        raise
     await _run_pipeline(
         paper_id,
         workspace,
@@ -3125,6 +3131,22 @@ async def _prepare_and_run(
         review_stages,
         pipeline=pipeline,
     )
+
+
+async def _mark_cancelled_before_start(paper_id: str) -> None:
+    """A run cancelled while its data and literature were being prepared: cancelled, as the runner marks it."""
+    from ..db.client import execute
+    from ..db.events import log_event
+
+    logger.warning("Run %s cancelled before it started (while preparing data and literature)", paper_id)
+    try:
+        await log_event(paper_id, "cancelled", payload={"before_start": True})
+        await execute(
+            "UPDATE papers SET status = 'cancelled', last_error = %(e)s, updated_at = NOW() WHERE id = %(id)s",
+            {"e": "cancelled by user", "id": paper_id},
+        )
+    except Exception as e:  # noqa: BLE001 — the cancel itself must still go through
+        logger.warning("Could not mark run %s as cancelled: %s", paper_id, e)
 
 
 def model_override(settings: Any, backend_name: str, model: str | None) -> str | None:

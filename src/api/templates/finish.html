@@ -254,7 +254,7 @@
       const links = (d.study_url ? '<p><a class="btn-primary" href="' + esc(d.study_url) + '" target="_blank" rel="noopener">Open the study on e2er.org</a> ' : '<p>') +
         (d.dossier_url ? '<a class="btn" href="' + esc(d.dossier_url) + '" target="_blank" rel="noopener">Open its dossier</a>' : '') + '</p>';
       document.getElementById('pub-out').innerHTML = d.ok ? links + folded(d.output) : '<pre class="preview">' + esc(d.output) + '</pre>';
-      pubMsg.textContent = d.ok ? 'Published.' : 'Not published; see above.';
+      pubMsg.textContent = d.ok ? 'Published.' : 'Not published; see below.';
       card('card-publish', d.ok ? 'ok' : 'bad', d.ok ? 'Published' : 'Not published');
     } catch (e) { pubMsg.textContent = e.message; }
   });
