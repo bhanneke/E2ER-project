@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.0] — 2026-10-08
+
 The local dashboard works end to end on 127.0.0.1, and every page reads plainly.
 
 ### Studies folder
@@ -58,7 +60,7 @@ The local dashboard works end to end on 127.0.0.1, and every page reads plainly.
 - `/docs` names e2er and its version; styles for the Library, Skills and Workflow pages, the status
   colours and the study page.
 
-### Mapping a research field (planned for 0.14.0)
+### Mapping a research field
 
 - **New template `field-map`: map a research field by main path analysis.** A specialist proposes
   the boundary (search terms with the topic's older names, a journal set, years, and two to six
