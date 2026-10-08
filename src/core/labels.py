@@ -38,6 +38,17 @@ STEPS: dict[str, str] = {
     "compare": "Compare every number",
     "reproduction_gate": "Reproduction check",
     "review_report": "Report review",
+    "design_boundary": "Propose the field's boundary",
+    "retrieve_boundary": "Retrieve the papers from OpenAlex",
+    "review_boundary": "Boundary review",
+    "citation_network": "Citation network and completeness check",
+    "main_path": "Main path and key routes",
+    "robustness": "Main paths of the alternative boundaries",
+    "propose_lanes": "Propose lanes as questions",
+    "review_lanes": "Lane review",
+    "draw_map": "Map, reading list and exports",
+    "write_review": "Field review draft",
+    "citation_check": "Citation check",
     # Stops e2er makes on its own, outside the template's steps.
     "number_check": "Number check",
     "output_contract": "Output that failed its check",
@@ -83,6 +94,9 @@ SPECIALISTS: dict[str, str] = {
     "replication_packager": "Replication package",
     "replication_planner": "Reproduction plan",
     "reproduction_comparer": "Comparison of the reproduced numbers",
+    "field_boundary_designer": "Boundary of the field",
+    "field_lane_mapper": "Lanes of the field map",
+    "field_review_writer": "Field review",
 }
 
 #: The built-in templates.
@@ -91,6 +105,7 @@ TEMPLATES: dict[str, str] = {
     "empirical-preregistered": "Empirical study, pre-registered",
     "event-study-finance": "Event study in finance",
     "replication": "Replication of a published study",
+    "field-map": "Map a research field",
 }
 
 #: What a researcher did at a stop (the ``action`` of a ``researcher_action`` event).
@@ -270,6 +285,7 @@ SETTINGS: dict[str, str] = {
     "ALLIUM_API_KEY": "the Allium key",
     "ZOTERO_API_KEY": "the Zotero key",
     "SEMANTIC_SCHOLAR_API_KEY": "the Semantic Scholar key",
+    "OPENALEX_API_KEY": "the OpenAlex key",
     "ZENODO_TOKEN": "the Zenodo key",
     "CLAUDE_CODE_PATH": "the location of Claude Code",
     "CODEX_PATH": "the location of the Codex CLI",

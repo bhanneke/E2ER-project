@@ -120,13 +120,11 @@ cite_key = "liu2012integrated"
 [[steps]]
 kind = "specialists"
 name = "design_boundary"
-label = "Propose the field's boundary"
 run  = ["field_boundary_designer"]
 
 [[steps]]
 kind      = "gate"
 name      = "retrieve_boundary"
-label = "Retrieve the papers from OpenAlex"
 check     = "field_retrieve"
 # Runs at every start: a boundary the researcher edited is retrieved again;
 # unchanged boundaries are read from the files already retrieved.
@@ -139,13 +137,11 @@ max_requests = 300
 [[steps]]
 kind  = "researcher"
 name  = "review_boundary"
-label = "Boundary review"
 files = ["field_boundary.json", "field_boundary.md", "field_boundary_counts.md"]
 
 [[steps]]
 kind  = "gate"
 name  = "citation_network"
-label = "Citation network and completeness check"
 check = "field_network"
 
 [steps.settings]
@@ -156,7 +152,6 @@ min_papers             = 100
 [[steps]]
 kind  = "gate"
 name  = "main_path"
-label = "Main path and key routes"
 check = "field_main_path"
 
 [steps.settings]
@@ -165,47 +160,39 @@ key_routes = 10
 [[steps]]
 kind  = "gate"
 name  = "robustness"
-label = "Main paths of the alternative boundaries"
 check = "field_robustness"
 
 [[steps]]
 kind = "specialists"
 name = "propose_lanes"
-label = "Propose lanes as questions"
 run  = ["field_lane_mapper"]
 
 [[steps]]
 kind  = "researcher"
 name  = "review_lanes"
-label = "Lane review"
 files = ["field_lanes.json", "field_lanes.md", "main_path.md", "robustness.md", "completeness_report.md"]
 
 [[steps]]
 kind  = "gate"
 name  = "draw_map"
-label = "Map, reading list and exports"
 check = "field_map"
 
 [[steps]]
 kind = "specialists"
 name = "write_review"
-label = "Field review draft"
 run  = ["field_review_writer"]
 
 [[steps]]
 kind  = "gate"
 name  = "number_check"
-label = "Number check"
 check = "numbers"
 
 [[steps]]
 kind  = "gate"
 name  = "citation_check"
-label = "Citation check"
 check = "citations"
 
 [[steps]]
 kind  = "researcher"
 name  = "review_draft"
-label = "Draft review"
 files = ["paper_draft.tex", "field_map_results.json", "reading_list.csv"]
