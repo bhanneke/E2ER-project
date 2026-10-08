@@ -393,3 +393,21 @@ def test_a_stored_error_reads_as_a_sentence():
     assert _plain_error("RuntimeError: All specialists failed: technical_reviewer; x") == (
         "All specialists failed: Technical review"
     )
+
+
+def test_a_stop_you_asked_for_lists_what_the_step_wrote(tmp_path):
+    """The strategist logs its specialists without a stage: the step's window of events names them."""
+    from src.api.app import _step_outputs
+
+    for name in ("paper_plan.md", "econometric_spec.md", "estimation_results.json", "data_summary.md"):
+        (tmp_path / name).write_text("x")
+    events = [
+        {"event_type": "specialist_end", "stage": None, "specialist": "data_analyst"},  # before the step
+        {"event_type": "phase_start", "stage": "initial", "specialist": None},
+        {"event_type": "specialist_end", "stage": None, "specialist": "idea_developer"},
+        {"event_type": "specialist_end", "stage": None, "specialist": "econometrics_specialist"},
+        {"event_type": "phase_end", "stage": "initial", "specialist": None},
+    ]
+    got = _step_outputs(tmp_path, "initial", events, None)
+    assert "paper_plan.md" in got and "estimation_results.json" in got and "econometric_spec.md" in got
+    assert "data_summary.md" not in got

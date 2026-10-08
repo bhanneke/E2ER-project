@@ -620,7 +620,8 @@ async def _log_config() -> None:
 
     logger.info("Run identity: %s", identity_summary())
     logger.info(
-        "e2er v3 starting | backend=%s model=%s data=%s lit_kb=%s github=%s default_cap=$%.2f",
+        "e2er %s starting | backend=%s model=%s data=%s lit_kb=%s github=%s default_cap=$%.2f",
+        _version,
         s.llm_backend,
         s.default_model,
         "on" if s.data_module_enabled else "off",
@@ -1130,8 +1131,14 @@ def _step_outputs(workspace: Path, step: str, events: list[dict[str, Any]], spec
     from ..core.specialists.registry import SPECIALIST_ARTIFACTS, SPECIALIST_SIDECAR_ARTIFACTS
 
     who: list[str] = []
-    for e in events:
-        if e.get("event_type") == "specialist_end" and e.get("stage") == step and e.get("specialist"):
+    inside = False  # between the step's phase_start and phase_end (the last time it ran)
+    for e in events:  # oldest first, as fetch_events returns them
+        et, stage = e.get("event_type"), e.get("stage")
+        if et == "phase_start" and stage == step:
+            inside, who = True, []
+        elif et == "phase_end" and stage == step:
+            inside = False
+        elif et == "specialist_end" and e.get("specialist") and (inside or stage == step):
             who.append(str(e["specialist"]))
     if not who and spec is not None and spec.step(step) is not None:
         who = list(spec.step(step).run)
@@ -2155,13 +2162,9 @@ async def submit_new_paper(
     """Form-encoded handler that mirrors POST /api/papers. Redirects to the progress page.
 
     A refusal (a first run over the $1 floor, an unknown template) is shown on
-    the form, with what was typed kept, rather than as a JSON error page.
-
-    NOT bearer-auth-protected: browsers can't add `Authorization: Bearer ...`
-    to a regular form POST. The JSON /api/papers IS auth-protected, so machine
-    clients still need a token. When deploying with API_AUTH_TOKEN set, lock
-    the dashboard down at the network layer (Tailscale, VPN, localhost-only
-    bind) — see SECURITY.md.
+    the form, with what was typed kept. The form needs the dashboard's session
+    cookie (require_auth), as the JSON /api/papers does; a tab without it gets
+    the "not signed in" page.
     """
     from ..cli_run import derive_title
     from ..core.demonstration import DEMONSTRATION
