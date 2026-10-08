@@ -66,8 +66,8 @@ Mapping lives in one dict so it's trivial to re-shape; anything unmatched falls 
 
 ## Locked decisions
 
-- **D1 — Output location.** `OUTPUT_DIR` env if set, else `<LOCAL_DATA_DIR>/e2er_papers/<slug>/`, else
-  `~/e2er-papers/<slug>/`.
+- **D1 — Output location.** `OUTPUT_DIR` env if set, else `<studies folder>/exports/<slug>/` (0.14.0; before,
+  `<LOCAL_DATA_DIR>/e2er_papers/<slug>/`, else `~/e2er-papers/<slug>/`).
 - **D2 — Slug.** `<title-kebab>-<YYYYMMDD>-<NN>`, where `NN` is a 2-digit version counter — the smallest
   unused number for that `<title>-<date>` prefix. So same-day re-exports increment
   (`routing-around-royalties-20260627-01`, `-02`, `-03`, …). This makes each export a new, versioned

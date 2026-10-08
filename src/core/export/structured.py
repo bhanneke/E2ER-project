@@ -159,10 +159,12 @@ def _leaves_workspace(path: Path, workspace: Path) -> bool:
 def _skip(src: Path, workspace: Path) -> str | None:
     """Why ``src`` is not exported, or None. Never exported: OS clutter, dotfiles
     (``.env`` holds keys), key files, and links that lead out of the workspace."""
-    from .bundle_files import never_exported
+    from .bundle_files import is_leftover, never_exported
 
     if never_exported(src.name):
         return "a dotfile, key file or operating-system file"
+    if is_leftover(src.name):
+        return "a backup, lock file or earlier version of an output"
     if _leaves_workspace(src, workspace):
         return "a link to something outside the workspace"
     return None
@@ -451,6 +453,8 @@ def export_paper(
     # misc/ — top-level files we didn't map (no silent loss), minus internal ones.
     for src in sorted(workspace.iterdir()):
         if not src.is_file() or src.name in copied_names or src.name in _MISC_EXCLUDE or src.name.startswith("."):
+            continue
+        if _skip(src, workspace):
             continue
         _copy_matches(workspace, out / "misc", glob.escape(src.name), None, copied_names, notes)
 

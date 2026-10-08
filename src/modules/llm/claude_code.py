@@ -247,8 +247,10 @@ class ClaudeCodeBackend(LLMBackend):
         workspace_root_abs: Path | None = None
         if paper_id:
             settings = get_settings()
+            from ...home import find_workspace
+
             workspace_root_abs = Path(settings.workspace_root).resolve()
-            cwd = str(workspace_root_abs / paper_id)
+            cwd = str(find_workspace(paper_id, workspace_root_abs).resolve())
 
         # Retry transient Anthropic API errors. The CLI surfaces these in
         # its JSON output as is_error=true + api_error_status set (e.g.

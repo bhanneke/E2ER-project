@@ -223,12 +223,13 @@ class LiteratureToolHandler(ToolHandler):
 
         settings = get_settings()
         # On SQLite, consult the researcher's persisted local library first.
-        # The workspace dir name is the paper id (workspace_root/<uuid>).
+        # The run's id: in its manifest (folders are named after the title since 0.14.0).
         if settings.literature_local_enabled:
             try:
+                from ...home import paper_id_of
                 from .storage import search_literature
 
-                local = await search_literature(query, paper_project_id=self._workspace.name, limit=limit)
+                local = await search_literature(query, paper_project_id=paper_id_of(self._workspace), limit=limit)
             except Exception as e:  # noqa: BLE001
                 logger.debug("local literature search failed: %s", e)
                 local = []

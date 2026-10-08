@@ -157,11 +157,9 @@ def test_create_paper_accepts_valid_methodology(methodology, tmp_path, monkeypat
         )
 
     assert resp.status_code == 200, f"create_paper rejected methodology={methodology}: {resp.text}"
-    paper_id = resp.json()["paper_id"]
-
-    # Manifest written with correct methodology
-    manifest = json.loads((tmp_path / paper_id / "manifest.json").read_text())
-    assert manifest["methodology"] == methodology
+    # Manifest written with correct methodology (and the run's id: the folder is named after the title)
+    manifest = json.loads((Path(resp.json()["workspace"]) / "manifest.json").read_text())
+    assert manifest["methodology"] == methodology and manifest["paper_id"] == resp.json()["paper_id"]
 
 
 def test_create_paper_rejects_invalid_methodology(tmp_path, monkeypatch):
@@ -220,8 +218,7 @@ def test_create_paper_methodology_defaults_to_empirical(tmp_path, monkeypatch):
         )
 
     assert resp.status_code == 200
-    paper_id = resp.json()["paper_id"]
-    manifest = json.loads((tmp_path / paper_id / "manifest.json").read_text())
+    manifest = json.loads((Path(resp.json()["workspace"]) / "manifest.json").read_text())  # a readable folder name
     assert manifest["methodology"] == "empirical"
 
 

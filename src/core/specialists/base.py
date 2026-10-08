@@ -305,12 +305,15 @@ async def run_specialist(
 
 
 def set_aside_previous_outputs(workspace: Path, work_order: WorkOrder) -> list[tuple[str, str]]:
-    """Move a rewriting specialist's earlier output files to ``<name>.previous``.
+    """Move a rewriting specialist's earlier output files into the hidden ``.history`` folder.
 
     For specialists that write their files whole each time
     (``SPECIALIST_REWRITES_OUTPUTS``), so a retry or a send-back starts from no
     file: the CLI backend's write tool cannot overwrite a file it has not read,
-    and a stale file must never pass a contract check it did not earn.
+    and a stale file must never pass a contract check it did not earn. The
+    earlier version goes to ``.history/<name>.<n>`` (n counts up), which export,
+    "Download all files" and the dashboard leave out; before 0.14.0 it went to
+    ``<name>.previous`` next to the output, and every export carried it.
     """
     from .registry import SPECIALIST_REWRITES_OUTPUTS
 
@@ -320,10 +323,18 @@ def set_aside_previous_outputs(workspace: Path, work_order: WorkOrder) -> list[t
     for name in [work_order.output_file, *work_order.sidecar_artifacts]:
         path = workspace / name if name else None
         if path is not None and path.is_file():
-            target = path.with_name(path.name + ".previous")
+            n = 1
+            while (workspace / HISTORY_DIR / f"{name}.{n}").exists():
+                n += 1
+            target = workspace / HISTORY_DIR / f"{name}.{n}"
+            target.parent.mkdir(parents=True, exist_ok=True)
             path.replace(target)
-            moved.append((name, target.name))
+            moved.append((name, target.relative_to(workspace).as_posix()))
     return moved
+
+
+#: Where earlier versions of rewritten outputs go (hidden: never exported or listed).
+HISTORY_DIR = ".history"
 
 
 async def _log_contract_gate(
@@ -826,8 +837,9 @@ def _list_local_pdfs_for_prompt(specialist: str, paper_id: str) -> str:
     if specialist not in _BIB_SPECIALISTS:
         return ""
     from ...config import get_settings
+    from ...home import find_workspace
 
-    workspace = Path(get_settings().workspace_root) / paper_id
+    workspace = find_workspace(paper_id, get_settings().workspace_root)
     lit_dir = workspace / "literature"
     if not lit_dir.is_dir():
         return ""
@@ -864,8 +876,9 @@ def _workspace_bib_for_prompt(specialist: str, paper_id: str, limit: int = 40) -
     if specialist not in _BIB_SPECIALISTS:
         return ""
     from ...config import get_settings
+    from ...home import find_workspace
 
-    bib_path = Path(get_settings().workspace_root) / paper_id / "literature.bib"
+    bib_path = find_workspace(paper_id, get_settings().workspace_root) / "literature.bib"
     if not bib_path.is_file():
         return ""
     try:

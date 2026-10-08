@@ -101,7 +101,7 @@ e2er doctor              # checks the setup
 e2er --version           # prints the installed version
 ```
 
-`e2er init` asks which AI access to use and checks that it is installed. The command then creates the folders `data/` and `literature/` and writes the settings to `.env` in the current folder; `--force` overwrites an existing `.env`. For Claude Code, Codex or Gemini it asks before copying e2er's skill files into that CLI's skills folder (`~/.claude/skills`, `~/.codex/skills` or `~/.gemini/skills`); `--defaults` copies them into `~/.claude/skills` only. Other CLIs' folders are left alone. The setup page in the browser writes the same file. `e2er doctor` reports the AI access, the database and the data and literature it finds.
+`e2er init` asks which AI access to use and checks that it is installed. The command then creates the folders `data/` and `literature/` and writes the settings to `.env` in the current folder; `--force` overwrites an existing `.env`. For Claude Code, Codex or Gemini it asks before copying e2er's skill files into that CLI's skills folder (`~/.claude/skills`, `~/.codex/skills` or `~/.gemini/skills`); `--defaults` copies them into `~/.claude/skills` only. Other CLIs' folders are left alone. The setup page in the browser writes the same file; the first time, it asks for a studies folder (default `~/e2er-studies`) and remembers it, so `e2er` started from any folder uses that folder's settings, studies and exports. A folder with its own `.env` keeps working as a project of its own. `e2er doctor` reports the AI access, the database and the data and literature it finds.
 
 Studies are recorded in a SQLite database at `~/.e2er/papers.db`. Setting `DATABASE_URL` to a Postgres address switches e2er to Postgres, and `e2er migrate` then creates the tables.
 
@@ -172,7 +172,7 @@ e2er login
 e2er publish <study folder> --owner <github-login> --project <name> --to https://e2er.org
 ```
 
-`e2er export` writes the study folder with the subfolders `paper/`, `code/`, `data/`, `results/`, `design/` and `reviews/`. The file `provenance.json` in it lists every file with its hash value. `--to` sets where the folder is written (default: `OUTPUT_DIR`, else `e2er_papers/` in the data folder, which is never read back in as data). The command works from any folder and takes the first characters of the paper id when they are unique.
+`e2er export` writes the study folder with the subfolders `paper/`, `code/`, `data/`, `results/`, `design/` and `reviews/`. The file `provenance.json` in it lists every file with its hash value. `--to` sets where the folder is written (default: `OUTPUT_DIR`, else `exports/` in the studies folder, never inside the data folder). The command works from any folder and takes the first characters of the paper id when they are unique.
 
 `e2er verify` runs the check offline and without API keys. The check recomputes the hash values, rebuilds the tables from the estimation results, recomputes t and p values, compares the estimation with the declared identification strategy and confirms that every citation is in the bibliography. A pre-registration or a reproduction in the folder is checked as well. `--online` also looks up the citations in OpenAlex, Semantic Scholar and Crossref. `--against` compares the folder with the study or dossier that e2er.org published and only reads from e2er.org.
 

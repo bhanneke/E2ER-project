@@ -1322,11 +1322,11 @@ def test_a_rewriting_specialists_earlier_output_is_set_aside(tmp_path: Path):
     )
     moved = set_aside_previous_outputs(tmp_path, order)
     assert moved == [
-        ("reproduction_report.md", "reproduction_report.md.previous"),
-        ("reproduction_report.json", "reproduction_report.json.previous"),
+        ("reproduction_report.md", ".history/reproduction_report.md.1"),
+        ("reproduction_report.json", ".history/reproduction_report.json.1"),
     ]
     assert not (tmp_path / "reproduction_report.json").exists()
-    assert (tmp_path / "reproduction_report.json.previous").read_text() == "{}"
+    assert (tmp_path / ".history" / "reproduction_report.json.1").read_text() == "{}"
 
 
 def test_other_specialists_keep_their_files_and_are_told_to_read_them_first(tmp_path: Path):
@@ -1363,5 +1363,5 @@ async def test_the_retry_prompt_names_the_set_aside_or_existing_files(tmp_path: 
     ):
         order = WorkOrder(paper_id=PID, specialist=spec, focus="x", output_file=out, sidecar_artifacts=side)
         await base.run_specialist(order, _Backend(), tmp_path, "m", backend_name="claude_code")
-    assert "moved aside" in seen[0] and "reproduction_report.json.previous" in seen[0]
+    assert "moved aside" in seen[0] and ".history/reproduction_report.json.1" in seen[0]
     assert "Read each one before you write it" in seen[1] and "`paper_draft.tex`" in seen[1]

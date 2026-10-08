@@ -115,6 +115,11 @@ class Settings(BaseSettings):
     # pointing the user at the registration URL.
     fred_api_key: str | None = None
 
+    # ── Zenodo (deposits with the researcher's own account) ───────────────────
+    # Read by src/core/zenodo.load_token after the environment; Setup writes it.
+    zenodo_token: str | None = None
+    zenodo_sandbox_token: str | None = None
+
     @property
     def data_module_enabled(self) -> bool:
         return self.allium_api_key is not None
@@ -237,15 +242,19 @@ class Settings(BaseSettings):
     output_dir: str | None = None  # where exported project folders land
 
     def resolved_output_root(self) -> Path:
-        """Root dir for exported papers: OUTPUT_DIR, else
-        <first LOCAL_DATA_DIR>/e2er_papers, else ~/e2er-papers."""
+        """Root dir for exported studies: OUTPUT_DIR, else ``exports`` in the studies folder.
+
+        Never inside the data folder: before 0.14.0 the default was
+        ``<LOCAL_DATA_DIR>/e2er_papers``, which put every export among the
+        researcher's data (the corpus reader skips that folder, so studies
+        exported there before keep working).
+        """
         if self.output_dir:
             return Path(self.output_dir).expanduser()
-        if self.local_data_dir:
-            first = self.local_data_dir.split(",")[0].strip()
-            if first:
-                return Path(first).expanduser() / "e2er_papers"
-        return Path.home() / "e2er-papers"
+        from . import home
+
+        here = home.project_dir() if home.kind() != "none" else home.default_studies_folder()
+        return here / "exports"
 
     # ── GitHub ────────────────────────────────────────────────────────────────
     github_token: str | None = None
@@ -380,4 +389,20 @@ class Settings(BaseSettings):
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
-    return Settings()
+    """The settings: the environment, then the `.env` of the studies folder (src/home.py).
+
+    A relative ``WORKSPACE_ROOT`` (the default ``workspaces``) is taken inside
+    that folder when e2er was started somewhere else, so studies always land
+    next to the settings they were made with.
+    """
+    from . import home
+
+    here = home.project_dir()
+    s = Settings(_env_file=str(here / ".env"))  # type: ignore[call-arg]
+    try:
+        elsewhere = here.resolve() != Path.cwd().resolve()
+    except OSError:
+        elsewhere = False
+    if elsewhere and not Path(s.workspace_root).expanduser().is_absolute():
+        s.workspace_root = str(here / s.workspace_root)
+    return s

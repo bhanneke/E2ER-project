@@ -47,8 +47,12 @@ def test_a_reviewer_run_again_finds_no_review_of_the_round_before(tmp_path: Path
     (tmp_path / "review_mechanism.md").write_text("OVERALL SCORE: 3.0/10\nRECOMMENDATION: Reject\n")
     order = WorkOrder(paper_id=PID, specialist="mechanism_reviewer", focus="review", output_file="review_mechanism.md")
     moved = set_aside_previous_outputs(tmp_path, order)
-    assert moved == [("review_mechanism.md", "review_mechanism.md.previous")]
+    assert moved == [("review_mechanism.md", ".history/review_mechanism.md.1")]
     assert not (tmp_path / "review_mechanism.md").exists()
+    # A second round keeps the first one's file too, under the next number.
+    (tmp_path / "review_mechanism.md").write_text("OVERALL SCORE: 6.0/10\n")
+    assert set_aside_previous_outputs(tmp_path, order) == [("review_mechanism.md", ".history/review_mechanism.md.2")]
+    assert (tmp_path / ".history" / "review_mechanism.md.1").read_text().startswith("OVERALL SCORE: 3.0")
 
 
 def test_only_each_reviewers_latest_reply_can_stand_in_for_its_file(tmp_path, mock_llm):

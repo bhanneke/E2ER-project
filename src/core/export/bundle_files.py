@@ -50,6 +50,16 @@ def is_junk(name: str) -> bool:
     return name in JUNK_NAMES or name.startswith("._")
 
 
+#: Endings of files a run or an editor leaves behind: earlier versions of an output
+#: (``.previous``, from e2er before 0.14.0), backups, locks and swap files.
+_LEFTOVER_ENDINGS = (".previous", ".bak", ".orig", ".tmp", ".swp", ".swo", ".lock", "~")
+
+
+def is_leftover(name: str) -> bool:
+    """A backup, lock or earlier version of a file: never part of an exported study."""
+    return name.endswith(_LEFTOVER_ENDINGS) or name.startswith(".~lock.")
+
+
 def never_exported(name: str) -> bool:
     """A name export leaves behind: OS clutter, dotfiles (``.env`` holds keys) and key files."""
     return is_junk(name) or name.startswith(".") or bool(_SECRET_NAME.match(name))
