@@ -201,6 +201,11 @@ class Settings(BaseSettings):
     # of those services prioritises requests from registered emails; the
     # default keeps us in the polite pool with a stable address.
     unpaywall_email: str = "research@e2er.app"
+    # Optional free OpenAlex key (https://help.openalex.org/api/authentication/).
+    # Without it every request draws on a daily budget shared by all machines on
+    # the same network; with it the key's own budget applies. The field map
+    # sends it as a bearer token, never in an address.
+    openalex_api_key: str | None = None
 
     # Zotero Web API (reference library). Set the key plus exactly one of
     # user_id / group_id. The library's bibliographic items are merged into

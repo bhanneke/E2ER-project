@@ -276,6 +276,7 @@ WRAPPER_KEYS = frozenset(
         "ALLIUM_API_KEY",
         "SEMANTIC_SCHOLAR_API_KEY",
         "ZOTERO_API_KEY",
+        "OPENALEX_API_KEY",  # e2er-fieldmap
         "DB_PASSWORD",  # the run database (Postgres), where the wrappers record what they load
     }
 )

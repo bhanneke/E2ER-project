@@ -19,13 +19,13 @@ def _refuse_inside_a_specialist() -> None:
     reviewer's shell started a second study on the same server with `e2er run`.
     Claude Code's allowlist never lets a specialist reach `e2er`; Codex and
     Gemini have no allowlist (docs/BACKENDS.md). A specialist's tools are
-    e2er-data, e2er-lit, e2er-run and e2er-check-tables, separate commands.
+    e2er-data, e2er-lit, e2er-run, e2er-check-tables and e2er-fieldmap, separate commands.
     """
     who = os.environ.get(_INSIDE_AI_STEP)
     if who:
         print(
             f"e2er: this command does not run inside a study's step (the {who} step is running). "
-            "A step uses e2er-data, e2er-lit, e2er-run and e2er-check-tables.",
+            "A step uses e2er-data, e2er-lit, e2er-run, e2er-check-tables and e2er-fieldmap.",
             file=sys.stderr,
         )
         sys.exit(2)

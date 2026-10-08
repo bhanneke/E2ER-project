@@ -58,6 +58,41 @@ The local dashboard works end to end on 127.0.0.1, and every page reads plainly.
 - `/docs` names e2er and its version; styles for the Library, Skills and Workflow pages, the status
   colours and the study page.
 
+### Mapping a research field (planned for 0.14.0)
+
+- **New template `field-map`: map a research field by main path analysis.** A specialist proposes
+  the boundary (search terms with the topic's older names, a journal set, years, and two to six
+  alternative boundaries); the researcher approves it with the paper counts. Code retrieves the
+  papers from OpenAlex (paged, cached in the study, with a request ceiling, `OPENALEX_API_KEY` as
+  a bearer token when set; every load recorded in `data_sources.json` as OpenAlex, CC0), builds
+  the network of citations inside the boundary with a completeness report (papers without
+  internal links or references, short reference lists, duplicates, notices, broken cycles),
+  computes search path count weights (exact integers), the global and local main paths and the
+  key routes, and repeats this on the alternative boundaries to show which papers are on every
+  main path. A specialist names lanes as questions; the researcher approves them; code draws the
+  map by year and lane and writes the reading list, Pajek, GEXF, VOSviewer and CSV exports, two
+  LaTeX tables and `field_map_results.json`. A specialist drafts a short field review, and the
+  number check and the citation check run on it as steps of their own. Nothing is estimated: the
+  template has no estimation gate and no econometrics step.
+- The workflow follows Michal Hron's article "Map a research field with Claude: main path
+  analysis, step by step" (LinkedIn Pulse, 8 October 2026,
+  https://www.linkedin.com/pulse/map-research-field-claude-main-path-analysis-step-michal-hron-jm2ge/,
+  shared by Björn Hanneke); this implementation is independent and uses OpenAlex. Adopted: the
+  six-step workflow and the pitfalls it lists. e2er's own: the code, the OpenAlex retrieval, the
+  cycle handling, the exports, the template's steps and stops, and the number-checked review.
+  The methods: Hummon and Doreian (1989), Batagelj (2003), Liu and Lu (2012).
+- **New skill `synthesis/main-path-analysis`**: the method step by step, the choices and what they
+  change, the pitfalls, how to read the map, and the sources.
+- **New specialists** `field_boundary_designer`, `field_lane_mapper` and `field_review_writer`, and
+  the command `e2er-fieldmap` (count, sources, boundary, network, mainpath, robustness, papers,
+  map, export, all), allow-listed for those three.
+- **Templates can credit the work they are based on** in `[[credit]]` tables (creator, role,
+  relation, title, address, publication and access dates, where it was found), checked when the
+  template loads. `credits.json` lists the credit of e2er's own parts for the catalogue of
+  e2er.org.
+- The checks `numbers` and `citations` can run as steps of their own in a template without a
+  review step.
+
 ## [0.13.9] — 2026-10-07
 
 - **A review run again is scored from its own files.** The reviewers now rewrite their files whole:

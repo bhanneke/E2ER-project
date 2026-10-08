@@ -6,9 +6,9 @@ Every specialist the strategist can dispatch, the skill files it is given, and
 the artifacts it must produce. A specialist that does not write its declared
 artifact fails its contract and is retried with the violation fed back.
 
-- **28** specialists
-- **63** skill files on disk
-- **52** referenced by at least one specialist
+- **31** specialists
+- **64** skill files on disk
+- **53** referenced by at least one specialist
 - **11** never referenced
 
 ## Shipped but never loaded
@@ -58,6 +58,23 @@ methodology guidance exists, and no specialist is given it.
 - **Writes:** `econometric_spec.md`
 - **Sidecars:** `estimation_results.json`
 - **Skills (6):** `data/query-data`, `econometrics/iv-estimation`, `econometrics/did`, `econometrics/panel-data`, `econometrics/event-study`, `econometrics/estimation-results-schema`
+
+### `field_boundary_designer`
+
+- **Writes:** `field_boundary.md`
+- **Sidecars:** `field_boundary.json`
+- **Skills (2):** `synthesis/main-path-analysis`, `base/researcher`
+
+### `field_lane_mapper`
+
+- **Writes:** `field_lanes.md`
+- **Sidecars:** `field_lanes.json`
+- **Skills (2):** `synthesis/main-path-analysis`, `reasoning/anti-slop`
+
+### `field_review_writer`
+
+- **Writes:** `paper_draft.tex`
+- **Skills (4):** `synthesis/main-path-analysis`, `writing/personal-style`, `writing/cite-numbers-by-source`, `reasoning/anti-slop`
 
 ### `idea_developer`
 
@@ -185,7 +202,7 @@ The reverse index: who is affected if you edit a skill file.
 | Skill | Loaded by |
 |---|---|
 | `base/economist` | `data_architect`, `idea_developer`, `polish_institutions`, `theory_specialist` |
-| `base/researcher` | `idea_developer`, `literature_scanner`, `paper_drafter`, `replication_packager` |
+| `base/researcher` | `field_boundary_designer`, `idea_developer`, `literature_scanner`, `paper_drafter`, `replication_packager` |
 | `causal-inference/identification-spec-schema` | `identification_strategist` |
 | `causal-inference/judge-designs` | `identification_strategist` |
 | `causal-inference/natural-experiments` | `identification_strategist` |
@@ -216,7 +233,7 @@ The reverse index: who is affected if you edit a skill file.
 | `modeling/asset-pricing` | `theory_specialist` |
 | `modeling/game-theory` | `polish_equilibria`, `theory_specialist` |
 | `modeling/market-microstructure` | `mechanism_reviewer` |
-| `reasoning/anti-slop` | `abstract_writer`, `patch_revisor`, `revisor`, `section_writer`, `writing_reviewer` |
+| `reasoning/anti-slop` | `abstract_writer`, `field_lane_mapper`, `field_review_writer`, `patch_revisor`, `revisor`, `section_writer`, `writing_reviewer` |
 | `reasoning/argument-audit` | `self_attacker` |
 | `reasoning/creative-ideation` | `idea_developer` |
 | `reasoning/identification` | `identification_strategist`, `theory_specialist` |
@@ -230,9 +247,10 @@ The reverse index: who is affected if you edit a skill file.
 | `review/technical-review` | `identification_reviewer`, `technical_reviewer` |
 | `review/writing-quality` | `writing_reviewer` |
 | `synthesis/context-builder` | `literature_reviewer`, `literature_scanner`, `polish_bibliography` |
+| `synthesis/main-path-analysis` | `field_boundary_designer`, `field_lane_mapper`, `field_review_writer` |
 | `synthesis/replication-package` | `replication_packager` |
 | `writing/abstract` | `abstract_writer` |
-| `writing/cite-numbers-by-source` | `abstract_writer`, `paper_drafter`, `patch_revisor`, `revisor`, `section_writer` |
+| `writing/cite-numbers-by-source` | `abstract_writer`, `field_review_writer`, `paper_drafter`, `patch_revisor`, `revisor`, `section_writer` |
 | `writing/paper-structure` | `paper_drafter`, `revisor`, `section_writer` |
-| `writing/personal-style` | `paper_drafter`, `patch_revisor`, `revisor`, `section_writer` |
+| `writing/personal-style` | `field_review_writer`, `paper_drafter`, `patch_revisor`, `revisor`, `section_writer` |
 | `writing/scoped-revision` | `patch_revisor` |

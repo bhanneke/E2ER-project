@@ -46,6 +46,15 @@ SPECIALIST_ARTIFACTS: dict[str, str] = {
     # the comparer levels each result against what the sandbox run produced.
     "replication_planner": "replication_plan.md",
     "reproduction_comparer": "reproduction_report.md",
+    # Field-map template (pipelines/field-map.toml): main path analysis of a
+    # research field. The boundary designer proposes the search terms, journals
+    # and years (and the alternative boundaries); the lane mapper groups the
+    # mapped papers into lanes named as questions; the review writer drafts a
+    # short field review from the computed results. The computation in between
+    # is code (src/modules/fieldmap), run as steps of the template.
+    "field_boundary_designer": "field_boundary.md",
+    "field_lane_mapper": "field_lanes.md",
+    "field_review_writer": "paper_draft.tex",
 }
 
 SPECIALIST_SKILLS: dict[str, list[str]] = {
@@ -182,6 +191,14 @@ SPECIALIST_SKILLS: dict[str, list[str]] = {
     "replication_packager": ["data/cleaning", "base/researcher", "synthesis/replication-package"],
     "replication_planner": ["replication/reproduction-protocol", "replication/replication-plan"],
     "reproduction_comparer": ["replication/reproduction-protocol", "replication/reproduction-report"],
+    "field_boundary_designer": ["synthesis/main-path-analysis", "base/researcher"],
+    "field_lane_mapper": ["synthesis/main-path-analysis", "reasoning/anti-slop"],
+    "field_review_writer": [
+        "synthesis/main-path-analysis",
+        "writing/personal-style",
+        "writing/cite-numbers-by-source",
+        "reasoning/anti-slop",
+    ],
 }
 
 # Sidecar artifacts produced ALONGSIDE the primary SPECIALIST_ARTIFACTS file.
@@ -219,6 +236,10 @@ SPECIALIST_SIDECAR_ARTIFACTS: dict[str, list[str]] = {
     # reproduction check verifies number by number. Both are required.
     "replication_planner": ["replication_plan.json"],
     "reproduction_comparer": ["reproduction_report.json"],
+    # The field map's two judgement files, read by code: the boundaries the
+    # retrieval step fetches, and the lanes the map step draws.
+    "field_boundary_designer": ["field_boundary.json"],
+    "field_lane_mapper": ["field_lanes.json"],
     "paper_drafter": [
         # Declarative results-table spec. Prompted via the multi-file
         # output block; the renderer (core/renderer/tables.py) fills the
@@ -285,6 +306,8 @@ SPECIALIST_NEEDS: dict[str, tuple[str, ...]] = {
     "econometrics_specialist": ("data_architect", "data_analyst", "identification_strategist"),
     # estimation_results.json (the results table), data_summary.md, model_spec.md.
     "paper_drafter": ("data_analyst", "econometrics_specialist", "theory_specialist"),
+    # field_lanes.json names the lanes the review is organised by.
+    "field_review_writer": ("field_lane_mapper",),
 }
 
 #: Specialists that write their output files whole on every attempt. Before an
@@ -294,7 +317,13 @@ SPECIALIST_NEEDS: dict[str, tuple[str, ...]] = {
 #: (after a deep revision, or a rerun from the review step) must never be
 #: scored from the review file of the round before.
 SPECIALIST_REWRITES_OUTPUTS: frozenset[str] = frozenset(
-    {"replication_planner", "reproduction_comparer", *REVIEWER_SPECIALISTS}
+    {
+        "replication_planner",
+        "reproduction_comparer",
+        "field_boundary_designer",
+        "field_lane_mapper",
+        *REVIEWER_SPECIALISTS,
+    }
 )
 
 #: The work order a fixed `specialists` step of a template gives a specialist
@@ -333,5 +362,43 @@ SPECIALIST_DEFAULT_FOCUS: dict[str, str] = {
         "the numbers and the log, and fails the run on any disagreement. e2er writes the counts and the "
         "environment into `reproduction_report.md` itself; do not restate them. Every count, label and version "
         "your Markdown states is compared with `reproduction_report.json`."
+    ),
+    "field_boundary_designer": (
+        "Propose the boundary of the research field the question names, for a main path analysis, as your "
+        "main-path-analysis skill describes. Write `field_boundary.json`: `main` (query, search_in, sources, "
+        "from_year, to_year, types, exclude, note) and `alternatives`, 2 to 6 boundaries with their own `name` "
+        "that change one choice each (another journal set, the method's older names left out or added, a year "
+        "range without the last years). Join terms with OR or AND, never commas; quote phrases. Include the older "
+        "names the topic went by. Check sizes with `e2er-fieldmap count --query ... [--sources S..] [--from Y] "
+        "[--to Y]` (one OpenAlex request each; aim at 300 to 2,000 papers for `main`) and journal ids with "
+        '`e2er-fieldmap sources "<journal>"`; stay under 20 such calls. Write `field_boundary.md` for the '
+        "researcher: each term and journal with why it is in, the counts you saw, and what each alternative "
+        "tests. Code retrieves the boundaries after you; the researcher then approves or edits them."
+    ),
+    "field_lane_mapper": (
+        "Group the papers of the field map into lanes, as your main-path-analysis skill describes. "
+        "`e2er-fieldmap papers --abstracts` lists the mapped papers (the main path and the key routes of the "
+        "main boundary) with titles, abstracts and keywords; `main_path.md` and `robustness.md` show the paths. "
+        "Write `field_lanes.json`: `lanes`, 2 to 8, each with `id`, `question` (the lane named as a question the "
+        "papers in it answer, ending with '?') and `papers` (OpenAlex ids; each paper in one lane at most; at "
+        "most a quarter of the mapped papers in none). Decide from titles and abstracts only, not from what you "
+        "remember of the field. Write `field_lanes.md`: each lane, the papers in it by year, and one sentence on "
+        "why. The researcher approves or edits the lanes before the map is drawn."
+    ),
+    "field_review_writer": (
+        "Write a short field review in LaTeX (`paper_draft.tex`: \\title, the abstract and the body, without "
+        "\\documentclass or a bibliography command; e2er adds the preamble and the bibliography) from the "
+        "field map, as your main-path-analysis skill describes. Read `field_map_results.json` (every number you "
+        "may state), `main_path.md`, `robustness.md`, `completeness_report.md`, `field_lanes.json`, "
+        "`field_boundary.md` and `reading_list.csv`. Include \\input{tables/field_map_summary.tex} and "
+        "\\input{tables/main_path_list.tex} and the figure `figures/field_map.pdf`; write no table yourself. Every "
+        "number in the text must be a value of `field_map_results.json`. Cite the papers of the main path from "
+        "`literature.bib` (run `e2er-lit save --doi <doi>` for each one you cite; the DOIs are in "
+        "`reading_list.csv`) and the method with the keys hummon1989connectivity, batagelj2003efficient and "
+        "liu2012integrated, which are in `literature.bib` already. Describe how the field moved along the main "
+        "path, lane by lane, which papers hold across the boundaries, and state the limits: the boundary decides "
+        "the result, recent papers are under-cited so the end of the path is unsettled, database coverage and "
+        "short reference lists drop links, and a main path shows how citations flow, not what the field "
+        "believes. Two to four pages."
     ),
 }

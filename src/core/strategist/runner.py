@@ -12,6 +12,7 @@ from ...logging_config import get_logger
 from ...modules.llm.base import LLMBackend, ToolHandler
 from ..governance import DEFAULT_REGIME, KIND_RELIABILITY
 from ..governance import enforces as governance_enforces
+from ..pipeline.fieldmap_checks import FILES as _FIELDMAP_FILES
 from ..pipeline.spec import RESEARCHER_KINDS, SEQUENCE_CHECKS, find_spec
 from ..specialists.contracts import Contribution, WorkOrder
 from ..specialists.dispatcher import (
@@ -3126,6 +3127,7 @@ _SEQUENCE_CHECK_FILES: dict[str, tuple[str, ...]] = {
     "package_integrity": ("package_manifest.json",),
     "sandbox": ("replication_plan.json", "sandbox_log.json"),
     "reproduction": ("reproduction_report.json", "reproduction_check.json"),
+    **_FIELDMAP_FILES,
 }
 
 
@@ -3163,6 +3165,10 @@ def _sequence_check(check: str) -> Any:
         from ..pipeline.reproduction import check_reproduction
 
         return _reproduction_with_disclaimer(check_reproduction)
+    from ..pipeline.fieldmap_checks import CHECKS as _FIELDMAP_CHECKS
+
+    if check in _FIELDMAP_CHECKS:
+        return _FIELDMAP_CHECKS[check]
     raise ValueError(f"check {check!r} cannot run as a step of its own")
 
 

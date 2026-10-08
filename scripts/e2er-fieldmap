@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# Field map gatekeeper for e2er specialists: OpenAlex boundaries, citation
+# network, SPC main paths, robustness, map and exports (src/modules/fieldmap).
+#
+# CLI backends reach e2er only through allow-listed wrappers (see
+# scripts/e2er-lit). The field-map template's specialists use this one to
+# count a boundary, find a journal's OpenAlex id and read the mapped papers;
+# the template runs the same functions as checks of their own.
+#
+# Usage:
+#   e2er-fieldmap count --query "main path analysis" --from 1989 --to 2026
+#   e2er-fieldmap sources "Scientometrics"
+#   e2er-fieldmap papers --abstracts
+
+set -euo pipefail
+
+# The workspace is the directory we were called from — the runner sets the
+# CLI subprocess's cwd to workspaces/<paper_id>. Capture it BEFORE cd'ing to
+# the project root, and hand it to the Python side explicitly.
+export E2ER_WORKSPACE="$(pwd -P)"
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$PROJECT_ROOT"
+
+if [[ -n "${E2ER_PYTHON:-}" ]] && [[ -x "$E2ER_PYTHON" ]]; then
+    PY="$E2ER_PYTHON"
+elif command -v python3.12 >/dev/null 2>&1; then
+    PY="$(command -v python3.12)"
+elif command -v python3.11 >/dev/null 2>&1; then
+    PY="$(command -v python3.11)"
+elif command -v python3 >/dev/null 2>&1; then
+    PY="$(command -v python3)"
+else
+    echo "e2er-fieldmap: cannot find a Python interpreter. The project requires Python 3.11+." >&2
+    exit 2
+fi
+
+exec "$PY" -m src.modules.fieldmap.cli "$@"

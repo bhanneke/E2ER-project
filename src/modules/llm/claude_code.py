@@ -110,8 +110,18 @@ _CHECK_TABLES_TOOL = "Bash(e2er-check-tables:*)"
 # need `e2er-lit list` to know which keys are actually citable. In the
 # 2026-09-01 repeats cell none of them could reach any of it: no run wrote a
 # bibliography, and both reviewed drafts cited from memory.
-_LITERATURE_SPECIALISTS = frozenset({"literature_scanner", "paper_drafter", "section_writer"})
+_LITERATURE_SPECIALISTS = frozenset(
+    {"literature_scanner", "paper_drafter", "section_writer", "field_boundary_designer", "field_review_writer"}
+)
 _LIT_TOOL = "Bash(e2er-lit:*)"
+
+# The field-map template's specialists (pipelines/field-map.toml): the boundary
+# designer counts candidate boundaries and finds journals' OpenAlex ids, the
+# lane mapper reads the mapped papers' titles and abstracts, the review writer
+# reads the results. `e2er-fieldmap` sends at most two OpenAlex requests per
+# count/sources call; the retrieval itself runs as a step of the template.
+_FIELDMAP_SPECIALISTS = frozenset({"field_boundary_designer", "field_lane_mapper", "field_review_writer"})
+_FIELDMAP_TOOL = "Bash(e2er-fieldmap:*)"
 
 #: How much of a backend error to keep. 500 chars was too little: the
 #: 2026-08-03 pilot lost eight cells to an unexplained CLI failure because
@@ -144,6 +154,8 @@ def allowed_tools_for(specialist: str | None) -> list[str]:
         tools.append(_RUN_TOOL)
     if specialist in _SPEC_WRITING_SPECIALISTS:
         tools.append(_CHECK_TABLES_TOOL)
+    if specialist in _FIELDMAP_SPECIALISTS:
+        tools.append(_FIELDMAP_TOOL)
     return tools
 
 

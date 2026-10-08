@@ -71,6 +71,9 @@ CHECK_SETTINGS: dict[str, dict[str, type | tuple[type, ...]]] = {
         "snapshot": str,
     },
     "reproduction": {"minor_rel_tolerance": (int, float)},
+    "field_retrieve": {"max_papers": int, "max_requests": int},
+    "field_network": {"max_isolated_share": (int, float), "max_missing_refs_share": (int, float), "min_papers": int},
+    "field_main_path": {"key_routes": int},
 }
 
 #: Text settings and the form each must take.
@@ -83,7 +86,23 @@ TEXT_SETTINGS: dict[str, re.Pattern[str]] = {
 #: Checks that run as a step of their own, in sequence, rather than inside the
 #: strategist's dispatch. Each is a function of the workspace and the step's
 #: settings that returns a verdict (see `_run_check_step` in the runner).
-SEQUENCE_CHECKS: frozenset[str] = frozenset({"package_integrity", "sandbox", "reproduction"})
+SEQUENCE_CHECKS: frozenset[str] = frozenset(
+    {
+        "package_integrity",
+        "sandbox",
+        "reproduction",
+        # The field-map template (src/core/pipeline/fieldmap_checks.py).
+        "field_retrieve",
+        "field_network",
+        "field_main_path",
+        "field_robustness",
+        "field_map",
+        # The number and citation checks of the draft, as steps of their own in a
+        # template without a review panel (inside the review step otherwise).
+        "numbers",
+        "citations",
+    }
+)
 
 
 class PipelineError(ValueError):
@@ -136,6 +155,8 @@ class PipelineSpec:
     #: specialist -> skills / sidecar files this template adds (see components.py)
     skills: dict[str, tuple[str, ...]] = field(default_factory=dict, hash=False)
     sidecars: dict[str, tuple[str, ...]] = field(default_factory=dict, hash=False)
+    #: Work this template is based on or draws from (``[[credit]]``), as written in the file.
+    credit: tuple[dict[str, Any], ...] = field(default=(), hash=False)
 
     def sequence_for(self, mode: str, complete: frozenset[str] | set[str] = frozenset()) -> list[str]:
         """The stage names that would run, in order.
@@ -267,7 +288,7 @@ def _step_from(raw: Any, source: Path | str, index: int) -> StepSpec:
                 _fail(source, f"{where} ({name}): setting {key} must be a non-negative number, not {value!r}")
             if not isinstance(value, allowed[key]):
                 _fail(source, f"{where} ({name}): setting {key} must be a whole number, not {value!r}")
-        for share in ("max_overlap_share", "minor_rel_tolerance"):
+        for share in ("max_overlap_share", "minor_rel_tolerance", "max_isolated_share", "max_missing_refs_share"):
             if share in settings and float(settings[share]) > 1:
                 _fail(source, f"{where} ({name}): {share} is a share between 0 and 1")
 
@@ -297,7 +318,17 @@ def _step_from(raw: Any, source: Path | str, index: int) -> StepSpec:
 
 def spec_from_dict(data: dict[str, Any], *, source: Path | str = "<dict>") -> PipelineSpec:
     """Build and validate a spec from parsed TOML."""
-    unknown = set(data) - {"name", "title", "description", "methodologies", "steps", "finalize", "skills", "sidecars"}
+    unknown = set(data) - {
+        "name",
+        "title",
+        "description",
+        "methodologies",
+        "steps",
+        "finalize",
+        "skills",
+        "sidecars",
+        "credit",
+    }
     if unknown:
         _fail(source, f"unknown top-level key(s): {', '.join(sorted(unknown))}")
 
@@ -334,7 +365,38 @@ def spec_from_dict(data: dict[str, Any], *, source: Path | str = "<dict>") -> Pi
         source=Path(source) if isinstance(source, Path) else None,
         skills=_components(data.get("skills"), "skills", source),
         sidecars=_components(data.get("sidecars"), "sidecars", source),
+        credit=_credit(data.get("credit"), source),
     )
+
+
+#: What every `[[credit]]` entry names: who, what they contributed, and where it is.
+CREDIT_REQUIRED = ("creator", "role", "relation", "title", "url", "accessed")
+CREDIT_RELATIONS = ("based_on", "related_work", "cites")
+_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _credit(raw: Any, source: Path | str) -> tuple[dict[str, Any], ...]:
+    """`[[credit]]`: the work a template is based on, with its creator and where it was found.
+
+    Checked at load, so a template cannot carry a credit line without the address
+    and the date it was read.
+    """
+    if raw is None:
+        return ()
+    if not isinstance(raw, list) or not all(isinstance(c, dict) for c in raw):
+        _fail(source, "[[credit]] must be a list of tables")
+    for i, c in enumerate(raw, start=1):
+        missing = [k for k in CREDIT_REQUIRED if not str(c.get(k) or "").strip()]
+        if missing:
+            _fail(source, f"credit {i} has no {', '.join(missing)}")
+        if c["relation"] not in CREDIT_RELATIONS:
+            _fail(source, f"credit {i}: relation must be one of {', '.join(CREDIT_RELATIONS)}")
+        if not str(c["url"]).startswith("https://"):
+            _fail(source, f"credit {i}: url must be an https:// address")
+        for key in ("published", "accessed"):
+            if key in c and not _DATE_RE.match(str(c[key])):
+                _fail(source, f"credit {i}: {key} must be a date YYYY-MM-DD")
+    return tuple(dict(c) for c in raw)
 
 
 def _components(raw: Any, table: str, source: Path | str) -> dict[str, tuple[str, ...]]:

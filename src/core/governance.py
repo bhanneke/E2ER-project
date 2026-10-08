@@ -38,6 +38,8 @@ REGIMES: tuple[str, ...] = ("off", "contracts", "full")
 DEFAULT_REGIME = "full"
 
 #: Every mechanism a regime can switch between blocking and shadow.
+#: `field_network` (the field map's completeness check: too many papers without
+#: an internal citation or without references) only in the field-map template.
 #: `event_window` runs only in templates that declare it (event studies),
 #: `preregistration` (nothing estimated before the freeze) only in templates with
 #: a preregister step, and `reproduction` only in the replication template; they
@@ -50,6 +52,7 @@ GATES: tuple[str, ...] = (
     "event_window",
     "reproduction",
     "preregistration",
+    "field_network",
 )
 
 #: Deterministic steps of a template whose failure means the run cannot go on,
@@ -57,7 +60,16 @@ GATES: tuple[str, ...] = (
 #: fetched and verified, or the sandbox could not run. Like a reliability
 #: contract failure they block in every regime, so they are not in GATES (a
 #: regime cannot switch them off) and are recorded as enforced wherever they fail.
-RELIABILITY_CHECKS: tuple[str, ...] = ("package_integrity", "sandbox")
+RELIABILITY_CHECKS: tuple[str, ...] = (
+    "package_integrity",
+    "sandbox",
+    # The field map's computation steps: retrieval from OpenAlex, main path,
+    # robustness, map. A failure means the step could not run, not that a claim failed.
+    "field_retrieve",
+    "field_main_path",
+    "field_robustness",
+    "field_map",
+)
 
 _ENFORCEMENT: dict[str, frozenset[str]] = {
     "full": frozenset(GATES),
