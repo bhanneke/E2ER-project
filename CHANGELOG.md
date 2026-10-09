@@ -28,6 +28,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `template_components` event, and the dossier of a published run carries it as `credit`
   (`{"template": …, "entries": [...]}`, the entries as the template file wrote them). Dossiers of
   templates without credit are unchanged, and so are their ids.
+- **Co-authors from the terminal.** `e2er publish --coauthor "Name|github=login|orcid=…|role=…"`
+  (repeatable) lists co-authors after the publisher in `e2er.json`; each needs a GitHub login or an
+  ORCID iD, so e2er.org can ask them to confirm the credit. A malformed entry is refused with a
+  sentence that says what is missing.
+- **Skill texts without internal names.** `synthesis/context-builder` and `writing/scoped-revision`
+  name the specialists in words ("the paper drafter", "targeted corrections").
 - **Every terminal command is in the README**: `e2er serve`, `skills sync` (and `install-skills`),
   `verify-citations`, `preregister deposit`, `whoami`, `logout`, `dossier push`, `skills installed`
   and `remove`, and the `library` commands `list`, `stats`, `topics list`, `topics remove`, `export`

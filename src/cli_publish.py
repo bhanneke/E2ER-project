@@ -39,6 +39,7 @@ import copy
 import io
 import json
 import os
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -257,6 +258,51 @@ def _save_zenodo_record(b: Path, record: dict[str, Any]) -> None:
     p.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
 
 
+_ORCID = re.compile(r"^\d{4}-\d{4}-\d{4}-\d{3}[\dX]$")
+_GITHUB_LOGIN = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$")
+
+
+def parse_coauthor(spec: str) -> dict[str, Any]:
+    """`--coauthor "Name|github=login|orcid=0000-…|role=…"` as a contributor of e2er.json.
+
+    The name comes first; then ``key=value`` parts in any order. ``role`` may repeat or list
+    roles separated by commas. A co-author needs a GitHub login or an ORCID iD, so that
+    e2er.org can ask that person to confirm the credit.
+    """
+    parts = [x.strip() for x in str(spec).split("|")]
+    name, rest = parts[0], [x for x in parts[1:] if x]
+    out: dict[str, Any] = {"name": name} if name and "=" not in name else {}
+    if not out:
+        raise ValueError(f'--coauthor "{spec}": start with the name, e.g. "Ada Lovelace|github=ada"')
+    roles: list[str] = []
+    for item in rest:
+        key, sep, value = item.partition("=")
+        key, value = key.strip().lower(), value.strip()
+        if not sep or not value:
+            raise ValueError(f'--coauthor "{spec}": "{item}" is not key=value (github, orcid or role)')
+        if key == "github":
+            login = value.removeprefix("@")
+            if not _GITHUB_LOGIN.match(login):
+                raise ValueError(f'--coauthor "{spec}": "{value}" is not a GitHub login')
+            out["github"] = login
+        elif key == "orcid":
+            orcid = value.removeprefix("https://orcid.org/")
+            if not _ORCID.match(orcid):
+                raise ValueError(f'--coauthor "{spec}": "{value}" is not an ORCID iD (0000-0000-0000-0000)')
+            out["orcid"] = orcid
+        elif key in ("role", "roles"):
+            roles += [r.strip() for r in value.split(",") if r.strip()]
+        else:
+            raise ValueError(f'--coauthor "{spec}": unknown part "{key}" (use github, orcid or role)')
+    if not (out.get("github") or out.get("orcid")):
+        raise ValueError(
+            f'--coauthor "{spec}": add github=<login> or orcid=<iD>, so e2er.org can ask {name} to confirm'
+        )
+    if roles:
+        out["roles"] = roles
+    return out
+
+
 def _describe(
     bundle: str,
     *,
@@ -290,9 +336,15 @@ def _describe(
     accept_data_terms: list[str] | None = None,
     paper: str | None = None,
     paper_url: str | None = None,
+    coauthors: list[str] | None = None,
 ) -> tuple[int, dict[str, Any] | None]:
     from .cli_verify import _verdict
 
+    try:
+        listed = [parse_coauthor(c) for c in coauthors or []]
+    except ValueError as e:
+        print(f"error: {e}")
+        return 1, None
     b = Path(bundle).expanduser().resolve()
     if not (b / "provenance.json").is_file():
         print(f"error: {b} is not an exported bundle (no provenance.json); run `e2er export` first")
@@ -439,6 +491,16 @@ def _describe(
     contributor: dict[str, Any] = {k: v for k, v in {"name": name, "github": github, "orcid": orcid}.items() if v}
     if contributor:
         contributor["roles"] = roles or ["conceptualization", "investigation"]
+    # Co-authors (`--coauthor`), after the publisher; e2er.org asks each to confirm the credit.
+    people = [contributor] if contributor else []
+    for c in listed:
+        same = any(
+            (c.get("github") and str(p.get("github") or "").lower() == c["github"].lower())
+            or (c.get("orcid") and p.get("orcid") == c["orcid"])
+            for p in people
+        )
+        if not same:
+            people.append(c)
     # Without the run, the template file declares the agents (today's file, said to be declared).
     template_file = Path(__file__).resolve().parents[1] / "pipelines" / f"{template}.toml"
 
@@ -447,7 +509,7 @@ def _describe(
             b,
             owner=owner,
             project=project,
-            contributors=[contributor] if contributor else [],
+            contributors=people,
             repository=repository,
             db=run_db,
             template=template,

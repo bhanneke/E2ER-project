@@ -510,6 +510,15 @@ def main() -> None:
     publish_p.add_argument("--orcid", default=None, help="Your ORCID iD, e.g. 0000-0002-1825-0097.")
     publish_p.add_argument("--name", default=None, help="Your name as it should appear in citations.")
     publish_p.add_argument("--role", action="append", default=None, dest="roles", help="CRediT role (repeatable).")
+    publish_p.add_argument(
+        "--coauthor",
+        action="append",
+        default=None,
+        dest="coauthors",
+        metavar='"NAME|github=LOGIN|orcid=ID|role=ROLE"',
+        help="A co-author (repeatable): the name, then github= and/or orcid=, and role= (CRediT, repeatable). "
+        "e2er.org asks each co-author to confirm the credit.",
+    )
     publish_p.add_argument("--repo", default=None, help="URL of the repository that holds the bundle.")
     publish_p.add_argument(
         "--commit", default=None, help="Commit that pins the bundle (needed for registry verification)."
@@ -724,6 +733,7 @@ def main() -> None:
                 orcid=args.orcid,
                 name=args.name,
                 roles=args.roles,
+                coauthors=args.coauthors,
                 repo=args.repo,
                 commit=args.commit,
                 path=args.path,
