@@ -639,8 +639,8 @@ def write_recipe(workspace: Path, out: Path, *, date_str: str = "") -> Outcome:
         requirements_note = f"code/requirements.txt pins {len(pins)} package(s) at the versions the run used."
         if missing:
             notes.append(
-                f"The scripts import {', '.join(missing)}, which the run's environment did not have; the code that "
-                "uses it did not run in the study either."
+                f"The scripts import {', '.join(missing)}, which was not installed when the study ran, so "
+                "requirements.txt does not pin it and the rerun does not have it either."
             )
     if rewritten:
         notes.append(
