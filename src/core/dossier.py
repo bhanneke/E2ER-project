@@ -372,6 +372,8 @@ class RunRecord:
     skills: dict[str, list[str]] = field(default_factory=dict)
     component_segments: dict[str, list[int]] = field(default_factory=dict)
     recorded: bool = False  # the database has this run's events
+    #: The template's ``[[credit]]`` entries as the run recorded them (``template_components``), if any.
+    credit: dict[str, Any] | None = None
 
 
 #: Events that are part of the run's history but not one of the dossier's step types.
@@ -516,6 +518,9 @@ def read_run(db: Path, paper_id: str, files: dict[str, Any] | None = None, bundl
             if seg >= 0:
                 rec.segments[seg]["template"] = data.get("template")
             template_skills[seg] = {k: list(v) for k, v in (data.get("skills") or {}).items()}
+            entries = data.get("credit")
+            if isinstance(entries, list) and entries:
+                rec.credit = {"template": data.get("template"), "entries": [e for e in entries if isinstance(e, dict)]}
         elif etype == "phase_start":
             phase = stage
         elif etype == "specialist_start":
@@ -906,6 +911,10 @@ def build_dossier(
         if run.internal_review:
             doc["run"]["internal_review"] = run.internal_review
         doc["run"]["events"] = run.events
+        if run.credit:
+            # The work the template is based on, cites or relates to, as the run recorded it. A
+            # template without `[[credit]]` adds nothing, so those dossiers (and their ids) are unchanged.
+            doc["credit"] = copy.deepcopy(run.credit)
     else:
         doc["run"]["workflow_recorded"] = False
         doc["run"]["note"] = (

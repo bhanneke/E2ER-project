@@ -462,3 +462,65 @@ def test_the_preregistration_carries_its_plan_files(tmp_path: Path):
     doc = build_dossier(_manifest(None), bundle=b)
     assert doc["preregistration"]["plan_files"] == {"event_design.json": "b" * 64}
     assert doc["preregistration"]["frozen_at"] == "2026-09-29T12:49:29Z"
+
+
+# ── template credit (plan B3) ────────────────────────────────────────────────
+
+#: The id this dossier had before the template credit existed; a template without
+#: `[[credit]]` must keep giving the same document, and so the same id.
+NO_CREDIT_ID = "sha256:13f5b37a92633f61e339d88bd78cf6b6dda33ded1ab36a7358fc6ffffebd8ce2"
+
+
+def test_a_template_without_credit_leaves_the_dossier_and_its_id_unchanged(tmp_path: Path, fake_git):
+    run = read_run(_two_commit_run(tmp_path), PID)
+    doc = build_dossier(_manifest(run), run=run)
+    doc["run"]["exported"] = "x"
+    assert "credit" not in doc
+    assert d.dossier_id(doc) == NO_CREDIT_ID
+
+
+def _credited_run(tmp_path: Path) -> tuple[Path, list[dict[str, Any]]]:
+    from src.core.pipeline.spec import find_spec
+
+    credit = [dict(c) for c in find_spec("field-map").credit]
+    db = _db(
+        tmp_path,
+        [
+            ("run_identity", None, None, _identity(C1), "2026-10-09 09:00:00"),
+            (
+                "template_components",
+                None,
+                None,
+                {"template": "field-map", "skills": {}, "sidecars": {}, "credit": credit},
+                "2026-10-09 09:00:00",
+            ),
+            ("specialist_start", None, "idea_developer", {}, "2026-10-09 09:01:00"),
+            ("specialist_end", None, "idea_developer", {"success": True}, "2026-10-09 09:02:00"),
+        ],
+    )
+    return db, credit
+
+
+def test_the_template_credit_the_run_recorded_goes_into_the_dossier(tmp_path: Path, fake_git):
+    db, credit = _credited_run(tmp_path)
+    run = read_run(db, PID)
+    doc = build_dossier(_manifest(run), run=run)
+    assert doc["credit"] == {"template": "field-map", "entries": credit}
+    based_on = [e for e in doc["credit"]["entries"] if e["relation"] == "based_on"]
+    assert based_on[0]["creator"] == "Michal Hron" and based_on[0]["url"].startswith("https://")
+    d.canonical(doc)  # the credit keeps the document hashable on e2er.org
+
+
+def test_the_runner_records_the_template_credit():
+    """The `template_components` event carries `[[credit]]` (field-map has credit); without credit it is as before."""
+    from src.core.pipeline.spec import find_spec
+    from src.core.strategist.runner import PipelineRunner
+
+    r = PipelineRunner.__new__(PipelineRunner)
+    r._spec = find_spec("field-map")
+    payload = r._template_components()
+    assert payload is not None and payload["template"] == "field-map"
+    assert payload["credit"] == [dict(c) for c in find_spec("field-map").credit]
+    r._spec = find_spec("event-study-finance")
+    plain = r._template_components()
+    assert plain is not None and "credit" not in plain and set(plain) == {"template", "skills", "sidecars"}
