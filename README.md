@@ -211,7 +211,7 @@ e2er ships with 64 skill files and 31 specialist roles. `e2er run --template NAM
 
 ## Data sources
 
-Your own data go in the folder that `LOCAL_DATA_DIR` names (`data/` after `e2er init`). Files in the formats `.csv`, `.tsv`, `.jsonl`, `.parquet` and `.xlsx` are made available to each study and loaded into a SQLite database for that study.
+Your own data go in the folder that `LOCAL_DATA_DIR` names (`data/` after `e2er init`), your papers (PDFs, a `.bib` file or a Zotero folder) in the folder that `LITERATURE_DIR` names. New study lists both: tick the data files and papers the study uses, or add files there. `e2er run --data FILE… --papers FILE…` does the same in a terminal; without a choice a study takes everything in both folders. Data files (`.csv`, `.tsv`, `.jsonl`, `.parquet`, `.xlsx`) are loaded into a SQLite database for that study. Your papers are written into the study's bibliography with the keys the writers cite; a literature search for the research question adds papers found on the web, marked as such ("Use only my papers" turns it off). The run page and the finish page show what the study used.
 
 Specialists can also draw on four sources:
 
