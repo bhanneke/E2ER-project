@@ -21,7 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Only the chosen files count.** They are staged into the study's `data/` folder and imported into
   its `data.db` (an added file is recorded in `data_sources.json` as added by the researcher); the
   planning check, the specialists' context and the list of available sources read only the study's
-  own folder, never the live data folder. The choice is recorded in `study_inputs.json`.
+  own folder, never the live data folder. The choice is recorded in `.study_inputs.json` (left out of the exported folder: it names files on this computer).
 - **The researcher's papers are in the bibliography (fix).** Entries of the .bib file, a local Zotero
   library and the Zotero web library were shown to the writers as citable but never written into
   `literature.bib`, so citing one failed the citation check (missing from the bibliography). Now

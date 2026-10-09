@@ -195,7 +195,12 @@ async def inputs_panel(request: Request, paper_id: str) -> Any:
 
     problem = local_problem(request)
     workspace = await _workspace_of(paper_id)
-    view = inputs_view(workspace) if workspace is not None and workspace.is_dir() and not problem else None
+    # Read off the event loop: the live panel beside it must not wait for this one.
+    view = (
+        await asyncio.to_thread(inputs_view, workspace)
+        if workspace is not None and workspace.is_dir() and not problem
+        else None
+    )
     return templates.TemplateResponse(
         request, "_inputs_panel.html", {"v": view, "problem": problem, "paper_id": paper_id}
     )

@@ -11,7 +11,7 @@ Now New study lists the files of the data folder and the papers of the
 literature folder, the ``.bib`` files and the Library, and the researcher ticks
 what this study uses or adds files of their own (``e2er run --data …
 --papers …`` does the same in a terminal). The choice is written into the
-study's folder as ``study_inputs.json`` when the study starts::
+study's folder as ``.study_inputs.json`` when the study starts::
 
     {"data":   {"chosen": true, "files": [{"name": "prices.csv", "origin": "folder", "size": 1234}]},
      "papers": {"chosen": true, "web_search": true, "requested": ["pdf:/…/a.pdf", "bib:/…/refs.bib#key"],
@@ -45,7 +45,8 @@ from ..logging_config import get_logger
 
 logger = get_logger(__name__)
 
-INPUTS_FILE = "study_inputs.json"
+#: A dot file: it names files on this computer (full paths), so the study folder that is published leaves it out.
+INPUTS_FILE = ".study_inputs.json"
 
 #: Where files added on New study wait until the study starts (then they are copied into it).
 UPLOADS_FOLDER = "uploads"

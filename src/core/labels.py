@@ -417,7 +417,7 @@ def status(stored: str) -> str:
     return _plain(s).lower()
 
 
-#: Where a study's data file came from (study_inputs.json), as the pages say it.
+#: Where a study's data file came from (.study_inputs.json), as the pages say it.
 DATA_ORIGINS: dict[str, str] = {
     "folder": "from your data folder",
     "upload": "added for this study",

@@ -590,3 +590,16 @@ def test_e2ers_own_markers_never_reach_the_bibliography(tmp_path: Path):
     text = resolved.items[0].to_bibtex()
     assert "e2er_origin" not in text and "e2er_id" not in text and str(tmp_path) not in text
     assert "e2er_source = {researcher}" in text and "pages = {1221--1257}" in text
+
+
+def test_the_record_of_the_choice_stays_out_of_the_exported_folder(tmp_path: Path):
+    """Found by E2E-05 and E2E-28: the record names files on this computer by their full paths, and an
+    exported folder that carried it (misc/) put them on e2er.org. A dot file is never exported."""
+    from src.core.export.structured import export_paper
+
+    ws = tmp_path / "ws"
+    _workspace_with_inputs(ws)
+    (ws / "manifest.json").write_text(json.dumps({"title": "T", "paper_id": "p"}))
+    assert si.INPUTS_FILE.startswith(".")
+    out = export_paper(ws, tmp_path / "exports", date_str="20261010")
+    assert not [p for p in out.rglob("*") if "study_inputs" in p.name]

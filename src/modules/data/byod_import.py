@@ -211,11 +211,11 @@ def _import_one_file_sync(
 
 
 def _uploaded_names(workspace: Path) -> set[str]:
-    """The data files added on New study for this study alone (study_inputs.json)."""
+    """The data files added on New study for this study alone (.study_inputs.json)."""
     import json
 
     try:
-        record = json.loads((Path(workspace) / "study_inputs.json").read_text(encoding="utf-8"))
+        record = json.loads((Path(workspace) / ".study_inputs.json").read_text(encoding="utf-8"))
         files = (record.get("data") or {}).get("files") or []
         return {str(f.get("name")) for f in files if isinstance(f, dict) and f.get("origin") == "upload"}
     except (OSError, ValueError, AttributeError):
