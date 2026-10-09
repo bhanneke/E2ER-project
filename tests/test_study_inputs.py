@@ -603,3 +603,43 @@ def test_the_record_of_the_choice_stays_out_of_the_exported_folder(tmp_path: Pat
     assert si.INPUTS_FILE.startswith(".")
     out = export_paper(ws, tmp_path / "exports", date_str="20261010")
     assert not [p for p in out.rglob("*") if "study_inputs" in p.name]
+
+
+async def test_a_pdfs_doi_record_replaces_its_guessed_authors_and_year(monkeypatch):
+    """The 2026-10-10 live run: a Fed working paper's first page gave "Federal Reserve Board" and 1936."""
+    from src.modules.literature import crossref, openalex
+    from src.modules.literature.discovery import _enrich_one
+
+    record = PaperMetadata(
+        title="Inframarginal Borrowers and the Mortgage Payment Channel of Monetary Policy",
+        authors=["Daniel R. Ringo"],
+        year=2024,
+        journal="FEDS",
+        doi="10.17016/FEDS.2024.069",
+    )
+    monkeypatch.setattr(openalex, "fetch_by_doi", AsyncMock(return_value=record))
+    monkeypatch.setattr(crossref, "fetch_by_doi", AsyncMock(return_value=None))
+    pdf = PaperMetadata(
+        title="Inframarginal Borrowers and the Mortgage Payment Channel of Monetary P",
+        authors=["Federal Reserve Board"],
+        year=1936,
+        doi="10.17016/FEDS.2024.069",
+        source="byod_pdf",
+    )
+    got = await _enrich_one(pdf)
+    assert (got.authors, got.year, got.bibtex_key) == (["Daniel R. Ringo"], 2024, "ringo2024inframarginal")
+    # A DOI on the first page that belongs to another paper (a reference) changes nothing but blanks.
+    other = PaperMetadata(title="Something Else Entirely", authors=["X Y"], year=2001, doi="10.1/zz", source="byod_pdf")
+    monkeypatch.setattr(
+        openalex,
+        "fetch_by_doi",
+        AsyncMock(return_value=PaperMetadata(title="Unrelated", authors=["A"], year=1999, journal="J")),
+    )
+    got = await _enrich_one(other)
+    assert (got.title, got.authors, got.year, got.journal) == ("Something Else Entirely", ["X Y"], 2001, "J")
+
+
+def test_an_accented_surname_keeps_its_letters_in_the_key():
+    assert PaperMetadata(title="The Floating Rate Channel", authors=["Ander Pérez-Orive"], year=2017).bibtex_key == (
+        "perezorive2017the"
+    )

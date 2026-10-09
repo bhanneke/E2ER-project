@@ -82,17 +82,26 @@ def stage_pdf(workspace: Path, item: PaperMetadata) -> None:
 
 
 async def _enrich_one(item: PaperMetadata) -> PaperMetadata:
-    """Fill missing authors/year/journal/abstract via DOI or title lookup.
-    Never raises; returns the item (possibly unchanged)."""
+    """Complete a paper's authors/year/journal/abstract from CrossRef/OpenAlex.
+    Never raises; returns the item (possibly unchanged).
+
+    A PDF's own metadata is often wrong rather than missing (the 2026-10-10 live
+    run: "Federal Reserve Board" as the author, 1936 as the year, read from the
+    first page of a Fed working paper). So when the PDF names its DOI and the
+    record found by that DOI has the same title, the record's authors, year,
+    title and journal replace the PDF's; otherwise only missing fields are filled.
+    """
     from . import crossref, openalex
 
     needs = not item.authors or not item.year or not item.journal
-    if not needs:
+    if not needs and not item.doi:
         return item
     try:
         hit: PaperMetadata | None = None
+        by_doi = False
         if item.doi:
             hit = await openalex.fetch_by_doi(item.doi) or await crossref.fetch_by_doi(item.doi)
+            by_doi = hit is not None
         elif len(item.title) >= 12:
             res = await crossref.search_papers(item.title, limit=1)
             if res.papers:
@@ -100,7 +109,17 @@ async def _enrich_one(item: PaperMetadata) -> PaperMetadata:
                 # Only trust the hit if the titles plausibly match.
                 if _title_match(item.title, cand.title):
                     hit = cand
-        if hit:
+        if hit and by_doi and item.source == "byod_pdf" and hit.title and _title_match(item.title, hit.title):
+            item.title = hit.title
+            item.authors = hit.authors or item.authors
+            item.year = hit.year or item.year
+            item.journal = hit.journal or item.journal
+            item.abstract = item.abstract or hit.abstract
+            item.citations = item.citations or hit.citations
+        elif hit:
+            if not by_doi and item.source == "byod_pdf" and hit.title:
+                # A title matched by search is the record's clean title (not "Munich Personal RePEc Archive …").
+                item.title = hit.title
             item.authors = item.authors or hit.authors
             item.year = item.year or hit.year
             item.journal = item.journal or hit.journal
