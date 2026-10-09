@@ -125,7 +125,9 @@ def assemble_document(body: str) -> str:
     the title renders correctly.
     """
     if looks_like_full_document(body):
-        return body
+        from ..bibliography import add_missing_bibliography
+
+        return add_missing_bibliography(body, "refs")
 
     title, body = _extract_braced(body, "title")
     author, body = _extract_braced(body, "author")

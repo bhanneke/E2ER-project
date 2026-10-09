@@ -564,3 +564,29 @@ def test_add_papers_on_the_library_page_uses_the_library_importer(tmp_path: Path
         assert "1 new" in c.get("/htmx/library/adding").text
         r = c.post("/library/add", files=[("pdf", ("x.txt", b"x", "text/plain"))], follow_redirects=False)
         assert "x.txt is not a PDF" in r.headers["location"].replace("+", " ")
+
+
+# ── a paper that cites must compile with its bibliography ───────────────────
+
+
+def test_a_whole_paper_that_cites_without_a_bibliography_line_gets_one():
+    """Found by E2E-28: a drafter's complete document cited the researcher's papers but had no
+    \\bibliography line, so the run's PDF and the published one printed "?" for every citation."""
+    from src.core.bibliography import add_missing_bibliography
+    from src.core.renderer.templates import assemble_document
+
+    tex = "\\documentclass{article}\n\\usepackage{natbib}\n\\begin{document}\nAs \\citet{a} show.\n\\end{document}\n"
+    fixed = assemble_document(tex)
+    assert fixed.endswith("\\bibliographystyle{plainnat}\n\\bibliography{refs}\n\\end{document}\n")
+    assert add_missing_bibliography(fixed) == fixed
+    plain = "\\documentclass{article}\n\\begin{document}\nNo citations.\n\\end{document}\n"
+    assert assemble_document(plain) == plain
+
+
+def test_e2ers_own_markers_never_reach_the_bibliography(tmp_path: Path):
+    bib = tmp_path / "r.bib"
+    bib.write_text(BIB)
+    resolved = si.resolve_papers([f"bib:{bib}#Bernanke:2005"], tmp_path)
+    text = resolved.items[0].to_bibtex()
+    assert "e2er_origin" not in text and "e2er_id" not in text and str(tmp_path) not in text
+    assert "e2er_source = {researcher}" in text and "pages = {1221--1257}" in text

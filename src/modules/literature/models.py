@@ -88,7 +88,9 @@ class PaperMetadata:
             done = {"title", "author", "year", "journal", "doi", "url", "abstract", "file", SOURCE_FIELD}
             for name, value in raw.items():
                 low = str(name).lower()
-                if low in done or name in {"ENTRYTYPE", "ID"} or not str(value).strip():
+                # e2er's own markers (e2er_*, the file a paper came from) are not fields of the entry.
+                internal = low.startswith("e2er_") or low in {"source_pdf", "zotero_key", "library_key", "filename"}
+                if low in done or internal or name in {"ENTRYTYPE", "ID"} or not str(value).strip():
                     continue
                 if re.fullmatch(r"[a-z][a-z0-9_-]*", low):
                     lines.append(f"  {low} = {{{value}}},")
