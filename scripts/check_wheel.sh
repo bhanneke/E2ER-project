@@ -36,3 +36,33 @@ echo "== templates and skills"
 
 echo "== e2er verify showcase"
 "$WORK/venv/bin/e2er" verify showcase
+
+# The commands specialists run by name must exist in an installed e2er and be on
+# the PATH the backends give a specialist (before 0.15.0 only e2er-data and
+# e2er-fieldmap were installed; e2er-run, e2er-lit, e2er-check-tables and
+# e2er-allium-query existed only in a source checkout).
+echo "== the specialists' commands"
+"$WORK/venv/bin/python" - <<'PY'
+import shutil, sys
+from src.modules.llm.cli_support import subprocess_path
+path = subprocess_path("/usr/bin:/bin")
+missing = [c for c in ("e2er-data", "e2er-fieldmap", "e2er-run", "e2er-lit", "e2er-check-tables", "e2er-allium-query")
+           if not shutil.which(c, path=path)]
+if missing:
+    sys.exit(f"not on a specialist's PATH ({path}): {', '.join(missing)}")
+print("ok  all six on a specialist's PATH")
+PY
+mkdir -p "$WORK/ws"
+printf 'print("ran")\n' > "$WORK/ws/tiny.py"
+( cd "$WORK/ws" && "$WORK/venv/bin/e2er-run" tiny.py | grep -q ran )
+grep -q '"script": "tiny.py"' "$WORK/ws/.e2er-script-runs.jsonl"
+echo "ok  e2er-run runs a script and records it"
+( cd "$WORK/ws" && "$WORK/venv/bin/e2er-run" ../tiny.py 2>/dev/null ) && { echo "e2er-run ran a path outside the workspace"; exit 1; } || true
+"$WORK/venv/bin/e2er-lit" --help >/dev/null
+echo "ok  e2er-lit --help"
+"$WORK/venv/bin/e2er-allium-query" --help >/dev/null
+echo "ok  e2er-allium-query --help"
+# Exit 2: nothing to check; the answer says why.
+CT="$(cd "$WORK/ws" && "$WORK/venv/bin/e2er-check-tables" 2>&1 || true)"
+echo "$CT" | grep -q "no table_spec.json"
+echo "ok  e2er-check-tables answers in a workspace without table_spec.json"

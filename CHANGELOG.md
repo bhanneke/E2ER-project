@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Replication, credit, commands and the field map (0.15.0)
+- **Fixed: an installed e2er could not run the specialists' commands.** Before 0.15.0 a pip or
+  `uv tool install` installation had only `e2er`, `e2er-data` and `e2er-fieldmap`. `e2er-run`,
+  `e2er-lit`, `e2er-check-tables` and `e2er-allium-query` existed only in a source checkout, while
+  the specialists were told to use them. On an installed e2er, specialists on the CLI backends
+  (Claude Code, Codex, Gemini) could therefore not run their own scripts while writing them, not
+  search or record literature, and not check their table specs; the runner still ran the
+  estimation script itself after the step. All six are now console commands of the package
+  (`src/wrappers.py`; the `scripts/` files of a checkout call the same code). The wheel check
+  installs the package with an empty home folder and runs each of them.
 - **`e2er reproduce` for every study.** `e2er export` now writes `reproduce.json` from what the run
   recorded: the estimation script and every later script of the run that wrote
   `estimation_results.json`, in the order the run ran them (`e2er-run` and the runner now record
