@@ -1365,3 +1365,51 @@ async def test_the_retry_prompt_names_the_set_aside_or_existing_files(tmp_path: 
         await base.run_specialist(order, _Backend(), tmp_path, "m", backend_name="claude_code")
     assert "moved aside" in seen[0] and ".history/reproduction_report.json.1" in seen[0]
     assert "Read each one before you write it" in seen[1] and "`paper_draft.tex`" in seen[1]
+
+
+# ── languages e2er cannot run (refused at fetch, before any model call) ─────
+
+STATA_PACKAGE = {
+    "study/README.md": b"# Study\nRun do main.do in Stata 17.\n",
+    "study/code/main.do": b"use data/panel.dta, clear\nreg y x\n",
+    "study/code/clean.do": b"* cleaning\n",
+    "study/data/panel.dta": b"\x00stata",
+}
+
+
+def _fetch_members(ws: Path, members: dict[str, bytes]):
+    blob = _zip_bytes(members)
+    return repl.fetch_package(ws, client=_client(_record({"pkg.zip": blob}), {"pkg.zip": blob}))
+
+
+def test_a_stata_package_is_refused_at_fetch_naming_its_files(workspace: Path):
+    r = _fetch_members(workspace, STATA_PACKAGE)
+    assert not r.passed
+    reason = r.reasons[0]
+    assert reason.startswith("e2er runs R and Python code only.")
+    assert "Stata" in reason and "study/code/main.do" in reason and "study/data/panel.dta" in reason
+    assert "before any model is asked" in reason
+    # nothing is recorded as fetched: the planner never starts
+    assert not (workspace / repl.MANIFEST_FILE).exists()
+
+
+def test_a_stata_package_with_r_code_is_fetched(workspace: Path):
+    r = _fetch_members(workspace, {**STATA_PACKAGE, "study/code/main.R": b"x <- 1\n"})
+    assert r.passed, r.reasons
+
+
+@pytest.mark.parametrize(("name", "language"), [("model.m", "MATLAB"), ("est.jl", "Julia"), ("prog.sas", "SAS")])
+def test_other_languages_are_refused_too(workspace: Path, name: str, language: str):
+    r = _fetch_members(workspace, {"study/README.md": b"readme\n", f"study/code/{name}": b"x\n"})
+    assert not r.passed and language in r.reasons[0] and f"study/code/{name}" in r.reasons[0]
+
+
+async def test_the_run_halts_at_fetch_for_a_stata_package_without_a_model(workspace: Path, events, monkeypatch):
+    blob = _zip_bytes(STATA_PACKAGE)
+    client = _client(_record({"pkg.zip": blob}), {"pkg.zip": blob})
+    monkeypatch.setattr("src.modules.data.zenodo.ZenodoClient", lambda *a, **k: client)
+    r = _runner(workspace)
+    with pytest.raises(GateHaltError) as halt:
+        await r._run_check_step(r._spec.step("fetch"), r._state)
+    assert "Stata" in halt.value.reasons[0]
+    assert r._backend is None  # no backend was ever built, so no model was called
