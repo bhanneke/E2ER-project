@@ -513,7 +513,17 @@ async def _run_yf_history(args: argparse.Namespace) -> str:
     from .load_record import now_utc, yfinance_load
 
     what = "daily prices" if args.interval == "1d" else f"prices at interval {args.interval}"
-    _record(result, args, yfinance_load(args.ticker, now_utc(), what=what))
+    entry = yfinance_load(args.ticker, now_utc(), what=what)
+    # The request as it was made, so the load can be repeated (`e2er reproduce`, get_data.py).
+    entry["request"] = {
+        "command": "history",
+        "ticker": args.ticker,
+        "start": args.start,
+        "end": args.end,
+        "interval": args.interval,
+        "adjusted": not args.raw,
+    }
+    _record(result, args, entry)
     return _json.dumps(result, indent=2, default=str)
 
 
@@ -540,7 +550,9 @@ async def _run_yf_fundamentals(args: argparse.Namespace) -> str:
     _maybe_save_table(result, args)
     from .load_record import now_utc, yfinance_load
 
-    _record(result, args, yfinance_load(args.ticker, now_utc(), what=f"annual {args.statement.replace('_', ' ')}"))
+    entry = yfinance_load(args.ticker, now_utc(), what=f"annual {args.statement.replace('_', ' ')}")
+    entry["request"] = {"command": "fundamentals", "ticker": args.ticker, "statement": args.statement}
+    _record(result, args, entry)
     return _json.dumps(result, indent=2, default=str)
 
 
@@ -556,7 +568,9 @@ async def _run_yf_dividends(args: argparse.Namespace) -> str:
     _maybe_save_table(result, args)
     from .load_record import now_utc, yfinance_load
 
-    _record(result, args, yfinance_load(args.ticker, now_utc(), what="dividends"))
+    entry = yfinance_load(args.ticker, now_utc(), what="dividends")
+    entry["request"] = {"command": "dividends", "ticker": args.ticker}
+    _record(result, args, entry)
     return _json.dumps(result, indent=2, default=str)
 
 

@@ -175,11 +175,14 @@ def test_readme_has_the_review_score_and_coef(tmp_path: Path):
 
 def test_readme_reproduce_section_follows_what_the_folder_has(tmp_path: Path):
     ws = _workspace(tmp_path)
+    (ws / "run_estimation.py").unlink()  # no estimation script, so no recipe at export
     out = export_paper(ws, tmp_path / "out", date_str="20260627")
     readme = (out / "README.md").read_text()
-    # no recipe: say so, and never promise a command that cannot run
+    # no recipe: say so and why, and never promise a command that cannot run
     assert "has no `reproduce.json`" in readme and "cd code && python" not in readme
+    assert "the study has no estimation script" in readme
     assert "`data.db`, SQLite" in readme
+    (ws / "run_estimation.py").write_text("import pandas as pd")
 
     (ws / "reproduce.json").write_text('{"schema": "e2er-reproduce/1"}')
     (ws / "requirements.txt").write_text("numpy==2.3.5\n")

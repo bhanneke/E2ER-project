@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Replication, credit, commands and the field map (0.15.0)
+- **`e2er reproduce` for every study.** `e2er export` now writes `reproduce.json` from what the run
+  recorded: the estimation script and every later script of the run that wrote
+  `estimation_results.json`, in the order the run last changed them; the files they read, laid out
+  where they expect them, with data files as inputs (SHA-256 and source from `data_sources.json`);
+  `code/requirements.txt` with the packages they import at the versions of the run's environment;
+  the estimation results (and robustness results) to compare, with the tables rendered again; and
+  `code/get_data.py`, which loads Yahoo Finance and GMD data again with `e2er-data` when the folder
+  does not have them. The exported scripts name the run folder instead of the workspace's full
+  path. The FOMC demonstration study reproduces with it: 162 of 162 values identical and both
+  tables the same, in a new environment. A study without an estimation script or without results
+  gets no recipe, and its README and `e2er reproduce` say why. `e2er-data yfinance` records the
+  request (ticker, dates, interval) with each load, so the reload asks for the same rows.
 - **Stata packages are refused before any model call.** The replication template's download step
   now refuses a package that has no R or Python file and whose code is in Stata (`.do`, `.ado`,
   `.dta`), MATLAB, Julia, SAS, SPSS, GAMS, EViews, Mathematica or Ox. The refusal names the files and

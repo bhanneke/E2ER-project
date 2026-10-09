@@ -302,7 +302,14 @@ def _read_json(path: Path) -> dict:
         return {}
 
 
-def _render_readme(workspace: Path, manifest: dict, slug: str, notes: list[str] | None = None) -> str:
+def _render_readme(
+    workspace: Path,
+    manifest: dict,
+    slug: str,
+    notes: list[str] | None = None,
+    out: Path | None = None,
+    no_recipe: str = "",
+) -> str:
     title = manifest.get("title") or "Untitled"
     rq = manifest.get("research_question") or "—"
     review = review_detail(_read_json(workspace / "review_aggregation.json"))
@@ -356,9 +363,10 @@ def _render_readme(workspace: Path, manifest: dict, slug: str, notes: list[str] 
     if (workspace / "data_sources.json").is_file():
         data_line += "; `data_sources.json` records where each input came from and under which terms"
     code_line = "- `code/` — the estimation script (`code/scratch/` holds exploratory scripts and logs)"
-    if (workspace / "requirements.txt").is_file():
+    folder = out or workspace
+    if (workspace / "requirements.txt").is_file() or (folder / "code" / "requirements.txt").is_file():
         code_line += "; `requirements.txt` pins the packages it runs with"
-    if (workspace / "get_data.py").is_file():
+    if (workspace / "get_data.py").is_file() or (folder / "code" / "get_data.py").is_file():
         code_line += "; `get_data.py` loads the inputs the folder does not ship"
     lines += [
         "",
@@ -375,7 +383,7 @@ def _render_readme(workspace: Path, manifest: dict, slug: str, notes: list[str] 
     if notes:
         lines += ["## Export notes", ""] + [f"- {n}" for n in notes] + [""]
     lines += ["## Reproduce", ""]
-    if (workspace / "reproduce.json").is_file():
+    if (folder / "reproduce.json").is_file():
         lines += [
             "`reproduce.json` says how to run the study's code again. With e2er installed:",
             "",
@@ -386,6 +394,8 @@ def _render_readme(workspace: Path, manifest: dict, slug: str, notes: list[str] 
             "This runs the code in a folder of its own, in a new environment with the pinned packages, "
             "and compares every result value and every table with the ones in this folder.",
         ]
+    elif no_recipe:
+        lines += [f"This folder has no `reproduce.json`, so `e2er reproduce` cannot run it: {no_recipe}."]
     else:
         lines += [
             "This folder has no `reproduce.json`, so `e2er reproduce` cannot run it. The estimation script "
@@ -481,7 +491,18 @@ def export_paper(
             continue
         _copy_matches(workspace, out / "misc", glob.escape(src.name), None, copied_names, notes)
 
-    (out / "README.md").write_text(_render_readme(workspace, manifest, slug, notes), encoding="utf-8")
+    # How to run the study's code again (`e2er reproduce`), written from what the run recorded.
+    from .reproduce_recipe import write_recipe
+
+    try:
+        outcome = write_recipe(workspace, out, date_str=date_str)
+        no_recipe = outcome.reason
+    except Exception as e:  # noqa: BLE001 — best-effort, like the rest of the export
+        logger.warning("export: reproduce.json was not written: %s", e)
+        no_recipe = f"e2er could not write it ({type(e).__name__}: {e})"
+    (out / "README.md").write_text(
+        _render_readme(workspace, manifest, slug, notes, out=out, no_recipe=no_recipe), encoding="utf-8"
+    )
 
     # The shareable view, rendered from the provenance about to be written, so
     # that provenance.json (written LAST, after every other file exists)
