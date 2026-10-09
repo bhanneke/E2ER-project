@@ -25,15 +25,15 @@ from ...db.paper_data_db import (
     unique_table_name,
 )
 from ...logging_config import get_logger
+from ..local_corpus import DATA_EXTENSIONS
 
 if TYPE_CHECKING:
     import pandas as pd
 
 logger = get_logger(__name__)
 
-# Tabular extensions we import into data.db. ``.txt`` is intentionally excluded
-# (free text, not a table — it stays available via read_file).
-_TABULAR_EXTENSIONS: frozenset[str] = frozenset({".csv", ".tsv", ".parquet", ".xlsx", ".jsonl"})
+# Tabular extensions we import into data.db: the one list (local_corpus.DATA_EXTENSIONS).
+_TABULAR_EXTENSIONS = DATA_EXTENSIONS
 
 _CSV_CHUNK = 50_000
 
@@ -210,10 +210,23 @@ def _import_one_file_sync(
     return results
 
 
+def _uploaded_names(workspace: Path) -> set[str]:
+    """The data files added on New study for this study alone (study_inputs.json)."""
+    import json
+
+    try:
+        record = json.loads((Path(workspace) / "study_inputs.json").read_text(encoding="utf-8"))
+        files = (record.get("data") or {}).get("files") or []
+        return {str(f.get("name")) for f in files if isinstance(f, dict) and f.get("origin") == "upload"}
+    except (OSError, ValueError, AttributeError):
+        return set()
+
+
 def _import_corpus_sync(workspace: Path, max_rows: int) -> list[dict[str, Any]]:
     files = _staged_data_files(workspace)
     if not files:
         return []
+    uploaded = _uploaded_names(workspace)
     data_dir = Path(workspace) / "data"
     db_path = data_db_path(workspace)
     existing: set[str] = set()
@@ -232,15 +245,17 @@ def _import_corpus_sync(workspace: Path, max_rows: int) -> list[dict[str, Any]]:
             logger.warning("BYOD import skipped %s: %s (paper creation continues)", rel_label, e)
             continue
         imported.extend(tables)
-        _record_file(workspace, rel_label, path, tables)
+        _record_file(workspace, rel_label, path, tables, uploaded=rel_label in uploaded)
     return imported
 
 
-def _record_file(workspace: Path, rel: str, path: Path, tables: list[dict[str, Any]]) -> None:
+def _record_file(workspace: Path, rel: str, path: Path, tables: list[dict[str, Any]], uploaded: bool = False) -> None:
     """Record the researcher's file in data_sources.json: its name, SHA-256 and the tables it became."""
     from .load_record import data_folder_load, now_utc, try_record
 
     entry = data_folder_load(rel, path, now_utc())
+    if uploaded:
+        entry["dataset"] = "Added by the researcher for this study"
     entry["tables"] = [t["table"] for t in tables]
     entry["rows"] = sum(int(t.get("rows") or 0) for t in tables)
     try_record(workspace, entry)

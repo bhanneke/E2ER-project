@@ -332,12 +332,14 @@ def _canonical_url(request: Request) -> str | None:
 
 
 from .finish import router as _finish_router  # noqa: E402 — needs `templates` above
+from .inputs import router as _inputs_router  # noqa: E402
 from .setup import router as _setup_router  # noqa: E402
 from .studies import router as _studies_router  # noqa: E402
 
 app.include_router(_setup_router)
 app.include_router(_finish_router)
 app.include_router(_studies_router)
+app.include_router(_inputs_router)
 
 # Registry of running pipeline tasks, keyed by paper_id.
 # Used by POST /api/papers/{id}/cancel to cancel an in-flight run.
@@ -440,72 +442,43 @@ def _link_local_data_dir_into_workspace(
     workspace: Path,
     local_data_dir: str | None,
     recursive: bool = False,
+    *,
+    data: bool = True,
+    pdfs: bool = True,
 ) -> None:
-    """Stage the LOCAL_DATA_DIR corpus into the paper's workspace.
+    """Stage the whole LOCAL_DATA_DIR corpus into the paper's workspace (a study with no choice made).
 
-    Data files (csv/tsv/jsonl/parquet/xlsx/txt) land in ``workspace/data/``
+    Data files (csv/tsv/jsonl/parquet/xlsx) land in ``workspace/data/``
     so specialists ``read_file`` them through the standard sandbox. PDFs
     land in ``workspace/literature/`` so the ``read_reference`` tool can
-    extract them by local path. ``.bib`` files are handled separately by
-    ``_load_reference_summary`` and are not symlinked here.
+    extract them by local path. ``.bib`` files are written into the study's
+    ``literature.bib`` by ``study_inputs.prepare_papers`` and are not linked here.
+    A study whose data (``data=False``) or papers (``pdfs=False``) were chosen
+    stages those by the choice instead.
     """
     from ..modules.local_corpus import DATA_EXTENSIONS, PDF_EXTENSIONS
 
-    _stage_corpus_files(workspace, local_data_dir, recursive, DATA_EXTENSIONS, "data", "data")
-    _stage_corpus_files(workspace, local_data_dir, recursive, PDF_EXTENSIONS, "literature", "PDF")
+    if data:
+        _stage_corpus_files(workspace, local_data_dir, recursive, DATA_EXTENSIONS, "data", "data")
+    if pdfs:
+        _stage_corpus_files(workspace, local_data_dir, recursive, PDF_EXTENSIONS, "literature", "PDF")
 
 
-async def _ingest_literature_corpus(paper_id: str, workspace: Path, settings) -> None:
-    """Discover + persist the BYOD literature folder into SQLite. Best-effort —
-    a discovery/enrichment failure must never block paper creation.
+async def _prepare_papers(paper_id: str, workspace: Path, settings, research_question: str, title: str) -> None:
+    """Put the study's bibliography on disk BEFORE any specialist runs.
 
-    Only runs on the SQLite backend (the local-library path); on Postgres the
-    pgvector KB is the literature store and this is a no-op.
+    The researcher's papers first (the ones chosen on New study, or without a
+    choice every paper of their literature folder, .bib files and Zotero
+    libraries), written into ``literature.bib`` with the keys the writers are
+    shown; then the web search for the research question, in addition unless
+    the researcher ticked "Use only my papers". See
+    :func:`src.core.study_inputs.prepare_papers` and
+    :func:`src.modules.literature.discovery.acquire_literature` (why this is a
+    stage rather than a tool the drafter may choose to call).
     """
-    from ..db.client import current_backend
+    from ..core.study_inputs import prepare_papers
 
-    lit_dirs = settings.resolved_literature_dirs()
-    if not lit_dirs or current_backend() != "sqlite":
-        return
-    from ..modules.literature.discovery import ingest_literature
-    from ..modules.local_corpus import parse_corpus_roots
-
-    roots = parse_corpus_roots(lit_dirs)
-    if not roots:
-        return
-    try:
-        await ingest_literature(
-            workspace,
-            paper_id,
-            roots,
-            max_items=settings.literature_max_ingest,
-            enrich=True,
-        )
-    except Exception as e:  # noqa: BLE001
-        logger.warning("literature ingestion skipped for %s: %s (paper creation continues)", paper_id, e)
-
-
-async def _acquire_literature(paper_id: str, workspace: Path, settings, research_question: str, title: str) -> None:
-    """Put a real bibliography on disk BEFORE any specialist runs.
-
-    Unlike ``_ingest_literature_corpus`` (which needs a BYOD folder and only
-    runs on SQLite), this always runs — it is the standalone replacement for
-    v1's mandatory literature agent. See
-    :func:`src.modules.literature.discovery.acquire_literature` for why it is a
-    stage rather than a tool the drafter may choose to call.
-
-    Self-skipping when a bibliography already exists, so the BYOD/Zotero path
-    above wins when the researcher brought their own library.
-    """
-    from ..modules.literature.discovery import acquire_literature
-
-    await acquire_literature(
-        workspace,
-        paper_id,
-        [research_question, title],
-        settings,
-        limit=settings.literature_acquire_limit,
-    )
+    await prepare_papers(workspace, paper_id, settings, [research_question, title])
 
 
 async def _tuple_is_proven(model: str, methodology: str, mode: str) -> bool:
@@ -758,6 +731,15 @@ class CreatePaperRequest(BaseModel):
     # this one study): recorded in manifest.json, and the replication report
     # and a later `e2er publish` carry the disclaimer.
     purpose: str | None = None
+    # What the study uses (src/core/study_inputs.py). None: no choice was made, the study
+    # takes every data file of the data folder and every paper of the researcher's folders
+    # and libraries (as before 0.15.0). A list: exactly these. Data files are full paths;
+    # papers are ids (pdf:<path>, bib:<path>#<key>, bibfile:<path>, zotero:<folder>#<key>,
+    # library:<key>) or paths of .pdf and .bib files.
+    data_files: list[str] | None = None
+    papers: list[str] | None = None
+    # The web literature search runs in addition to the researcher's papers; False: "Use only my papers".
+    web_search: bool = True
 
 
 class ResumeRequest(BaseModel):
@@ -797,21 +779,45 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
     """Create a new paper and start the pipeline."""
     import uuid
 
+    from ..core import study_inputs
     from ..db.client import execute
     from ..home import new_workspace
 
     paper_id = str(uuid.uuid4())
     settings = get_settings()
+    # The chosen data files and papers are checked before anything is made: a missing
+    # file or a .txt among the data is refused in one sentence, with no study left behind.
+    try:
+        chosen_data = study_inputs.check_data_files(req.data_files) if req.data_files is not None else None
+        chosen_papers = study_inputs.check_paper_ids(req.papers) if req.papers is not None else None
+    except study_inputs.InputError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
     # A readable folder name (date and title); the id is in its manifest.json.
     workspace = new_workspace(Path(settings.workspace_root).expanduser(), req.title, paper_id)
 
-    # v0.8: stage the user's BYOD corpus into the paper's workspace via
-    # symlinks. Data-shaped files (csv/parquet/jsonl/xlsx/tsv/txt) land
-    # in `workspace/<id>/data/` so `_list_user_data` discovers them and
-    # specialists can `read_file('data/<name>')` through the standard
-    # FileToolHandler sandbox. Literature (.bib) is handled separately
-    # by `_load_reference_summary`; we don't symlink those.
-    _link_local_data_dir_into_workspace(workspace, settings.local_data_dir, settings.local_data_dir_recursive)
+    # Stage what the study uses into its folder. Without a choice, every data file (and PDF)
+    # of LOCAL_DATA_DIR is linked in, as since v0.8; with one, exactly the chosen files. From
+    # here on the study reads only its own folder (data/, literature/), never the live folders.
+    _link_local_data_dir_into_workspace(
+        workspace,
+        settings.local_data_dir,
+        settings.local_data_dir_recursive,
+        data=chosen_data is None,
+        pdfs=chosen_papers is None,
+    )
+    staged = (
+        study_inputs.stage_chosen_data(workspace, chosen_data, settings)
+        if chosen_data is not None
+        else study_inputs.staged_data_files(workspace)
+    )
+    requested = study_inputs.copy_uploaded_papers(workspace, chosen_papers) if chosen_papers is not None else []
+    study_inputs.write_record(
+        workspace,
+        {
+            "data": {"chosen": chosen_data is not None, "files": staged},
+            "papers": {"chosen": chosen_papers is not None, "web_search": req.web_search, "requested": requested},
+        },
+    )
 
     # NB: the heavy BYOD work — importing staged files into data.db and
     # discovering/ingesting the literature corpus — runs in the background
@@ -932,7 +938,8 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
         "paper_id": paper_id,
         "title": req.title,
         "research_question": req.research_question,
-        "datasets": req.datasets,
+        # The study's data files, named in every specialist's context ("Data Available").
+        "datasets": req.datasets or [f["name"] for f in staged],
         "mode": req.mode,
         "methodology": req.methodology,
         "model": current_model,
@@ -1995,9 +2002,21 @@ def _library_view(query: str = "", limit: int = 25) -> dict[str, Any]:
 
 
 @app.get("/library", response_class=HTMLResponse)
-async def dashboard_library(request: Request, q: str = "") -> Any:
-    """Search what the papers you have read actually claim."""
-    return templates.TemplateResponse(request, "library.html", _library_view(q))
+async def dashboard_library(request: Request, q: str = "", message: str = "") -> Any:
+    """Search what the papers you have read actually claim; add papers to the Library."""
+    from .inputs import _ADDING
+    from .local_session import local_problem
+
+    return templates.TemplateResponse(
+        request,
+        "library.html",
+        {
+            **_library_view(q),
+            "message": message,
+            "adding": dict(_ADDING),
+            "session_problem": local_problem(request),
+        },
+    )
 
 
 def _skills_view(message: str = "") -> dict[str, Any]:
@@ -2093,7 +2112,12 @@ def _step_label(name: str, spec: Any = None) -> str:
     return _labels.step(name, spec)
 
 
-def _new_form_context(values: dict[str, Any] | None = None, error: str = "") -> dict[str, Any]:
+def _new_form_context(
+    values: dict[str, Any] | None = None, error: str = "", request: Request | None = None
+) -> dict[str, Any]:
+    from ..core.study_inputs import data_options
+    from ..modules.local_corpus import DATA_EXTENSIONS, DATA_EXTENSIONS_TEXT
+    from .local_session import local_problem
     from .setup import needs_setup
 
     settings = get_settings()
@@ -2106,9 +2130,29 @@ def _new_form_context(values: dict[str, Any] | None = None, error: str = "") -> 
         "max_cost_usd": settings.default_max_cost_usd,
         "demonstration": False,
         "review_at": [],
+        # None: nothing chosen yet, so every file of the data folder is ticked (what a study took before 0.15.0).
+        "data_files": None,
+        "papers": None,
+        "only_my_papers": False,
         **(values or {}),
     }
+    problem = local_problem(request) if request is not None else ""
+    try:
+        files = [] if problem else data_options(settings)
+    except OSError as e:  # a data folder that cannot be read must not break the page
+        logger.warning("New study: the data folder could not be listed: %s", e)
+        files = []
+    chosen = v["data_files"]
+    data_rows = [{**f.__dict__, "ticked": chosen is None or f.path in chosen} for f in files]
     return {
+        "data_rows": data_rows,
+        "data_dir": getattr(settings, "local_data_dir", None) or "",
+        "data_accept": ",".join(sorted(DATA_EXTENSIONS)),
+        "data_types": DATA_EXTENSIONS_TEXT,
+        "files_problem": problem,
+        "papers_query": "picked=1&" + "&".join(f"chosen={quote_plus(x)}" for x in v["papers"])
+        if v["papers"] is not None
+        else "",
         "default_cap": settings.default_max_cost_usd,
         "pipelines": _pipeline_choices(),
         "values": v,
@@ -2121,7 +2165,7 @@ def _new_form_context(values: dict[str, Any] | None = None, error: str = "") -> 
 
 @app.get("/papers/new", response_class=HTMLResponse)
 async def new_paper_form(request: Request) -> Any:
-    return templates.TemplateResponse(request, "new.html", _new_form_context())
+    return templates.TemplateResponse(request, "new.html", _new_form_context(request=request))
 
 
 def _pipeline_choices() -> list[dict[str, Any]]:
@@ -2180,6 +2224,37 @@ def _review_at_choices(spec: Any) -> list[str]:
     return [st.name for st in spec.steps if not _is_stop(st) and not st.after]
 
 
+#: The largest file New study accepts (each file).
+_UPLOAD_MAX_BYTES = 200 * 1024 * 1024
+
+
+async def _save_uploads(files: list[Any], folder: Path, allowed: set[str], what: str) -> list[Path]:
+    """Save the files added on New study into ``folder``; a wrong type or a file too large is refused in a sentence."""
+    from ..core.study_inputs import InputError
+
+    saved: list[Path] = []
+    for f in files:
+        name = Path(str(getattr(f, "filename", "") or "")).name
+        if not name:
+            continue  # an empty "Add files" field
+        if Path(name).suffix.lower() not in allowed:
+            raise InputError(f"{name} is not {what}.")
+        target = folder / name
+        n = 2
+        while target.exists():
+            target = folder / f"{Path(name).stem}_{n}{Path(name).suffix}"
+            n += 1
+        written = 0
+        with target.open("wb") as out:
+            while chunk := await f.read(1024 * 1024):
+                written += len(chunk)
+                if written > _UPLOAD_MAX_BYTES:
+                    raise InputError(f"{name} is larger than {_UPLOAD_MAX_BYTES // (1024 * 1024)} MB.")
+                out.write(chunk)
+        saved.append(target.resolve())
+    return saved
+
+
 @app.post("/papers", dependencies=[Depends(require_auth)])
 async def submit_new_paper(
     request: Request,
@@ -2191,16 +2266,27 @@ async def submit_new_paper(
     max_cost_usd: float | None = Form(None),
     demonstration: str = Form(""),
     review_at: list[str] = Form([]),
+    data_choice: str = Form(""),
+    data_file: list[str] = Form([]),
+    paper_choice: str = Form(""),
+    paper: list[str] = Form([]),
+    only_my_papers: str = Form(""),
 ) -> Any:
     """Form-encoded handler that mirrors POST /api/papers. Redirects to the progress page.
 
-    A refusal (a first run over the $1 floor, an unknown template) is shown on
-    the form, with what was typed kept. The form needs the dashboard's session
-    cookie (require_auth), as the JSON /api/papers does; a tab without it gets
-    the "not signed in" page.
+    A refusal (a first run over the $1 floor, an unknown template, a file that
+    cannot be read) is shown on the form, with what was typed kept. The form
+    needs the dashboard's session cookie (require_auth), as the JSON /api/papers
+    does; a tab without it gets the "not signed in" page.
+
+    The data files and papers ticked on the form are what the study uses
+    (``data_choice``/``paper_choice`` say the form offered the choice); files
+    added with "Add files" come with the form and are copied into the study.
     """
     from ..cli_run import derive_title
     from ..core.demonstration import DEMONSTRATION
+    from ..core.study_inputs import InputError, new_upload_folder
+    from ..modules.local_corpus import DATA_EXTENSIONS, DATA_EXTENSIONS_TEXT
 
     rq = research_question.strip()
     values = {
@@ -2212,32 +2298,64 @@ async def submit_new_paper(
         "max_cost_usd": max_cost_usd,
         "demonstration": bool(demonstration),
         "review_at": list(review_at),
+        "data_files": list(data_file) if data_choice else None,
+        "papers": list(paper) if paper_choice else None,
+        "only_my_papers": bool(only_my_papers),
     }
+
+    def refuse(message: str, status: int = 422) -> Any:
+        return templates.TemplateResponse(
+            request, "new.html", _new_form_context(values, message, request), status_code=status
+        )
+
     if not rq:
-        return templates.TemplateResponse(
-            request, "new.html", _new_form_context(values, "Write the research question first."), status_code=422
-        )
-    backend = get_settings().llm_backend
-    req = CreatePaperRequest(
-        title=title.strip() or derive_title(rq),
-        research_question=rq,
-        mode=mode,
-        methodology=methodology,
-        pipeline=pipeline,
-        max_cost_usd=max_cost_usd,
-        # The CLI backends run on the researcher's subscription at $0, so the
-        # $1 first-run floor protects nothing there (as `e2er run` does).
-        acknowledge_unproven_tuple=backend in {"claude_code", "codex", "gemini"},
-        purpose=DEMONSTRATION if demonstration else None,
-        review_stages=list(dict.fromkeys(review_at)),
-    )
-    bg = BackgroundTasks()
+        return refuse("Write the research question first.")
+    form = await request.form()
+    folder = new_upload_folder()
     try:
-        resp = await create_paper(req, bg)
-    except HTTPException as e:
-        return templates.TemplateResponse(
-            request, "new.html", _new_form_context(values, str(e.detail)), status_code=e.status_code
+        try:
+            added_data = await _save_uploads(
+                form.getlist("data_upload"),
+                folder,
+                set(DATA_EXTENSIONS),
+                f"a data file e2er can read ({DATA_EXTENSIONS_TEXT})",
+            )
+            added_papers = await _save_uploads(
+                form.getlist("paper_upload"), folder, {".pdf", ".bib"}, "a paper e2er can read (.pdf or .bib)"
+            )
+        except InputError as e:
+            return refuse(f"{e} Nothing was started; add the files again.")
+        backend = get_settings().llm_backend
+        data_files = [*data_file, *map(str, added_data)] if (data_choice or added_data) else None
+        papers = [*paper, *map(str, added_papers)] if (paper_choice or added_papers) else None
+        req = CreatePaperRequest(
+            title=title.strip() or derive_title(rq),
+            research_question=rq,
+            mode=mode,
+            methodology=methodology,
+            pipeline=pipeline,
+            max_cost_usd=max_cost_usd,
+            # The CLI backends run on the researcher's subscription at $0, so the
+            # $1 first-run floor protects nothing there (as `e2er run` does).
+            acknowledge_unproven_tuple=backend in {"claude_code", "codex", "gemini"},
+            purpose=DEMONSTRATION if demonstration else None,
+            review_stages=list(dict.fromkeys(review_at)),
+            data_files=data_files,
+            papers=papers,
+            web_search=not only_my_papers,
         )
+        bg = BackgroundTasks()
+        try:
+            resp = await create_paper(req, bg)
+        except HTTPException as e:
+            return refuse(
+                str(e.detail) + (" Add the files again." if (added_data or added_papers) else ""), e.status_code
+            )
+    finally:
+        # The added files are in the study now (copied when it started); the waiting folder goes.
+        import shutil
+
+        shutil.rmtree(folder, ignore_errors=True)
     # FastAPI normally runs background_tasks after the response; here we manually
     # await any tasks the create_paper handler queued (github repo creation).
     await bg()
@@ -2271,6 +2389,8 @@ async def paper_detail(request: Request, paper_id: str = Depends(_validate_uuid)
             "study": await attempt_context(paper_id),
             "artifacts": artifacts,
             "reading": _reading_list(artifacts),
+            # The "Data and papers" panel follows a run that is preparing or working.
+            "inputs_live": str(paper.get("status") or "") in IN_FLIGHT or paper_id in _RUNNING,
             "groups": _artifact_groups(
                 workspace,
                 artifacts,
@@ -3062,9 +3182,8 @@ async def stream_artifact(paper_id: str, path: str) -> FileResponse:
     )
 
 
-# Accepted BYOD file extensions. Limits applied to keep workspace cheap to mount.
-_DATA_EXT_ALLOW = {".csv", ".tsv", ".parquet", ".xlsx", ".xls", ".json", ".jsonl", ".txt"}
-_DATA_FILE_MAX_BYTES = 200 * 1024 * 1024  # 200 MB per upload
+# Accepted BYOD file extensions: the one list (local_corpus.DATA_EXTENSIONS). 200 MB per upload.
+_DATA_FILE_MAX_BYTES = _UPLOAD_MAX_BYTES
 
 
 @app.post("/api/papers/{paper_id}/files", dependencies=[Depends(require_auth)])
@@ -3081,12 +3200,10 @@ async def upload_data_file(paper_id: str, file: UploadFile = File(...)) -> dict[
     name = Path(file.filename or "").name  # strip any path components
     if not name:
         raise HTTPException(status_code=400, detail="filename is required")
-    suffix = Path(name).suffix.lower()
-    if suffix not in _DATA_EXT_ALLOW:
-        raise HTTPException(
-            status_code=400,
-            detail=f"unsupported extension {suffix!r}; allowed: {sorted(_DATA_EXT_ALLOW)}",
-        )
+    from ..modules.local_corpus import not_a_data_file
+
+    if why := not_a_data_file(name):
+        raise HTTPException(status_code=400, detail=why)
 
     data_dir = workspace / "data"
     data_dir.mkdir(exist_ok=True)
@@ -3141,18 +3258,13 @@ async def _prepare_and_run(
             await import_corpus_into_data_db(workspace, settings.max_rows_per_paper)
         except Exception as e:  # noqa: BLE001 — best-effort; pipeline still runs
             logger.warning("BYOD import failed for %s: %s (pipeline continues)", paper_id, e)
+        # The researcher's papers, then the web search. Must precede _run_pipeline: the
+        # drafter reads literature.bib from the prompt, and a cite with no bib entry is a
+        # hard fail at the citation gate and an undefined reference at compile time.
         try:
-            await _ingest_literature_corpus(paper_id, workspace, settings)
+            await _prepare_papers(paper_id, workspace, settings, research_question, title)
         except Exception as e:  # noqa: BLE001
-            logger.warning("literature ingest failed for %s: %s (pipeline continues)", paper_id, e)
-        # Runs second so the BYOD library above wins; acquisition self-skips when a
-        # bibliography already exists. Must precede _run_pipeline: the drafter reads
-        # literature.bib from the prompt, and a cite with no bib entry is a hard fail
-        # at the citation gate and an undefined reference at compile time.
-        try:
-            await _acquire_literature(paper_id, workspace, settings, research_question, title)
-        except Exception as e:  # noqa: BLE001
-            logger.warning("literature acquisition failed for %s: %s (pipeline continues)", paper_id, e)
+            logger.warning("literature preparation failed for %s: %s (pipeline continues)", paper_id, e)
     except asyncio.CancelledError:
         # Cancel pressed in the first seconds, before the run itself started: the runner's own
         # handler never ran, and the run would stay "idea" for good with nothing to resume.

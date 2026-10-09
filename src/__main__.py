@@ -173,6 +173,27 @@ def main() -> None:
         "then `e2er review <paper_id>` to edit, instruct, send back or approve (or `e2er resume` to continue).",
     )
     run_p.add_argument(
+        "--data",
+        nargs="+",
+        default=None,
+        metavar="FILE",
+        help="The data files this study uses (.csv, .tsv, .jsonl, .parquet, .xlsx), as on New study. "
+        "Without --data the study takes every data file of the data folder (LOCAL_DATA_DIR).",
+    )
+    run_p.add_argument(
+        "--papers",
+        nargs="+",
+        default=None,
+        metavar="FILE",
+        help="The papers this study reads and cites: PDFs and .bib files (or a folder of them), as on New study. "
+        "Without --papers it takes every paper of the literature folder and .bib files.",
+    )
+    run_p.add_argument(
+        "--only-my-papers",
+        action="store_true",
+        help="No web search for further literature: the study cites only the researcher's papers.",
+    )
+    run_p.add_argument(
         "--max-cost",
         type=float,
         default=5.0,
@@ -936,6 +957,9 @@ def main() -> None:
                 review_stages=args.review_at,
                 template=args.template,
                 demonstration=args.demonstration,
+                data=args.data,
+                papers=args.papers,
+                only_my_papers=args.only_my_papers,
             )
         )
     elif args.command == "init":

@@ -1728,7 +1728,10 @@ def test_byod_upload_rejects_unknown_extension(tmp_path, monkeypatch):
         files={"file": ("malware.exe", b"MZ", "application/octet-stream")},
     )
     assert resp.status_code == 400
-    assert "unsupported extension" in resp.json()["detail"]
+    # One plain sentence, naming the types e2er reads (the one list, local_corpus.DATA_EXTENSIONS).
+    assert resp.json()["detail"] == (
+        "malware.exe is not a data file e2er can read. Use .csv, .tsv, .jsonl, .parquet or .xlsx."
+    )
 
 
 def test_tier1_context_includes_user_data(tmp_path):

@@ -21,7 +21,13 @@ def parse_bibtex_file(bib_path: Path) -> list[PaperMetadata]:
 
         library = bibtexparser.parse_file(str(bib_path))
         # v2 Entry → flat str dict, matching what _entry_to_metadata expects.
-        papers = [_entry_to_metadata({k: v.value for k, v in entry.fields_dict.items()}) for entry in library.entries]
+        # The entry's own key and type go along: the study's literature.bib keeps the researcher's keys.
+        papers = [
+            _entry_to_metadata(
+                {**{k: v.value for k, v in entry.fields_dict.items()}, "ID": entry.key, "ENTRYTYPE": entry.entry_type}
+            )
+            for entry in library.entries
+        ]
         logger.info("Parsed %d entries from %s", len(papers), bib_path)
         return papers
     except ImportError:
@@ -78,4 +84,5 @@ def _entry_to_metadata(entry: dict) -> PaperMetadata:
         url=entry.get("url", ""),
         source="bibtex",
         raw=entry,
+        cite_key=str(entry.get("ID") or ""),
     )

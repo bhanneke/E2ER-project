@@ -175,6 +175,39 @@ def derive_title(rq: str, limit: int = 80) -> str:
     return title
 
 
+def resolve_inputs(data: list[str] | None, papers: list[str] | None) -> tuple[list[str] | None, list[str] | None]:
+    """``--data`` and ``--papers`` as the server takes them: full paths and paper ids.
+
+    A folder given to ``--papers`` stands for every PDF and .bib file in it (and
+    below); a folder given to ``--data`` for every data file in it. Raises
+    ValueError with one plain sentence for a missing file or a type e2er does not read.
+    """
+    from .core.study_inputs import InputError, check_data_files, check_paper_ids
+    from .modules.local_corpus import DATA_EXTENSIONS
+
+    def expand(items: list[str], suffixes: set[str]) -> list[str]:
+        out: list[str] = []
+        for raw in items:
+            p = Path(raw).expanduser()
+            if p.is_dir():
+                found = sorted(str(f.resolve()) for f in p.rglob("*") if f.is_file() and f.suffix.lower() in suffixes)
+                if not found:
+                    raise ValueError(f"{p} holds no {' or '.join(sorted(suffixes))} files.")
+                out.extend(found)
+            else:
+                out.append(str(p.resolve()) if p.exists() else str(p.absolute()))
+        return out
+
+    try:
+        data_files = (
+            [str(p) for p in check_data_files(expand(data, set(DATA_EXTENSIONS)))] if data is not None else None
+        )
+        paper_ids = check_paper_ids(expand(papers, {".pdf", ".bib"})) if papers is not None else None
+    except InputError as e:
+        raise ValueError(str(e)) from e
+    return data_files, paper_ids
+
+
 def _submit_paper(
     rq: str,
     methodology: str,
@@ -188,6 +221,9 @@ def _submit_paper(
     title_suffix: str = "",
     template: str | None = None,
     demonstration: bool = False,
+    data_files: list[str] | None = None,
+    papers: list[str] | None = None,
+    web_search: bool = True,
 ) -> dict | None:
     """POST /api/papers and return the response body."""
     import httpx
@@ -237,6 +273,13 @@ def _submit_paper(
         # Recorded in the study's manifest.json at start: export, publish, the
         # paper's footnote, the reproduction report and the dossier take it from there.
         body["purpose"] = "demonstration"
+    # What the study uses (src/core/study_inputs.py): full paths, checked by the caller.
+    if data_files is not None:
+        body["data_files"] = data_files
+    if papers is not None:
+        body["papers"] = papers
+    if not web_search:
+        body["web_search"] = False
     try:
         r = httpx.post(f"{_api_root()}/api/papers", json=body, headers=api_headers(), timeout=30.0)
     except httpx.HTTPError as e:
@@ -296,6 +339,9 @@ def run(
     review_stages: list[str] | None = None,
     template: str = "empirical",
     demonstration: bool = False,
+    data: list[str] | None = None,
+    papers: list[str] | None = None,
+    only_my_papers: bool = False,
 ) -> int:
     """Submit a paper and tail it. Entry point for `e2er run "<RQ>"`."""
     # The template must be a file e2er can load, checked before the server is
@@ -308,6 +354,12 @@ def run(
         names = ", ".join(sorted(available())) or "none"
         print(f"e2er run: {str(e).splitlines()[0]}. Available templates: {names}", file=sys.stderr)
         return 2
+    # The chosen files are checked here, before anything is started: a typo costs a message.
+    try:
+        data_files, paper_ids = resolve_inputs(data, papers)
+    except ValueError as e:
+        print(f"e2er run: {e}", file=sys.stderr)
+        return 2
     ok, err = _ensure_api_up()
     if not ok:
         print(f"e2er run: {err}", file=sys.stderr)
@@ -319,6 +371,12 @@ def run(
     gov_note = f", governance={governance}" if governance else ""
     review_note = f", review-at={','.join(review_stages)}" if review_stages else ""
     demo_note = ", demonstration or test run" if demonstration else ""
+    if data_files is not None:
+        demo_note += f", data: {', '.join(Path(f).name for f in data_files) or 'none'}"
+    if paper_ids is not None:
+        demo_note += f", papers: {len(paper_ids)} file(s)/entries"
+    if only_my_papers:
+        demo_note += ", only my papers"
     print(
         f"  template={template}, methodology={methodology}, mode={mode}, max_cost=${max_cost}"
         f"{backend_note}{model_note}{gov_note}{review_note}{demo_note}",
@@ -336,6 +394,9 @@ def run(
         review_stages=review_stages,
         template=template,
         demonstration=demonstration,
+        data_files=data_files,
+        papers=paper_ids,
+        web_search=not only_my_papers,
     )
     if not resp:
         return 5

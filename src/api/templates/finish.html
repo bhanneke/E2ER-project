@@ -13,6 +13,40 @@
   <div class="pf-banner bad">This study has not finished (status: {{ paper.shown_status | status_words }}). You can still check what it has produced.</div>
 {% endif %}
 
+{% if inputs %}
+<section class="card" id="card-used">
+  <div class="card-h"><h2>What the study used</h2></div>
+  <h3>Data used</h3>
+  {% if inputs.loads %}
+    <table class="wf-table compact">
+      <thead><tr><th>Source</th><th>What</th><th>Fingerprint</th></tr></thead>
+      <tbody>
+        {% for d in inputs.loads %}
+          <tr><td>{{ "added for this study" if d.uploaded else d.source }}</td><td class="mono">{{ d.what }}</td>
+            <td class="mono muted">{% if d.sha256 %}{{ d.sha256[:12] }}…{% endif %}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p class="small muted">The study page on e2er.org lists the same, with the terms and citation of each source.</p>
+  {% else %}
+    <p class="muted">No data loads were recorded.</p>
+  {% endif %}
+  <h3>References in the paper ({{ inputs.references | length }})</h3>
+  {% if inputs.references %}
+    <ul class="inputs-list">
+      {% for r in inputs.references %}
+        <li>{{ r.authors }}{% if r.year %} ({{ r.year }}){% endif %}. {{ r.title }}
+          <span class="src-tag{% if not r.mine %} web{% endif %}">{{ r.source }}</span></li>
+      {% endfor %}
+    </ul>
+  {% elif inputs.cited is none %}
+    <p class="muted">There is no draft yet.</p>
+  {% else %}
+    <p class="muted">The paper cites nothing from its bibliography.</p>
+  {% endif %}
+</section>
+{% endif %}
+
 <section class="card" id="card-folder" data-state="{{ 'ok' if export else 'none' }}">
   <header class="card-h">
     <span class="dot" aria-hidden="true"></span>

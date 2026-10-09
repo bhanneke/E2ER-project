@@ -260,8 +260,9 @@ def _banned(text: str) -> list[str]:
     return [m.group(0) for m in _BANNED.finditer(text)]
 
 
-#: Identifiers in templates that are not visible text: a CSS class and a JSON key of `e2er verify`.
-_TEMPLATE_IDENTIFIERS = ("pf-verdict", "d.verdict")
+#: Identifiers in templates that are not visible text: a CSS class, a JSON key of `e2er verify`, and the
+#: file types a file field takes (``accept=".pdf,.bib"``).
+_TEMPLATE_IDENTIFIERS = ("pf-verdict", "d.verdict", 'accept="')
 
 
 @pytest.mark.parametrize("path", sorted((ROOT / "src" / "api" / "templates").glob("*.html")), ids=lambda p: p.name)

@@ -342,12 +342,11 @@ async def test_acquisition_seeds_the_bibliography_from_the_corpus(db_path, tmp_p
     assert (workspace / "literature" / "corpus_evidence.md").is_file()
 
 
-async def test_an_existing_bibliography_is_not_overwritten_but_evidence_is_still_written(
+async def test_an_existing_bibliography_is_kept_and_the_library_papers_join_it_as_the_researchers(
     db_path, tmp_path, monkeypatch
 ):
-    """A BYOD library must not have web hits merged in — but a new evidence file
-    is not a merge, and withholding it would punish exactly the users who have
-    built a corpus."""
+    """The researcher's bibliography stays as it is; the Library's papers whose claims the evidence
+    quotes join it, marked as the researcher's (the Library is theirs), and the evidence is written."""
     from src.config import get_settings
     from src.modules.literature.discovery import acquire_literature
 
@@ -356,11 +355,19 @@ async def test_an_existing_bibliography_is_not_overwritten_but_evidence_is_still
     (workspace / "literature.bib").write_text("@article{mine2020,\n  title = {Mine},\n}\n")
 
     monkeypatch.setattr("src.modules.literature.corpus_context.corpus_path", lambda explicit=None: db_path)
+    monkeypatch.setattr("src.modules.literature.registry.search_sources", lambda s: [])
+
+    async def _no_store(item, paper_id):
+        return None
+
+    monkeypatch.setattr("src.modules.literature.storage.store_paper", _no_store)
 
     written = await acquire_literature(workspace, "paper-1", ["equity loading"], get_settings())
 
-    assert written == 0
-    assert "Spot ETFs" not in (workspace / "literature.bib").read_text()
+    assert written == 1
+    bib = (workspace / "literature.bib").read_text()
+    assert bib.startswith("@article{mine2020,") and "Spot ETFs" in bib
+    assert "e2er_source = {researcher}" in bib
     assert (workspace / "literature" / "corpus_evidence.md").is_file()
 
 

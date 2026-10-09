@@ -34,7 +34,8 @@ def test_tables_from_unavailable_sources_are_violations_with_the_reason(tmp_path
     assert not check.ok and check.artifact == "data_dictionary.json"
     assert "table crsp_market_daily (source crsp): e2er has no connector for crsp" in check.reason
     assert "table dgs2 (source fred): fred needs FRED_API_KEY, which is not set" in check.reason
-    assert "table ff_factors_daily (source file)" in check.reason and "holds no data files" in check.reason
+    assert "table ff_factors_daily (source file)" in check.reason
+    assert "no data files were chosen for this study" in check.reason
     assert "spy_prices" not in check.reason
     assert "Available now: yfinance, gmd; no data files." in check.reason
 
@@ -54,13 +55,22 @@ def test_available_connectors_and_local_files_pass(tmp_path: Path):
     assert all(c.ok for c in check_declared_sources(tmp_path, _settings(fred_api_key="k")))
 
 
-def test_a_file_in_local_data_dir_counts(tmp_path: Path):
+def test_only_the_files_staged_into_the_study_count_not_the_live_data_folder(tmp_path: Path):
+    """Since 0.15.0 a study uses the files chosen for it (staged into its data/ folder when it started).
+
+    A file that sits in the data folder but was not chosen is not the study's: the planning check
+    refuses a table from it, and a file added to the folder later does not join a running study.
+    """
     shared = tmp_path / "shared"
     shared.mkdir()
     (shared / "banks.csv").write_text("a\n1\n")
     ws = tmp_path / "ws"
     ws.mkdir()
     _dictionary(ws, [{"name": "banks", "source": "local", "file": "banks.csv"}])
+    [bad] = check_declared_sources(ws, _settings(local_data_dir=str(shared)))
+    assert not bad.ok and "no data files were chosen for this study" in bad.reason
+    (ws / "data").mkdir()
+    (ws / "data" / "banks.csv").symlink_to(shared / "banks.csv")
     assert all(c.ok for c in check_declared_sources(ws, _settings(local_data_dir=str(shared))))
 
 
@@ -146,4 +156,4 @@ def test_a_supplied_table_matches_a_file_of_its_name(tmp_path: Path):
     assert all(c.ok for c in check_declared_sources(tmp_path, _settings()))
     _dictionary(tmp_path, [{"name": "other_dates", "source": "researcher-supplied"}])
     [bad] = check_declared_sources(tmp_path, _settings())
-    assert "files there: fomc_dates.csv" in bad.reason
+    assert "among the study's data files (fomc_dates.csv)" in bad.reason

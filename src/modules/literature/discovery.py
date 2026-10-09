@@ -167,9 +167,12 @@ async def ingest_literature(workspace: Path, paper_id: str, roots: list[Path], m
     return stored
 
 
-def _write_literature_bib(workspace: Path, items: list[PaperMetadata]) -> None:
+def _write_literature_bib(workspace: Path, items: list[PaperMetadata], *, keep_existing: bool = False) -> None:
     """Write/merge the discovered library into workspace/literature.bib (deduped
-    by bibtex key). Best-effort; assemble_refs_bib later merges it into refs.bib."""
+    by bibtex key). Best-effort; assemble_refs_bib later merges it into refs.bib.
+
+    ``keep_existing``: an entry already in the file wins over a new one with the
+    same key (the web search never replaces one of the researcher's papers)."""
     if not items:
         return
     try:
@@ -181,7 +184,7 @@ def _write_literature_bib(workspace: Path, items: list[PaperMetadata]) -> None:
                 if "{" in block and "," in block:
                     entries.setdefault(block.split("{", 1)[1].split(",", 1)[0].strip(), block.strip())
         for it in items:
-            if it.title:
+            if it.title and not (keep_existing and it.bibtex_key in entries):
                 entries[it.bibtex_key] = it.to_bibtex()
         bib_path.write_text("\n\n".join(entries.values()) + "\n", encoding="utf-8")
         logger.info("Wrote %d bib entries to %s", len(entries), bib_path.name)
@@ -203,12 +206,38 @@ def bib_entry_count(workspace: Path) -> int:
         return 0
 
 
+def _bib_marks(workspace: Path) -> set[str]:
+    """DOIs and titles already in ``literature.bib``: a web hit for one of them is the same paper."""
+    from ...core.pipeline.verify_citations import load_bib
+
+    marks: set[str] = set()
+    for fields in load_bib(Path(workspace) / "literature.bib").values():
+        if fields.get("doi"):
+            marks.add("doi:" + str(fields["doi"]).lower().strip())
+        if fields.get("title"):
+            marks.add("t:" + _norm_title(str(fields["title"])))
+    return marks
+
+
+def _norm_title(title: str) -> str:
+    return " ".join("".join(c if c.isalnum() else " " for c in title.lower()).split())
+
+
+def _same_paper(paper: PaperMetadata, marks: set[str]) -> bool:
+    return bool(
+        (paper.doi and "doi:" + paper.doi.lower().strip() in marks) or ("t:" + _norm_title(paper.title) in marks)
+    )
+
+
 async def acquire_literature(
     workspace: Path,
     paper_id: str,
     queries: list[str],
     settings: Settings,
     limit: int = 30,
+    *,
+    web_search: bool = True,
+    chosen: list[PaperMetadata] | None = None,
 ) -> int:
     """Search the web providers for this paper's own research question and record
     the hits in ``literature.bib``. Returns the number of entries written.
@@ -230,8 +259,12 @@ async def acquire_literature(
     So this does not ask. It runs before any specialist does, and the drafter
     finds a real bibliography already on disk — v1's arrangement, restored.
 
-    Skipped when a bibliography already exists: BYOD/Zotero users have their own
-    library and must not have web hits merged into it silently.
+    Since 0.15.0 it runs in addition to the researcher's own papers (which
+    ``study_inputs.prepare_papers`` wrote first): its entries are tagged
+    ``e2er_source = {web}`` and shown as "found on the web", never mixed in
+    silently, and none replaces one of the researcher's entries. The researcher
+    turns it off with "Use only my papers" (``web_search=False``); then the
+    corpus evidence, too, is limited to the papers they chose (``chosen``).
 
     Best-effort: a failing provider is skipped, a failing store is logged, and a
     dead network costs the bibliography rather than the run. The caller wraps
@@ -250,16 +283,22 @@ async def acquire_literature(
     # wrong order.
     await corpus_context.ingest_staged_pdfs(workspace)
 
-    # Then the corpus: offline, free, and already checked. This runs even when
-    # a bibliography exists, because writing a new evidence file is not the same
-    # as merging web hits into a BYOD library — the thing the skip below
-    # protects against. Degrades to nothing when no corpus has been built.
+    # Then the corpus: offline, free, and already checked. Degrades to nothing
+    # when no corpus has been built.
     evidence = corpus_context.gather(wanted)
+    if chosen is not None:
+        evidence = corpus_context.with_chosen(evidence, chosen, only=not web_search)
     corpus_context.write_evidence(workspace, evidence)
 
     existing = bib_entry_count(workspace)
-    if existing:
-        logger.info("literature.bib already holds %d entries for %s — acquisition skipped", existing, paper_id)
+    if not web_search:
+        # "Use only my papers": no request goes out; the Library's evidence (already limited to the
+        # chosen papers above) may still seed the entries its claims come from.
+        marks = _bib_marks(workspace) if existing else set()
+        seeded = [p for p in evidence.as_metadata() if p.title and not _same_paper(p, marks)]
+        if seeded:
+            _write_literature_bib(workspace, seeded, keep_existing=True)
+        logger.info("literature web search for %s is off (use only my papers); %d entries", paper_id, existing)
         return 0
 
     if not wanted:
@@ -288,18 +327,23 @@ async def acquire_literature(
                         found.setdefault(paper.bibtex_key, paper)
                 break
 
+    # The researcher's own papers are already in the file: a hit for one of them is not a second entry.
+    marks = _bib_marks(workspace) if existing else set()
+    found = {k: p for k, p in found.items() if not _same_paper(p, marks)}
+
     if not found:
-        logger.warning(
-            "literature acquisition found nothing for %s (%d query/queries, %d source(s)) — "
-            "the drafter will have no bibliography and every cite will report missing_in_bib",
-            paper_id,
-            len(wanted),
-            len(sources),
-        )
+        if not existing:
+            logger.warning(
+                "literature acquisition found nothing for %s (%d query/queries, %d source(s)) — "
+                "the drafter will have no bibliography and every cite will report missing_in_bib",
+                paper_id,
+                len(wanted),
+                len(sources),
+            )
         return 0
 
     items = list(found.values())
-    _write_literature_bib(workspace, items)
+    _write_literature_bib(workspace, items, keep_existing=True)
 
     # Parity with the BYOD path: persist so search_papers can serve these
     # offline. Per-item best-effort — a storage failure must not cost the bib.

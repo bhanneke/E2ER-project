@@ -7,6 +7,7 @@ breaks it fails in e2er's own suite.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import shutil
@@ -241,12 +242,13 @@ def _free_port() -> int:
         return int(s.getsockname()[1])
 
 
-def test_the_fomc_event_study_replays_to_the_end_through_the_server(tmp_path: Path):
-    """`e2er serve` under the replay level: the event-study template from the question to a completed run."""
+@contextlib.contextmanager
+def _replay_server(tmp_path: Path, scenario: str, settings: list[str]):
+    """`e2er serve` under the replay level for a study folder in tmp; yields (api, study folder)."""
     port = _free_port()
     study, home = tmp_path / "study", tmp_path / "home"
-    study.mkdir()
-    home.mkdir()
+    study.mkdir(exist_ok=True)
+    home.mkdir(exist_ok=True)
     (study / ".env").write_text(
         "\n".join(
             [
@@ -257,22 +259,16 @@ def test_the_fomc_event_study_replays_to_the_end_through_the_server(tmp_path: Pa
                 f"PORT={port}",
                 "CORPUS_AUTOINGEST=false",
                 "LITERATURE_ACQUIRE_LIMIT=0",
-                # As in the recorded run: a FRED key, and the researcher's own FOMC
-                # dates in the data folder (the data architect may only plan tables
-                # from sources the study has).
-                "FRED_API_KEY=replay-key",
-                f"LOCAL_DATA_DIR={study / 'data'}",
+                *settings,
             ]
         )
         + "\n"
     )
-    (study / "data").mkdir()
-    (study / "data" / "fomc_announcement_dates.csv").write_text("date\n2015-12-16\n", encoding="utf-8")
     env = {
         **os.environ,
         "HOME": str(home),
         "PYTHONPATH": str(ROOT),
-        "E2ER_REPLAY_SCENARIO": "fomc",
+        "E2ER_REPLAY_SCENARIO": scenario,
         "E2ER_REPLAY_NETLOG": str(tmp_path / "net.txt"),
         "E2ER_SKIP_SETUP_REDIRECT": "1",
         "E2ER_SESSION_TOKEN": "replay-session",
@@ -299,6 +295,38 @@ def test_the_fomc_event_study_replays_to_the_end_through_the_server(tmp_path: Pa
                     break
             except httpx.HTTPError:
                 time.sleep(0.25)
+        yield api, study
+    finally:
+        server.terminate()
+        server.wait(timeout=10)
+
+
+def _approve_to_the_end(api: str, pid: str) -> tuple[dict, list[str]]:
+    stops = []
+    for _ in range(8):
+        p = _wait(api, pid)
+        if p["status"] == "completed":
+            break
+        stage = httpx.get(f"{api}/api/papers/{pid}/review", timeout=10).json()["pending"]["stage"]
+        stops.append(stage)
+        r = httpx.post(
+            f"{api}/api/papers/{pid}/review",
+            json={"action": "approve"},
+            headers={"x-e2er-token": "replay-session"},
+            timeout=30,
+        )
+        assert r.status_code == 200, r.text
+    return p, stops
+
+
+def test_the_fomc_event_study_replays_to_the_end_through_the_server(tmp_path: Path):
+    """`e2er serve` under the replay level: the event-study template from the question to a completed run."""
+    study = tmp_path / "study"
+    (study / "data").mkdir(parents=True)
+    (study / "data" / "fomc_announcement_dates.csv").write_text("date\n2015-12-16\n", encoding="utf-8")
+    # As in the recorded run: a FRED key, and the researcher's own FOMC dates in the data
+    # folder (the data architect may only plan tables from sources the study has).
+    with _replay_server(tmp_path, "fomc", ["FRED_API_KEY=replay-key", f"LOCAL_DATA_DIR={study / 'data'}"]) as (api, _):
         body = {
             "title": FOMC["title"],
             "research_question": FOMC["research_question"],
@@ -310,20 +338,7 @@ def test_the_fomc_event_study_replays_to_the_end_through_the_server(tmp_path: Pa
         pid = httpx.post(f"{api}/api/papers", json=body, headers={"x-e2er-token": "replay-session"}, timeout=30).json()[
             "paper_id"
         ]
-        stops = []
-        for _ in range(8):
-            p = _wait(api, pid)
-            if p["status"] == "completed":
-                break
-            stage = httpx.get(f"{api}/api/papers/{pid}/review", timeout=10).json()["pending"]["stage"]
-            stops.append(stage)
-            r = httpx.post(
-                f"{api}/api/papers/{pid}/review",
-                json={"action": "approve"},
-                headers={"x-e2er-token": "replay-session"},
-                timeout=30,
-            )
-            assert r.status_code == 200, r.text
+        p, stops = _approve_to_the_end(api, pid)
         assert p["status"] == "completed", p
         assert stops == ["review_design", "preregister", "review_draft"]
         ws = Path(p["workspace"])  # named after the date and title since 0.14.0
@@ -334,9 +349,72 @@ def test_the_fomc_event_study_replays_to_the_end_through_the_server(tmp_path: Pa
         assert (ws / "preregistration.lock.json").is_file() and (ws / "review_aggregation.json").is_file()
         blocked = (tmp_path / "net.txt").read_text() if (tmp_path / "net.txt").exists() else ""
         assert "anthropic" not in blocked and "zenodo" not in blocked
-    finally:
-        server.terminate()
-        server.wait(timeout=10)
+
+
+def test_a_study_with_chosen_data_and_papers_replays_to_the_end(tmp_path: Path):
+    """The byod scenario: the researcher chooses 3 of 4 data files and 2 PDFs + 1 of 2 .bib entries.
+
+    Exactly those reach the study: the 3 files are staged and imported into data.db
+    (the recorded data analyst adds its tables without replacing them), the 3 papers
+    are in literature.bib with the keys the draft cites (tagged as the researcher's),
+    the citation check finds every cited key, and the run page's panel lists them.
+    """
+    byod = json.loads((FIXTURES / "byod" / "scenario.json").read_text(encoding="utf-8"))
+    inputs = FIXTURES / "byod" / "inputs"
+    study = tmp_path / "study"
+    shutil.copytree(inputs / "data", study / "data")
+    shutil.copytree(inputs / "literature", study / "literature")
+    lit = (study / "literature").resolve()
+    with _replay_server(
+        tmp_path,
+        "byod",
+        ["FRED_API_KEY=replay-key", f"LOCAL_DATA_DIR={study / 'data'}", f"LITERATURE_DIR={lit}"],
+    ) as (api, _):
+        papers = [
+            f"bib:{lit / 'refs.bib'}#{p.split('#')[1]}" if "#" in p else str(lit / p) for p in byod["inputs"]["papers"]
+        ]
+        body = {
+            "title": FOMC["title"],
+            "research_question": FOMC["research_question"],
+            "mode": "single_pass",
+            "pipeline": FOMC["template"],
+            "acknowledge_unproven_tuple": True,
+            "data_files": [str((study / "data" / n).resolve()) for n in byod["inputs"]["data"]],
+            "papers": papers,
+        }
+        r = httpx.post(f"{api}/api/papers", json=body, headers={"x-e2er-token": "replay-session"}, timeout=30)
+        assert r.status_code == 200, r.text
+        pid = r.json()["paper_id"]
+        p, stops = _approve_to_the_end(api, pid)
+        assert p["status"] == "completed", (p.get("last_error"), stops)
+        ws = Path(p["workspace"])
+
+        assert sorted(x.name for x in (ws / "data").iterdir()) == sorted(byod["inputs"]["data"])
+        import sqlite3
+
+        con = sqlite3.connect(ws / "data.db")
+        tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+        con.close()
+        assert {"bank_tickers", "target_rate_changes", "fomc_announcement_dates"} <= tables
+        assert {"spy_prices", "dgs2"} <= tables, "the recorded analyst's tables join the researcher's"
+        assert not any("unrelated" in t for t in tables)
+        loads = json.loads((ws / "data_sources.json").read_text(encoding="utf-8"))["loads"]
+        mine = sorted(x["series"] for x in loads if x["connector"] == "data-folder")
+        assert mine == sorted(byod["inputs"]["data"])
+
+        from src.core.pipeline.verify_citations import load_bib
+
+        bib = load_bib(ws / "literature.bib")
+        assert set(bib) == set(byod["inputs"]["cited_keys"])
+        assert {f["e2er_source"] for f in bib.values()} == {"researcher"}
+        integrity = json.loads((ws / "citation_integrity.json").read_text(encoding="utf-8"))
+        assert integrity["total_cites"] == 3 and integrity["missing_in_bib"] == 0
+
+        panel = httpx.get(
+            f"{api}/htmx/papers/{pid}/inputs", headers={"x-e2er-token": "replay-session"}, timeout=10
+        ).text
+        assert "Your papers (3)" in panel and "target_rate_changes.csv" in panel
+        assert "Not searched" not in panel and "unrelated_survey" not in panel
 
 
 def _wait(api: str, pid: str) -> dict:

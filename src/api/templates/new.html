@@ -16,7 +16,7 @@
   <p class="error" role="alert">{{ error }}</p>
 {% endif %}
 
-<form method="post" action="/papers" class="paper-form" id="new-study">
+<form method="post" action="/papers" class="paper-form" id="new-study" enctype="multipart/form-data">
   <label>
     <span>Research question</span>
     <textarea name="research_question" rows="4" required
@@ -39,6 +39,66 @@
         </label>
       {% endfor %}
     </div>
+  </fieldset>
+
+  <fieldset class="plain" id="data-choice">
+    <legend>Data</legend>
+    <input type="hidden" name="data_choice" value="1">
+    <small class="muted">The study uses the files you tick, and public data it fetches itself (FRED, Yahoo Finance and other sources under Settings).</small>
+    {% if files_problem %}
+      <p class="pick-empty">{{ files_problem }}</p>
+    {% else %}
+    <div class="pick" data-pick="data">
+      {% if data_rows %}
+        <div class="pick-tools">
+          <input type="search" placeholder="Search your data files" data-pick-search aria-label="Search your data files">
+          <button type="button" class="btn-ghost btn-small" data-pick-all>Select all</button>
+          <button type="button" class="btn-ghost btn-small" data-pick-none>Select none</button>
+          <span class="pick-count" data-pick-count></span>
+        </div>
+        <div class="pick-list">
+          {% for f in data_rows %}
+            <label class="pick-row" data-text="{{ f.name | lower }}">
+              <input type="checkbox" name="data_file" value="{{ f.path }}" {% if f.ticked %}checked{% endif %}>
+              <span class="pick-name">{{ f.name }}</span>
+              <span class="pick-meta">{{ f.kind }} · {{ f.size | filesize }}</span>
+            </label>
+          {% endfor %}
+        </div>
+        <p class="pick-note muted">From your data folder: <code class="path">{{ data_dir }}</code></p>
+      {% else %}
+        <p class="pick-empty">{% if data_dir %}Your data folder (<code class="path">{{ data_dir }}</code>) holds no data files.{% else %}No data folder is set (Settings).{% endif %} Add files here, or the study uses public data only.</p>
+      {% endif %}
+      <div class="pick-add">
+        <label class="btn btn-small"><input type="file" name="data_upload" multiple accept="{{ data_accept }}" data-add="data" hidden> Add files</label>
+        <span class="muted small">{{ data_types }}. Files you add here are kept with this study only.</span>
+      </div>
+      <ul class="pick-added" data-added="data"></ul>
+    </div>
+    {% endif %}
+  </fieldset>
+
+  <fieldset class="plain" id="paper-choice">
+    <legend>Papers</legend>
+    <small class="muted">The study reads and cites the papers you tick: from your literature folder, your .bib files and your Library.</small>
+    {% if files_problem %}
+      <p class="pick-empty">{{ files_problem }}</p>
+    {% else %}
+    <div class="pick" data-pick="papers">
+      <div id="paper-list" hx-get="/htmx/new/papers{% if papers_query %}?{{ papers_query }}{% endif %}" hx-trigger="load" hx-swap="innerHTML">
+        <p class="pick-empty">Reading your papers…</p>
+      </div>
+      <div class="pick-add">
+        <label class="btn btn-small"><input type="file" name="paper_upload" multiple accept=".pdf,.bib" data-add="papers" hidden> Add PDFs or a .bib file</label>
+        <span class="muted small">Files you add here are kept with this study only.</span>
+      </div>
+      <ul class="pick-added" data-added="papers"></ul>
+    </div>
+    <label class="check">
+      <input type="checkbox" name="only_my_papers" value="1" {% if values.only_my_papers %}checked{% endif %}>
+      <span>Use only my papers. Otherwise e2er also searches OpenAlex and arXiv for the research question; the study marks those papers as found on the web.</span>
+    </label>
+    {% endif %}
   </fieldset>
 
   <label class="check">
@@ -106,6 +166,58 @@
   }
   form.querySelectorAll('input[name=pipeline]').forEach((r) => r.addEventListener('change', sync));
   sync();
+
+  // Data files and papers: search, select all or none, and how many are ticked.
+  function wire(pick) {
+    if (!pick || pick.dataset.wired) return;
+    const rows = () => Array.from(pick.querySelectorAll('.pick-row'));
+    const count = pick.querySelector('[data-pick-count]');
+    const update = () => {
+      if (!count) return;
+      const all = rows().length;
+      const on = rows().filter((r) => r.querySelector('input').checked).length;
+      count.textContent = on + ' of ' + all + ' ticked';
+    };
+    const search = pick.querySelector('[data-pick-search]');
+    if (!search) return;
+    pick.dataset.wired = '1';
+    search.addEventListener('input', () => {
+      const q = search.value.trim().toLowerCase();
+      rows().forEach((r) => { r.hidden = q && !r.dataset.text.includes(q); });
+    });
+    const setVisible = (on) => { rows().filter((r) => !r.hidden).forEach((r) => { r.querySelector('input').checked = on; }); update(); };
+    pick.querySelector('[data-pick-all]').addEventListener('click', () => setVisible(true));
+    pick.querySelector('[data-pick-none]').addEventListener('click', () => setVisible(false));
+    pick.addEventListener('change', (ev) => { if (ev.target.matches('.pick-row input')) update(); });
+    update();
+  }
+  document.querySelectorAll('[data-pick]').forEach(wire);
+  document.body.addEventListener('htmx:afterSettle', () => document.querySelectorAll('[data-pick]').forEach(wire));
+
+  // Files added on this page: listed with their size; a type e2er does not read is refused here.
+  const allowed = { data: '{{ data_accept }}'.split(','), papers: ['.pdf', '.bib'] };
+  const kinds = { data: '{{ data_types }}', papers: '.pdf or .bib' };
+  form.querySelectorAll('[data-add]').forEach((input) => {
+    input.addEventListener('change', () => {
+      const which = input.dataset.add;
+      const list = form.querySelector('[data-added="' + which + '"]');
+      list.innerHTML = '';
+      const bad = Array.from(input.files).filter((f) => !allowed[which].some((x) => f.name.toLowerCase().endsWith(x)));
+      if (bad.length) {
+        const li = document.createElement('li');
+        li.className = 'error';
+        li.textContent = bad.map((f) => f.name).join(', ') + ': e2er cannot read ' + (bad.length > 1 ? 'these' : 'this') + '. Use ' + kinds[which] + '.';
+        list.appendChild(li);
+        input.value = '';
+        return;
+      }
+      Array.from(input.files).forEach((f) => {
+        const li = document.createElement('li');
+        li.textContent = f.name + ' (' + (f.size >= 1048576 ? (f.size / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(f.size / 1024)) + ' KB') + '), added for this study';
+        list.appendChild(li);
+      });
+    });
+  });
 })();
 </script>
 {% endblock %}

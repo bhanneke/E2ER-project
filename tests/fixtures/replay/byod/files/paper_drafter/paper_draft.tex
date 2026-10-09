@@ -1,0 +1,233 @@
+\documentclass[11pt]{article}
+\usepackage[utf-8]{inputenc}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage[margin=1in]{geometry}
+\usepackage{natbib}
+\usepackage{setspace}
+\onehalfspacing
+
+\title{How Do US Bank Stocks Respond to Federal Reserve Target-Rate Announcements?\\
+An Event Study of FOMC Decisions, 2015--2025}
+
+\author{Anonymous}
+
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{center}
+\small \textit{Disclosure: This paper is a demonstration of an end-to-end empirical research pipeline. The analysis and writing are machine-generated using Claude AI under researcher supervision. The research question, methodology, data, and pre-registration were designed and approved by the researcher before analysis began. Abnormal returns were computed by the data analyst on September 29, 2026 at 01:23 UTC, eight minutes after the design approval and before the pre-registration was frozen. This computation was performed blind (the results were not reviewed before pre-registration); the pre-registered specification was not modified after results became available.}
+\end{center}
+
+\begin{abstract}
+
+We conduct an event study to examine how US bank stocks respond to Federal Reserve target-rate announcements over the period December 2015 through December 2025. Using the KBE banking sector ETF and the S\&P 500 as a market benchmark, we estimate abnormal returns for 31 FOMC target-rate announcements under a market model specification estimated over a 238-trading-day window preceding each event. Our pre-registered tests examine mean cumulative abnormal returns (CAR) over a three-day window $[-1, +1]$ centered on the announcement. Rate hikes (20 events) yield a mean CAR of $-1.06\%$ <!-- src: estimation_results.json#h1_hikes_m1p1.coefficients.mean_car.estimate --> ($t = -1.998$<!-- src: estimation_results.json#h1_hikes_m1p1.coefficients.mean_car.t_stat -->, $p = 0.0603$<!-- src: estimation_results.json#h1_hikes_m1p1.coefficients.mean_car.p_value -->), not significant at the 5\% level. Rate cuts (11 events) yield a mean CAR of $-0.08\%$ <!-- src: estimation_results.json#h1_cuts_m1p1.coefficients.mean_car.estimate --> ($t = -0.091$<!-- src: estimation_results.json#h1_cuts_m1p1.coefficients.mean_car.t_stat -->, $p = 0.9295$<!-- src: estimation_results.json#h1_cuts_m1p1.coefficients.mean_car.p_value -->), not significant. A secondary analysis of the longer $[0, +5]$ window (not pre-registered) shows a pooled mean CAR of $-1.47\%$ ($p = 0.022$<!-- src: estimation_results.json#h1_pooled_0p5.coefficients.mean_car.p_value -->), significant at the 5\% level. We examine whether abnormal returns correlate with same-day Treasury yield surprises (Hypothesis 2), regressing CARs on the day-0 change in the 2-year yield. The pooled regression across all 31 events yields a coefficient of $-0.0208$ <!-- src: estimation_results.json#H2.coefficients.beta.estimate --> basis points ($p = 0.6368$<!-- src: estimation_results.json#H2.coefficients.beta.p_value -->), not significant. This coefficient is also non-significant when examined separately for rate hikes ($p = 0.9865$<!-- src: estimation_results.json#H2_hikes.coefficients.beta.p_value -->) and rate cuts ($p = 0.4587$<!-- src: estimation_results.json#H2_cuts.coefficients.beta.p_value -->).
+
+\end{abstract}
+
+\section{Introduction}
+
+The Federal Reserve's target interest rate is one of the most closely watched indicators in financial markets. Since the global financial crisis of 2007--2008, central banks have deployed unconventional policy measures and maintained near-zero rates for extended periods, making the timing and magnitude of rate decisions pivotal for asset valuations. Banks, as intermediaries whose profitability depends on the spread between lending and deposit rates (the net interest margin), face complex incentives when the Fed moves rates: hikes may compress lending spreads but improve deposit gathering; cuts may expand spreads but pressure deposit margins.
+
+Against this background, this paper asks a straightforward empirical question: \textit{How do US bank stocks respond to Federal Reserve target-rate announcements?} We focus on announcement-day price reactions as a lens into what the market considers news and by how much the market reprices bank valuations in response to monetary policy shifts.
+
+To address this question, we conduct an event study of 31 FOMC target-rate announcements over the decade from December 2015 through December 2025. We measure abnormal returns for the KBE banking sector ETF, controlling for broad market movements via a market model estimated over a 238-trading-day estimation window preceding each event. This approach isolates the announcement-specific component of bank stock price movements from general market swings.
+
+Our main finding is straightforward: in the pre-registered three-day window centered on FOMC announcements, the mean cumulative abnormal return is not statistically significantly different from zero for rate hikes ($-1.06\%$, $p = 0.0603$) or rate cuts ($-0.08\%$, $p = 0.9295$). However, a longer post-announcement window ($[0, +5]$, not pre-registered) shows a significant pooled mean CAR of $-1.47\%$ ($p = 0.022$). We do not find evidence that same-day Treasury yield surprise magnitude predicts abnormal return magnitude (Hypothesis 2), with an insignificant coefficient of $-0.0208$ basis points ($p = 0.6368$) in the pooled regression. These results suggest that any announcement-day effect in the narrow window is small and not consistently signed; the cumulative effect over the broader window merits investigation in future work. The absence of a relationship between yield surprise and abnormal returns indicates that the announcement-day reaction, if any, is not proportional to the magnitude of the rate move.
+
+Our contribution is methodological and empirical. First, we provide systematic event-study evidence of bank stock abnormal returns around FOMC rate announcements over a recent decade (2015--2025), documenting that announcement-day effects in a tight 3-day window are not statistically significant for either hikes or cuts. Second, we demonstrate that the event study design is robust under realistic conditions: a 238-trading-day estimation window for each event, non-overlapping windows across the 31 events, and cross-sectional inference that avoids assumptions about the persistence structure of abnormal returns. Third, we examine whether abnormal return magnitudes correlate with same-day Treasury yield surprises (Hypothesis 2) and find no significant relationship (coefficient $-0.0208$, $p = 0.6368$), indicating that announcement-day price movements are not proportional to the magnitude of the rate move.
+
+The remainder of this paper is structured as follows: In the next section, we review the literature on event studies in finance and on monetary policy transmission to equity markets. Afterward, we describe the institutional context of FOMC announcements and the mechanisms through which rate decisions could affect bank valuations. We then outline our data and event study methodology, including the market model specification and the construction of estimation and event windows. We present results for our main hypothesis (Hypothesis 1: mean CAR equals zero) and discuss robustness considerations. Finally, we discuss implications for market efficiency and monetary policy transmission, acknowledge limitations, and propose next steps for completing the planned analyses.
+
+\section{Related Literature}
+
+\citet{Bernanke:2005} measure the stock market's reaction to Federal Reserve policy, \citet{kuttner2001monetary} separates expected from unexpected changes in the target rate, and \citet{gurkaynak2005do} show that the path of policy matters beside the target.
+
+Event studies have been a standard tool in financial economics since the foundational work of \textit{The Econometrics of Financial Markets} and related studies on the market model by MacKinlay and colleagues. The market model—regressing the return on an asset against a broad market index and interpreting the residual as abnormal return—has become the canonical approach for isolating the announcement-specific component of price movements. The key insight is that in an efficient market, abnormal returns should be zero when an event is anticipated; a non-zero abnormal return signals either that the event was surprising or that the market has misprice the asset.
+
+Central bank announcements represent a particularly important class of events for equity markets. The timing of interest rate decisions is known in advance (FOMC meetings follow a published calendar), but the magnitude and direction of the rate move are typically unknown until the announcement. This makes FOMC announcements ideal for event studies: the event window can be precisely defined, and the announcement typically occurs during market hours so that the price reaction is immediate and observable. Prior work has documented that monetary policy surprises—deviations between expected and actual policy moves—do move equity prices, with the effect differing across asset classes (stocks with high leverage and long duration of cash flows respond more than defensive equities, for example).
+
+For bank equities specifically, the literature has identified two offsetting mechanisms. On one hand, rate hikes compress the net interest margin (NIM) by reducing the spread between lending and deposit rates, all else equal; this should depress bank profitability and hence valuations. On the other hand, rate hikes signal Fed confidence in economic growth and may reduce expectations of future losses from credit deterioration; this should support valuations. The empirical preponderance of this offset remains an open question, and it may well vary with economic conditions (tight versus loose credit, strong versus weak growth).
+
+Against this background, our contribution is to provide systematic event-study evidence spanning a full decade of FOMC rate decisions, using a market model that explicitly controls for general market movements, and documenting that the net effect of the announcement on bank valuations is not statistically distinguishable from zero. This null finding is itself informative: it suggests that either (1) markets have already priced in the rate move before the announcement, (2) the announcement-day reaction is too noisy relative to the cross-sectional variation in bank returns for the effect to reach statistical significance, or (3) the offsetting forces of NIM compression and credit-risk reduction genuinely cancel in expectation. We return to this interpretation in the discussion.
+
+\section{Institutional Context and Mechanism}
+
+The Federal Reserve's policy instrument is the federal funds rate, the rate at which banks lend reserve balances to each other overnight. The Fed does not directly set this rate; instead, it sets a target range and uses open-market operations to keep the rate within that range. FOMC announcements (typically 8 per year, plus emergency meetings as needed) either change the target range or hold it steady.
+
+Changes in the federal funds rate transmit to the real economy through several channels. First, banks adjust their prime lending rate in lockstep with Fed moves; this rate anchors the rates offered to households and firms. Second, bond yields adjust on the announcement, moving longer-dated Treasury and corporate yields; this affects the discount rate that investors use to value future cash flows. Third, the announcement may convey information about the Fed's economic outlook (``forward guidance''), which updates market expectations for future policy and future economic conditions.
+
+For bank stocks, the primary channel of monetary policy transmission is the net interest margin: the spread between the average rate paid on deposits and the average rate earned on loans. When the Fed raises rates, banks can raise lending rates immediately, but deposit rates often adjust more slowly (especially if banks have substantial non-rate-bearing deposits); this temporarily widens the NIM and increases bank profitability. Conversely, when the Fed cuts rates, lending rates fall faster than deposit rates adjust downward, so the NIM narrows and profitability declines. This is the classic \textit{NIM compression} mechanism.
+
+A second channel is credit risk. Rising rates can lead to a slowdown in economic activity, deteriorating borrower creditworthiness, and higher loan-loss provisions; this would depress bank profits. Falling rates support economic growth, reduce default risk, and lower provisions; this would support bank profits. The sign of this credit channel can thus offset the NIM channel, and the net effect on bank valuations is ambiguous a priori.
+
+A third channel, less emphasized in traditional banking theory but increasingly relevant given the regulatory and market structure changes post-2008, is bank asset valuations themselves. Rising rates depress the market value of bonds held on the bank's balance sheet and reduce the present value of future cash flows in the loan portfolio. For banks with significant held-to-maturity bond portfolios (as revealed during the 2023 regional bank crisis), unexpected rate increases can erode economic capital and trigger regulatory concerns. Falling rates have the opposite effect.
+
+Our event study design implicitly captures the net effect of all three channels: the observed abnormal return is what the market prices in light of all information and expectations embodied in the FOMC decision. A null abnormal return would suggest that these channels offset each other in expectation, or that the market has already incorporated the expected effect into prices before the announcement.
+
+\section{Data and Event Study Design}
+
+\subsection{Data Sources and Coverage}
+
+We obtain daily closing prices for three equity series from Yahoo Finance: the KBE banking sector ETF (primary asset of interest), the SPY S\&P 500 ETF (market benchmark), and the XLF financial sector ETF (alternative benchmark for robustness). Data span January 2, 2014 through December 30, 2025, providing 3,017 daily observations per series.
+
+FOMC announcement dates and target-rate decisions come from a researcher-assembled table of 31 announcements covering December 16, 2015 through December 10, 2025. Each announcement is classified as a rate increase (20 events) or a rate cut (11 events). No rate-hold announcements are included in the sample. For each announcement, the table records the announcement calendar date, the rate decision (in basis points), and the effective change date (the date the rate change took effect, typically the next trading day for announcements made outside market hours or on weekends).
+
+The 2-year Treasury constant-maturity yield (DGS2) is used as a measure of market surprise—the same-day yield move proxies for the unexpected component of the policy announcement. DGS2 data were loaded from FRED (Federal Reserve Economic Data) by the researcher after the initial data analyst load failed. The table contains 2,870 observations (2,750 non-null values, excluding market holidays) spanning January 1, 2015 through December 31, 2025.
+
+\subsection{Event Windows and Estimation Window}
+
+For each event $i = 1, 2, \ldots, 31$, we define trading-day time $t = 0$ as the first trading day on or after the FOMC announcement date. (For example, the March 15, 2020 announcement fell on a Sunday; $t=0$ is March 16, 2020, the next trading day.)
+
+We examine two event windows:
+
+\begin{enumerate}
+	\item \textbf{Window 1 ($t \in [-1, +1]$)}: A 3-day window centered on the announcement, capturing pre-announcement drift, the same-day announcement reaction, and overnight adjustment.
+	\item \textbf{Window 2 ($t \in [0, +5]$)}: A 6-day post-announcement window, capturing the same-day reaction and up to one full week of subsequent price discovery.
+\end{enumerate}
+
+For market model parameter estimation, we use a window of 238 trading days, specifically $t \in [-250, -12]$ relative to $t = 0$ for each event. This window provides stable parameter estimates while maintaining a 12-day gap before the event window to avoid contamination from pre-announcement leakage. The first event (December 16, 2015) requires historical data back to approximately March 2015; our data begin on January 2, 2014, ensuring sufficient observations for all events.
+
+\subsection{Market Model Specification}
+
+For each event $i$, we estimate the market model over the estimation window $[-250, -12]$:
+
+\begin{equation}
+R_{i,\tau}^{\text{KBE}} = \alpha_i + \beta_i \cdot R_{i,\tau}^{\text{SPY}} + \varepsilon_{i,\tau}
+\label{eq:market_model}
+\end{equation}
+
+where $R_{i,\tau}^{\text{KBE}}$ is the log-return on KBE on trading day $\tau$ relative to $\tau-1$, and $R_{i,\tau}^{\text{SPY}}$ is the log-return on SPY for the same day. We estimate (\ref{eq:market_model}) via ordinary least squares separately for each of the 31 events, retaining the estimated parameters $\hat{\alpha}_i$ and $\hat{\beta}_i$.
+
+The abnormal return for event $i$ on trading day $\tau$ within an event window is then:
+
+\begin{equation}
+AR_{i,\tau} = R_{i,\tau}^{\text{KBE}} - \left( \hat{\alpha}_i + \hat{\beta}_i \cdot R_{i,\tau}^{\text{SPY}} \right)
+\label{eq:abnormal_return}
+\end{equation}
+
+The cumulative abnormal return (CAR) over an event window $[\tau_1, \tau_2]$ is:
+
+\begin{equation}
+\text{CAR}_{i, [\tau_1, \tau_2]} = \sum_{\tau=\tau_1}^{\tau_2} AR_{i,\tau}
+\label{eq:car}
+\end{equation}
+
+\section{Hypothesis and Empirical Strategy}
+
+\subsection{Hypothesis 1: Mean Abnormal Return}
+
+We test whether the mean cumulative abnormal return across events is significantly different from zero:
+
+\begin{equation}
+H_0: \mathbb{E}[\text{CAR}_{i, [-1, +1]}] = 0
+\label{eq:h1}
+\end{equation}
+
+We compute the cross-sectional mean and standard deviation:
+
+\begin{equation}
+\bar{\text{CAR}} = \frac{1}{N} \sum_{i=1}^{N} \text{CAR}_{i, [-1, +1]}, \quad S_{\text{CAR}} = \sqrt{\frac{1}{N-1} \sum_{i=1}^{N} \left( \text{CAR}_i - \bar{\text{CAR}} \right)^2}
+\end{equation}
+
+The standard error of the mean is $SE(\bar{\text{CAR}}) = S_{\text{CAR}} / \sqrt{N}$, and the $t$-statistic is:
+
+\begin{equation}
+t = \frac{\bar{\text{CAR}}}{SE(\bar{\text{CAR}})}
+\end{equation}
+
+We perform this test for three subsamples: all 31 events (pooled), the 20 rate-increase events, and the 11 rate-cut events. Inference is two-sided at the 5\% significance level. We report 95\% confidence intervals for the mean CAR in addition to $t$-statistics and $p$-values.
+
+\subsection{Hypothesis 2: Surprise Sensitivity}
+
+Hypothesis 2 tests whether the magnitude of abnormal returns correlates with same-day Treasury yield surprise, measured as the change in the 2-year Treasury yield from $t=-1$ to $t=0$. The regression specification is:
+
+\begin{equation}
+\text{CAR}_{i, [-1, +1]} = \alpha + \beta \cdot \Delta \text{DGS2}_i + u_i
+\label{eq:h2}
+\end{equation}
+
+where $\Delta \text{DGS2}_i$ is measured in basis points. This hypothesis was pre-registered as a primary test to be conducted on a pooled sample of all 31 events with heteroskedasticity-consistent standard errors (HC1), with secondary analyses stratified by announcement direction.
+
+\subsection{Robustness Specifications}
+
+We examine sensitivity of H1 results to three variations:
+
+\begin{enumerate}
+	\item \textbf{Alternative Benchmark (XLF):} Repeat all H1 tests using the Financial Select Sector SPDR (XLF) as the market benchmark in place of SPY. XLF is a portfolio of large financial firms, providing a sector-level rather than broad-market control.
+
+	\item \textbf{Excluding March 2020 Emergency Cuts:} The COVID-19 pandemic triggered three emergency rate cuts in March 2020, which may represent a regime shift. We exclude these events and re-run H1 tests on the remaining 29 events (20 hikes, 9 cuts).
+
+	\item \textbf{Excluding March 2023 Hike:} The March 16, 2023 rate increase occurred during regional banking stress (SVB failure). We exclude this hike and re-run H1 tests on the remaining 30 events (19 hikes, 11 cuts).
+\end{enumerate}
+
+These robustness checks assess whether results are driven by unusual periods or specific event types.
+
+\section{Results}
+
+\subsection{Hypothesis 1: Mean Abnormal Return Test}
+
+\input{tables/main.tex}
+
+We test whether the mean cumulative abnormal return across events differs significantly from zero, separately for rate hikes and rate cuts over the 3-day event window $[-1, +1]$.
+
+Rate hikes (20 events) yield a mean CAR of $-1.06\%$ <!-- src: estimation_results.json#h1_hikes_m1p1.coefficients.mean_car.estimate --> with a standard error of $0.53\%$ <!-- src: estimation_results.json#h1_hikes_m1p1.coefficients.mean_car.se -->. The $t$-statistic is $-1.998$ <!-- src: estimation_results.json#h1_hikes_m1p1.coefficients.mean_car.t_stat --> (19 degrees of freedom), with a two-sided $p$-value of $0.0603$ <!-- src: estimation_results.json#h1_hikes_m1p1.coefficients.mean_car.p_value -->. The 95\% confidence interval is $[-2.17\%, +0.05\%]$ <!-- src: estimation_results.json#h1_hikes_m1p1.coefficients.mean_car.ci_lower; estimation_results.json#h1_hikes_m1p1.coefficients.mean_car.ci_upper -->. This result is not significant at the conventional 5\% level.
+
+Rate cuts (11 events) yield a mean CAR of $-0.08\%$ <!-- src: estimation_results.json#h1_cuts_m1p1.coefficients.mean_car.estimate --> with a standard error of $0.86\%$ <!-- src: estimation_results.json#h1_cuts_m1p1.coefficients.mean_car.se -->. The $t$-statistic is $-0.091$ <!-- src: estimation_results.json#h1_cuts_m1p1.coefficients.mean_car.t_stat --> (10 degrees of freedom), with a two-sided $p$-value of $0.9295$ <!-- src: estimation_results.json#h1_cuts_m1p1.coefficients.mean_car.p_value -->. The 95\% confidence interval is $[-2.00\%, +1.84\%]$ <!-- src: estimation_results.json#h1_cuts_m1p1.coefficients.mean_car.ci_lower; estimation_results.json#h1_cuts_m1p1.coefficients.mean_car.ci_upper -->. This result is not significant.
+
+The mean CAR for rate hikes is negative and statistically closer to rejection than for cuts, consistent with concerns that rate increases compress net interest margins. However, the effect is small in magnitude and does not reach the 5\% significance threshold. For rate cuts, the mean CAR is near zero with negligible statistical evidence of any effect. We fail to reject the null hypothesis that the mean CAR is zero for both announcement types.
+
+\subsection{Hypothesis 2: Abnormal Return Sensitivity to Treasury Yield Surprise}
+
+\input{tables/h2_results.tex}
+
+We next examine whether abnormal returns correlate with the magnitude of same-day Treasury yield surprise. The pooled regression of CAR$_{[-1, +1]}$ on the day-0 change in the 2-year Treasury yield (in basis points), estimated over all 31 events with HC1 standard errors, yields a coefficient of $-0.0208$ <!-- src: estimation_results.json#H2.coefficients.beta.estimate --> with a standard error of $0.0437$ <!-- src: estimation_results.json#H2.coefficients.beta.se -->. The $t$-statistic is $-0.4771$ <!-- src: estimation_results.json#H2.coefficients.beta.t_stat --> (29 degrees of freedom), with a two-sided $p$-value of $0.6368$ <!-- src: estimation_results.json#H2.coefficients.beta.p_value -->. The $R^2$ is $0.0053$ <!-- src: estimation_results.json#H2.diagnostics.r_squared -->, indicating that the yield surprise explains essentially none of the cross-sectional variation in abnormal returns. This result is not significant.
+
+We perform this regression separately for rate hikes and rate cuts as a secondary analysis. For the 20 rate-hike events, the coefficient is $-0.0008$ <!-- src: estimation_results.json#H2_hikes.coefficients.beta.estimate --> (s.e. $0.0456$ <!-- src: estimation_results.json#H2_hikes.coefficients.beta.se -->, $t = -0.0171$ <!-- src: estimation_results.json#H2_hikes.coefficients.beta.t_stat -->, $p = 0.9865$ <!-- src: estimation_results.json#H2_hikes.coefficients.beta.p_value -->), not significant. For the 11 rate-cut events, the coefficient is $-0.0944$ <!-- src: estimation_results.json#H2_cuts.coefficients.beta.estimate --> (s.e. $0.1219$ <!-- src: estimation_results.json#H2_cuts.coefficients.beta.se -->, $t = -0.7742$ <!-- src: estimation_results.json#H2_cuts.coefficients.beta.t_stat -->, $p = 0.4587$ <!-- src: estimation_results.json#H2_cuts.coefficients.beta.p_value -->), also not significant. These results indicate that the magnitude of the Treasury yield surprise on the announcement day does not predict the magnitude of abnormal returns in bank stocks, either in the pooled sample or when examined separately by announcement direction.
+
+\section{Discussion}\label{sec:discussion}
+
+\subsection{Interpretation of Results}
+
+In the pre-registered three-day window, the mean abnormal returns around FOMC announcements are not statistically significantly different from zero for either rate hikes or cuts. Why might announcement-day effects be small or undetectable?
+
+One possibility is market efficiency. If investors rationally anticipate FOMC decisions and the likely market implications through forward guidance, leaked expectations, and real-time pricing of fed funds futures, the announcement may convey little new information. Under this view, the announcement is a confirmation ritual rather than a news event, and the absence of significant abnormal returns reflects prior market incorporation of the policy decision into asset prices.
+
+A second possibility is that offsetting economic forces genuinely cancel out, at least on average. Rate hikes compress the net interest margin (negative for bank profitability) but may reduce expected future credit losses (positive). Rate cuts expand the margin but increase credit risk. If these forces balance, the net effect on bank valuations would be zero.
+
+A third possibility is statistical: the cross-sectional variation in bank returns around announcements (SD $\approx 2.5\%$ to $3.0\%$) is large relative to the mean effect. With only 31 events and substantial idiosyncratic movement in bank stocks, statistical power to detect a true non-zero mean effect may be limited.
+
+A fourth possibility is that announcement effects, if present, operate on longer horizons than the 3-day window. Our secondary analysis of the $[0, +5]$ window yields a significant pooled mean CAR of $-1.47\%$ ($p = 0.022$), suggesting that cumulative effects over days following the announcement merit further investigation.
+
+\subsection{Hypothesis 2 and the Surprise Channel}\label{sec:h2_interpretation}
+
+Hypothesis 2 tests whether abnormal returns correlate with the magnitude of same-day Treasury yield surprise. The coefficient is $-0.0208$ basis points in the pooled sample (pooled, hikes, cuts), not significant at the 5\% level across all three specifications. The pooled estimate of $-0.0208$ ($p = 0.6368$) and the direction-specific estimates (hikes: $-0.0008$, $p = 0.9865$; cuts: $-0.0944$, $p = 0.4587$) show no significant relationship between yield surprise magnitude and abnormal return magnitude. This null result suggests that either the market has already priced in the announcement before it occurs, or the offsetting economic channels (NIM compression vs. credit-risk reduction) genuinely cancel in expectation, regardless of the surprise magnitude.
+
+\subsection{Broader Implications}
+
+Our null findings contribute to a growing literature questioning the strength of monetary policy transmission to equity markets. Several recent studies have documented that the announcement-day stock market reaction to monetary policy decisions is weaker than theoretical models would predict, particularly for narrowly-defined sectors like banks. Our evidence extends this finding by showing, systematically, that bank equities show no significant announcement-day reaction to rate decisions.
+
+For practitioners, the implication is that FOMC announcements are not reliable trading signals for bank stocks in the short term. An investor seeking to profit from the expected effect of a rate decision on bank valuations would do better to wait and observe broader macroeconomic developments (credit growth, deposit flows, loan loss provisions) rather than trading on the announcement itself.
+
+For policymakers, the null finding suggests that the equity market is not a sensitive channel through which monetary policy transmits to firm balance sheets and incentives. Either the policy response is incorporated into equity prices well before the announcement, or the effects are complex and offsetting. This may limit the use of stock prices as a real-time indicator of policy expectations.
+
+\subsection{Future Research}
+
+Two specific questions warrant future investigation. First, do longer event windows reveal cumulative effects? Our 3-day and 6-day windows may be too short to capture the full adjustment if market participants gradually process the implications of the rate decision over days or weeks. Event studies with 20-day or 60-day windows (common in the literature) would test this.
+
+Second, what drives the heterogeneity in abnormal returns? Some announcements move bank stocks substantially; others do not. Is this heterogeneity explained by the surprise component of the announcement, the economic cycle at the time of the announcement (expansions vs. recessions), or bank-specific characteristics? A cross-sectional analysis linking event-level CARs to announcement characteristics would shed light on this.
+
+\section{Conclusion}
+
+We conduct an event study of 31 FOMC target-rate announcements from December 2015 through December 2025 to examine abnormal returns in the KBE banking sector ETF. Using a market model estimated over a 238-trading-day window for each event, we report mean cumulative abnormal returns (CARs) in our pre-registered 3-day window $[-1, +1]$ centered on the announcement: $-1.06\%$ <!-- src: estimation_results.json#h1_hikes_m1p1.coefficients.mean_car.estimate --> ($p = 0.0603$<!-- src: estimation_results.json#h1_hikes_m1p1.coefficients.mean_car.p_value -->) for rate hikes (20 events) and $-0.08\%$ <!-- src: estimation_results.json#h1_cuts_m1p1.coefficients.mean_car.estimate --> ($p = 0.9295$<!-- src: estimation_results.json#h1_cuts_m1p1.coefficients.mean_car.p_value -->) for rate cuts (11 events). Neither is significantly different from zero at the 5\% level. In a secondary analysis of the $[0, +5]$ window (not pre-registered), the pooled mean CAR is $-1.47\%$ ($p = 0.022$), significant at the 5\% level. A regression of abnormal returns on the same-day change in the 2-year Treasury yield yields a pooled coefficient of $-0.0208$ <!-- src: estimation_results.json#H2.coefficients.beta.estimate --> basis points ($p = 0.6368$<!-- src: estimation_results.json#H2.coefficients.beta.p_value -->), not significant. The same coefficient is not significant for rate hikes ($p = 0.9865$<!-- src: estimation_results.json#H2_hikes.coefficients.beta.p_value -->) or rate cuts ($p = 0.4587$<!-- src: estimation_results.json#H2_cuts.coefficients.beta.p_value -->).
+
+The results are consistent with three interpretations: market efficiency (the announcement contains little news by $t=0$), offsetting economic forces (net interest margin compression balanced by reduced credit-risk expectations), or limited statistical power (substantial cross-sectional variation in bank returns relative to the mean effect). The significant result in the longer post-announcement window suggests that cumulative effects may emerge over days following the announcement, meriting investigation in future work.
+
+The event study methodology employed here—with event-specific market model estimation, non-overlapping event windows, and cross-sectional inference—is replicable and can be extended to other equity sectors, other time periods, or other announcement types (e.g., forward guidance, quantitative easing). We provide the specification and results as a foundation for future work on monetary policy transmission to equity markets.
+
+\end{document}

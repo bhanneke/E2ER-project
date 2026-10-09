@@ -655,7 +655,7 @@ def _build_user_prompt(work_order: WorkOrder) -> str:
     parts = [f"## Work Order\n{work_order.focus}"]
     if work_order.context:
         parts.append(f"\n## Context\n{work_order.context}")
-    bib = _load_reference_summary(work_order.specialist)
+    bib = _load_reference_summary(work_order.specialist, work_order.paper_id)
     if bib:
         parts.append(f"\n{bib}")
     workspace_bib = _workspace_bib_for_prompt(work_order.specialist, work_order.paper_id)
@@ -758,77 +758,66 @@ def _build_user_prompt(work_order: WorkOrder) -> str:
     return "\n".join(parts)
 
 
-def _load_reference_summary(specialist: str) -> str:
-    """Return a compact bibliography block from the configured reference
-    libraries.
+def _load_reference_summary(specialist: str, paper_id: str | None = None) -> str:
+    """The researcher's own papers for this study, with the keys that are in its ``literature.bib``.
 
-    Libraries are resolved via the Lane-B registry
-    (``reference_libraries``). Today that's the local ``.bib`` corpus
-    (``LITERATURE_BIBTEX_FILE`` + any ``*.bib`` in ``LOCAL_DATA_DIR``);
-    Zotero and Citavi plug in there later (see
-    ``docs/internal/MODULARIZATION_PLAN.md``). Entries are merged and de-duplicated
-    by (title, year) so the same paper in two libraries isn't listed
-    twice. Empty config → empty string.
+    Read from the study's own ``literature.bib`` (the entries tagged
+    ``e2er_source = {researcher}``), which ``study_inputs.prepare_papers``
+    wrote before any specialist ran: the papers the researcher chose on New
+    study, or without a choice every paper of their folders, .bib files and
+    Zotero libraries.
+
+    Before 0.15.0 this block read the researcher's .bib file and Zotero
+    libraries afresh at every prompt and showed their entries as citable,
+    while none of them was ever written into the study's bibliography: a paper
+    that cited one failed the citation check (missing_in_bib). Now a key shown
+    here is a key in the file, because it is read from the file.
     """
-    if specialist not in _BIB_SPECIALISTS:
+    if specialist not in _BIB_SPECIALISTS or not paper_id:
         return ""
     from ...config import get_settings
-    from ...modules.literature.registry import reference_libraries
+    from ...home import find_workspace
+    from ...modules.literature.models import SOURCE_FIELD
+    from ..pipeline.verify_citations import load_bib
 
-    libraries = reference_libraries(get_settings())
-    if not libraries:
+    workspace = find_workspace(paper_id, get_settings().workspace_root)
+    entries = [(k, f) for k, f in load_bib(workspace / "literature.bib").items() if f.get(SOURCE_FIELD) == "researcher"]
+    if not entries:
         return ""
-
-    all_papers = []
-    seen: set[tuple[str, str]] = set()
-    sources_used: list[str] = []
-    for library in libraries:
-        try:
-            papers = library.entries()
-        except Exception:
-            continue
-        if not papers:
-            continue
-        sources_used.append(library.name)
-        for p in papers:
-            key = (p.title.strip().lower(), str(p.year or ""))
-            if key in seen:
-                continue
-            seen.add(key)
-            all_papers.append(p)
-
-    if not all_papers:
-        return ""
-
-    sources_label = ", ".join(sources_used) if len(sources_used) <= 3 else f"{len(sources_used)} libraries"
-    has_pdf = any(p.pdf_url for p in all_papers)
-    header = f"## Available References ({len(all_papers)} papers from {sources_label})"
-    lines = [header]
+    pdfs = _staged_pdfs_by_key(workspace)
+    lines = [f"## The Researcher's Own Papers ({len(entries)}, chosen for this study)"]
     lines.append(
-        "Cite ONLY from this list, using the exact `\\cite{key}` shown at the start of each entry — "
-        "these are the only keys that exist in the bibliography. Do NOT invent citations or cite "
-        "papers that are not listed here; a `\\cite{}` to any other key compiles as an undefined "
-        "reference. If the list doesn't cover a claim, rephrase without a citation rather than "
-        "fabricating one."
+        "Cite ONLY keys that are in literature.bib, using the exact `\\cite{key}` shown at the start of each "
+        "entry. Do NOT invent citations or cite papers that are not listed; a `\\cite{}` to any other key "
+        "compiles as an undefined reference. These are the papers the researcher brought: build on them first. "
+        "If the list doesn't cover a claim, rephrase without a citation rather than fabricating one."
     )
-    if has_pdf:
-        lines.append("Entries marked [PDF] can be read in full with the `read_reference` tool (pass the pdf_url).")
+    if pdfs:
+        lines.append("Entries marked [PDF] can be read in full with the `read_reference` tool (pass the path).")
     lines.append("")
-    for p in all_papers[:60]:
-        authors = ", ".join(p.authors[:2])
-        if len(p.authors) > 2:
-            authors += " et al."
-        year = f" ({p.year})" if p.year else ""
-        journal = f". _{p.journal}_" if p.journal else ""
-        pdf = f" [PDF: {p.pdf_url}]" if p.pdf_url else ""
-        lines.append(f'- `\\cite{{{p.bibtex_key}}}` — {authors}{year}. "{p.title}"{journal}{pdf}')
-    if len(all_papers) > 60:
-        lines.append(f"  ... and {len(all_papers) - 60} more.")
+    for key, f in entries[:60]:
+        names = [a.strip() for a in str(f.get("author") or "").split(" and ") if a.strip()]
+        authors = ", ".join(names[:2]) + (" et al." if len(names) > 2 else "")
+        year = f" ({f['year']})" if f.get("year") else ""
+        venue = f.get("journal") or f.get("booktitle") or ""
+        journal = f". _{venue}_" if venue else ""
+        pdf = f" [PDF: {pdfs[key]}]" if key in pdfs else ""
+        lines.append(f'- `\\cite{{{key}}}` — {authors}{year}. "{str(f.get("title") or "").strip("{}")}"{journal}{pdf}')
+    if len(entries) > 60:
+        lines.append(f"  ... and {len(entries) - 60} more in literature.bib.")
     return "\n".join(lines)
 
 
+def _staged_pdfs_by_key(workspace: Path) -> dict[str, str]:
+    """The study's PDFs by the key of their entry (from study_inputs.json)."""
+    from ..study_inputs import read_record
+
+    items = (read_record(workspace).get("papers") or {}).get("items") or []
+    return {str(i["key"]): str(i["pdf"]) for i in items if isinstance(i, dict) and i.get("key") and i.get("pdf")}
+
+
 def _list_local_pdfs_for_prompt(specialist: str, paper_id: str) -> str:
-    """List PDFs that were staged into the paper's workspace from LOCAL_DATA_DIR.
+    """List the PDFs staged into the study's ``literature/`` folder (the researcher's papers).
 
     Surfaced only to bib-relevant specialists, alongside the reference summary,
     so they know they can read these in full via ``read_reference(path=...)``.
@@ -849,14 +838,16 @@ def _list_local_pdfs_for_prompt(specialist: str, paper_id: str) -> str:
     listing = "\n".join(f"- literature/{p}" for p in pdfs[:30])
     suffix = f"\n  ... and {len(pdfs) - 30} more." if len(pdfs) > 30 else ""
     return (
-        "## Local PDFs (staged from LOCAL_DATA_DIR)\n"
+        "## The Researcher's PDFs (in the study's literature/ folder)\n"
         "Read any of these in full via `read_reference(path=...)`:\n"
         f"{listing}{suffix}"
     )
 
 
 _BIB_ENTRY_RE = re.compile(r"^@\w+\s*\{\s*([^,\s]+)", re.MULTILINE)
-_BIB_FIELD_RE = re.compile(r"^\s*(title|year)\s*=\s*[{\"]?(.*?)[}\"]?,?\s*$", re.MULTILINE | re.IGNORECASE)
+_BIB_FIELD_RE = re.compile(r"^\s*(title|year|e2er_source)\s*=\s*[{\"]?(.*?)[}\"]?,?\s*$", re.MULTILINE | re.IGNORECASE)
+#: How the citable list marks where an entry came from (the e2er_source field).
+_SOURCE_MARK = {"researcher": "  [researcher's paper]", "web": "  [found on the web]"}
 
 
 def _workspace_bib_for_prompt(specialist: str, paper_id: str, limit: int = 40) -> str:
@@ -886,19 +877,19 @@ def _workspace_bib_for_prompt(specialist: str, paper_id: str, limit: int = 40) -
     except OSError:
         return ""
 
-    entries: list[tuple[str, str, str]] = []
+    entries: list[tuple[str, str, str, str]] = []
     for block in text.split("\n@"):
         block = block if block.lstrip().startswith("@") else "@" + block
         m = _BIB_ENTRY_RE.search(block)
         if not m:
             continue
         fields = {k.lower(): v.strip().rstrip(",").strip('{}" ') for k, v in _BIB_FIELD_RE.findall(block)}
-        entries.append((m.group(1), fields.get("year", ""), fields.get("title", "")))
+        entries.append((m.group(1), fields.get("year", ""), fields.get("title", ""), fields.get("e2er_source", "")))
     if not entries:
         return ""
 
     shown = entries[:limit]
-    lines = [f"- \\cite{{{k}}}  {y or '????'}  {t[:110]}" for k, y, t in shown]
+    lines = [f"- \\cite{{{k}}}  {y or '????'}  {t[:110]}{_SOURCE_MARK.get(src, '')}" for k, y, t, src in shown]
     more = f"\n  ... and {len(entries) - limit} more in literature.bib." if len(entries) > limit else ""
     return (
         f"## Citable References ({len(entries)} in literature.bib)\n"

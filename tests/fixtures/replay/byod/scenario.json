@@ -1,0 +1,32 @@
+{
+  "name": "byod",
+  "base": "fomc",
+  "source": "The FOMC replay (base) with the researcher's own data and papers chosen on New study: the inputs/ folder holds the data files and papers a test or story puts in the data and literature folders. The PDFs are replay fixtures, not the published papers.",
+  "merge": [
+    "data.db",
+    "data_sources.json"
+  ],
+  "inputs": {
+    "data": [
+      "fomc_announcement_dates.csv",
+      "bank_tickers.csv",
+      "target_rate_changes.csv"
+    ],
+    "data_not_chosen": [
+      "unrelated_survey.csv"
+    ],
+    "papers": [
+      "kuttner_2001_monetary_policy_surprises.pdf",
+      "gurkaynak_2005_do_actions_speak.pdf",
+      "refs.bib#Bernanke:2005"
+    ],
+    "papers_not_chosen": [
+      "refs.bib#English:2018"
+    ],
+    "cited_keys": [
+      "Bernanke:2005",
+      "kuttner2001monetary",
+      "gurkaynak2005do"
+    ]
+  }
+}

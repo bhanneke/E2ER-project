@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Choose the data and papers a study uses (0.15.0)
+- **New study lists your data files and papers.** The files of the data folder (name, type, size;
+  search; select all or none) and the papers of the literature folder, your .bib files and the
+  Library (title, authors, year). The study uses what you tick. Before, every study took everything
+  in both folders and the page offered no choice. Ticked at first: the data files and the papers of
+  the literature folder and .bib files (what a study took before); the Library's papers are offered
+  unticked.
+- **Add files before the run starts.** "Add files" takes data files, "Add PDFs or a .bib file" takes
+  papers; they are copied into the study and kept with it only. One list of data file types
+  everywhere (.csv, .tsv, .jsonl, .parquet, .xlsx); any other file is refused in one sentence. A
+  .txt is no longer staged as data.
+- **Only the chosen files count.** They are staged into the study's `data/` folder and imported into
+  its `data.db` (an added file is recorded in `data_sources.json` as added by the researcher); the
+  planning check, the specialists' context and the list of available sources read only the study's
+  own folder, never the live data folder. The choice is recorded in `study_inputs.json`.
+- **The researcher's papers are in the bibliography (fix).** Entries of the .bib file, a local Zotero
+  library and the Zotero web library were shown to the writers as citable but never written into
+  `literature.bib`, so citing one failed the citation check (missing from the bibliography). Now
+  every paper offered to the writers is written into `literature.bib` before the first step, with
+  the key the prompt shows; a .bib entry keeps its own key and fields.
+- **Web search in addition, marked.** The literature search for the research question runs beside
+  your papers (before, a .bib or Zotero library switched it off without a word). Every entry says
+  where it came from (`e2er_source = {researcher}` or `{web}`); none replaces one of yours.
+  "Use only my papers" turns the search off and limits the Library's evidence to the chosen papers.
+- **The run page shows "Data and papers"**: the chosen files, the tables the study reads with their
+  rows and source, your papers and the papers found on the web. The finish page shows "What the
+  study used": data used and every reference the paper cites, marked "from your papers" or "found
+  on the web". The dossier lists the cited references with their source (`references`; a study
+  exported before has none, so its dossier is unchanged).
+- **Library: Add papers.** The Library page takes PDFs or a folder and reads them in the background
+  with the importer of `e2er library add`.
+- **`e2er run --data FILE… --papers FILE… [--only-my-papers]`** does the same in a terminal (a
+  folder stands for the files in it). Without them a study takes everything, as before.
+
 ### Replication, credit, commands and the field map (0.15.0)
 - **Fixed: an installed e2er could not run the specialists' commands.** Before 0.15.0 a pip or
   `uv tool install` installation had only `e2er`, `e2er-data` and `e2er-fieldmap`. `e2er-run`,
