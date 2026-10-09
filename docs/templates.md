@@ -42,6 +42,23 @@ the idea came from; it does not say its creator endorses the template. e2er's
 own parts also list their credit in `credits.json` at the repository root, for
 the catalogue of e2er.org.
 
+A run records its template's credit in the `template_components` event, and
+the dossier of a published run carries it as `credit`: the template's name and
+the `[[credit]]` entries as the template file wrote them, so e2er.org can say
+"Template based on …". A template without `[[credit]]` adds nothing to the
+dossier.
+
+```json
+"credit": {
+  "template": "field-map",
+  "entries": [
+    {"creator": "Michal Hron", "role": "conceptualization", "relation": "based_on",
+     "title": "Map a research field with Claude: main path analysis, step by step",
+     "url": "https://www.linkedin.com/pulse/…", "accessed": "2026-10-08", "…": "…"}
+  ]
+}
+```
+
 ```toml
 [[credit]]
 creator   = "Michal Hron"
@@ -71,7 +88,7 @@ and the number-checked review. Hron's own implementation runs on Scopus
 | `design_boundary` | specialist | The boundary designer writes `field_boundary.json`: the main boundary (search terms with the topic's older names, OpenAlex source ids of a journal set, years) and 2 to 6 alternatives. `e2er-fieldmap count` and `e2er-fieldmap sources` read sizes and journal ids, one OpenAlex request each. |
 | `retrieve_boundary` | check `field_retrieve` | Retrieves every boundary from OpenAlex: one request for the size (a boundary above `max_papers` is refused), then pages of 100 with cursor paging, at most `max_requests`, cached in `fieldmap/cache/`. Runs at every start; unchanged boundaries send no request. Each load is recorded in `data_sources.json` (OpenAlex, CC0, with OpenAlex's citation). |
 | `review_boundary` | researcher | Approve or edit the boundaries, with the counts in `field_boundary_counts.md`. |
-| `citation_network` | check `field_network` | The network of citations inside the main boundary (from the cited to the citing paper) and `completeness_report.md`: papers without internal links, without references, with short reference lists, probable duplicates, notices, broken cycles. Stops when more than `max_isolated_share` of the papers have no internal link, more than `max_missing_refs_share` have no references, or there are fewer than `min_papers`. |
+| `citation_network` | check `field_network` | The network of citations inside the main boundary (from the cited to the citing paper) and `completeness_report.md`: papers without internal links, without references, with short reference lists, probable duplicates, notices, broken cycles. Stops when more than `max_isolated_share` (default 50%) of the papers have no internal link, more than `max_missing_refs_share` (default 40%) have no references, or there are fewer than `min_papers` (default 100). The defaults come from five boundaries (see the calibration below). |
 | `main_path` | check `field_main_path` | SPC weights (exact integers), the global main path (largest total SPC; ties all kept and counted), the local forward main path, key routes from the `key_routes` heaviest links (ties with the last included), the heaviest links (`main_path.md`). |
 | `robustness` | check `field_robustness` | The same on every alternative boundary; papers on the main path of every boundary are robust (`robustness.md`). |
 | `propose_lanes` | specialist | The lane mapper groups the mapped papers into 2 to 8 lanes named as questions (`field_lanes.json`), from titles and abstracts. |
@@ -87,6 +104,25 @@ every dropped citation is listed in `completeness_report.json`. Nothing is
 estimated, so the template has no estimation gate and no econometrics step.
 Set `OPENALEX_API_KEY` (free) to use a key's own request budget instead of the
 budget OpenAlex shares among keyless requests from one network.
+
+### Calibration of the completeness stops
+
+The stop values of `citation_network` were set on 2026-10-10 from five
+boundaries (main boundary only, 31 OpenAlex requests for the four new ones):
+
+| Boundary | Papers | Without internal links | Without references | Main path |
+|---|---:|---:|---:|---:|
+| main path analysis (scientometrics, 2026-10-08) | 346 | 18% | 15% | 17 papers |
+| expectation-confirmation model / IS continuance (information systems) | 1,164 | 33% | 35% | 18 papers |
+| Ricardian equivalence (economics) | 685 | 40% | 30% | 18 papers |
+| wash trading (finance niche) | 62 | 58% | 44% | 5 papers, 8 tied |
+| token airdrops (crypto niche) | 60 | 87% | 62% | 5 papers |
+
+Established literatures stay at or below 40% without internal links and 35%
+without references; the two niches are above 55% and 44%. The stops are set
+between the groups: 50% and 40% (before: 60% and 25%; 25% would have stopped the
+information-systems and economics boundaries). `skills/files/synthesis/main-path-analysis.md`
+has the full table.
 
 ## `event-study-finance`
 

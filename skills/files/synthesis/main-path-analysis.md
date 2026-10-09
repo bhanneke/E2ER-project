@@ -50,14 +50,39 @@ which knowledge moves. Then check what is missing before trusting any path:
 
 - **Papers without internal links** neither cite nor are cited by another paper
   of the set. They cannot be on the main path. A large share (e2er stops above
-  60%) means the terms catch papers from other fields, or the field is
+  50%) means the terms catch papers from other fields, or the field is
   fragmented.
 - **Papers without references, or with unusually short reference lists** (under
   a quarter of the set's median). The database did not record their references.
   Their missing arcs are real citations the network does not have, and an
   important paper can fall off the main path for this reason alone. Check the
-  listed papers you know matter; if many have no references, the coverage of
-  this field is too thin.
+  listed papers you know matter; if many have no references (e2er stops above
+  40%), the coverage of this field is too thin.
+
+How these stop values were set (2026-10-10). The completeness check ran on five
+boundaries from OpenAlex, retrieved with titles and abstracts, articles and
+reviews:
+
+| Boundary | Field | Papers | Internal links per paper | Without internal links | Without references | Main path |
+|---|---|---:|---:|---:|---:|---:|
+| "main path analysis" OR "key-route main path" OR "search path count" | scientometrics | 346 | 4.7 | 18% | 15% | 17 papers |
+| "expectation-confirmation model" OR "information systems continuance" | information systems | 1,164 | 4.7 | 33% | 35% | 18 papers |
+| "Ricardian equivalence" | economics | 685 | 2.1 | 40% | 30% | 18 papers |
+| "wash trading" | finance niche | 62 | 1.2 | 58% | 44% | 5 papers, 8 tied paths |
+| "airdrop" AND ("token" OR "cryptocurrency" OR "blockchain") | crypto niche | 60 | 0.15 | 87% | 62% | 5 papers |
+
+The three established literatures have 18% to 40% of papers without internal
+links and 15% to 35% without references, and give main paths of 17 and 18 papers. The
+two niches have 58% and 87% without internal links and 44% and 62% without
+references; their main paths have five papers and in one case eight tied
+paths. The stop values sit between the two groups: 50% without internal links
+and 40% without references. The earlier 25% for missing references would have
+stopped the information-systems and the economics boundary, whose main paths
+are long and unambiguous. Papers without references are nearly always papers
+without internal links too (87% to 100% of them in all five boundaries), so the
+main path is computed on the papers that are linked. Below 100 papers (both
+niches) the check stops as well. Five boundaries are a small calibration;
+widen it when a study's boundary falls near a stop value.
 - **Duplicates and notices.** A paper indexed twice (preprint and journal
   version, reprint) splits its citations; errata, corrigenda and retraction
   notices are not papers. Exclude them by id (`exclude` in the boundary).

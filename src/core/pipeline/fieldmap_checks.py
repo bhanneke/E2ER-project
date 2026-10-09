@@ -37,8 +37,8 @@ def field_retrieve(workspace: Path, *, max_papers: int = 5000, max_requests: int
 def field_network(
     workspace: Path,
     *,
-    max_isolated_share: float = 0.6,
-    max_missing_refs_share: float = 0.25,
+    max_isolated_share: float = 0.5,
+    max_missing_refs_share: float = 0.4,
     min_papers: int = 100,
 ) -> Verdict:
     return wf.network_step(
