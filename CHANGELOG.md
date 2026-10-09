@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Replication, credit, commands and the field map (0.15.0)
+- **Stata packages are refused before any model call.** The replication template's download step
+  now refuses a package that has no R or Python file and whose code is in Stata (`.do`, `.ado`,
+  `.dta`), MATLAB, Julia, SAS, SPSS, GAMS, EViews, Mathematica or Ox. The refusal names the files and
+  stops the run before the planner reads the package, so nothing is spent.
+- **Template credit in the dossier.** A run records its template's `[[credit]]` in the
+  `template_components` event, and the dossier of a published run carries it as `credit`
+  (`{"template": …, "entries": [...]}`, the entries as the template file wrote them). Dossiers of
+  templates without credit are unchanged, and so are their ids.
+- **Every terminal command is in the README**: `e2er serve`, `skills sync` (and `install-skills`),
+  `verify-citations`, `preregister deposit`, `whoami`, `logout`, `dossier push`, `skills installed`
+  and `remove`, and the `library` commands `list`, `stats`, `topics list`, `topics remove`, `export`
+  and `remove`. A test reads every command and subcommand from the code and fails when the README
+  does not name it.
+- **Field-map completeness stops calibrated.** The citation-network check now stops above 50% of
+  papers without internal links (before 60%) and above 40% without references (before 25%). The
+  values come from five boundaries (scientometrics, information systems, economics and two niches);
+  the old 25% would have stopped the information-systems and economics literatures, whose main
+  paths have 18 papers. The table is in the `synthesis/main-path-analysis` skill and in
+  docs/templates.md.
+
 ## [0.14.1] — 2026-10-08
 
 - 0.14.1 is 0.14.0 as it was meant to ship. The tag v0.14.0 exists, but its release run stopped at a test that only read the [Unreleased] part of this file, so 0.14.0 was never published on PyPI. That test now reads the whole file.
