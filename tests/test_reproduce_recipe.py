@@ -91,6 +91,8 @@ def test_the_fomc_replay_export_gets_a_recipe_and_reproduces(tmp_path: Path, thi
     published = "results/estimation_results.json"
     assert recipe["compare"] == [{"published": published, "produced": "estimation_results.json"}]
     assert not find_local_paths(recipe), "the recipe names no path of this machine"
+    # The recorded run predates the script log: the order comes from file times, and the recipe says so.
+    assert recipe["notes"][0].startswith("Order taken from file times")
 
     pins = (out / "code" / "requirements.txt").read_text(encoding="utf-8")
     for package in ("numpy==", "pandas==", "scipy==", "statsmodels=="):
@@ -163,6 +165,7 @@ def test_a_study_on_the_researchers_own_data_reproduces(tmp_path: Path, this_pyt
     recipe = json.loads((out / "reproduce.json").read_text(encoding="utf-8"))
 
     assert [s["run"] for s in recipe["steps"]] == [["python", "run_estimation.py"]]  # nothing to reload
+    assert not any("file times" in n for n in recipe["notes"])  # one script: no order to take from anywhere
     assert not (out / "code" / "get_data.py").exists()
     inputs = {i["path"]: i for i in recipe["inputs"]}
     assert set(inputs) == {"data.db", "data/weights.csv"}
@@ -325,3 +328,89 @@ def test_the_yfinance_command_records_its_request(tmp_path: Path, monkeypatch):
         "interval": "1d",
         "adjusted": True,
     }
+
+
+# ── the order comes from what the run ran, not from file times ──────────────
+
+WRAPPER = Path(__file__).resolve().parent.parent / "scripts" / "e2er-run"
+ORDERED_SCRIPTS = {
+    # writes the first results
+    "run_estimation.py": 'import json\njson.dump({"main": {"b": 1.0}}, open("estimation_results.json", "w"))\n',
+    # a later revision replaces them
+    "zz_revise.py": 'import json\njson.dump({"main": {"b": 2.0}}, open("estimation_results.json", "w"))\n',
+    # a patch on top of the revision: only right after zz_revise.py
+    "aa_patch.py": (
+        "import json\nr = json.load(open('estimation_results.json'))\nr['main']['b'] *= 10\n"
+        "json.dump(r, open('estimation_results.json', 'w'))\n"
+    ),
+}
+
+
+def _ordered_workspace(tmp_path: Path) -> Path:
+    """Three scripts run with e2er-run in the order estimation, revision, patch; then the file times are shuffled."""
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    (ws / "manifest.json").write_text(json.dumps({"paper_id": "p-o", "title": "Order"}), encoding="utf-8")
+    for name, code in ORDERED_SCRIPTS.items():
+        (ws / name).write_text(code, encoding="utf-8")
+    env = {**os.environ, "E2ER_PYTHON": sys.executable}
+    for name in ORDERED_SCRIPTS:
+        r = subprocess.run(["bash", str(WRAPPER), name], cwd=ws, env=env, capture_output=True, text=True)
+        assert r.returncode == 0, r.stderr
+    assert json.loads((ws / "estimation_results.json").read_text())["main"]["b"] == 20.0
+    # A copy or checkout resets the times: here the patch looks oldest and the revision newest.
+    for name, t in (("aa_patch.py", 1000), ("run_estimation.py", 2000), ("zz_revise.py", 3000)):
+        os.utime(ws / name, (t, t))
+    os.utime(ws / "estimation_results.json", (3500, 3500))
+    return ws
+
+
+def test_e2er_run_records_every_run_in_the_workspace(tmp_path: Path):
+    from src.core.specialists.post_execution import read_script_runs
+
+    ws = _ordered_workspace(tmp_path)
+    runs = read_script_runs(ws)
+    assert [r["script"] for r in runs] == list(ORDERED_SCRIPTS)
+    assert all(r["exit_code"] == 0 and r["by"] == "e2er-run" and len(r["sha256"]) == 64 for r in runs)
+    (ws / "bad.py").write_text("raise SystemExit(3)\n", encoding="utf-8")
+    r = subprocess.run(["bash", str(WRAPPER), "bad.py"], cwd=ws, env={**os.environ, "E2ER_PYTHON": sys.executable})
+    assert r.returncode == 3 and read_script_runs(ws)[-1]["exit_code"] == 3  # the exit code is passed on
+
+
+def test_the_runner_records_the_script_it_runs(tmp_path: Path):
+    from src.core.specialists.post_execution import maybe_execute_specialist_script, read_script_runs
+
+    (tmp_path / "run_estimation.py").write_text(ORDERED_SCRIPTS["run_estimation.py"], encoding="utf-8")
+    attempt = maybe_execute_specialist_script(tmp_path, "econometrics_specialist")
+    assert attempt.ran and attempt.returncode == 0
+    [run] = read_script_runs(tmp_path)
+    assert run["script"] == "run_estimation.py" and run["by"] == "runner" and run["exit_code"] == 0
+
+
+def test_the_recipe_follows_the_recorded_order_when_file_times_disagree(tmp_path: Path, this_python, capsys):
+    ws = _ordered_workspace(tmp_path)
+    assert [p.name for p in rr.chain_of(ws).scripts] == ["run_estimation.py", "zz_revise.py", "aa_patch.py"]
+    out = export_paper(ws, tmp_path / "exports", date_str="20261010")
+    recipe = json.loads((out / "reproduce.json").read_text(encoding="utf-8"))
+    assert [s["run"][-1] for s in recipe["steps"]] == ["run_estimation.py", "zz_revise.py", "aa_patch.py"]
+    assert "in the order the run ran them (its script log)" in recipe["about"]
+    assert not any("file times" in n for n in recipe["notes"])
+    assert reproduce(str(out)) == 0, capsys.readouterr().out
+
+
+def test_without_a_script_log_the_recipe_says_the_order_comes_from_file_times(tmp_path: Path):
+    ws = _ordered_workspace(tmp_path)
+    (ws / ".e2er-script-runs.jsonl").unlink()
+    ordered = rr.chain_of(ws)
+    assert ordered.order == rr.ORDER_FILE_TIMES
+    assert [p.name for p in ordered.scripts] == ["run_estimation.py", "zz_revise.py"]  # what file times can tell
+    out = export_paper(ws, tmp_path / "exports", date_str="20261010")
+    recipe = json.loads((out / "reproduce.json").read_text(encoding="utf-8"))
+    assert recipe["notes"][0].startswith("Order taken from file times")
+    assert "file times; the run recorded no script runs" in recipe["about"]
+
+
+def test_a_script_changed_after_its_last_run_is_named(tmp_path: Path):
+    ws = _ordered_workspace(tmp_path)
+    (ws / "aa_patch.py").write_text(ORDERED_SCRIPTS["aa_patch.py"] + "# edited\n", encoding="utf-8")
+    assert any("aa_patch.py changed after the run last ran it" in n for n in rr.chain_of(ws).notes)

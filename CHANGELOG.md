@@ -10,7 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Replication, credit, commands and the field map (0.15.0)
 - **`e2er reproduce` for every study.** `e2er export` now writes `reproduce.json` from what the run
   recorded: the estimation script and every later script of the run that wrote
-  `estimation_results.json`, in the order the run last changed them; the files they read, laid out
+  `estimation_results.json`, in the order the run ran them (`e2er-run` and the runner now record
+  every script run in the workspace; for older runs the order comes from file times, and the recipe
+  says so); the files they read, laid out
   where they expect them, with data files as inputs (SHA-256 and source from `data_sources.json`);
   `code/requirements.txt` with the packages they import at the versions of the run's environment;
   the estimation results (and robustness results) to compare, with the tables rendered again; and

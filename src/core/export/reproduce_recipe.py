@@ -5,8 +5,10 @@ without running anything:
 
 - **Steps.** The scripts that wrote ``estimation_results.json``: the estimation
   script the runner looks for (``run_estimation.py`` and the other names of
-  ``post_execution``), then every script in the workspace that writes the file
-  and that the run changed after it, in the order the run last changed them.
+  ``post_execution``), then every script that writes the file and ran after it,
+  in the order the run ran them (the workspace's script log, which ``e2er-run``
+  and the runner write). Without that log (runs before 0.15.0) the order is the
+  one the run last changed the files in, and the recipe says so.
   A specialist that revised the results with a second script (the FOMC study's
   ``revise_estimation.py`` and ``compute_h2_v2.py``) is followed that way.
 - **Files and inputs.** Every workspace file a script names in a string
@@ -102,16 +104,73 @@ def _estimation_names() -> tuple[str, ...]:
 _SLACK_NS = 2_000_000_000
 
 
-def estimation_chain(workspace: Path) -> list[Path]:
-    """The scripts that wrote ``estimation_results.json``, in the order to run them (see the module doc)."""
-    results = workspace / RESULTS
+#: Where the order of the scripts came from.
+ORDER_RECORDED = "script log"
+ORDER_FILE_TIMES = "file times"
+ORDER_SINGLE = "one script"
+
+
+@dataclass
+class Chain:
+    """The scripts to rerun, in order, and where that order comes from."""
+
+    scripts: list[Path]
+    order: str
+    notes: list[str] = field(default_factory=list)
+
+
+def _writers(workspace: Path) -> tuple[list[Path], Path | None]:
     writers = sorted(p for p in workspace.glob("*.py") if p.is_file() and RESULTS in _read(p))
     canonical = next((workspace / n for n in _estimation_names() if (workspace / n).is_file()), None)
+    return writers, canonical
+
+
+def _recorded_chain(workspace: Path, writers: list[Path], canonical: Path | None) -> Chain | None:
+    """The order the run ran the scripts in (the workspace's script log); None when it recorded none."""
+    from ..specialists.post_execution import SCRIPT_RUNS, read_script_runs
+
+    names = {p.name for p in writers} | ({canonical.name} if canonical else set())
+    ok = [r for r in read_script_runs(workspace) if r.get("exit_code") == 0 and r["script"] in names]
+    ok = [r for r in ok if (workspace / r["script"]).is_file()]
+    if not ok:
+        return None
+    # From the last run of the estimation script on: what ran after it built the final results.
+    first = max((i for i, r in enumerate(ok) if canonical and r["script"] == canonical.name), default=0)
+    runs = ok[first:]
+    seq: list[dict[str, Any]] = []
+    for r in runs:
+        if not seq or seq[-1]["script"] != r["script"]:
+            seq.append(r)
+    notes = []
+    last_sha = {r["script"]: r.get("sha256") for r in runs}
+    changed = [n for n, sha in last_sha.items() if sha and sha != _sha256(workspace / n)]
+    if changed:
+        notes.append(
+            f"{', '.join(changed)} changed after the run last ran it (recorded in {SCRIPT_RUNS}); the rerun uses "
+            "the version the study ships."
+        )
+    return Chain([workspace / r["script"] for r in seq], ORDER_RECORDED, notes)
+
+
+def chain_of(workspace: Path) -> Chain:
+    """The scripts that wrote ``estimation_results.json``, in the order to run them.
+
+    The order is the one the run recorded when it ran them (the script log that
+    ``e2er-run`` and the runner write). A run without that record (e2er before
+    0.15.0) falls back to the order the run last changed the files, and the
+    recipe says so: copies, restores and checkouts reset file times.
+    """
+    writers, canonical = _writers(workspace)
+    recorded = _recorded_chain(workspace, writers, canonical)
+    if recorded is not None:
+        return recorded
     if canonical is None:
         if not writers:
-            return []
+            return Chain([], ORDER_SINGLE)
         # No script under a known name: the runner would run the latest one that writes the file.
-        return [max(writers, key=lambda p: (p.stat().st_mtime_ns, p.name))]
+        latest = max(writers, key=lambda p: (p.stat().st_mtime_ns, p.name))
+        return Chain([latest], ORDER_SINGLE if len(writers) == 1 else ORDER_FILE_TIMES)
+    results = workspace / RESULTS
     start = canonical.stat().st_mtime_ns
     end = results.stat().st_mtime_ns if results.is_file() else None
     later = [
@@ -120,7 +179,22 @@ def estimation_chain(workspace: Path) -> list[Path]:
         if p != canonical and p.stat().st_mtime_ns > start and (end is None or p.stat().st_mtime_ns <= end + _SLACK_NS)
     ]
     later.sort(key=lambda p: (p.stat().st_mtime_ns, p.name))
-    return [canonical, *later]
+    if not later:
+        return Chain([canonical], ORDER_SINGLE)
+    return Chain(
+        [canonical, *later],
+        ORDER_FILE_TIMES,
+        [
+            "Order taken from file times: the run recorded no script runs (e2er before 0.15.0), so the scripts "
+            "run in the order the run last changed them. Copies, restores and checkouts change file times; "
+            "if the rerun differs, check the order of the steps first."
+        ],
+    )
+
+
+def estimation_chain(workspace: Path) -> list[Path]:
+    """The scripts of :func:`chain_of`."""
+    return chain_of(workspace).scripts
 
 
 def no_recipe_reason(workspace: Path) -> str | None:
@@ -517,9 +591,10 @@ def write_recipe(workspace: Path, out: Path, *, date_str: str = "") -> Outcome:
         return Outcome(reason=why)
     if not (out / "results" / RESULTS).is_file():
         return Outcome(reason="the export has no results/estimation_results.json to compare a rerun with")
-    chain = estimation_chain(workspace)
+    ordered = chain_of(workspace)
+    chain = ordered.scripts
     loads = _loads(workspace)
-    notes: list[str] = []
+    notes: list[str] = list(ordered.notes)
     files: dict[str, str] = {}
     rewritten: list[str] = []
     for script in chain:
@@ -653,12 +728,17 @@ def write_recipe(workspace: Path, out: Path, *, date_str: str = "") -> Outcome:
         if (out / "results" / name).is_file() and any(name in _read(s) for s in chain):
             compare.append({"published": f"results/{name}", "produced": name})
 
+    order_words = {
+        ORDER_RECORDED: "in the order the run ran them (its script log)",
+        ORDER_FILE_TIMES: "in the order the run last changed them (file times; the run recorded no script runs)",
+        ORDER_SINGLE: "in the order the run ran them",
+    }[ordered.order]
     recipe: dict[str, Any] = {
         "schema": "e2er-reproduce/1",
         "about": (
             f"Written by e2er at export ({date_str}) from what the run "
-            f"recorded: the scripts that wrote {RESULTS}, from the estimation script on, in the order the run last "
-            f"changed them; the files they read; and the packages they import. {requirements_note}"
+            f"recorded: the scripts that wrote {RESULTS}, from the estimation script on, {order_words}; the files "
+            f"they read; and the packages they import. {requirements_note}"
         ),
         "python": f"{sys.version_info.major}.{sys.version_info.minor}",
         "requirements": "code/requirements.txt",

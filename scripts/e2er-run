@@ -79,10 +79,26 @@ echo "e2er-run: executing $TARGET (timeout ${TIMEOUT_SECONDS}s)" >&2
 # FORCE_COLOR is set (Claude Code and uv set it), and the escape codes split
 # "ValueError: boom" apart.
 export PYTHON_COLORS=0
+# Every run is recorded in the workspace's script log (.e2er-script-runs.jsonl): which script,
+# its SHA-256, when, and its exit code. Export reads it to rerun the scripts in the order the run
+# ran them (reproduce.json). The script's exit code is passed on unchanged.
+STARTED="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+set +e
 if command -v timeout >/dev/null 2>&1; then
-  exec timeout "$TIMEOUT_SECONDS" "$PYTHON_BIN" "$RESOLVED"
+  timeout "$TIMEOUT_SECONDS" "$PYTHON_BIN" "$RESOLVED"
 elif command -v gtimeout >/dev/null 2>&1; then
-  exec gtimeout "$TIMEOUT_SECONDS" "$PYTHON_BIN" "$RESOLVED"
+  gtimeout "$TIMEOUT_SECONDS" "$PYTHON_BIN" "$RESOLVED"
 else
-  exec "$PYTHON_BIN" "$RESOLVED"
+  "$PYTHON_BIN" "$RESOLVED"
 fi
+CODE=$?
+set -e
+"$PYTHON_BIN" - "$WORKSPACE" "${RESOLVED#"$WORKSPACE"/}" "$STARTED" "$CODE" <<'PY' >/dev/null 2>&1 || true
+import hashlib, json, sys
+from pathlib import Path
+ws, rel, started, code = Path(sys.argv[1]), sys.argv[2], sys.argv[3], int(sys.argv[4])
+sha = hashlib.sha256((ws / rel).read_bytes()).hexdigest()
+with open(ws / ".e2er-script-runs.jsonl", "a", encoding="utf-8") as f:
+    f.write(json.dumps({"script": rel, "sha256": sha, "started_at": started, "exit_code": code, "by": "e2er-run"}) + "\n")
+PY
+exit "$CODE"
