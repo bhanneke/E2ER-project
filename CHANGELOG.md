@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.2] — 2026-10-11
+
 ### Stale tables are set aside; a draft that cites nothing is caught
 - **The renderer sets aside tables the spec no longer declares.** In the 2026-10-10 Haiku run
   section_writer cut `table_spec.json` from four tables to two; the two dropped tables (`---` in every
