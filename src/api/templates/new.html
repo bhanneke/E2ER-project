@@ -60,7 +60,7 @@
           {% for f in data_rows %}
             <label class="pick-row" data-text="{{ f.name | lower }}">
               <input type="checkbox" name="data_file" value="{{ f.path }}" {% if f.ticked %}checked{% endif %}>
-              <span class="pick-name">{{ f.name }}</span>
+              <span class="pick-name quoted">{{ f.name }}</span>
               <span class="pick-meta">{{ f.kind }} · {{ f.size | filesize }}</span>
             </label>
           {% endfor %}

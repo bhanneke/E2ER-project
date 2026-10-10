@@ -121,7 +121,12 @@ def _write_inputs(ws: Path) -> None:
         source="bibtex",
         cite_key="Bernanke:2005",
     )
-    web = PaperMetadata(title="Monetary Policy and Bank Equity", authors=["Ann English"], year=2018, source="openalex")
+    web = PaperMetadata(
+        title="Monetary Policy, Bank Equity and the Federal Budget",
+        authors=["Ann English"],
+        year=2018,
+        source="openalex",
+    )
     (ws / "literature.bib").write_text(mine.to_bibtex() + "\n\n" + web.to_bibtex() + "\n", encoding="utf-8")
     draft = ws / "paper_draft.tex"
     draft.write_text(

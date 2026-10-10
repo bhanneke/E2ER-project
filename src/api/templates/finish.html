@@ -22,7 +22,7 @@
       <thead><tr><th>Source</th><th>What</th><th>Fingerprint</th></tr></thead>
       <tbody>
         {% for d in inputs.loads %}
-          <tr><td>{{ "added for this study" if d.uploaded else d.source }}</td><td class="mono">{{ d.what }}</td>
+          <tr><td>{{ "added for this study" if d.uploaded else d.source }}</td><td class="mono quoted">{{ d.what }}</td>
             <td class="mono muted">{% if d.sha256 %}{{ d.sha256[:12] }}…{% endif %}</td></tr>
         {% endfor %}
       </tbody>
@@ -35,7 +35,7 @@
   {% if inputs.references %}
     <ul class="inputs-list">
       {% for r in inputs.references %}
-        <li>{{ r.authors }}{% if r.year %} ({{ r.year }}){% endif %}. {{ r.title }}
+        <li><span class="quoted">{{ r.authors }}</span>{% if r.year %} ({{ r.year }}){% endif %}. <span class="quoted">{{ r.title }}</span>
           <span class="src-tag{% if not r.mine %} web{% endif %}">{{ r.source }}</span></li>
       {% endfor %}
     </ul>

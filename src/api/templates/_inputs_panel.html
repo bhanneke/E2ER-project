@@ -12,7 +12,7 @@
     {% if v.files %}
       <ul class="inputs-list">
         {% for f in v.files %}
-          <li><span class="mono">{{ f.name }}</span> <span class="muted">· {{ f.origin }} · {{ f.size | filesize }}</span></li>
+          <li><span class="mono quoted">{{ f.name }}</span> <span class="muted">· {{ f.origin }} · {{ f.size | filesize }}</span></li>
         {% endfor %}
       </ul>
       {% if not v.data_chosen %}<p class="small muted">No choice was made, so the study took every data file of the data folder.</p>{% endif %}
@@ -25,7 +25,7 @@
         <thead><tr><th>Table</th><th class="num">Rows</th><th>From</th></tr></thead>
         <tbody>
           {% for t in v.tables %}
-            <tr><td class="mono">{{ t.table }}</td><td class="num">{{ "{:,}".format(t.rows) }}</td><td>{{ t.source }}</td></tr>
+            <tr><td class="mono quoted">{{ t.table }}</td><td class="num">{{ "{:,}".format(t.rows) }}</td><td class="quoted">{{ t.source }}</td></tr>
           {% endfor %}
         </tbody>
       </table>
@@ -36,9 +36,9 @@
     {% if v.mine %}
       <ul class="inputs-list scroll-list">
         {% for p in v.mine %}
-          <li>{{ p.title }}{% if p.year %} ({{ p.year }}){% endif %}
-            <span class="muted">{% if p.authors %}· {{ p.authors }} {% endif %}· {{ p.origin }}{% if p.kind %} · {{ p.kind }}{% endif %}{% if p.pdf %} · full text{% endif %}</span>
-            <span class="muted mono small">\cite{ {{- p.key -}} }</span></li>
+          <li><span class="quoted">{{ p.title }}</span>{% if p.year %} ({{ p.year }}){% endif %}
+            <span class="muted">{% if p.authors %}· <span class="quoted">{{ p.authors }}</span> {% endif %}· {{ p.origin }}{% if p.kind %} · {{ p.kind }}{% endif %}{% if p.pdf %} · full text{% endif %}</span>
+            <span class="muted mono small quoted">\cite{ {{- p.key -}} }</span></li>
         {% endfor %}
       </ul>
       {% if not v.papers_chosen and v.recorded %}<p class="small muted">No choice was made, so the study took every paper of your literature folder and .bib files.</p>{% endif %}
@@ -56,7 +56,7 @@
     {% elif v.web %}
       <ul class="inputs-list scroll-list">
         {% for p in v.web %}
-          <li>{{ p.title }}{% if p.year %} ({{ p.year }}){% endif %} <span class="muted">{% if p.authors %}· {{ p.authors }}{% endif %}</span></li>
+          <li><span class="quoted">{{ p.title }}</span>{% if p.year %} ({{ p.year }}){% endif %} <span class="muted">{% if p.authors %}· <span class="quoted">{{ p.authors }}</span>{% endif %}</span></li>
         {% endfor %}
       </ul>
     {% elif v.prepared %}

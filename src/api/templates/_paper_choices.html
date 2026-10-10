@@ -14,7 +14,7 @@
     {% for p in papers %}
       <label class="pick-row" data-text="{{ (p.title ~ ' ' ~ p.authors_text ~ ' ' ~ (p.year or '') ~ ' ' ~ p.kind_label) | lower }}">
         <input type="checkbox" name="paper" value="{{ p.id }}" {% if p.ticked %}checked{% endif %}>
-        <span class="pick-name">{{ p.title }}{% if p.authors_text %} <span class="muted">· {{ p.authors_text }}</span>{% endif %}</span>
+        <span class="pick-name quoted">{{ p.title }}{% if p.authors_text %} <span class="muted">· {{ p.authors_text }}</span>{% endif %}</span>
         <span class="pick-meta">{{ p.year or "" }} · {{ p.kind_label }}</span>
       </label>
     {% endfor %}
