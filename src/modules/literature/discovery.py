@@ -282,8 +282,9 @@ async def acquire_literature(
     ``study_inputs.prepare_papers`` wrote first): its entries are tagged
     ``e2er_source = {web}`` and shown as "found on the web", never mixed in
     silently, and none replaces one of the researcher's entries. The researcher
-    turns it off with "Use only my papers" (``web_search=False``); then the
-    corpus evidence, too, is limited to the papers they chose (``chosen``).
+    turns it off with "Use only my papers" (``web_search=False``). When the
+    researcher chose the study's papers (``chosen``), the Library's evidence is
+    limited to those papers, with or without the web search.
 
     Best-effort: a failing provider is skipped, a failing store is logged, and a
     dead network costs the bibliography rather than the run. The caller wraps
@@ -306,7 +307,10 @@ async def acquire_literature(
     # when no corpus has been built.
     evidence = corpus_context.gather(wanted)
     if chosen is not None:
-        evidence = corpus_context.with_chosen(evidence, chosen, only=not web_search)
+        # The researcher chose this study's papers: the Library's other papers are not among them.
+        # (The 2026-10-10 live run without this: a search of the whole Library for a mortgage question
+        # brought 25 unrelated papers, NFT and stablecoin studies, into the bibliography as "your papers".)
+        evidence = corpus_context.with_chosen(evidence, chosen, only=True)
     corpus_context.write_evidence(workspace, evidence)
 
     existing = bib_entry_count(workspace)

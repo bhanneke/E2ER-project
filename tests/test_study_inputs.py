@@ -643,3 +643,41 @@ def test_an_accented_surname_keeps_its_letters_in_the_key():
     assert PaperMetadata(title="The Floating Rate Channel", authors=["Ander Pérez-Orive"], year=2017).bibtex_key == (
         "perezorive2017the"
     )
+
+
+async def test_a_study_with_chosen_papers_takes_no_unchosen_library_paper(tmp_path: Path):
+    """The 2026-10-10 live run: with the web search on, a search of the whole Library for a mortgage question
+    seeded 25 unrelated papers (NFT, stablecoins) into the bibliography as the researcher's. With a choice made,
+    only the chosen papers come from the Library; the web search still runs, its papers marked as found on the web."""
+    from src.modules.literature.corpus import ClaimHit, PaperRow
+    from src.modules.literature.corpus_context import CorpusEvidence
+    from src.modules.literature.discovery import acquire_literature
+    from src.modules.literature.models import SearchResult
+
+    ws = tmp_path / "ws-choice"
+    ws.mkdir(parents=True, exist_ok=True)
+    unrelated = CorpusEvidence(
+        hits=[ClaimHit("key_findings", "x", "q", "", "nft1", "Mapping the NFT revolution", 2021, "")],
+        papers={"nft1": PaperRow("nft1", "", "Mapping the NFT revolution", ["A"], 2021, "openalex", 1)},
+        queries=["q"],
+    )
+    web = SimpleNamespace(
+        name="openalex",
+        search=AsyncMock(
+            return_value=SearchResult(
+                papers=[PaperMetadata(title="Mortgage Rates and Policy", authors=["W Eb"], year=2020)],
+                source="openalex",
+                query="q",
+            )
+        ),
+    )
+    chosen = [PaperMetadata(title="The Mortgage Rate Conundrum", source="bibtex", cite_key="JPT2022")]
+    with (
+        patch("src.modules.literature.corpus_context.gather", return_value=unrelated),
+        patch("src.modules.literature.corpus_context.ingest_staged_pdfs", new=AsyncMock(return_value=0)),
+        patch("src.modules.literature.registry.search_sources", return_value=[web]),
+        patch("src.modules.literature.storage.store_paper", new=AsyncMock()),
+    ):
+        await acquire_literature(ws, "p", ["q"], SimpleNamespace(), limit=5, web_search=True, chosen=chosen)
+    bib = (ws / "literature.bib").read_text()
+    assert "NFT revolution" not in bib and "Mortgage Rates and Policy" in bib and "e2er_source = {web}" in bib

@@ -130,9 +130,9 @@ def with_chosen(
     """The evidence for a study whose researcher chose its papers.
 
     Every claim of a chosen Library paper is added (it was chosen for what it
-    says, whether or not the search found it). With ``only`` ("Use only my
-    papers") the claims of papers that were not chosen are left out: a chosen
-    PDF or .bib entry matches its Library paper by DOI or title. Never raises.
+    says, whether or not the search found it). With ``only`` (what a study with
+    a choice uses) the claims of papers that were not chosen are left out: a
+    chosen PDF or .bib entry matches its Library paper by DOI or title. Never raises.
     """
     from .corpus import claims_for_papers, normalize_doi
 
