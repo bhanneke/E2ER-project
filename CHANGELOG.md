@@ -95,6 +95,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bills the Gemini API key and e2er does not count the cost; they no longer call it a subscription.
 - README, docs/BACKENDS.md and the command help say the same.
 
+### OpenRouter with an open model, run live
+- **First live study on OpenRouter with an open model (DeepSeek V4 Pro).** The OpenRouter backend had
+  only been tested with mocks. A whole single-pass study now runs on it; what the live run showed is
+  fixed below.
+- **Costs are what OpenRouter bills (fix).** The cost table had no entry for open models, so every
+  DeepSeek call was priced at the $3/$15-per-million guess, 10 to 40 times the bill, and the spending
+  limit would have stopped a study that had spent cents. e2er now records the cost OpenRouter reports
+  for each call (`usage.cost`), counts cached prompt tokens as cache reads, and for a call without a
+  reported cost uses OpenRouter's published price list, read at the start of a run and kept for a day
+  in `~/.e2er/cache/openrouter-models.json` (the fixed table, now with DeepSeek, when offline). On the
+  live run e2er's recorded cost and OpenRouter's account differed by under a cent.
+- **Calls go to the model's cheapest provider (new setting `OPENROUTER_PROVIDER_SORT`, default
+  `price`).** Left to OpenRouter's own balancing, DeepSeek calls went to a provider charging about 8
+  times the listed price. `throughput`, `latency` or empty (OpenRouter's balancing) are the other choices.
+- **The spending limit holds inside a specialist (fix).** It was checked between specialists only;
+  one specialist ran on while the study passed its $3 limit ($3.48 billed). The Anthropic and
+  OpenRouter backends now check before every call, counting the specialists still running.
+- **Setup offers every OpenRouter model that can use tools, with its price** ("DeepSeek V4 Pro (open
+  model, low price): $0.23 in / $0.46 out per million tokens"), suggestions first; offline, the fixed
+  suggestions. A model already chosen stays selected, also in e2er's spelling (`claude-sonnet-4-5` for
+  OpenRouter's `claude-sonnet-4.5`).
+- **A reviewer that answers instead of writing its file (fix).** DeepSeek returned a whole review as
+  its reply without calling `write_file`, and the retry cost a new review. On the Anthropic and
+  OpenRouter backends a missing Markdown output is now filled with the final answer (300 characters or
+  more) and the log says so; JSON, LaTeX and scripts never are.
+- **Smaller fixes in the OpenRouter loop:** a response with no answer (an upstream provider failed) is
+  retried twice; tool arguments that are not valid JSON go back to the model as an error instead of
+  running the tool with no arguments; empty arguments and arguments in a code fence are accepted.
+
 ## [0.15.1] — 2026-10-10
 
 ### Iterative mode, run end to end
