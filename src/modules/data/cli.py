@@ -30,7 +30,9 @@ LLM in API mode — guardrail rejections, query_ids, sample rows, status.
 The CLI subprocess sees this as bash command output. Exit code is 0 (the
 model reads the output regardless) except when a `--table` load fails
 (connector error, no rows, no values: exit 4, data.db untouched); fatal
-errors print to stderr.
+errors print to stderr. Inside a step of `e2er reproduce` that does not load
+the inputs again (E2ER_DATA_READ_ONLY=1) only `query` runs; anything else
+exits 5 with a plain message.
 """
 
 from __future__ import annotations
@@ -853,7 +855,8 @@ async def _run_query_sql(args: argparse.Namespace) -> str:
         result = await read_only_query(workspace, sql)
     except DataQueryError as e:
         return json.dumps({"error": str(e)})
-    await _audit_query_data(args.paper_id, args.specialist, sql, int(result.get("row_count", 0)))
+    if os.environ.get("E2ER_REPRODUCE") != "1":  # a rerun's queries are not part of any run's record
+        await _audit_query_data(args.paper_id, args.specialist, sql, int(result.get("row_count", 0)))
     payload: dict[str, Any] = {
         "columns": result.get("columns", []),
         "rows": result.get("rows", []),
@@ -1259,6 +1262,29 @@ _DISPATCH: dict[str, dict[str, Any]] = {
 }
 
 
+def _refuse_in_rerun(args: argparse.Namespace) -> int:
+    """Inside `e2er reproduce`, a step that does not load the inputs again may only read data.db.
+
+    The study's code then depends on nothing but its own folder: a call that loads
+    data from a source is stopped with a plain message, and recorded for the report.
+    """
+    command = f"{args.source} {args.command}"
+    log = os.environ.get("E2ER_REPRODUCE_NETWORK_LOG", "").strip()
+    if log:
+        try:
+            with open(log, "a", encoding="utf-8") as f:
+                f.write(json.dumps({"command": command, "blocked": True}) + "\n")
+        except OSError:
+            pass
+    print(
+        f"e2er reproduce: `e2er-data {command}` loads data from a source on the web, which this step of the "
+        "rerun may not do. The study's code can read its own data with `e2er-data query sql` and "
+        "`e2er-data query tables` (they read data.db); loading data belongs in the data step (get_data.py).",
+        file=sys.stderr,
+    )
+    return 5
+
+
 def main(argv: list[str] | None = None) -> int:
     """Entry point. Returns process exit code."""
     import os
@@ -1294,6 +1320,8 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
+    if os.environ.get("E2ER_DATA_READ_ONLY") == "1" and args.source != "query":
+        return _refuse_in_rerun(args)
     _TABLE_FAILURES.clear()
     try:
         result = asyncio.run(runner(args))

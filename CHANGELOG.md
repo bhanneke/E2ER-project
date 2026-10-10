@@ -46,6 +46,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `tables_untraced` with its reason. `e2er verify` gives the same reason when it fails the numbers check
   for 0 traced cells.
 
+### Studies reproduce on their own
+- **`e2er reproduce` gives the study's code e2er's read-only data access.** `e2er-data query sql` and
+  `e2er-data query tables` now work inside a rerun and read the run folder's `data.db`. Before, a
+  script that checked an aggregate with `e2er-data query sql` stopped with exit 2 ("paper_id
+  missing"): the E2E-01 run with Codex on 0.15.1 passed `e2er verify` and failed `e2er reproduce`
+  for this reason. The steps still get no API key and no e2er setting, and a rerun's queries are not
+  written to e2er's own database.
+- **No web outside the data step.** Only the step that loads inputs again (`get_data.py`) may use the
+  network and e2er-data's loaders. In every other step a connection to another machine fails with a
+  plain message, and `e2er-data yfinance|fred|gmd|allium …` exits 5 with one; the report says which
+  step tried to reach what. `e2er reproduce --allow-network` lets the steps through and names the
+  sites they read in the report and the verdict. The guard sees connections made by Python (a small
+  module in the rerun's environment); a program started from the script (`curl`) is caught by the
+  estimation contract below.
+- **The estimation script is checked for web access at the estimation step.** The runner reads the
+  scripts that write `estimation_results.json` (and the local modules they import) without running
+  them, and flags network libraries (requests, httpx, urllib.request, yfinance, pandas_datareader,
+  fredapi, …), URLs read with pandas, `curl`/`wget` in a subprocess and e2er tools other than
+  `e2er-data query`. A finding is an output-contract failure for the econometrics specialist, with
+  the file and line and the message "The estimation script must read its data from data.db or files
+  in data/; load web data in the data step", so the specialist fixes it within its attempts; after
+  the last attempt the run stops as for any contract failure. The econometrics and data skills say
+  the same. The FOMC replay fixture's estimation script lost its pandas-datareader fallback, which
+  this check flags.
+- **The reproduce report always lists the inputs**, also when a step fails or the environment cannot
+  be made, so the reader sees what the rerun had; a recipe without inputs says so.
+- On the E2E-01 Codex export, the rerun now runs to the end with `--allow-network`: every estimate and
+  all 15 tables are identical; the 276 differing values are the provenance of the 101 statements the
+  script reads from federalreserve.gov while it estimates (retrieval times, page hashes, 16 URLs).
+  Without `--allow-network` it stops at that fetch and says so.
+
 ### Gemini: not tested, API key only
 - **Full runs are tested on Claude (Claude Code) and OpenAI (Codex CLI with a ChatGPT plan).** Google
   ended Gemini CLI sign-in for individual accounts in October 2026: `gemini` 0.63.0 answers "This

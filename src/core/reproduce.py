@@ -27,6 +27,13 @@ published number at the decimals the study printed), shows *small differences*
 or *differs*. Inputs listed with a SHA-256 are compared with the study's own
 files. When the study ships rendered tables and their spec, the tables are
 rendered again from the rerun's results and compared with the paper's.
+
+The study's code runs on its own: it gets no API key and no e2er setting, but it
+does get e2er's read-only access to its own database (``e2er-data query sql`` and
+``e2er-data query tables`` read the run folder's ``data.db``). Only the steps that
+load inputs again (``"reload"``, e.g. ``get_data.py``) may load data from the web;
+in every other step a connection to another machine fails with a plain message
+(``--allow-network`` lets it through), and the report says which steps tried.
 """
 
 from __future__ import annotations
@@ -408,6 +415,10 @@ def make_environment(run_dir: Path, recipe: dict[str, Any], folder: Path, logs: 
     except ValueError:
         info = {"python": "unknown", "packages": {}}
     info["installer"] = "uv" if uv else "pip"
+    try:
+        info["network_guard"] = install_network_guard(py)
+    except (OSError, subprocess.SubprocessError):
+        info["network_guard"] = False
     return py, info
 
 
@@ -438,8 +449,22 @@ def minimal_env() -> dict[str, str]:
     }
 
 
-def step_env(venv_python: Path) -> dict[str, str]:
-    """The steps' environment: the minimal one (no keys), the new environment first; e2er-data from the running e2er."""
+#: Set in every step: e2er-data knows it runs inside a rerun (no audit record in e2er's own database).
+REPRODUCE_ENV = "E2ER_REPRODUCE"
+#: Set in the steps that do not load inputs again: e2er-data answers read-only queries only.
+DATA_READ_ONLY_ENV = "E2ER_DATA_READ_ONLY"
+#: ``block`` or ``record``: what the network guard does in a step (see reproduce_netguard.py).
+NETWORK_ENV = "E2ER_REPRODUCE_NETWORK"
+#: Where the guard and e2er-data record what a step tried to reach.
+NETWORK_LOG_ENV = "E2ER_REPRODUCE_NETWORK_LOG"
+
+
+def step_env(venv_python: Path, run_dir: Path | None = None) -> dict[str, str]:
+    """The steps' environment: the minimal one (no keys), the new environment first; e2er-data from the running e2er.
+
+    With ``run_dir``, e2er-data is bound to the run folder: ``e2er-data query sql/tables`` read
+    its ``data.db``, never a workspace of this machine.
+    """
     env = minimal_env()
     venv_bin = venv_python.parent
     scripts = sysconfig.get_path("scripts") or str(Path(sys.executable).parent)
@@ -449,7 +474,30 @@ def step_env(venv_python: Path) -> dict[str, str]:
     e2er_data = shutil.which("e2er-data", path=scripts) or shutil.which("e2er-data")
     if e2er_data:
         env["E2ER_DATA"] = e2er_data
+    if run_dir is not None:
+        env["E2ER_PAPER_ID"] = run_dir.name
+        env["E2ER_WORKSPACE"] = str(run_dir)
+        env["E2ER_WORKSPACE_ROOT"] = str(run_dir.parent)
+        env["E2ER_SPECIALIST"] = "reproduce"
+        env[REPRODUCE_ENV] = "1"
     return env
+
+
+def install_network_guard(venv_python: Path) -> bool:
+    """Put the network guard into the new environment (it acts only in steps that set E2ER_REPRODUCE_NETWORK)."""
+    probe = subprocess.run(
+        [str(venv_python), "-I", "-c", "import sysconfig; print(sysconfig.get_path('purelib'))"],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        env=minimal_env(),
+    )
+    site = Path(probe.stdout.strip()) if probe.returncode == 0 and probe.stdout.strip() else None
+    if site is None or not site.is_dir():
+        return False
+    shutil.copy2(Path(__file__).with_name("reproduce_netguard.py"), site / "e2er_reproduce_netguard.py")
+    (site / "e2er_reproduce_netguard.pth").write_text("import e2er_reproduce_netguard\n", encoding="utf-8")
+    return True
 
 
 def lay_out(folder: Path, run_dir: Path, recipe: dict[str, Any]) -> list[str]:
@@ -490,13 +538,67 @@ class StepResult:
     seconds: float
     tail: str
     log: str
+    #: Whether the step loads inputs again (``"reload"`` in the recipe): the only steps that may use the web.
+    reload: bool = False
+    #: What the step tried to reach on the network, or to load with e2er-data: {"host"/"command", "blocked"}.
+    network: list[dict[str, Any]] = field(default_factory=list)
+
+    @property
+    def blocked(self) -> list[dict[str, Any]]:
+        return [n for n in self.network if n.get("blocked")]
 
     def as_dict(self) -> dict[str, Any]:
-        return self.__dict__.copy()
+        d = self.__dict__.copy()
+        d["network"] = list(self.network)
+        return d
 
 
-def run_steps(run_dir: Path, recipe: dict[str, Any], env: dict[str, str], logs: Path, python: Path) -> list[StepResult]:
-    """Run the steps in order; stop at the first that fails. ``python`` runs every ``python …`` step."""
+def is_reload_step(step: dict[str, Any], recipe: dict[str, Any]) -> bool:
+    """Does the step run a script that loads inputs again (an input's ``"reload"``)?"""
+    names = {
+        Path(str(i["reload"])).name
+        for i in recipe.get("inputs") or []
+        if isinstance(i, dict) and isinstance(i.get("reload"), str)
+    }
+    return any(Path(a).name in names for a in step_argv(step))
+
+
+def _read_network_log(path: Path) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return out
+    for line in lines:
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(row, dict):
+            continue
+        key = json.dumps(row, sort_keys=True)
+        if key not in seen:
+            seen.add(key)
+            out.append(row)
+    return out
+
+
+def run_steps(
+    run_dir: Path,
+    recipe: dict[str, Any],
+    env: dict[str, str],
+    logs: Path,
+    python: Path,
+    *,
+    allow_network: bool = False,
+) -> list[StepResult]:
+    """Run the steps in order; stop at the first that fails. ``python`` runs every ``python …`` step.
+
+    A step that loads inputs again may use the web and every e2er-data command. Every other step
+    gets e2er-data's read-only queries only, and no network unless ``allow_network`` (then its
+    connections are recorded).
+    """
     results = []
     for i, step in enumerate(recipe["steps"], 1):
         argv = step_argv(step)
@@ -504,8 +606,15 @@ def run_steps(run_dir: Path, recipe: dict[str, Any], env: dict[str, str], logs: 
             argv = [str(python), *argv[1:]]
         timeout = float(step.get("timeout_minutes") or DEFAULT_STEP_TIMEOUT_MINUTES) * 60
         log = logs / f"step-{i}.log"
+        net_log = logs / f"step-{i}-network.jsonl"
+        reload = is_reload_step(step, recipe)
+        step_environment = dict(env)
+        if not reload:
+            step_environment[DATA_READ_ONLY_ENV] = "1"
+            step_environment[NETWORK_ENV] = "record" if allow_network else "block"
+            step_environment[NETWORK_LOG_ENV] = str(net_log)
         started = time.monotonic()
-        code, tail = _run(argv, cwd=run_dir, env=env, timeout=timeout, log=log)
+        code, tail = _run(argv, cwd=run_dir, env=step_environment, timeout=timeout, log=log)
         results.append(
             StepResult(
                 command=shlex.join(step_argv(step)),
@@ -514,11 +623,36 @@ def run_steps(run_dir: Path, recipe: dict[str, Any], env: dict[str, str], logs: 
                 seconds=round(time.monotonic() - started, 1),
                 tail=tail if code else "",
                 log=str(log),
+                reload=reload,
+                network=_read_network_log(net_log),
             )
         )
         if code != 0:
             break
     return results
+
+
+def blocked_words(step: StepResult) -> str:
+    """What a step was stopped from doing, as the end of a sentence; empty when nothing was stopped."""
+    hosts = sorted({str(n["host"]) for n in step.blocked if n.get("host")})
+    commands = sorted({str(n["command"]) for n in step.blocked if n.get("command")})
+    parts = []
+    if hosts:
+        parts.append(
+            f"tried to reach the web ({', '.join(hosts[:5])}), which a rerun allows only in the step that loads "
+            "the inputs again"
+        )
+    if commands:
+        parts.append(
+            "called " + ", ".join(f"`e2er-data {c}`" for c in commands[:5]) + ", which loads data from the web; "
+            "during a rerun the study's code can only read its own data (e2er-data query)"
+        )
+    return " and ".join(parts)
+
+
+def web_hosts(step: StepResult) -> list[str]:
+    """The machines a step reached (allowed with --allow-network)."""
+    return sorted({str(n["host"]) for n in step.network if n.get("host") and not n.get("blocked")})
 
 
 def verdict(
@@ -535,6 +669,9 @@ def verdict(
     """
     if any(s.exit_code for s in steps):
         failed = next(s for s in steps if s.exit_code)
+        why = blocked_words(failed)
+        if why:
+            return f"Could not reproduce: the step `{failed.command}` {why}.", 2
         return f"Could not reproduce: the step `{failed.command}` failed.", 2
     unwritten = [f.published for f in files if f.problem == NOT_WRITTEN]
     if files and len(unwritten) == len(files):
@@ -559,6 +696,12 @@ def verdict(
         and not (other or absent)
     ):
         tail = " and every table renders the same" if tables and tables.get("rendered") else ""
+        web = sorted({h for s in steps if not s.reload for h in web_hosts(s)})
+        if web:
+            tail += (
+                f"; the study's code read from the web while it ran ({', '.join(web[:5])}), so a later rerun "
+                "can differ when those pages change"
+            )
         return f"Reproduced: every compared value is identical or the same at the published precision{tail}.", 0
     parts = []
     if count(MINOR):
@@ -575,4 +718,7 @@ def verdict(
         parts.append(f"{len(other)} input file(s) differ from the study's ({', '.join(i['path'] for i in other[:3])})")
     if absent:
         parts.append(f"{len(absent)} input file(s) are missing ({', '.join(i['path'] for i in absent[:3])})")
+    web = sorted({h for s in steps if not s.reload for h in web_hosts(s)})
+    if web:
+        parts.append(f"the study's code read from the web while it ran ({', '.join(web[:5])})")
     return "Not reproduced exactly: " + "; ".join(parts) + ".", 1

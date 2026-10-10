@@ -43,41 +43,7 @@ dgs2_non_null = dgs2_data['value'].notna().sum()
 print(f"DGS2 non-null values: {dgs2_non_null}")
 
 if dgs2_non_null == 0:
-    print("DGS2 table is empty. Attempting to load from FRED...")
-    dgs2_loaded = False
-
-    # Try pandas-datareader first
-    try:
-        import pandas_datareader as pdr
-        print("  Loading DGS2 from FRED via pandas-datareader...")
-        dgs2_fred = pdr.data.DataReader("DGS2", "fred", datetime(2015, 1, 1), datetime(2025, 12, 31))
-        print(f"  ✓ Loaded {len(dgs2_fred)} rows from FRED")
-
-        # Prepare and insert into database
-        dgs2_fred_df = dgs2_fred.reset_index()
-        dgs2_fred_df.columns = ['date', 'value']
-
-        # Drop the old table and create new one
-        cursor = conn.cursor()
-        cursor.execute("DROP TABLE IF EXISTS dgs2")
-        conn.commit()
-
-        dgs2_fred_df.to_sql("dgs2", conn, if_exists='replace', index=False)
-        conn.commit()
-        print(f"  ✓ Replaced dgs2 table with {len(dgs2_fred_df)} rows")
-
-        # Reload from database
-        dgs2_data = pd.read_sql("SELECT date, value FROM dgs2 ORDER BY date", conn)
-        dgs2_non_null = dgs2_data['value'].notna().sum()
-        print(f"  ✓ DGS2 now has {dgs2_non_null} non-null values")
-        dgs2_loaded = True
-    except (ImportError, ModuleNotFoundError):
-        print("  ✗ pandas-datareader not available")
-    except Exception as e:
-        print(f"  ✗ pandas-datareader failed: {e}")
-
-    if not dgs2_loaded:
-        print("  WARNING: H2 analysis requires DGS2 data. Please ensure DGS2 is loaded.")
+    print("  WARNING: H2 analysis requires DGS2 data. Please ensure DGS2 is loaded.")
 
 print(f"Loaded {len(fomc_events)} FOMC events")
 

@@ -490,6 +490,12 @@ def main() -> None:
     reproduce_p.add_argument("folder", help="The study folder (with reproduce.json).")
     reproduce_p.add_argument("--keep", action="store_true", help="Keep the run folder also when everything matches.")
     reproduce_p.add_argument(
+        "--allow-network",
+        action="store_true",
+        help="Let the study's code reach the web also outside the step that loads its inputs again "
+        "(the report names what it reached).",
+    )
+    reproduce_p.add_argument(
         "--json", dest="json_out", default=None, metavar="FILE", help="Also write the report as JSON."
     )
 
@@ -830,7 +836,7 @@ def main() -> None:
     if args.command == "reproduce":
         from .cli_reproduce import reproduce as _reproduce
 
-        sys.exit(_reproduce(args.folder, keep=args.keep, json_out=args.json_out))
+        sys.exit(_reproduce(args.folder, keep=args.keep, json_out=args.json_out, allow_network=args.allow_network))
 
     if args.command == "verify":
         from .cli_verify import verify as _verify

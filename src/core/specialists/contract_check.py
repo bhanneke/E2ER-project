@@ -837,6 +837,14 @@ def check_specialist_artifacts(workspace: Path, specialist: str) -> list[Contrac
                 if prereg is not None:
                     checks.append(prereg)
 
+    # The estimation runs on its own: `e2er reproduce` reruns it without the web and
+    # without e2er's tools, so a script that fetches web data or calls a loader is a
+    # broken run of the study's code, not a property of the paper (reliability).
+    if specialist == "econometrics_specialist" and regression_file and not base_failed:
+        from .standalone_check import check_estimation_standalone
+
+        checks.append(check_estimation_standalone(workspace, regression_file))
+
     # The replication template's JSON files are contracts other code executes
     # (the plan) or verifies (the report): a file that parses but breaks its
     # schema is as unusable as a missing one, so this is reliability.

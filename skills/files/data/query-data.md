@@ -48,7 +48,13 @@ queries you run **are** your data-provenance trail. Document the key ones in you
 output (`data_summary.md` / the spec you produce).
 
 The final reproducible estimation script (`run_estimation.py`) may still read the
-data files with `pandas` — that's expected. But **verify the columns and their
+data files with `pandas` — that's expected. It may also call
+`e2er-data query sql|tables` (read-only; in `e2er reproduce` it reads the
+rerun's `data.db`), but no other e2er command and nothing on the web: **load
+every web source in the data step**, into `data.db` (`--table`) or under
+`data/`. The estimation script must read its data from data.db or files in
+data/; a script that fetches web pages or calls `e2er-data yfinance|fred|…`
+is rejected at the estimation contract. But **verify the columns and their
 meanings with `e2er-data query` first**, so the script operates on real fields
 rather than assumptions. Explore with SQL; reproduce with pandas.
 

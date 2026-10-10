@@ -51,22 +51,37 @@ def render(
             f"Environment: Python {env_info.get('python')} in a new virtual environment "
             f"({env_info.get('installer')}), from {recipe['requirements']}: {pins or 'no packages'}"
         )
+        if env_info.get("network_guard") is False:
+            lines.append(
+                "  The network guard could not be put into the environment: the steps were not kept off the web."
+            )
         lines.append("")
     lines.append("Steps:")
     for i, s in enumerate(steps, 1):
         state = "done" if s.exit_code == 0 else f"FAILED (exit {s.exit_code})"
         about = f" ({s.about})" if s.about else ""
         lines.append(f"  {i}. {s.command}{about}: {state} in {s.seconds:.0f} s")
+        why = rp.blocked_words(s)
+        if why:
+            lines.append(f"       It {why}.")
+        web = rp.web_hosts(s)
+        if web and not s.reload:
+            lines.append(f"       It read from the web (allowed with --allow-network): {', '.join(web)}.")
         if s.exit_code:
             lines += [f"       {t}" for t in s.tail.splitlines()]
             lines.append(f"       full output: {s.log}")
     if len(steps) < len(recipe["steps"]):
         lines.append(f"  {len(recipe['steps']) - len(steps)} later step(s) not run.")
-    if inputs:
+    lines += ["", "Inputs, compared with the study's own files (SHA-256):"]
+    declared = recipe.get("inputs") or []
+    if not declared:
+        lines.append("  the study's reproduce.json lists no inputs")
+    elif not inputs:
+        lines.append(f"  not compared: the run stopped before the inputs were laid out ({len(declared)} listed)")
+    else:
         same = [i for i in inputs if i["status"] == "identical"]
         differ = [i["path"] for i in inputs if i["status"] == "differs"]
         missing = [i["path"] for i in inputs if i["status"] == "missing"]
-        lines += ["", "Inputs, compared with the study's own files (SHA-256):"]
         lines.append(f"  {len(same)} of {len(inputs)} identical")
         if differ:
             lines.append(f"  {len(differ)} differ: {', '.join(differ)}")
@@ -99,7 +114,14 @@ def render(
     return "\n".join(lines) + "\n"
 
 
-def reproduce(folder: str, *, keep: bool = False, json_out: str | None = None) -> int:
+def _inputs_only(recipe: dict[str, Any], inputs: list[dict[str, Any]]) -> str:
+    """The inputs section alone, for a run that stopped before its steps."""
+    text = render(Path(""), {**recipe, "steps": []}, None, [], inputs, [], None, "")
+    start = text.find("Inputs, compared")
+    return "\n" + text[start:].rstrip() + "\n" if start >= 0 else ""
+
+
+def reproduce(folder: str, *, keep: bool = False, json_out: str | None = None, allow_network: bool = False) -> int:
     root = Path(folder).expanduser().resolve()
     if not root.is_dir():
         print(f"error: {folder} is not a folder")
@@ -122,13 +144,17 @@ def reproduce(folder: str, *, keep: bool = False, json_out: str | None = None) -
     try:
         rp.lay_out(root, run_dir, recipe)  # without the results it is to write: the rerun must write them
         python, env_info = rp.make_environment(run_dir, recipe, root, logs)
-        steps = rp.run_steps(run_dir, recipe, rp.step_env(python), logs, python)
+        steps = rp.run_steps(run_dir, recipe, rp.step_env(python, run_dir), logs, python, allow_network=allow_network)
     except rp.RecipeError as e:
-        print(f"error: {e}\nThe run folder is kept: {run_dir}")
+        print(f"error: {e}")
+        inputs = rp.compare_inputs(run_dir, recipe.get("inputs") or [])
+        print(_inputs_only(recipe, inputs), end="")
+        print(f"The run folder is kept: {run_dir}")
         return 2
+    # The inputs are compared also when a step failed: the reader sees what the rerun had.
+    inputs = rp.compare_inputs(run_dir, recipe.get("inputs") or [])
     ran = bool(steps) and not any(s.exit_code for s in steps)
     if ran:
-        inputs = rp.compare_inputs(run_dir, recipe.get("inputs") or [])
         files = [
             rp.compare_json(root / c["published"], run_dir / c["produced"], c["published"], c["produced"])
             for c in recipe["compare"]
@@ -144,6 +170,7 @@ def reproduce(folder: str, *, keep: bool = False, json_out: str | None = None) -
             "environment": env_info,
             "steps": [s.as_dict() for s in steps],
             "inputs": inputs,
+            "allow_network": allow_network,
             "results": [f.as_dict() for f in files],
             "tables": tables,
             "verdict": verdict,
