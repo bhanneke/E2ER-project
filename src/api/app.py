@@ -2956,9 +2956,14 @@ def _plain_error(raw: str) -> str:
     """
     import re as _re
 
+    from ..modules.llm.plan_limit import is_plan_limit_status
+
     text = raw.strip()
     if text.startswith("BudgetExceededError"):
         return "The spending limit was reached."
+    if is_plan_limit_status(text):
+        # The subscription plan's usage limit: the whole sentence, it says what to do.
+        return text
     if text.startswith("Server shutdown while in-flight") or "the server stopped while" in text:
         return "e2er was stopped while the run was working."
     text = _re.sub(r"^[A-Z][A-Za-z]*(Error|Exception)\s*:\s*", "", text)
@@ -2976,6 +2981,7 @@ def _failure_detail(workspace: Path, paper: dict[str, Any], events: list[dict[st
     about what the model was thinking, only about what it did not produce.
     """
     from ..core.run_outcome import workspace_status
+    from ..modules.llm.plan_limit import is_plan_limit_status
 
     # "stopped" (stored as `rejected`) is a check that stopped the run; an older
     # run stored `rejected` after its internal quality review, and that run
@@ -3024,7 +3030,9 @@ def _failure_detail(workspace: Path, paper: dict[str, Any], events: list[dict[st
             "A check stopped the run. Fix what the check names, then resume: the run stops at the same check "
             "until it passes."
         )
-    if status == "paused":
+    if status == "paused" and is_plan_limit_status(raw):
+        hints.append("Nothing is lost: no step failed, and Resume runs the specialist the limit interrupted again.")
+    elif status == "paused":
         hints.append(
             "The run is paused and its files are kept. Resume picks up at the first step that has not finished."
         )

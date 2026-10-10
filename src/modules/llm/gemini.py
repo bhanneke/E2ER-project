@@ -41,6 +41,7 @@ from .cli_support import (
     stop_on_cancel,
     workspace_cwd,
 )
+from .plan_limit import detect as detect_plan_limit
 
 logger = get_logger(__name__)
 
@@ -192,6 +193,9 @@ class GeminiBackend(LLMBackend):
 
         if proc.returncode != 0 or parsed["error"]:
             error = parsed["error"] or stderr.strip() or f"Exit code {proc.returncode}: {stdout.strip()}"
+            # A used-up daily quota: calls fail until it resets, so the run pauses (paused_plan_limit).
+            if limit := detect_plan_limit("gemini", f"{error}\n{stderr}"):
+                raise limit
             return ToolLoopResult(
                 success=False,
                 output=output,

@@ -137,6 +137,9 @@ class Study:
             "total": len(self.attempts),
             "archived": len(self.archived),
             "latest_status": latest["status"] if latest else None,
+            "latest_id": latest["id"] if latest else None,
+            # A run paused at its subscription plan's usage limit: the sentence, shown with a Resume button.
+            "latest_plan_limit": latest["plan_limit"] if latest else "",
             "latest_date": latest["updated_at"] if latest else None,
             "last_activity": self.last_activity(show_archived),
             "summary": self.summary(show_archived),
@@ -175,6 +178,7 @@ def group(rows: list[dict[str, Any]]) -> dict[str, Study]:
             "archived": r.get("archived_at") is not None,
             "archived_at": _ts(r.get("archived_at")),
             "moved": bool(r.get("study_override")),
+            "plan_limit": _plan_limit(r),
             "version": len(st.attempts) + 1,
         }
         st.attempts.append(attempt)
@@ -187,8 +191,16 @@ def group(rows: list[dict[str, Any]]) -> dict[str, Study]:
 
 _ATTEMPT_COLUMNS = (
     "id, title, research_question, status, pipeline, backend, model, created_at, updated_at, "
-    "archived_at, study_key, study_override, workspace"
+    "archived_at, study_key, study_override, workspace, last_error"
 )
+
+
+def _plan_limit(row: dict[str, Any]) -> str:
+    """The status sentence of a run paused at its plan's usage limit, else ""."""
+    from ..modules.llm.plan_limit import is_plan_limit_status
+
+    error = row.get("last_error")
+    return str(error) if row.get("status") == "paused" and is_plan_limit_status(error) else ""
 
 
 async def load() -> dict[str, Study]:

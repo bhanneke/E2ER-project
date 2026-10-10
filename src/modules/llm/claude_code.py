@@ -25,6 +25,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import time
 from pathlib import Path
 from typing import Any
@@ -33,6 +34,7 @@ from ...config import get_settings
 from ...logging_config import get_logger
 from .base import LLMBackend, TokenUsage, ToolHandler, ToolLoopResult
 from .cli_support import cli_name, cli_path_or_setting, cli_version, kill_process_group, run_env, stop_on_cancel
+from .plan_limit import detect as detect_plan_limit
 
 logger = get_logger(__name__)
 
@@ -449,6 +451,16 @@ async def _invoke_cli(
     stdout = stdout_bytes.decode("utf-8", errors="replace")
     stderr = stderr_bytes.decode("utf-8", errors="replace")
 
+    # The Claude plan's limit ("Claude AI usage limit reached|<time>", "5-hour
+    # limit reached ∙ resets 3pm"): every call fails until it resets, so the run
+    # pauses (runner: paused_plan_limit) instead of failing. The CLI prints it in
+    # its JSON result, on stderr, or as the whole answer of an exit-0 call.
+    said = _limit_text(stdout)
+    if proc.returncode != 0 or _parse_output(stdout).get("is_error") or _LIMIT_ONLY.match(said.strip()):
+        limit = detect_plan_limit("claude_code", f"{said}\n{stderr}")
+        if limit is not None:
+            raise limit
+
     if proc.returncode != 0:
         error_msg = stderr.strip() or f"Exit code {proc.returncode}: {_clip(stdout.strip())}"
         return ToolLoopResult(
@@ -495,6 +507,16 @@ async def _invoke_cli(
         duration_seconds=duration,
         stop_reason="end_turn",
     )
+
+
+#: An exit-0 answer that is nothing but the plan-limit notice (older Claude Code versions).
+_LIMIT_ONLY = re.compile(r"^claude(?: ai)? usage limit reached\b", re.I)
+
+
+def _limit_text(stdout: str) -> str:
+    """The CLI's own words in its output: the JSON ``result``/``error`` when there is one, else the text."""
+    raw = _parse_output(stdout)
+    return str(raw.get("result") or raw.get("error") or "") or stdout
 
 
 def _parse_output(stdout: str) -> dict[str, Any]:

@@ -148,6 +148,7 @@ EVENTS: dict[str, str] = {
     "researcher_rerun": "Ran again from a step",
     "awaiting_review": "Stopped for you",
     "paper_paused": "Paused",
+    "paused_plan_limit": "Paused: the plan's usage limit was reached",
     "preregistration": "Pre-registration frozen",
     "preregistration_check": "Pre-registration compared with the plan",
     "run_identity": "e2er version recorded",

@@ -10,6 +10,7 @@ from typing import Any
 
 from ...logging_config import get_logger
 from ...modules.llm.base import LLMBackend, ToolHandler
+from ...modules.llm.plan_limit import PlanLimitReachedError
 from ..governance import DEFAULT_REGIME
 from ..specialists.base import run_specialist
 from ..specialists.contracts import Contribution, WorkOrder
@@ -285,6 +286,12 @@ async def execute_work_order(
     except asyncio.CancelledError:
         # Cancellation must propagate, not be swallowed as a specialist failure.
         raise
+    except PlanLimitReachedError as limit:
+        # The subscription plan's usage limit: not this specialist's failure. No
+        # attempt is counted; the run pauses and Resume runs this work order again.
+        limit.specialist = limit.specialist or work_order.specialist
+        logger.warning("Specialist %s paused: %s", work_order.specialist, limit)
+        raise
     except Exception as e:
         logger.error("Specialist %s failed: %s", work_order.specialist, e)
         await log_event(
@@ -431,14 +438,24 @@ async def execute_parallel(
     logger.info("Parallel dispatch: %d specialists", len(work_orders))
     sem = asyncio.Semaphore(get_settings().max_concurrent_specialists)
 
-    contributions = await asyncio.gather(
-        *(
-            run_with_attempts(
+    async def _one(wo: WorkOrder) -> Contribution | PlanLimitReachedError:
+        try:
+            return await run_with_attempts(
                 wo, backend, workspace, model, extra_tools, extra_handlers, backend_name, governance, sem=sem
             )
-            for wo in work_orders
-        )
-    )
+        except PlanLimitReachedError as limit:
+            return limit
+
+    # A plan's usage limit hit by one specialist does not stop the others: each
+    # finishes (the ones that succeed keep their output, and in the initial phase
+    # are recorded as done), then the batch raises the limit and the run pauses.
+    # The others usually hit the same limit at their next call, so this costs
+    # little, and nothing they finished is thrown away.
+    outcomes = await asyncio.gather(*(_one(wo) for wo in work_orders))
+    limits = [o for o in outcomes if isinstance(o, PlanLimitReachedError)]
+    if limits:
+        raise next((x for x in limits if x.resets), limits[0])
+    contributions = [o for o in outcomes if isinstance(o, Contribution)]
 
     failed = [c for c in contributions if not c.success]
     if failed:
