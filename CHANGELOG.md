@@ -128,6 +128,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   its reply without calling `write_file`, and the retry cost a new review. On the Anthropic and
   OpenRouter backends a missing Markdown output is now filled with the final answer (300 characters or
   more) and the log says so; JSON, LaTeX and scripts never are.
+- **The number check skips LaTeX comments in tables (fix).** DeepSeek annotated each table row with a
+  `% src:` comment naming the JSON keys (`pre_tightening_2015_2021`); read as cells they gave 15021 and
+  22023, and `e2er verify` failed the exported study.
 - **Smaller fixes in the OpenRouter loop:** a response with no answer (an upstream provider failed) is
   retried twice; tool arguments that are not valid JSON go back to the model as an error instead of
   running the tool with no arguments; empty arguments and arguments in a code fence are accepted.
