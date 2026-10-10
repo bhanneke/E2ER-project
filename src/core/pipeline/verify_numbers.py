@@ -396,6 +396,9 @@ def _matches_rounded(num_str: str, source_val: float) -> bool:
     return abs(draft_val - source_val) <= half * (1 + 1e-9) + 1e-12 * max(1.0, abs(source_val))
 
 
+#: A LaTeX comment: an unescaped % to the end of its line (``\\%`` is a percent sign).
+_LATEX_COMMENT_RE = re.compile(r"(?<!\\)%[^\n]*")
+
 _FULL_RULE_RE = re.compile(r"\\(?:hline|midrule|toprule|bottomrule)(?![A-Za-z])")
 
 
@@ -431,6 +434,11 @@ def _extract_table_numbers(tex_content: str, *, zeros: bool = False) -> list[tup
     cells such as ``0.000`` (a value with decimals), which the run's gate skips.
     """
     results: list[tuple[str, str]] = []
+    # LaTeX comments are not cells. A model annotating its rows with
+    # "% src: ...by_period.pre_tightening_2015_2021.n" (DeepSeek V4 Pro, 2026-10-10)
+    # had that line read into the next row's first cell, as the numbers 15021
+    # and 22023, and `e2er verify` failed the study.
+    tex_content = _LATEX_COMMENT_RE.sub("", tex_content)
 
     # Strip non-data rule commands before splitting into rows. `cmidrule`
     # carries a numeric range arg (\cmidrule(lr){2-3}) that must not be read

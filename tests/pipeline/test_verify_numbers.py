@@ -879,3 +879,19 @@ def test_prose_periods_and_ranges():
         "lies in 0.12--0.15, against $-0.30$ before."
     )
     assert [p.num_str for p in _extract_prose_numbers(text)] == ["0.12", "0.15", "-0.30"]
+
+
+def test_latex_comments_in_a_table_are_not_cells():
+    """DeepSeek V4 Pro annotated each row with a `% src:` comment naming the JSON keys
+    (`by_period.pre_tightening_2015_2021.n`); read into the next row they gave 15021 and
+    22023 and `e2er verify` failed the study (2026-10-10)."""
+    from src.core.pipeline.verify_numbers import _extract_table_numbers
+
+    tex = (
+        "\\begin{tabular}{lcc}\n\\toprule\n& Pre & Tightening \\\\\n\\midrule\n"
+        "$N$ & 84 & 24 \\\\\n"
+        "% src: summary_statistics.json#by_period.pre_tightening_2015_2021.n, #by_period.tightening_2022_2023.n\n"
+        "Share & 52\\% & 0.45 \\\\\n"
+        "\\bottomrule\n\\end{tabular}\n"
+    )
+    assert sorted(n for n, _ in _extract_table_numbers(tex)) == ["0.45", "24", "52", "84"]
