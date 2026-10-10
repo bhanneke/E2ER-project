@@ -55,10 +55,14 @@
       <td class="c-status">
         <span class="status status-{{ a.status }}">{{ a.status | status_words }}</span>
         {% if a.archived %}<span class="muted">archived</span>{% endif %}
+        {% if a.plan_limit %}<span class="plan-limit">{{ a.plan_limit }}</span>{% endif %}
       </td>
       <td class="c-dates muted"><span class="d">started {{ a.created_at[:16] }}</span> <span class="d">last change {{ a.updated_at[:16] }}</span></td>
       <td class="c-model muted"><span class="d">{{ a.model or "not recorded" }}</span>{% if a.backend %} <span class="d">through {{ a.backend | backend_label }}</span>{% endif %}</td>
       <td class="c-action">
+        {% if a.plan_limit and not a.archived %}
+          <button type="button" class="btn-primary btn-small" data-resume="{{ a.id }}">Resume</button>
+        {% endif %}
         {% if a.status == "paused" %}
           <button type="button" class="btn btn-small" data-cancel="{{ a.id }}" data-v="{{ a.version }}">Cancel run</button>
         {% endif %}
@@ -117,6 +121,7 @@
     if (!confirm('Cancel run ' + b.dataset.v + ' for good? It cannot be resumed afterwards. Its files are kept, and you can archive it.')) return;
     act(b, () => call('POST', '/api/papers/' + b.dataset.cancel + '/cancel-attempt'));
   }));
+  document.querySelectorAll('[data-resume]').forEach((b) => b.addEventListener('click', () => act(b, () => call('POST', '/api/papers/' + b.dataset.resume + '/resume'))));
   document.querySelectorAll('[data-unarchive]').forEach((b) => b.addEventListener('click', () => act(b, () => call('POST', '/api/papers/' + b.dataset.unarchive + '/unarchive'))));
   document.querySelectorAll('[data-move]').forEach((b) => b.addEventListener('click', () => {
     const target = b.parentElement.querySelector('select').value;

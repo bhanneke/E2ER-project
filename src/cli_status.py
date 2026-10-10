@@ -31,6 +31,7 @@ import time
 # graph flat.
 from .cli_run import _api_reachable, _api_root, _poll_status, api_headers
 from .core.run_outcome import score_words, status_words
+from .modules.llm.plan_limit import is_plan_limit_status
 
 
 def _truncate(text: str, max_len: int) -> str:
@@ -98,7 +99,11 @@ def _format_status_summary(d: dict) -> str:
         f"Workspace:  {workspace}",
         f"Dashboard:  {_api_root()}/papers/{d.get('id', '')}",
     ]
-    if last_error:
+    if last_error and is_plan_limit_status(str(last_error)):
+        # The plan's usage limit: the whole sentence (it says when it resets), and the command.
+        lines.append(f"Paused:     {last_error}")
+        lines.append(f"Resume:     e2er resume {d.get('id', '')}")
+    elif last_error:
         lines.append(f"Last error: {_truncate(str(last_error), 120)}")
     for note in d.get("notes") or []:
         lines.append(f"Note:       {note}")
@@ -400,7 +405,9 @@ def resume(
     else:
         print(f"  Cap: ${_format_money(current_cap)} (unchanged)")
     last_error = payload.get("last_error")
-    if last_error:
+    if last_error and is_plan_limit_status(str(last_error)):
+        print(f"  Was: {last_error}")
+    elif last_error:
         print(f"  Was: {_truncate(str(last_error), 120)}")
 
     # POST /resume with the optional cap raise

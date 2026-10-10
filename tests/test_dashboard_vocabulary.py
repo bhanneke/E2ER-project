@@ -479,3 +479,23 @@ def test_the_iterative_mode_shows_its_rounds_in_plain_words(client, fx):
     assert "section:discussion" in html and not problems(html)
     log = text[text.find("What happened") :]
     assert "Round of improvement" in log and "Ceiling check" in log and "Change of approach" in log
+
+
+def test_a_plan_limit_pause_reads_plainly_with_a_resume_button(client, fx):
+    """The subscription plan's usage limit: paused, the whole sentence, and Resume, on every page that lists it."""
+    sentence = (
+        "Your ChatGPT plan's usage limit is reached (resets at 14:30). "
+        "The run is paused; press Resume when the limit has reset."
+    )
+    pid = fx.ids["plan_limit"]
+    live = client.get(f"/htmx/papers/{pid}/live").text
+    text = visible_text(live)
+    assert sentence in text and "Paused: the plan's usage limit was reached" in text
+    assert 'id="resume"' in live and "status-paused" in live and "status-failed" not in live
+    assert "no step failed" in text
+    listing = client.get("/").text
+    assert sentence in visible_text(listing) and f'data-resume="{pid}"' in listing
+    study = client.get(f"/studies/{fx.keys['plan_limit']}").text
+    assert sentence in visible_text(study) and f'data-resume="{pid}"' in study
+    for page in (live, listing, study):
+        assert not problems(page)

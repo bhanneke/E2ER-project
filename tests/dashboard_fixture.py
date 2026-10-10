@@ -272,6 +272,27 @@ def _studies() -> dict[str, dict[str, Any]]:
             "last_error": "BudgetExceededError: spent $0.52 of the $0.50 limit",
             "cap": 0.5,
         },
+        # The ChatGPT plan's usage limit (Codex), a study of its own so it is the latest run on the list.
+        "plan_limit": {
+            "pipeline": "empirical",
+            "status": "paused",
+            "completed": ["initial"],
+            "question": "Do central bank speeches move bank stocks?",
+            "last_error": "Your ChatGPT plan's usage limit is reached (resets at 14:30). "
+            "The run is paused; press Resume when the limit has reset.",
+            "events": [
+                (
+                    "paused_plan_limit",
+                    {
+                        "backend": "codex",
+                        "resets": "at 14:30",
+                        "specialist": "idea_developer",
+                        "status": "Your ChatGPT plan's usage limit is reached (resets at 14:30). "
+                        "The run is paused; press Resume when the limit has reset.",
+                    },
+                )
+            ],
+        },
         "interrupted": {
             "pipeline": "empirical",
             "status": "paused",
@@ -381,6 +402,8 @@ def _events(paper_id: str, spec: dict[str, Any]) -> list[tuple[Any, ...]]:
         for sp in outs:
             ev += [("specialist_start", stage, sp), ("specialist_end", stage, sp)]
         ev.append(("phase_end", stage, None))
+    for et, payload in spec.get("events", []):
+        ev.append((et, None, None, payload))
     if spec.get("pending") in {"event_window_gate", "estimation_gate"}:
         ev.append(("gate_halted", spec["pending"], None))
     return ev
@@ -465,14 +488,14 @@ async def _populate(fx: Fixture) -> None:
             {
                 "id": paper_id,
                 "title": title,
-                "rq": QUESTION,
+                "rq": spec.get("question", QUESTION),
                 "status": spec["status"],
                 "ws": str(ws.resolve()),
                 "rs": json.dumps(spec.get("review_stages", [])),
                 "cap": spec.get("cap", 5.0),
                 "pipeline": spec["pipeline"],
                 "mode": spec.get("mode", "single_pass"),
-                "key": study_key(QUESTION, spec["pipeline"], title),
+                "key": study_key(spec.get("question", QUESTION), spec["pipeline"], title),
             },
         )
         if spec.get("last_error"):

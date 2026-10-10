@@ -10,6 +10,8 @@ from typing import Any
 
 from ...logging_config import get_logger
 from ...modules.llm.base import LLMBackend, ToolHandler
+from ...modules.llm.plan_limit import PlanLimitReachedError
+from ...modules.llm.plan_limit import status_text as plan_limit_status
 from .. import labels as _labels
 from ..governance import DEFAULT_REGIME, KIND_RELIABILITY
 from ..governance import enforces as governance_enforces
@@ -516,6 +518,35 @@ class PipelineRunner:
             )
             await self._update_status(PaperStatus.PAUSED, error=error_msg)
             return {"status": "paused", "reason": "budget_exhausted", "spent": be.spent, "cap": be.cap}
+        except PlanLimitReachedError as pl:
+            # The subscription CLI's plan (ChatGPT, Claude, Gemini) reached its
+            # usage limit. Nothing is broken and nothing is lost: like the
+            # spending limit, the run pauses with its state saved; no step is
+            # marked failed and the interrupted specialist's attempt is not
+            # counted. Resume picks up at the first step that has not finished
+            # and runs the interrupted specialist again.
+            state.save(self._workspace)
+            text = plan_limit_status(pl.backend, pl.resets)
+            logger.warning("Pipeline paused (plan limit) for paper %s: %s", self._paper_id, pl.message[:300])
+            await log_event(
+                self._paper_id,
+                "paused_plan_limit",
+                payload={
+                    "backend": pl.backend,
+                    "resets": pl.resets,
+                    "specialist": pl.specialist,
+                    "status": text,
+                    "message": pl.message[:2000],
+                },
+            )
+            await self._update_status(PaperStatus.PAUSED, error=text)
+            return {
+                "status": "paused",
+                "reason": "plan_limit",
+                "backend": pl.backend,
+                "resets": pl.resets,
+                "specialist": pl.specialist,
+            }
         except StepFailedError as sf:
             # A step ended the run. Nothing after it runs; the step is not
             # marked done, so `e2er resume` runs it again; the reason is the

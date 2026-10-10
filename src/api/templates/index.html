@@ -65,6 +65,10 @@
       <td class="c-latest">
         {% if s.latest_status %}<span class="status status-{{ s.latest_status }}">{{ s.latest_status | status_words }}</span>{% endif %}
         <span class="muted">{{ (s.latest_date or "")[:16] }}</span>
+        {% if s.latest_plan_limit %}
+          <span class="plan-limit">{{ s.latest_plan_limit }}</span>
+          <button type="button" class="btn-primary btn-small" data-resume="{{ s.latest_id }}">Resume</button>
+        {% endif %}
       </td>
       {% if show_archived %}
       <td class="c-action">
@@ -115,6 +119,11 @@
       setTimeout(() => location.reload(), 700);
     } catch (e) { text.textContent = e.message; go.disabled = false; }
   });
+  document.querySelectorAll('[data-resume]').forEach((b) => b.addEventListener('click', async () => {
+    b.disabled = true;
+    try { await call('POST', '/api/papers/' + b.dataset.resume + '/resume'); msg.textContent = 'Resumed.'; setTimeout(() => location.reload(), 700); }
+    catch (e) { msg.textContent = e.message; b.disabled = false; }
+  }));
   document.querySelectorAll('[data-unarchive-study]').forEach((b) => b.addEventListener('click', async () => {
     b.disabled = true;
     try { await call('POST', '/api/studies/' + b.dataset.unarchiveStudy + '/unarchive'); location.reload(); }

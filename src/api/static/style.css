@@ -694,3 +694,6 @@ table.attempts td, table.studies td { padding-top: 10px; padding-bottom: 10px; }
 .lib-group > summary { cursor: pointer; font-size: 13.5px; font-weight: 600; }
 .lib-group > summary .pick-count { font-weight: normal; margin-left: 6px; }
 .fold > summary { cursor: pointer; font-size: 13px; color: var(--muted); }
+
+/* A run paused at its subscription plan's usage limit: the sentence under the status, then Resume. */
+.plan-limit { display: block; margin: 4px 0; font-size: 13px; max-width: 34em; white-space: normal; }

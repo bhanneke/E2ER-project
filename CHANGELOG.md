@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### A subscription plan's usage limit pauses the run
+- **Codex, Claude Code and Gemini: a used-up plan pauses the run instead of failing it.** On
+  2026-10-11 (0.15.2, Codex with gpt-6-astra) a run failed with "All specialists failed in parallel
+  batch: idea_developer: Codex failed (exit 1): You’ve hit your usage limit. Upgrade to Pro …". Nothing
+  was broken: the ChatGPT plan's limit was used up. The CLI backends now recognise their plan-limit
+  messages (Codex: "You’ve hit your usage limit", `usage_limit_reached`; Claude Code: "Claude AI usage
+  limit reached|<time>", "Claude usage limit reached … reset at 2pm", "5-hour limit reached ∙ resets
+  3pm", "You've hit your limit · resets …", weekly and Opus limits; Gemini: a used-up daily quota, not a
+  per-minute rate limit) and raise `PlanLimitReachedError`, with the reset time when the CLI states one.
+  No retry is spent on it (`src/modules/llm/plan_limit.py`).
+- **The run pauses like at the spending limit.** The runner records `paused_plan_limit` (backend,
+  reset time, the interrupted specialist, the status sentence), saves its state and sets the study to
+  paused with "Your ChatGPT plan's usage limit is reached (resets at 14:30). The run is paused; press
+  Resume when the limit has reset." (Claude: "Your Claude plan's usage limit …"). No step is marked
+  failed and the interrupted specialist's attempt does not count towards its three attempts or the
+  circuit breaker. Resume picks up at the first step that has not finished and runs the interrupted
+  specialist again; in the first step, work orders that finished are kept, as after a spending-limit
+  pause.
+- **Parallel batches finish first.** When one specialist of a parallel batch hits the limit, the
+  others run to their end (the ones that succeed keep their output; they usually hit the same limit at
+  their next call), then the run pauses. No specialist is stopped half-way.
+- **Where it shows.** The run page shows the whole sentence with the Resume button and the event
+  "Paused: the plan's usage limit was reached"; the studies list and the study page show the sentence
+  and a Resume button for such a run; `e2er status` prints the sentence and `e2er resume <id>`; the
+  dossier records the `paused_plan_limit` event among the run's events.
+
 ## [0.15.2] — 2026-10-11
 
 ### Stale tables are set aside; a draft that cites nothing is caught

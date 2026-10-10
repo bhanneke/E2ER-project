@@ -62,6 +62,7 @@ from .cli_support import (
     stop_on_cancel,
     workspace_cwd,
 )
+from .plan_limit import detect as detect_plan_limit
 
 logger = get_logger(__name__)
 
@@ -224,6 +225,10 @@ class CodexBackend(LLMBackend):
             spent = spent + result.usage
             calls += result.tool_calls_made
             result = replace(result, usage=spent, tool_calls_made=calls)
+            if not result.success and (limit := detect_plan_limit("codex", result.error or "")):
+                # The ChatGPT plan's limit: every call fails until it resets. The
+                # run pauses (runner: paused_plan_limit) instead of failing.
+                raise limit
             if result.success or not is_transient_codex_error(result.error or ""):
                 return result
             if attempt >= len(retry_delays):
