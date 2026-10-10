@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -107,7 +108,14 @@ def test_the_fomc_replay_export_gets_a_recipe_and_reproduces(tmp_path: Path, thi
     code = reproduce(str(out))
     report = capsys.readouterr().out
     assert code == 0, report
-    assert "1 of 1 identical" in report and "values: 162 identical" in report
+    assert "1 of 1 identical" in report
+    # Every one of the 162 values comes back. The last digits of a float depend on the platform's numerical
+    # libraries (CI on Linux: 129 identical and 33 the same at the published precision; macOS: all 162
+    # identical), so the test asks what e2er promises: none differs beyond the precision the study published.
+    m = re.search(
+        r"estimation_results\.json: 162 values: (\d+) identical(?:, (\d+) same at the published precision)?\n", report
+    )
+    assert m and int(m[1]) + int(m[2] or 0) == 162, report
     assert "Reproduced: every compared value is identical" in report
     assert "spy_prices: the study's own copy is here" not in report  # get_data's own output stays in its log
 
