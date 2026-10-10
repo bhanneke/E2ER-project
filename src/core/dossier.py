@@ -679,6 +679,8 @@ def read_run(db: Path, paper_id: str, files: dict[str, Any] | None = None, bundl
                     halted[-1]["approved_by_researcher"] = {
                         "at": _utc(data.get("at") or created),
                         "mismatches": _clip(list(data.get("mismatches") or [])),
+                        # Continued although no table cell was traced at all.
+                        **({"untraced": data["untraced"]} if isinstance(data.get("untraced"), dict) else {}),
                     }
             if data.get("decision") == "accepted_as_is":
                 # The output stands by the researcher's decision; one that still

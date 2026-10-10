@@ -557,12 +557,8 @@ def _check_numbers(bundle: Path, ws: Path) -> Check:
             # The paper ships rendered tables and the check traced no cell in any of
             # them. That is not a pass: it is the gate failing to run on the one
             # channel the anti-fabrication claim rests on.
-            return Check(
-                "numbers",
-                FAIL,
-                "0 table cell(s) traced although the paper ships rendered tables — the numbers check did not run "
-                "on them",
-            )
+            why = report.untraced_reason or "the numbers check did not run on them"
+            return Check("numbers", FAIL, f"0 table cell(s) traced although the paper ships rendered tables: {why}")
         return Check("numbers", SKIP, f"the paper has no table cell to check{note}{_prose_note(report)}")
     return Check(
         "numbers",

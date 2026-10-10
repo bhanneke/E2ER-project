@@ -1240,6 +1240,9 @@ async def get_review(paper_id: str = Depends(_validate_uuid)) -> dict[str, Any]:
         ]
         if check.get("auto_patch"):
             extra["auto_patch"] = check["auto_patch"]
+        if isinstance(check.get("untraced"), dict):
+            # No table cell was traced at all: the reason names the tables.
+            extra["untraced"] = check["untraced"].get("reason", "")
     if pending.kind == "contract":
         # Per specialist: each attempt with its violations, and the files involved.
         extra["failures"] = [

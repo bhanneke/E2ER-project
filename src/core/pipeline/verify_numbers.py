@@ -104,11 +104,22 @@ class VerificationReport:
     # the renderer's order-insensitive normalization), with the available keys
     # so the drafter can correct them. Surfaced from table_render_report.json.
     table_spec_unresolved: list[dict[str, Any]] = field(default_factory=list)
+    # The results tables the renderer wrote for this paper (from
+    # table_render_report.json), and those of them the draft never \input-s.
+    # A paper whose rendered tables reach no table cell of the check has not
+    # been checked, whatever the prose coverage: see `tables_untraced`.
+    rendered_tables: list[str] = field(default_factory=list)
+    rendered_tables_not_in_draft: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         # `conclusive` is a property, so asdict() misses it — and the saved
         # JSON is what reviewers and the experiment harvester read.
-        return {**asdict(self), "conclusive": self.conclusive}
+        return {
+            **asdict(self),
+            "conclusive": self.conclusive,
+            "tables_untraced": self.tables_untraced,
+            "untraced_reason": self.untraced_reason,
+        }
 
     @property
     def critical_mismatches(self) -> list[Mismatch]:
@@ -138,6 +149,46 @@ class VerificationReport:
         """
         return self.total_values_in_tables > 0
 
+    @property
+    def tables_untraced(self) -> bool:
+        """The renderer wrote results tables, and the check traced no cell of any.
+
+        The case the 2026-10-10 Haiku run passed through: the draft ``\\input``-ed
+        none of its two rendered tables, the table channel checked nothing, the
+        prose channel checked 87 numbers, and the gate reported a pass. A check
+        that ran on none of the paper's tables has not passed; the run's gate
+        stops on this, and ``e2er verify`` fails it.
+        """
+        return bool(self.rendered_tables) and not self.tables_conclusive
+
+    @property
+    def untraced_reason(self) -> str:
+        """Why no table cell was checked, in plain words; empty when cells were."""
+        if not self.tables_untraced:
+            return ""
+        rendered = ", ".join(self.rendered_tables)
+        missing = self.rendered_tables_not_in_draft
+        if missing and len(missing) == len(self.rendered_tables):
+            inputs = ", ".join(f"\\input{{tables/{name}}}" for name in missing)
+            return (
+                f"the paper includes none of its {len(missing)} rendered results table(s) ({rendered}), so the number "
+                f"check compared no table cell with the results files; the paper needs {inputs} where each "
+                "table belongs"
+            )
+        if missing:
+            return (
+                f"the number check found no number in the rendered results tables the paper includes, and the "
+                f"paper leaves out {', '.join(missing)}; no table cell was compared with the results files"
+            )
+        if self.skipped_reason and self.skipped_reason != _NOTHING_VERIFIED:
+            return f"no table cell of the rendered results tables ({rendered}) was checked: {self.skipped_reason}"
+        return (
+            f"the rendered results tables ({rendered}) are in the paper but hold no number the check can read "
+            "(every cell is empty or ---), so no table cell was compared with the results files"
+        )
+
+
+_NOTHING_VERIFIED = "draft contains no table values and no checkable prose numbers; nothing was verified"
 
 # JSON filenames that the analyst + econometrics specialist must produce.
 # Look at workspace root (v3 layout). Order: by stage of production.
@@ -800,6 +851,38 @@ def _read_table_spec_feedback(workspace: Path) -> list[dict[str, Any]]:
     return out
 
 
+def rendered_tables(workspace: Path) -> list[str]:
+    """The results tables the renderer wrote for this paper, by file name.
+
+    Read from ``table_render_report.json``, which the renderer writes on every
+    render; a stale ``tables/*.tex`` from an earlier table_spec is not one of
+    them. Empty when nothing was rendered or the report is unreadable.
+    """
+    path = workspace / "table_render_report.json"
+    try:
+        rep = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    rendered = rep.get("rendered") if isinstance(rep, dict) else None
+    if not isinstance(rendered, list):
+        return []
+    return sorted({str(r) for r in rendered if isinstance(r, str) and r})
+
+
+def _strip_tex_comments(tex: str) -> str:
+    """Drop LaTeX comments: a commented-out ``\\input`` includes nothing."""
+    return "\n".join(re.sub(r"(?<!\\)%.*", "", line) for line in tex.splitlines())
+
+
+def included_tables(tex_content: str) -> set[str]:
+    """File names of the tables a draft ``\\input``-s (``tables/main`` → ``main.tex``)."""
+    names: set[str] = set()
+    for ref in _INPUT_RE.findall(_strip_tex_comments(tex_content)):
+        name = Path(ref.strip()).name
+        names.add(name if name.endswith(".tex") else f"{name}.tex")
+    return names
+
+
 def _find_source_jsons(workspace: Path) -> dict[str, Path]:
     """Locate authoritative JSON files at the workspace root.
 
@@ -879,11 +962,17 @@ def verify(
         logger.warning("verify_numbers: %s", report.skipped_reason)
         return report
 
-    tex_content = _expand_inputs(draft_path.read_text(encoding="utf-8", errors="replace"), draft_path.parent)
+    raw_draft = draft_path.read_text(encoding="utf-8", errors="replace")
+    tex_content = _expand_inputs(raw_draft, draft_path.parent)
 
     # PR-2: key-resolution feedback is independent of numeric content — surface
     # it before any of the source-JSON early returns below.
     report.table_spec_unresolved = _read_table_spec_feedback(workspace)
+    # Likewise which rendered tables the draft includes: a paper with rendered
+    # tables and no traced cell must not read as a pass, however it got there.
+    report.rendered_tables = rendered_tables(workspace)
+    included = included_tables(raw_draft)
+    report.rendered_tables_not_in_draft = [t for t in report.rendered_tables if t not in included]
 
     source_jsons = _find_source_jsons(workspace)
     report.source_files_found = sorted(str(p) for p in source_jsons.values())
@@ -992,7 +1081,7 @@ def verify(
     _check_prose(report, tex_content, all_source_values, tolerance)
 
     if not report.conclusive:
-        report.skipped_reason = "draft contains no table values and no checkable prose numbers; nothing was verified"
+        report.skipped_reason = _NOTHING_VERIFIED
         logger.warning("verify_numbers: %s", report.skipped_reason)
 
     return report

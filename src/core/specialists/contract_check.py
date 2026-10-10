@@ -485,6 +485,49 @@ def check_no_inline_tables(workspace: Path, relative: str = "paper_draft.tex") -
     )
 
 
+def check_draft_includes_declared_tables(workspace: Path, relative: str = "paper_draft.tex") -> ContractCheck:
+    """Every table the drafter declares in ``table_spec.json`` is ``\\input`` in the draft.
+
+    The renderer fills declared tables from the results files; a declared table
+    the draft never includes ships in tables/ but not in the paper, and the
+    number check (which reads the paper) then traces no cell of it. The
+    2026-10-10 Haiku run declared two tables, included neither, and passed the
+    number check on prose alone.
+    """
+    from ..pipeline.verify_numbers import included_tables
+
+    target = workspace / relative
+    spec_path = workspace / "table_spec.json"
+    if not target.is_file() or not spec_path.is_file():
+        return ContractCheck(relative, True, "", kind=KIND_VERIFICATION)
+    try:
+        spec = json.loads(spec_path.read_text(encoding="utf-8"))
+        text = target.read_text(encoding="utf-8", errors="replace")
+    except (OSError, ValueError):
+        # An unreadable spec is the renderer's to report; the draft is not at fault.
+        return ContractCheck(relative, True, "", kind=KIND_VERIFICATION)
+    tables = spec.get("tables") if isinstance(spec, dict) else None
+    declared = sorted(
+        {
+            t["filename"] if t["filename"].endswith(".tex") else f"{t['filename']}.tex"
+            for t in tables or []
+            if isinstance(t, dict) and isinstance(t.get("filename"), str) and t["filename"].strip()
+        }
+    )
+    missing = [name for name in declared if name not in included_tables(text)]
+    if not missing:
+        return ContractCheck(relative, True, "", kind=KIND_VERIFICATION)
+    inputs = ", ".join(f"\\input{{tables/{name}}}" for name in missing)
+    return ContractCheck(
+        relative,
+        False,
+        f"table_spec.json declares {len(declared)} table(s) and the draft includes "
+        f"{'none of them' if len(missing) == len(declared) else f'{len(declared) - len(missing)} of them'}: "
+        f"add {inputs} where each table belongs, or drop the table from table_spec.json",
+        kind=KIND_VERIFICATION,
+    )
+
+
 def _plan_problems(workspace: Path) -> list[str]:
     from ..pipeline.replication import check_plan
 
@@ -790,4 +833,10 @@ def check_specialist_artifacts(workspace: Path, specialist: str) -> list[Contrac
         draft = SPECIALIST_ARTIFACTS.get(specialist, "paper_draft.tex")
         if draft.endswith(".tex") and not any(c.artifact == draft and not c.ok for c in checks):
             checks.append(check_no_inline_tables(workspace, draft))
+    # The drafter writes table_spec.json and the draft together: what it
+    # declares, it includes.
+    if specialist == "paper_drafter":
+        draft = SPECIALIST_ARTIFACTS.get(specialist, "paper_draft.tex")
+        if draft.endswith(".tex") and not any(c.artifact == draft and not c.ok for c in checks):
+            checks.append(check_draft_includes_declared_tables(workspace, draft))
     return checks

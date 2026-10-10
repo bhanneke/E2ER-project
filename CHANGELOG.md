@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### The number check stops when no table cell was checked
+- **A paper with rendered results tables and no traced table cell no longer passes the number
+  check.** In the 2026-10-10 E2E-01 run on Claude Haiku the renderer wrote two tables from the results
+  files, the draft `\input`-ed neither, and the number check, which reads the draft, compared 0 table
+  cells, checked the prose numbers and reported a pass. The run went on to the reviewers and the export,
+  and `e2er verify` then failed the export (no table_cell edges, 0 cells traced). The tables traced in
+  full once included (25 of 25 cells), so the tracing itself was not at fault.
+- **Under governance `full` the run now stops at the number check** and says why in plain words: which
+  rendered tables the paper leaves out, and the `\input` lines it needs. Edit the draft, give an
+  instruction or send back the drafter or the table layout, and the check runs again; or approve to
+  continue without the table check, recorded in the dossier as your decision (`e2er verify` still
+  fails such a paper). Under `contracts` and `off` the finding is recorded in `number_check.json` and
+  the run notes, and the run continues.
+- **The drafter's output contract checks that every table declared in `table_spec.json` is
+  `\input` in the draft**, so a drafter that leaves its tables out gets the missing `\input` lines as
+  feedback and another attempt before the run reaches the number check.
+- `number_verification.json` records the rendered tables, those the draft leaves out, and
+  `tables_untraced` with its reason. `e2er verify` gives the same reason when it fails the numbers check
+  for 0 traced cells.
+
 ### Gemini: not tested, API key only
 - **Full runs are tested on Claude (Claude Code) and OpenAI (Codex CLI with a ChatGPT plan).** Google
   ended Gemini CLI sign-in for individual accounts in October 2026: `gemini` 0.63.0 answers "This

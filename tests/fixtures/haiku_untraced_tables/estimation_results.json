@@ -1,0 +1,94 @@
+{
+  "main": {
+    "specification": "OLS: CAR on target rate change with macro controls, event window [-1, +1]",
+    "n_observations": 539,
+    "n_events": 77,
+    "fixed_effects": [],
+    "controls": [
+      "fed_funds_rate_level",
+      "inflation_rate",
+      "unemployment_rate",
+      "unemployment_change_3m",
+      "term_spread",
+      "vix"
+    ],
+    "coefficients": {
+      "constant": {
+        "estimate": -0.019268077777587586,
+        "se": 0.007370627939908337,
+        "t_stat": -2.614170452596093,
+        "p_value": 0.008944440099456533
+      },
+      "target_rate_change_bps": {
+        "estimate": -0.00011602457363270083,
+        "se": 7.364454557578618e-05,
+        "t_stat": -1.575467303458369,
+        "p_value": 0.11514861982834272
+      },
+      "fed_funds_rate_level": {
+        "estimate": 0.0047628483363538945,
+        "se": 0.0013235938699594804,
+        "t_stat": 3.598421271397775,
+        "p_value": 0.00032015473442331596
+      },
+      "inflation_rate": {
+        "estimate": 0.0027482554826655887,
+        "se": 0.0009491793250054568,
+        "t_stat": 2.8954017541941184,
+        "p_value": 0.0037867354408527296
+      },
+      "unemployment_rate": {
+        "estimate": -0.0019363890169800057,
+        "se": 0.0009249620317216545,
+        "t_stat": -2.0934794624767004,
+        "p_value": 0.0363063755255508
+      },
+      "unemployment_change_3m": {
+        "estimate": -3.4980968634556557e-19,
+        "se": 1.3039679183395863e-19,
+        "t_stat": -2.6826556192501836,
+        "p_value": 0.007304016085526078
+      },
+      "term_spread": {
+        "estimate": 0.017687997068878563,
+        "se": 0.0037835044213952672,
+        "t_stat": 4.67503010406306,
+        "p_value": 2.9391050278534713e-06
+      },
+      "vix": {
+        "estimate": 0.00025220874565121224,
+        "se": 0.00024065615426412847,
+        "t_stat": 1.04800455414244,
+        "p_value": 0.2946365086572532
+      }
+    },
+    "diagnostics": {
+      "mean_car": 0.0007966004148372979,
+      "std_car": 0.026696295704827545,
+      "sign_test_p": 0.49075243916081146,
+      "n_positive": 278,
+      "r_squared": 0.09184231535643772,
+      "adj_r_squared": 0.0814633703890828,
+      "df_residual": 525
+    },
+    "n_observations_regression": 532
+  },
+  "descriptive_stats": {
+    "specification": "Descriptive statistics on CARs, event window [-1, +1]",
+    "n_observations": 539,
+    "n_events": 77,
+    "coefficients": {
+      "car_mean": {
+        "estimate": 0.0007966004148372979,
+        "t_stat": 0.6927617595894814,
+        "p_value": 0.4887579937281062
+      }
+    },
+    "diagnostics": {
+      "mean_car": 0.0007966004148372979,
+      "std_car": 0.026696295704827545,
+      "sign_test_p": 0.49075243916081146,
+      "n_positive": 278
+    }
+  }
+}
