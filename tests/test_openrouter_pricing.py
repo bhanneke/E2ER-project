@@ -483,3 +483,98 @@ async def test_a_stopped_run_still_records_what_the_loop_spent(backend, monkeypa
     assert len(saved) == 1
     assert saved[0]["paper_id"] == "p9" and saved[0]["specialist"] == "econometrics_specialist"
     assert saved[0]["usage"].cost_usd == pytest.approx(0.4)
+
+
+# ── streamed calls: assembled, and a stalled one is retried ─────────────────
+
+
+class _FakeStream:
+    """Chunks as OpenRouter streams them; ``hang_after`` makes it stop sending."""
+
+    def __init__(self, chunks, hang_after=None):
+        self._chunks = list(chunks)
+        self._hang_after = hang_after
+        self.closed = False
+
+    def __aiter__(self):
+        return self._gen()
+
+    async def _gen(self):
+        import asyncio
+
+        for i, c in enumerate(self._chunks):
+            if self._hang_after is not None and i >= self._hang_after:
+                await asyncio.sleep(3600)
+            yield c
+
+    async def close(self):
+        self.closed = True
+
+
+def _chunk(*, content=None, tool_calls=None, finish=None, usage=None, error=None):
+    delta = SimpleNamespace(content=content, tool_calls=tool_calls)
+    choices = (
+        []
+        if (content is None and tool_calls is None and finish is None)
+        else [SimpleNamespace(delta=delta, finish_reason=finish)]
+    )
+    return SimpleNamespace(choices=choices, usage=usage, error=error, model_extra={})
+
+
+def _tc_delta(index, *, id=None, name=None, args=None):
+    return SimpleNamespace(index=index, id=id, function=SimpleNamespace(name=name, arguments=args))
+
+
+async def test_stream_is_assembled_into_text_tool_calls_and_usage():
+    from src.modules.llm.openrouter import _collect
+
+    stream = _FakeStream(
+        [
+            _chunk(content="Writing "),
+            _chunk(content="now.", tool_calls=[_tc_delta(0, id="c1", name="write_file", args='{"path": ')]),
+            _chunk(
+                tool_calls=[_tc_delta(0, args='"a.md", "content": "x"}'), _tc_delta(1, id="c2", name="list_directory")]
+            ),
+            _chunk(finish="tool_calls"),
+            _chunk(usage=_usage(100, 20, cost=0.001)),
+        ]
+    )
+    r = await _collect(stream)
+    msg = r.choices[0].message
+    assert msg.content == "Writing now."
+    assert r.choices[0].finish_reason == "tool_calls"
+    assert [(t.id, t.function.name, t.function.arguments) for t in msg.tool_calls] == [
+        ("c1", "write_file", '{"path": "a.md", "content": "x"}'),
+        ("c2", "list_directory", ""),
+    ]
+    assert r.usage.cost == 0.001
+
+
+async def test_a_stalled_call_is_dropped_and_asked_again(backend, monkeypatch):
+    from src.modules.llm import openrouter as mod
+
+    monkeypatch.setattr(mod, "AsyncStream", _FakeStream)
+    monkeypatch.setattr(mod, "_IDLE_SECONDS", 0.05)
+    stalled = _FakeStream([_chunk(content="Hel"), _chunk(content="lo")], hang_after=1)
+    good = _FakeStream([_chunk(content="Hello", finish="stop"), _chunk(usage=_usage(5, 1, cost=0.0002))])
+    create = AsyncMock(side_effect=[stalled, good])
+    monkeypatch.setattr(backend._client.chat.completions, "create", create)
+    r = await backend.tool_loop("s", [{"role": "user", "content": "u"}], [], None)
+    assert r.success and r.output == "Hello"
+    assert create.call_count == 2
+    assert stalled.closed
+    assert create.call_args.kwargs["stream"] is True
+    assert create.call_args.kwargs["stream_options"] == {"include_usage": True}
+
+
+async def test_a_provider_error_in_the_stream_is_retried(backend, monkeypatch):
+    from src.modules.llm import openrouter as mod
+
+    monkeypatch.setattr(mod, "AsyncStream", _FakeStream)
+    monkeypatch.setattr(mod, "_EMPTY_BACKOFF_SECONDS", 0)
+    failed = _FakeStream([_chunk(content="par"), _chunk(finish="error", error={"message": "provider down"})])
+    good = _FakeStream([_chunk(content="ok", finish="stop")])
+    create = AsyncMock(side_effect=[failed, good])
+    monkeypatch.setattr(backend._client.chat.completions, "create", create)
+    r = await backend.tool_loop("s", [{"role": "user", "content": "u"}], [], None)
+    assert r.success and r.output == "ok"

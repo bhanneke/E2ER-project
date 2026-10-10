@@ -8,7 +8,7 @@ import json
 import time
 from typing import Any
 
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, AsyncStream
 
 from ...config import get_settings
 from ...logging_config import get_logger
@@ -22,6 +22,79 @@ _loop_keys = itertools.count(1)
 #: What each running loop has used so far, by loop key (recorded if the run is stopped mid-loop).
 _spent: dict[int, TokenUsage] = {}
 _EMPTY_BACKOFF_SECONDS = 5.0
+
+
+#: A streamed call that sends nothing for this long has stalled (first chunk: the
+#: provider reads the whole prompt first; later chunks: tokens arrive every second).
+_FIRST_CHUNK_SECONDS = 240.0
+_IDLE_SECONDS = 120.0
+
+
+class _StalledError(Exception):
+    """A streamed call sent nothing for too long."""
+
+
+async def _collect(stream: Any) -> Any:
+    """Assemble a streamed completion into the shape of a non-streamed one."""
+    from types import SimpleNamespace
+
+    text: list[str] = []
+    calls: dict[int, dict[str, Any]] = {}
+    finish: str | None = None
+    usage: Any = None
+    error: Any = None
+    seen_choice = False
+    it = stream.__aiter__()
+    timeout = _FIRST_CHUNK_SECONDS
+    while True:
+        try:
+            chunk = await asyncio.wait_for(it.__anext__(), timeout)
+        except StopAsyncIteration:
+            break
+        except TimeoutError as e:
+            raise _StalledError(f"no data for {timeout:.0f} s") from e
+        timeout = _IDLE_SECONDS
+        if getattr(chunk, "usage", None) is not None:
+            usage = chunk.usage
+        error = error or getattr(chunk, "error", None) or (getattr(chunk, "model_extra", None) or {}).get("error")
+        for choice in getattr(chunk, "choices", None) or []:
+            seen_choice = True
+            delta = getattr(choice, "delta", None)
+            if delta is not None:
+                if getattr(delta, "content", None):
+                    text.append(delta.content)
+                for tc in getattr(delta, "tool_calls", None) or []:
+                    slot = calls.setdefault(
+                        tc.index if tc.index is not None else len(calls), {"id": "", "name": "", "args": []}
+                    )
+                    if getattr(tc, "id", None):
+                        slot["id"] = tc.id
+                    fn = getattr(tc, "function", None)
+                    if fn is not None:
+                        if getattr(fn, "name", None):
+                            slot["name"] = fn.name
+                        if getattr(fn, "arguments", None):
+                            slot["args"].append(fn.arguments)
+            if getattr(choice, "finish_reason", None):
+                finish = choice.finish_reason
+    choices = []
+    if finish == "error":
+        # The provider failed mid-answer (OpenRouter sends the error in the stream).
+        return SimpleNamespace(choices=[], usage=usage, error=error or "the provider failed mid-answer", model_extra={})
+    if seen_choice and (text or calls or finish):
+        tool_calls = [
+            SimpleNamespace(
+                id=c["id"] or f"call_{i}",
+                type="function",
+                function=SimpleNamespace(name=c["name"], arguments="".join(c["args"])),
+            )
+            for i, c in sorted(calls.items())
+        ]
+        message = SimpleNamespace(content="".join(text) or None, tool_calls=tool_calls or None)
+        choices.append(
+            SimpleNamespace(finish_reason=finish or ("tool_calls" if tool_calls else "stop"), message=message)
+        )
+    return SimpleNamespace(choices=choices, usage=usage, error=error, model_extra={})
 
 
 def _int(v: Any) -> int:
@@ -99,11 +172,17 @@ class OpenRouterBackend(LLMBackend):
 
     async def _create(self, create_kwargs: dict[str, Any], turn: int) -> Any:
         """One completion. The SDK retries HTTP errors itself; this also retries
-        the 200 responses OpenRouter sends with no choices (an upstream provider
-        failed mid-stream, or an ``error`` object in the body)."""
+        a call that stalls (see ``_collect``) and the 200 responses OpenRouter
+        sends with no choices (an upstream provider failed, or an ``error``
+        object in the body)."""
         last = ""
         for attempt in range(_EMPTY_RETRIES + 1):
-            response = await self._client.chat.completions.create(**create_kwargs)
+            try:
+                response = await self._complete(create_kwargs)
+            except _StalledError as e:
+                last = str(e)
+                logger.warning("OpenRouter turn %d: %s, attempt %d", turn, last, attempt + 1)
+                continue
             if response.choices:
                 return response
             err = getattr(response, "error", None) or (getattr(response, "model_extra", None) or {}).get("error")
@@ -112,6 +191,29 @@ class OpenRouterBackend(LLMBackend):
             if attempt < _EMPTY_RETRIES:
                 await asyncio.sleep(_EMPTY_BACKOFF_SECONDS * (attempt + 1))
         raise RuntimeError(f"OpenRouter returned no answer after {_EMPTY_RETRIES + 1} attempts: {last}")
+
+    async def _complete(self, create_kwargs: dict[str, Any]) -> Any:
+        """The call, streamed, so a provider that stops sending is noticed.
+
+        Without streaming a stalled call waited for the SDK's 600 s timeout and
+        then ran again: three live studies on DeepSeek V4 Pro (2026-10-10) each
+        lost 10 to 11 minutes to one such call. A client that answers without a
+        stream (a test double) is used as is.
+        """
+        stream = await self._client.chat.completions.create(
+            **create_kwargs, stream=True, stream_options={"include_usage": True}
+        )
+        if not isinstance(stream, AsyncStream):
+            return stream
+        try:
+            return await _collect(stream)
+        finally:
+            close = getattr(stream, "close", None)
+            if close is not None:
+                try:
+                    await close()
+                except Exception:  # noqa: BLE001 — closing a dead stream must not mask the result
+                    pass
 
     def _usage_of(self, response: Any) -> TokenUsage:
         """Tokens and cost of one response.

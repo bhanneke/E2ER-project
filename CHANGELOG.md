@@ -131,6 +131,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The number check skips LaTeX comments in tables (fix).** DeepSeek annotated each table row with a
   `% src:` comment naming the JSON keys (`pre_tightening_2015_2021`); read as cells they gave 15021 and
   22023, and `e2er verify` failed the exported study.
+- **A call that stalls is asked again after two minutes, not ten (fix).** Each of the three live studies
+  lost 10 to 11 minutes to one OpenRouter call that never answered and ran into the SDK's 600-second
+  timeout. Calls are now streamed: one that sends nothing for 120 seconds (240 before its first data)
+  is dropped and asked again, as is one whose provider fails mid-answer.
 - **Smaller fixes in the OpenRouter loop:** a response with no answer (an upstream provider failed) is
   retried twice; tool arguments that are not valid JSON go back to the model as an error instead of
   running the tool with no arguments; empty arguments and arguments in a code fence are accepted.
