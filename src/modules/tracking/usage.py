@@ -170,3 +170,64 @@ async def get_usage_summary() -> dict[str, Any]:
         """
     )
     return row or {}
+
+
+# ── the spending limit inside a specialist's tool loop ──────────────────────
+#
+# check_budget runs between specialists. On a per-token backend one specialist
+# can run for twenty minutes and dozens of calls (DeepSeek V4 Pro on OpenRouter,
+# 2026-10-10: the study was at $2.85 of a $3.00 limit when a specialist started,
+# and OpenRouter had billed $3.48 before it finished). The SDK backends ask
+# before every call; the cost of loops still running (not yet in llm_usage) is
+# counted too, since a paper runs up to three specialists at once.
+
+_in_flight: dict[str, dict[int, float]] = {}
+
+
+async def _paper_cap(paper_id: str) -> float | None:
+    from ...db.client import fetch_one
+
+    try:
+        row = await fetch_one("SELECT max_cost_usd FROM papers WHERE id = %(id)s", {"id": paper_id})
+    except Exception:  # noqa: BLE001 — no DB: the between-specialist check still applies
+        return None
+    if not row or row.get("max_cost_usd") is None:
+        return None
+    return float(row["max_cost_usd"])
+
+
+async def _recorded_spent(paper_id: str) -> float:
+    from ...db.client import fetch_one
+
+    try:
+        row = await fetch_one(
+            "SELECT COALESCE(SUM(cost_usd), 0)::float AS spent FROM llm_usage WHERE paper_id = %(id)s",
+            {"id": paper_id},
+        )
+    except Exception:  # noqa: BLE001
+        return 0.0
+    return float((row or {}).get("spent", 0.0))
+
+
+async def loop_over_budget(paper_id: str | None, loop_key: int, loop_cost: float) -> tuple[bool, float, float]:
+    """Whether this paper has reached its spending limit, counting the loops still running.
+
+    ``loop_cost`` is what this loop has spent so far (not yet in ``llm_usage``).
+    Returns ``(over, spent, cap)``; ``over`` is False when the paper or its limit is unknown.
+    """
+    if not paper_id:
+        return False, 0.0, 0.0
+    _in_flight.setdefault(paper_id, {})[loop_key] = loop_cost
+    cap = await _paper_cap(paper_id)
+    if cap is None:
+        return False, 0.0, 0.0
+    spent = await _recorded_spent(paper_id) + sum(_in_flight.get(paper_id, {}).values())
+    return spent >= cap, spent, cap
+
+
+def loop_finished(paper_id: str | None, loop_key: int) -> None:
+    """The loop's cost is about to be recorded in ``llm_usage``: stop counting it as in flight."""
+    if paper_id and paper_id in _in_flight:
+        _in_flight[paper_id].pop(loop_key, None)
+        if not _in_flight[paper_id]:
+            del _in_flight[paper_id]

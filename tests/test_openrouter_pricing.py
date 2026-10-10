@@ -344,3 +344,44 @@ def test_answer_never_replaces_a_written_file_or_fills_json(tmp_path):
     assert not _keep_answer_as_markdown_output(tmp_path, "writing_reviewer", "review_writing.md", "Done.")
     assert not _keep_answer_as_markdown_output(tmp_path, "writing_reviewer", "../outside.md", long)
     assert not (tmp_path.parent / "outside.md").exists()
+
+
+# ── the spending limit inside one specialist ─────────────────────────────────
+
+
+async def test_tool_loop_stops_at_the_spending_limit(backend, monkeypatch):
+    """Recorded $0.90 of a $1.00 limit; each call costs $0.06: the loop stops after two calls."""
+
+    async def fetch_one(sql, params=None):
+        if "max_cost_usd" in sql:
+            return {"max_cost_usd": 1.0}
+        return {"spent": 0.90}
+
+    monkeypatch.setattr("src.db.client.fetch_one", fetch_one)
+    tool_turn = _resp("tool_calls", tool_calls=[_tc("a", "list_directory", "{}")], usage=_usage(10, 10, cost=0.06))
+    create = AsyncMock(return_value=tool_turn)
+    monkeypatch.setattr(backend._client.chat.completions, "create", create)
+    r = await backend.tool_loop("s", [{"role": "user", "content": "u"}], [], _Recorder(), paper_id="p1")
+    assert not r.success
+    assert r.stop_reason == "budget"
+    assert "spending limit" in (r.error or "")
+    assert create.call_count == 2
+    assert r.usage.cost_usd == pytest.approx(0.12)
+    from src.modules.tracking import usage as usage_mod
+
+    assert "p1" not in usage_mod._in_flight  # its cost is recorded by the runner, not counted twice
+
+
+async def test_loops_running_at_once_count_together(monkeypatch):
+    from src.modules.tracking.usage import loop_finished, loop_over_budget
+
+    async def fetch_one(sql, params=None):
+        return {"max_cost_usd": 1.0} if "max_cost_usd" in sql else {"spent": 0.5}
+
+    monkeypatch.setattr("src.db.client.fetch_one", fetch_one)
+    assert (await loop_over_budget("p2", 1, 0.3))[0] is False
+    over, spent, cap = await loop_over_budget("p2", 2, 0.25)
+    assert over and spent == pytest.approx(1.05) and cap == 1.0
+    loop_finished("p2", 1)
+    loop_finished("p2", 2)
+    assert (await loop_over_budget(None, 3, 99.0))[0] is False

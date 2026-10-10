@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import itertools
 import json
 import time
 from typing import Any
@@ -17,6 +18,7 @@ logger = get_logger(__name__)
 
 _OPENROUTER_BASE = "https://openrouter.ai/api/v1"
 _EMPTY_RETRIES = 2
+_loop_keys = itertools.count(1)
 _EMPTY_BACKOFF_SECONDS = 5.0
 
 
@@ -147,9 +149,29 @@ class OpenRouterBackend(LLMBackend):
         tool_handler: ToolHandler | None,
         max_turns: int = 30,
         *,
-        paper_id: str | None = None,  # noqa: ARG002 — accepted for interface parity, unused in SDK mode
+        paper_id: str | None = None,
         specialist: str | None = None,  # noqa: ARG002
     ) -> ToolLoopResult:
+        from ..tracking.usage import loop_finished
+
+        loop_key = next(_loop_keys)
+        try:
+            return await self._tool_loop(system, messages, tools, tool_handler, max_turns, paper_id, loop_key)
+        finally:
+            loop_finished(paper_id, loop_key)
+
+    async def _tool_loop(
+        self,
+        system: str,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        tool_handler: ToolHandler | None,
+        max_turns: int,
+        paper_id: str | None,
+        loop_key: int,
+    ) -> ToolLoopResult:
+        from ..tracking.usage import loop_over_budget
+
         start = time.monotonic()
         usage = TokenUsage()
         tool_calls_made = 0
@@ -158,6 +180,20 @@ class OpenRouterBackend(LLMBackend):
         msgs: list[dict[str, Any]] = [{"role": "system", "content": system}, *messages]
 
         for turn in range(max_turns):
+            over, spent, cap = await loop_over_budget(paper_id, loop_key, usage.cost_usd or 0.0)
+            if over:
+                logger.warning(
+                    "OpenRouter turn %d: spending limit reached ($%.2f of $%.2f); stopping", turn, spent, cap
+                )
+                return ToolLoopResult(
+                    success=False,
+                    output="",
+                    error=f"spending limit reached: ${spent:.2f} of ${cap:.2f}",
+                    tool_calls_made=tool_calls_made,
+                    usage=usage,
+                    duration_seconds=time.monotonic() - start,
+                    stop_reason="budget",
+                )
             t_call = time.monotonic()
             logger.info("OpenRouter turn %d: calling %s (msgs=%d)", turn, self._model, len(msgs))
             try:
