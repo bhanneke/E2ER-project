@@ -31,9 +31,13 @@ _LATEX_ACCENT = re.compile(r"\{?\\[`'^\"~=.uvHtcdbk]\s*\{?([A-Za-z])\}?\}?")
 _LATEX_ESCAPED = re.compile(r"\\([&%$#_])")
 _BANNERS = re.compile(
     r"\s+(?:Article\s+Accepted\s+Version|Accepted\s+Version|Published\s+Version|Author\s+Accepted\s+Manuscript|"
-    r"Working\s+Paper\s+Series|Discussion\s+Paper|Preprint)\b.*$",
+    r"Working\s+Paper\s+Series|Discussion\s+Paper|Preprint|Electronic\s+version\s+of|First\s+version)\b.*$",
     re.IGNORECASE,
 )
+#: "… THEORY by Roger B. Myerson …": the byline a PDF's first page runs into the title.
+_BYLINE = re.compile(r"\s+by\s+(?:[A-Z][a-z'’-]+|[A-Z]\.)(?:\s+(?:[A-Z][a-z'’-]+|[A-Z]\.)){1,3}\b.*$")
+#: Longer than any title: the PDF's first page ran on into the authors or the abstract.
+TOO_LONG = 160
 _TRAILING_DATE = re.compile(
     r"[\s,;:–-]+(?:this\s+(?:version|draft)[:\s]*)?(?:\d{1,2}\s+)?"
     r"(?:January|February|March|April|May|June|July|August|September|October|November|December)"
@@ -71,6 +75,7 @@ def clean(raw: str) -> str:
         trimmed = _TRAILING_NAME.sub("", head)
         t = trimmed if len(trimmed.split()) >= 3 else head
     t = _BANNERS.sub("", t)
+    t = _BYLINE.sub("", t)
     t = _TRAILING_DATE.sub("", t)
     return " ".join(t.split()).strip(" ,;:-–")
 
@@ -149,7 +154,7 @@ def display_title(raw: str, doi: str = "", *, lookup: bool = True) -> str:
     """The title to show: cleaned; from the DOI record when the paper's own is not a title or still has author
     footnotes in it; "(title not readable)" when neither gives one."""
     t = clean(raw)
-    dirty = unusable(raw) or bool(_MARK_RE.search(str(raw or "")))
+    dirty = unusable(raw) or bool(_MARK_RE.search(str(raw or ""))) or len(t) > TOO_LONG
     if dirty and doi and lookup:
         better = title_by_doi(doi)
         if better and not unusable(better):

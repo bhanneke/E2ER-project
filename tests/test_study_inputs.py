@@ -722,6 +722,15 @@ def test_a_table_no_load_recorded_is_made_by_the_study(tmp_path: Path):
             "Cryptocurrencies as a financial asset: a systematic analysis",
         ),
         ("Crypto wash trading∗ March 15, 2023", "Crypto wash trading"),
+        (
+            "NASH EQUILIBRIUM AND THE HISTORY OF ECONOMIC THEORY by Roger B. Myerson first version, April 1996",
+            "NASH EQUILIBRIUM AND THE HISTORY OF ECONOMIC THEORY",
+        ),
+        (
+            "Bargaining and Markets Electronic version of “Bargaining and Markets” by Martin J. Osborne",
+            "Bargaining and Markets",
+        ),
+        ("Stand by Me: Loyalty in Markets", "Stand by Me: Loyalty in Markets"),
     ],
 )
 def test_titles_lose_their_markup(raw, shown):
