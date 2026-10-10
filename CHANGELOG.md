@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Choose the data and papers a study uses (0.15.0)
+## [0.15.0] — 2026-10-10
+
+### Choose the data and papers a study uses
 - **New study lists your data files and papers.** The files of the data folder (name, type, size;
   search; select all or none) and the papers of the literature folder, your .bib files and the
   Library (title, authors, year). The study uses what you tick. Before, every study took everything
@@ -52,7 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`e2er run --data FILE… --papers FILE… [--only-my-papers]`** does the same in a terminal (a
   folder stands for the files in it). Without them a study takes everything, as before.
 
-### Replication, credit, commands and the field map (0.15.0)
+### Replication, credit, commands and the field map
 - **Fixed: an installed e2er could not run the specialists' commands.** Before 0.15.0 a pip or
   `uv tool install` installation had only `e2er`, `e2er-data` and `e2er-fieldmap`. `e2er-run`,
   `e2er-lit`, `e2er-check-tables` and `e2er-allium-query` existed only in a source checkout, while
