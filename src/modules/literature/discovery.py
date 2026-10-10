@@ -242,11 +242,15 @@ _STOP_WORDS = frozenset(
     change changes changed compared compare earlier later fully full ran role impact case paper research question
     questions""".split()
 )
-#: How many of the question's words a hit must share, as a share of them, with a floor and a cap.
-#: With an abstract: a quarter of the question's words, at least 2 and at most 4. Title only (some
-#: records have no abstract): a fifth, at least 2 and at most 3.
-RELEVANCE_SHARE_ABSTRACT, RELEVANCE_SHARE_TITLE = 0.25, 0.20
-RELEVANCE_FLOOR, RELEVANCE_CAP_ABSTRACT, RELEVANCE_CAP_TITLE = 2, 4, 3
+#: How many of the question's content words a hit must share (each capped at the question's own number).
+#: With an abstract: the title shares 2, and title and abstract together a third (2 to 4). Without one: the
+#: title shares a fifth (2 to 3). Calibrated on the 2026-10-10 live run (a mortgage pass-through question):
+#: its web hits' titles shared at most one word, or two by chance ("Long-Acting … Teen Birth Rates") with no
+#: more in the abstract; on-topic papers share 2 to 4 in the title and 4 to 6 with the abstract.
+RELEVANCE_TITLE_WITH_ABSTRACT = 2
+RELEVANCE_SHARE_ABSTRACT, RELEVANCE_CAP_ABSTRACT = 1 / 3, 4
+RELEVANCE_SHARE_TITLE, RELEVANCE_CAP_TITLE = 0.20, 3
+RELEVANCE_FLOOR = 2
 
 
 def _stem(word: str) -> str:
@@ -269,22 +273,20 @@ def is_relevant(paper: PaperMetadata, question: frozenset[str]) -> bool:
     Deterministic, no model call. The 2026-10-10 live run (a question on the pass-through of the federal
     funds rate to mortgage rates) put 53 web hits into the bibliography, among them solar asset-backed
     bonds, the federal budget and teen birth rates: the search engines match single words of a long
-    question. The rule (see RELEVANCE_*): with an abstract, the title and abstract together share at
-    least a quarter of the question's content words (2 to 4); without one, the title shares a fifth (2 to 3).
-    A question with no content words keeps every hit.
+    question. The rule (RELEVANCE_*): with an abstract, the title shares 2 of the question's words and
+    title and abstract together a third of them (2 to 4); without an abstract, the title shares a fifth
+    (2 to 3). Never more than the question has. A question with no content words keeps every hit.
     """
     if not question:
         return True
-    have_abstract = bool((paper.abstract or "").strip())
-    words = question_terms(f"{paper.title} {paper.abstract or ''}")
-    share, cap = (
-        (RELEVANCE_SHARE_ABSTRACT, RELEVANCE_CAP_ABSTRACT)
-        if have_abstract
-        else (RELEVANCE_SHARE_TITLE, RELEVANCE_CAP_TITLE)
-    )
-    # Never more words than the question has (a two-word question: both).
-    need = min(len(question), cap, max(RELEVANCE_FLOOR, math.ceil(share * len(question))))
-    return len(question & words) >= need
+    n = len(question)
+    title = question & question_terms(paper.title)
+    if (paper.abstract or "").strip():
+        both = question & question_terms(f"{paper.title} {paper.abstract}")
+        need = min(n, RELEVANCE_CAP_ABSTRACT, max(RELEVANCE_FLOOR, math.ceil(RELEVANCE_SHARE_ABSTRACT * n)))
+        return len(title) >= min(n, RELEVANCE_TITLE_WITH_ABSTRACT) and len(both) >= need
+    need = min(n, RELEVANCE_CAP_TITLE, max(RELEVANCE_FLOOR, math.ceil(RELEVANCE_SHARE_TITLE * n)))
+    return len(title) >= need
 
 
 def _record_web_search(workspace: Path, question: frozenset[str], kept: int, left_out: list[str]) -> None:

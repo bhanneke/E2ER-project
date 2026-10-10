@@ -41,10 +41,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   header or a journal citation ("J Evol Econ (2013) 23:925–953") is replaced by its DOI record's
   title, else shown as "(title not readable)". The Library's papers are a folded group of their own,
   "Your Library (N)", with its own search, below the folder's papers and .bib entries.
-- **Off-topic web hits stay out.** A search hit joins the bibliography only when its title and
-  abstract share enough of the research question's content words (a quarter of them, 2 to 4; title
-  only: a fifth, 2 to 3; `is_relevant` in `modules/literature/discovery.py`). The live run's 53 hits
-  for a mortgage question (solar bonds, the federal budget, …) would all have stayed out; the study
+- **Off-topic web hits stay out.** A search hit joins the bibliography only when it shares enough of
+  the research question's content words: with an abstract, 2 in the title and a third (2 to 4) in title
+  and abstract; title only, a fifth (2 to 3) (`is_relevant` in `modules/literature/discovery.py`). The
+  live run's 53 hits for a mortgage question (solar bonds, the federal budget, …) all stay out; the study
   records what it left out in `literature/web_search.json`, and the run page says how many. The
   panel lists the web papers the draft cites first and folds the rest.
 - **Library: Add papers.** The Library page takes PDFs or a folder and reads them in the background
