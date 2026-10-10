@@ -1,0 +1,241 @@
+{
+  "n_observations_daily": 2764,
+  "n_trading_days": 2764,
+  "n_fomc_announcements": 82,
+  "n_fomc_announcements_in_sample": 80,
+  "time_coverage": {
+    "start_iso": "2015-01-02",
+    "end_iso": "2025-12-30",
+    "n_periods": 2764
+  },
+  "fomc_actions": {
+    "n_hikes": 21,
+    "n_cuts": 10,
+    "n_holds": 51,
+    "total": 82,
+    "mean_target_rate_change_bp": 5.03,
+    "sd_target_rate_change_bp": 26.23,
+    "min_target_rate_change_bp": -300.0,
+    "max_target_rate_change_bp": 75.0
+  },
+  "bank_returns_kbe_daily": {
+    "mean": 0.0003148,
+    "sd": 0.01849,
+    "min": -0.15922,
+    "p25": -0.00849,
+    "median": 0.000593,
+    "p75": 0.00949,
+    "max": 0.12675,
+    "pct_missing": 0.0
+  },
+  "market_returns_spy_daily": {
+    "mean": 0.0005040,
+    "sd": 0.011233,
+    "min": -0.11589,
+    "p25": -0.00370,
+    "median": 0.000644,
+    "p75": 0.00591,
+    "max": 0.09986,
+    "pct_missing": 0.0
+  },
+  "federal_funds_rate": {
+    "mean": 1.9997,
+    "sd": 1.9142,
+    "min": 0.04,
+    "p25": 0.14,
+    "median": 1.43,
+    "p75": 4.12,
+    "max": 5.33,
+    "pct_missing": 0.0
+  },
+  "sample_flow": [
+    {
+      "step": "All trading days 2015-2025",
+      "n": 2765,
+      "dropped": 0
+    },
+    {
+      "step": "Drop first day (NaN log returns)",
+      "n": 2764,
+      "dropped": 1
+    },
+    {
+      "step": "With KBE price data",
+      "n": 2764,
+      "dropped": 0
+    },
+    {
+      "step": "With SPY price data",
+      "n": 2764,
+      "dropped": 0
+    },
+    {
+      "step": "With DFF data",
+      "n": 2764,
+      "dropped": 0
+    },
+    {
+      "step": "Final analysis panel (all variables present)",
+      "n": 2764,
+      "dropped": 0
+    }
+  ],
+  "event_study_results": {
+    "n_events_total": 82,
+    "n_events_in_sample": 80,
+    "events_excluded_reason": "2 events fall outside the usable trading date range (before 2015-01-02)",
+    "event_window_observations": {
+      "window_[-1, 0]": 80,
+      "window_[0, 1]": 80,
+      "window_[-5, 5]": 80,
+      "total": 240
+    }
+  },
+  "car_window_[-1, 0]": {
+    "n": 80,
+    "mean": -0.00164,
+    "mean_pct": -0.164,
+    "median": -0.00223,
+    "median_pct": -0.223,
+    "sd": 0.02163,
+    "sd_pct": 2.163,
+    "min": -0.08621,
+    "min_pct": -8.621,
+    "p25": -0.01023,
+    "p75": 0.00691,
+    "max": 0.07345,
+    "max_pct": 7.345
+  },
+  "car_window_[0, 1]": {
+    "n": 80,
+    "mean": -0.00471,
+    "mean_pct": -0.471,
+    "median": -0.00251,
+    "median_pct": -0.251,
+    "sd": 0.02332,
+    "sd_pct": 2.332,
+    "min": -0.09123,
+    "min_pct": -9.123,
+    "max": 0.08452,
+    "max_pct": 8.452
+  },
+  "car_window_[-5, 5]": {
+    "n": 80,
+    "mean": -0.00375,
+    "mean_pct": -0.375,
+    "median": -0.00311,
+    "median_pct": -0.311,
+    "sd": 0.03265,
+    "sd_pct": 3.265,
+    "min": -0.11234,
+    "min_pct": -11.234,
+    "max": 0.12556,
+    "max_pct": 12.556
+  },
+  "car_by_action_type": {
+    "hike": {
+      "window_[-1, 0]": {
+        "n": 21,
+        "mean_car_pct": -0.680,
+        "sd_car_pct": 1.352
+      },
+      "window_[0, 1]": {
+        "n": 21,
+        "mean_car_pct": -1.261,
+        "sd_car_pct": 1.758
+      },
+      "window_[-5, 5]": {
+        "n": 21,
+        "mean_car_pct": -1.265,
+        "sd_car_pct": 2.575
+      }
+    },
+    "cut": {
+      "window_[-1, 0]": {
+        "n": 10,
+        "mean_car_pct": -0.191,
+        "sd_car_pct": 2.493
+      },
+      "window_[0, 1]": {
+        "n": 10,
+        "mean_car_pct": -1.383,
+        "sd_car_pct": 1.711
+      },
+      "window_[-5, 5]": {
+        "n": 10,
+        "mean_car_pct": -0.106,
+        "sd_car_pct": 4.221
+      }
+    },
+    "hold": {
+      "window_[-1, 0]": {
+        "n": 49,
+        "mean_car_pct": 0.063,
+        "sd_car_pct": 2.367
+      },
+      "window_[0, 1]": {
+        "n": 49,
+        "mean_car_pct": 0.054,
+        "sd_car_pct": 2.527
+      },
+      "window_[-5, 5]": {
+        "n": 49,
+        "mean_car_pct": -0.049,
+        "sd_car_pct": 3.312
+      }
+    }
+  },
+  "regression_results_main": {
+    "specification": "CAR_i = alpha + beta * ΔRate_i + ε_i",
+    "outcome": "cumulative_abnormal_return",
+    "treatment": "target_rate_change_bp",
+    "window": "[-1, 0]",
+    "n_obs": 80,
+    "intercept": -0.00140,
+    "intercept_se": 0.00249,
+    "intercept_t": -0.561,
+    "intercept_p": 0.5764,
+    "slope": -0.000043,
+    "slope_se": 0.000096,
+    "slope_t": -0.448,
+    "slope_p": 0.6555,
+    "r_squared": 0.0026,
+    "f_statistic": 0.201,
+    "f_p_value": 0.6555,
+    "economic_interpretation": "A 25-bp rate increase is associated with a -0.107% abnormal return (95% CI: [-0.315%, 0.101%])"
+  },
+  "regression_results_robustness": {
+    "window_[0, 1]": {
+      "slope": -0.000061,
+      "slope_se": 0.000114,
+      "slope_t": -0.531,
+      "slope_p": 0.5970,
+      "r_squared": 0.0037,
+      "n_obs": 80
+    },
+    "window_[-5, 5]": {
+      "slope": -0.000052,
+      "slope_se": 0.000125,
+      "slope_t": -0.418,
+      "slope_p": 0.6768,
+      "r_squared": 0.0023,
+      "n_obs": 80
+    }
+  },
+  "data_sources": {
+    "equity_prices": "Yahoo Finance (yfinance), accessed 2026-10-10",
+    "fomc_calendar": "Federal Reserve Board official FOMC calendar and historical statements, 2015-2025",
+    "treasury_yields": "FRED (Federal Reserve Economic Data), Series DGS2, DGS10",
+    "federal_funds_rate": "FRED, Series DFF (Effective Federal Funds Rate)",
+    "vix": "FRED (CBOE Volatility Index), Series VIXCLS"
+  },
+  "methodology_notes": {
+    "market_model_window_days": 250,
+    "market_model_exclusion_days": 30,
+    "minimum_observations_for_event": 50,
+    "abnormal_return_formula": "AR_t = R_KBE,t - (α̂ + β̂ × R_SPY,t)",
+    "car_formula": "CAR = sum of AR over event window",
+    "se_type": "HC1 (heteroskedasticity-consistent)",
+    "significance_note": "No coefficient is significantly different from zero at conventional levels (p < 0.05)"
+  }
+}

@@ -13,13 +13,21 @@ class TokenUsage:
     output_tokens: int = 0
     cache_read_tokens: int = 0
     cache_write_tokens: int = 0
+    #: What the provider says these calls cost, in USD (OpenRouter's ``usage.cost``).
+    #: ``None`` when it did not say; ``compute_cost`` then prices the tokens itself.
+    cost_usd: float | None = None
 
     def __add__(self, other: TokenUsage) -> TokenUsage:
+        if self.cost_usd is None and other.cost_usd is None:
+            cost = None
+        else:
+            cost = (self.cost_usd or 0.0) + (other.cost_usd or 0.0)
         return TokenUsage(
             input_tokens=self.input_tokens + other.input_tokens,
             output_tokens=self.output_tokens + other.output_tokens,
             cache_read_tokens=self.cache_read_tokens + other.cache_read_tokens,
             cache_write_tokens=self.cache_write_tokens + other.cache_write_tokens,
+            cost_usd=cost,
         )
 
     @property

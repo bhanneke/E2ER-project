@@ -27,7 +27,10 @@ tables that differ from the results files after the automatic correction
 (kind ``numbers``, step ``number_check``, governance ``full``): approving
 continues with those mismatches, each recorded in the dossier as the
 researcher's decision; an edit, an instruction or a send-back is followed by
-the check running again.
+the check running again. It stops the same way when the paper has rendered
+results tables and the check traced no cell in any of them (say, the draft
+``\\input``-s none of them): approving continues without the table check, and
+the dossier records that decision.
 
 Every action is written to the event log as ``researcher_action``; the dossier
 lists them as steps of type ``researcher``, so a reader sees where the
@@ -127,6 +130,22 @@ def mismatch_record(m: Any) -> dict[str, Any]:
         "source_key": source_key,
         "source_file": source_file,
         "key": mismatch_key(m),
+    }
+
+
+def untraced_key(tables: list[str]) -> str:
+    """The number check's "no table cell traced" finding, as a key: the rendered tables it concerns."""
+    return "untraced|" + ",".join(sorted(tables))
+
+
+def untraced_record(report: Any) -> dict[str, Any]:
+    """The "no table cell traced" finding, for the researcher and the dossier."""
+    tables = list(getattr(report, "rendered_tables", []) or [])
+    return {
+        "reason": str(getattr(report, "untraced_reason", "")),
+        "rendered_tables": tables,
+        "not_in_draft": list(getattr(report, "rendered_tables_not_in_draft", []) or []),
+        "key": untraced_key(tables),
     }
 
 
@@ -234,10 +253,18 @@ def apply_action(
         if pending.kind == "numbers":
             # The researcher continues with the tables as they are: each mismatch
             # is recorded (dossier) and the check lets exactly these through.
-            mismatches = list((state.metadata.get("number_check") or {}).get("mismatches") or [])
+            check = state.metadata.get("number_check") or {}
+            mismatches = list(check.get("mismatches") or [])
             payload.update(decision="numbers_accepted", mismatches=mismatches)
             keys = state.metadata.setdefault("numbers_accepted", [])
             keys.extend(m["key"] for m in mismatches if m.get("key") and m["key"] not in keys)
+            untraced = check.get("untraced")
+            if isinstance(untraced, dict) and untraced.get("key"):
+                # The tables went unchecked (no cell traced): the researcher
+                # continues without the table check, for exactly these tables.
+                payload.update(untraced=untraced)
+                if untraced["key"] not in keys:
+                    keys.append(untraced["key"])
         if pending.kind == "contract":
             # The researcher takes the output as it is: recorded for the dossier,
             # each output that still fails its contract marked as such.

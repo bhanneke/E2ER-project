@@ -124,13 +124,16 @@ _LABELS = {
     "deviation": " (the pre-registered plan changed; approve the deviation, edit it back or send back)",
     "contract": " (output that failed its check after the last attempt)",
     "numbers": " (the number check: tables differ from the results)",
+    "numbers_untraced": " (the number check: no table cell was checked)",
 }
 
 
 def format_pending(data: dict[str, Any]) -> str:
     """The researcher step a run waits at, as `e2er review` and `e2er status` print it."""
     pending = data.get("pending") or {}
-    lines = [f"Researcher step: {pending.get('stage')}" + _LABELS.get(str(pending.get("kind")), "")]
+    kind = str(pending.get("kind"))
+    label = _LABELS.get(f"{kind}_untraced" if kind == "numbers" and pending.get("untraced") else kind, "")
+    lines = [f"Researcher step: {pending.get('stage')}" + label]
     if pending.get("kind") == "contract":
         for f in pending.get("failures") or []:
             attempts = f.get("attempts") or []
@@ -144,6 +147,13 @@ def format_pending(data: dict[str, Any]) -> str:
             "  Approve to keep the output as it is (the dossier marks it as failing its check), edit a file, "
             "give an instruction, or send the specialist back with a remark for new attempts. "
             "`e2er resume` alone gives it new attempts."
+        )
+    elif pending.get("kind") == "numbers" and pending.get("untraced"):
+        lines.append(f"  The number check compared no table cell with the results files: {pending['untraced']}.")
+        lines.append(
+            "  Edit the draft, give an instruction, or send back the paper draft or the table layout; "
+            "the check then runs again. Approve to continue without the table check: the dossier records "
+            "it as your decision, and `e2er verify` still fails a paper whose tables were never checked."
         )
     elif pending.get("kind") == "numbers":
         mismatches = pending.get("mismatches") or []

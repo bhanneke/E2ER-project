@@ -879,3 +879,48 @@ def test_prose_periods_and_ranges():
         "lies in 0.12--0.15, against $-0.30$ before."
     )
     assert [p.num_str for p in _extract_prose_numbers(text)] == ["0.12", "0.15", "-0.30"]
+
+
+def test_latex_comments_in_a_table_are_not_cells():
+    """DeepSeek V4 Pro annotated each row with a `% src:` comment naming the JSON keys
+    (`by_period.pre_tightening_2015_2021.n`); read into the next row they gave 15021 and
+    22023 and `e2er verify` failed the study (2026-10-10)."""
+    from src.core.pipeline.verify_numbers import _extract_table_numbers
+
+    tex = (
+        "\\begin{tabular}{lcc}\n\\toprule\n& Pre & Tightening \\\\\n\\midrule\n"
+        "$N$ & 84 & 24 \\\\\n"
+        "% src: summary_statistics.json#by_period.pre_tightening_2015_2021.n, #by_period.tightening_2022_2023.n\n"
+        "Share & 52\\% & 0.45 \\\\\n"
+        "\\bottomrule\n\\end{tabular}\n"
+    )
+    assert sorted(n for n, _ in _extract_table_numbers(tex)) == ["0.45", "24", "52", "84"]
+
+
+def test_source_notes_in_prose_are_not_claims():
+    """`<!-- src: ... -->` and `% src: ...` notes name JSON keys such as
+    `pre_tightening_2015_2021`; their digits are not numbers the paper states."""
+    from src.core.pipeline.verify_numbers import _strip_latex_machinery
+
+    tex = (
+        "\\begin{document}\nThe spread fell by 0.21 points"
+        " <!-- src: estimation_results.json#by_period.p_2015_2021 -->.\n"
+        "% src: summary_statistics.json#tightening_2022_2023.n\nIt stayed inverted.\n"
+    )
+    prose = _strip_latex_machinery(tex)
+    assert "0.21" in prose
+    assert "2015" not in prose and "2022" not in prose and "src:" not in prose
+
+
+def test_math_minus_and_year_to_month_spans_in_cells():
+    """`$-$0.93` is -0.93 (read as 0.93 it "mismatched" a min of -0.93), and the 2015 of
+    "2015--Feb 2022" is a period label (DeepSeek V4 Pro study, 2026-10-10)."""
+    from src.core.pipeline.verify_numbers import _extract_table_numbers
+
+    tex = (
+        "\\begin{tabular}{llcc}\n\\toprule\nPeriod & Dates & Mean & Min \\\\\n\\midrule\n"
+        "Pre & 2015--Feb 2022 & 0.80 & $-$0.93 \\\\\n"
+        "Tight & Mar 2022--Jul 2023 & $-$0.39 & $ - $1.5 \\\\\n"
+        "\\bottomrule\n\\end{tabular}\n"
+    )
+    assert [n for n, _ in _extract_table_numbers(tex)] == ["0.80", "-0.93", "-0.39", "-1.5"]

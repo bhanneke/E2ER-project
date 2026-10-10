@@ -41,6 +41,12 @@ class Settings(BaseSettings):
     anthropic_model: str = "claude-sonnet-4-5"
     openrouter_api_key: str | None = None
     openrouter_model: str = "anthropic/claude-sonnet-4-5"
+    #: Which of a model's providers OpenRouter sends each call to: "price" (the
+    #: providers in order of what a study's calls cost there, mostly cached input;
+    #: see llm/openrouter_models.provider_order), "throughput", "latency", or ""
+    #: for OpenRouter's own balancing. Measured 2026-10-10 on DeepSeek V4 Pro: both
+    #: OpenRouter's balancing and its own sort=price billed ~5-8x the cheapest provider.
+    openrouter_provider_sort: Literal["price", "throughput", "latency", ""] = "price"
     enable_prompt_caching: bool = True
 
     # ── Governance regime (the experiment's treatment variable) ───────────────
@@ -333,10 +339,11 @@ class Settings(BaseSettings):
     codex_sandbox: str = "workspace-write"
     codex_cwd: str = ""
 
-    # ── Gemini CLI backend (free under Google AI Pro/Ultra plan) ──────────────
+    # ── Gemini CLI backend (not tested) ───────────────────────────────────────
     # Set LLM_BACKEND=gemini to delegate to the `gemini` subprocess. Requires
-    # the Gemini CLI (`npm install -g @google/gemini-cli`); sign in by running
-    # `gemini` once. Not validated live yet.
+    # the Gemini CLI (`npm install -g @google/gemini-cli`) and GEMINI_API_KEY:
+    # Google ended Gemini CLI sign-in for individual accounts in October 2026.
+    # No full study has run on it; full runs are tested on Claude Code and Codex.
     gemini_path: str = "gemini"
     gemini_timeout: int = 1800
     gemini_model: str = ""  # Empty → CLI's default

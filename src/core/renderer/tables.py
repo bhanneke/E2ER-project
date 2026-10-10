@@ -74,6 +74,9 @@ class RenderReport:
     normalized: list[Normalized] = field(default_factory=list)  # order-insensitive key fixes
     errors: list[str] = field(default_factory=list)  # per-table render failures
     skipped_reason: str | None = None
+    # Tables an earlier render wrote that the current table_spec.json no longer
+    # declares, moved to .history/tables/ so they never ship (path after the move).
+    set_aside: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -436,6 +439,7 @@ def render_tables(workspace: Path) -> RenderReport:
 
     tables_dir = workspace / "tables"
     tables_dir.mkdir(exist_ok=True)
+    previously = _previously_rendered(workspace)
 
     report = RenderReport()
     for table in spec["tables"]:
@@ -457,6 +461,8 @@ def render_tables(workspace: Path) -> RenderReport:
         report.unresolved.extend(unresolved)
         report.normalized.extend(normalized)
 
+    report.set_aside = _set_aside_stale(workspace, sorted(previously - set(report.rendered)))
+
     if report.normalized:
         logger.info(
             "render_tables: %d reference(s) resolved by order-insensitive token match "
@@ -472,6 +478,47 @@ def render_tables(workspace: Path) -> RenderReport:
     logger.info("render_tables: wrote %d table(s) to %s", len(report.rendered), tables_dir)
     _save_report(workspace, report)
     return report
+
+
+def _previously_rendered(workspace: Path) -> set[str]:
+    """The tables the last render wrote, from its ``table_render_report.json``."""
+    try:
+        rep = json.loads((workspace / "table_render_report.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return set()
+    rendered = rep.get("rendered") if isinstance(rep, dict) else None
+    if not isinstance(rendered, list):
+        return set()
+    return {r for r in rendered if isinstance(r, str) and r.endswith(".tex") and "/" not in r}
+
+
+def _set_aside_stale(workspace: Path, names: list[str]) -> list[str]:
+    """Move tables an earlier render wrote, and the current spec no longer declares, to ``.history/tables/``.
+
+    In the 2026-10-10 Haiku run section_writer cut table_spec.json from four
+    tables to two; the three it dropped stayed in tables/ with ``---`` in every
+    cell and shipped in the export's paper/tables/. Only files the renderer
+    itself wrote are moved: field-map tables and \\input stubs are not its own.
+    """
+    moved: list[str] = []
+    for name in names:
+        path = workspace / "tables" / name
+        if not path.is_file():
+            continue
+        n = 1
+        while (workspace / ".history" / "tables" / f"{name}.{n}").exists():
+            n += 1
+        target = workspace / ".history" / "tables" / f"{name}.{n}"
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            path.replace(target)
+        except OSError as e:
+            logger.warning("render_tables: could not set aside stale table %s: %s", name, e)
+            continue
+        moved.append(target.relative_to(workspace).as_posix())
+    if moved:
+        logger.info("render_tables: set aside %d table(s) the spec no longer declares: %s", len(moved), moved)
+    return moved
 
 
 def _save_report(workspace: Path, report: RenderReport) -> None:

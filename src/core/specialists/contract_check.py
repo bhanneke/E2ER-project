@@ -485,6 +485,80 @@ def check_no_inline_tables(workspace: Path, relative: str = "paper_draft.tex") -
     )
 
 
+def check_draft_includes_declared_tables(workspace: Path, relative: str = "paper_draft.tex") -> ContractCheck:
+    """Every table the drafter declares in ``table_spec.json`` is ``\\input`` in the draft.
+
+    The renderer fills declared tables from the results files; a declared table
+    the draft never includes ships in tables/ but not in the paper, and the
+    number check (which reads the paper) then traces no cell of it. The
+    2026-10-10 Haiku run declared two tables, included neither, and passed the
+    number check on prose alone.
+    """
+    from ..pipeline.verify_numbers import included_tables
+
+    target = workspace / relative
+    spec_path = workspace / "table_spec.json"
+    if not target.is_file() or not spec_path.is_file():
+        return ContractCheck(relative, True, "", kind=KIND_VERIFICATION)
+    try:
+        spec = json.loads(spec_path.read_text(encoding="utf-8"))
+        text = target.read_text(encoding="utf-8", errors="replace")
+    except (OSError, ValueError):
+        # An unreadable spec is the renderer's to report; the draft is not at fault.
+        return ContractCheck(relative, True, "", kind=KIND_VERIFICATION)
+    tables = spec.get("tables") if isinstance(spec, dict) else None
+    declared = sorted(
+        {
+            t["filename"] if t["filename"].endswith(".tex") else f"{t['filename']}.tex"
+            for t in tables or []
+            if isinstance(t, dict) and isinstance(t.get("filename"), str) and t["filename"].strip()
+        }
+    )
+    missing = [name for name in declared if name not in included_tables(text)]
+    if not missing:
+        return ContractCheck(relative, True, "", kind=KIND_VERIFICATION)
+    inputs = ", ".join(f"\\input{{tables/{name}}}" for name in missing)
+    return ContractCheck(
+        relative,
+        False,
+        f"table_spec.json declares {len(declared)} table(s) and the draft includes "
+        f"{'none of them' if len(missing) == len(declared) else f'{len(declared) - len(missing)} of them'}: "
+        f"add {inputs} where each table belongs, or drop the table from table_spec.json",
+        kind=KIND_VERIFICATION,
+    )
+
+
+#: Writers of the paper's draft whose draft must cite the study's references.
+_MUST_CITE: frozenset[str] = frozenset({"paper_drafter", "field_review_writer"})
+
+
+def check_draft_cites(workspace: Path, relative: str = "paper_draft.tex") -> ContractCheck:
+    """A draft written for a study with references cites at least one of them.
+
+    The 2026-10-10 Haiku draft cited nothing although literature.bib held 21
+    entries; the citation check, which checks the cites a draft makes, had
+    nothing to check and the paper went through. A study with no references
+    at all is not held to this (the citation check then says "no references").
+    """
+    from ..pipeline.verify_citations import parse_bibitem_keys, parse_cite_keys, study_references
+
+    target = workspace / relative
+    if not target.is_file():
+        return ContractCheck(relative, True, "", kind=KIND_VERIFICATION)
+    try:
+        text = target.read_text(encoding="utf-8", errors="replace")
+    except OSError as e:
+        return ContractCheck(relative, False, f"read failed: {e}", kind=KIND_VERIFICATION)
+    if parse_cite_keys(text) or parse_bibitem_keys(text) or not study_references(workspace):
+        return ContractCheck(relative, True, "", kind=KIND_VERIFICATION)
+    return ContractCheck(
+        relative,
+        False,
+        "The draft cites no work; cite the papers in literature.bib where they support the text",
+        kind=KIND_VERIFICATION,
+    )
+
+
 def _plan_problems(workspace: Path) -> list[str]:
     from ..pipeline.replication import check_plan
 
@@ -763,6 +837,14 @@ def check_specialist_artifacts(workspace: Path, specialist: str) -> list[Contrac
                 if prereg is not None:
                     checks.append(prereg)
 
+    # The estimation runs on its own: `e2er reproduce` reruns it without the web and
+    # without e2er's tools, so a script that fetches web data or calls a loader is a
+    # broken run of the study's code, not a property of the paper (reliability).
+    if specialist == "econometrics_specialist" and regression_file and not base_failed:
+        from .standalone_check import check_estimation_standalone
+
+        checks.append(check_estimation_standalone(workspace, regression_file))
+
     # The replication template's JSON files are contracts other code executes
     # (the plan) or verifies (the report): a file that parses but breaks its
     # schema is as unusable as a missing one, so this is reliability.
@@ -790,4 +872,17 @@ def check_specialist_artifacts(workspace: Path, specialist: str) -> list[Contrac
         draft = SPECIALIST_ARTIFACTS.get(specialist, "paper_draft.tex")
         if draft.endswith(".tex") and not any(c.artifact == draft and not c.ok for c in checks):
             checks.append(check_no_inline_tables(workspace, draft))
+    # The checks below look at a draft that exists; each reports on its own, so
+    # one attempt's feedback names every problem at once.
+    draft = SPECIALIST_ARTIFACTS.get(specialist, "paper_draft.tex")
+    draft_written = draft.endswith(".tex") and not any(
+        c.artifact == draft and not c.ok and c.kind == KIND_RELIABILITY for c in checks
+    )
+    # The drafter writes table_spec.json and the draft together: what it
+    # declares, it includes.
+    if specialist == "paper_drafter" and draft_written:
+        checks.append(check_draft_includes_declared_tables(workspace, draft))
+    # A draft for a study with references cites them.
+    if specialist in _MUST_CITE and draft_written:
+        checks.append(check_draft_cites(workspace, draft))
     return checks

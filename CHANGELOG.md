@@ -7,6 +7,151 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.2] — 2026-10-11
+
+### Stale tables are set aside; a draft that cites nothing is caught
+- **The renderer sets aside tables the spec no longer declares.** In the 2026-10-10 Haiku run
+  section_writer cut `table_spec.json` from four tables to two; the two dropped tables (`---` in every
+  cell) stayed in `tables/` and shipped in the export's `paper/tables/`. A table an earlier render
+  wrote and the current spec drops now moves to the hidden `.history/tables/` (listed as `set_aside`
+  in `table_render_report.json`). Tables the renderer did not write (field-map tables, `\input` stubs)
+  stay. The export also leaves out of `paper/tables/` any table that is neither rendered nor included
+  by the paper, which covers workspaces from before this change.
+- **A draft for a study with references must cite them.** The same run's draft cited none of the 21
+  entries of `literature.bib`, and the citation check, which checks the cites a draft makes, skipped
+  itself. The output contract of the paper drafter and of the field review writer now fails such a
+  draft with "The draft cites no work; cite the papers in literature.bib where they support the text";
+  after the last attempt the run stops at the contract as usual. The study's references are the
+  entries of `literature.bib` and `user_refs.bib`, or the papers chosen for it.
+- **The citation check says why it checked nothing**: "no references: the draft cites no work and the
+  study has no bibliography", or "the draft cites none of the N work(s) in the study's bibliography",
+  in `citation_integrity.json` and the run's gate record. `e2er verify` fails a paper that cites none
+  of the works in its `refs.bib`, and says "no references" when the bundle has no bibliography.
+
+### The number check stops when no table cell was checked
+- **A paper with rendered results tables and no traced table cell no longer passes the number
+  check.** In the 2026-10-10 E2E-01 run on Claude Haiku the renderer wrote two tables from the results
+  files, the draft `\input`-ed neither, and the number check, which reads the draft, compared 0 table
+  cells, checked the prose numbers and reported a pass. The run went on to the reviewers and the export,
+  and `e2er verify` then failed the export (no table_cell edges, 0 cells traced). The tables traced in
+  full once included (25 of 25 cells), so the tracing itself was not at fault.
+- **Under governance `full` the run now stops at the number check** and says why in plain words: which
+  rendered tables the paper leaves out, and the `\input` lines it needs. Edit the draft, give an
+  instruction or send back the drafter or the table layout, and the check runs again; or approve to
+  continue without the table check, recorded in the dossier as your decision (`e2er verify` still
+  fails such a paper). Under `contracts` and `off` the finding is recorded in `number_check.json` and
+  the run notes, and the run continues.
+- **The drafter's output contract checks that every table declared in `table_spec.json` is
+  `\input` in the draft**, so a drafter that leaves its tables out gets the missing `\input` lines as
+  feedback and another attempt before the run reaches the number check.
+- `number_verification.json` records the rendered tables, those the draft leaves out, and
+  `tables_untraced` with its reason. `e2er verify` gives the same reason when it fails the numbers check
+  for 0 traced cells.
+
+### Studies reproduce on their own
+- **`e2er reproduce` gives the study's code e2er's read-only data access.** `e2er-data query sql` and
+  `e2er-data query tables` now work inside a rerun and read the run folder's `data.db`. Before, a
+  script that checked an aggregate with `e2er-data query sql` stopped with exit 2 ("paper_id
+  missing"): the E2E-01 run with Codex on 0.15.1 passed `e2er verify` and failed `e2er reproduce`
+  for this reason. The steps still get no API key and no e2er setting, and a rerun's queries are not
+  written to e2er's own database.
+- **No web outside the data step.** Only the step that loads inputs again (`get_data.py`) may use the
+  network and e2er-data's loaders. In every other step a connection to another machine fails with a
+  plain message, and `e2er-data yfinance|fred|gmd|allium …` exits 5 with one; the report says which
+  step tried to reach what. `e2er reproduce --allow-network` lets the steps through and names the
+  sites they read in the report and the verdict. The guard sees connections made by Python (a small
+  module in the rerun's environment); a program started from the script (`curl`) is caught by the
+  estimation contract below.
+- **The estimation script is checked for web access at the estimation step.** The runner reads the
+  scripts that write `estimation_results.json` (and the local modules they import) without running
+  them, and flags network libraries (requests, httpx, urllib.request, yfinance, pandas_datareader,
+  fredapi, …), URLs read with pandas, `curl`/`wget` in a subprocess and e2er tools other than
+  `e2er-data query`. A finding is an output-contract failure for the econometrics specialist, with
+  the file and line and the message "The estimation script must read its data from data.db or files
+  in data/; load web data in the data step", so the specialist fixes it within its attempts; after
+  the last attempt the run stops as for any contract failure. The econometrics and data skills say
+  the same. The FOMC replay fixture's estimation script lost its pandas-datareader fallback, which
+  this check flags.
+- **The reproduce report always lists the inputs**, also when a step fails or the environment cannot
+  be made, so the reader sees what the rerun had; a recipe without inputs says so.
+- On the E2E-01 Codex export, the rerun now runs to the end with `--allow-network`: every estimate and
+  all 15 tables are identical; the 276 differing values are the provenance of the 101 statements the
+  script reads from federalreserve.gov while it estimates (retrieval times, page hashes, 16 URLs).
+  Without `--allow-network` it stops at that fetch and says so.
+
+### Gemini: not tested, API key only
+- **Full runs are tested on Claude (Claude Code) and OpenAI (Codex CLI with a ChatGPT plan).** Google
+  ended Gemini CLI sign-in for individual accounts in October 2026: `gemini` 0.63.0 answers "This
+  client is no longer supported for Gemini Code Assist for individuals" and points to Antigravity. The
+  Gemini backend therefore needs a Gemini API key (`GEMINI_API_KEY`) and is not tested. The code stays.
+- **The setup page lists Gemini under "Other providers (not tested)"**, with a field for the Gemini
+  API key and no sign-in command. Its note no longer says Gemini runs on a subscription. A Gemini key
+  saved there is written to `.env` as `GEMINI_API_KEY`.
+- **`e2er doctor` and `e2er init`.** A Gemini sign-in file no longer counts as ready; only
+  `GEMINI_API_KEY` (or `GOOGLE_API_KEY`) does, from the environment or `.env`. The check names the
+  backend as not tested. `e2er init` offers Gemini last, as "Other provider, not tested", and checks
+  for the key.
+- **`e2er run-matrix` leaves Gemini out of its default backends.** It runs only when `--backends`
+  names it.
+- **Spending limit texts.** For a Gemini study, the new-study form and the run page say that Google
+  bills the Gemini API key and e2er does not count the cost; they no longer call it a subscription.
+- README, docs/BACKENDS.md and the command help say the same.
+
+### OpenRouter with an open model, run live
+- **First live study on OpenRouter with an open model (DeepSeek V4 Pro).** The OpenRouter backend had
+  only been tested with mocks. A whole single-pass study now runs on it; what the live run showed is
+  fixed below.
+- **Costs are what OpenRouter bills (fix).** The cost table had no entry for open models, so every
+  DeepSeek call was priced at the $3/$15-per-million guess, 10 to 40 times the bill, and the spending
+  limit would have stopped a study that had spent cents. e2er now records the cost OpenRouter reports
+  for each call (`usage.cost`), counts cached prompt tokens as cache reads, and for a call without a
+  reported cost uses OpenRouter's published price list, read at the start of a run and kept for a day
+  in `~/.e2er/cache/openrouter-models.json` (the fixed table, now with DeepSeek, when offline). On the
+  live run e2er's recorded cost and OpenRouter's account differed by under a cent.
+- **Calls go to the provider that is cheapest for a study (new setting `OPENROUTER_PROVIDER_SORT`,
+  default `price`).** A model on OpenRouter is served by several providers at very different prices.
+  Left to OpenRouter's balancing, DeepSeek calls went to a provider charging about 8 times the cheapest;
+  OpenRouter's own "cheapest" ranks by fresh input and picked one that charges 9 times more for cached
+  input and 10 times more for output, and a study's calls are mostly cached input. e2er now reads the
+  model's providers from OpenRouter's public list (kept a day), ranks them by what a study's mix of
+  calls costs there, and asks for them in that order with fallback. `throughput`, `latency` or empty
+  (OpenRouter's balancing) are the other choices.
+- **The spending limit holds inside a specialist (fix).** It was checked between specialists only;
+  one specialist ran on while the study passed its $3 limit ($3.48 billed). The Anthropic and
+  OpenRouter backends now check before every call, counting the specialists still running.
+- **Stopping a run keeps the cost of the specialist that was working (fix).** Its calls were billed
+  but never recorded, so a stopped study showed $2.85 where OpenRouter had billed $3.48. The Anthropic
+  and OpenRouter backends now record what a loop used when its run is stopped.
+- **Setup offers every OpenRouter model that can use tools, with its price** ("DeepSeek V4 Pro (open
+  model, low price): $0.23 in / $0.46 out per million tokens"), suggestions first; offline, the fixed
+  suggestions. A model already chosen stays selected, also in e2er's spelling (`claude-sonnet-4-5` for
+  OpenRouter's `claude-sonnet-4.5`).
+- **A reviewer that answers instead of writing its file (fix).** DeepSeek returned a whole review as
+  its reply without calling `write_file`, and the retry cost a new review. On the Anthropic and
+  OpenRouter backends a missing Markdown output is now filled with the final answer (300 characters or
+  more) and the log says so; JSON, LaTeX and scripts never are.
+- **Source notes no longer print in the paper, and drafts no longer write their own tables (fix).** The
+  `cite-numbers-by-source` skill, loaded by the drafter, section writer, abstract writer and revisor,
+  taught HTML comments (`<!-- src: ... -->`) for source notes, which LaTeX printed into the PDF, and
+  showed a results table written in the draft, which the drafter's contract rejects: every live run on
+  DeepSeek lost its first draft to "inline tabular", as a Claude Code run had on 2026-09-11. The skill
+  now teaches `% src:` notes on a line of their own and `\input{tables/<name>.tex}` for tables;
+  compiling removes any HTML comment from `paper_draft.tex` and `abstract.tex`, and the number check
+  reads neither kind of note as a claim.
+- **The number check skips LaTeX comments in tables (fix).** DeepSeek annotated each table row with a
+  `% src:` comment naming the JSON keys (`pre_tightening_2015_2021`); read as cells they gave 15021 and
+  22023, and `e2er verify` failed the exported study.
+- **The number check reads `$-$0.93` as -0.93 and "2015--Feb 2022" as a period (fix).** A table with a
+  minus typeset in math had its minimum of -0.93 read as 0.93, and the 2015 of a year-to-month span read
+  as a value; both failed `e2er verify` on numbers that were right.
+- **A call that stalls is asked again after two minutes, not ten (fix).** Each of the three live studies
+  lost 10 to 11 minutes to one OpenRouter call that never answered and ran into the SDK's 600-second
+  timeout. Calls are now streamed: one that sends nothing for 120 seconds (240 before its first data)
+  is dropped and asked again, as is one whose provider fails mid-answer.
+- **Smaller fixes in the OpenRouter loop:** a response with no answer (an upstream provider failed) is
+  retried twice; tool arguments that are not valid JSON go back to the model as an error instead of
+  running the tool with no arguments; empty arguments and arguments in a code fence are accepted.
+
 ## [0.15.1] — 2026-10-10
 
 ### Iterative mode, run end to end

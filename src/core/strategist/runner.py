@@ -1929,9 +1929,14 @@ class PipelineRunner:
                 # fabrication the experiment is measuring.
                 report = await self._verify_numbers_auto_patch(report)
                 accepted = self._numbers_accepted(report)
-            failed_numbers = bool(report.critical_mismatches)
+            # Rendered tables and not one traced cell is a failed check, not a
+            # pass: the 2026-10-10 Haiku run's draft included neither of its two
+            # rendered tables and the gate let it through on prose coverage.
+            failed_numbers = bool(report.critical_mismatches) or report.tables_untraced
             detail_numbers = ""
-            if failed_numbers:
+            if report.tables_untraced:
+                detail_numbers = report.untraced_reason
+            elif failed_numbers:
                 summary = "; ".join(
                     f"{m.draft_value} vs {m.source_value} ({m.source_key}) at {m.table_context}"
                     for m in report.critical_mismatches[:5]
@@ -1977,7 +1982,9 @@ class PipelineRunner:
                 )
             enforce_cites = self._governance_enforces("citations")
             failed_cites = not cite_report.passed
-            detail_cites = ""
+            # A draft with no citation is not checked; the record says why in plain
+            # words ("no references", or how many works the draft leaves uncited).
+            detail_cites = cite_report.skipped_reason or ""
             if failed_cites:
                 missing = ", ".join(c.cite_key for c in cite_report.missing_checks[:5])
                 unverif = ", ".join(c.cite_key for c in cite_report.unverifiable_checks[:5])
@@ -2342,6 +2349,16 @@ class PipelineRunner:
 
     def _number_check_status_text(self, reasons: list[str]) -> str:
         """The paper's status line while the run waits at the number check."""
+        state = self._number_check_state()
+        untraced = ((state.metadata.get("number_check") or {}) if state is not None else {}).get("untraced")
+        if isinstance(untraced, dict):
+            return (
+                f"Stopped at the number check: no number in the paper's tables was compared with the results "
+                f"files: {str(untraced.get('reason', ''))[:1500]}. "
+                f"Open the check with `e2er review {self._paper_id}`: edit the draft, give an instruction, "
+                "send back the paper draft or the table layout, or approve to continue without the table check, "
+                "recorded in the dossier as your decision. The reviewers run after that."
+            )
         tried = getattr(self, "_number_patch_outcome", "") or "it did not run"
         shown = "; ".join(reasons[:3]) + (f"; and {len(reasons) - 3} more" if len(reasons) > 3 else "")
         return (
@@ -2361,13 +2378,16 @@ class PipelineRunner:
 
     def _numbers_accepted(self, report: Any) -> bool:
         """True when the researcher approved continuing with exactly these mismatches (or a subset)."""
-        from ..pipeline.researcher import mismatch_key
+        from ..pipeline.researcher import mismatch_key, untraced_key
 
         state = self._number_check_state()
-        if state is None or not report.critical_mismatches:
+        needed = {mismatch_key(m) for m in report.critical_mismatches}
+        if report.tables_untraced:
+            needed.add(untraced_key(report.rendered_tables))
+        if state is None or not needed:
             return False
         accepted = set(state.metadata.get("numbers_accepted") or [])
-        return bool(accepted) and all(mismatch_key(m) in accepted for m in report.critical_mismatches)
+        return needed <= accepted
 
     async def _stop_at_number_check(self, report: Any) -> None:
         """Stop the run for the researcher at the number check (raises GateHaltError).
@@ -2378,10 +2398,13 @@ class PipelineRunner:
         layout (section_writer writes table_spec.json) or the estimation, or
         approves continuing with the mismatches recorded in the dossier.
         """
-        from ..pipeline.researcher import NUMBERS_STEP, describe_mismatch, mismatch_record
+        from ..pipeline.researcher import NUMBERS_STEP, describe_mismatch, mismatch_record, untraced_record
 
         mismatches = [mismatch_record(m) for m in report.critical_mismatches]
         reasons = [describe_mismatch(m) for m in mismatches]
+        untraced = untraced_record(report) if report.tables_untraced else None
+        if untraced is not None:
+            reasons.insert(0, untraced["reason"])
         sources = sorted({m["source_file"] for m in mismatches if m["source_file"]})
         files = [f for f in ["paper_draft.tex", *sources, "table_spec.json"] if f and (self._workspace / f).is_file()]
         state = self._number_check_state()
@@ -2393,7 +2416,11 @@ class PipelineRunner:
             state.approved_stages.remove(NUMBERS_STEP)
         tried = getattr(self, "_number_patch_outcome", "")
         state.pending_review_stage = NUMBERS_STEP
-        state.metadata["number_check"] = {"mismatches": mismatches, "auto_patch": tried}
+        state.metadata["number_check"] = {
+            "mismatches": mismatches,
+            "auto_patch": tried,
+            **({"untraced": untraced} if untraced is not None else {}),
+        }
         state.metadata["review"] = {"kind": "numbers", "files": files, "reasons": reasons}
         state.save(self._workspace)
         raise GateHaltError(NUMBERS_STEP, reasons)
@@ -2412,12 +2439,23 @@ class PipelineRunner:
             state.metadata.pop("number_check", None)
             state.save(self._workspace)
         note_path = self._workspace / "number_check.json"
-        if not report.critical_mismatches:
+        if not report.critical_mismatches and not report.tables_untraced:
             note_path.unlink(missing_ok=True)
             return
         mismatches = [mismatch_record(m) for m in report.critical_mismatches]
         regime = getattr(self, "_governance", DEFAULT_REGIME)
-        if enforced and accepted:
+        if report.tables_untraced:
+            found = f"The number check compared no table cell with the results: {report.untraced_reason}"
+            if enforced and accepted:
+                decision = "accepted_by_researcher"
+                note = f"{found}. The researcher approved continuing without it (recorded in the dossier)."
+            else:
+                decision = "recorded_and_continued"
+                note = (
+                    f"{found}. Under governance '{regime}' this check does not stop the run: it is recorded "
+                    "in the dossier and the run continued."
+                )
+        elif enforced and accepted:
             decision = "accepted_by_researcher"
             note = (
                 f"The number check found {len(mismatches)} number(s) in the tables that differ from the results; "
@@ -2431,7 +2469,11 @@ class PipelineRunner:
                 "in the dossier and the run continued."
             )
         logger.warning("Paper %s: %s", self._paper_id, note)
-        doc = {"decision": decision, "governance": regime, "note": note, "mismatches": mismatches}
+        doc: dict[str, Any] = {"decision": decision, "governance": regime, "note": note, "mismatches": mismatches}
+        if report.tables_untraced:
+            from ..pipeline.researcher import untraced_record
+
+            doc["untraced"] = untraced_record(report)
         note_path.write_text(json.dumps(doc, indent=2), encoding="utf-8")
         await log_event(self._paper_id, "number_check_" + decision, stage="review", payload=doc)
 

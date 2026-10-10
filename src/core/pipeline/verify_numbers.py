@@ -104,11 +104,22 @@ class VerificationReport:
     # the renderer's order-insensitive normalization), with the available keys
     # so the drafter can correct them. Surfaced from table_render_report.json.
     table_spec_unresolved: list[dict[str, Any]] = field(default_factory=list)
+    # The results tables the renderer wrote for this paper (from
+    # table_render_report.json), and those of them the draft never \input-s.
+    # A paper whose rendered tables reach no table cell of the check has not
+    # been checked, whatever the prose coverage: see `tables_untraced`.
+    rendered_tables: list[str] = field(default_factory=list)
+    rendered_tables_not_in_draft: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         # `conclusive` is a property, so asdict() misses it — and the saved
         # JSON is what reviewers and the experiment harvester read.
-        return {**asdict(self), "conclusive": self.conclusive}
+        return {
+            **asdict(self),
+            "conclusive": self.conclusive,
+            "tables_untraced": self.tables_untraced,
+            "untraced_reason": self.untraced_reason,
+        }
 
     @property
     def critical_mismatches(self) -> list[Mismatch]:
@@ -138,6 +149,46 @@ class VerificationReport:
         """
         return self.total_values_in_tables > 0
 
+    @property
+    def tables_untraced(self) -> bool:
+        """The renderer wrote results tables, and the check traced no cell of any.
+
+        The case the 2026-10-10 Haiku run passed through: the draft ``\\input``-ed
+        none of its two rendered tables, the table channel checked nothing, the
+        prose channel checked 87 numbers, and the gate reported a pass. A check
+        that ran on none of the paper's tables has not passed; the run's gate
+        stops on this, and ``e2er verify`` fails it.
+        """
+        return bool(self.rendered_tables) and not self.tables_conclusive
+
+    @property
+    def untraced_reason(self) -> str:
+        """Why no table cell was checked, in plain words; empty when cells were."""
+        if not self.tables_untraced:
+            return ""
+        rendered = ", ".join(self.rendered_tables)
+        missing = self.rendered_tables_not_in_draft
+        if missing and len(missing) == len(self.rendered_tables):
+            inputs = ", ".join(f"\\input{{tables/{name}}}" for name in missing)
+            return (
+                f"the paper includes none of its {len(missing)} rendered results table(s) ({rendered}), so the number "
+                f"check compared no table cell with the results files; the paper needs {inputs} where each "
+                "table belongs"
+            )
+        if missing:
+            return (
+                f"the number check found no number in the rendered results tables the paper includes, and the "
+                f"paper leaves out {', '.join(missing)}; no table cell was compared with the results files"
+            )
+        if self.skipped_reason and self.skipped_reason != _NOTHING_VERIFIED:
+            return f"no table cell of the rendered results tables ({rendered}) was checked: {self.skipped_reason}"
+        return (
+            f"the rendered results tables ({rendered}) are in the paper but hold no number the check can read "
+            "(every cell is empty or ---), so no table cell was compared with the results files"
+        )
+
+
+_NOTHING_VERIFIED = "draft contains no table values and no checkable prose numbers; nothing was verified"
 
 # JSON filenames that the analyst + econometrics specialist must produce.
 # Look at workspace root (v3 layout). Order: by stage of production.
@@ -224,6 +275,9 @@ _PERIOD_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"(?:'|’)\d0s\b"),
     # Fiscal years: FY2019, FY 2019, FY19, FY'19.
     re.compile(rf"\bFY\s*'?(?:{_YEAR}|\d{{2}})(?!\d)"),
+    # A year running to a month: the "2015--" of "2015--Feb 2022" (the month and
+    # year after it go with the next pattern). Read as a cell, 2015 "mismatched".
+    re.compile(rf"(?<![\d.,]){_YEAR}{_DASH}(?={_MONTH}\b)"),
     # Month and year: Jan 2020, March 15, 2020, Mar.~2020.
     re.compile(rf"\b{_MONTH}\.?(?:\s|~)*(?:\d{{1,2}},?(?:\s|~)*)?{_YEAR}(?!\d)"),
 )
@@ -253,6 +307,9 @@ _SCRIPT_RE = re.compile(r"[\^_](?:\{[^{}]*\}|[A-Za-z0-9])")
 _LABEL_WORD_RE = re.compile(r"[A-Za-z]{2,}")
 
 
+_MATH_MINUS_RE = re.compile(r"\$\s*(?:-|−|\\text\{-\})\s*\$\s*(?=\d)")
+
+
 def _normalize_cell(cell: str) -> str:
     """Pre-process a tabular cell before running ``_NUMBER_RE``.
 
@@ -271,6 +328,8 @@ def _normalize_cell(cell: str) -> str:
     # LaTeX brace-protected thousands separator → standard comma.
     # Done first so subsequent date stripping sees a clean number.
     cell = cell.replace("{,}", ",")
+    # A minus typeset in math before the number: "$-$0.93" is -0.93, not 0.93.
+    cell = _MATH_MINUS_RE.sub("-", cell)
     cell = _strip_periods(cell)
     for pattern in _DATE_PATTERNS:
         cell = pattern.sub("", cell)
@@ -345,6 +404,9 @@ def _matches_rounded(num_str: str, source_val: float) -> bool:
     return abs(draft_val - source_val) <= half * (1 + 1e-9) + 1e-12 * max(1.0, abs(source_val))
 
 
+#: A LaTeX comment: an unescaped % to the end of its line (``\\%`` is a percent sign).
+_LATEX_COMMENT_RE = re.compile(r"(?<!\\)%[^\n]*")
+
 _FULL_RULE_RE = re.compile(r"\\(?:hline|midrule|toprule|bottomrule)(?![A-Za-z])")
 
 
@@ -380,6 +442,11 @@ def _extract_table_numbers(tex_content: str, *, zeros: bool = False) -> list[tup
     cells such as ``0.000`` (a value with decimals), which the run's gate skips.
     """
     results: list[tuple[str, str]] = []
+    # LaTeX comments are not cells. A model annotating its rows with
+    # "% src: ...by_period.pre_tightening_2015_2021.n" (DeepSeek V4 Pro, 2026-10-10)
+    # had that line read into the next row's first cell, as the numbers 15021
+    # and 22023, and `e2er verify` failed the study.
+    tex_content = _LATEX_COMMENT_RE.sub("", tex_content)
 
     # Strip non-data rule commands before splitting into rows. `cmidrule`
     # carries a numeric range arg (\cmidrule(lr){2-3}) that must not be read
@@ -447,6 +514,9 @@ def _extract_table_numbers(tex_content: str, *, zeros: bool = False) -> list[tup
 # don't double-count table cells or read \input paths, labels, refs, or cite
 # keys as numeric claims.
 _STRIP_FOR_PROSE: tuple[re.Pattern[str], ...] = (
+    # Source notes are not claims: "<!-- src: ...2015_2021 -->" and "% src: ..." comments.
+    re.compile(r"<!--.*?-->", re.DOTALL),
+    _LATEX_COMMENT_RE,
     re.compile(r"\\begin\{tabular\}.*?\\end\{tabular\}", re.DOTALL),
     re.compile(r"\\input\{[^}]*\}"),
     re.compile(r"\\(?:label|ref|eqref|cref|cite[a-z]*)\{[^}]*\}"),
@@ -800,6 +870,38 @@ def _read_table_spec_feedback(workspace: Path) -> list[dict[str, Any]]:
     return out
 
 
+def rendered_tables(workspace: Path) -> list[str]:
+    """The results tables the renderer wrote for this paper, by file name.
+
+    Read from ``table_render_report.json``, which the renderer writes on every
+    render; a stale ``tables/*.tex`` from an earlier table_spec is not one of
+    them. Empty when nothing was rendered or the report is unreadable.
+    """
+    path = workspace / "table_render_report.json"
+    try:
+        rep = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    rendered = rep.get("rendered") if isinstance(rep, dict) else None
+    if not isinstance(rendered, list):
+        return []
+    return sorted({str(r) for r in rendered if isinstance(r, str) and r})
+
+
+def _strip_tex_comments(tex: str) -> str:
+    """Drop LaTeX comments: a commented-out ``\\input`` includes nothing."""
+    return "\n".join(re.sub(r"(?<!\\)%.*", "", line) for line in tex.splitlines())
+
+
+def included_tables(tex_content: str) -> set[str]:
+    """File names of the tables a draft ``\\input``-s (``tables/main`` → ``main.tex``)."""
+    names: set[str] = set()
+    for ref in _INPUT_RE.findall(_strip_tex_comments(tex_content)):
+        name = Path(ref.strip()).name
+        names.add(name if name.endswith(".tex") else f"{name}.tex")
+    return names
+
+
 def _find_source_jsons(workspace: Path) -> dict[str, Path]:
     """Locate authoritative JSON files at the workspace root.
 
@@ -879,11 +981,17 @@ def verify(
         logger.warning("verify_numbers: %s", report.skipped_reason)
         return report
 
-    tex_content = _expand_inputs(draft_path.read_text(encoding="utf-8", errors="replace"), draft_path.parent)
+    raw_draft = draft_path.read_text(encoding="utf-8", errors="replace")
+    tex_content = _expand_inputs(raw_draft, draft_path.parent)
 
     # PR-2: key-resolution feedback is independent of numeric content — surface
     # it before any of the source-JSON early returns below.
     report.table_spec_unresolved = _read_table_spec_feedback(workspace)
+    # Likewise which rendered tables the draft includes: a paper with rendered
+    # tables and no traced cell must not read as a pass, however it got there.
+    report.rendered_tables = rendered_tables(workspace)
+    included = included_tables(raw_draft)
+    report.rendered_tables_not_in_draft = [t for t in report.rendered_tables if t not in included]
 
     source_jsons = _find_source_jsons(workspace)
     report.source_files_found = sorted(str(p) for p in source_jsons.values())
@@ -992,7 +1100,7 @@ def verify(
     _check_prose(report, tex_content, all_source_values, tolerance)
 
     if not report.conclusive:
-        report.skipped_reason = "draft contains no table values and no checkable prose numbers; nothing was verified"
+        report.skipped_reason = _NOTHING_VERIFIED
         logger.warning("verify_numbers: %s", report.skipped_reason)
 
     return report

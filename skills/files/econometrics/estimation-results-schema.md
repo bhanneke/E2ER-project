@@ -48,6 +48,32 @@ Naming matters: the runner looks for `run_estimation.py` →
 to discover the script by content, but the canonical names are the
 reliable path — use them.
 
+### The estimation script reads only the study's own data
+
+`run_estimation.py` (and any later script that writes
+`estimation_results.json`) must read its data from **`data.db` or files in
+`data/`** — nothing else. `e2er reproduce` reruns it later in a folder of its
+own, without the web and without e2er's tools, and a rerun must not depend on
+what a website serves that day. So, inside the estimation script:
+
+- **no web access**: no `requests`, `httpx`, `urllib.request`, `yfinance`,
+  `pandas_datareader`, `fredapi`, no `pd.read_csv("https://…")`, no `curl`
+  or `wget` in a subprocess. Event dates, announcement texts, prices: whatever
+  the study needs from the web is loaded **in the data step** (the data
+  analyst, with `e2er-data … --table <name>` into `data.db`, or saved under
+  `data/`), before estimation.
+- **no e2er tool except a read-only query**: `e2er-data query sql "SELECT …"`
+  and `e2er-data query tables` are fine (in a rerun they read the rerun's
+  `data.db`); `e2er-data yfinance|fred|gmd|allium …`, `e2er-run` and the
+  other e2er commands are not. Reading `data.db` with `sqlite3` or
+  `pandas.read_sql` is the simplest way.
+
+This is checked deterministically: the runner reads the estimation script
+(and the local modules it imports) and rejects one that reaches the web or
+calls an e2er loader, with the file and line, as an output-contract failure.
+If the data the estimation needs are not in `data.db`, say so in
+`econometric_spec.md` rather than fetching them in the script.
+
 This means: when the workspace has data, the correct action is almost
 always **write `run_estimation.py`**, not give up. "I could not run
 estimation" is only true when there is genuinely no data to estimate on.

@@ -365,6 +365,34 @@ def load_bib(bib_path: Path) -> dict[str, dict]:
     return out
 
 
+#: The bibliographies a study's writers may cite from (literature.bib is written
+#: at ingest with the papers found or chosen; user_refs.bib is the researcher's).
+STUDY_BIBLIOGRAPHIES = ("literature.bib", "user_refs.bib")
+
+
+def study_references(workspace: Path) -> int:
+    """How many works the study can cite: the entries of its bibliographies, else the papers chosen for it."""
+    keys: set[str] = set()
+    for name in STUDY_BIBLIOGRAPHIES:
+        keys.update(load_bib(workspace / name))
+    if keys:
+        return len(keys)
+    from ..study_inputs import read_record, section
+
+    try:
+        items = section(read_record(workspace), "papers").get("items") or []
+    except (OSError, ValueError, AttributeError):
+        return 0
+    return len(items) if isinstance(items, list) else 0
+
+
+def no_citation_reason(n_references: int, *, where: str = "the draft") -> str:
+    """Why a draft with no citation went unchecked, in plain words."""
+    if n_references:
+        return f"{where} cites none of the {n_references} work(s) in the study's bibliography"
+    return f"no references: {where} cites no work and the study has no bibliography"
+
+
 # ── Verifier chain ───────────────────────────────────────────────────────────
 
 
@@ -572,8 +600,14 @@ async def verify(
     bibitem_keys = parse_bibitem_keys(tex)
 
     if not cite_keys and not bibitem_keys:
-        report.skipped_reason = "no \\cite or \\bibitem commands in draft"
-        logger.info("verify_citations: %s", report.skipped_reason)
+        # Say which case this is: a study with no references at all, or a draft
+        # that ignores the bibliography it has (the 2026-10-10 Haiku draft
+        # cited none of the 21 entries of literature.bib).
+        refs = study_references(draft_path.parent)
+        if bib_path is not None and not refs:
+            refs = len(load_bib(bib_path))
+        report.skipped_reason = no_citation_reason(refs)
+        logger.warning("verify_citations: %s", report.skipped_reason)
         return report
 
     if bib_path is None:

@@ -555,13 +555,14 @@ def test_gemini_failed_help_probe_is_not_cached(monkeypatch):
     gemini._FLAG_CACHE.clear()
 
 
-async def test_gemini_missing_cli_hint_names_a_real_sign_in(cfg):
+async def test_gemini_missing_cli_hint_names_the_api_key(cfg):
     b = GeminiBackend()
     b._cli_path = "/nonexistent/gemini"  # noqa: SLF001
     with patch("src.modules.llm.gemini._probe_gemini_flags", return_value=(True, True)):
         r = await _call(b)
     assert "gemini auth" not in (r.error or "")
-    assert "run `gemini` once and sign in" in (r.error or "")
+    assert "run `gemini` once and sign in" not in (r.error or "")
+    assert "GEMINI_API_KEY" in (r.error or "")
 
 
 # ---------- e2er-data help (found live: a model asking --help got a traceback) ----------

@@ -1,0 +1,123 @@
+{
+  "tables": [
+    {
+      "filename": "descriptive_stats.tex",
+      "label": "tab:desc_stats",
+      "caption": "Descriptive Statistics of Cumulative Abnormal Returns Around FOMC Announcements",
+      "columns": [
+        {
+          "spec_key": "descriptive_stats",
+          "header": "Full Sample"
+        }
+      ],
+      "rows": [
+        {
+          "type": "stat",
+          "field": "n_events",
+          "label": "Number of FOMC Announcements",
+          "decimals": 0
+        },
+        {
+          "type": "stat",
+          "field": "n_observations",
+          "label": "Daily Observations",
+          "decimals": 0
+        },
+        {
+          "type": "stat",
+          "field": "mean_car",
+          "label": "Mean CAR (\\%)"
+        },
+        {
+          "type": "stat",
+          "field": "std_car",
+          "label": "Std Dev CAR (\\%)"
+        },
+        {
+          "type": "stat",
+          "field": "n_positive",
+          "label": "Events with Positive CAR",
+          "decimals": 0
+        },
+        {
+          "type": "stat",
+          "field": "sign_test_p",
+          "label": "Sign Test $p$-value"
+        }
+      ],
+      "notes": "CAR is the cumulative abnormal return of the KBE bank ETF measured over the event window around FOMC announcements using market model residuals. Sign test evaluates whether the proportion of positive CARs differs significantly from 50\\%."
+    },
+    {
+      "filename": "main.tex",
+      "label": "tab:main",
+      "caption": "Effect of Federal Reserve Target Rate Changes on Bank Stock Returns",
+      "columns": [
+        {
+          "spec_key": "main",
+          "header": "CAR (KBE)"
+        }
+      ],
+      "rows": [
+        {
+          "type": "coefficient",
+          "var": "target_rate_change_bps",
+          "label": "Target Rate Change (bps)"
+        },
+        {
+          "type": "coefficient",
+          "var": "fed_funds_rate_level",
+          "label": "Fed Funds Rate (\\%)"
+        },
+        {
+          "type": "coefficient",
+          "var": "inflation_rate",
+          "label": "Inflation Rate (\\%)"
+        },
+        {
+          "type": "coefficient",
+          "var": "unemployment_rate",
+          "label": "Unemployment Rate (\\%)"
+        },
+        {
+          "type": "coefficient",
+          "var": "unemployment_change_3m",
+          "label": "$\\Delta$ Unemployment, 3m (pp)"
+        },
+        {
+          "type": "coefficient",
+          "var": "term_spread",
+          "label": "Term Spread (bps)"
+        },
+        {
+          "type": "coefficient",
+          "var": "vix",
+          "label": "VIX Index"
+        },
+        {
+          "type": "coefficient",
+          "var": "constant",
+          "label": "Constant"
+        },
+        {
+          "type": "stat",
+          "field": "r_squared",
+          "label": "$R^2$",
+          "decimals": 3
+        },
+        {
+          "type": "stat",
+          "field": "adj_r_squared",
+          "label": "Adj. $R^2$",
+          "decimals": 3
+        },
+        {
+          "type": "stat",
+          "field": "n_observations_regression",
+          "label": "$N$",
+          "decimals": 0
+        }
+      ],
+      "notes": "Dependent variable: cumulative abnormal return (CAR) of the KBE bank ETF around FOMC announcements. Standard errors in parentheses below coefficients. *** $p<0.01$, ** $p<0.05$, * $p<0.10$."
+    }
+  ]
+}

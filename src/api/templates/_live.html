@@ -3,7 +3,7 @@
   {% if paper.internal_review %}<span class="muted review-score">e2er's internal quality review: {{ "%.1f" | format(paper.internal_review.score) }} of 10</span>{% endif %}
   <div class="cost-meter">
     {% if subscription %}
-      <div class="cost-label">No spending limit <span class="muted">(your subscription)</span></div>
+      <div class="cost-label">No spending limit <span class="muted">{% if uncounted_key %}(Google bills your Gemini API key; e2er does not count the cost){% else %}(your subscription){% endif %}</span></div>
     {% else %}
       <div class="cost-label">
         ${{ "%.2f"|format(cost_spent) }}

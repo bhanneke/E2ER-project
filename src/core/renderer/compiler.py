@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import shutil
 from pathlib import Path
 
@@ -56,6 +57,24 @@ def _mirror_figures_into_subdir(workspace: Path) -> None:
         logger.warning("could not mirror figures into figures/: %s", e)
 
 
+_HTML_COMMENT_RE = re.compile(r"[ \t]*<!--.*?-->", re.DOTALL)
+
+
+def strip_html_comments(path: Path) -> bool:
+    """Remove ``<!-- ... -->`` from a LaTeX file (LaTeX prints them); True when it changed."""
+    if not path.is_file():
+        return False
+    text = path.read_text(encoding="utf-8")
+    cleaned = _HTML_COMMENT_RE.sub("", text)
+    if cleaned == text:
+        return False
+    path.write_text(cleaned, encoding="utf-8")
+    logger.warning(
+        "%s: removed %d HTML comment(s), which LaTeX would print", path.name, len(_HTML_COMMENT_RE.findall(text))
+    )
+    return True
+
+
 async def compile_latex(workspace: Path, main_file: str = "paper_draft.tex") -> Path | None:
     """Assemble (preamble + body + bibliography) and compile to PDF.
 
@@ -74,6 +93,11 @@ async def compile_latex(workspace: Path, main_file: str = "paper_draft.tex") -> 
     refs = assemble_refs_bib(workspace)
     if refs:
         logger.info("Assembled refs.bib at %s", refs)
+
+    # HTML comments are not LaTeX: "<!-- src: ... -->" source notes (which the
+    # cite-numbers skill once taught) were printed into the PDF as text.
+    for part in (tex_path, workspace / "abstract.tex"):
+        strip_html_comments(part)
 
     # Wrap the body if needed. Original draft is preserved as paper_draft.body.tex.
     body = tex_path.read_text(encoding="utf-8")

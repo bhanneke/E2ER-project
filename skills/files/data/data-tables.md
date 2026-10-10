@@ -54,6 +54,12 @@ exists before that.
   ```
 
   The result reports `saved_table` and `saved_table_rows`: the real count.
+- Load here **everything the estimation will need from the web**: prices,
+  rates, and also event dates or announcement texts (into `data.db` as a
+  table, or saved under `data/`). The estimation script must read its data
+  from data.db or files in data/; it may not fetch web pages or call
+  `e2er-data yfinance|fred|gmd|allium` itself (checked at the estimation
+  contract), because `e2er reproduce` reruns it without the web.
 - Cleaning scripts may derive further tables (e.g. daily returns), but they
   must not overwrite the loaded raw tables.
 - `data_summary.md` names every declared table with its **actual** row count,

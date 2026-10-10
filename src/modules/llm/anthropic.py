@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import itertools
 import time
 from typing import Any
 
@@ -14,6 +16,9 @@ from .base import LLMBackend, TokenUsage, ToolHandler, ToolLoopResult
 logger = get_logger(__name__)
 
 _CACHE_THRESHOLD_CHARS = 4000  # only cache if system prompt is substantial
+_loop_keys = itertools.count(1)
+#: What each running loop has used so far, by loop key (recorded if the run is stopped mid-loop).
+_spent: dict[int, TokenUsage] = {}
 
 
 class AnthropicBackend(LLMBackend):
@@ -43,9 +48,35 @@ class AnthropicBackend(LLMBackend):
         tool_handler: ToolHandler | None,
         max_turns: int = 30,
         *,
-        paper_id: str | None = None,  # noqa: ARG002 — accepted for interface parity, unused in SDK mode
-        specialist: str | None = None,  # noqa: ARG002
+        paper_id: str | None = None,
+        specialist: str | None = None,
     ) -> ToolLoopResult:
+        from ..tracking.usage import loop_finished, record_cancelled_loop
+
+        loop_key = next(_loop_keys)
+        try:
+            return await self._tool_loop(system, messages, tools, tool_handler, max_turns, paper_id, loop_key)
+        except asyncio.CancelledError:
+            # A stopped run: the runner never records this loop's usage, but it was billed.
+            await record_cancelled_loop(paper_id, specialist, "anthropic", self._model, _spent.pop(loop_key, None))
+            raise
+        finally:
+            _spent.pop(loop_key, None)
+            loop_finished(paper_id, loop_key)
+
+    async def _tool_loop(
+        self,
+        system: str,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        tool_handler: ToolHandler | None,
+        max_turns: int,
+        paper_id: str | None,
+        loop_key: int,
+    ) -> ToolLoopResult:
+        from ..tracking.costs import compute_cost
+        from ..tracking.usage import loop_over_budget
+
         start = time.monotonic()
         usage = TokenUsage()
         tool_calls_made = 0
@@ -80,6 +111,20 @@ class AnthropicBackend(LLMBackend):
                 }
 
         for turn in range(max_turns):
+            over, spent, cap = await loop_over_budget(
+                paper_id, loop_key, float(compute_cost(self._model, usage, backend="anthropic"))
+            )
+            if over:
+                logger.warning("Anthropic turn %d: spending limit reached ($%.2f of $%.2f); stopping", turn, spent, cap)
+                return ToolLoopResult(
+                    success=False,
+                    output="",
+                    error=f"spending limit reached: ${spent:.2f} of ${cap:.2f}",
+                    tool_calls_made=tool_calls_made,
+                    usage=usage,
+                    duration_seconds=time.monotonic() - start,
+                    stop_reason="budget",
+                )
             try:
                 response = await self._client.messages.create(
                     model=self._model,
@@ -107,6 +152,7 @@ class AnthropicBackend(LLMBackend):
                 cache_read_tokens=getattr(u, "cache_read_input_tokens", 0) or 0,
                 cache_write_tokens=getattr(u, "cache_creation_input_tokens", 0) or 0,
             )
+            _spent[loop_key] = usage
 
             # Extract text output
             text_output = " ".join(b.text for b in response.content if hasattr(b, "text"))

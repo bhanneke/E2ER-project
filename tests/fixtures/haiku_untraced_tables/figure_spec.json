@@ -1,0 +1,103 @@
+{
+  "figures": [
+    {
+      "filename": "fig_car_by_action_type.pdf",
+      "figure_type": "bar",
+      "label": "fig:car_by_action",
+      "caption_hint": "Mean cumulative abnormal returns (CARs) for KBE by FOMC action type, 2015–2025. Error bars show ±1 SD. Window [-1, 0] trading days.",
+      "categories": ["Rate Hike", "Rate Cut", "Hold Rate"],
+      "values": [-0.680, -0.191, 0.063],
+      "errors": [1.352, 2.493, 2.367],
+      "y_label": "Mean CAR (%)",
+      "note": "N=21 hikes, N=10 cuts, N=49 holds. Standard deviations shown."
+    },
+    {
+      "filename": "fig_car_vs_rate_change_scatter.pdf",
+      "figure_type": "binscatter",
+      "label": "fig:car_vs_rate",
+      "caption_hint": "Relationship between FOMC target rate change and KBE cumulative abnormal return (window [-1, 0]). Fitted line shows regression slope: β̂ = -0.000043 (SE=0.000096, p=0.656).",
+      "x": [-300, -250, -75, -50, -25, 0, 25, 50, 75],
+      "y": [-0.19, -0.23, -0.17, -0.21, -0.19, 0.06, -0.68, -0.43, -1.26],
+      "fit_line": {
+        "slope": -0.000043,
+        "intercept": -0.00140
+      },
+      "x_label": "Target Rate Change (basis points)",
+      "y_label": "CAR (percent)",
+      "note": "Each point represents the mean CAR for events with that rate change. N=80 events. Fitted regression shown; R²=0.0026."
+    },
+    {
+      "filename": "fig_car_distribution_by_window.pdf",
+      "figure_type": "multi_panel",
+      "label": "fig:car_dist",
+      "caption_hint": "Distribution of cumulative abnormal returns (CARs) across three event windows. Each panel shows the empirical distribution of CARs with mean line.",
+      "ncols": 3,
+      "panels": [
+        {
+          "figure_type": "distribution",
+          "title": "Panel A: Window [-1, 0]",
+          "values": [-8.621, -4.203, -2.156, -1.892, -1.234, -0.891, -0.356, -0.223, 0.015, 0.089, 0.567, 1.234, 2.891, 4.156, 7.345],
+          "bins": 20,
+          "kde_overlay": true,
+          "vertical_lines": [
+            {
+              "x": -0.164,
+              "label": "Mean = -0.164%"
+            }
+          ],
+          "x_label": "CAR (%)",
+          "y_label": "Frequency"
+        },
+        {
+          "figure_type": "distribution",
+          "title": "Panel B: Window [0, 1]",
+          "values": [-9.123, -4.567, -2.234, -1.912, -1.456, -0.923, -0.251, 0.012, 0.134, 0.678, 1.456, 2.123, 3.789, 5.234, 8.452],
+          "bins": 20,
+          "kde_overlay": true,
+          "vertical_lines": [
+            {
+              "x": -0.471,
+              "label": "Mean = -0.471%"
+            }
+          ],
+          "x_label": "CAR (%)",
+          "y_label": "Frequency"
+        },
+        {
+          "figure_type": "distribution",
+          "title": "Panel C: Window [-5, 5]",
+          "values": [-11.234, -6.789, -3.456, -2.123, -1.567, -0.891, -0.311, 0.023, 0.456, 1.234, 2.678, 4.123, 6.234, 8.901, 12.556],
+          "bins": 20,
+          "kde_overlay": true,
+          "vertical_lines": [
+            {
+              "x": -0.375,
+              "label": "Mean = -0.375%"
+            }
+          ],
+          "x_label": "CAR (%)",
+          "y_label": "Frequency"
+        }
+      ]
+    },
+    {
+      "filename": "fig_regression_coefficient.pdf",
+      "figure_type": "coefficient",
+      "label": "fig:reg_coef",
+      "caption_hint": "Regression coefficient on target rate change (basis points) in predicting KBE CAR, with 95% confidence intervals. Outcome: CAR in window [-1, 0]. The coefficient is not significantly different from zero (p=0.656).",
+      "coefficients": [
+        {
+          "name": "Target Rate Change (bp)",
+          "estimate": -0.000043,
+          "ci_lower": -0.000232,
+          "ci_upper": 0.000146
+        }
+      ],
+      "reference_line": 0,
+      "x_label": "Effect on CAR (pp per bp)",
+      "x_min": -0.0005,
+      "x_max": 0.0002,
+      "note": "95% CI shown. N=80 events. β̂ = -0.000043 (SE=0.000096, p=0.656). Interpretation: a 25-bp rate increase → -0.107% CAR."
+    }
+  ]
+}

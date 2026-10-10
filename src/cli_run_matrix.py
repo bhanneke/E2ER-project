@@ -33,10 +33,13 @@ class MatrixArgError(ValueError):
 def available_backends(settings=None) -> list[str]:
     """The backends ready on this computer, as `e2er doctor` finds them.
 
-    The subscription CLIs (Claude Code, Codex, Gemini) that are installed and
-    not known to be signed out; if there is none, the API backends with a key.
+    The subscription CLIs (Claude Code, Codex) that are installed and not
+    known to be signed out; if there is none, the API backends with a key.
     The old default named all three CLIs whether or not they were there, so a
     matrix on a machine with one CLI spent two thirds of its runs failing.
+    Gemini is never in the default: no full study has run on it, and since
+    Google ended Gemini CLI sign-in for individual accounts (October 2026) it
+    needs a Gemini API key. `--backends gemini` still runs it.
     """
     from .doctor import detect_backends
 
@@ -45,6 +48,7 @@ def available_backends(settings=None) -> list[str]:
 
         settings = get_settings()
     rows = detect_backends(settings)
+    rows = [b for b in rows if getattr(b, "tested", True)]
     cli = [b.name for b in rows if b.kind == "cli" and b.ready]
     if cli:
         return cli

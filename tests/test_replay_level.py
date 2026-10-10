@@ -565,9 +565,12 @@ def test_the_iterative_mode_replays_to_the_end_through_the_server(tmp_path: Path
         assert "do not grow with the yield surprise" in draft
         assert "which we did not pre-register and report as exploratory" in draft
         assert "However, a longer post-announcement window" not in draft
-        assert (ws / "abstract.tex").read_text(encoding="utf-8") == (
-            files / "abstract_writer.pivot" / "abstract.tex"
-        ).read_text(encoding="utf-8")
+        # The pivot's abstract, less its "<!-- src: -->" notes (compiling removes them: LaTeX prints them).
+        from src.core.renderer.compiler import _HTML_COMMENT_RE
+
+        assert (ws / "abstract.tex").read_text(encoding="utf-8") == _HTML_COMMENT_RE.sub(
+            "", (files / "abstract_writer.pivot" / "abstract.tex").read_text(encoding="utf-8")
+        )
         corrections = json.loads((ws / "self_attack_corrections.json").read_text(encoding="utf-8"))
         assert corrections["applied"] == 1 and not corrections["failed"]
         assert "report as exploratory" in corrections["diff"]

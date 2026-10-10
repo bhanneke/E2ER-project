@@ -433,7 +433,7 @@ async def test_verify_skipped_when_no_cites(tmp_path: Path):
     draft = tmp_path / "draft.tex"
     draft.write_text("Just text, no citations.", encoding="utf-8")
     report = await verify(draft)
-    assert report.skipped_reason and "no \\cite" in report.skipped_reason
+    assert report.skipped_reason and report.skipped_reason.startswith("no references:")
     assert report.passed is True  # skipped == pass per the verify_numbers convention
 
 

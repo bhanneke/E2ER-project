@@ -68,11 +68,26 @@ BACKEND_HELP: dict[str, dict[str, str]] = {
         "url": "https://github.com/openai/codex",
     },
     "gemini": {
-        "label": "Google AI subscription, through the Gemini CLI",
-        "how": "Install the Gemini CLI, then run `gemini` once and sign in.",
+        "label": "Gemini API key, through the Gemini CLI (not tested)",
+        "how": (
+            "Install the Gemini CLI and set GEMINI_API_KEY to a key from Google AI Studio. "
+            "Google ended Gemini CLI sign-in for individual accounts in October 2026, and e2er "
+            "has not been tested with a Gemini API key."
+        ),
         "url": "https://github.com/google-gemini/gemini-cli",
+        "key_url": "https://aistudio.google.com/apikey",
     },
 }
+
+#: Backends e2er offers but has never run a full study on. They are listed
+#: apart ("other providers, not tested") and left out of `run-matrix`'s default.
+UNTESTED_BACKENDS = frozenset({"gemini"})
+
+#: Why Gemini has no sign-in option, in one sentence for the setup page, doctor and init.
+GEMINI_NO_SIGNIN = (
+    "Google ended Gemini CLI sign-in for individual accounts in October 2026, "
+    "so Gemini needs a Gemini API key (GEMINI_API_KEY)"
+)
 
 #: The models the setup page offers per backend: (value, label). The first
 #: entry marked cheapest is the cheapest; "" means the CLI's own default.
@@ -106,7 +121,7 @@ BACKEND_MODELS: dict[str, tuple[str, list[tuple[str, str]]]] = {
         "GEMINI_MODEL",
         [
             ("", "The Gemini CLI's own default"),
-            ("gemini-2.5-flash", "Gemini 2.5 Flash: uses the least of your plan"),
+            ("gemini-2.5-flash", "Gemini 2.5 Flash: cheapest"),
             ("gemini-2.5-pro", "Gemini 2.5 Pro"),
         ],
     ),
@@ -128,6 +143,43 @@ def _codex_models() -> list[tuple[str, str]]:
     for m in listed:
         desc = str(m.get("description") or "").strip().rstrip(".")
         out.append((str(m["slug"]), f"{m.get('display_name') or m['slug']}: {desc}" if desc else str(m["slug"])))
+    return out
+
+
+#: Shown first in the OpenRouter model list (when OpenRouter lists them), in this order.
+_OPENROUTER_SUGGESTED = (
+    ("anthropic/claude-sonnet-4.5", "recommended"),
+    ("anthropic/claude-haiku-4.5", "cheaper Claude"),
+    ("deepseek/deepseek-v4-pro", "open model, low price"),
+)
+
+
+def openrouter_models(current: str = "") -> list[tuple[str, str]]:
+    """The OpenRouter models a study can use, with their price, for the setup page.
+
+    Only models that can call tools (every specialist works through tools),
+    from OpenRouter's published list: a few suggestions first, then the rest
+    by name. Without the list (offline) the fixed suggestions. The model in
+    use stays in the list even when OpenRouter no longer offers it.
+    """
+    from .modules.llm.openrouter_models import canonical_id, tool_models
+
+    listed = tool_models()
+    if not listed:
+        out = list(BACKEND_MODELS["openrouter"][1])
+    else:
+        by_id = {m.id: m for m in listed}
+        out = []
+        for mid, note in _OPENROUTER_SUGGESTED:
+            if mid in by_id:
+                m = by_id[mid]
+                out.append((mid, f"{m.name} ({note}): {m.price_label()}"))
+        shown = {mid for mid, _ in out}
+        out += [(m.id, f"{m.name}: {m.price_label()}") for m in listed if m.id not in shown]
+    if current and current not in {mid for mid, _ in out}:
+        # The settings' spelling (claude-sonnet-4-5) of a listed model keeps that model's label.
+        same = next((label for mid, label in out if mid == canonical_id(current)), None)
+        out.insert(0, (current, same or f"{current} (in use; not in OpenRouter's list of models that can use tools)"))
     return out
 
 
@@ -173,12 +225,25 @@ def cli_signed_in(backend: str, home: Path | None = None) -> tuple[bool | None, 
             return True, "signed in"
         return False, "not signed in: run `codex login`"
     if backend == "gemini":
-        if os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"):
-            return True, "signed in with a key from the environment"
-        if (h / ".gemini" / "oauth_creds.json").is_file():
-            return True, "signed in"
-        return False, "not signed in: run `gemini` once and sign in"
+        # Only a key counts: Google ended Gemini CLI sign-in for individual
+        # accounts in October 2026 (gemini 0.63.0 refuses it), so a sign-in
+        # file left from before no longer lets a study run.
+        if os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY") or _env_file_has("GEMINI_API_KEY"):
+            return True, "a Gemini API key is set"
+        return False, f"no Gemini API key: {GEMINI_NO_SIGNIN}"
     return None, ""
+
+
+def _env_file_has(setting: str) -> bool:
+    """Whether the settings file (`.env`) sets `setting`; the setup page writes keys there."""
+    try:
+        from dotenv import dotenv_values
+
+        from .home import env_file
+
+        return bool((dotenv_values(env_file()).get(setting) or "").strip())
+    except Exception:  # noqa: BLE001 — a missing or unreadable .env is normal
+        return False
 
 
 def signin_command(backend: str, path: str | None) -> str:
@@ -191,7 +256,8 @@ def signin_command(backend: str, path: str | None) -> str:
     import shutil
 
     exe = _BACKEND_CLI.get(backend)
-    if not exe or not path:
+    if not exe or not path or backend in UNTESTED_BACKENDS:
+        # Gemini: no sign-in to offer, only a key (GEMINI_NO_SIGNIN).
         return ""
     on_path = shutil.which(exe)
     try:
@@ -206,7 +272,7 @@ def signin_command(backend: str, path: str | None) -> str:
 class BackendStatus:
     name: str
     label: str
-    kind: str  # "cli" (runs on a subscription) | "api" (billed per use)
+    kind: str  # "cli" (a CLI on this computer) | "api" (billed per use)
     installed: bool
     signed_in: bool | None
     detail: str
@@ -217,6 +283,8 @@ class BackendStatus:
     key_setting: str = ""
     #: The command that signs this CLI in, as the researcher types it (full path when not on PATH).
     signin_command: str = ""
+    #: False for a backend no full study has run on (UNTESTED_BACKENDS).
+    tested: bool = True
 
 
 def detect_backends(settings: Any = None) -> list[BackendStatus]:
@@ -226,6 +294,8 @@ def detect_backends(settings: Any = None) -> list[BackendStatus]:
         model_setting, models = BACKEND_MODELS[name]
         if name == "codex":
             models = _codex_models()
+        elif name == "openrouter":
+            models = openrouter_models(str(getattr(settings, "openrouter_model", "") or ""))
         info = BACKEND_HELP[name]
         if name in _BACKEND_CLI:
             path = resolve_backend_cli(name, settings)
@@ -246,7 +316,9 @@ def detect_backends(settings: Any = None) -> list[BackendStatus]:
                     info,
                     model_setting,
                     models,
+                    key_setting="GEMINI_API_KEY" if name == "gemini" else "",
                     signin_command=signin_command(name, path) if path else "",
+                    tested=name not in UNTESTED_BACKENDS,
                 )
             )
         else:
@@ -344,6 +416,12 @@ async def backend_check(settings) -> Check:
         return Check(f"backend.{backend}", FAIL, f"CLI at {path}, but {note}")
     if signed is None:
         return Check(f"backend.{backend}", SKIP, f"CLI at {path}; {note}")
+    if backend in UNTESTED_BACKENDS:
+        return Check(
+            f"backend.{backend}",
+            PASS,
+            f"CLI at {path}; {note}. Gemini is not tested: full runs are tested on Claude Code and Codex",
+        )
     return Check(f"backend.{backend}", PASS, f"CLI at {path} ($0 on the subscription); {note}")
 
 

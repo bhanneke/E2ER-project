@@ -84,9 +84,11 @@ e2er works with one of the following. The setup page shows which of them it find
 
 - A Claude subscription through Claude Code. Install Claude Code following [Anthropic's instructions](https://code.claude.com/docs/en/setup), then run `claude` once and sign in. Studies then run on the subscription.
 - An API key from [Anthropic](https://console.anthropic.com/settings/keys) or [OpenRouter](https://openrouter.ai/keys), billed per use. You paste the key on the setup page.
-- The [Codex CLI](https://github.com/openai/codex) with a ChatGPT plan (the ChatGPT desktop app includes it) or the [Gemini CLI](https://github.com/google-gemini/gemini-cli) with a Google AI plan. e2er hands them the same work as Claude Code, but they cannot be limited to e2er's own commands the way Claude Code is; [docs/BACKENDS.md](docs/BACKENDS.md) says what each may do. The Gemini backend has not yet been run against the real Gemini CLI.
+- The [Codex CLI](https://github.com/openai/codex) with a ChatGPT plan (the ChatGPT desktop app includes it). e2er hands it the same work as Claude Code, but Codex cannot be limited to e2er's own commands the way Claude Code is; [docs/BACKENDS.md](docs/BACKENDS.md) says what it may do.
 
-In the terminal, the setting `LLM_BACKEND` selects the access: `claude_code`, `codex`, `gemini`, `anthropic` or `openrouter`.
+Full runs are tested on Claude (Claude Code) and OpenAI (Codex CLI with a ChatGPT plan). Google ended Gemini CLI sign-in for individual accounts in October 2026, so the Gemini backend needs a Gemini API key (`GEMINI_API_KEY`) and is not tested. The setup page lists it under "Other providers (not tested)".
+
+In the terminal, the setting `LLM_BACKEND` selects the access: `claude_code`, `codex`, `anthropic` or `openrouter`, and `gemini` for the untested Gemini backend.
 
 The replication template also needs [Docker Desktop](https://docs.docker.com/get-started/get-docker/), because it executes the authors' code in a container.
 
@@ -103,7 +105,7 @@ e2er skills sync         # copies e2er's skill files to the CLIs' skills folders
 e2er --version           # prints the installed version
 ```
 
-`e2er init` asks which AI access to use and checks that it is installed. The command then creates the folders `data/` and `literature/` and writes the settings to `.env` in the current folder; `--force` overwrites an existing `.env`. For Claude Code, Codex or Gemini it asks before copying e2er's skill files into that CLI's skills folder (`~/.claude/skills`, `~/.codex/skills` or `~/.gemini/skills`); `--defaults` copies them into `~/.claude/skills` only. Other CLIs' folders are left alone. The setup page in the browser writes the same file; the first time, it asks for a studies folder (default `~/e2er-studies`) and remembers it, so `e2er` started from any folder uses that folder's settings, studies and exports. A folder with its own `.env` keeps working as a project of its own. `e2er doctor` reports the AI access, the database and the data and literature it finds. `e2er serve` starts the dashboard at http://127.0.0.1:8280 (`--port` another port, `--host` another address, `--no-browser` without opening the browser); `e2er` alone does the same. `e2er skills sync` copies e2er's own skill files into the skills folder of each installed CLI again, for example after an update (`--backend` names one, `--force` overwrites files that exist); `e2er install-skills` is its former name and still works.
+`e2er init` asks which AI access to use and checks that it is installed. The command then creates the folders `data/` and `literature/` and writes the settings to `.env` in the current folder; `--force` overwrites an existing `.env`. For Claude Code, Codex or Gemini (not tested) it asks before copying e2er's skill files into that CLI's skills folder (`~/.claude/skills`, `~/.codex/skills` or `~/.gemini/skills`); `--defaults` copies them into `~/.claude/skills` only. Other CLIs' folders are left alone. The setup page in the browser writes the same file; the first time, it asks for a studies folder (default `~/e2er-studies`) and remembers it, so `e2er` started from any folder uses that folder's settings, studies and exports. A folder with its own `.env` keeps working as a project of its own. `e2er doctor` reports the AI access, the database and the data and literature it finds. `e2er serve` starts the dashboard at http://127.0.0.1:8280 (`--port` another port, `--host` another address, `--no-browser` without opening the browser); `e2er` alone does the same. `e2er skills sync` copies e2er's own skill files into the skills folder of each installed CLI again, for example after an update (`--backend` names one, `--force` overwrites files that exist); `e2er install-skills` is its former name and still works.
 
 Studies are recorded in a SQLite database at `~/.e2er/papers.db`. Setting `DATABASE_URL` to a Postgres address switches e2er to Postgres, and `e2er migrate` then creates the tables.
 
@@ -123,7 +125,7 @@ e2er status <paper_id> --tail
 `e2er run` starts a study and follows it in the terminal. Ctrl+C stops the output in the terminal, and the study keeps running in the background. The options are:
 
 - `--template NAME`: the template the study follows (default `empirical`).
-- `--max-cost USD`: the spending limit of the study in US dollars (default 5). It applies to the API backends; on Claude Code, Codex and Gemini CLI a study costs $0 in e2er's records.
+- `--max-cost USD`: the spending limit of the study in US dollars (default 5). It applies to the API backends; on Claude Code and Codex a study costs $0 in e2er's records. The Gemini backend (not tested) is also recorded as $0, although Google bills its API key.
 - `--review-at STEP`: an additional pause for your review after this step (repeatable).
 - `--backend` and `--model`: another AI access or model for this study.
 - `--methodology empirical|theoretical|mixed` and `--mode single_pass|iterative`.
@@ -131,7 +133,7 @@ e2er status <paper_id> --tail
 
 `e2er run` starts a local server on port 8280 when none is running. The page at http://127.0.0.1:8280 lists all studies. The files of a study are in `workspaces/<paper_id>/`.
 
-`e2er run-matrix "<research question>" --backends claude_code,codex --models claude_code=sonnet,codex=gpt-6-luna --repeats 3` runs one question with several AI providers (without `--backends`, every subscription CLI that is ready on your computer), and `e2er compare matrix.json` lists the design choices each run made and the model that made them.
+`e2er run-matrix "<research question>" --backends claude_code,codex --models claude_code=sonnet,codex=gpt-6-luna --repeats 3` runs one question with several AI providers (without `--backends`, every subscription CLI that is ready on your computer: Claude Code and Codex; the untested Gemini backend runs only when `--backends` names it), and `e2er compare matrix.json` lists the design choices each run made and the model that made them.
 
 ### Reviewing, stopping and resuming
 
@@ -254,7 +256,7 @@ The library is stored at `~/.e2er/corpus.db` (`CORPUS_DB` moves it). Before draf
 
 Each study has a spending limit, set with `--max-cost` (default 5 US dollars in the terminal). A study that reaches the limit pauses, and `e2er resume <paper_id> --max-cost <higher limit>` continues it. The first study with a given combination of model, methodology and mode is limited to 1 US dollar until one such study has completed. `--acknowledge-unproven` lifts this limit.
 
-These limits apply to the API backends (Anthropic, OpenRouter), which bill per use. On Claude Code, Codex and Gemini CLI the study runs on your subscription: e2er records its cost as $0, so no spending limit applies, and the subscription's own usage limits are the only ones.
+These limits apply to the API backends (Anthropic, OpenRouter), which bill per use. On Claude Code and Codex the study runs on your subscription: e2er records its cost as $0, so no spending limit applies, and the subscription's own usage limits are the only ones. The Gemini backend (not tested) runs on a Gemini API key that Google bills; e2er records its cost as $0 as well, so no spending limit applies there either.
 
 ## Troubleshooting
 
@@ -299,7 +301,7 @@ make smoke-paid   # one real study on Claude Haiku 4.5 (needs ANTHROPIC_API_KEY,
   title        = {{e2er (End-to-End Research): The Open Infrastructure for
                    Publishing, Verifying, Reproducing and Reusing AI-Enabled Research}},
   year         = {2026},
-  version      = {0.15.1},
+  version      = {0.15.2},
   url          = {https://github.com/bhanneke/E2ER-project},
   doi          = {10.5281/zenodo.20187238},
   license      = {MIT},
