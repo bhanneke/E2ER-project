@@ -54,15 +54,34 @@
     {% if not v.web_search %}
       <p class="muted">Not searched: you chose to use only your papers.</p>
     {% elif v.web %}
-      <ul class="inputs-list scroll-list">
-        {% for p in v.web %}
-          <li><span class="quoted">{{ p.title }}</span>{% if p.year %} ({{ p.year }}){% endif %} <span class="muted">{% if p.authors %}· <span class="quoted">{{ p.authors }}</span>{% endif %}</span></li>
-        {% endfor %}
-      </ul>
+      {% if v.cited is not none %}
+        <p class="small muted">{{ v.web_cited | length }} of them cited in the paper{% if v.web_cited %}:{% else %}.{% endif %}</p>
+      {% endif %}
+      {% if v.web_cited %}
+        <ul class="inputs-list">
+          {% for p in v.web_cited %}
+            <li><span class="quoted">{{ p.title }}</span>{% if p.year %} ({{ p.year }}){% endif %} <span class="muted">{% if p.authors %}· <span class="quoted">{{ p.authors }}</span>{% endif %}</span></li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+      {% set rest = v.web_other if v.cited is not none else v.web %}
+      {% if rest %}
+        <details class="fold">
+          <summary>{% if v.cited is not none %}Not cited ({{ rest | length }}){% else %}The list ({{ rest | length }}){% endif %}</summary>
+          <ul class="inputs-list scroll-list">
+            {% for p in rest %}
+              <li><span class="quoted">{{ p.title }}</span>{% if p.year %} ({{ p.year }}){% endif %} <span class="muted">{% if p.authors %}· <span class="quoted">{{ p.authors }}</span>{% endif %}</span></li>
+            {% endfor %}
+          </ul>
+        </details>
+      {% endif %}
     {% elif v.prepared %}
       <p class="muted">None.</p>
     {% else %}
       <p class="muted">Being prepared.</p>
+    {% endif %}
+    {% if v.web_search and v.web_left_out %}
+      <p class="small muted">{{ v.web_left_out }} further search result(s) left out: they share too few words with the research question.</p>
     {% endif %}
   </div>
 </div>

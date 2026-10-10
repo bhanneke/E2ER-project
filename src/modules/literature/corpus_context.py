@@ -73,9 +73,11 @@ class CorpusEvidence:
 
     def as_metadata(self) -> list[PaperMetadata]:
         """The cited papers, in the shape ``literature.bib`` is written from."""
+        from ...core.titles import clean, unusable
+
         return [
             PaperMetadata(
-                title=p.title,
+                title=p.title if unusable(p.title) else clean(p.title),
                 authors=list(p.authors),
                 year=p.year,
                 doi=p.doi,

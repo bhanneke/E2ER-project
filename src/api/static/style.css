@@ -687,3 +687,7 @@ table.attempts td, table.studies td { padding-top: 10px; padding-bottom: 10px; }
 .src-tag { font-size: 11.5px; padding: 1px 6px; border-radius: 3px; background: #eaf2fb; color: var(--accent); white-space: nowrap; }
 .src-tag.web { background: #f1f1f1; color: var(--muted); }
 .lib-add { max-width: 520px; }
+.lib-group { margin-top: 10px; border-top: 1px solid #eee; padding-top: 8px; }
+.lib-group > summary { cursor: pointer; font-size: 13.5px; font-weight: 600; }
+.lib-group > summary .pick-count { font-weight: normal; margin-left: 6px; }
+.fold > summary { cursor: pointer; font-size: 13px; color: var(--muted); }

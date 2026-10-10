@@ -36,6 +36,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   study used": data used and every reference the paper cites, marked "from your papers" or "found
   on the web". The dossier lists the cited references with their source (`references`; a study
   exported before has none, so its dossier is unchanged).
+- **Readable titles.** New study, the run page and the finish page show titles without braces, LaTeX,
+  author footnote marks (∗ † ‡) or "Accepted Version" banners; a title that is a file name, a page
+  header or a journal citation ("J Evol Econ (2013) 23:925–953") is replaced by its DOI record's
+  title, else shown as "(title not readable)". The Library's papers are a folded group of their own,
+  "Your Library (N)", with its own search, below the folder's papers and .bib entries.
+- **Off-topic web hits stay out.** A search hit joins the bibliography only when its title and
+  abstract share enough of the research question's content words (a quarter of them, 2 to 4; title
+  only: a fifth, 2 to 3; `is_relevant` in `modules/literature/discovery.py`). The live run's 53 hits
+  for a mortgage question (solar bonds, the federal budget, …) would all have stayed out; the study
+  records what it left out in `literature/web_search.json`, and the run page says how many. The
+  panel lists the web papers the draft cites first and folds the rest.
 - **Library: Add papers.** The Library page takes PDFs or a folder and reads them in the background
   with the importer of `e2er library add`.
 - **`e2er run --data FILE… --papers FILE… [--only-my-papers]`** does the same in a terminal (a

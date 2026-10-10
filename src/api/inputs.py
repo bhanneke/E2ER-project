@@ -28,6 +28,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from ..core import labels
 from ..logging_config import get_logger
+from ..modules.literature.discovery import WEB_SEARCH_FILE
 from .local_session import local_problem, require_local_session
 
 logger = get_logger(__name__)
@@ -72,6 +73,13 @@ def _cited(workspace: Path) -> list[str] | None:
 
 def _clean(value: Any) -> str:
     return " ".join(str(value or "").replace("{", "").replace("}", "").split())
+
+
+def _title(fields: dict[str, Any]) -> str:
+    """A bibliography entry's title as the pages show it (src/core/titles.py)."""
+    from ..core.titles import display_title
+
+    return display_title(str(fields.get("title") or ""), str(fields.get("doi") or ""))
 
 
 def _authors(value: Any, n: int = 2) -> str:
@@ -122,7 +130,7 @@ def inputs_view(workspace: Path) -> dict[str, Any]:
     for key, f in entries.items():
         row: dict[str, Any] = {
             "key": key,
-            "title": _clean(f.get("title")),
+            "title": _title(f),
             "authors": _authors(f.get("author")),
             "year": _clean(f.get("year")),
         }
@@ -135,6 +143,14 @@ def inputs_view(workspace: Path) -> dict[str, Any]:
         else:
             web.append(row)
     cited = _cited(workspace)
+    # The web papers the draft cites first; the others are folded (a search finds more than a paper uses).
+    cited_set = set(cited or [])
+    web_cited = sorted((w for w in web if w["key"] in cited_set), key=lambda w: (cited or []).index(w["key"]))
+    web_other = [w for w in web if w["key"] not in cited_set]
+    try:
+        search = json.loads((workspace / "literature" / WEB_SEARCH_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        search = {}
     references = []
     for key in cited or []:
         cited_entry = entries.get(key)
@@ -144,7 +160,7 @@ def inputs_view(workspace: Path) -> dict[str, Any]:
         references.append(
             {
                 "key": key,
-                "title": _clean(f.get("title")),
+                "title": _title(f),
                 "authors": _authors(f.get("author")),
                 "year": _clean(f.get("year")),
                 "source": labels.reference_source(str(f.get(SOURCE_FIELD) or "")),
@@ -161,6 +177,9 @@ def inputs_view(workspace: Path) -> dict[str, Any]:
         "prepared": "items" in papers or bool(entries),
         "mine": mine,
         "web": web,
+        "web_cited": web_cited,
+        "web_other": web_other,
+        "web_left_out": int(search.get("left_out_count") or 0) if isinstance(search, dict) else 0,
         "missing": [str(m) for m in papers.get("missing") or []],
         "cited": cited,
         "references": references,
@@ -234,8 +253,10 @@ def paper_choices(settings: Any, chosen: list[str] | None) -> dict[str, Any]:
                 "ticked": ticked,
             }
         )
+    # The folder's papers and the .bib entries first; the Library in a group of its own.
     return {
-        "papers": rows,
+        "papers": [r for r in rows if r["kind"] != "library"],
+        "library": [r for r in rows if r["kind"] == "library"],
         "literature_dir": settings.resolved_literature_dirs() or "",
         "bib_file": settings.literature_bibtex_file or "",
     }

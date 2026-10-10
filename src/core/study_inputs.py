@@ -189,11 +189,19 @@ def _literature_roots(settings: Any) -> list[Path]:
     return [r.resolve() for r in parse_corpus_roots(settings.resolved_literature_dirs())]
 
 
-def paper_options(settings: Any, *, library: bool = True, limit: int | None = None) -> list[PaperOption]:
-    """Every paper New study can offer: PDFs and Zotero items of the literature folder, .bib entries, the Library."""
+def paper_options(
+    settings: Any, *, library: bool = True, limit: int | None = None, lookup: bool = True
+) -> list[PaperOption]:
+    """Every paper New study can offer: PDFs and Zotero items of the literature folder, .bib entries, the Library.
+
+    Titles are shown as :func:`src.core.titles.display_title` makes them: without braces and author
+    footnotes, and from the DOI record when a paper's own title is a file name or a page header
+    (``lookup=False``: never ask OpenAlex, for tests and offline use).
+    """
     from ..modules.literature.bibtex import parse_bibtex_file
     from ..modules.literature.local_zotero import detect_zotero, read_zotero_sqlite
     from ..modules.local_corpus import PDF_EXTENSIONS, iter_corpus_files
+    from .titles import display_title
 
     cap = limit or int(getattr(settings, "literature_max_ingest", 500) or 500)
     out: list[PaperOption] = []
@@ -203,7 +211,8 @@ def paper_options(settings: Any, *, library: bool = True, limit: int | None = No
             for m in read_zotero_sqlite(root):
                 key = (m.raw or {}).get("zotero_key")
                 if key:
-                    out.append(PaperOption(f"zotero:{root}#{key}", m.title, m.authors, m.year, "zotero", root.name))
+                    title = display_title(m.title, m.doi, lookup=lookup)
+                    out.append(PaperOption(f"zotero:{root}#{key}", title, m.authors, m.year, "zotero", root.name))
             continue
         for _r, pdf in iter_corpus_files([root], PDF_EXTENSIONS, recursive=True):
             if len(pdfs) < cap:
@@ -214,7 +223,7 @@ def paper_options(settings: Any, *, library: bool = True, limit: int | None = No
         out.append(
             PaperOption(
                 f"pdf:{pdf}",
-                str(info.get("title") or pdf.stem),
+                display_title(str(info.get("title") or pdf.stem), str(info.get("doi") or ""), lookup=lookup),
                 list(info.get("authors") or []),
                 info.get("year"),
                 "pdf",
@@ -224,14 +233,16 @@ def paper_options(settings: Any, *, library: bool = True, limit: int | None = No
     for bib in _bib_files(settings):
         for e in parse_bibtex_file(bib):
             if e.title and e.cite_key:
-                out.append(PaperOption(f"bib:{bib}#{e.cite_key}", e.title, e.authors, e.year, "bib", bib.name))
+                title = display_title(e.title, e.doi, lookup=lookup)
+                out.append(PaperOption(f"bib:{bib}#{e.cite_key}", title, e.authors, e.year, "bib", bib.name))
     if library:
-        out.extend(_library_options())
+        out.extend(_library_options(lookup=lookup))
     return out
 
 
-def _library_options() -> list[PaperOption]:
+def _library_options(lookup: bool = True) -> list[PaperOption]:
     from ..modules.literature import corpus
+    from .titles import display_title
 
     path = corpus.corpus_path()
     if not path.is_file():
@@ -242,7 +253,13 @@ def _library_options() -> list[PaperOption]:
     except Exception as e:  # noqa: BLE001 — a broken Library must not break New study
         logger.warning("New study: the Library could not be read: %s", e)
         return []
-    return [PaperOption(f"library:{r.key}", r.title, r.authors, r.year, "library", "Library") for r in rows if r.title]
+    return [
+        PaperOption(
+            f"library:{r.key}", display_title(r.title, r.doi, lookup=lookup), r.authors, r.year, "library", "Library"
+        )
+        for r in rows
+        if r.title
+    ]
 
 
 # ── files added on New study ────────────────────────────────────────────────
@@ -525,8 +542,11 @@ def resolve_papers(ids: list[str], workspace: Path) -> ResolvedPapers:
             if row is None:
                 out.missing.append(f"library:{key}")
                 continue
+            from .titles import NOT_READABLE, display_title
+
+            shown = display_title(row.title, row.doi)
             m = PaperMetadata(
-                title=row.title,
+                title=row.title if shown == NOT_READABLE else shown,
                 authors=list(row.authors),
                 year=row.year,
                 doi=row.doi,
@@ -644,6 +664,12 @@ async def prepare_papers(workspace: Path, paper_id: str, settings: Any, queries:
         thin = [i for i in items if i.source == "byod_pdf" or (i.raw or {}).get("source_pdf")]
         for item in thin:
             await _enrich_one(item)
+        from .titles import clean, unusable
+
+        for item in items:
+            # A PDF's or Library title without author footnotes and banners (a .bib entry keeps its own).
+            if item.source != "bibtex" and not unusable(item.title):
+                item.title = clean(item.title)
         items = dedupe(items)
         unique_keys(items)
         for item in items:

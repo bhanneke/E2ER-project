@@ -170,15 +170,17 @@
   // Data files and papers: search, select all or none, and how many are ticked.
   function wire(pick) {
     if (!pick || pick.dataset.wired) return;
-    const rows = () => Array.from(pick.querySelectorAll('.pick-row'));
-    const count = pick.querySelector('[data-pick-count]');
+    // Its own rows and tools, not those of a group inside it (the Library has its own).
+    const own = (sel) => Array.from(pick.querySelectorAll(sel)).filter((el) => el.closest('[data-pick]') === pick);
+    const rows = () => own('.pick-row');
+    const [count] = own('[data-pick-count]');
+    const [search] = own('[data-pick-search]');
     const update = () => {
       if (!count) return;
       const all = rows().length;
       const on = rows().filter((r) => r.querySelector('input').checked).length;
       count.textContent = on + ' of ' + all + ' ticked';
     };
-    const search = pick.querySelector('[data-pick-search]');
     if (!search) return;
     pick.dataset.wired = '1';
     search.addEventListener('input', () => {
@@ -186,9 +188,9 @@
       rows().forEach((r) => { r.hidden = q && !r.dataset.text.includes(q); });
     });
     const setVisible = (on) => { rows().filter((r) => !r.hidden).forEach((r) => { r.querySelector('input').checked = on; }); update(); };
-    pick.querySelector('[data-pick-all]').addEventListener('click', () => setVisible(true));
-    pick.querySelector('[data-pick-none]').addEventListener('click', () => setVisible(false));
-    pick.addEventListener('change', (ev) => { if (ev.target.matches('.pick-row input')) update(); });
+    own('[data-pick-all]')[0].addEventListener('click', () => setVisible(true));
+    own('[data-pick-none]')[0].addEventListener('click', () => setVisible(false));
+    pick.addEventListener('change', (ev) => { if (ev.target.matches('.pick-row input') && ev.target.closest('[data-pick]') === pick) update(); });
     update();
   }
   document.querySelectorAll('[data-pick]').forEach(wire);

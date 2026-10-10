@@ -103,7 +103,7 @@ def test_the_paper_list_holds_pdfs_bib_entries_and_the_library(tmp_path: Path, m
     monkeypatch.setattr(
         si,
         "_library_options",
-        lambda: [si.PaperOption("library:k1", "From the Library", [], 2020, "library", "Library")],
+        lambda lookup=True: [si.PaperOption("library:k1", "From the Library", [], 2020, "library", "Library")],
     )
     opts = si.paper_options(_settings(tmp_path, literature_dir=str(lit)))
     kinds = {o.kind: o for o in opts}
@@ -120,14 +120,15 @@ def test_new_study_ticks_the_folder_and_offers_the_library_unticked(tmp_path: Pa
     monkeypatch.setattr(
         si,
         "paper_options",
-        lambda s: [
+        lambda s, **kw: [
             si.PaperOption("pdf:/x/a.pdf", "A", ["Ann Author"], 2020, "pdf", "a.pdf"),
             si.PaperOption("library:k", "L", [], 2021, "library", "Library"),
         ],
     )
     view = paper_choices(_settings(tmp_path), None)
-    assert [p["ticked"] for p in view["papers"]] == [True, False]
-    assert [p["ticked"] for p in paper_choices(_settings(tmp_path), ["library:k"])["papers"]] == [False, True]
+    assert [p["ticked"] for p in view["papers"]] == [True] and [p["ticked"] for p in view["library"]] == [False]
+    picked = paper_choices(_settings(tmp_path), ["library:k"])
+    assert [p["ticked"] for p in picked["papers"] + picked["library"]] == [False, True]
 
 
 # ── checking a choice ───────────────────────────────────────────────────────
@@ -695,3 +696,169 @@ def test_a_table_no_load_recorded_is_made_by_the_study(tmp_path: Path):
     con.commit()
     con.close()
     assert {t["table"]: t["source"] for t in inputs_view(ws)["tables"]}["monthly_panel"] == "made by the study"
+
+
+# ── titles a researcher can read (2026-10-10, the live run's New study) ─────
+
+
+@pytest.mark.parametrize(
+    "raw, shown",
+    [
+        (
+            "What Explains the Stock Market's Reaction to {Federal Reserve} Policy?",
+            "What Explains the Stock Market's Reaction to Federal Reserve Policy?",
+        ),
+        ("Zakraj{\\v{s}}ek and S\\&P 500 Returns", "Zakrajsek and S&P 500 Returns"),
+        (
+            "Credible, Optimal Auctions via Public Broadcast Tarun Chitra ∗ Matheus V. X. Ferreira † Ks",
+            "Credible, Optimal Auctions via Public Broadcast",
+        ),
+        (
+            "Coexisting Exchange Platforms: Limit Order Books and Automated Market Makers Jun Aoyagi∗ Yuki",
+            "Coexisting Exchange Platforms: Limit Order Books and Automated Market Makers",
+        ),
+        (
+            "Cryptocurrencies as a financial asset: a systematic analysis Article Accepted Version Creative Commons",
+            "Cryptocurrencies as a financial asset: a systematic analysis",
+        ),
+        ("Crypto wash trading∗ March 15, 2023", "Crypto wash trading"),
+    ],
+)
+def test_titles_lose_their_markup(raw, shown):
+    from src.core.titles import clean, unusable
+
+    assert clean(raw) == shown and not unusable(raw)
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "C:\\Working Papers\\10449.wpd",
+        "J Evol Econ (2013) 23:925–953",
+        "PII: S1573-4412(84)02014-6",
+        "base.dvi",
+        "438988_1_En_Print.indd",
+        "Electronic Markets           (2024) 34:42",
+        "Cite as: Jiang, L. P., & Rao, R. P. N. (2022). Predictive coding theories",
+        "TEM\xa0Journal.\xa0Volume\xa010,\xa0Issue\xa01,\xa0Pages\xa0327‐333,\xa0ISSN\xa02217‐8309",
+    ],
+)
+def test_a_file_name_or_page_header_is_not_a_title(raw, monkeypatch):
+    from src.core import titles
+
+    assert titles.unusable(raw)
+    monkeypatch.setattr(titles, "title_by_doi", lambda doi: "Firms and Industrial Dynamics" if doi else "")
+    assert titles.display_title(raw, "10.1007/s00191-012-0302-4") == "Firms and Industrial Dynamics"
+    assert titles.display_title(raw, "") == titles.NOT_READABLE
+
+
+def test_new_study_groups_the_library_and_shows_clean_titles(tmp_path: Path, monkeypatch):
+    from src.api.inputs import paper_choices
+
+    monkeypatch.setattr("src.core.titles.title_by_doi", lambda doi: "")
+    lit = tmp_path / "lit"
+    lit.mkdir()
+    (lit / "refs.bib").write_text(BIB)
+    rows = [
+        SimpleNamespace(key="k1", title="C:\\Working Papers\\10449.wpd", doi="", authors=[], year=2004),
+        SimpleNamespace(key="k2", title="Platform Markets∗ May 2020", doi="", authors=["Ann Bee"], year=2020),
+    ]
+    monkeypatch.setattr("src.modules.literature.corpus.corpus_path", lambda explicit=None: tmp_path / "c.db")
+    (tmp_path / "c.db").write_text("")
+    import contextlib
+
+    monkeypatch.setattr("src.modules.literature.corpus.connect", lambda p: contextlib.nullcontext(None))
+    monkeypatch.setattr("src.modules.literature.corpus.list_papers", lambda conn, limit: rows)
+    view = paper_choices(_settings(tmp_path, literature_dir=str(lit)), None)
+    assert [p["title"] for p in view["papers"]][0].startswith(
+        "What Explains the Stock Market's Reaction to Federal Reserve"
+    )
+    assert [p["title"] for p in view["library"]] == ["(title not readable)", "Platform Markets"]
+
+
+# ── web hits that belong to the question ────────────────────────────────────
+
+
+QUESTION = (
+    "How fully did changes in the federal funds rate pass through to 30-year US mortgage rates during the "
+    "2022-2023 tightening, compared with earlier tightening cycles since 2000, and how much of the "
+    "pass-through ran through long-term Treasury yields?"
+)
+
+
+@pytest.mark.parametrize(
+    "title, abstract, kept",
+    [
+        # The live run's off-topic hits (titles only, as the bibliography kept them).
+        (
+            "Valuation of Solar Asset-Backed Bonds After Issuance: Did the Inflation Reduction Act Lower Spreads "
+            "Over Benchmark Treasury?",
+            "",
+            False,
+        ),
+        ("GEOGRAPHIC DISTRIBUTION OF FEDERAL FUNDS IN 1985", "", False),
+        ("Choice of Entity: Pass Through Entities", "", False),
+        ("Then and Now: A Look Back and Ahead at the Federal Budget", "", False),
+        # On topic.
+        ("Monetary Policy Pass-Through to Interest Rates: Stylized Facts from 30 European Countries", "", True),
+        ("How Does Monetary Policy Pass-Through Affect Mortgage Default?", "", True),
+        (
+            "The Mortgage Rate Conundrum",
+            "Mortgage rates rose less than Treasury yields during tightening cycles; the pass-through of the federal "
+            "funds rate to long-term mortgage rates weakened.",
+            True,
+        ),
+        (
+            "Federal Trust Funds: An Idea Whose Time Is Over",
+            "Federal trust funds hold earmarked revenue; we review their budget treatment.",
+            False,
+        ),
+    ],
+)
+def test_the_web_search_keeps_hits_that_share_the_questions_words(title, abstract, kept):
+    from src.modules.literature.discovery import is_relevant, question_terms
+
+    assert is_relevant(PaperMetadata(title=title, abstract=abstract), question_terms(QUESTION)) is kept
+
+
+async def test_off_topic_web_hits_stay_out_of_the_bibliography_and_are_counted(tmp_path: Path):
+    from src.api.inputs import inputs_view
+    from src.modules.literature.discovery import acquire_literature
+    from src.modules.literature.models import SearchResult
+
+    hits = [
+        PaperMetadata(
+            title="How Does Monetary Policy Pass-Through Affect Mortgage Default?", authors=["Kim Lee"], year=2021
+        ),
+        PaperMetadata(title="Geographic Distribution of Federal Funds in 1985", authors=["Old Report"], year=1986),
+    ]
+    web = SimpleNamespace(
+        name="openalex", search=AsyncMock(return_value=SearchResult(papers=hits, source="o", query="q"))
+    )
+    with (
+        patch("src.modules.literature.registry.search_sources", return_value=[web]),
+        patch("src.modules.literature.storage.store_paper", new=AsyncMock()),
+        patch("src.modules.literature.corpus_context.ingest_staged_pdfs", new=AsyncMock(return_value=0)),
+    ):
+        await acquire_literature(tmp_path, "p", [QUESTION], SimpleNamespace(), limit=5)
+    bib = (tmp_path / "literature.bib").read_text()
+    assert "Mortgage Default" in bib and "Federal Funds in 1985" not in bib
+    record = json.loads((tmp_path / "literature" / "web_search.json").read_text())
+    assert record["kept"] == 1 and record["left_out"] == ["Geographic Distribution of Federal Funds in 1985"]
+    (tmp_path / "paper_draft.tex").write_text("No citations yet.")
+    v = inputs_view(tmp_path)
+    assert v["web_left_out"] == 1 and v["web_cited"] == [] and len(v["web_other"]) == 1
+
+
+def test_the_panel_lists_the_cited_web_papers_first_and_folds_the_rest(tmp_path: Path):
+    from src.api.inputs import inputs_view
+
+    ws = tmp_path / "ws"
+    _workspace_with_inputs(ws)
+    extra = PaperMetadata(title="Uncited Web Paper", authors=["Zed Q"], year=2020, source="openalex")
+    with (ws / "literature.bib").open("a") as f:
+        f.write("\n" + extra.to_bibtex() + "\n")
+    v = inputs_view(ws)
+    assert [w["key"] for w in v["web_cited"]] == ["web2021found"] and [w["key"] for w in v["web_other"]] == [
+        "q2020uncited"
+    ]

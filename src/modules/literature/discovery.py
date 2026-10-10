@@ -14,6 +14,7 @@ Best-effort throughout — never raises into paper creation. Bounded by
 from __future__ import annotations
 
 import asyncio
+import math
 import re
 from pathlib import Path
 
@@ -225,6 +226,92 @@ def bib_entry_count(workspace: Path) -> int:
         return 0
 
 
+# ── which web hits belong to the question ───────────────────────────────────
+
+#: Where the study records what the web search kept and left out (shown on the run page).
+WEB_SEARCH_FILE = "web_search.json"
+
+#: Words that say nothing about a question's topic: function words, and the words every research
+#: question uses ("how", "effect", "changes", "compared", "since").
+_STOP_WORDS = frozenset(
+    """a about after against all also among an and any are as at be been before between both but by can could
+    did do does during each either for from had has have how however if in into is it its many may more most much
+    not of on or our over same should since so some such than that the their them then there these they this those
+    to under until upon us was we were what when where whether which while who whom why will with within
+    without would year years new study studies effect effects evidence analysis data using use used based approach
+    change changes changed compared compare earlier later fully full ran role impact case paper research question
+    questions""".split()
+)
+#: How many of the question's words a hit must share, as a share of them, with a floor and a cap.
+#: With an abstract: a quarter of the question's words, at least 2 and at most 4. Title only (some
+#: records have no abstract): a fifth, at least 2 and at most 3.
+RELEVANCE_SHARE_ABSTRACT, RELEVANCE_SHARE_TITLE = 0.25, 0.20
+RELEVANCE_FLOOR, RELEVANCE_CAP_ABSTRACT, RELEVANCE_CAP_TITLE = 2, 4, 3
+
+
+def _stem(word: str) -> str:
+    if len(word) > 4 and word.endswith("ies"):
+        return word[:-3] + "y"
+    if len(word) > 4 and word.endswith("s") and not word.endswith(("ss", "us", "is")):
+        return word[:-1]
+    return word
+
+
+def question_terms(text: str) -> frozenset[str]:
+    """The content words of a text: lower case, 3 letters or more, no numbers, no stop words, plurals as singular."""
+    words = re.findall(r"[a-z][a-z0-9]+", (text or "").lower())
+    return frozenset(_stem(w) for w in words if len(w) >= 3 and w not in _STOP_WORDS)
+
+
+def is_relevant(paper: PaperMetadata, question: frozenset[str]) -> bool:
+    """Does a web hit belong to the question? It must share enough of the question's content words.
+
+    Deterministic, no model call. The 2026-10-10 live run (a question on the pass-through of the federal
+    funds rate to mortgage rates) put 53 web hits into the bibliography, among them solar asset-backed
+    bonds, the federal budget and teen birth rates: the search engines match single words of a long
+    question. The rule (see RELEVANCE_*): with an abstract, the title and abstract together share at
+    least a quarter of the question's content words (2 to 4); without one, the title shares a fifth (2 to 3).
+    A question with no content words keeps every hit.
+    """
+    if not question:
+        return True
+    have_abstract = bool((paper.abstract or "").strip())
+    words = question_terms(f"{paper.title} {paper.abstract or ''}")
+    share, cap = (
+        (RELEVANCE_SHARE_ABSTRACT, RELEVANCE_CAP_ABSTRACT)
+        if have_abstract
+        else (RELEVANCE_SHARE_TITLE, RELEVANCE_CAP_TITLE)
+    )
+    need = min(cap, max(RELEVANCE_FLOOR, math.ceil(share * len(question))))
+    return len(question & words) >= need
+
+
+def _record_web_search(workspace: Path, question: frozenset[str], kept: int, left_out: list[str]) -> None:
+    import json
+
+    path = Path(workspace) / "literature" / WEB_SEARCH_FILE
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(
+                {
+                    "rule": "a hit is kept when its title and abstract share enough of the question's content words "
+                    "(src/modules/literature/discovery.py, is_relevant)",
+                    "question_terms": sorted(question),
+                    "kept": kept,
+                    "left_out_count": len(left_out),
+                    "left_out": left_out[:100],
+                },
+                indent=2,
+                ensure_ascii=False,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+    except OSError as e:
+        logger.warning("could not record the web search: %s", e)
+
+
 def _bib_marks(workspace: Path) -> set[str]:
     """DOIs and titles already in ``literature.bib``: a web hit for one of them is the same paper."""
     from ...core.pipeline.verify_citations import load_bib
@@ -337,6 +424,8 @@ async def acquire_literature(
     # evidence file quotes. Seeded first, so a web hit for the same paper does
     # not displace the entry whose claims are already on disk.
     found: dict[str, PaperMetadata] = {p.bibtex_key: p for p in evidence.as_metadata() if p.title}
+    question = question_terms(" ".join(wanted))
+    left_out: list[str] = []
     for query in wanted:
         for source in sources:
             try:
@@ -346,9 +435,15 @@ async def acquire_literature(
                 continue
             if result.papers:
                 for paper in result.papers:
-                    if paper.title:
-                        found.setdefault(paper.bibtex_key, paper)
+                    if not paper.title or paper.bibtex_key in found:
+                        continue
+                    if is_relevant(paper, question):
+                        found[paper.bibtex_key] = paper
+                    elif paper.title not in left_out:
+                        left_out.append(paper.title)
                 break
+    if sources:
+        _record_web_search(workspace, question, sum(1 for p in found.values() if p.origin == "web"), left_out)
 
     # The researcher's own papers are already in the file: a hit for one of them is not a second entry.
     marks = _bib_marks(workspace) if existing else set()
