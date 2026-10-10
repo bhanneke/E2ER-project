@@ -101,6 +101,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the old 25% would have stopped the information-systems and economics literatures, whose main
   paths have 18 papers. The table is in the `synthesis/main-path-analysis` skill and in
   docs/templates.md.
+- **Fixed: the number check read period labels as numbers.** A table with rows labelled `2004--06`,
+  `2015--18` and `2022--23` (live run 2026-10-10, mortgage pass-through study) was read as 2004
+  and -06, 2015 and -18, 2022 and -23; the run stopped at the number check on two of them and
+  `e2er verify` failed six cells of a correct table. Spans of years (`2004-06`, `2007–2009`,
+  `1998--02`), quarters and months (`2022Q3`, `Q3 2022`, `2004m6`), decades (`1990s`), fiscal years
+  (`FY2019`) and month-and-year dates (`Jan 2020`) are now labels, in table cells and in the text,
+  for the run's check and for `e2er verify` alike. A dash right after a digit is a range dash, not a
+  minus sign: the upper bound of `0.12--0.15` is 0.15. Negative values, standard errors in
+  parentheses and bare years are read as before.
 
 ## [0.14.1] — 2026-10-08
 
