@@ -139,6 +139,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The number check skips LaTeX comments in tables (fix).** DeepSeek annotated each table row with a
   `% src:` comment naming the JSON keys (`pre_tightening_2015_2021`); read as cells they gave 15021 and
   22023, and `e2er verify` failed the exported study.
+- **The number check reads `$-$0.93` as -0.93 and "2015--Feb 2022" as a period (fix).** A table with a
+  minus typeset in math had its minimum of -0.93 read as 0.93, and the 2015 of a year-to-month span read
+  as a value; both failed `e2er verify` on numbers that were right.
 - **A call that stalls is asked again after two minutes, not ten (fix).** Each of the three live studies
   lost 10 to 11 minutes to one OpenRouter call that never answered and ran into the SDK's 600-second
   timeout. Calls are now streamed: one that sends nothing for 120 seconds (240 before its first data)

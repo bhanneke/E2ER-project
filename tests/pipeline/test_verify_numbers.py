@@ -910,3 +910,17 @@ def test_source_notes_in_prose_are_not_claims():
     prose = _strip_latex_machinery(tex)
     assert "0.21" in prose
     assert "2015" not in prose and "2022" not in prose and "src:" not in prose
+
+
+def test_math_minus_and_year_to_month_spans_in_cells():
+    """`$-$0.93` is -0.93 (read as 0.93 it "mismatched" a min of -0.93), and the 2015 of
+    "2015--Feb 2022" is a period label (DeepSeek V4 Pro study, 2026-10-10)."""
+    from src.core.pipeline.verify_numbers import _extract_table_numbers
+
+    tex = (
+        "\\begin{tabular}{llcc}\n\\toprule\nPeriod & Dates & Mean & Min \\\\\n\\midrule\n"
+        "Pre & 2015--Feb 2022 & 0.80 & $-$0.93 \\\\\n"
+        "Tight & Mar 2022--Jul 2023 & $-$0.39 & $ - $1.5 \\\\\n"
+        "\\bottomrule\n\\end{tabular}\n"
+    )
+    assert [n for n, _ in _extract_table_numbers(tex)] == ["0.80", "-0.93", "-0.39", "-1.5"]

@@ -275,6 +275,9 @@ _PERIOD_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"(?:'|’)\d0s\b"),
     # Fiscal years: FY2019, FY 2019, FY19, FY'19.
     re.compile(rf"\bFY\s*'?(?:{_YEAR}|\d{{2}})(?!\d)"),
+    # A year running to a month: the "2015--" of "2015--Feb 2022" (the month and
+    # year after it go with the next pattern). Read as a cell, 2015 "mismatched".
+    re.compile(rf"(?<![\d.,]){_YEAR}{_DASH}(?={_MONTH}\b)"),
     # Month and year: Jan 2020, March 15, 2020, Mar.~2020.
     re.compile(rf"\b{_MONTH}\.?(?:\s|~)*(?:\d{{1,2}},?(?:\s|~)*)?{_YEAR}(?!\d)"),
 )
@@ -304,6 +307,9 @@ _SCRIPT_RE = re.compile(r"[\^_](?:\{[^{}]*\}|[A-Za-z0-9])")
 _LABEL_WORD_RE = re.compile(r"[A-Za-z]{2,}")
 
 
+_MATH_MINUS_RE = re.compile(r"\$\s*(?:-|−|\\text\{-\})\s*\$\s*(?=\d)")
+
+
 def _normalize_cell(cell: str) -> str:
     """Pre-process a tabular cell before running ``_NUMBER_RE``.
 
@@ -322,6 +328,8 @@ def _normalize_cell(cell: str) -> str:
     # LaTeX brace-protected thousands separator → standard comma.
     # Done first so subsequent date stripping sees a clean number.
     cell = cell.replace("{,}", ",")
+    # A minus typeset in math before the number: "$-$0.93" is -0.93, not 0.93.
+    cell = _MATH_MINUS_RE.sub("-", cell)
     cell = _strip_periods(cell)
     for pattern in _DATE_PATTERNS:
         cell = pattern.sub("", cell)
