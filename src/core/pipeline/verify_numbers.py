@@ -506,6 +506,9 @@ def _extract_table_numbers(tex_content: str, *, zeros: bool = False) -> list[tup
 # don't double-count table cells or read \input paths, labels, refs, or cite
 # keys as numeric claims.
 _STRIP_FOR_PROSE: tuple[re.Pattern[str], ...] = (
+    # Source notes are not claims: "<!-- src: ...2015_2021 -->" and "% src: ..." comments.
+    re.compile(r"<!--.*?-->", re.DOTALL),
+    _LATEX_COMMENT_RE,
     re.compile(r"\\begin\{tabular\}.*?\\end\{tabular\}", re.DOTALL),
     re.compile(r"\\input\{[^}]*\}"),
     re.compile(r"\\(?:label|ref|eqref|cref|cite[a-z]*)\{[^}]*\}"),

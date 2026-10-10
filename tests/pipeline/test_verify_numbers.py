@@ -895,3 +895,18 @@ def test_latex_comments_in_a_table_are_not_cells():
         "\\bottomrule\n\\end{tabular}\n"
     )
     assert sorted(n for n, _ in _extract_table_numbers(tex)) == ["0.45", "24", "52", "84"]
+
+
+def test_source_notes_in_prose_are_not_claims():
+    """`<!-- src: ... -->` and `% src: ...` notes name JSON keys such as
+    `pre_tightening_2015_2021`; their digits are not numbers the paper states."""
+    from src.core.pipeline.verify_numbers import _strip_latex_machinery
+
+    tex = (
+        "\\begin{document}\nThe spread fell by 0.21 points"
+        " <!-- src: estimation_results.json#by_period.p_2015_2021 -->.\n"
+        "% src: summary_statistics.json#tightening_2022_2023.n\nIt stayed inverted.\n"
+    )
+    prose = _strip_latex_machinery(tex)
+    assert "0.21" in prose
+    assert "2015" not in prose and "2022" not in prose and "src:" not in prose

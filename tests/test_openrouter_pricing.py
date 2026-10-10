@@ -578,3 +578,15 @@ async def test_a_provider_error_in_the_stream_is_retried(backend, monkeypatch):
     monkeypatch.setattr(backend._client.chat.completions, "create", create)
     r = await backend.tool_loop("s", [{"role": "user", "content": "u"}], [], None)
     assert r.success and r.output == "ok"
+
+
+def test_html_comments_are_removed_before_latex_prints_them(tmp_path):
+    """The cite-numbers skill taught `<!-- src: ... -->` notes; LaTeX printed them in the PDF."""
+    from src.core.renderer.compiler import strip_html_comments
+
+    tex = tmp_path / "paper_draft.tex"
+    tex.write_text("The spread fell 0.21 points <!-- src: estimation_results.json#a.b -->.\n% src: kept\n")
+    assert strip_html_comments(tex)
+    assert tex.read_text() == "The spread fell 0.21 points.\n% src: kept\n"
+    assert not strip_html_comments(tex)
+    assert not strip_html_comments(tmp_path / "missing.tex")

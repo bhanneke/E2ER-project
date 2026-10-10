@@ -128,6 +128,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   its reply without calling `write_file`, and the retry cost a new review. On the Anthropic and
   OpenRouter backends a missing Markdown output is now filled with the final answer (300 characters or
   more) and the log says so; JSON, LaTeX and scripts never are.
+- **Source notes no longer print in the paper, and drafts no longer write their own tables (fix).** The
+  `cite-numbers-by-source` skill, loaded by the drafter, section writer, abstract writer and revisor,
+  taught HTML comments (`<!-- src: ... -->`) for source notes, which LaTeX printed into the PDF, and
+  showed a results table written in the draft, which the drafter's contract rejects: every live run on
+  DeepSeek lost its first draft to "inline tabular", as a Claude Code run had on 2026-09-11. The skill
+  now teaches `% src:` notes on a line of their own and `\input{tables/<name>.tex}` for tables;
+  compiling removes any HTML comment from `paper_draft.tex` and `abstract.tex`, and the number check
+  reads neither kind of note as a claim.
 - **The number check skips LaTeX comments in tables (fix).** DeepSeek annotated each table row with a
   `% src:` comment naming the JSON keys (`pre_tightening_2015_2021`); read as cells they gave 15021 and
   22023, and `e2er verify` failed the exported study.

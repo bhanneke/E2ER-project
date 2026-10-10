@@ -4,9 +4,8 @@
 > longer hand-written — they are rendered deterministically from the JSON
 > sidecars via `table_spec.json` (see the `data/table-spec` skill), so a
 > rendered table cell cannot drift from its source and needs no `% src:`
-> comment. The rule below still governs every number you write in **prose**
-> (abstract, body text, figure captions) and in any hand-written non-numeric
-> table.
+> comment. The rule below governs every number you write in **prose**
+> (abstract, body text, figure captions). Do not write tables in the draft.
 
 ## The rule
 
@@ -38,27 +37,27 @@ when numbers in LaTeX tables don't match the JSON sources.
 
 ## Citation convention
 
-In the markdown / LaTeX source, mark every numeric citation with a
-brief HTML comment naming the source file and dotted key path:
+In the LaTeX source, note the source of every number you write as a
+LaTeX comment on its own line, right after the sentence, naming the
+file and the dotted key path:
 
 ```latex
-% The treatment effect <!-- src: estimation_results.json#main.coefficients.treatment.estimate -->
 The treatment effect is $-0.231$ (s.e. $0.058$), statistically
 significant at the $1\%$ level.
+% src: estimation_results.json#main.coefficients.treatment.estimate
+The effect is robust to ...
 ```
 
-Or in a table:
+A `%` comments out everything after it on its line, so the note goes on
+a line of its own; the sentence after it starts on the next line. Never
+use HTML comments (`<!-- ... -->`): LaTeX does not know them and prints
+them in the PDF.
 
-```latex
-\begin{tabular}{lcc}
-\toprule
-Variable & Coef & SE \\
-\midrule
-Treatment & -0.231 & 0.058 \\  % src: estimation_results.json#main.coefficients.treatment
-Control X1 & 0.045 & 0.012 \\  % src: estimation_results.json#main.coefficients.x1
-\bottomrule
-\end{tabular}
-```
+**Tables are not written in the draft.** Do not put a `tabular` in the
+draft: results and summary tables are described in `table_spec.json`
+(see the `data/table-spec` skill), rendered from the JSON sidecars into
+`tables/<name>.tex`, and included with `\input{tables/<name>.tex}`. The
+output contract rejects a draft with its own `tabular`.
 
 The dotted-key path matches the JSON structure. So
 `estimation_results.json#main.coefficients.treatment.estimate`
@@ -116,9 +115,8 @@ For these:
 2. Or show the computation explicitly in a comment so a reader can
    reproduce it:
    ```latex
-   The treatment increases revenue by $\$1.23M$ <!--
-   computed: coef (-0.231) * mean_y (estimation_results#main.diagnostics.mean_y)
-   * n (24890) — see /derived_quantities.md -->
+   The treatment increases revenue by $\$1.23M$.
+   % computed: coef (-0.231) * mean_y (estimation_results#main.diagnostics.mean_y) * n (24890)
    ```
 
 When verify_numbers encounters a derived quantity that doesn't match
@@ -144,8 +142,8 @@ whether the rounding works.
 **Right.** Drafter reads `summary_statistics.json`, sees
 `n_observations: 24890`, writes:
 
-> The sample contains 24,890 pool-day observations
-> <!-- src: summary_statistics.json#n_observations -->.
+> The sample contains 24,890 pool-day observations.
+> % src: summary_statistics.json#n_observations
 
 **Wrong (no source).** Drafter invents:
 
