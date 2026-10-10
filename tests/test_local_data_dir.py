@@ -3,13 +3,15 @@
 Single env var that holds mixed content (data files + .bib literature)
 the researcher wants available to every paper they run. Two pathways:
 
-1. Data-shape files (csv/parquet/jsonl/xlsx/tsv/txt) are symlinked
+1. Data-shape files (csv/parquet/jsonl/xlsx/tsv) are symlinked
    into the paper's `workspace/<id>/data/` at paper creation, where
-   the existing `_list_user_data` context builder picks them up.
-2. `.bib` files are parsed by `_load_reference_summary` alongside
-   the existing `LITERATURE_BIBTEX_FILE`, with title-year
-   deduplication so the same file in both places doesn't
-   double-list.
+   the existing `_list_user_data` context builder picks them up
+   (0.15.0: when no data files were chosen for the study).
+2. `.bib` files are written into the study's `literature.bib` with the
+   existing `LITERATURE_BIBTEX_FILE` before any specialist runs
+   (study_inputs.prepare_papers, 0.15.0), with title-year deduplication
+   so the same file in both places doesn't double-list, and
+   `_load_reference_summary` shows them from there.
 
 Unset → no-op; everything that worked pre-v0.8 still works.
 """
@@ -59,12 +61,12 @@ class TestLinkLocalDataDir:
         )
 
     def test_data_files_symlinked(self, tmp_path: Path):
-        """Happy path: csv / parquet / jsonl / xlsx / tsv / txt files
-        all get symlinked into workspace/data/."""
+        """Happy path: csv / parquet / jsonl / xlsx / tsv files all get symlinked into
+        workspace/data/; a .txt is not a data file (0.15.0: one list everywhere)."""
         local = tmp_path / "corpus"
         local.mkdir()
-        files = ["prices.csv", "trades.parquet", "events.jsonl", "panel.xlsx", "sample.tsv", "notes.txt"]
-        for name in files:
+        files = ["prices.csv", "trades.parquet", "events.jsonl", "panel.xlsx", "sample.tsv"]
+        for name in [*files, "notes.txt"]:
             (local / name).write_bytes(b"sample")
 
         workspace = tmp_path / "ws"
@@ -75,6 +77,7 @@ class TestLinkLocalDataDir:
             link = workspace / "data" / name
             assert link.is_symlink(), f"{name} should be a symlink"
             assert link.resolve() == (local / name).resolve()
+        assert not (workspace / "data" / "notes.txt").exists()
 
     def test_bib_files_not_symlinked(self, tmp_path: Path):
         """`.bib` files are handled separately by `_load_reference_summary`
@@ -171,8 +174,7 @@ class TestLinkLocalDataDir:
     def test_extensions_constant_includes_expected_set(self):
         """Pin the allowlist so a refactor that drops .parquet or
         .xlsx silently is caught."""
-        for ext in (".csv", ".tsv", ".jsonl", ".parquet", ".xlsx", ".txt"):
-            assert ext in _LOCAL_DATA_EXTENSIONS
+        assert set(_LOCAL_DATA_EXTENSIONS) == {".csv", ".tsv", ".jsonl", ".parquet", ".xlsx"}
 
 
 # ---------------------------------------------------------------------------
@@ -187,17 +189,25 @@ def _bib(title: str, year: int = 2024) -> str:
 
 
 class TestLoadReferenceSummaryWithLocalDir:
-    """`_load_reference_summary` merges the curated single-file source
-    (LITERATURE_BIBTEX_FILE) with any .bib files found in
-    LOCAL_DATA_DIR. v0.4 behaviour (single-file only) is preserved
-    when LOCAL_DATA_DIR is unset."""
+    """The researcher's .bib files (LITERATURE_BIBTEX_FILE and any .bib in
+    LOCAL_DATA_DIR) reach the writers through the study's own literature.bib.
+
+    Before 0.15.0 `_load_reference_summary` read them afresh at every prompt and
+    none was ever written into the study's bibliography, so citing one failed the
+    citation check. Now `prepare_papers` writes them (no choice made: all of them)
+    and the summary reads them back from the file, so every key shown exists."""
 
     def _settings(self, **kwargs):
-        from src import config as cfg_module
-
         base = {
             "literature_bibtex_file": None,
             "local_data_dir": None,
+            "literature_dir": None,
+            "local_data_dir_recursive": False,
+            "literature_max_ingest": 500,
+            "literature_acquire_limit": 0,
+            "zotero_api_key": None,
+            "zotero_user_id": None,
+            "zotero_group_id": None,
         }
         base.update(kwargs)
 
@@ -205,33 +215,51 @@ class TestLoadReferenceSummaryWithLocalDir:
             def __getattr__(self, k):
                 return base.get(k)
 
-        return patch.object(cfg_module, "get_settings", return_value=_Stub())
+            def resolved_literature_dirs(self):
+                return base["literature_dir"] or base["local_data_dir"]
+
+        return _Stub()
+
+    def _summary(self, tmp_path: Path, specialist: str = "paper_drafter", **kwargs) -> str:
+        import asyncio
+        from unittest.mock import AsyncMock
+
+        from src.core.study_inputs import prepare_papers
+
+        ws = tmp_path / "ws"
+        ws.mkdir(exist_ok=True)
+        settings = self._settings(workspace_root=str(tmp_path), **kwargs)
+        with (
+            patch("src.modules.literature.discovery.acquire_literature", new=AsyncMock(return_value=0)),
+            patch("src.modules.literature.storage.store_paper", new=AsyncMock()),
+        ):
+            asyncio.run(prepare_papers(ws, "pid", settings, ["a question"]))
+        with (
+            patch("src.config.get_settings", return_value=settings),
+            patch("src.home.find_workspace", return_value=ws),
+        ):
+            return _load_reference_summary(specialist, "pid")
 
     def test_no_sources_returns_empty(self, tmp_path: Path):
-        with self._settings():
-            assert _load_reference_summary("paper_drafter") == ""
+        assert self._summary(tmp_path) == ""
+        assert not (tmp_path / "ws" / "literature.bib").exists()
 
     def test_only_literature_bibtex_file_v04_behavior(self, tmp_path: Path):
-        """Backwards compat: when only LITERATURE_BIBTEX_FILE is set,
-        the output matches v0.4's behaviour."""
         bib = tmp_path / "curated.bib"
         bib.write_text(_bib("Alpha"))
 
-        with self._settings(literature_bibtex_file=str(bib)):
-            out = _load_reference_summary("paper_drafter")
-        assert "Available References" in out
-        assert "Alpha" in out
+        out = self._summary(tmp_path, literature_bibtex_file=str(bib))
+        assert "The Researcher's Own Papers (1" in out
+        assert "\\cite{alpha}" in out, "the researcher's own key, as it is in their .bib"
+        bibtext = (tmp_path / "ws" / "literature.bib").read_text()
+        assert "@article{alpha," in bibtext and "e2er_source = {researcher}" in bibtext
 
     def test_only_local_data_dir_picks_up_bib(self, tmp_path: Path):
-        """v0.8: a Zotero-exported .bib inside LOCAL_DATA_DIR is
-        parsed even when LITERATURE_BIBTEX_FILE is unset."""
         local = tmp_path / "corpus"
         local.mkdir()
         (local / "zotero_export.bib").write_text(_bib("Beta"))
 
-        with self._settings(local_data_dir=str(local)):
-            out = _load_reference_summary("paper_drafter")
-        assert "Beta" in out
+        assert "Beta" in self._summary(tmp_path, local_data_dir=str(local))
 
     def test_both_sources_merged(self, tmp_path: Path):
         bib_curated = tmp_path / "curated.bib"
@@ -240,73 +268,44 @@ class TestLoadReferenceSummaryWithLocalDir:
         local.mkdir()
         (local / "zotero.bib").write_text(_bib("Beta") + _bib("Gamma"))
 
-        with self._settings(
-            literature_bibtex_file=str(bib_curated),
-            local_data_dir=str(local),
-        ):
-            out = _load_reference_summary("paper_drafter")
-        # All three references reachable
+        out = self._summary(tmp_path, literature_bibtex_file=str(bib_curated), local_data_dir=str(local))
         for ref in ("Alpha", "Beta", "Gamma"):
             assert ref in out
+            assert f"{{{ref.lower()}," in (tmp_path / "ws" / "literature.bib").read_text()
 
     def test_duplicate_papers_deduped_by_title_year(self, tmp_path: Path):
-        """A user who points LITERATURE_BIBTEX_FILE at a file already
-        inside LOCAL_DATA_DIR shouldn't get every reference listed
-        twice. Dedup by (title, year)."""
         local = tmp_path / "corpus"
         local.mkdir()
         shared = local / "shared.bib"
         shared.write_text(_bib("Alpha") + _bib("Beta"))
 
-        with self._settings(
-            literature_bibtex_file=str(shared),
-            local_data_dir=str(local),
-        ):
-            out = _load_reference_summary("paper_drafter")
-        # Each title appears once
+        out = self._summary(tmp_path, literature_bibtex_file=str(shared), local_data_dir=str(local))
         assert out.count("Alpha") == 1
         assert out.count("Beta") == 1
-        # Header reports the deduplicated count (2 papers, not 4)
-        assert "(2 papers" in out
+        assert "(2, chosen for this study)" in out
 
     def test_non_bib_extensions_in_local_dir_ignored(self, tmp_path: Path):
-        """CSVs and PDFs alongside .bib files shouldn't be parsed as
-        bibliographies."""
         local = tmp_path / "corpus"
         local.mkdir()
         (local / "real.bib").write_text(_bib("RealRef"))
         (local / "not_bib.csv").write_text("a,b\n1,2\n")
         (local / "not_bib.txt").write_text("just notes, not BibTeX")
 
-        with self._settings(local_data_dir=str(local)):
-            out = _load_reference_summary("paper_drafter")
+        out = self._summary(tmp_path, local_data_dir=str(local))
         assert "RealRef" in out
-        # The CSV / TXT content didn't break parsing
-        assert out != ""
 
     def test_unparseable_bib_skipped_gracefully(self, tmp_path: Path):
-        """A malformed .bib in the corpus shouldn't blow up the other
-        sources. The bad file is skipped; the good file is still
-        emitted."""
         local = tmp_path / "corpus"
         local.mkdir()
         (local / "good.bib").write_text(_bib("Survivor"))
         (local / "broken.bib").write_text("this is not bibtex at all")
 
-        with self._settings(local_data_dir=str(local)):
-            out = _load_reference_summary("paper_drafter")
-        # The good file is still emitted
-        assert "Survivor" in out
+        assert "Survivor" in self._summary(tmp_path, local_data_dir=str(local))
 
     def test_only_bib_specialists_get_the_block(self, tmp_path: Path):
-        """data_analyst, mechanism_reviewer, etc. don't need the
-        bibliography — preserve the v0.4 specialist-list contract."""
         local = tmp_path / "corpus"
         local.mkdir()
         (local / "refs.bib").write_text(_bib("Alpha"))
 
-        with self._settings(local_data_dir=str(local)):
-            # `paper_drafter` is in _BIB_SPECIALISTS
-            assert "Alpha" in _load_reference_summary("paper_drafter")
-            # `data_analyst` is NOT
-            assert _load_reference_summary("data_analyst") == ""
+        assert "Alpha" in self._summary(tmp_path, local_data_dir=str(local))
+        assert self._summary(tmp_path, "data_analyst", local_data_dir=str(local)) == ""

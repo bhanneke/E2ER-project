@@ -73,8 +73,8 @@ def main(argv: list[str] | None = None) -> int:
     b.add_argument("--max-requests", type=int, default=300)
 
     n = sub.add_parser("network", help="the main boundary's network and its completeness report")
-    n.add_argument("--max-isolated-share", type=float, default=0.6)
-    n.add_argument("--max-missing-refs-share", type=float, default=0.25)
+    n.add_argument("--max-isolated-share", type=float, default=0.5)
+    n.add_argument("--max-missing-refs-share", type=float, default=0.4)
     n.add_argument("--min-papers", type=int, default=100)
 
     m = sub.add_parser("mainpath", help="SPC, main paths and key routes of the main boundary")

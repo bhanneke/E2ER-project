@@ -33,6 +33,15 @@ the server runs::
 ``{"wait": seconds}`` makes the attempt take that long before it answers, the
 way a slow model call does, so a story can cancel a run while it works.
 
+A scenario can build on another (``"base": "fomc"``): it inherits that
+scenario's plan and recordings and brings only the files it changes
+(``files/<specialist>/<path>`` of its own, used first). ``"merge"`` names
+recorded files that are merged into the study's own instead of replacing them:
+``data.db`` gains the recorded tables it does not have, ``data_sources.json``
+the recorded loads it does not have. The ``byod`` scenario uses both, so the
+data the researcher chose on New study (imported into data.db before the run)
+stays in the study when the recorded data analyst writes its files.
+
 Attempt *n* (counted per paper and specialist in this process) uses entry
 *n* of ``attempts``; later attempts replay the recording unchanged.
 
@@ -108,6 +117,17 @@ class ReplayBackend(LLMBackend):
         name = str(scenario or os.environ.get(ENV_SCENARIO) or "fomc")
         self.root = scenario_dir(name)
         self.scenario: dict[str, Any] = json.loads((self.root / "scenario.json").read_text(encoding="utf-8"))
+        #: The scenario this one builds on ("base"), whose recordings fill in what it does not bring.
+        self.base_root: Path | None = None
+        if self.scenario.get("base"):
+            self.base_root = scenario_dir(str(self.scenario["base"]))
+            base = json.loads((self.base_root / "scenario.json").read_text(encoding="utf-8"))
+            own = self.scenario
+            self.scenario = {
+                **base,
+                **own,
+                "specialists": {**(base.get("specialists") or {}), **(own.get("specialists") or {})},
+            }
         #: The backend and model this replay stands in for (None: the recording's own model).
         self.backend = backend
         self._model = model
@@ -199,10 +219,19 @@ class ReplayBackend(LLMBackend):
             duration_seconds=time.time() - t0,
         )
 
+    def _source(self, specialist: str, rel: str) -> Path:
+        own = self.root / "files" / specialist / rel
+        if own.exists() or self.base_root is None:
+            return own
+        return self.base_root / "files" / specialist / rel
+
     def _write(self, workspace: Path, specialist: str, rel: str, paper_id: str, replace: list[list[str]]) -> None:
-        src = self.root / "files" / specialist / rel
+        src = self._source(specialist, rel)
         dest = workspace / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
+        if rel in (self.scenario.get("merge") or []) and dest.is_file():
+            _merge(src, dest)
+            return
         if dest.is_symlink() or dest.exists():
             dest.unlink()
         if src.suffix not in _TEXT_SUFFIXES:
@@ -250,3 +279,34 @@ class ReplayBackend(LLMBackend):
                 success=False, output="", error="replay has no recording for this call", duration_seconds=0.0
             )
         return ToolLoopResult(success=True, output=out, duration_seconds=time.time() - t0)
+
+
+def _merge(src: Path, dest: Path) -> None:
+    """Merge a recorded file into the study's own (``"merge"`` in scenario.json)."""
+    if dest.name == "data.db":
+        import sqlite3
+
+        con = sqlite3.connect(dest)
+        try:
+            have = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+            con.execute("ATTACH DATABASE ? AS rec", (str(src),))
+            for (name,) in con.execute("SELECT name FROM rec.sqlite_master WHERE type = 'table'").fetchall():
+                if name not in have:
+                    con.execute(f'CREATE TABLE "{name}" AS SELECT * FROM rec."{name}"')  # noqa: S608 — test fixture
+            con.commit()
+            con.execute("DETACH DATABASE rec")
+        finally:
+            con.close()
+        return
+    if dest.name == "data_sources.json":
+        mine = json.loads(dest.read_text(encoding="utf-8"))
+        recorded = json.loads(src.read_text(encoding="utf-8"))
+
+        def key(load: dict[str, Any]) -> Any:
+            return load.get("table") or load.get("saved_to") or (load.get("connector"), load.get("series"))
+
+        seen = {key(x) for x in mine.get("loads") or []}
+        mine["loads"] = (mine.get("loads") or []) + [x for x in recorded.get("loads") or [] if key(x) not in seen]
+        dest.write_text(json.dumps(mine, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        return
+    raise AssertionError(f"replay: no merge for {dest.name}")

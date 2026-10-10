@@ -653,3 +653,41 @@ section.empty { border: 1px dashed #ccc; border-radius: 6px; padding: 16px 20px;
 table.attempts td, table.studies td { padding-top: 10px; padding-bottom: 10px; }
 .terms-missing { margin: 6px 0 0; }
 @media (max-width: 700px) { .c-action { white-space: normal; } .send-back { flex-direction: column; align-items: stretch; } }
+
+/* New study: the data files and papers a study uses */
+.pick { border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; margin: 6px 0 4px; background: #fff; }
+.pick-tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+.paper-form .pick-tools input[type=search] { flex: 1; min-width: 160px; width: auto; padding: 5px 8px; }
+.pick-count { font-size: 12.5px; color: var(--muted); }
+.pick-list { max-height: 260px; overflow-y: auto; border-top: 1px solid #eee; }
+.paper-form .pick-row { display: flex; gap: 8px; align-items: baseline; margin: 0; padding: 5px 2px; border-bottom: 1px solid #f2f2f2; font-size: 13.5px; cursor: pointer; }
+.paper-form .pick-row[hidden] { display: none; }
+.paper-form .pick-row > input { width: auto; flex: none; }
+.paper-form .pick-row > span { display: inline; font-weight: normal; font-size: 13.5px; margin: 0; }
+.pick-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.paper-form .pick-row > .pick-meta { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.pick-note { font-size: 12.5px; margin: 6px 0 0; overflow-wrap: anywhere; }
+.pick-empty { color: var(--muted); font-size: 13.5px; margin: 4px 0 8px; }
+.pick-add { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+.paper-form .pick-add label.btn { display: inline-flex; margin: 0; cursor: pointer; }
+.paper-form .pick-add label.btn input { display: none; }
+.pick-added { list-style: none; padding: 0; margin: 6px 0 0; font-size: 13px; }
+.pick-added li { padding: 2px 0; }
+.small { font-size: 12.5px; }
+
+/* Run page and finish page: what the study used */
+.inputs-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+@media (max-width: 720px) { .inputs-cols { grid-template-columns: 1fr; } }
+.inputs-cols h3, #card-used h3 { font-size: 14px; margin: 12px 0 6px; }
+.inputs-list { margin: 0; padding-left: 18px; font-size: 13.5px; }
+.inputs-list li { margin: 3px 0; overflow-wrap: anywhere; }
+.scroll-list { max-height: 240px; overflow-y: auto; }
+.wf-table.compact { font-size: 13px; margin: 6px 0; }
+.wf-table.compact th, .wf-table.compact td { padding: 5px 8px; }
+.src-tag { font-size: 11.5px; padding: 1px 6px; border-radius: 3px; background: #eaf2fb; color: var(--accent); white-space: nowrap; }
+.src-tag.web { background: #f1f1f1; color: var(--muted); }
+.lib-add { max-width: 520px; }
+.lib-group { margin-top: 10px; border-top: 1px solid #eee; padding-top: 8px; }
+.lib-group > summary { cursor: pointer; font-size: 13.5px; font-weight: 600; }
+.lib-group > summary .pick-count { font-weight: normal; margin-left: 6px; }
+.fold > summary { cursor: pointer; font-size: 13px; color: var(--muted); }

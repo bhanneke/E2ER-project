@@ -23,8 +23,33 @@ def bibliography_names(tex: str) -> list[str]:
     return names
 
 
+_CITES = re.compile(r"\\(?:cite|citep|citet|citealp|citealt|citeauthor|citeyear)\*?(?:\[[^\]]*\]){0,2}\{")
+_END_DOCUMENT = re.compile(r"\\end\{document\}")
+
+
+def add_missing_bibliography(tex: str, name: str = "refs") -> str:
+    """A complete paper that cites but never says ``\\bibliography{…}`` gets one, before ``\\end{document}``.
+
+    Without it BibTeX is never asked and every citation prints as "?", in the
+    run's PDF and in the exported one alike (a drafter that writes a whole
+    document sometimes forgets the line). A paper with its own line, or that
+    cites nothing, is unchanged.
+    """
+    if _BIBLIOGRAPHY.search(tex) or not _CITES.search(tex) or "thebibliography" in tex:
+        return tex
+    m = None
+    for m in _END_DOCUMENT.finditer(tex):
+        pass
+    if m is None:
+        return tex
+    style = "" if "\\bibliographystyle" in tex else "\\bibliographystyle{plainnat}\n"
+    return tex[: m.start()] + f"{style}\\bibliography{{{name}}}\n" + tex[m.start() :]
+
+
 def point_bibliography(tex: str, paper_dir: Path, shipped: str = "refs") -> str:
     """Point ``\\bibliography`` at the file the bundle ships when the named one is missing."""
+    if (paper_dir / f"{shipped}.bib").is_file():
+        tex = add_missing_bibliography(tex, shipped)
     names = bibliography_names(tex)
     if not names or all((paper_dir / f"{n}.bib").is_file() for n in names):
         return tex

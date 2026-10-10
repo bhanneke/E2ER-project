@@ -83,3 +83,81 @@ def test_the_readme_does_not_promise_specialists_as_files_yet():
     assert not (ROOT / "specialists").is_dir(), (
         "specialists/ now exists — update the README, which still says only pipelines are files"
     )
+
+
+# ── every terminal command is in the README (plan B5) ────────────────────────
+
+
+def _subcommands(parser) -> list[list[str]]:
+    """Every command path of an argparse parser: ``[["add"], ["topics", "add"], …]``."""
+    import argparse
+
+    out: list[list[str]] = []
+    for action in parser._actions:
+        if isinstance(action, argparse._SubParsersAction):
+            seen: set[int] = set()
+            for name, sub in action.choices.items():
+                if id(sub) in seen:  # an alias of a command already listed
+                    continue
+                seen.add(id(sub))
+                out.append([name])
+                out += [[name, *rest] for rest in _subcommands(sub)]
+    return out
+
+
+def _main_commands() -> list[list[str]]:
+    """The command paths `e2er` itself defines (src/__main__.py), read from its source.
+
+    `main()` builds its parser inline, so the parser tree is rebuilt from the
+    `add_parser` / `add_subparsers` calls: ``x_p = subparsers.add_parser("x")`` is
+    the command ``x``, ``x_sub = x_p.add_subparsers()`` its group, and
+    ``x_sub.add_parser("y")`` the command ``x y``.
+    """
+    import ast
+
+    tree = ast.parse((ROOT / "src" / "__main__.py").read_text(encoding="utf-8"))
+    path_of: dict[str, list[str]] = {"subparsers": []}  # variable -> the command path it adds to (a group)
+    parser_of: dict[str, list[str]] = {}  # variable -> the command it is the parser of
+    out: list[list[str]] = []
+
+    def call_info(node):
+        func = node.func if isinstance(node, ast.Call) else None
+        if isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name):
+            return node.func.value.id, node.func.attr, node.args
+        return None
+
+    for node in ast.walk(tree):
+        targets: list[str] = []
+        value = None
+        if isinstance(node, ast.Assign):
+            targets = [t.id for t in node.targets if isinstance(t, ast.Name)]
+            value = node.value
+        elif isinstance(node, ast.Expr):
+            value = node.value
+        info = call_info(value)
+        if not info:
+            continue
+        owner, attr, args = info
+        if attr == "add_parser" and owner in path_of and args and isinstance(args[0], ast.Constant):
+            path = [*path_of[owner], args[0].value]
+            out.append(path)
+            for t in targets:
+                parser_of[t] = path
+        elif attr == "add_subparsers" and owner in parser_of:
+            for t in targets:
+                path_of[t] = parser_of[owner]
+    return out
+
+
+def test_every_terminal_command_is_documented_in_the_readme():
+    """Every `e2er` command and subcommand appears in the README as `e2er <command> [<subcommand>]`."""
+    from src.cli_corpus import build_parser as library_parser
+    from src.cli_skills import build_parser as skills_parser
+
+    commands = _main_commands()
+    commands += [["library", *p] for p in _subcommands(library_parser())]
+    commands += [["skills", *p] for p in _subcommands(skills_parser())]
+    assert ["preregister", "deposit"] in commands and ["dossier", "push"] in commands  # the reader works
+    text = _readme()
+    missing = [" ".join(p) for p in commands if not re.search(r"\be2er " + re.escape(" ".join(p)) + r"(?![\w-])", text)]
+    assert not missing, "the README's terminal commands do not mention: " + ", ".join(f"e2er {m}" for m in missing)

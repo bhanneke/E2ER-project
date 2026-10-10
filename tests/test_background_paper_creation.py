@@ -24,7 +24,7 @@ async def _run(tmp_path: Path, settings=None):
 
     with (
         patch("src.modules.data.byod_import.import_corpus_into_data_db", side_effect=imp),
-        patch("src.api.app._ingest_literature_corpus", side_effect=ing),
+        patch("src.api.app._prepare_papers", side_effect=ing),
         patch("src.api.app._run_pipeline", side_effect=run),
     ):
         s = settings or type("S", (), {"max_rows_per_paper": 1000})()
@@ -50,7 +50,7 @@ async def test_import_failure_does_not_block_pipeline(tmp_path: Path):
 
     with (
         patch("src.modules.data.byod_import.import_corpus_into_data_db", side_effect=boom),
-        patch("src.api.app._ingest_literature_corpus", side_effect=ing),
+        patch("src.api.app._prepare_papers", side_effect=ing),
         patch("src.api.app._run_pipeline", side_effect=run),
     ):
         s = type("S", (), {"max_rows_per_paper": 1000})()

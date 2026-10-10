@@ -34,7 +34,16 @@ FOMC_FILES: dict[str, list[str]] = {
     "identification_strategist": ["identification_strategy.md", "identification_spec.json", "event_design.json"],
     "data_architect": ["data_dictionary.json"],
     "data_analyst": ["data_summary.md", "summary_statistics.json", "figure_spec.json", "data.db"],
-    "econometrics_specialist": ["econometric_spec.md", "run_estimation.py", "estimation_results.json"],
+    # The estimation script and the scripts that revised the results after it, in the order the run last
+    # changed them (export's reproduce.json runs them in that order).
+    "econometrics_specialist": [
+        "econometric_spec.md",
+        "run_estimation.py",
+        "revise_estimation.py",
+        "compute_h2_final.py",
+        "compute_h2_v2.py",
+        "estimation_results.json",
+    ],
     "paper_drafter": ["paper_draft.tex", "table_spec.json"],
     "abstract_writer": ["abstract.tex"],
     "mechanism_reviewer": ["review_mechanism.md"],

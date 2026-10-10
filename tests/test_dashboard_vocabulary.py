@@ -252,9 +252,28 @@ def _pages(fx: Fixture) -> list[str]:
     pages = ["/", "/?archived=1", "/papers/new", "/setup", "/preflight", "/library", "/skills", "/workflow"]
     pages += [f"/studies/{k}" for k in dict.fromkeys(fx.keys.values()) if k]
     for name, pid in fx.ids.items():
-        pages += [f"/papers/{pid}", f"/htmx/papers/{pid}/live", f"/papers/{pid}/review"]
+        pages += [f"/papers/{pid}", f"/htmx/papers/{pid}/live", f"/papers/{pid}/review", f"/htmx/papers/{pid}/inputs"]
     pages.append(f"/papers/{fx.ids['finished']}/finish")
+    # Choosing data and papers (0.15.0): the papers list New study loads, the Library's progress line.
+    pages += ["/htmx/new/papers", "/htmx/library/adding"]
     return pages
+
+
+def test_new_study_lists_the_data_files_and_the_papers(client, fx):
+    page = client.get("/papers/new").text
+    assert "fomc_announcement_dates.csv" in page and "bank_tickers.csv" in page and "Add files" in page
+    papers = client.get("/htmx/new/papers").text
+    assert "What Explains the Stock Market" in papers and 'name="paper_choice"' in papers
+
+
+def test_the_run_and_finish_pages_say_what_the_study_used(client, fx):
+    pid = fx.ids["finished"]
+    panel = client.get(f"/htmx/papers/{pid}/inputs").text
+    assert "fomc_announcement_dates.csv" in panel and "added for this study" in panel
+    assert "Your papers (1)" in panel and "Found on the web (1)" in panel
+    assert "your data file (fomc_announcement_dates.csv)" in panel
+    finish = client.get(f"/papers/{pid}/finish").text
+    assert "What the study used" in finish and "from your papers" in finish and "found on the web" in finish
 
 
 def test_every_page_reads_plainly(client, fx):

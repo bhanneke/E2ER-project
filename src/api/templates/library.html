@@ -8,18 +8,34 @@
   word, checked against the paper. A claim whose sentence could not be found in the paper is not kept.
 </p>
 
+{% if message %}<p class="pf-banner" role="status">{{ message }}</p>{% endif %}
+<div id="library-adding">{% include "_library_adding.html" with context %}</div>
+
+<details class="card" id="library-add"{% if not exists %} open{% endif %}>
+  <summary><strong>Add papers</strong></summary>
+  <p class="card-note">e2er reads each PDF and records what it claims, each claim with the sentence it comes from,
+    checked against the paper. It is the same as <code class="tick">e2er library add</code> in a terminal.</p>
+  {% if session_problem %}
+    <p class="muted">{{ session_problem }}</p>
+  {% else %}
+  <form method="post" action="/library/add" enctype="multipart/form-data" class="lib-add">
+    <label class="field"><span>PDFs</span><input type="file" name="pdf" accept=".pdf" multiple></label>
+    <label class="field"><span>Or a folder of PDFs on this computer</span><input type="text" name="folder" placeholder="~/papers"></label>
+    <button type="submit" class="btn-primary">Add to the Library</button>
+  </form>
+  {% endif %}
+</details>
+
 {% if not exists %}
   <section class="empty">
     <h2>No library yet</h2>
     <p>
-      Give e2er a folder of PDFs and it reads them into a library you can search by claim. Your own copies work
-      best: about two in five papers found on the web are behind a paywall.
+      Give e2er PDFs or a folder of PDFs (above) and it reads them into a library you can search by claim. Your own
+      copies work best: about two in five papers found on the web are behind a paywall.
     </p>
-    <p>Adding papers runs in a terminal for now:</p>
-    <div class="copy-row"><code class="cmd">e2er corpus add ~/path/to/your/papers/</code><button type="button" class="btn-ghost btn-small" data-copy="e2er corpus add ~/path/to/your/papers/">Copy</button></div>
     <p class="muted">
-      The library is kept in <code class="path">{{ path }}</code> and grows with every folder you add.
-      Every study reads it.
+      The library is kept in <code class="path">{{ path }}</code> and grows with every paper you add.
+      On New study you can choose papers from it for a study.
     </p>
   </section>
 
@@ -98,13 +114,8 @@
   {% endif %}
 
   <p class="muted">
-    Add more in a terminal with <code class="tick">e2er corpus add</code> and a folder, a DOI or a PDF.
-    A study also reads the PDFs in its own literature folder.
+    Add more above, or in a terminal with <code class="tick">e2er library add</code> and a folder, a DOI or a PDF.
+    On New study you can choose papers from the Library for a study.
   </p>
-  <script>
-    document.querySelectorAll('[data-copy]').forEach((b) => b.addEventListener('click', async () => {
-      try { await navigator.clipboard.writeText(b.dataset.copy); b.textContent = 'Copied'; } catch (e) { b.textContent = 'Select it and copy'; }
-    }));
-  </script>
 {% endif %}
 {% endblock %}

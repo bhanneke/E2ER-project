@@ -165,7 +165,9 @@ _TABULAR_RE = re.compile(
 _NUMBER_RE = re.compile(
     r"(?<![a-zA-Z])"  # not preceded by a letter
     r"[\$\(]*"  # optional $ or (
-    r"(-?\d+(?:,\d{3})*"  # integer part with optional thousands separators
+    # A minus sign right after a digit or a dash is a range dash: the upper
+    # bound of "0.12--0.15" or "5-10" is positive.
+    r"((?:(?<![\d-])-)?\d+(?:,\d{3})*"  # integer part with optional thousands separators
     r"(?:\.\d+)?)"  # optional decimal part
     r"[\$\)]*"  # optional $ or )
     r"(?:\*{1,3})?"  # optional significance stars
@@ -196,6 +198,53 @@ _DATE_PATTERNS: tuple[re.Pattern[str], ...] = (
 )
 
 
+# Period labels: a span of years, a quarter, a decade, a fiscal year, a month
+# and year. Stripped from table cells and prose BEFORE number extraction, like
+# the dates above. The 2026-10-10 live runs (mortgage pass-through study) stopped
+# at the number check on rows labelled "2004--06", "2015--18", "2022--23": read
+# as numbers they gave 2004 and -06, and -06 "mismatched" an ADF statistic.
+_YEAR = r"(?:1[89]|20)\d{2}"
+_MONTH = (
+    r"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|June?|July?|Aug(?:ust)?"
+    r"|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)"
+)
+# A hyphen joins the years directly; an en or em dash may stand between spaces.
+_DASH = r"(?:-|\s*(?:-{2,3}|–|—|\\text(?:en|em)dash(?:\{\})?)\s*)"
+# 2004--06, 2007–2009, 2000-2007, 1998--02. The end must not come before the
+# start and the span is at most 50 years (checked in `_strip_year_span`): "2019
+# -12" or a number pair such as "1999-1850" stays as numbers.
+_YEAR_SPAN_RE = re.compile(rf"(?<![\d.,])({_YEAR}){_DASH}(\d{{4}}|\d{{2}})(?!\d|[.,]\d)")
+_PERIOD_PATTERNS: tuple[re.Pattern[str], ...] = (
+    # Quarter, half, month index: 2022Q3, 2022:Q3, 2022-Q3, 2022H1, 2004m6, 2004:06.
+    re.compile(rf"(?<![\d.,]){_YEAR}\s*[:\-]?\s*[QqHh][1-4](?!\d)"),
+    re.compile(rf"(?<![\d.,]){_YEAR}(?:[Mm]|:)(?:1[0-2]|0?[1-9])(?![\d.])"),
+    re.compile(rf"\b[QH][1-4]\s*[:\-/~]?\s*{_YEAR}(?!\d)"),
+    # Decades: 1990s, '90s.
+    re.compile(r"(?<![\d.,])(?:1[89]|20)\d0s\b"),
+    re.compile(r"(?:'|’)\d0s\b"),
+    # Fiscal years: FY2019, FY 2019, FY19, FY'19.
+    re.compile(rf"\bFY\s*'?(?:{_YEAR}|\d{{2}})(?!\d)"),
+    # Month and year: Jan 2020, March 15, 2020, Mar.~2020.
+    re.compile(rf"\b{_MONTH}\.?(?:\s|~)*(?:\d{{1,2}},?(?:\s|~)*)?{_YEAR}(?!\d)"),
+)
+
+
+def _strip_year_span(m: re.Match[str]) -> str:
+    start, end = m.group(1), m.group(2)
+    end_year = int(end) if len(end) == 4 else int(start[:2] + end)
+    if len(end) == 2 and end_year < int(start):
+        end_year += 100  # 1998--02
+    return " " if 0 < end_year - int(start) <= 50 else m.group(0)
+
+
+def _strip_periods(text: str) -> str:
+    """Remove period labels (spans of years, quarters, decades, fiscal years, months)."""
+    text = _YEAR_SPAN_RE.sub(_strip_year_span, text)
+    for pattern in _PERIOD_PATTERNS:
+        text = pattern.sub(" ", text)
+    return text
+
+
 _SCRIPT_RE = re.compile(r"[\^_](?:\{[^{}]*\}|[A-Za-z0-9])")
 
 
@@ -222,6 +271,7 @@ def _normalize_cell(cell: str) -> str:
     # LaTeX brace-protected thousands separator → standard comma.
     # Done first so subsequent date stripping sees a clean number.
     cell = cell.replace("{,}", ",")
+    cell = _strip_periods(cell)
     for pattern in _DATE_PATTERNS:
         cell = pattern.sub("", cell)
     # Superscripts and subscripts are notation, not values: the 2 of $R^2$, the
@@ -566,6 +616,7 @@ def _strip_latex_machinery(tex_content: str) -> str:
         prose = pat.sub(" ", prose)
     prose = _MARKUP_RE.sub(" ", prose)
     prose = _ROW_SPACING_RE.sub(" ", prose)
+    prose = _strip_periods(prose)
     for pat in _DATE_PATTERNS:
         prose = pat.sub(" ", prose)
     return prose

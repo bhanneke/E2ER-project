@@ -5,8 +5,9 @@ in one (or several) local folder(s). These helpers parse the env var
 (possibly comma-separated) and walk the folder(s), optionally recursing.
 
 The corpus has three file kinds with different consumers:
-  - data files (csv/tsv/jsonl/parquet/xlsx/txt) → symlinked into
-    ``workspace/<paper_id>/data/`` at paper creation.
+  - data files (csv/tsv/jsonl/parquet/xlsx) → linked into
+    ``workspace/<paper_id>/data/`` at paper creation (only the files chosen for
+    the study, when a choice was made; see ``src/core/study_inputs.py``).
   - ``.bib`` → merged into the reference summary alongside
     ``LITERATURE_BIBTEX_FILE`` by ``LocalBibLibrary``.
   - PDFs → symlinked into ``workspace/<paper_id>/literature/`` so the
@@ -24,9 +25,20 @@ from ..logging_config import get_logger
 
 logger = get_logger(__name__)
 
-DATA_EXTENSIONS: frozenset[str] = frozenset({".csv", ".tsv", ".jsonl", ".parquet", ".xlsx", ".txt"})
+#: The data files e2er reads into a study, everywhere: the New study list, uploads, `e2er run --data`,
+#: staging, the planning check and the import into data.db. One list, so a file offered is a file read.
+DATA_EXTENSIONS: frozenset[str] = frozenset({".csv", ".tsv", ".jsonl", ".parquet", ".xlsx"})
+#: The same list as a researcher reads it.
+DATA_EXTENSIONS_TEXT = ".csv, .tsv, .jsonl, .parquet or .xlsx"
 BIB_EXTENSIONS: frozenset[str] = frozenset({".bib"})
 PDF_EXTENSIONS: frozenset[str] = frozenset({".pdf"})
+
+
+def not_a_data_file(name: str) -> str | None:
+    """The plain sentence for a file e2er does not read as data (None when it does)."""
+    if Path(name).suffix.lower() in DATA_EXTENSIONS:
+        return None
+    return f"{Path(name).name} is not a data file e2er can read. Use {DATA_EXTENSIONS_TEXT}."
 
 
 def parse_corpus_roots(setting: str | None) -> list[Path]:

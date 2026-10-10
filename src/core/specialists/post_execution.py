@@ -60,6 +60,7 @@ import re
 import subprocess
 import sys
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 from ...logging_config import get_logger
@@ -130,6 +131,10 @@ EXECUTION_CONVENTIONS: dict[str, ExecutionConvention] = {
         timeout_seconds=600,
     ),
 }
+
+
+# The script log (one implementation for e2er-run and the runner): src/core/script_log.py.
+from ..script_log import SCRIPT_RUNS, read_script_runs, record_script_run  # noqa: E402,F401
 
 
 @dataclass(frozen=True)
@@ -295,6 +300,7 @@ def maybe_execute_specialist_script(workspace: Path, specialist: str) -> Executi
         " [discovered]" if discovered else "",
         convention.timeout_seconds,
     )
+    started = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     try:
         completed = subprocess.run(
             [sys.executable, str(script_path)],
@@ -330,6 +336,8 @@ def maybe_execute_specialist_script(workspace: Path, specialist: str) -> Executi
             reason=f"subprocess launch failed: {e!r}",
             discovered=discovered,
         )
+
+    record_script_run(workspace, rel_script, started, -1 if rc is None else rc, by="runner")
 
     # If the script wrote a populated alternate output but not the canonical
     # sidecar, copy it across so M4.3 (which keys on the canonical name) sees it.

@@ -18,6 +18,7 @@ untouched.
 ```
 <OUTPUT_DIR>/<slug>/
 ├── README.md            generated: research question, internal quality review score, key result, how to reproduce
+├── reproduce.json       how `e2er reproduce` runs the study's code again (written at export, see below)
 ├── paper/
 │   ├── paper.pdf        compiled (if the LaTeX compile succeeded)
 │   ├── paper.tex        ← paper_draft.tex
@@ -48,6 +49,24 @@ untouched.
     ├── self_attack_report.json
     └── polish_*.md
 ```
+
+### reproduce.json, written at export
+
+`src/core/export/reproduce_recipe.py` writes the recipe from what the run
+recorded, without a model and without running anything: the estimation script
+(`run_estimation.py` or another name the runner looks for) and every later
+script of the run that writes `estimation_results.json`, in the order the run
+ran them (`.e2er-script-runs.jsonl` in the workspace, written by `e2er-run` and
+by the runner; runs before 0.15.0 have none, and then the order is the one the
+files were last changed in, which the recipe's notes say); every workspace file those scripts name (`data.db`,
+`data/…`), laid out where they expect it, data files as inputs with their
+SHA-256 and source from `data_sources.json`; `code/requirements.txt` with the
+packages the scripts import at the versions of e2er's environment; and, for
+Yahoo Finance and GMD data, `code/get_data.py`, which loads them again with
+`e2er-data` (recorded series and dates) when the folder does not have them.
+The scripts' copies in `code/` name the run folder instead of the workspace's
+full path. A study without estimation results or without such a script gets no
+recipe, and README.md says why; so does `e2er reproduce` on the folder.
 
 ### Artifact → folder mapping (driven by `SPECIALIST_ARTIFACTS`, registry.py)
 

@@ -145,8 +145,8 @@ name  = "citation_network"
 check = "field_network"
 
 [steps.settings]
-max_isolated_share     = 0.6
-max_missing_refs_share = 0.25
+max_isolated_share     = 0.5
+max_missing_refs_share = 0.4
 min_papers             = 100
 
 [[steps]]

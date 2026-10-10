@@ -73,13 +73,17 @@ class CorpusEvidence:
 
     def as_metadata(self) -> list[PaperMetadata]:
         """The cited papers, in the shape ``literature.bib`` is written from."""
+        from ...core.titles import clean, unusable
+
         return [
             PaperMetadata(
-                title=p.title,
+                title=p.title if unusable(p.title) else clean(p.title),
                 authors=list(p.authors),
                 year=p.year,
                 doi=p.doi,
                 source=p.source or "corpus",
+                # From the researcher's Library: "from your papers", whatever found it first.
+                raw={"e2er_origin": "researcher", "library_key": p.key},
             )
             for p in self.papers.values()
         ]
@@ -116,6 +120,52 @@ def gather(
     except sqlite3.Error as e:
         logger.warning("corpus at %s unreadable (%s) — continuing without it", path, e)
         return CorpusEvidence()
+
+
+def with_chosen(
+    evidence: CorpusEvidence,
+    chosen: list[PaperMetadata],
+    *,
+    only: bool,
+    db: str | Path | None = None,
+) -> CorpusEvidence:
+    """The evidence for a study whose researcher chose its papers.
+
+    Every claim of a chosen Library paper is added (it was chosen for what it
+    says, whether or not the search found it). With ``only`` (what a study with
+    a choice uses) the claims of papers that were not chosen are left out: a
+    chosen PDF or .bib entry matches its Library paper by DOI or title. Never raises.
+    """
+    from .corpus import claims_for_papers, normalize_doi
+
+    keys = [str((m.raw or {}).get("library_key")) for m in chosen if (m.raw or {}).get("library_key")]
+    hits = list(evidence.hits)
+    papers = dict(evidence.papers)
+    if keys:
+        path = corpus_path(db)
+        if path.is_file():
+            try:
+                with connect(path) as conn:
+                    seen = {(h.key, h.quote) for h in hits}
+                    hits.extend(h for h in claims_for_papers(conn, keys) if (h.key, h.quote) not in seen)
+                    papers.update(get_papers(conn, keys))
+            except sqlite3.Error as e:
+                logger.warning("corpus at %s unreadable (%s) — the chosen Library papers bring no claims", path, e)
+    if only:
+        dois = {normalize_doi(m.doi) for m in chosen if m.doi}
+        titles = {_title(m.title) for m in chosen}
+        allowed = {
+            k
+            for k, p in papers.items()
+            if k in keys or (p.doi and normalize_doi(p.doi) in dois) or _title(p.title) in titles
+        }
+        hits = [h for h in hits if h.key in allowed]
+        papers = {k: v for k, v in papers.items() if k in allowed}
+    return CorpusEvidence(hits=hits, papers=papers, queries=evidence.queries)
+
+
+def _title(title: str) -> str:
+    return " ".join("".join(c if c.isalnum() else " " for c in (title or "").lower()).split())
 
 
 def _gather(conn: sqlite3.Connection, queries: list[str], per_query: int) -> CorpusEvidence:

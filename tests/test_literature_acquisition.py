@@ -9,7 +9,8 @@ bridge made the capability reachable and canary #7 still never called it, then
 cited 23 keys against a bibliography that did not exist.
 
 So acquisition does not ask the model. These tests pin that: it runs, it writes,
-it yields to a researcher's own library, and it never takes the pipeline down.
+it runs beside a researcher's own library without touching it (its entries are
+marked as found on the web), and it never takes the pipeline down.
 
 No network — the provider chain is patched.
 """
@@ -72,7 +73,11 @@ def test_entry_count_reads_entries(tmp_path: Path):
 
 @pytest.mark.asyncio
 async def test_writes_a_bibliography_from_the_research_question(tmp_path: Path):
-    hits = [_paper("Spot ETF approval and volatility"), _paper("Realized volatility persistence", "Jones", 2021)]
+    # Both share the question's words (the web search keeps only hits on its topic: see test_study_inputs).
+    hits = [
+        _paper("Spot ETF approval and volatility"),
+        _paper("Realized volatility after spot ETF launches", "Jones", 2021),
+    ]
     with _with_sources(_source("openalex", hits)), _no_storage():
         n = await acquire_literature(tmp_path, "p1", ["does the spot ETF change volatility?"], SETTINGS)
 
@@ -83,18 +88,58 @@ async def test_writes_a_bibliography_from_the_research_question(tmp_path: Path):
 
 
 @pytest.mark.asyncio
-async def test_yields_to_a_researchers_own_library(tmp_path: Path):
-    """BYOD/Zotero users have curated references; web hits must not be merged
-    into them silently."""
+async def test_a_hit_off_the_questions_topic_is_left_out(tmp_path: Path):
+    hits = [_paper("Spot ETF approval and volatility"), _paper("Teen birth rates and contraception", "Jones", 2021)]
+    with _with_sources(_source("openalex", hits)), _no_storage():
+        n = await acquire_literature(tmp_path, "p1", ["does the spot ETF change volatility?"], SETTINGS)
+
+    assert n == 1 and "Teen birth" not in (tmp_path / "literature.bib").read_text(encoding="utf-8")
+
+
+@pytest.mark.asyncio
+async def test_runs_in_addition_to_a_researchers_own_library_marked_as_found_on_the_web(tmp_path: Path):
+    """Since 0.15.0 the web search runs in addition to the researcher's papers, never silently:
+    the researcher's entries stay as they are, and every web entry says it came from the web."""
     (tmp_path / "literature.bib").write_text(BIB, encoding="utf-8")
-    src = _source("openalex", [_paper("Something else")])
+    same = _paper("Impact of macroeconomic news on the volatility of bitcoin", "Lyócsa", 2020)
+    src = _source("openalex", [_paper("Something else"), same])
 
     with _with_sources(src), _no_storage():
         n = await acquire_literature(tmp_path, "p1", ["a question"], SETTINGS)
 
+    assert n == 1, "the hit for the researcher's own paper is not a second entry"
+    bib = (tmp_path / "literature.bib").read_text(encoding="utf-8")
+    assert bib.startswith(BIB.strip()), "the researcher's entries stay first and unchanged"
+    assert "smith2020something" in bib and "e2er_source = {web}" in bib
+
+
+@pytest.mark.asyncio
+async def test_use_only_my_papers_sends_no_request(tmp_path: Path):
+    (tmp_path / "literature.bib").write_text(BIB, encoding="utf-8")
+    src = _source("openalex", [_paper("Something else")])
+
+    with _with_sources(src), _no_storage():
+        n = await acquire_literature(tmp_path, "p1", ["a question"], SETTINGS, web_search=False)
+
     assert n == 0
     src.search.assert_not_awaited()
     assert (tmp_path / "literature.bib").read_text(encoding="utf-8") == BIB
+
+
+@pytest.mark.asyncio
+async def test_a_web_hit_never_replaces_a_researchers_entry_with_the_same_key(tmp_path: Path):
+    mine = PaperMetadata(
+        title="Spot trading", authors=["Ann Smith"], year=2020, source="bibtex", cite_key="smith2020spot"
+    )
+    (tmp_path / "literature.bib").write_text(mine.to_bibtex() + "\n", encoding="utf-8")
+    other = _paper("Spot markets elsewhere", "Bob Smith", 2020)  # derives the same key, smith2020spot
+    assert other.bibtex_key == "smith2020spot"
+
+    with _with_sources(_source("openalex", [other])), _no_storage():
+        await acquire_literature(tmp_path, "p1", ["a question"], SETTINGS)
+
+    bib = (tmp_path / "literature.bib").read_text(encoding="utf-8")
+    assert "Spot trading" in bib and "Spot markets elsewhere" not in bib
 
 
 @pytest.mark.asyncio
@@ -125,9 +170,11 @@ async def test_first_source_with_hits_wins(tmp_path: Path):
 async def test_dedupes_across_the_two_queries(tmp_path: Path):
     """The research question and the title overlap heavily; one paper found by
     both must produce one entry."""
-    same = _paper("Overlapping result")
+    same = _paper("Spot ETF volatility")
     with _with_sources(_source("openalex", [same])), _no_storage():
-        n = await acquire_literature(tmp_path, "p1", ["question", "title"], SETTINGS)
+        n = await acquire_literature(
+            tmp_path, "p1", ["Does the spot ETF change volatility?", "Spot ETF volatility"], SETTINGS
+        )
 
     assert n == 1
 

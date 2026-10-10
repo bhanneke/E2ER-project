@@ -116,6 +116,47 @@ def hash_tree(root: Path) -> dict[str, dict[str, Any]]:
     }
 
 
+#: The languages the sandbox runs: an entry point is ``Rscript`` or ``python`` on one of these files.
+RUNNABLE_SUFFIXES = frozenset({".r", ".py"})
+#: Code (and Stata's data format) of languages e2er cannot run, by file suffix.
+UNSUPPORTED_LANGUAGES: dict[str, str] = {
+    ".do": "Stata",
+    ".ado": "Stata",
+    ".dta": "Stata",
+    ".m": "MATLAB",
+    ".mod": "Dynare (MATLAB)",
+    ".jl": "Julia",
+    ".sas": "SAS",
+    ".sps": "SPSS",
+    ".gms": "GAMS",
+    ".prg": "EViews",
+    ".wf1": "EViews",
+    ".nb": "Mathematica",
+    ".wl": "Mathematica",
+    ".ox": "Ox",
+}
+
+
+def unsupported_language(tree: dict[str, Any]) -> str | None:
+    """Why the package cannot be replicated here, or None.
+
+    A package without a single R or Python file whose code (or data) is in a
+    language e2er cannot run, Stata above all, is refused at once: the planner
+    would only find out after the model has been paid to read it.
+    """
+    if any(PurePosixPath(p).suffix.lower() in RUNNABLE_SUFFIXES for p in tree):
+        return None
+    found = sorted(p for p in tree if PurePosixPath(p).suffix.lower() in UNSUPPORTED_LANGUAGES)
+    if not found:
+        return None
+    languages = sorted({UNSUPPORTED_LANGUAGES[PurePosixPath(p).suffix.lower()] for p in found})
+    shown = ", ".join(found[:8]) + (f" and {len(found) - 8} more" if len(found) > 8 else "")
+    return (
+        f"e2er runs R and Python code only. This package has no R or Python file; its code is in "
+        f"{' and '.join(languages)} ({shown}). The replication stops here, before any model is asked."
+    )
+
+
 def _make_read_only(root: Path) -> None:
     for dirpath, dirnames, filenames in os.walk(root):
         for name in filenames:
@@ -420,6 +461,9 @@ def _fetch(workspace: Path, *, max_mb: int, client: Any) -> CheckResult:
         return CheckResult(False, (f"the package cannot be unpacked safely: {e}",))
 
     tree = hash_tree(package)
+    refused = unsupported_language(tree)
+    if refused:
+        return CheckResult(False, (refused,))
     tops = sorted({p.split("/", 1)[0] for p in tree})
     root_hint = tops[0] if len(tops) == 1 and any("/" in p for p in tree) else "."
     texts = _extract_pdf_text(package, workspace / TEXT_DIR)

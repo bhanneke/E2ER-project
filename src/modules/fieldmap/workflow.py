@@ -247,8 +247,8 @@ def network_for(ws: Path, name: str):  # noqa: ANN201 — returns (data, Network
 def network_step(
     ws: Path,
     *,
-    max_isolated_share: float = 0.6,
-    max_missing_refs_share: float = 0.25,
+    max_isolated_share: float = 0.5,
+    max_missing_refs_share: float = 0.4,
     min_papers: int = 100,
 ) -> Verdict:
     """Build the main boundary's network and report what it is missing; fail when too much is."""

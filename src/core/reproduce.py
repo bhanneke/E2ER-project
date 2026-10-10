@@ -9,7 +9,8 @@ how the study's code is run again:
       "requirements": "code/requirements.txt",   # pinned packages, installed in a new environment
       "files": {"run_estimation.py": "code/run_estimation.py"},   # run folder <- study folder
       "steps": [{"run": ["python", "run_estimation.py"], "about": "estimate the models"}],
-      "inputs": [{"path": "data/x.csv", "sha256": "…", "source": "…"}],
+      "inputs": [{"path": "data/x.csv", "sha256": "…", "source": "…"}],   # + "reload": "get_data.py" when a
+                                                 # step loads it again if the folder does not ship it
       "compare": [{"published": "results/estimation_results.json", "produced": "estimation_results.json"}],
       "notes": ["…"]
     }
@@ -95,9 +96,12 @@ def load_recipe(folder: Path) -> dict[str, Any]:
     """reproduce.json, checked; RecipeError says what is wrong in plain words."""
     path = folder / RECIPE_FILE
     if not path.is_file():
+        from .export.reproduce_recipe import folder_reason
+
+        why = folder_reason(folder)
         raise RecipeError(
             f"{folder} has no {RECIPE_FILE}, the file that says how to run the study's code again "
-            "(which environment, which steps, which results to compare). See `e2er reproduce --help`."
+            "(which environment, which steps, which results to compare). " + (why or "See `e2er reproduce --help`.")
         )
     try:
         recipe = json.loads(path.read_text(encoding="utf-8"))
@@ -118,10 +122,11 @@ def load_recipe(folder: Path) -> dict[str, Any]:
         if not isinstance(files, dict) or not files:
             problems.append('"files" must map run-folder paths to files in the study folder')
         else:
+            reloaded = reloaded_inputs(recipe)
             for dst, src in files.items():
                 if not (_safe_rel(dst) and _safe_rel(src)):
                     problems.append(f'"files": {dst!r} -> {src!r} is not a relative path inside the folder')
-                elif not (folder / src).exists():
+                elif not (folder / src).exists() and dst not in reloaded:
                     problems.append(f'"files": {src} is not in the folder')
     steps = recipe.get("steps")
     if not isinstance(steps, list) or not steps:
@@ -148,6 +153,15 @@ def load_recipe(folder: Path) -> dict[str, Any]:
     if problems:
         raise RecipeError(f"{RECIPE_FILE}: " + "; ".join(problems))
     return recipe
+
+
+def reloaded_inputs(recipe: dict[str, Any]) -> set[str]:
+    """Run-folder paths of inputs a step loads again when the folder does not ship them (``"reload"``)."""
+    return {
+        str(i["path"])
+        for i in recipe.get("inputs") or []
+        if isinstance(i, dict) and isinstance(i.get("path"), str) and i.get("reload")
+    }
 
 
 def step_argv(step: dict[str, Any]) -> list[str]:
@@ -452,6 +466,8 @@ def lay_out(folder: Path, run_dir: Path, recipe: dict[str, Any]) -> list[str]:
     else:
         for dst, src in files.items():
             source, target = folder / src, run_dir / dst
+            if not source.exists():
+                continue  # an input the folder does not ship; a step loads it again (load_recipe checked)
             target.parent.mkdir(parents=True, exist_ok=True)
             if source.is_dir():
                 shutil.copytree(source, target, dirs_exist_ok=True)

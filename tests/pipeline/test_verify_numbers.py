@@ -739,3 +739,143 @@ y & 15 \\
 \end{tabular}
 """
     assert [n for n, _ in _extract_table_numbers(tex)] == ["0.42", "15"]
+
+
+# ---------------------------------------------------------------------------
+# Period labels are not values (live runs 2026-10-10, mortgage pass-through)
+# ---------------------------------------------------------------------------
+
+_PERIOD_LABELS = [
+    "2004-06",
+    "2004--06",
+    "2007–2009",
+    "2000-2007",
+    "1998--02",
+    r"2007\textendash 2009",
+    "2022Q3",
+    "2022:Q3",
+    "Q3 2022",
+    "2004m6",
+    "1990s",
+    "2004/05",
+    "FY2019",
+    "FY 2019",
+    "Jan 2020",
+    "March 15, 2020",
+]
+
+
+def _period_table(label: str, rule: str) -> str:
+    top, mid, bottom = (
+        (r"\hline", r"\hline", r"\hline") if rule == "hline" else (r"\toprule", r"\midrule", r"\bottomrule")
+    )
+    return rf"""
+\label{{tab:rob_dates}}
+\begin{{tabular}}{{lcc}}
+{top}
+ & Baseline & Start $-3$ \\
+{mid}
+{label} & -0.12 & 0.34** \\
+ & (0.05) & ($0.07$) \\
+{bottom}
+\end{{tabular}}
+"""
+
+
+@pytest.mark.parametrize("rule", ["booktabs", "hline"])
+@pytest.mark.parametrize("label", _PERIOD_LABELS)
+def test_a_period_row_label_is_not_a_value(label: str, rule: str):
+    """Rows labelled "2004--06" were read as 2004 and -06, and -06 "mismatched"
+    an ADF statistic: the number check stopped a correct paper."""
+    nums = [n for n, _ in _extract_table_numbers(_period_table(label, rule))]
+    assert nums == ["-0.12", "0.34", "0.05", "0.07"]
+
+
+@pytest.mark.parametrize("label", _PERIOD_LABELS)
+def test_a_period_in_a_data_cell_is_not_a_value(label: str):
+    tex = rf"""
+\begin{{tabular}}{{lcc}}
+\toprule
+ & A & B \\
+\midrule
+Sample & {label} & -0.12 \\
+\bottomrule
+\end{{tabular}}
+"""
+    assert [n for n, _ in _extract_table_numbers(tex)] == ["-0.12"]
+
+
+@pytest.mark.parametrize(
+    ("cell", "expected"),
+    [
+        ("-0.12", ["-0.12"]),
+        ("$-2.409$***", ["-2.409"]),
+        ("(0.05)", ["0.05"]),
+        ("[-0.30, -0.10]", ["-0.30", "-0.10"]),
+        # A range of results: the upper bound is positive, the dash is no sign.
+        ("0.12--0.15", ["0.12", "0.15"]),
+        ("0.12-0.15", ["0.12", "0.15"]),
+        ("5-10", ["5", "10"]),
+        ("1,290", ["1,290"]),
+        ("2015", ["2015"]),  # a bare year is still read (it may be a count)
+        ("1850-1999", ["1850", "1999"]),  # no period: 149 years
+        ("2019 -12", ["2019", "-12"]),  # no period: the end comes first
+    ],
+)
+def test_numbers_that_look_like_periods_are_still_read(cell: str, expected: list[str]):
+    tex = rf"""
+\begin{{tabular}}{{lc}}
+\toprule
+ & A \\
+\midrule
+Row & {cell} \\
+\bottomrule
+\end{{tabular}}
+"""
+    assert [n for n, _ in _extract_table_numbers(tex)] == expected
+
+
+def test_the_live_rob_dates_table_passes_the_gate_and_verify(tmp_path: Path):
+    """The E2E-29 table (cycles 2004--06, 2015--18, 2022--23): every value is a
+    source value, so neither the run's gate nor `e2er verify`'s rounding rule
+    may report a mismatch. Before the fix both did, on -06 and -18."""
+    est = {
+        "tests": {"unit_root": {"adf_stat": -7.226714165256452}},
+        "diagnostics": {"bic": -21.6645986272779},
+        "cycles": {
+            "c2004_06": {"baseline": 0.1161, "extend_6": -0.0119},
+            "c2015_18": {"baseline": 0.2287, "extend_6": -0.0781},
+            "c2022_23": {"baseline": 0.6302, "extend_6": 0.5741},
+        },
+    }
+    draft = r"""\begin{document}
+\begin{table}\caption{Robustness of cycle pass-through ratios}\label{tab:rob_dates}
+\begin{tabular}{lcc}
+\toprule
+ & Baseline & Extend $+6$ \\
+\midrule
+2004--06 & 0.116 & -0.012 \\
+2015--18 & 0.229 & -0.078 \\
+2022--23 & 0.630 & 0.574 \\
+\bottomrule
+\end{tabular}
+\end{table}
+The 2022--23 cycle passed through 0.630 of the funds-rate change, against 0.116 in 2004--06.
+\end{document}
+"""
+    ws = _ws_with_est(tmp_path, est, draft)
+    for rounding in (False, True):
+        report = verify(ws / "paper_draft.tex", ws, rounding=rounding)
+        assert report.total_values_in_tables == 6
+        assert report.mismatches == [], report.mismatches
+        assert report.prose_mismatches == []
+
+
+def test_prose_periods_and_ranges():
+    from src.core.pipeline.verify_numbers import _extract_prose_numbers
+
+    text = (
+        "Over 2007--2009 and in 2022Q3 (FY2019, the 1990s, Jan 2020) the slope "
+        "lies in 0.12--0.15, against $-0.30$ before."
+    )
+    assert [p.num_str for p in _extract_prose_numbers(text)] == ["0.12", "0.15", "-0.30"]

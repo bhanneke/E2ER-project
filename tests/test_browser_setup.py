@@ -531,8 +531,7 @@ def live_db(tmp_path, monkeypatch):
         return None
 
     # No network: the literature steps would ask OpenAlex.
-    monkeypatch.setattr("src.api.app._acquire_literature", _nothing)
-    monkeypatch.setattr("src.api.app._ingest_literature_corpus", _nothing)
+    monkeypatch.setattr("src.api.app._prepare_papers", _nothing)
     get_settings.cache_clear()
     yield tmp_path
     get_settings.cache_clear()

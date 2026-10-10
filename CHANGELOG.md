@@ -7,6 +7,112 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0] — 2026-10-10
+
+### Choose the data and papers a study uses
+- **New study lists your data files and papers.** The files of the data folder (name, type, size;
+  search; select all or none) and the papers of the literature folder, your .bib files and the
+  Library (title, authors, year). The study uses what you tick. Before, every study took everything
+  in both folders and the page offered no choice. Ticked at first: the data files and the papers of
+  the literature folder and .bib files (what a study took before); the Library's papers are offered
+  unticked.
+- **Add files before the run starts.** "Add files" takes data files, "Add PDFs or a .bib file" takes
+  papers; they are copied into the study and kept with it only. One list of data file types
+  everywhere (.csv, .tsv, .jsonl, .parquet, .xlsx); any other file is refused in one sentence. A
+  .txt is no longer staged as data.
+- **Only the chosen files count.** They are staged into the study's `data/` folder and imported into
+  its `data.db` (an added file is recorded in `data_sources.json` as added by the researcher); the
+  planning check, the specialists' context and the list of available sources read only the study's
+  own folder, never the live data folder. The choice is recorded in `.study_inputs.json` (left out of the exported folder: it names files on this computer).
+- **The researcher's papers are in the bibliography (fix).** Entries of the .bib file, a local Zotero
+  library and the Zotero web library were shown to the writers as citable but never written into
+  `literature.bib`, so citing one failed the citation check (missing from the bibliography). Now
+  every paper offered to the writers is written into `literature.bib` before the first step, with
+  the key the prompt shows; a .bib entry keeps its own key and fields.
+- **Web search in addition, marked.** The literature search for the research question runs beside
+  your papers (before, a .bib or Zotero library switched it off without a word). Every entry says
+  where it came from (`e2er_source = {researcher}` or `{web}`); none replaces one of yours.
+  "Use only my papers" turns the search off and limits the Library's evidence to the chosen papers.
+- **The run page shows "Data and papers"**: the chosen files, the tables the study reads with their
+  rows and source, your papers and the papers found on the web. The finish page shows "What the
+  study used": data used and every reference the paper cites, marked "from your papers" or "found
+  on the web". The dossier lists the cited references with their source (`references`; a study
+  exported before has none, so its dossier is unchanged).
+- **Readable titles.** New study, the run page and the finish page show titles without braces, LaTeX,
+  author footnote marks (∗ † ‡) or "Accepted Version" banners; a title that is a file name, a page
+  header or a journal citation ("J Evol Econ (2013) 23:925–953") is replaced by its DOI record's
+  title, else shown as "(title not readable)". The Library's papers are a folded group of their own,
+  "Your Library (N)", with its own search, below the folder's papers and .bib entries.
+- **Off-topic web hits stay out.** A search hit joins the bibliography only when it shares enough of
+  the research question's content words: with an abstract, 2 in the title and a third (2 to 4) in title
+  and abstract; title only, a fifth (2 to 3) (`is_relevant` in `modules/literature/discovery.py`). The
+  live run's 53 hits for a mortgage question (solar bonds, the federal budget, …) all stay out; the study
+  records what it left out in `literature/web_search.json`, and the run page says how many. The
+  panel lists the web papers the draft cites first and folds the rest.
+- **Library: Add papers.** The Library page takes PDFs or a folder and reads them in the background
+  with the importer of `e2er library add`.
+- **`e2er run --data FILE… --papers FILE… [--only-my-papers]`** does the same in a terminal (a
+  folder stands for the files in it). Without them a study takes everything, as before.
+
+### Replication, credit, commands and the field map
+- **Fixed: an installed e2er could not run the specialists' commands.** Before 0.15.0 a pip or
+  `uv tool install` installation had only `e2er`, `e2er-data` and `e2er-fieldmap`. `e2er-run`,
+  `e2er-lit`, `e2er-check-tables` and `e2er-allium-query` existed only in a source checkout, while
+  the specialists were told to use them. On an installed e2er, specialists on the CLI backends
+  (Claude Code, Codex, Gemini) could therefore not run their own scripts while writing them, not
+  search or record literature, and not check their table specs; the runner still ran the
+  estimation script itself after the step. All six are now console commands of the package
+  (`src/wrappers.py`; the `scripts/` files of a checkout call the same code). The wheel check
+  installs the package with an empty home folder and runs each of them.
+- **`e2er reproduce` for every study.** `e2er export` now writes `reproduce.json` from what the run
+  recorded: the estimation script and every later script of the run that wrote
+  `estimation_results.json`, in the order the run ran them (`e2er-run` and the runner now record
+  every script run in the workspace; for older runs the order comes from file times, and the recipe
+  says so); the files they read, laid out
+  where they expect them, with data files as inputs (SHA-256 and source from `data_sources.json`);
+  `code/requirements.txt` with the packages they import at the versions of the run's environment;
+  the estimation results (and robustness results) to compare, with the tables rendered again; and
+  `code/get_data.py`, which loads Yahoo Finance and GMD data again with `e2er-data` when the folder
+  does not have them. The exported scripts name the run folder instead of the workspace's full
+  path. The FOMC demonstration study reproduces with it: 162 of 162 values identical and both
+  tables the same, in a new environment. A study without an estimation script or without results
+  gets no recipe, and its README and `e2er reproduce` say why. `e2er-data yfinance` records the
+  request (ticker, dates, interval) with each load, so the reload asks for the same rows.
+- **Stata packages are refused before any model call.** The replication template's download step
+  now refuses a package that has no R or Python file and whose code is in Stata (`.do`, `.ado`,
+  `.dta`), MATLAB, Julia, SAS, SPSS, GAMS, EViews, Mathematica or Ox. The refusal names the files and
+  stops the run before the planner reads the package, so nothing is spent.
+- **Template credit in the dossier.** A run records its template's `[[credit]]` in the
+  `template_components` event, and the dossier of a published run carries it as `credit`
+  (`{"template": …, "entries": [...]}`, the entries as the template file wrote them). Dossiers of
+  templates without credit are unchanged, and so are their ids.
+- **Co-authors from the terminal.** `e2er publish --coauthor "Name|github=login|orcid=…|role=…"`
+  (repeatable) lists co-authors after the publisher in `e2er.json`; each needs a GitHub login or an
+  ORCID iD, so e2er.org can ask them to confirm the credit. A malformed entry is refused with a
+  sentence that says what is missing.
+- **Skill texts without internal names.** `synthesis/context-builder` and `writing/scoped-revision`
+  name the specialists in words ("the paper drafter", "targeted corrections").
+- **Every terminal command is in the README**: `e2er serve`, `skills sync` (and `install-skills`),
+  `verify-citations`, `preregister deposit`, `whoami`, `logout`, `dossier push`, `skills installed`
+  and `remove`, and the `library` commands `list`, `stats`, `topics list`, `topics remove`, `export`
+  and `remove`. A test reads every command and subcommand from the code and fails when the README
+  does not name it.
+- **Field-map completeness stops calibrated.** The citation-network check now stops above 50% of
+  papers without internal links (before 60%) and above 40% without references (before 25%). The
+  values come from five boundaries (scientometrics, information systems, economics and two niches);
+  the old 25% would have stopped the information-systems and economics literatures, whose main
+  paths have 18 papers. The table is in the `synthesis/main-path-analysis` skill and in
+  docs/templates.md.
+- **Fixed: the number check read period labels as numbers.** A table with rows labelled `2004--06`,
+  `2015--18` and `2022--23` (live run 2026-10-10, mortgage pass-through study) was read as 2004
+  and -06, 2015 and -18, 2022 and -23; the run stopped at the number check on two of them and
+  `e2er verify` failed six cells of a correct table. Spans of years (`2004-06`, `2007–2009`,
+  `1998--02`), quarters and months (`2022Q3`, `Q3 2022`, `2004m6`), decades (`1990s`), fiscal years
+  (`FY2019`) and month-and-year dates (`Jan 2020`) are now labels, in table cells and in the text,
+  for the run's check and for `e2er verify` alike. A dash right after a digit is a range dash, not a
+  minus sign: the upper bound of `0.12--0.15` is 0.15. Negative values, standard errors in
+  parentheses and bare years are read as before.
+
 ## [0.14.1] — 2026-10-08
 
 - 0.14.1 is 0.14.0 as it was meant to ship. The tag v0.14.0 exists, but its release run stopped at a test that only read the [Unreleased] part of this file, so 0.14.0 was never published on PyPI. That test now reads the whole file.

@@ -1,6 +1,6 @@
 [project]
 name = "e2er"
-version = "0.14.1"
+version = "0.15.0"
 description = "e2er is the open infrastructure for publishing, verifying, reproducing and reusing AI-enabled research."
 requires-python = ">=3.11"
 readme = "README.md"
@@ -82,6 +82,13 @@ e2er-data = "src.modules.data.cli:main"
 # papers through it (src/modules/fieldmap/cli.py); scripts/e2er-fieldmap is the
 # dev-checkout wrapper.
 e2er-fieldmap = "src.modules.fieldmap.cli:main"
+# The other commands specialists run by name (claude_code.py allowlists, the
+# specialists' instructions); src/wrappers.py implements them, and the
+# scripts/ files of a source checkout call the same functions.
+e2er-run = "src.wrappers:run_main"
+e2er-lit = "src.wrappers:lit_main"
+e2er-check-tables = "src.wrappers:check_tables_main"
+e2er-allium-query = "src.wrappers:allium_query_main"
 
 [build-system]
 requires = ["setuptools>=68.0"]

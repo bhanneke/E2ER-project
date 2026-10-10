@@ -138,6 +138,15 @@
 })();
 </script>
 
+<section class="card" id="inputs-panel">
+  <div class="card-h"><h2>Data and papers</h2></div>
+  <div hx-get="/htmx/papers/{{ paper.id }}/inputs"
+       hx-trigger="load delay:400ms{% if inputs_live %}, every 15s{% endif %}"
+       hx-swap="innerHTML">
+    <p class="muted">Loading…</p>
+  </div>
+</section>
+
 <section>
   <h2>Files</h2>
   {% if not groups %}

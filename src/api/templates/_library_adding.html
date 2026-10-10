@@ -1,0 +1,7 @@
+{% if a and a.label %}
+  {% if a.finished %}
+    <p class="done-box">Added from {{ a.label }}: {{ a.stored }} new, {{ a.skipped }} already in the Library{% if a.failed %}, {{ a.failed }} without readable text or checkable claims{% endif %}.{% if a.error %} It stopped early: {{ a.error }}{% endif %}</p>
+  {% else %}
+    <p class="pf-banner" hx-get="/htmx/library/adding" hx-trigger="every 4s" hx-target="#library-adding" hx-swap="innerHTML">Reading {{ a.label }}: {{ a.done }} of {{ a.total or "?" }} papers done. Each paper takes the AI a moment.</p>
+  {% endif %}
+{% endif %}

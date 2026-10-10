@@ -125,8 +125,8 @@ def _extract(conn: sqlite3.Connection, storage_dir: Path) -> list[PaperMetadata]
     deleted = {row[0] for row in conn.execute("SELECT itemID FROM deletedItems")}
 
     out: list[PaperMetadata] = []
-    for item_id, type_name in conn.execute(
-        "SELECT i.itemID, it.typeName FROM items i JOIN itemTypes it ON it.itemTypeID = i.itemTypeID"
+    for item_id, item_key, type_name in conn.execute(
+        "SELECT i.itemID, i.key, it.typeName FROM items i JOIN itemTypes it ON it.itemTypeID = i.itemTypeID"
     ):
         if type_name in _SKIP_TYPES or item_id in deleted:
             continue
@@ -146,7 +146,8 @@ def _extract(conn: sqlite3.Connection, storage_dir: Path) -> list[PaperMetadata]
                 journal=journal.strip(),
                 url=(f.get("url") or "").strip(),
                 source="zotero_local",
-                raw={"source_pdf": source_pdf} if source_pdf else {},
+                # The item's Zotero key: how New study names the item a researcher chose.
+                raw={"zotero_key": item_key, **({"source_pdf": source_pdf} if source_pdf else {})},
             )
         )
     return out

@@ -372,6 +372,8 @@ class RunRecord:
     skills: dict[str, list[str]] = field(default_factory=dict)
     component_segments: dict[str, list[int]] = field(default_factory=dict)
     recorded: bool = False  # the database has this run's events
+    #: The template's ``[[credit]]`` entries as the run recorded them (``template_components``), if any.
+    credit: dict[str, Any] | None = None
 
 
 #: Events that are part of the run's history but not one of the dossier's step types.
@@ -516,6 +518,9 @@ def read_run(db: Path, paper_id: str, files: dict[str, Any] | None = None, bundl
             if seg >= 0:
                 rec.segments[seg]["template"] = data.get("template")
             template_skills[seg] = {k: list(v) for k, v in (data.get("skills") or {}).items()}
+            entries = data.get("credit")
+            if isinstance(entries, list) and entries:
+                rec.credit = {"template": data.get("template"), "entries": [e for e in entries if isinstance(e, dict)]}
         elif etype == "phase_start":
             phase = stage
         elif etype == "specialist_start":
@@ -906,6 +911,10 @@ def build_dossier(
         if run.internal_review:
             doc["run"]["internal_review"] = run.internal_review
         doc["run"]["events"] = run.events
+        if run.credit:
+            # The work the template is based on, cites or relates to, as the run recorded it. A
+            # template without `[[credit]]` adds nothing, so those dossiers (and their ids) are unchanged.
+            doc["credit"] = copy.deepcopy(run.credit)
     else:
         doc["run"]["workflow_recorded"] = False
         doc["run"]["note"] = (
@@ -917,6 +926,9 @@ def build_dossier(
     sources = _data_sources(bundle)
     if sources:
         doc["data_sources"] = sources
+    references = _references(bundle)
+    if references:
+        doc["references"] = references
     doc["workflow"] = workflow
     if not recorded and (prereg is not None or any(w.get("type") == "researcher" for w in workflow)):
         doc["schema"] = SCHEMA_RESEARCHER
@@ -1073,3 +1085,42 @@ def stamp_paper(
     if m:
         return tex[: m.start()] + block + tex[m.end() :]
     return tex.replace("\\begin{document}", block + "\n\\begin{document}", 1)
+
+
+def _references(bundle: Path | None) -> list[dict[str, Any]]:
+    """The references the paper cites, each with where it came from: the researcher's papers or a web search.
+
+    Read from the exported ``paper/refs.bib`` (its ``e2er_source`` tags, written
+    since 0.15.0 by study_inputs.prepare_papers and the literature search) and
+    the keys ``paper/paper.tex`` cites. A study whose bibliography carries no
+    tags (exported before 0.15.0) has no ``references``, so its dossier and its
+    address are unchanged.
+    """
+    if bundle is None:
+        return []
+    from ..modules.literature.models import SOURCE_FIELD
+    from .pipeline.verify_citations import load_bib, parse_cite_keys
+
+    entries = load_bib(Path(bundle) / "paper" / "refs.bib")
+    if not any(f.get(SOURCE_FIELD) for f in entries.values()):
+        return []
+    try:
+        tex = (Path(bundle) / "paper" / "paper.tex").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    out: list[dict[str, Any]] = []
+    for key in parse_cite_keys(tex):
+        f = entries.get(key)
+        if f is None:
+            continue
+        entry: dict[str, Any] = {
+            "key": key,
+            "title": " ".join(str(f.get("title") or "").replace("{", "").replace("}", "").split()),
+            "source": "researcher" if f.get(SOURCE_FIELD) == "researcher" else "web",
+        }
+        if str(f.get("year") or "").strip():
+            entry["year"] = str(f["year"]).strip()
+        if str(f.get("doi") or "").strip():
+            entry["doi"] = str(f["doi"]).strip()
+        out.append(entry)
+    return out

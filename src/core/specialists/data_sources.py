@@ -11,8 +11,10 @@ stops for the researcher, who can add data files or keys, or instruct the
 architect to use other sources.
 
 Available: yfinance and GMD (no key), FRED with FRED_API_KEY, Allium with
-ALLIUM_API_KEY, and files in the study's data folder (``data/`` in the
-workspace, or LOCAL_DATA_DIR).
+ALLIUM_API_KEY, and the data files of this study: the files staged into its
+``data/`` folder when it started (the files chosen on New study or with
+``e2er run --data``, else every data file of the data folder). The data folder
+itself is not read again: a file added there later is not part of this study.
 """
 
 from __future__ import annotations
@@ -21,6 +23,8 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+from ...modules.local_corpus import DATA_EXTENSIONS
 
 #: Connectors e2er has: source name -> (the setting that holds its key, its variable), None when keyless.
 CONNECTORS: dict[str, tuple[str, str] | None] = {
@@ -39,7 +43,8 @@ _ALIASES = {
 LOCAL_SOURCES = frozenset(
     {"local", "file", "data", "data_folder", "researcher", "researcher_supplied", "supplied", "byod", "upload"}
 )
-_TABULAR = frozenset({".csv", ".tsv", ".parquet", ".xlsx", ".xls", ".json", ".jsonl", ".txt"})
+#: The data files a study can read (the one list in modules/local_corpus.py).
+_TABULAR = DATA_EXTENSIONS
 
 
 @dataclass(frozen=True)
@@ -50,11 +55,8 @@ class Sources:
 
 
 def _data_dirs(workspace: Path, settings: Any) -> list[Path]:
-    dirs = [Path(workspace) / "data"]
-    for part in str(getattr(settings, "local_data_dir", "") or "").split(","):
-        if part.strip():
-            dirs.append(Path(part.strip()).expanduser())
-    return dirs
+    """The study's own data folder: what was staged for it at the start (never the live data folder)."""
+    return [Path(workspace) / "data"]
 
 
 def available_sources(workspace: Path, settings: Any = None) -> Sources:
@@ -112,11 +114,11 @@ def why_unavailable(entry: dict[str, Any], sources: Sources) -> str | None:
         if not wanted and any(Path(f).stem == name for f in sources.files):
             return None
         if not sources.files:
-            return "the study's data folder (data/ or LOCAL_DATA_DIR) holds no data files"
-        return f"no file {wanted!r} in the study's data folder (files there: {', '.join(sources.files)})"
+            return "no data files were chosen for this study"
+        return f"no file {wanted!r} among the study's data files ({', '.join(sources.files)})"
     return (
         f"e2er has no connector for {entry.get('source')!s}; "
-        "add the data as a file in the study's data folder or use an available source"
+        "add the data as a file to the study or use an available source"
     )
 
 
@@ -175,17 +177,17 @@ def sources_block(workspace: Path, settings: Any = None) -> str:
             lines.append(f"- not available: `{name}` (needs {key[1]}, which is not set)" if key else "")
     if s.files:
         lines.append(
-            "- `file`: the study's data folder holds "
+            "- `file`: the researcher chose these data files for this study (in its `data/` folder): "
             + ", ".join(f"`{f}`" for f in s.files)
             + '; declare such a table with `"source": "file", "file": "<name>"`.'
         )
     else:
-        lines.append("- no data files: the study's data folder (data/ or LOCAL_DATA_DIR) is empty.")
+        lines.append("- no data files: the researcher chose no data files for this study.")
     if s.tables:
         lines.append("- already in data.db (do not redeclare): " + ", ".join(sorted(s.tables)))
     lines.append(
         "Sources such as CRSP, Compustat, WRDS, call reports or Fama-French factors are not available unless "
-        "their data are files in the data folder. If the question needs data that no available source has, "
+        "their data are among the study's data files. If the question needs data that no available source has, "
         "say so in data_dictionary.json (`unavailable`) instead of declaring the table."
     )
     return "\n".join(line for line in lines if line)

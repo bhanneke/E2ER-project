@@ -1,14 +1,25 @@
 #!/usr/bin/env bash
-# Back-compat shim. The Allium gatekeeper moved into the unified
-# `e2er-data` wrapper as the `allium` source on 2026-05-17 (v0.4 prep).
-# This shim re-prefixes the old `e2er-allium-query <cmd>` invocation as
-# `e2er-data allium <cmd>` so external scripts and any unmigrated skill
-# files keep working through a deprecation window.
-#
-# Will be removed in v0.5.0. Migrate to `e2er-data allium <cmd>` for new
-# code.
-
+# e2er-allium-query for a source checkout. The implementation is src/wrappers.py (the console
+# entry point `e2er-allium-query` of an installed e2er); this file only finds a Python and
+# calls it, in the current folder (the study's workspace), with the checkout on
+# PYTHONPATH.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-exec "$SCRIPT_DIR/e2er-data" allium "$@"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+if [[ -n "${E2ER_PYTHON:-}" ]] && [[ -x "$E2ER_PYTHON" ]]; then
+    PY="$E2ER_PYTHON"
+elif command -v python3.12 >/dev/null 2>&1; then
+    PY="$(command -v python3.12)"
+elif command -v python3.11 >/dev/null 2>&1; then
+    PY="$(command -v python3.11)"
+elif command -v python3 >/dev/null 2>&1; then
+    PY="$(command -v python3)"
+else
+    echo "e2er-allium-query: cannot find a Python interpreter. The project requires Python 3.11+." >&2
+    exit 2
+fi
+
+export PYTHONPATH="$PROJECT_ROOT${PYTHONPATH:+:$PYTHONPATH}"
+exec "$PY" -m src.wrappers allium-query "$@"

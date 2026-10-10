@@ -173,6 +173,27 @@ def main() -> None:
         "then `e2er review <paper_id>` to edit, instruct, send back or approve (or `e2er resume` to continue).",
     )
     run_p.add_argument(
+        "--data",
+        nargs="+",
+        default=None,
+        metavar="FILE",
+        help="The data files this study uses (.csv, .tsv, .jsonl, .parquet, .xlsx), as on New study. "
+        "Without --data the study takes every data file of the data folder (LOCAL_DATA_DIR).",
+    )
+    run_p.add_argument(
+        "--papers",
+        nargs="+",
+        default=None,
+        metavar="FILE",
+        help="The papers this study reads and cites: PDFs and .bib files (or a folder of them), as on New study. "
+        "Without --papers it takes every paper of the literature folder and .bib files.",
+    )
+    run_p.add_argument(
+        "--only-my-papers",
+        action="store_true",
+        help="No web search for further literature: the study cites only the researcher's papers.",
+    )
+    run_p.add_argument(
         "--max-cost",
         type=float,
         default=5.0,
@@ -510,6 +531,15 @@ def main() -> None:
     publish_p.add_argument("--orcid", default=None, help="Your ORCID iD, e.g. 0000-0002-1825-0097.")
     publish_p.add_argument("--name", default=None, help="Your name as it should appear in citations.")
     publish_p.add_argument("--role", action="append", default=None, dest="roles", help="CRediT role (repeatable).")
+    publish_p.add_argument(
+        "--coauthor",
+        action="append",
+        default=None,
+        dest="coauthors",
+        metavar='"NAME|github=LOGIN|orcid=ID|role=ROLE"',
+        help="A co-author (repeatable): the name, then github= and/or orcid=, and role= (CRediT, repeatable). "
+        "e2er.org asks each co-author to confirm the credit.",
+    )
     publish_p.add_argument("--repo", default=None, help="URL of the repository that holds the bundle.")
     publish_p.add_argument(
         "--commit", default=None, help="Commit that pins the bundle (needed for registry verification)."
@@ -724,6 +754,7 @@ def main() -> None:
                 orcid=args.orcid,
                 name=args.name,
                 roles=args.roles,
+                coauthors=args.coauthors,
                 repo=args.repo,
                 commit=args.commit,
                 path=args.path,
@@ -926,6 +957,9 @@ def main() -> None:
                 review_stages=args.review_at,
                 template=args.template,
                 demonstration=args.demonstration,
+                data=args.data,
+                papers=args.papers,
+                only_my_papers=args.only_my_papers,
             )
         )
     elif args.command == "init":

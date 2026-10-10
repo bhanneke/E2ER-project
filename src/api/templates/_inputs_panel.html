@@ -1,0 +1,88 @@
+{% if problem %}
+  <p class="muted">{{ problem }}</p>
+{% elif not v %}
+  <p class="muted">The study's folder is not on this computer.</p>
+{% else %}
+{% if not v.recorded %}
+  <p class="card-note">This run started before e2er recorded the data and papers a study uses. What its folder holds:</p>
+{% endif %}
+<div class="inputs-cols">
+  <div>
+    <h3>Data files</h3>
+    {% if v.files %}
+      <ul class="inputs-list">
+        {% for f in v.files %}
+          <li><span class="mono quoted">{{ f.name }}</span> <span class="muted">· {{ f.origin }} · {{ f.size | filesize }}</span></li>
+        {% endfor %}
+      </ul>
+      {% if not v.data_chosen %}<p class="small muted">No choice was made, so the study took every data file of the data folder.</p>{% endif %}
+    {% elif v.recorded %}
+      <p class="muted">No data files of your own: the study fetches public data.</p>
+    {% endif %}
+    {% if v.tables %}
+      <h3>Tables the study reads</h3>
+      <table class="wf-table compact">
+        <thead><tr><th>Table</th><th class="num">Rows</th><th>From</th></tr></thead>
+        <tbody>
+          {% for t in v.tables %}
+            <tr><td class="mono quoted">{{ t.table }}</td><td class="num">{{ "{:,}".format(t.rows) }}</td><td class="quoted">{{ t.source }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% endif %}
+  </div>
+  <div>
+    <h3>Your papers ({{ v.mine | length }})</h3>
+    {% if v.mine %}
+      <ul class="inputs-list scroll-list">
+        {% for p in v.mine %}
+          <li><span class="quoted">{{ p.title }}</span>{% if p.year %} ({{ p.year }}){% endif %}
+            <span class="muted">{% if p.authors %}· <span class="quoted">{{ p.authors }}</span> {% endif %}· {{ p.origin }}{% if p.kind %} · {{ p.kind }}{% endif %}{% if p.pdf %} · full text{% endif %}</span>
+            <br><span class="muted mono small quoted">\cite{ {{- p.key -}} }</span></li>
+        {% endfor %}
+      </ul>
+      {% if not v.papers_chosen and v.recorded %}<p class="small muted">No choice was made, so the study took every paper of your literature folder and .bib files.</p>{% endif %}
+    {% elif not v.prepared and v.recorded %}
+      <p class="muted">Being prepared: e2er writes them into the study's bibliography before the first step.</p>
+    {% else %}
+      <p class="muted">None.</p>
+    {% endif %}
+    {% if v.missing %}
+      <p class="small error">{{ v.missing | length }} chosen paper(s) could not be found when the study started.</p>
+    {% endif %}
+    <h3>Found on the web ({{ v.web | length }})</h3>
+    {% if not v.web_search %}
+      <p class="muted">Not searched: you chose to use only your papers.</p>
+    {% elif v.web %}
+      {% if v.cited is not none %}
+        <p class="small muted">{{ v.web_cited | length }} of them cited in the paper{% if v.web_cited %}:{% else %}.{% endif %}</p>
+      {% endif %}
+      {% if v.web_cited %}
+        <ul class="inputs-list">
+          {% for p in v.web_cited %}
+            <li><span class="quoted">{{ p.title }}</span>{% if p.year %} ({{ p.year }}){% endif %} <span class="muted">{% if p.authors %}· <span class="quoted">{{ p.authors }}</span>{% endif %}</span></li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+      {% set rest = v.web_other if v.cited is not none else v.web %}
+      {% if rest %}
+        <details class="fold">
+          <summary>{% if v.cited is not none %}Not cited ({{ rest | length }}){% else %}The list ({{ rest | length }}){% endif %}</summary>
+          <ul class="inputs-list scroll-list">
+            {% for p in rest %}
+              <li><span class="quoted">{{ p.title }}</span>{% if p.year %} ({{ p.year }}){% endif %} <span class="muted">{% if p.authors %}· <span class="quoted">{{ p.authors }}</span>{% endif %}</span></li>
+            {% endfor %}
+          </ul>
+        </details>
+      {% endif %}
+    {% elif v.prepared %}
+      <p class="muted">None.</p>
+    {% else %}
+      <p class="muted">Being prepared.</p>
+    {% endif %}
+    {% if v.web_search and v.web_left_out %}
+      <p class="small muted">{{ v.web_left_out }} further search result(s) left out: they share too few words with the research question.</p>
+    {% endif %}
+  </div>
+</div>
+{% endif %}

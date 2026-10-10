@@ -60,14 +60,103 @@ class Fixture:
 
 
 def env_for(folder: Path) -> dict[str, str]:
-    """The settings that point e2er at the fixture folder."""
+    """The settings that point e2er at the fixture folder (with a data folder and a literature folder)."""
     study = folder / "study"
     return {
         "DATABASE_URL": f"sqlite:///{folder / 'papers.db'}",
         "WORKSPACE_ROOT": str(study / "workspaces"),
         "OUTPUT_DIR": str(study / "exports"),
         "LLM_BACKEND": "claude_code",
+        "LOCAL_DATA_DIR": str(study / "data"),
+        "LITERATURE_DIR": str(study / "literature"),
     }
+
+
+_BIB = """@article{Bernanke:2005,
+  title = {What Explains the Stock Market's Reaction to Federal Reserve Policy?},
+  author = {Bernanke, Ben S. and Kuttner, Kenneth N.},
+  journal = {Journal of Finance},
+  year = {2005},
+}
+"""
+
+
+def _folders(study: Path) -> None:
+    """The researcher's data and literature folders, as New study lists them."""
+    (study / "data").mkdir(parents=True, exist_ok=True)
+    (study / "data" / "fomc_announcement_dates.csv").write_text("date\n2015-12-16\n", encoding="utf-8")
+    (study / "data" / "bank_tickers.csv").write_text("ticker\nKBE\nKRE\n", encoding="utf-8")
+    (study / "literature").mkdir(parents=True, exist_ok=True)
+    (study / "literature" / "refs.bib").write_text(_BIB, encoding="utf-8")
+
+
+def _write_inputs(ws: Path) -> None:
+    """What the study used: chosen files, a table, the researcher's paper and one found on the web, cited."""
+    import sqlite3
+
+    from src.core.study_inputs import write_record
+    from src.modules.literature.models import PaperMetadata
+
+    write_record(
+        ws,
+        {
+            "data": {
+                "chosen": True,
+                "files": [
+                    {"name": "fomc_announcement_dates.csv", "origin": "folder", "size": 20},
+                    {"name": "bank_balance_sheets.csv", "origin": "upload", "size": 4096},
+                ],
+            },
+            "papers": {
+                "chosen": True,
+                "web_search": True,
+                "items": [{"key": "Bernanke:2005", "title": "What Explains", "kind": "bib", "origin": "folder"}],
+            },
+        },
+    )
+    mine = PaperMetadata(
+        title="What Explains the Stock Market's Reaction to Federal Reserve Policy?",
+        authors=["Bernanke, Ben S.", "Kuttner, Kenneth N."],
+        year=2005,
+        source="bibtex",
+        cite_key="Bernanke:2005",
+    )
+    web = PaperMetadata(
+        title="Monetary Policy, Bank Equity and the Federal Budget",
+        authors=["Ann English"],
+        year=2018,
+        source="openalex",
+    )
+    (ws / "literature.bib").write_text(mine.to_bibtex() + "\n\n" + web.to_bibtex() + "\n", encoding="utf-8")
+    draft = ws / "paper_draft.tex"
+    draft.write_text(
+        draft.read_text(encoding="utf-8").replace(
+            "\\section{Results}",
+            "\\section{Results}\nAs \\citet{Bernanke:2005} and \\citet{english2018monetary} find.\n",
+        ),
+        encoding="utf-8",
+    )
+    con = sqlite3.connect(ws / "data.db")
+    con.execute("CREATE TABLE IF NOT EXISTS fomc_announcement_dates (date TEXT)")
+    con.execute("INSERT INTO fomc_announcement_dates VALUES ('2015-12-16')")
+    con.commit()
+    con.close()
+    (ws / "data_sources.json").write_text(
+        json.dumps(
+            {
+                "loads": [
+                    {
+                        "connector": "data-folder",
+                        "dataset": "The researcher's data folder",
+                        "series": "fomc_announcement_dates.csv",
+                        "table": "fomc_announcement_dates",
+                        "files": [{"path": "data/fomc_announcement_dates.csv", "sha256": "c" * 64}],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
 
 
 #: name → (template, mode, status, last_error, pending step, review metadata, extra state metadata)
@@ -251,6 +340,7 @@ def _write_workspace(ws: Path, paper_id: str, name: str, spec: dict[str, Any]) -
         "purpose": "demonstration",
     }
     (ws / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    _write_inputs(ws)
     state = {
         "paper_id": paper_id,
         "mode": "single_pass",
@@ -381,6 +471,7 @@ def build(folder: Path) -> Fixture:
     env = env_for(folder)
     (study / ".env").write_text("".join(f"{k}={v}\n" for k, v in env.items()), encoding="utf-8")
     fx = Fixture(folder=folder, study=study, db=folder / "papers.db")
+    _folders(study)
     asyncio.run(_populate(fx))
     _exports(fx)
     (folder / "fixture.json").write_text(json.dumps({"ids": fx.ids, "keys": fx.keys}, indent=2), encoding="utf-8")

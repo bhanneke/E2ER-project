@@ -1,0 +1,47 @@
+{% if problem %}
+  <p class="pick-empty">{{ problem }}</p>
+{% else %}
+{# Sent only once the list is here: a form sent before it loaded leaves the papers as they were (all of them). #}
+<input type="hidden" name="paper_choice" value="1">
+{% if papers %}
+  <div class="pick-tools">
+    <input type="search" placeholder="Search by title, author or year" data-pick-search aria-label="Search your papers">
+    <button type="button" class="btn-ghost btn-small" data-pick-all>Select all</button>
+    <button type="button" class="btn-ghost btn-small" data-pick-none>Select none</button>
+    <span class="pick-count" data-pick-count></span>
+  </div>
+  <div class="pick-list">
+    {% for p in papers %}
+      <label class="pick-row" data-text="{{ (p.title ~ ' ' ~ p.authors_text ~ ' ' ~ (p.year or '') ~ ' ' ~ p.kind_label) | lower }}">
+        <input type="checkbox" name="paper" value="{{ p.id }}" {% if p.ticked %}checked{% endif %}>
+        <span class="pick-name quoted">{{ p.title }}{% if p.authors_text %} <span class="muted">· {{ p.authors_text }}</span>{% endif %}</span>
+        <span class="pick-meta">{{ p.year or "" }} · {{ p.kind_label }}</span>
+      </label>
+    {% endfor %}
+  </div>
+  <p class="pick-note muted">{% if literature_dir %}From your literature folder: <code class="path">{{ literature_dir }}</code>{% endif %}{% if bib_file %}{% if literature_dir %} · {% endif %}.bib file: <code class="path">{{ bib_file }}</code>{% endif %}</p>
+{% else %}
+  <p class="pick-empty">{% if library %}No papers in your literature folder or .bib files (Settings). Choose from your Library below, or add PDFs or a .bib file here.{% else %}No papers yet: your literature folder, your .bib files and your Library are empty or not set (Settings). Add PDFs or a .bib file here.{% endif %}</p>
+{% endif %}
+
+{% if library %}
+  <details class="lib-group" data-pick="library">
+    <summary>Your Library ({{ library | length }}) <span class="pick-count" data-pick-count></span></summary>
+    <div class="pick-tools">
+      <input type="search" placeholder="Search your Library" data-pick-search aria-label="Search your Library">
+      <button type="button" class="btn-ghost btn-small" data-pick-all>Select all</button>
+      <button type="button" class="btn-ghost btn-small" data-pick-none>Select none</button>
+    </div>
+    <div class="pick-list">
+      {% for p in library %}
+        <label class="pick-row" data-text="{{ (p.title ~ ' ' ~ p.authors_text ~ ' ' ~ (p.year or '')) | lower }}">
+          <input type="checkbox" name="paper" value="{{ p.id }}" {% if p.ticked %}checked{% endif %}>
+          <span class="pick-name quoted">{{ p.title }}{% if p.authors_text %} <span class="muted">· {{ p.authors_text }}</span>{% endif %}</span>
+          <span class="pick-meta">{{ p.year or "" }}</span>
+        </label>
+      {% endfor %}
+    </div>
+    <p class="pick-note muted">Papers you added to the Library (e2er reads what each claims). Tick those this study builds on.</p>
+  </details>
+{% endif %}
+{% endif %}

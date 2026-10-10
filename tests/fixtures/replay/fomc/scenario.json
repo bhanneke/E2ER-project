@@ -96,9 +96,12 @@
       "files": [
         "econometric_spec.md",
         "run_estimation.py",
+        "revise_estimation.py",
+        "compute_h2_final.py",
+        "compute_h2_v2.py",
         "estimation_results.json"
       ],
-      "output": "Wrote econometric_spec.md, run_estimation.py, estimation_results.json.",
+      "output": "Wrote econometric_spec.md, run_estimation.py, revise_estimation.py, compute_h2_final.py, compute_h2_v2.py, estimation_results.json.",
       "usage": {
         "input_tokens": 388,
         "output_tokens": 33543,

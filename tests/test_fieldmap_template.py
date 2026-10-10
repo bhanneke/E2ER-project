@@ -562,3 +562,21 @@ def test_the_study_bundle_carries_the_field_map(ws: Path, fake: FakeOpenAlex, tm
     ):
         assert (out / rel).is_file(), rel
     assert not list(out.rglob("cache"))
+
+
+def test_the_completeness_stops_agree_everywhere_and_match_the_calibration():
+    """50% without internal links and 40% without references (calibrated on five boundaries, 2026-10-10)."""
+    import inspect
+
+    from src.core.pipeline import fieldmap_checks
+    from src.core.pipeline.spec import find_spec
+    from src.modules.fieldmap import cli, workflow
+
+    want = {"max_isolated_share": 0.5, "max_missing_refs_share": 0.4, "min_papers": 100}
+    for fn in (workflow.network_step, fieldmap_checks.field_network):
+        params = inspect.signature(fn).parameters
+        assert {k: params[k].default for k in want} == want, fn
+    assert dict(find_spec("field-map").step("citation_network").settings) == want
+    source = inspect.getsource(cli.main)
+    assert '"--max-isolated-share", type=float, default=0.5)' in source
+    assert '"--max-missing-refs-share", type=float, default=0.4)' in source

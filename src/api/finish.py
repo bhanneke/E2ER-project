@@ -165,10 +165,24 @@ async def finish_page(request: Request, paper_id: str) -> Any:
             "n_checks": 6,
             "project": project_published or _slug(str(paper.get("title") or "")),
             "demonstration": demo,
+            "inputs": _inputs(workspace, request),
             "session_ok": not local_problem(request),
             "session_problem": local_problem(request),
         },
     )
+
+
+def _inputs(workspace: Path, request: Request) -> dict[str, Any] | None:
+    """What the study used (its data and the references it cites), for the "Data used" card."""
+    from .inputs import inputs_view
+
+    if local_problem(request) or not workspace.is_dir():
+        return None
+    try:
+        return inputs_view(workspace)
+    except Exception as e:  # noqa: BLE001 — the card is information; the page must still open
+        logger.warning("finish page: what the study used could not be read: %s", e)
+        return None
 
 
 @router.post("/api/papers/{paper_id}/export", dependencies=[Depends(require_local_session)])

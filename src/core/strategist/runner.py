@@ -310,6 +310,22 @@ class PipelineRunner:
             status = PaperStatus.IN_PROGRESS
         return status
 
+    def _template_components(self) -> dict[str, Any] | None:
+        """The ``template_components`` event: the template's skills, sidecars and credit; None when it has none."""
+        spec = self._spec
+        if not (spec.skills or spec.sidecars or spec.credit):
+            return None
+        out: dict[str, Any] = {
+            "template": spec.name,
+            "skills": {k: list(v) for k, v in spec.skills.items()},
+            "sidecars": {k: list(v) for k, v in spec.sidecars.items()},
+        }
+        if spec.credit:
+            # The work the template is based on (`[[credit]]`), as the template file says it, so that
+            # the dossier credits it as the run recorded it. Without credit the event is as before.
+            out["credit"] = [dict(c) for c in spec.credit]
+        return out
+
     async def run(self) -> dict[str, Any]:
         """Run the full pipeline from idea to completion, with checkpoint/resume support."""
         from ...db.events import log_event
@@ -341,16 +357,9 @@ class PipelineRunner:
         from ..pipeline.components import activate, deactivate
 
         template_token = activate(self._spec)
-        if self._spec.skills or self._spec.sidecars:
-            await log_event(
-                self._paper_id,
-                "template_components",
-                payload={
-                    "template": self._spec.name,
-                    "skills": {k: list(v) for k, v in self._spec.skills.items()},
-                    "sidecars": {k: list(v) for k, v in self._spec.sidecars.items()},
-                },
-            )
+        components = self._template_components()
+        if components:
+            await log_event(self._paper_id, "template_components", payload=components)
 
         state: PipelineState | None = None
         try:

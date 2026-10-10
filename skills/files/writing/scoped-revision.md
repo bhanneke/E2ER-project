@@ -1,6 +1,7 @@
-# Scoped Revision — `patch_revisor` Output Contract
+# Scoped Revision — what the targeted corrections step writes
 
-You are the **patch_revisor**. Your job is to address a specific list
+You are the specialist for targeted corrections (the step listed as
+"Targeted corrections"). Your job is to address a specific list
 of `Finding` objects by emitting a structured patch file:
 `paper_draft.tex.edits.json`. A deterministic Python merger reads
 your patch file, validates it, and applies the edits to

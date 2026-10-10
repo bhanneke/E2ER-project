@@ -49,15 +49,65 @@ class _FakeLib(ReferenceLibrary):
         return self._papers
 
 
-def test_reference_summary_surfaces_cite_keys_and_cite_only_rule():
+def test_reference_summary_surfaces_cite_keys_and_cite_only_rule(tmp_path: Path):
+    """The block is read from the study's literature.bib: a key it shows is a key in the file."""
     from src.core.specialists.base import _load_reference_summary
 
-    papers = [PaperMetadata(title="Multihoming and Platform Competition", authors=["Ada Liu"], year=2023)]
-    with patch("src.modules.literature.registry.reference_libraries", return_value=[_FakeLib(papers)]):
-        out = _load_reference_summary("paper_drafter")
-    assert "Cite ONLY from this list" in out
+    papers = [
+        PaperMetadata(title="Multihoming and Platform Competition", authors=["Ada Liu"], year=2023, source="byod_pdf"),
+        PaperMetadata(title="Found Online", authors=["Bo Web"], year=2021, source="openalex"),
+    ]
+    _write_literature_bib(tmp_path, papers)
+    with patch("src.home.find_workspace", return_value=tmp_path):
+        out = _load_reference_summary("paper_drafter", "pid")
+    assert "Cite ONLY keys that are in literature.bib" in out
     assert "\\cite{liu2023multihoming}" in out
     assert "Do NOT invent citations" in out
+    assert "Found Online" not in out, "the block lists the researcher's own papers; web hits are in the citable list"
+
+
+def test_every_offered_reference_is_in_the_bib_with_the_key_the_prompt_shows(tmp_path: Path):
+    """The 0.15.0 bib fix: .bib entries (their own keys), a Zotero web library and folder PDFs
+    are all written into literature.bib, and the prompt shows exactly those keys."""
+    import asyncio
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from src.core.pipeline.verify_citations import load_bib
+    from src.core.specialists.base import _load_reference_summary, _workspace_bib_for_prompt
+    from src.core.study_inputs import prepare_papers
+
+    bib = tmp_path / "refs.bib"
+    bib.write_text(
+        "@article{Bernanke:2005, title={What Explains the Stock Market's Reaction},"
+        " author={Bernanke, Ben}, year={2005}}\n"
+    )
+    zotero = [PaperMetadata(title="From Zotero Online", authors=["Zed Otero"], year=2019, source="zotero")]
+    settings = SimpleNamespace(
+        literature_bibtex_file=str(bib),
+        local_data_dir=None,
+        literature_dir=None,
+        local_data_dir_recursive=False,
+        literature_max_ingest=500,
+        literature_acquire_limit=0,
+        zotero_api_key="k",
+        zotero_user_id="1",
+        zotero_group_id=None,
+        resolved_literature_dirs=lambda: None,
+    )
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    with (
+        patch("src.modules.literature.providers.ZoteroLibrary.entries", return_value=zotero),
+        patch("src.modules.literature.storage.store_paper", new=AsyncMock()),
+    ):
+        asyncio.run(prepare_papers(ws, "pid", settings, ["q"]))
+    keys = set(load_bib(ws / "literature.bib"))
+    assert keys == {"Bernanke:2005", "otero2019from"}
+    with patch("src.home.find_workspace", return_value=ws):
+        shown = _load_reference_summary("paper_drafter", "pid") + _workspace_bib_for_prompt("paper_drafter", "pid")
+    for key in keys:
+        assert f"\\cite{{{key}}}" in shown
 
 
 def test_bibtex_key_is_alphanumeric():

@@ -28,9 +28,17 @@ SOURCE = (
 FINDING = "We find no detectable change in the equity loading of bitcoin"
 
 
+TOKEN = "library-test-token-0123456789"
+
+
 @pytest.fixture
-def client() -> TestClient:
-    return TestClient(app)
+def client(monkeypatch) -> TestClient:
+    from src.api import local_session as ls
+
+    monkeypatch.setenv(ls.ENV_TOKEN, TOKEN)
+    c = TestClient(app, base_url="http://127.0.0.1:8290", client=("127.0.0.1", 50000))
+    c.cookies.set("e2er_session_8290", TOKEN)
+    return c
 
 
 def _review(doi: str = "10.1/a", title: str = "Spot ETFs and bitcoin") -> StructuredReview:
@@ -72,7 +80,15 @@ def test_no_library_is_a_starting_point_not_an_error(client, no_library):
 
     assert r.status_code == 200
     assert "No library yet" in r.text
-    assert "e2er corpus add" in r.text, "tell them the one command that fixes it"
+    # Adding papers is on the page itself since 0.15.0 (the importer of `e2er library add`).
+    assert 'action="/library/add"' in r.text and "Add papers" in r.text, "offer the way to fill it"
+    assert "e2er library add" in r.text
+
+
+def test_add_papers_needs_the_signed_in_tab(no_library):
+    r = TestClient(app).get("/library")
+    assert "Add papers" in r.text and 'action="/library/add"' not in r.text
+    assert "This page only works" in r.text or "not signed in" in r.text
 
 
 def test_looking_at_an_empty_library_does_not_create_one(client, no_library):

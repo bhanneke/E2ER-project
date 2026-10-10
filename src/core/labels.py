@@ -417,6 +417,57 @@ def status(stored: str) -> str:
     return _plain(s).lower()
 
 
+#: Where a study's data file came from (.study_inputs.json), as the pages say it.
+DATA_ORIGINS: dict[str, str] = {
+    "folder": "from your data folder",
+    "upload": "added for this study",
+    "file": "your file",
+}
+
+#: Where one of the researcher's papers came from.
+PAPER_ORIGINS: dict[str, str] = {
+    "folder": "from your literature folder",
+    "upload": "added for this study",
+    "library": "from your Library",
+}
+
+#: What kind of paper it is.
+PAPER_KINDS: dict[str, str] = {"pdf": "PDF", "bib": ".bib entry", "zotero": "Zotero", "library": "Library"}
+
+#: A reference's e2er_source tag (literature.bib, refs.bib, the dossier).
+REFERENCE_SOURCES: dict[str, str] = {"researcher": "from your papers", "web": "found on the web"}
+
+#: Where a table of data.db came from (data_sources.json), as the pages name it.
+DATA_CONNECTORS: dict[str, str] = {
+    "data-folder": "your data file",
+    "fred": "FRED",
+    "yfinance": "Yahoo Finance",
+    "gmd": "Global Macro Database",
+    "allium": "Allium",
+    "zenodo": "Zenodo",
+}
+
+
+def data_origin(origin: str) -> str:
+    return DATA_ORIGINS.get(origin) or _plain(origin).lower()
+
+
+def paper_origin(origin: str) -> str:
+    return PAPER_ORIGINS.get(origin) or _plain(origin).lower()
+
+
+def paper_kind(kind: str) -> str:
+    return PAPER_KINDS.get(kind) or _plain(kind)
+
+
+def reference_source(tag: str) -> str:
+    return REFERENCE_SOURCES.get(tag) or "found on the web"
+
+
+def data_connector(name: str) -> str:
+    return DATA_CONNECTORS.get(name) or _plain(name)
+
+
 def file(path: str) -> str:
     """A file the way the pages name it: the file name itself is the plain name."""
     return str(path)
@@ -433,3 +484,8 @@ def register(env: Any) -> None:
     env.filters["event_label"] = event
     env.filters["check_label"] = check
     env.filters["backend_label"] = backend
+    env.filters["data_origin_label"] = data_origin
+    env.filters["paper_origin_label"] = paper_origin
+    env.filters["paper_kind_label"] = paper_kind
+    env.filters["reference_source_label"] = reference_source
+    env.filters["connector_label"] = data_connector
