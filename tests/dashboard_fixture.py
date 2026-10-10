@@ -346,6 +346,10 @@ def _studies() -> dict[str, dict[str, Any]]:
                         "corrections_failed": 0,
                     },
                 ),
+                (
+                    "polish_applied",
+                    {"notes": ["polish_formula", "polish_numerics"], "decision": "applied", "changes_made": 1},
+                ),
             ],
         },
     }
@@ -363,7 +367,7 @@ def _events(paper_id: str, spec: dict[str, Any]) -> list[tuple[Any, ...]]:
     if spec.get("rounds"):
         ev.append(("phase_start", "iterative", None))
         for et, payload in spec["rounds"]:
-            stage = "self_attack" if et == "self_critique" else "iterative"
+            stage = {"self_critique": "self_attack", "polish_applied": "polish"}.get(et, "iterative")
             ev.append((et, stage, None, payload))
             if et == "improvement_round":
                 for sp in payload["specialists"]:

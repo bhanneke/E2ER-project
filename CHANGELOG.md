@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The iterative mode now runs at the replay level, from the question to the finished study.** A new
   replay scenario (`tests/fixtures/replay/fomc-iterative`, on top of the FOMC one) scripts two rounds
   of improvement, a ceiling check that asks for another round and then for a change of approach, a
-  self-critique with one serious finding, the polish notes, the review panel and the revision. Before,
+  self-critique with one serious finding, the polish notes and their correction, the review panel and the revision. Before,
   the replay answered "nothing further" to every round, so the rounds, the ceiling check, the change
   of approach and the self-critique's corrections had never run on the current engine. The replay
   backend takes per-round answers (`iterations`, `ceiling_checks`, `self_attack`) and per-call
@@ -35,6 +35,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   export kept only the revision's edits, and nothing showed what the self-critique changed in the
   draft. They are now kept in `self_attack_corrections.json` (findings, edits, diff), exported with
   the reviews.
+- **A change of approach runs under the same rules as a round (fix).** Its work orders went straight to the
+  specialists, past the guard against rewriting the whole draft after round 1 and past the circuit breaker.
+  They now run like a round's: a pivot that would rewrite the whole draft (paper drafter, revisor) is not run,
+  and the record and the run page say so in a sentence; a specialist that has failed its attempts stops the
+  run as in a round, and the pivot's failures count.
+- **The polish notes change the paper or say why not (fix).** The notes (`polish_*.md`) were exported and read
+  by no later step. Now they go to the targeted corrections, as the self-critique's findings do: the patch
+  revisor edits the draft where a note asks for it, or writes no edit. The number check guards it: corrections
+  that make more table or text numbers differ from the results are undone. What became of the notes is in
+  `polish_corrections.json` (exported with the reviews), the `polish_applied` event and the run page
+  ("Polish: 2 notes; 1 change made in the draft").
 - **A ceiling verdict other than the three no longer fails the run (fix).** "stop", "Continue" or no
   JSON at all failed the check's model and with it the whole run; it is now read as "ready for
   review" (case and spaces ignored).

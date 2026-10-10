@@ -165,6 +165,7 @@ EVENTS: dict[str, str] = {
     "pivot": "Change of approach",
     "improvement_stopped": "Rounds ended",
     "self_critique": "Self-critique",
+    "polish_applied": "Polish notes considered",
 }
 
 #: What the ceiling check after a round of improvement decided (its ``verdict``).
@@ -292,8 +293,9 @@ def round_summary(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
     text), in any order: each round is found by its number. One entry per
     round: ``round``, ``specialists`` (their names as the dashboard says them),
     ``reason``, and, when recorded, ``ceiling`` (what the check decided),
-    ``ceiling_reason``, ``pivot`` (the specialists of the change of approach)
-    and ``ended`` (the strategist ended the rounds here).
+    ``ceiling_reason``, ``pivot`` (the specialists of the change of approach),
+    ``pivot_refused`` (those refused because they would rewrite the whole
+    draft) and ``ended`` (the strategist ended the rounds here).
     """
     import json
 
@@ -319,6 +321,9 @@ def round_summary(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
             r["ceiling_reason"] = str(data.get("reason") or "")
         elif et == "pivot":
             r["pivot"] = [specialist(str(x)) for x in data.get("specialists") or []]
+            refused = [x for x in data.get("refused") or [] if isinstance(x, dict)]
+            if refused:
+                r["pivot_refused"] = [specialist(str(x.get("specialist") or "")) for x in refused]
         else:
             r["ended"] = True
             r["reason"] = r["reason"] or str(data.get("reason") or "")

@@ -839,27 +839,30 @@ class PipelineRunner:
                     break
                 if pivot_allowed:
                     self._pivot_count += 1
+                    # A change of approach runs like a round's work orders (_dispatch): the
+                    # guard against rewriting the whole draft, the circuit breaker and its
+                    # failure counts apply. Before 0.15.1 it went straight to
+                    # execute_parallel, past both.
+                    kept, refused = _split_full_rewrites(ceiling.suggested_pivots)
                     await log_event(
                         self._paper_id,
                         "pivot",
                         stage="iterative",
                         payload={
                             "round": iteration,
-                            "specialists": [wo.specialist for wo in ceiling.suggested_pivots],
-                            "focus": [wo.focus for wo in ceiling.suggested_pivots],
+                            "specialists": [wo.specialist for wo in kept],
+                            "focus": [wo.focus for wo in kept],
+                            **(
+                                {"refused": [{"specialist": sp, "note": FULL_REWRITE_REFUSED} for sp, _ in refused]}
+                                if refused
+                                else {}
+                            ),
                         },
                     )
-                    pivot_contributions = await execute_parallel(
-                        self._to_contract_orders(ceiling.suggested_pivots),
-                        self._backend,
-                        self._workspace,
-                        self._model,
-                        self._extra_tools,
-                        self._extra_handlers,
-                        self._backend_name,
-                        self._governance,
+                    pivot_decision = StrategistDecision(
+                        action="dispatch_parallel", work_orders=kept, rationale=ceiling.reason
                     )
-                    self._contributions.extend(pivot_contributions)
+                    self._contributions.extend(await self._dispatch(pivot_decision, pivot=True))
                     break  # one pivot per paper
                 if ceiling.verdict == "continue":
                     # Explicitly fall through to the next iteration. On the final
@@ -1787,7 +1790,95 @@ class PipelineRunner:
             self._governance,
         )
         self._contributions.extend(contributions)
+        await self._apply_polish_notes([c.specialist for c in contributions if c.success])
         return PaperStatus.POLISH
+
+    async def _apply_polish_notes(self, polished: list[str]) -> None:
+        """Turn the polish notes into targeted corrections of the draft, or a recorded decision not to.
+
+        Before 0.15.1 the notes (``polish_*.md``) were exported and read by no
+        later step. Now each note is a finding for the targeted corrections
+        (the patch revisor, as after the self-critique): it either edits the
+        draft or writes an empty patch, which is its recorded decision. The
+        number check guards the edits: when the corrected draft has more table
+        or text numbers that differ from the results than before, the
+        corrections are undone and that is recorded. The record is
+        ``polish_corrections.json`` and the ``polish_applied`` event.
+        """
+        from ...db.events import log_event
+        from ..pipeline.verify_numbers import verify
+        from .findings import Finding
+
+        notes = {
+            sp: (self._workspace / SPECIALIST_ARTIFACTS[sp]).read_text(encoding="utf-8", errors="replace")
+            for sp in polished
+            if sp in SPECIALIST_ARTIFACTS and (self._workspace / SPECIALIST_ARTIFACTS[sp]).is_file()
+        }
+        draft = self._workspace / "paper_draft.tex"
+        if not notes or not draft.is_file():
+            return
+        findings = [
+            Finding(
+                source="polish",
+                source_detail=sp,
+                target="paper:full",
+                severity=3,
+                problem=f"{_labels.specialist(sp)}: apply what this note asks for, or leave the draft as it is.\n\n"
+                + text[:6000],
+                suggested_fix="Change only the wording or the numbers the note names; every number must stay its "
+                "source's value.",
+            )
+            for sp, text in notes.items()
+        ]
+
+        def differ() -> tuple[int, int]:
+            r = verify(draft, self._workspace)
+            return len(r.critical_mismatches), r.prose_mismatched
+
+        before_text = draft.read_text(encoding="utf-8")
+        before = differ()
+        record: dict[str, Any] = {"notes": sorted(notes)}
+        try:
+            merge = await self._dispatch_patch_revisor(findings)
+        except FileNotFoundError:
+            record.update({"decision": "no correction file", "changes_made": 0})
+        else:
+            after = differ()
+            record.update(
+                {
+                    "edits": [
+                        {"find": r.edit.find, "replace": r.edit.replace, "source": r.edit.source_finding}
+                        for r in merge.applied
+                    ],
+                    "failed": [{"target": r.edit.target, "error": r.error} for r in merge.failed],
+                    "diff": merge.diff,
+                }
+            )
+            if merge.n_applied and (after[0] > before[0] or after[1] > before[1]):
+                draft.write_text(before_text, encoding="utf-8")
+                record.update(
+                    {
+                        "decision": "undone: the corrected draft had more numbers that differ from the results",
+                        "changes_made": 0,
+                        "numbers_before": {"tables": before[0], "text": before[1]},
+                        "numbers_after": {"tables": after[0], "text": after[1]},
+                    }
+                )
+            elif merge.n_applied:
+                record.update({"decision": "applied", "changes_made": merge.n_applied})
+            elif merge.failed:
+                record.update({"decision": "no change: the corrections could not be applied", "changes_made": 0})
+            else:
+                record.update({"decision": "no change: the notes asked for nothing the draft needs", "changes_made": 0})
+        (self._workspace / "polish_corrections.json").write_text(
+            json.dumps(record, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+        )
+        await log_event(
+            self._paper_id,
+            "polish_applied",
+            stage="polish",
+            payload={k: record[k] for k in ("notes", "decision", "changes_made") if k in record},
+        )
 
     def _reviewers_for_methodology(self) -> list[str]:
         """Filter the reviewer roster by methodology.
@@ -2840,7 +2931,7 @@ class PipelineRunner:
         await self._update_status(PaperStatus.COMPLETED)
         return PaperStatus.COMPLETED
 
-    async def _dispatch(self, decision: StrategistDecision) -> list[Contribution]:
+    async def _dispatch(self, decision: StrategistDecision, *, pivot: bool = False) -> list[Contribution]:
         if not decision.work_orders:
             return []
 
@@ -2861,15 +2952,8 @@ class PipelineRunner:
         # phase even though `paper_drafter` was correctly skipped.
         # v0.6.0's guard only filtered `paper_drafter`; v0.6.1 closes
         # the same drift door for `revisor`.
-        if self._iteration >= 2:
-            forbidden_full_rewriters = {"paper_drafter", "revisor"}
-            kept: list = []
-            dropped: list[tuple[str, str]] = []
-            for wo in decision.work_orders:
-                if wo.specialist in forbidden_full_rewriters:
-                    dropped.append((wo.specialist, wo.focus[:80] if wo.focus else "(no focus)"))
-                else:
-                    kept.append(wo)
+        if self._iteration >= 2 or pivot:
+            kept, dropped = _split_full_rewrites(decision.work_orders)
             if dropped:
                 logger.warning(
                     "Iterative-phase guard: dropped %d full-draft work "
@@ -3279,6 +3363,28 @@ def _estimation_next(orders: list[WorkOrder]) -> bool:
         return False
     first = min(o.parallel_group for o in orders)
     return any(o.specialist == _ESTIMATION_SPECIALIST and o.parallel_group == first for o in orders)
+
+
+#: Specialists that write paper_draft.tex from scratch: not after round 1, and never as a change of approach.
+_FULL_REWRITERS = frozenset({"paper_drafter", "revisor"})
+
+#: Why a full rewrite is refused, in the words the record and the run page use.
+FULL_REWRITE_REFUSED = (
+    "refused: it would rewrite the whole draft after the first round; a change to one section "
+    "(Sections and table layout) or the targeted corrections can do it"
+)
+
+
+def _split_full_rewrites(orders: list[Any]) -> tuple[list[Any], list[tuple[str, str]]]:
+    """The work orders that may run, and (specialist, focus) of those that would rewrite the whole draft."""
+    kept: list[Any] = []
+    dropped: list[tuple[str, str]] = []
+    for wo in orders:
+        if wo.specialist in _FULL_REWRITERS:
+            dropped.append((wo.specialist, wo.focus[:80] if wo.focus else "(no focus)"))
+        else:
+            kept.append(wo)
+    return kept, dropped
 
 
 def _select_polish_specialists(attack_report_path: Path) -> list[str]:

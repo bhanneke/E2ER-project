@@ -111,6 +111,7 @@
           <strong>Round {{ r.round }}</strong>{% if r.specialists %}: {{ r.specialists | join(", ") }}{% endif %}{% if r.reason %} <span class="muted quoted" title="The strategist's words">({{ r.reason }})</span>{% endif %}
           {% if r.ceiling %}<div class="round-check">Ceiling check: {{ r.ceiling }}{% if r.ceiling_reason %} <span class="muted quoted">({{ r.ceiling_reason }})</span>{% endif %}</div>{% endif %}
           {% if r.pivot %}<div class="round-pivot">Change of approach: {{ r.pivot | join(", ") }}</div>{% endif %}
+          {% if r.pivot_refused %}<div class="round-pivot">Not run as part of the change of approach: {{ r.pivot_refused | join(", ") }} (it would rewrite the whole draft)</div>{% endif %}
           {% if r.ended %}<div class="round-check">The strategist ended the rounds here.</div>{% endif %}
         </li>
       {% endfor %}
@@ -118,6 +119,9 @@
   {% endif %}
   {% if tp.self_critique %}
     <p class="self-critique"><strong>Self-critique:</strong> {{ tp.self_critique.note }}</p>
+  {% endif %}
+  {% if tp.polish %}
+    <p class="polish"><strong>Polish:</strong> {{ tp.polish }}</p>
   {% endif %}
 {% endif %}
 

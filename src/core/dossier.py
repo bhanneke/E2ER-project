@@ -743,6 +743,7 @@ def read_run(db: Path, paper_id: str, files: dict[str, Any] | None = None, bundl
                     "specialist_labels": [_labels.specialist(str(x)) for x in data.get("specialists") or []],
                     "at": at,
                     **({"focus": _clip(list(data["focus"]))} if data.get("focus") else {}),
+                    **({"refused": _clip(list(data["refused"]))} if data.get("refused") else {}),
                 }
             else:  # improvement_stopped: the strategist ended the rounds before this one
                 r["label"] = f"Rounds ended before round {n}"
@@ -762,8 +763,8 @@ def read_run(db: Path, paper_id: str, files: dict[str, Any] | None = None, bundl
         rec.events.append({"event": "rerun", "step": target, **info})
     rec.rounds = [rounds[k] for k in sorted(rounds)]
     for ev in rec.events:
-        if ev.get("event") == "self_critique":
-            ev["label"] = _labels.event("self_critique")
+        if ev.get("event") in ("self_critique", "polish_applied"):
+            ev["label"] = _labels.event(str(ev["event"]))
     rec.events.sort(key=lambda e: e.get("at") or "")
 
     if rec.workflow and not any(isinstance(s.get("output"), dict) and "sha256" in s["output"] for s in rec.workflow):

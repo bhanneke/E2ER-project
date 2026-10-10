@@ -1,7 +1,7 @@
 {
   "name": "fomc-iterative",
   "base": "fomc",
-  "source": "The FOMC replay (base) run in the iterative mode: two rounds of improvement after the initial phase, a ceiling check that asks for another round and then for a change of approach (the abstract rewritten so the pre-registered window leads), a self-critique with one serious finding that the targeted corrections fix in the introduction and one minor one the polish of the numbers notes, then the polish notes, the review panel and the revision of the recorded run. The rounds, ceiling verdicts, self-critique, the section writer's draft, the pivot's abstract, the correction and the polish notes are written for this scenario from the recorded study; every number in them is the recorded run's.",
+  "source": "The FOMC replay (base) run in the iterative mode: two rounds of improvement after the initial phase, a ceiling check that asks for another round and then for a change of approach (the abstract rewritten so the pre-registered window leads), a self-critique with one serious finding that the targeted corrections fix in the introduction and one minor one the polish of the numbers notes, then the polish notes (the targeted corrections apply the note on the numbers to the discussion), the review panel and the revision of the recorded run. The rounds, ceiling verdicts, self-critique, the section writer's draft, the pivot's abstract, the correction and the polish notes are written for this scenario from the recorded study; every number in them is the recorded run's.",
   "iterations": [
     {
       "work_orders": [
@@ -128,6 +128,16 @@
             "output_tokens": 1412,
             "cache_read_tokens": 98120,
             "cache_write_tokens": 15002
+          }
+        },
+        {
+          "dir": "patch_revisor.polish",
+          "output": "Wrote paper_draft.tex.edits.json (1 edit, discussion: the SD range).",
+          "usage": {
+            "input_tokens": 49,
+            "output_tokens": 1210,
+            "cache_read_tokens": 96044,
+            "cache_write_tokens": 14820
           }
         },
         {

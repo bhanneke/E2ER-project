@@ -2848,6 +2848,7 @@ def _template_progress(paper: dict[str, Any], events: list[dict[str, Any]]) -> d
                 )
     rounds = _labels.round_summary(events)
     critique = _self_critique(events)
+    polish = _polish_note(events)
     for row in steps:
         if row["name"] == "iterative" and rounds and row["state"] in {"done", "running"}:
             n = len(rounds)
@@ -2857,10 +2858,13 @@ def _template_progress(paper: dict[str, Any], events: list[dict[str, Any]]) -> d
             row["note"] = note if row["state"] == "done" else f"{note} so far; running now"
         if row["name"] == "self_attack" and critique and row["state"] == "done":
             row["note"] = critique["note"]
+        if row["name"] == "polish" and polish and row["state"] == "done":
+            row["note"] = polish
     current = next((s["label"] for s in steps if s["state"] in {"waiting", "running"}), "")
     return {
         "rounds": rounds,
         "self_critique": critique,
+        "polish": polish,
         "template": name,
         "template_label": _labels.template(name, spec),
         "steps": steps,
@@ -2894,6 +2898,28 @@ def _self_critique(events: list[dict[str, Any]]) -> dict[str, Any] | None:
                 note += f"; {made} correction{'s' if made != 1 else ''} made in the draft"
         return {"findings": n, "serious": serious, "note": note}
     return None
+
+
+def _polish_note(events: list[dict[str, Any]]) -> str:
+    """What became of the polish notes (the ``polish_applied`` event), in plain words; empty when not recorded."""
+    for e in events:  # most recent first
+        if str(e.get("event_type") or "") != "polish_applied":
+            continue
+        data = e.get("payload")
+        if isinstance(data, str):
+            try:
+                data = json.loads(data)
+            except ValueError:
+                data = {}
+        if not isinstance(data, dict):
+            return ""
+        n = len(data.get("notes") or [])
+        made = int(data.get("changes_made") or 0)
+        notes = f"{n} note{'s' if n != 1 else ''}"
+        if made:
+            return f"{notes}; {made} change{'s' if made != 1 else ''} made in the draft"
+        return f"{notes}; {data.get('decision') or 'no change'}"
+    return ""
 
 
 def _step_row(

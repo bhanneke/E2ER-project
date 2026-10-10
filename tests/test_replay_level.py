@@ -456,12 +456,15 @@ async def test_the_iterative_scenario_scripts_the_rounds_the_ceiling_checks_and_
 
 
 async def test_calls_replay_one_recording_per_call_and_then_the_last(tmp_path: Path):
-    """``calls``: the targeted corrections after the self-critique, then the recorded ones after the review panel."""
+    """``calls``: the targeted corrections after the self-critique, after the polish, then the recorded ones."""
     ReplayBackend._calls.clear()
     b = ReplayBackend("fomc-iterative")
     assert (await _call(b, tmp_path, "patch_revisor")).success
     first = json.loads((tmp_path / "paper_draft.tex.edits.json").read_text(encoding="utf-8"))
     assert [e["target"] for e in first] == ["section:introduction"]
+    assert (await _call(b, tmp_path, "patch_revisor")).success  # the polish notes' corrections
+    second = json.loads((tmp_path / "paper_draft.tex.edits.json").read_text(encoding="utf-8"))
+    assert [e["source_finding"] for e in second] == ["polish:polish_numerics"]
     r = await _call(b, tmp_path, "patch_revisor")
     assert r.success and r.usage.output_tokens == FOMC["specialists"]["patch_revisor"]["usage"]["output_tokens"]
     assert json.loads((tmp_path / "paper_draft.tex.edits.json").read_text(encoding="utf-8")) == []
@@ -531,7 +534,7 @@ def test_the_iterative_mode_replays_to_the_end_through_the_server(tmp_path: Path
             "revision",
             "replication",
         ], order
-        rec = {et: json.loads(pl) for et, _, _, pl in rows if et in ("pivot", "self_critique")}
+        rec = {et: json.loads(pl) for et, _, _, pl in rows if et in ("pivot", "self_critique", "polish_applied")}
         rounds = [json.loads(pl) for et, _, _, pl in rows if et == "improvement_round"]
         checks = [json.loads(pl) for et, _, _, pl in rows if et == "ceiling_check"]
         assert [(r["round"], r["specialists"]) for r in rounds] == [
@@ -547,6 +550,11 @@ def test_the_iterative_mode_replays_to_the_end_through_the_server(tmp_path: Path
             "categories": ["framing", "numerics"],
             "corrections_made": 1,
             "corrections_failed": 0,
+        }
+        assert rec["polish_applied"] == {
+            "notes": ["polish_formula", "polish_numerics"],
+            "decision": "applied",
+            "changes_made": 1,
         }
         iterative = [sp for et, st, sp, _ in rows if et == "specialist_end" and sp]
         assert iterative.count("abstract_writer") == 2 and "section_writer" in iterative
@@ -564,6 +572,10 @@ def test_the_iterative_mode_replays_to_the_end_through_the_server(tmp_path: Path
         assert corrections["applied"] == 1 and not corrections["failed"]
         assert "report as exploratory" in corrections["diff"]
         assert sorted(x.name for x in ws.glob("polish_*.md")) == ["polish_formula.md", "polish_numerics.md"]
+        # The note on the numbers changed the draft (the SD range), through the targeted corrections.
+        assert "SD between $2.4\\%$ and $2.9\\%$" in draft and "2.5\\%$ to $3.0" not in draft
+        polish = json.loads((ws / "polish_corrections.json").read_text(encoding="utf-8"))
+        assert polish["decision"] == "applied" and polish["edits"][0]["source"] == "polish:polish_numerics"
         # The number check passes on the revised draft: no table number differs from the results.
         numbers = json.loads((ws / "number_verification.json").read_text(encoding="utf-8"))
         assert numbers["passed"] and numbers["mismatched"] == 0 and numbers["matched"] > 0
@@ -604,6 +616,7 @@ def test_the_iterative_mode_replays_to_the_end_through_the_server(tmp_path: Path
         assert "Change of approach: Abstract" in text
         assert "2 rounds, then a change of approach" in text
         assert "Self-critique: 2 findings, 1 serious; 1 correction made in the draft" in text
+        assert "Polish: 2 notes; 1 change made in the draft" in text
         assert not problems(live), problems(live)
         page = httpx.get(f"{api}/papers/{pid}", headers=h, timeout=10).text
         assert not problems(page), problems(page)

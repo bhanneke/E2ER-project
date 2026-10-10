@@ -1,0 +1,10 @@
+[
+  {
+    "id": "p1",
+    "target": "paper:full",
+    "edit_type": "replace_text",
+    "find": "(SD $\\approx 2.5\\%$ to $3.0\\%$)",
+    "replace": "(SD between $2.4\\%$ and $2.9\\%$ for hikes and cuts)",
+    "source_finding": "polish:polish_numerics"
+  }
+]

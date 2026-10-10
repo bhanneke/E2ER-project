@@ -474,6 +474,7 @@ def test_the_iterative_mode_shows_its_rounds_in_plain_words(client, fx):
     assert "Ceiling check: a change of approach" in text and "Change of approach: Abstract" in text
     assert "2 rounds, then a change of approach" in text
     assert "Self-critique: 2 findings, 1 serious; 1 correction made in the draft" in text
+    assert "Polish: 2 notes; 1 change made in the draft" in text
     # The strategist's own words are shown as its words, not checked as e2er's.
     assert "section:discussion" in html and not problems(html)
     log = text[text.find("What happened") :]
