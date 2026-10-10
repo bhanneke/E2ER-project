@@ -299,11 +299,60 @@ def _studies() -> dict[str, dict[str, Any]]:
             "last_error": "Stopped by the estimation check: estimation_results.json has no regression",
         },
         "cancelled": {"pipeline": "empirical", "status": "cancelled", "completed": ["initial"]},
+        # The iterative mode: two rounds, a ceiling check after each, a change of approach, the self-critique.
+        "iterative": {
+            "pipeline": "empirical",
+            "mode": "iterative",
+            "status": "completed",
+            "completed": ["initial", "iterative", "estimation_gate", "self_attack", "polish", "review", "revision"]
+            + ["replication"],
+            "finished": True,
+            "rounds": [
+                (
+                    "improvement_round",
+                    {
+                        "round": 1,
+                        "specialists": ["econometrics_specialist", "paper_drafter"],
+                        "reason": "Confirm the estimates before more writing builds on them.",
+                    },
+                ),
+                ("ceiling_check", {"round": 1, "verdict": "continue", "reason": "The H2 discussion can be sharper."}),
+                (
+                    "improvement_round",
+                    {
+                        "round": 2,
+                        "specialists": ["section_writer"],
+                        "reason": "section:discussion overstates what 31 events show (paper_drafter).",
+                    },
+                ),
+                (
+                    "ceiling_check",
+                    {
+                        "round": 2,
+                        "verdict": "pivot",
+                        "reason": "The abstract needs a different step.",
+                        "pivot": ["abstract_writer"],
+                    },
+                ),
+                ("pivot", {"round": 2, "specialists": ["abstract_writer"], "focus": ["Rewrite the abstract."]}),
+                (
+                    "self_critique",
+                    {
+                        "findings": 2,
+                        "serious": 1,
+                        "max_severity": 7,
+                        "categories": ["framing"],
+                        "corrections_made": 1,
+                        "corrections_failed": 0,
+                    },
+                ),
+            ],
+        },
     }
 
 
-def _events(paper_id: str, spec: dict[str, Any]) -> list[tuple[str, str | None, str | None]]:
-    ev: list[tuple[str, str | None, str | None]] = [("phase_start", "initial", None)]
+def _events(paper_id: str, spec: dict[str, Any]) -> list[tuple[Any, ...]]:
+    ev: list[tuple[Any, ...]] = [("phase_start", "initial", None)]
     for sp in ("idea_developer", "literature_scanner", "data_analyst", "econometrics_specialist", "paper_drafter"):
         ev += [("specialist_start", "initial", sp), ("specialist_end", "initial", sp)]
     if "initial" in spec.get("completed", []):
@@ -311,6 +360,15 @@ def _events(paper_id: str, spec: dict[str, Any]) -> list[tuple[str, str | None, 
     if spec.get("feedback"):
         for sp in spec["feedback"]:
             ev += [("specialist_start", "review", sp), ("specialist_failed", "review", sp)]
+    if spec.get("rounds"):
+        ev.append(("phase_start", "iterative", None))
+        for et, payload in spec["rounds"]:
+            stage = "self_attack" if et == "self_critique" else "iterative"
+            ev.append((et, stage, None, payload))
+            if et == "improvement_round":
+                for sp in payload["specialists"]:
+                    ev += [("specialist_start", stage, sp), ("specialist_end", stage, sp)]
+        ev.append(("phase_end", "iterative", None))
     if spec.get("finished"):
         for st in ("review", "revision", "replication"):
             ev += [("phase_start", st, None), ("phase_end", st, None)]
@@ -397,7 +455,7 @@ async def _populate(fx: Fixture) -> None:
             """
             INSERT INTO papers (id, title, research_question, status, workspace, mode, methodology, model, backend,
                                 governance, review_stages, max_cost_usd, pipeline, study_key)
-            VALUES (%(id)s, %(title)s, %(rq)s, %(status)s, %(ws)s, 'single_pass', 'empirical', 'claude-sonnet-4-6',
+            VALUES (%(id)s, %(title)s, %(rq)s, %(status)s, %(ws)s, %(mode)s, 'empirical', 'claude-sonnet-4-6',
                     'claude_code', 'full', %(rs)s, %(cap)s, %(pipeline)s, %(key)s)
             """,
             {
@@ -409,6 +467,7 @@ async def _populate(fx: Fixture) -> None:
                 "rs": json.dumps(spec.get("review_stages", [])),
                 "cap": spec.get("cap", 5.0),
                 "pipeline": spec["pipeline"],
+                "mode": spec.get("mode", "single_pass"),
                 "key": study_key(QUESTION, spec["pipeline"], title),
             },
         )
@@ -416,11 +475,11 @@ async def _populate(fx: Fixture) -> None:
             await client.execute(
                 "UPDATE papers SET last_error = %(e)s WHERE id = %(id)s", {"e": spec["last_error"], "id": paper_id}
             )
-        for et, stage, who in _events(paper_id, spec):
+        for et, stage, who, *payload in _events(paper_id, spec):
             await client.execute(
                 "INSERT INTO pipeline_events (paper_id, event_type, stage, specialist, payload) "
                 "VALUES (%(p)s, %(t)s, %(st)s, %(sp)s, %(pl)s::jsonb)",
-                {"p": paper_id, "t": et, "st": stage, "sp": who, "pl": "{}"},
+                {"p": paper_id, "t": et, "st": stage, "sp": who, "pl": json.dumps(payload[0] if payload else {})},
             )
         if spec.get("approved"):
             await client.execute(

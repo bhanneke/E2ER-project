@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from ...logging_config import get_logger
 from ...modules.llm.base import LLMBackend, extract_json
@@ -291,9 +291,21 @@ class StrategistEngine:
                 pivots.append(WorkOrder(**w))
             except Exception as e:
                 logger.warning("ceiling_check: skipping malformed pivot %s: %s", w, e)
+        said = str(raw.get("verdict") or "proceed_to_review").strip().lower().replace(" ", "_").replace("-", "_")
+        verdicts: dict[str, Literal["continue", "pivot", "proceed_to_review"]] = {
+            "continue": "continue",
+            "pivot": "pivot",
+            "proceed_to_review": "proceed_to_review",
+        }
+        verdict = verdicts.get(said)
+        if verdict is None:
+            # A verdict outside the three (``stop``, ``done``, prose) used to fail
+            # the CeilingCheckResult model and with it the whole run.
+            logger.warning("ceiling_check: unknown verdict %r, treated as proceed_to_review", raw.get("verdict"))
+            verdict = "proceed_to_review"
         return CeilingCheckResult(
-            verdict=raw.get("verdict", "proceed_to_review"),
-            reason=raw.get("reason", ""),
+            verdict=verdict,
+            reason=str(raw.get("reason") or ""),
             suggested_pivots=pivots,
             iteration=iteration,
         )

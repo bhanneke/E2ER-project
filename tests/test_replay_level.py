@@ -424,3 +424,207 @@ def _wait(api: str, pid: str) -> dict:
             return p
         time.sleep(0.2)
     pytest.fail(f"the replayed run did not stop: {p}")
+
+
+ITER = json.loads((FIXTURES / "fomc-iterative" / "scenario.json").read_text(encoding="utf-8"))
+
+
+async def test_the_iterative_scenario_scripts_the_rounds_the_ceiling_checks_and_the_self_critique(tmp_path: Path):
+    """Round n's decision and the ceiling check after it are chosen by the round number in the prompt."""
+    b = ReplayBackend("fomc-iterative")
+
+    def decide(n: int) -> str:
+        return f"Paper status: in_progress\nIteration: {n}\nDecide what to do next."
+
+    r1 = json.loads((await _call(b, tmp_path, None, decide(1))).output)
+    assert r1["action"] == "dispatch_parallel"
+    assert [w["specialist"] for w in r1["work_orders"]] == ["econometrics_specialist", "paper_drafter"]
+    r2 = json.loads((await _call(b, tmp_path, None, decide(2))).output)
+    assert [w["specialist"] for w in r2["work_orders"]] == ["section_writer"]
+    r3 = json.loads((await _call(b, tmp_path, None, decide(3))).output)
+    assert r3["action"] == "complete"
+    c1 = json.loads((await _call(b, tmp_path, None, "Iteration: 1, Pivots used: 0\n... verdict")).output)
+    c2 = json.loads((await _call(b, tmp_path, None, "Iteration: 2, Pivots used: 0\n... verdict")).output)
+    assert (c1["verdict"], c2["verdict"]) == ("continue", "pivot")
+    assert [w["specialist"] for w in c2["suggested_pivots"]] == ["abstract_writer"]
+    attack = json.loads((await _call(b, tmp_path, None, "Find all flaws. Output JSON SelfAttackReport.")).output)
+    assert [f["severity"] for f in attack["findings"]] == [7, 4]
+    # The base scenario is unchanged: no rounds, proceed to review, no findings.
+    fomc = ReplayBackend("fomc")
+    base = json.loads((await _call(fomc, tmp_path, None, "Iteration: 1, Pivots used: 0 verdict")).output)
+    assert base["verdict"] == "proceed_to_review"
+
+
+async def test_calls_replay_one_recording_per_call_and_then_the_last(tmp_path: Path):
+    """``calls``: the targeted corrections after the self-critique, then the recorded ones after the review panel."""
+    ReplayBackend._calls.clear()
+    b = ReplayBackend("fomc-iterative")
+    assert (await _call(b, tmp_path, "patch_revisor")).success
+    first = json.loads((tmp_path / "paper_draft.tex.edits.json").read_text(encoding="utf-8"))
+    assert [e["target"] for e in first] == ["section:introduction"]
+    r = await _call(b, tmp_path, "patch_revisor")
+    assert r.success and r.usage.output_tokens == FOMC["specialists"]["patch_revisor"]["usage"]["output_tokens"]
+    assert json.loads((tmp_path / "paper_draft.tex.edits.json").read_text(encoding="utf-8")) == []
+    assert (await _call(b, tmp_path, "patch_revisor")).success  # later calls: the last recording
+    # The abstract: the recorded one first, the change of approach's second.
+    assert (await _call(b, tmp_path, "abstract_writer")).success
+    assert "secondary, non-pre-registered" in (tmp_path / "abstract.tex").read_text(encoding="utf-8")
+    assert (await _call(b, tmp_path, "abstract_writer")).success
+    assert "exploratory window" in (tmp_path / "abstract.tex").read_text(encoding="utf-8")
+
+
+def test_the_iterative_mode_replays_to_the_end_through_the_server(tmp_path: Path):
+    """`--mode iterative` on the current engine, end to end (the fomc-iterative scenario).
+
+    Initial phase, round 1 (estimation confirmed, draft redone), ceiling check: another
+    round; round 2 (a section rewritten), ceiling check: a change of approach (the
+    abstract); then the estimation check, the draft review, the self-critique (one
+    serious finding, corrected in the introduction), the polish, the review panel and
+    the revision. The number check passes; the dossier and the run view say what each
+    round did, the ceiling decisions and the change of approach in plain words.
+    """
+    import sqlite3
+
+    from src.core.dossier import read_run
+    from tests.test_dashboard_vocabulary import problems, visible_text
+
+    study = tmp_path / "study"
+    (study / "data").mkdir(parents=True)
+    (study / "data" / "fomc_announcement_dates.csv").write_text("date\n2015-12-16\n", encoding="utf-8")
+    files = FIXTURES / "fomc-iterative" / "files"
+    with _replay_server(
+        tmp_path, "fomc-iterative", ["FRED_API_KEY=replay-key", f"LOCAL_DATA_DIR={study / 'data'}"]
+    ) as (api, _):
+        body = {
+            "title": FOMC["title"],
+            "research_question": FOMC["research_question"],
+            "mode": "iterative",
+            "pipeline": FOMC["template"],
+            "acknowledge_unproven_tuple": True,
+            "max_cost_usd": 5,
+        }
+        pid = httpx.post(f"{api}/api/papers", json=body, headers={"x-e2er-token": "replay-session"}, timeout=30).json()[
+            "paper_id"
+        ]
+        p, stops = _approve_to_the_end(api, pid)
+        assert p["status"] == "completed", (p.get("last_error"), stops)
+        assert stops == ["review_design", "preregister", "review_draft"]
+        ws = Path(p["workspace"])
+
+        db = tmp_path / "home" / ".e2er" / "papers.db"
+        con = sqlite3.connect(db)
+        rows = con.execute(
+            "SELECT event_type, stage, specialist, payload FROM pipeline_events WHERE paper_id = ? "
+            "ORDER BY created_at, rowid",
+            (pid,),
+        ).fetchall()
+        con.close()
+        phases = [st for et, st, _, _ in rows if et == "phase_start"]
+        order = list(dict.fromkeys(phases))
+        assert order == [
+            "initial",
+            "iterative",
+            "estimation_gate",
+            "self_attack",
+            "polish",
+            "review",
+            "revision",
+            "replication",
+        ], order
+        rec = {et: json.loads(pl) for et, _, _, pl in rows if et in ("pivot", "self_critique")}
+        rounds = [json.loads(pl) for et, _, _, pl in rows if et == "improvement_round"]
+        checks = [json.loads(pl) for et, _, _, pl in rows if et == "ceiling_check"]
+        assert [(r["round"], r["specialists"]) for r in rounds] == [
+            (1, ["econometrics_specialist", "paper_drafter"]),
+            (2, ["section_writer"]),
+        ]
+        assert [(c["round"], c["verdict"]) for c in checks] == [(1, "continue"), (2, "pivot")]
+        assert rec["pivot"]["specialists"] == ["abstract_writer"] and rec["pivot"]["round"] == 2
+        assert rec["self_critique"] == {
+            "findings": 2,
+            "serious": 1,
+            "max_severity": 7,
+            "categories": ["framing", "numerics"],
+            "corrections_made": 1,
+            "corrections_failed": 0,
+        }
+        iterative = [sp for et, st, sp, _ in rows if et == "specialist_end" and sp]
+        assert iterative.count("abstract_writer") == 2 and "section_writer" in iterative
+
+        # What each step left in the draft: round 2's paragraph, the self-critique's correction
+        # in the introduction, the change of approach's abstract; the polish notes the self-critique asked for.
+        draft = (ws / "paper_draft.tex").read_text(encoding="utf-8")
+        assert "do not grow with the yield surprise" in draft
+        assert "which we did not pre-register and report as exploratory" in draft
+        assert "However, a longer post-announcement window" not in draft
+        assert (ws / "abstract.tex").read_text(encoding="utf-8") == (
+            files / "abstract_writer.pivot" / "abstract.tex"
+        ).read_text(encoding="utf-8")
+        corrections = json.loads((ws / "self_attack_corrections.json").read_text(encoding="utf-8"))
+        assert corrections["applied"] == 1 and not corrections["failed"]
+        assert "report as exploratory" in corrections["diff"]
+        assert sorted(x.name for x in ws.glob("polish_*.md")) == ["polish_formula.md", "polish_numerics.md"]
+        # The number check passes on the revised draft: no table number differs from the results.
+        numbers = json.loads((ws / "number_verification.json").read_text(encoding="utf-8"))
+        assert numbers["passed"] and numbers["mismatched"] == 0 and numbers["matched"] > 0
+
+        # The dossier's record of the run: each round, its ceiling check and the change of approach.
+        run = read_run(db, pid)
+        assert [(r["round"], r["label"], r["specialists"]) for r in run.rounds] == [
+            (1, "Round 1", ["econometrics_specialist", "paper_drafter"]),
+            (2, "Round 2", ["section_writer"]),
+        ]
+        assert run.rounds[0]["specialist_labels"] == ["Estimation", "Paper draft"]
+        assert [(r["ceiling_check"]["verdict"], r["ceiling_check"]["decision"]) for r in run.rounds] == [
+            ("continue", "another round"),
+            ("pivot", "a change of approach"),
+        ]
+        assert run.rounds[1]["pivot"]["label"] == "Change of approach"
+        assert run.rounds[1]["pivot"]["specialist_labels"] == ["Abstract"]
+        in_rounds = [
+            (s["specialist"], s["round"], s.get("pivot", False)) for s in run.workflow if s.get("phase") == "iterative"
+        ]
+        assert in_rounds == [
+            ("econometrics_specialist", 1, False),
+            ("paper_drafter", 1, False),
+            ("section_writer", 2, False),
+            ("abstract_writer", 2, True),
+        ]
+        critique = next(e for e in run.events if e["event"] == "self_critique")
+        assert critique["label"] == "Self-critique" and critique["corrections_made"] == 1
+        assert not any(s.get("round") for s in run.workflow if s.get("phase") != "iterative")
+
+        # The run view: the rounds in plain words, no internal names.
+        h = {"x-e2er-token": "replay-session"}
+        live = httpx.get(f"{api}/htmx/papers/{pid}/live", headers=h, timeout=10).text
+        text = visible_text(live).replace(" :", ":")  # the text of <strong>Round 1</strong>: …
+        assert "Rounds of improvement" in text
+        assert "Round 1: Estimation, Paper draft" in text and "Round 2: Sections and table layout" in text
+        assert "Ceiling check: another round" in text and "Ceiling check: a change of approach" in text
+        assert "Change of approach: Abstract" in text
+        assert "2 rounds, then a change of approach" in text
+        assert "Self-critique: 2 findings, 1 serious; 1 correction made in the draft" in text
+        assert not problems(live), problems(live)
+        page = httpx.get(f"{api}/papers/{pid}", headers=h, timeout=10).text
+        assert not problems(page), problems(page)
+
+    # Published (offline: nothing is sent) and verified like any study: the dossier carries the rounds.
+    bundle = next(x for x in (study / "exports").iterdir() if (x / "provenance.json").is_file())
+    env = {**os.environ, "HOME": str(tmp_path / "home"), "PYTHONPATH": str(ROOT), "E2ER_SKIP_SETUP_REDIRECT": "1"}
+    cli = [sys.executable, "-m", "tests.replay.cli"]
+    out = subprocess.run(
+        [*cli, "publish", str(bundle), "--owner", "replay", "--project", "fomc-iterative", "--name", "Replay"]
+        + ["--offline", "--no-stamp", "--out", str(tmp_path / "entry"), "--db", str(db)],
+        cwd=study,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
+    assert out.returncode == 0, out.stdout + out.stderr
+    doc = json.loads((bundle / "e2er.json").read_text(encoding="utf-8"))["dossier"]["doc"]
+    assert [r["ceiling_check"]["decision"] for r in doc["run"]["rounds"]] == ["another round", "a change of approach"]
+    assert doc["run"]["mode"] == "iterative"
+    out = subprocess.run([*cli, "verify", str(bundle)], cwd=study, env=env, capture_output=True, text=True, timeout=300)
+    assert out.returncode == 0, out.stdout + out.stderr
+    assert "[PASS] numbers" in out.stdout

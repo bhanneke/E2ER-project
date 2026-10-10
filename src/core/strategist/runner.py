@@ -782,17 +782,42 @@ class PipelineRunner:
         self._contributions.extend(contributions)
 
     async def _run_iterative_phase(self) -> PaperStatus:
-        """Iterative improvement loop with ceiling detection."""
+        """Iterative improvement loop with ceiling detection.
+
+        Each round, its ceiling check and a change of approach (pivot) are
+        recorded as events (``improvement_round``, ``ceiling_check``,
+        ``pivot``, ``improvement_stopped``), so the run view and the dossier
+        can say what each round did and why the rounds ended. Before 0.15.1
+        the log showed only the specialists, one after another.
+        """
+        from ...db.events import log_event
+
         for iteration in range(1, _MAX_ITERATIONS + 1):
             self._iteration = iteration
             logger.info("Iteration %d for paper %s", iteration, self._paper_id)
 
             decision = await self._strategist.decide("in_progress", iteration=iteration)
             if decision.action == "complete":
+                await log_event(
+                    self._paper_id,
+                    "improvement_stopped",
+                    stage="iterative",
+                    payload={"round": iteration, "reason": decision.rationale or ""},
+                )
                 return PaperStatus.IN_PROGRESS
             if decision.action == "fail":
                 raise RuntimeError(f"Strategist declared failure: {decision.rationale}")
 
+            await log_event(
+                self._paper_id,
+                "improvement_round",
+                stage="iterative",
+                payload={
+                    "round": iteration,
+                    "specialists": [wo.specialist for wo in decision.work_orders],
+                    "reason": decision.rationale or "",
+                },
+            )
             contributions = await self._dispatch(decision)
             self._contributions.extend(contributions)
 
@@ -800,11 +825,30 @@ class PipelineRunner:
             if iteration >= 1:
                 ceiling = await self._strategist.ceiling_check(iteration, self._pivot_count)
                 logger.info("Ceiling check: %s (iter=%d)", ceiling.verdict, iteration)
+                pivot_allowed = ceiling.verdict == "pivot" and self._pivot_count < _MAX_PIVOTS
+                check: dict[str, Any] = {"round": iteration, "verdict": ceiling.verdict, "reason": ceiling.reason}
+                if ceiling.verdict == "pivot":
+                    check["pivot"] = [wo.specialist for wo in ceiling.suggested_pivots]
+                    if not pivot_allowed:
+                        check["pivot_refused"] = "one change of approach per study"
+                if ceiling.verdict == "continue" and iteration == _MAX_ITERATIONS:
+                    check["last_round"] = True
+                await log_event(self._paper_id, "ceiling_check", stage="iterative", payload=check)
 
                 if ceiling.verdict == "proceed_to_review":
                     break
-                if ceiling.verdict == "pivot" and self._pivot_count < _MAX_PIVOTS:
+                if pivot_allowed:
                     self._pivot_count += 1
+                    await log_event(
+                        self._paper_id,
+                        "pivot",
+                        stage="iterative",
+                        payload={
+                            "round": iteration,
+                            "specialists": [wo.specialist for wo in ceiling.suggested_pivots],
+                            "focus": [wo.focus for wo in ceiling.suggested_pivots],
+                        },
+                    )
                     pivot_contributions = await execute_parallel(
                         self._to_contract_orders(ceiling.suggested_pivots),
                         self._backend,
@@ -828,11 +872,12 @@ class PipelineRunner:
                             iteration,
                         )
                     continue
-                # Any other verdict is unrecognised — log and proceed defensively.
+                # A pivot when the study has had its one, or any other verdict: proceed to review.
                 logger.warning(
-                    "Unrecognised ceiling decision '%s' at iter=%d; treating as proceed_to_review",
+                    "Ceiling decision '%s' at iter=%d (pivots used: %d); treating as proceed_to_review",
                     ceiling.verdict,
                     iteration,
+                    self._pivot_count,
                 )
                 break
 
@@ -1620,8 +1665,17 @@ class PipelineRunner:
             attack_report.overall_severity,
         )
 
+        from ...db.events import log_event
+
+        summary: dict[str, Any] = {
+            "findings": len(attack_report.findings),
+            "serious": len(attack_report.critical_findings),
+            "max_severity": attack_report.overall_severity,
+            "categories": sorted({f.category for f in attack_report.findings}),
+        }
         if not attack_report.findings:
             logger.info("Self-attack: no findings — skipping critical-finding revision step")
+            await log_event(self._paper_id, "self_critique", stage="self_attack", payload=summary)
             return PaperStatus.SELF_ATTACK
 
         # v0.6 step 4: critical findings drive ONE patch_revisor call,
@@ -1644,6 +1698,9 @@ class PipelineRunner:
             if findings:
                 try:
                     merge_result = await self._dispatch_patch_revisor(findings)
+                    summary["corrections_made"] = merge_result.n_applied
+                    summary["corrections_failed"] = merge_result.n_failed
+                    self._keep_self_attack_corrections(findings, merge_result)
                     if merge_result.fully_applied:
                         logger.info(
                             "Self-attack patch: applied %d edits to %d critical findings",
@@ -1663,12 +1720,43 @@ class PipelineRunner:
                             first_failures,
                         )
                 except FileNotFoundError as e:
+                    summary["corrections_made"] = 0
+                    summary["no_correction_file"] = True
                     logger.warning(
                         "Self-attack patch_revisor did not produce a patch file: %s",
                         e,
                     )
 
+        await log_event(self._paper_id, "self_critique", stage="self_attack", payload=summary)
         return PaperStatus.SELF_ATTACK
+
+    def _keep_self_attack_corrections(self, findings: list, merge_result: Any) -> None:
+        """Keep the self-critique's corrections in a file of their own.
+
+        The targeted corrections write ``paper_draft.tex.edits.json`` and
+        ``paper_draft.tex.applied.diff``, and the revision after the review
+        panel writes them again: without this copy the export kept only the
+        revision's (often empty) edits, and nothing showed what the
+        self-critique had changed in the draft.
+        """
+        edits_path = self._workspace / "paper_draft.tex.edits.json"
+        try:
+            edits = json.loads(edits_path.read_text(encoding="utf-8")) if edits_path.is_file() else []
+        except ValueError:
+            edits = []
+        record = {
+            "findings": [
+                {"target": f.target, "severity": f.severity, "problem": f.problem, "suggested_fix": f.suggested_fix}
+                for f in findings
+            ],
+            "edits": edits,
+            "applied": merge_result.n_applied,
+            "failed": [{"target": r.edit.target, "error": r.error} for r in merge_result.failed],
+            "diff": merge_result.diff,
+        }
+        (self._workspace / "self_attack_corrections.json").write_text(
+            json.dumps(record, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+        )
 
     async def _run_polish_phase(self) -> PaperStatus:
         """Parallel polish stack targeting specific paper pathologies."""

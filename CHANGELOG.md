@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Iterative mode, run end to end
+- **The iterative mode now runs at the replay level, from the question to the finished study.** A new
+  replay scenario (`tests/fixtures/replay/fomc-iterative`, on top of the FOMC one) scripts two rounds
+  of improvement, a ceiling check that asks for another round and then for a change of approach, a
+  self-critique with one serious finding, the polish notes, the review panel and the revision. Before,
+  the replay answered "nothing further" to every round, so the rounds, the ceiling check, the change
+  of approach and the self-critique's corrections had never run on the current engine. The replay
+  backend takes per-round answers (`iterations`, `ceiling_checks`, `self_attack`) and per-call
+  recordings (`calls`) for a specialist that runs more than once.
+- **Each round is recorded (fix).** The run's log showed the specialists of the rounds one after
+  another, with no sign of where a round began, what the ceiling check decided or which step was the
+  change of approach. The runner now records each round (`improvement_round`), the ceiling check after
+  it (`ceiling_check`: another round, a change of approach, ready for review; a second change of
+  approach is refused and recorded as such), the change of approach (`pivot`), the strategist ending
+  the rounds (`improvement_stopped`) and the self-critique (`self_critique`: findings, serious ones,
+  corrections made).
+- **The run page shows "Rounds of improvement"**: each round with its specialists, the ceiling check
+  after it and the change of approach in plain words; the step says "2 rounds, then a change of
+  approach", and the self-critique step its findings and corrections.
+- **The dossier lists the rounds** (`run.rounds`: each round's specialists with their names, the
+  ceiling check's decision and reason, the change of approach), and every step of a round says which
+  round it belongs to (`round`, `pivot`). A run without rounds adds nothing, so its dossier (and its
+  id) is unchanged.
+- **The self-critique's corrections are kept (fix).** They were written to `paper_draft.tex.edits.json`
+  and `paper_draft.tex.applied.diff`, which the revision after the review panel writes again: the
+  export kept only the revision's edits, and nothing showed what the self-critique changed in the
+  draft. They are now kept in `self_attack_corrections.json` (findings, edits, diff), exported with
+  the reviews.
+- **A ceiling verdict other than the three no longer fails the run (fix).** "stop", "Continue" or no
+  JSON at all failed the check's model and with it the whole run; it is now read as "ready for
+  review" (case and spaces ignored).
+
 ## [0.15.0] — 2026-10-10
 
 ### Choose the data and papers a study uses

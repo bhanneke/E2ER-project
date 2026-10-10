@@ -16,7 +16,13 @@ by ``tests/replay/extract.py`` from a recorded demonstration run.
 * A strategist call answers with the plan the real run followed: the
   initial phase's groups of specialists, ``complete`` for an iterative
   decision, ``proceed_to_review`` for a ceiling check, no findings for a
-  self-attack.
+  self-attack. A scenario for the iterative mode scripts these instead:
+  ``"iterations"`` (round *n*'s decision: its work orders and rationale;
+  after the last round, ``complete``), ``"ceiling_checks"`` (the verdict
+  after round *n*, e.g. ``continue``, then ``pivot`` with
+  ``suggested_pivots``) and ``"self_attack"`` (the self-critique's report).
+  Each answer is chosen by the round number in the prompt, so a resumed run
+  gets the same answers.
 * Calls with no recording fail visibly ("replay has no recording for …"),
   never silently.
 
@@ -44,6 +50,16 @@ stays in the study when the recorded data analyst writes its files.
 
 Attempt *n* (counted per paper and specialist in this process) uses entry
 *n* of ``attempts``; later attempts replay the recording unchanged.
+
+A specialist called more than once in a run with different results (the
+targeted corrections after the self-critique, then after the review panel)
+has ``"calls"``: call *n* uses entry *n* (the last one for later calls), each
+a recording of its own whose files are read from ``files/<dir>/`` (``"dir"``,
+default the specialist's name)::
+
+    "patch_revisor": {"calls": [
+        {"dir": "patch_revisor.self_attack", "files": ["paper_draft.tex.edits.json"]},
+        {"files": ["paper_draft.tex.edits.json"]}]}
 
 The replay stands in for the backend and model the run names (``get_backend``
 in the harness passes them): :meth:`ReplayBackend.identity` reports them, so
@@ -108,6 +124,8 @@ class ReplayBackend(LLMBackend):
 
     #: Calls per (paper id, specialist) in this process, across every backend instance.
     _attempts: dict[tuple[str, str], int] = {}
+    #: Calls per (paper id, specialist) for ``"calls"`` recordings (overrides count separately).
+    _calls: dict[tuple[str, str], int] = {}
     #: Every call, in order, for assertions: (paper id, specialist or strategist kind).
     calls: list[tuple[str, str]] = []
 
@@ -190,6 +208,7 @@ class ReplayBackend(LLMBackend):
                 error=f"replay has no recording for {specialist} in scenario {self.scenario.get('name')}",
                 duration_seconds=time.time() - t0,
             )
+        rec, folder = self._recording(paper_id or "", specialist, rec)
         variant = self._variant(paper_id or "", specialist)
         if variant.get("wait"):
             await asyncio.sleep(float(variant["wait"]))
@@ -203,7 +222,7 @@ class ReplayBackend(LLMBackend):
         for rel in rec.get("files") or []:
             if rel in skip:
                 continue
-            self._write(workspace, specialist, rel, paper_id or "", replace.get(rel) or [])
+            self._write(workspace, folder, rel, paper_id or "", replace.get(rel) or [])
             written.append(rel)
         u = rec.get("usage") or {}
         return ToolLoopResult(
@@ -218,6 +237,17 @@ class ReplayBackend(LLMBackend):
             ),
             duration_seconds=time.time() - t0,
         )
+
+    def _recording(self, paper_id: str, specialist: str, rec: dict[str, Any]) -> tuple[dict[str, Any], str]:
+        """This call's recording and the folder under ``files/`` its files come from (``"calls"``)."""
+        calls = rec.get("calls")
+        if not calls:
+            return rec, specialist
+        key = (paper_id, specialist)
+        n = ReplayBackend._calls.get(key, 0)
+        ReplayBackend._calls[key] = n + 1
+        one = {**{k: v for k, v in rec.items() if k != "calls"}, **calls[min(n, len(calls) - 1)]}
+        return one, str(one.get("dir") or specialist)
 
     def _source(self, specialist: str, rel: str) -> Path:
         own = self.root / "files" / specialist / rel
@@ -248,9 +278,13 @@ class ReplayBackend(LLMBackend):
     def _strategist(self, system: str, messages: list[dict[str, Any]], t0: float) -> ToolLoopResult:
         prompt = "\n".join(str(m.get("content", "")) for m in messages if m.get("role") == "user")
         ReplayBackend.calls.append(("", "strategist"))
+        rounds = (re.search(r"Iteration: (\d+)", prompt) or [None, "0"])[1]
+        n = int(rounds or 0)
         if "Decide what to do next" in prompt:
             status = (re.search(r"Paper status: (\w+)", prompt) or [None, ""])[1]
             groups = self.scenario.get("initial_groups") or []
+            scripted = self.scenario.get("iterations") or []
+            decision: dict[str, Any]
             if status == "designing" and groups:
                 orders = [
                     {
@@ -267,13 +301,21 @@ class ReplayBackend(LLMBackend):
                     "work_orders": orders,
                     "rationale": "replay: the plan of the recorded run",
                 }
+            elif status != "designing" and 1 <= n <= len(scripted):
+                decision = {"action": "dispatch_parallel", **scripted[n - 1]}
             else:
                 decision = {"action": "complete", "rationale": "replay: nothing further in the recorded run"}
             out = json.dumps(decision)
         elif "SelfAttackReport" in prompt:
-            out = json.dumps({"findings": [], "overall_severity": 0})
+            out = json.dumps(self.scenario.get("self_attack") or {"findings": [], "overall_severity": 0})
         elif "verdict" in prompt or "Iteration:" in prompt:
-            out = json.dumps({"verdict": "proceed_to_review", "reason": "replay", "suggested_pivots": []})
+            checks = self.scenario.get("ceiling_checks") or []
+            verdict = (
+                checks[n - 1]
+                if 1 <= n <= len(checks)
+                else {"verdict": "proceed_to_review", "reason": "replay", "suggested_pivots": []}
+            )
+            out = json.dumps(verdict)
         else:
             return ToolLoopResult(
                 success=False, output="", error="replay has no recording for this call", duration_seconds=0.0

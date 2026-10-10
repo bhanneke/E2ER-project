@@ -40,6 +40,7 @@ from pathlib import Path
 from typing import Any
 
 from ..skills.loader import skill_component
+from . import labels as _labels
 from .availability import any_public
 from .demonstration import DEMONSTRATION, disclaimer
 from .run_outcome import effective_status, internal_review, read_aggregation
@@ -374,7 +375,12 @@ class RunRecord:
     recorded: bool = False  # the database has this run's events
     #: The template's ``[[credit]]`` entries as the run recorded them (``template_components``), if any.
     credit: dict[str, Any] | None = None
+    #: The rounds of the iterative mode (``improvement_round``, ``ceiling_check``, ``pivot``), in order.
+    rounds: list[dict[str, Any]] = field(default_factory=list)
 
+
+#: The iterative mode's record of its rounds: kept as ``run.rounds`` of the dossier, not as events.
+_ROUND_EVENTS = {"improvement_round", "ceiling_check", "pivot", "improvement_stopped"}
 
 #: Events that are part of the run's history but not one of the dossier's step types.
 _RUN_EVENTS = {
@@ -493,6 +499,9 @@ def read_run(db: Path, paper_id: str, files: dict[str, Any] | None = None, bundl
         return at is not None and (start is None or at >= start) and (end is None or at <= end)
 
     phase: str | None = None
+    current_round: int | None = None
+    pivoting = False
+    rounds: dict[int, dict[str, Any]] = {}
     seg = -1
     started: dict[str, tuple[str | None, dict[str, Any]]] = {}
     pending_rerun: dict[str, dict[str, Any]] = {}
@@ -523,6 +532,7 @@ def read_run(db: Path, paper_id: str, files: dict[str, Any] | None = None, bundl
                 rec.credit = {"template": data.get("template"), "entries": [e for e in entries if isinstance(e, dict)]}
         elif etype == "phase_start":
             phase = stage
+            current_round, pivoting = None, False
         elif etype == "specialist_start":
             started[sp] = (at, data)
         elif etype in ("specialist_end", "specialist_failed"):
@@ -556,6 +566,11 @@ def read_run(db: Path, paper_id: str, files: dict[str, Any] | None = None, bundl
                 "ended": at,
                 "accepted": ok,
             }
+            if phase == "iterative" and current_round is not None:
+                # The iterative mode: the round this step belongs to, and whether it was the change of approach.
+                step["round"] = current_round
+                if pivoting:
+                    step["pivot"] = True
             if len(models) > 1:
                 step["models"] = [{"backend": b, "model": m} for b, m in models]
             why = (c[1][3] if c else None) or (data.get("error") if etype == "specialist_failed" else None)
@@ -701,6 +716,40 @@ def read_run(db: Path, paper_id: str, files: dict[str, Any] | None = None, bundl
             pending_rerun[stage] = {"at": at, "remark": _clip(data.get("remark"))}
         elif etype in ("phase_end", "specialist_skipped"):
             continue
+        elif etype in _ROUND_EVENTS and isinstance(data.get("round"), int):
+            n = data["round"]
+            r = rounds.setdefault(n, {"round": n, "label": f"Round {n}", **where})
+            if etype == "improvement_round":
+                current_round, pivoting = n, False
+                r["started"] = at
+                r["specialists"] = _clip(list(data.get("specialists") or []))
+                r["specialist_labels"] = [_labels.specialist(str(x)) for x in data.get("specialists") or []]
+                if data.get("reason"):
+                    r["reason"] = _clip(str(data["reason"]), 2000)
+            elif etype == "ceiling_check":
+                verdict = str(data.get("verdict") or "")
+                r["ceiling_check"] = {
+                    "verdict": verdict,
+                    "decision": _labels.ceiling_verdict(verdict),
+                    "at": at,
+                    **({"reason": _clip(str(data["reason"]), 2000)} if data.get("reason") else {}),
+                    **({"pivot_refused": str(data["pivot_refused"])} if data.get("pivot_refused") else {}),
+                }
+            elif etype == "pivot":
+                current_round, pivoting = n, True
+                r["pivot"] = {
+                    "label": _labels.event("pivot"),
+                    "specialists": _clip(list(data.get("specialists") or [])),
+                    "specialist_labels": [_labels.specialist(str(x)) for x in data.get("specialists") or []],
+                    "at": at,
+                    **({"focus": _clip(list(data["focus"]))} if data.get("focus") else {}),
+                }
+            else:  # improvement_stopped: the strategist ended the rounds before this one
+                r["label"] = f"Rounds ended before round {n}"
+                r["ended"] = True
+                r["at"] = at
+                if data.get("reason"):
+                    r["reason"] = _clip(str(data["reason"]), 2000)
         else:
             name = {"preregistration": "preregistration_frozen"}.get(etype, etype)
             ev: dict[str, Any] = {"event": name, **({"step": stage} if stage else {}), **where, "at": at}
@@ -711,6 +760,10 @@ def read_run(db: Path, paper_id: str, files: dict[str, Any] | None = None, bundl
             rec.events.append(ev)
     for target, info in pending_rerun.items():
         rec.events.append({"event": "rerun", "step": target, **info})
+    rec.rounds = [rounds[k] for k in sorted(rounds)]
+    for ev in rec.events:
+        if ev.get("event") == "self_critique":
+            ev["label"] = _labels.event("self_critique")
     rec.events.sort(key=lambda e: e.get("at") or "")
 
     if rec.workflow and not any(isinstance(s.get("output"), dict) and "sha256" in s["output"] for s in rec.workflow):
@@ -771,6 +824,7 @@ def read_run(db: Path, paper_id: str, files: dict[str, Any] | None = None, bundl
     rec.segments = strip_local_paths(rec.segments)
     rec.workflow = strip_local_paths(rec.workflow)
     rec.events = strip_local_paths(rec.events)
+    rec.rounds = strip_local_paths(rec.rounds)
     rec.outcome = strip_local_paths(rec.outcome)
     return rec
 
@@ -911,6 +965,10 @@ def build_dossier(
         if run.internal_review:
             doc["run"]["internal_review"] = run.internal_review
         doc["run"]["events"] = run.events
+        if run.rounds:
+            # The iterative mode's rounds, ceiling checks and change of approach. A run without
+            # rounds (one pass) adds nothing, so those dossiers (and their ids) are unchanged.
+            doc["run"]["rounds"] = run.rounds
         if run.credit:
             # The work the template is based on, cites or relates to, as the run recorded it. A
             # template without `[[credit]]` adds nothing, so those dossiers (and their ids) are unchanged.

@@ -2846,8 +2846,21 @@ def _template_progress(paper: dict[str, Any], events: list[dict[str, Any]]) -> d
                     _step_row(x, mode, status, completed, pending, opened, finished, halted, sub=True, spec=spec)
                     for x in inner
                 )
+    rounds = _labels.round_summary(events)
+    critique = _self_critique(events)
+    for row in steps:
+        if row["name"] == "iterative" and rounds and row["state"] in {"done", "running"}:
+            n = len(rounds)
+            note = f"{n} round{'s' if n != 1 else ''}"
+            if any(r.get("pivot") for r in rounds):
+                note += ", then a change of approach"
+            row["note"] = note if row["state"] == "done" else f"{note} so far; running now"
+        if row["name"] == "self_attack" and critique and row["state"] == "done":
+            row["note"] = critique["note"]
     current = next((s["label"] for s in steps if s["state"] in {"waiting", "running"}), "")
     return {
+        "rounds": rounds,
+        "self_critique": critique,
         "template": name,
         "template_label": _labels.template(name, spec),
         "steps": steps,
@@ -2856,6 +2869,31 @@ def _template_progress(paper: dict[str, Any], events: list[dict[str, Any]]) -> d
         "specialists_failed": failed_specialists,
         "checks": _gate_verdicts(workspace) if workspace.is_dir() else [],
     }
+
+
+def _self_critique(events: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """The last self-critique of the run in plain words (the ``self_critique`` event), or None."""
+    for e in events:  # most recent first
+        if str(e.get("event_type") or "") != "self_critique":
+            continue
+        data = e.get("payload")
+        if isinstance(data, str):
+            try:
+                data = json.loads(data)
+            except ValueError:
+                data = {}
+        if not isinstance(data, dict):
+            return None
+        n, serious = int(data.get("findings") or 0), int(data.get("serious") or 0)
+        if not n:
+            note = "no findings"
+        else:
+            note = f"{n} finding{'s' if n != 1 else ''}, {serious} serious"
+            if "corrections_made" in data:
+                made = int(data.get("corrections_made") or 0)
+                note += f"; {made} correction{'s' if made != 1 else ''} made in the draft"
+        return {"findings": n, "serious": serious, "note": note}
+    return None
 
 
 def _step_row(
@@ -2998,7 +3036,7 @@ async def paper_live_fragment(request: Request, paper_id: str = Depends(_validat
     try:
         events = await fetch_all(
             """
-            SELECT event_type, stage, specialist, created_at
+            SELECT event_type, stage, specialist, payload, created_at
             FROM pipeline_events
             WHERE paper_id = %(id)s
             ORDER BY created_at DESC

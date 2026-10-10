@@ -1,0 +1,163 @@
+{
+  "name": "fomc-iterative",
+  "base": "fomc",
+  "source": "The FOMC replay (base) run in the iterative mode: two rounds of improvement after the initial phase, a ceiling check that asks for another round and then for a change of approach (the abstract rewritten so the pre-registered window leads), a self-critique with one serious finding that the targeted corrections fix in the introduction and one minor one the polish of the numbers notes, then the polish notes, the review panel and the revision of the recorded run. The rounds, ceiling verdicts, self-critique, the section writer's draft, the pivot's abstract, the correction and the polish notes are written for this scenario from the recorded study; every number in them is the recorded run's.",
+  "iterations": [
+    {
+      "work_orders": [
+        {
+          "specialist": "econometrics_specialist",
+          "parallel_group": 0,
+          "context_tier": 2,
+          "focus": "Run run_estimation.py again from data.db and confirm that the H2 regression uses HC1 standard errors and that estimation_results.json is what the script writes."
+        },
+        {
+          "specialist": "paper_drafter",
+          "parallel_group": 1,
+          "context_tier": 2,
+          "focus": "Redraft the results around the confirmed estimates; cite every number by its source in estimation_results.json."
+        }
+      ],
+      "rationale": "Confirm the estimates from the saved data before more writing builds on them."
+    },
+    {
+      "work_orders": [
+        {
+          "specialist": "section_writer",
+          "parallel_group": 0,
+          "context_tier": 2,
+          "focus": "section:discussion. Say in the discussion of Hypothesis 2 how little power 31 events give the yield-surprise regression, so the null result is not read as evidence that surprises do not matter."
+        }
+      ],
+      "rationale": "The discussion of the H2 null result overstates what 31 events can show."
+    }
+  ],
+  "ceiling_checks": [
+    {
+      "verdict": "continue",
+      "reason": "Round 1 confirmed the estimates; the discussion of the H2 null result can still be made more precise.",
+      "suggested_pivots": []
+    },
+    {
+      "verdict": "pivot",
+      "reason": "Round 2 changed one paragraph. The abstract still gives the exploratory [0,+5] window as much room as the pre-registered result; that needs a different step, not another round.",
+      "suggested_pivots": [
+        {
+          "specialist": "abstract_writer",
+          "parallel_group": 0,
+          "context_tier": 2,
+          "focus": "Rewrite the abstract so the pre-registered [-1,+1] results lead and the [0,+5] window is called exploratory. Keep every number and its source."
+        }
+      ]
+    }
+  ],
+  "self_attack": {
+    "findings": [
+      {
+        "severity": 7,
+        "category": "framing",
+        "description": "The introduction reports the [0,+5] window as 'a significant pooled mean CAR' in the paragraph of the main finding. The window was not pre-registered and was looked at after the pre-registered [-1,+1] window did not reject; a reader takes it as a headline result.",
+        "suggested_fix": "In the introduction, call the [0,+5] window exploratory and say that no correction was made for looking at more than one window."
+      },
+      {
+        "severity": 4,
+        "category": "numerics",
+        "description": "The discussion gives the standard deviation of the CARs as 'about 2.5% to 3.0%'; estimation_results.json gives 2.55 (pooled), 2.37 (hikes) and 2.85 (cuts).",
+        "suggested_fix": "Write '2.4% to 2.9%' or give the three values."
+      }
+    ],
+    "overall_severity": 7
+  },
+  "specialists": {
+    "section_writer": {
+      "files": [
+        "paper_draft.tex"
+      ],
+      "output": "Wrote paper_draft.tex.",
+      "usage": {
+        "input_tokens": 61,
+        "output_tokens": 3120,
+        "cache_read_tokens": 210455,
+        "cache_write_tokens": 31877
+      }
+    },
+    "abstract_writer": {
+      "files": [
+        "abstract.tex"
+      ],
+      "output": "Wrote abstract.tex.",
+      "usage": {
+        "input_tokens": 42,
+        "output_tokens": 9743,
+        "cache_read_tokens": 233212,
+        "cache_write_tokens": 45097
+      },
+      "calls": [
+        {
+          "dir": "abstract_writer"
+        },
+        {
+          "dir": "abstract_writer.pivot",
+          "output": "Rewrote abstract.tex: the pre-registered window leads.",
+          "usage": {
+            "input_tokens": 38,
+            "output_tokens": 1906,
+            "cache_read_tokens": 120334,
+            "cache_write_tokens": 20118
+          }
+        }
+      ]
+    },
+    "patch_revisor": {
+      "files": [
+        "paper_draft.tex.edits.json"
+      ],
+      "output": "Wrote paper_draft.tex.edits.json.",
+      "usage": {
+        "input_tokens": 106,
+        "output_tokens": 9744,
+        "cache_read_tokens": 731276,
+        "cache_write_tokens": 48973
+      },
+      "calls": [
+        {
+          "dir": "patch_revisor.self_attack",
+          "output": "Wrote paper_draft.tex.edits.json (1 edit, introduction).",
+          "usage": {
+            "input_tokens": 54,
+            "output_tokens": 1412,
+            "cache_read_tokens": 98120,
+            "cache_write_tokens": 15002
+          }
+        },
+        {
+          "dir": "patch_revisor"
+        }
+      ]
+    },
+    "polish_formula": {
+      "files": [
+        "polish_formula.md"
+      ],
+      "output": "Wrote polish_formula.md.",
+      "usage": {
+        "input_tokens": 33,
+        "output_tokens": 1650,
+        "cache_read_tokens": 88710,
+        "cache_write_tokens": 14230
+      }
+    },
+    "polish_numerics": {
+      "files": [
+        "polish_numerics.md"
+      ],
+      "output": "Wrote polish_numerics.md.",
+      "usage": {
+        "input_tokens": 35,
+        "output_tokens": 1388,
+        "cache_read_tokens": 91402,
+        "cache_write_tokens": 14877
+      }
+    }
+  }
+}

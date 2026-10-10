@@ -462,3 +462,19 @@ def test_skills_without_the_internet_says_so_plainly(client, monkeypatch):
     html = client.get("/skills").text
     assert "The skills catalogue (RISE, on GitHub) could not be reached." in visible_text(html)
     assert not problems(html)
+
+
+def test_the_iterative_mode_shows_its_rounds_in_plain_words(client, fx):
+    """Each round with its specialists, the ceiling check after it, the change of approach and the self-critique."""
+    html = client.get(f"/htmx/papers/{fx.ids['iterative']}/live").text
+    text = visible_text(html).replace(" :", ":")
+    assert "Round 1: Estimation, Paper draft" in text
+    assert "Ceiling check: another round" in text
+    assert "Round 2: Sections and table layout" in text
+    assert "Ceiling check: a change of approach" in text and "Change of approach: Abstract" in text
+    assert "2 rounds, then a change of approach" in text
+    assert "Self-critique: 2 findings, 1 serious; 1 correction made in the draft" in text
+    # The strategist's own words are shown as its words, not checked as e2er's.
+    assert "section:discussion" in html and not problems(html)
+    log = text[text.find("What happened") :]
+    assert "Round of improvement" in log and "Ceiling check" in log and "Change of approach" in log
