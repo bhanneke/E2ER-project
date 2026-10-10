@@ -19,6 +19,8 @@ logger = get_logger(__name__)
 _OPENROUTER_BASE = "https://openrouter.ai/api/v1"
 _EMPTY_RETRIES = 2
 _loop_keys = itertools.count(1)
+#: What each running loop has used so far, by loop key (recorded if the run is stopped mid-loop).
+_spent: dict[int, TokenUsage] = {}
 _EMPTY_BACKOFF_SECONDS = 5.0
 
 
@@ -168,14 +170,19 @@ class OpenRouterBackend(LLMBackend):
         max_turns: int = 30,
         *,
         paper_id: str | None = None,
-        specialist: str | None = None,  # noqa: ARG002
+        specialist: str | None = None,
     ) -> ToolLoopResult:
-        from ..tracking.usage import loop_finished
+        from ..tracking.usage import loop_finished, record_cancelled_loop
 
         loop_key = next(_loop_keys)
         try:
             return await self._tool_loop(system, messages, tools, tool_handler, max_turns, paper_id, loop_key)
+        except asyncio.CancelledError:
+            # A stopped run: the runner never records this loop's usage, but it was billed.
+            await record_cancelled_loop(paper_id, specialist, "openrouter", self._model, _spent.pop(loop_key, None))
+            raise
         finally:
+            _spent.pop(loop_key, None)
             loop_finished(paper_id, loop_key)
 
     async def _tool_loop(
@@ -247,6 +254,7 @@ class OpenRouterBackend(LLMBackend):
                 )
 
             usage = usage + self._usage_of(response)
+            _spent[loop_key] = usage
 
             choice = response.choices[0]
             finish_reason = choice.finish_reason

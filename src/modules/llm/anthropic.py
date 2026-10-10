@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import itertools
 import time
 from typing import Any
@@ -16,6 +17,8 @@ logger = get_logger(__name__)
 
 _CACHE_THRESHOLD_CHARS = 4000  # only cache if system prompt is substantial
 _loop_keys = itertools.count(1)
+#: What each running loop has used so far, by loop key (recorded if the run is stopped mid-loop).
+_spent: dict[int, TokenUsage] = {}
 
 
 class AnthropicBackend(LLMBackend):
@@ -46,14 +49,19 @@ class AnthropicBackend(LLMBackend):
         max_turns: int = 30,
         *,
         paper_id: str | None = None,
-        specialist: str | None = None,  # noqa: ARG002
+        specialist: str | None = None,
     ) -> ToolLoopResult:
-        from ..tracking.usage import loop_finished
+        from ..tracking.usage import loop_finished, record_cancelled_loop
 
         loop_key = next(_loop_keys)
         try:
             return await self._tool_loop(system, messages, tools, tool_handler, max_turns, paper_id, loop_key)
+        except asyncio.CancelledError:
+            # A stopped run: the runner never records this loop's usage, but it was billed.
+            await record_cancelled_loop(paper_id, specialist, "anthropic", self._model, _spent.pop(loop_key, None))
+            raise
         finally:
+            _spent.pop(loop_key, None)
             loop_finished(paper_id, loop_key)
 
     async def _tool_loop(
@@ -144,6 +152,7 @@ class AnthropicBackend(LLMBackend):
                 cache_read_tokens=getattr(u, "cache_read_input_tokens", 0) or 0,
                 cache_write_tokens=getattr(u, "cache_creation_input_tokens", 0) or 0,
             )
+            _spent[loop_key] = usage
 
             # Extract text output
             text_output = " ".join(b.text for b in response.content if hasattr(b, "text"))

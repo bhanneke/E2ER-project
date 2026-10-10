@@ -231,3 +231,29 @@ def loop_finished(paper_id: str | None, loop_key: int) -> None:
         _in_flight[paper_id].pop(loop_key, None)
         if not _in_flight[paper_id]:
             del _in_flight[paper_id]
+
+
+async def record_cancelled_loop(
+    paper_id: str | None, specialist: str | None, backend: str, model: str, usage: TokenUsage | None
+) -> None:
+    """Record what a tool loop used before its run was stopped (best effort, never raises).
+
+    The runner records a specialist's usage when its loop returns; a stopped run
+    cancels the loop first, and its calls (billed) were missing from the cost.
+    """
+    if not paper_id or usage is None or usage.total_tokens == 0:
+        return
+    import asyncio
+
+    try:
+        await asyncio.shield(
+            save_usage(
+                paper_id=paper_id,
+                specialist=specialist or "unknown",
+                backend=backend,
+                model=model,
+                usage=usage,
+            )
+        )
+    except BaseException:  # noqa: BLE001 — never mask the cancellation
+        pass

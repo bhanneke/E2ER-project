@@ -443,3 +443,43 @@ async def test_calls_name_the_cheapest_providers_in_order(backend, monkeypatch):
     orm._endpoint_memory.clear()
     monkeypatch.setattr(orm, "_get_json", lambda url: pytest.fail("cached"))
     assert orm.provider_order("deepseek/deepseek-v4-pro")[0] == "baidu/fp8"
+
+
+async def test_a_stopped_run_still_records_what_the_loop_spent(backend, monkeypatch):
+    """Cancelling a run mid-specialist dropped that specialist's billed calls from the cost."""
+    import asyncio
+
+    saved = []
+
+    async def fake_save(**kw):
+        saved.append(kw)
+
+    monkeypatch.setattr("src.modules.tracking.usage.save_usage", fake_save)
+    first = _resp("tool_calls", tool_calls=[_tc("a", "list_directory", "{}")], usage=_usage(10, 10, cost=0.4))
+    started = asyncio.Event()
+
+    async def create(**kw):
+        if started.is_set():
+            await asyncio.sleep(3600)  # the second call hangs until the run is stopped
+        started.set()
+        return first
+
+    monkeypatch.setattr(backend._client.chat.completions, "create", create)
+    task = asyncio.create_task(
+        backend.tool_loop(
+            "s",
+            [{"role": "user", "content": "u"}],
+            [],
+            _Recorder(),
+            paper_id="p9",
+            specialist="econometrics_specialist",
+        )
+    )
+    await started.wait()
+    await asyncio.sleep(0.05)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert len(saved) == 1
+    assert saved[0]["paper_id"] == "p9" and saved[0]["specialist"] == "econometrics_specialist"
+    assert saved[0]["usage"].cost_usd == pytest.approx(0.4)

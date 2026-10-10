@@ -117,6 +117,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The spending limit holds inside a specialist (fix).** It was checked between specialists only;
   one specialist ran on while the study passed its $3 limit ($3.48 billed). The Anthropic and
   OpenRouter backends now check before every call, counting the specialists still running.
+- **Stopping a run keeps the cost of the specialist that was working (fix).** Its calls were billed
+  but never recorded, so a stopped study showed $2.85 where OpenRouter had billed $3.48. The Anthropic
+  and OpenRouter backends now record what a loop used when its run is stopped.
 - **Setup offers every OpenRouter model that can use tools, with its price** ("DeepSeek V4 Pro (open
   model, low price): $0.23 in / $0.46 out per million tokens"), suggestions first; offline, the fixed
   suggestions. A model already chosen stays selected, also in e2er's spelling (`claude-sonnet-4-5` for
