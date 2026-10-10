@@ -38,7 +38,7 @@
         {% for p in v.mine %}
           <li><span class="quoted">{{ p.title }}</span>{% if p.year %} ({{ p.year }}){% endif %}
             <span class="muted">{% if p.authors %}· <span class="quoted">{{ p.authors }}</span> {% endif %}· {{ p.origin }}{% if p.kind %} · {{ p.kind }}{% endif %}{% if p.pdf %} · full text{% endif %}</span>
-            <span class="muted mono small quoted">\cite{ {{- p.key -}} }</span></li>
+            <br><span class="muted mono small quoted">\cite{ {{- p.key -}} }</span></li>
         {% endfor %}
       </ul>
       {% if not v.papers_chosen and v.recorded %}<p class="small muted">No choice was made, so the study took every paper of your literature folder and .bib files.</p>{% endif %}
