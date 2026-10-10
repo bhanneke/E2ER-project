@@ -320,3 +320,27 @@ async def test_zero_cost_for_a_priced_model_counts_the_listed_price(backend, mon
     monkeypatch.setattr(backend._client.chat.completions, "create", create)
     r = await backend.tool_loop("s", [{"role": "user", "content": "u"}], [], None)
     assert r.usage.cost_usd and r.usage.cost_usd > 0.1
+
+
+# ── a reviewer that answers instead of writing its file ─────────────────────
+
+
+def test_markdown_answer_is_kept_as_the_missing_output(tmp_path):
+    from src.core.specialists.base import _keep_answer_as_markdown_output
+
+    review = "# Mechanism review\n\n" + "The mechanism section argues ... " * 20
+    assert _keep_answer_as_markdown_output(tmp_path, "mechanism_reviewer", "review_mechanism.md", review)
+    assert (tmp_path / "review_mechanism.md").read_text().startswith("# Mechanism review")
+
+
+def test_answer_never_replaces_a_written_file_or_fills_json(tmp_path):
+    from src.core.specialists.base import _keep_answer_as_markdown_output
+
+    long = "x" * 1000
+    (tmp_path / "review_mechanism.md").write_text("written by the model")
+    assert not _keep_answer_as_markdown_output(tmp_path, "mechanism_reviewer", "review_mechanism.md", long)
+    assert (tmp_path / "review_mechanism.md").read_text() == "written by the model"
+    assert not _keep_answer_as_markdown_output(tmp_path, "econometrics_specialist", "estimation_results.json", long)
+    assert not _keep_answer_as_markdown_output(tmp_path, "writing_reviewer", "review_writing.md", "Done.")
+    assert not _keep_answer_as_markdown_output(tmp_path, "writing_reviewer", "../outside.md", long)
+    assert not (tmp_path.parent / "outside.md").exists()

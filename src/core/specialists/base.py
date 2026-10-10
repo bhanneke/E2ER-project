@@ -179,6 +179,9 @@ async def run_specialist(
         result.usage.total_tokens,
     )
 
+    if result.success and backend_name in _SDK_BACKENDS:
+        _keep_answer_as_markdown_output(workspace, specialist, work_order.output_file, result.output)
+
     # v0.9 post-M4.3: runner-side post-specialist execution. The
     # positive path that complements M4.3's negative path — if the
     # specialist wrote a known execution-script (e.g.
@@ -900,6 +903,41 @@ def _workspace_bib_for_prompt(specialist: str, paper_id: str, limit: int = 40) -
         'If you need a work that is not here, run `e2er-lit search "<query>"` first; '
         "that records it and makes its key citable.\n" + "\n".join(lines) + more
     )
+
+
+#: Backends whose tool loop runs in-process (the model's final answer is plain text we hold).
+_SDK_BACKENDS = frozenset({"anthropic", "openrouter"})
+#: A final answer shorter than this is a sign-off ("Done."), not the document.
+_MIN_ANSWER_CHARS = 300
+
+
+def _keep_answer_as_markdown_output(workspace: Path, specialist: str, expected: str, answer: str) -> bool:
+    """Save the specialist's final answer as its Markdown output when it wrote no file.
+
+    Open models on OpenRouter (DeepSeek V4 Pro, 2026-10-10) sometimes answer a
+    reviewer's work order with the whole review as their reply and never call
+    ``write_file``: the contract check then failed "file not written" and the
+    retry cost a whole new review. For a Markdown output the reply is the
+    document, so it is written there verbatim, and the run log says so. JSON,
+    LaTeX and scripts are never filled this way: their contracts check content
+    that a chat reply is not.
+    """
+    from ..specialists.registry import SPECIALIST_ARTIFACTS
+
+    target = expected or SPECIALIST_ARTIFACTS.get(specialist, "")
+    text = (answer or "").strip()
+    if not target.endswith(".md") or len(text) < _MIN_ANSWER_CHARS:
+        return False
+    path = (workspace / target).resolve()
+    root = workspace.resolve()
+    if root not in path.parents or path.exists():
+        return False
+    if _find_output_file(workspace, specialist, target):  # written, but under a subfolder
+        return False
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text + "\n", encoding="utf-8")
+    logger.warning("%s: wrote no %s; its final answer (%d chars) was saved as that file", specialist, target, len(text))
+    return True
 
 
 def _find_output_file(workspace: Path, specialist: str, expected: str) -> str:
