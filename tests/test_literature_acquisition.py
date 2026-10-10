@@ -73,7 +73,11 @@ def test_entry_count_reads_entries(tmp_path: Path):
 
 @pytest.mark.asyncio
 async def test_writes_a_bibliography_from_the_research_question(tmp_path: Path):
-    hits = [_paper("Spot ETF approval and volatility"), _paper("Realized volatility persistence", "Jones", 2021)]
+    # Both share the question's words (the web search keeps only hits on its topic: see test_study_inputs).
+    hits = [
+        _paper("Spot ETF approval and volatility"),
+        _paper("Realized volatility after spot ETF launches", "Jones", 2021),
+    ]
     with _with_sources(_source("openalex", hits)), _no_storage():
         n = await acquire_literature(tmp_path, "p1", ["does the spot ETF change volatility?"], SETTINGS)
 
@@ -81,6 +85,15 @@ async def test_writes_a_bibliography_from_the_research_question(tmp_path: Path):
     written = (tmp_path / "literature.bib").read_text(encoding="utf-8")
     assert "smith2020spot" in written
     assert "jones2021realized" in written
+
+
+@pytest.mark.asyncio
+async def test_a_hit_off_the_questions_topic_is_left_out(tmp_path: Path):
+    hits = [_paper("Spot ETF approval and volatility"), _paper("Teen birth rates and contraception", "Jones", 2021)]
+    with _with_sources(_source("openalex", hits)), _no_storage():
+        n = await acquire_literature(tmp_path, "p1", ["does the spot ETF change volatility?"], SETTINGS)
+
+    assert n == 1 and "Teen birth" not in (tmp_path / "literature.bib").read_text(encoding="utf-8")
 
 
 @pytest.mark.asyncio
@@ -157,9 +170,11 @@ async def test_first_source_with_hits_wins(tmp_path: Path):
 async def test_dedupes_across_the_two_queries(tmp_path: Path):
     """The research question and the title overlap heavily; one paper found by
     both must produce one entry."""
-    same = _paper("Overlapping result")
+    same = _paper("Spot ETF volatility")
     with _with_sources(_source("openalex", [same])), _no_storage():
-        n = await acquire_literature(tmp_path, "p1", ["question", "title"], SETTINGS)
+        n = await acquire_literature(
+            tmp_path, "p1", ["Does the spot ETF change volatility?", "Spot ETF volatility"], SETTINGS
+        )
 
     assert n == 1
 

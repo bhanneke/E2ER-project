@@ -282,7 +282,8 @@ def is_relevant(paper: PaperMetadata, question: frozenset[str]) -> bool:
         if have_abstract
         else (RELEVANCE_SHARE_TITLE, RELEVANCE_CAP_TITLE)
     )
-    need = min(cap, max(RELEVANCE_FLOOR, math.ceil(share * len(question))))
+    # Never more words than the question has (a two-word question: both).
+    need = min(len(question), cap, max(RELEVANCE_FLOOR, math.ceil(share * len(question))))
     return len(question & words) >= need
 
 
