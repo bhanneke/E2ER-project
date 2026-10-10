@@ -128,17 +128,24 @@ def _write_cache(models: dict[str, OpenRouterModel]) -> None:
         logger.debug("could not cache the OpenRouter model list: %s", e)
 
 
-def _fetch() -> dict[str, OpenRouterModel] | None:
+def _get_json(url: str) -> Any:
+    """GET a public OpenRouter URL as JSON; None when offline or OpenRouter is down."""
     import httpx
 
     try:
-        resp = httpx.get(MODELS_URL, timeout=_TIMEOUT_SECONDS, follow_redirects=True)
+        resp = httpx.get(url, timeout=_TIMEOUT_SECONDS, follow_redirects=True)
         resp.raise_for_status()
-        models = parse_models(resp.json())
+        return resp.json()
     except Exception as e:  # noqa: BLE001 — offline or OpenRouter down: fall back
-        logger.info("OpenRouter model list not available (%s); using cached or fixed prices", e)
+        logger.info("OpenRouter %s not available (%s)", url, e)
         return None
-    return models or None
+
+
+def _fetch() -> dict[str, OpenRouterModel] | None:
+    payload = _get_json(MODELS_URL)
+    if not isinstance(payload, dict):
+        return None
+    return parse_models(payload) or None
 
 
 def load_models(*, refresh: bool = False, network: bool = True) -> dict[str, OpenRouterModel]:
@@ -199,6 +206,79 @@ def tool_models() -> list[OpenRouterModel]:
     )
 
 
+# ── which provider serves a model ───────────────────────────────────────────
+#
+# A model on OpenRouter is served by several providers at very different
+# prices. OpenRouter's own `sort: "price"` ranks them by the price of fresh
+# input; a study's calls are mostly cached input (each turn resends the whole
+# conversation). Measured on DeepSeek V4 Pro, 2026-10-10: "price" picked a
+# provider at $0.20 fresh input but $0.15 cached and $4.20 output, about 8x
+# the cheapest provider on the same calls. The mix below is from that run.
+_CALL_MIX = (Decimal("0.11"), Decimal("0.86"), Decimal("0.03"))  # fresh input, cached input, output
+
+
+def parse_endpoints(payload: dict[str, Any]) -> list[str]:
+    """The providers that can serve a study's calls for one model, cheapest first (their tags)."""
+    data = payload.get("data") or {}
+    ranked: list[tuple[Decimal, str]] = []
+    for e in data.get("endpoints") or []:
+        if not isinstance(e, dict) or not e.get("tag"):
+            continue
+        if "tools" not in (e.get("supported_parameters") or []):
+            continue
+        if isinstance(e.get("status"), int) and e["status"] < 0:  # degraded or down right now
+            continue
+        pricing = e.get("pricing") or {}
+        prompt = _per_million(pricing.get("prompt"))
+        completion = _per_million(pricing.get("completion"))
+        if prompt is None or completion is None:
+            continue
+        cache = _per_million(pricing.get("input_cache_read")) or prompt
+        fresh_w, cache_w, out_w = _CALL_MIX
+        cost = fresh_w * Decimal(prompt) + cache_w * Decimal(cache) + out_w * Decimal(completion)
+        ranked.append((cost, str(e["tag"])))
+    ranked.sort(key=lambda r: r[0])
+    return [tag for _, tag in ranked]
+
+
+_endpoint_memory: dict[str, list[str]] = {}
+
+
+def provider_order(model: str) -> list[str]:
+    """The providers to ask for ``model``, cheapest for a study's calls first; [] when unknown.
+
+    Read from OpenRouter's public endpoint list, kept for a day under
+    ``~/.e2er/cache/openrouter-endpoints/``.
+    """
+    if model in _endpoint_memory:
+        return _endpoint_memory[model]
+    path = cache_file().parent / "openrouter-endpoints" / (re.sub(r"[^A-Za-z0-9._-]", "_", model) + ".json")
+    order: list[str] | None = None
+    stale: list[str] | None = None
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        if time.time() - float(raw["fetched_at"]) < _REFRESH_SECONDS:
+            order = list(raw["order"])
+        else:
+            stale = list(raw["order"])
+    except Exception:  # noqa: BLE001 — no cache yet
+        pass
+    if order is None:
+        payload = _get_json(f"https://openrouter.ai/api/v1/models/{model}/endpoints")
+        if isinstance(payload, dict):
+            order = parse_endpoints(payload)
+            try:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(json.dumps({"fetched_at": time.time(), "order": order}), encoding="utf-8")
+            except OSError:
+                pass
+    if order is None:
+        order = stale or []
+    _endpoint_memory[model] = order
+    return order
+
+
 def _reset_for_tests() -> None:
     global _memory
     _memory = None
+    _endpoint_memory.clear()

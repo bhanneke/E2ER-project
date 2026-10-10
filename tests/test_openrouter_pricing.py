@@ -385,3 +385,61 @@ async def test_loops_running_at_once_count_together(monkeypatch):
     loop_finished("p2", 1)
     loop_finished("p2", 2)
     assert (await loop_over_budget(None, 3, 99.0))[0] is False
+
+
+_ENDPOINTS = {
+    "data": {
+        "endpoints": [
+            # Cheapest fresh input, but dear cached input and output: what sort=price picked live.
+            {
+                "tag": "relace/fp4",
+                "pricing": {"prompt": "0.000000199", "completion": "0.0000042", "input_cache_read": "0.00000015"},
+                "supported_parameters": ["tools"],
+                "status": 0,
+            },
+            {
+                "tag": "baidu/fp8",
+                "pricing": {"prompt": "0.000000201", "completion": "0.000000402", "input_cache_read": "0.000000017"},
+                "supported_parameters": ["tools"],
+                "status": 0,
+            },
+            {
+                "tag": "down/fp8",
+                "pricing": {"prompt": "0.0000000001", "completion": "0.0000000001"},
+                "supported_parameters": ["tools"],
+                "status": -2,
+            },
+            {
+                "tag": "notools",
+                "pricing": {"prompt": "0.0000000001", "completion": "0.0000000001"},
+                "supported_parameters": [],
+                "status": 0,
+            },
+            {
+                "tag": "azure/us",
+                "pricing": {"prompt": "0.00000191", "completion": "0.00000383", "input_cache_read": "0.00000016"},
+                "supported_parameters": ["tools"],
+                "status": 0,
+            },
+        ]
+    }
+}
+
+
+def test_providers_are_ranked_by_what_a_study_pays():
+    assert orm.parse_endpoints(_ENDPOINTS) == ["baidu/fp8", "relace/fp4", "azure/us"]
+
+
+async def test_calls_name_the_cheapest_providers_in_order(backend, monkeypatch):
+    monkeypatch.setattr(orm, "_get_json", lambda url: _ENDPOINTS if url.endswith("/endpoints") else None)
+    orm._reset_for_tests()
+    create = AsyncMock(return_value=_resp("stop", content="x", usage=_usage(1, 1, cost=0.0001)))
+    monkeypatch.setattr(backend._client.chat.completions, "create", create)
+    await backend.tool_loop("s", [{"role": "user", "content": "u"}], [], None)
+    assert create.call_args.kwargs["extra_body"] == {
+        "provider": {"order": ["baidu/fp8", "relace/fp4", "azure/us"], "allow_fallbacks": True}
+    }
+    # Kept for the day: a second backend does not fetch again.
+    orm._endpoint_memory.clear()
+    monkeypatch.setattr(orm, "_get_json", lambda url: pytest.fail("cached"))
+    assert orm.provider_order("deepseek/deepseek-v4-pro")[0] == "baidu/fp8"

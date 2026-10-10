@@ -77,6 +77,24 @@ class OpenRouterBackend(LLMBackend):
 
         load_models()
 
+    def _provider_preference(self) -> dict[str, Any]:
+        """OpenRouter's ``provider`` field for each call.
+
+        ``price``: the model's providers in order of what a study's calls cost
+        there (mostly cached input), with fallback to the others; OpenRouter's
+        own ``sort: "price"`` when that list cannot be read.
+        """
+        sort = getattr(self, "_provider_sort", "")
+        if not sort:
+            return {}
+        if sort == "price":
+            from .openrouter_models import provider_order
+
+            order = provider_order(self._model)
+            if order:
+                return {"order": order, "allow_fallbacks": True}
+        return {"sort": sort}
+
     async def _create(self, create_kwargs: dict[str, Any], turn: int) -> Any:
         """One completion. The SDK retries HTTP errors itself; this also retries
         the 200 responses OpenRouter sends with no choices (an upstream provider
@@ -207,8 +225,9 @@ class OpenRouterBackend(LLMBackend):
                 }
                 if oai_tools:
                     create_kwargs["tools"] = oai_tools
-                if getattr(self, "_provider_sort", ""):
-                    create_kwargs["extra_body"] = {"provider": {"sort": self._provider_sort}}
+                provider = self._provider_preference()
+                if provider:
+                    create_kwargs["extra_body"] = {"provider": provider}
                 response = await self._create(create_kwargs, turn)
                 logger.info(
                     "OpenRouter turn %d: response in %.1fs (finish=%s)",

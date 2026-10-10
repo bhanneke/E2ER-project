@@ -106,9 +106,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reported cost uses OpenRouter's published price list, read at the start of a run and kept for a day
   in `~/.e2er/cache/openrouter-models.json` (the fixed table, now with DeepSeek, when offline). On the
   live run e2er's recorded cost and OpenRouter's account differed by under a cent.
-- **Calls go to the model's cheapest provider (new setting `OPENROUTER_PROVIDER_SORT`, default
-  `price`).** Left to OpenRouter's own balancing, DeepSeek calls went to a provider charging about 8
-  times the listed price. `throughput`, `latency` or empty (OpenRouter's balancing) are the other choices.
+- **Calls go to the provider that is cheapest for a study (new setting `OPENROUTER_PROVIDER_SORT`,
+  default `price`).** A model on OpenRouter is served by several providers at very different prices.
+  Left to OpenRouter's balancing, DeepSeek calls went to a provider charging about 8 times the cheapest;
+  OpenRouter's own "cheapest" ranks by fresh input and picked one that charges 9 times more for cached
+  input and 10 times more for output, and a study's calls are mostly cached input. e2er now reads the
+  model's providers from OpenRouter's public list (kept a day), ranks them by what a study's mix of
+  calls costs there, and asks for them in that order with fallback. `throughput`, `latency` or empty
+  (OpenRouter's balancing) are the other choices.
 - **The spending limit holds inside a specialist (fix).** It was checked between specialists only;
   one specialist ran on while the study passed its $3 limit ($3.48 billed). The Anthropic and
   OpenRouter backends now check before every call, counting the specialists still running.

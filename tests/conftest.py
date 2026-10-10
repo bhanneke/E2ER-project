@@ -482,7 +482,7 @@ def _no_openrouter_model_list(monkeypatch, tmp_path_factory):
     from src.modules.llm import openrouter_models
 
     cache = tmp_path_factory.mktemp("no-openrouter-cache") / "openrouter-models.json"
-    monkeypatch.setattr(openrouter_models, "_fetch", lambda: None)
+    monkeypatch.setattr(openrouter_models, "_get_json", lambda url: None)
     monkeypatch.setattr(openrouter_models, "cache_file", lambda: cache)
     openrouter_models._reset_for_tests()
     yield

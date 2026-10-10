@@ -42,9 +42,10 @@ class Settings(BaseSettings):
     openrouter_api_key: str | None = None
     openrouter_model: str = "anthropic/claude-sonnet-4-5"
     #: Which of a model's providers OpenRouter sends each call to: "price" (the
-    #: cheapest), "throughput", "latency", or "" for OpenRouter's own balancing.
-    #: Measured 2026-10-10 on DeepSeek V4 Pro: OpenRouter's balancing sent calls to a
-    #: provider charging ~8x the listed price; "price" billed the listed price.
+    #: providers in order of what a study's calls cost there, mostly cached input;
+    #: see llm/openrouter_models.provider_order), "throughput", "latency", or ""
+    #: for OpenRouter's own balancing. Measured 2026-10-10 on DeepSeek V4 Pro: both
+    #: OpenRouter's balancing and its own sort=price billed ~5-8x the cheapest provider.
     openrouter_provider_sort: Literal["price", "throughput", "latency", ""] = "price"
     enable_prompt_caching: bool = True
 
