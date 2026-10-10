@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
 import time
 from typing import Any
 
@@ -14,6 +16,34 @@ from .base import LLMBackend, TokenUsage, ToolHandler, ToolLoopResult
 logger = get_logger(__name__)
 
 _OPENROUTER_BASE = "https://openrouter.ai/api/v1"
+_EMPTY_RETRIES = 2
+_EMPTY_BACKOFF_SECONDS = 5.0
+
+
+def _int(v: Any) -> int:
+    return v if isinstance(v, int) and not isinstance(v, bool) else 0
+
+
+def _parse_arguments(raw: Any) -> tuple[dict[str, Any], str]:
+    """A tool call's arguments as a dict, and why they could not be read ("" when fine).
+
+    Open models sometimes send no arguments ("" for a tool without parameters)
+    or wrap them in a code fence; both are accepted.
+    """
+    if isinstance(raw, dict):
+        return raw, ""
+    text = (raw or "").strip()
+    if not text:
+        return {}, ""
+    if text.startswith("```"):
+        text = text.strip("`").removeprefix("json").strip()
+    try:
+        value = json.loads(text)
+    except json.JSONDecodeError as e:
+        return {}, str(e)
+    if not isinstance(value, dict):
+        return {}, f"expected an object, got {type(value).__name__}"
+    return value, ""
 
 
 class OpenRouterBackend(LLMBackend):
@@ -38,6 +68,62 @@ class OpenRouterBackend(LLMBackend):
         )
         self._model = model or settings.openrouter_model
         self._max_tokens = settings.max_tokens_per_call
+        self._provider_sort = settings.openrouter_provider_sort
+        # Read OpenRouter's price list once (cached for a day under ~/.e2er/cache):
+        # it prices any call whose response does not report its own cost.
+        from .openrouter_models import load_models
+
+        load_models()
+
+    async def _create(self, create_kwargs: dict[str, Any], turn: int) -> Any:
+        """One completion. The SDK retries HTTP errors itself; this also retries
+        the 200 responses OpenRouter sends with no choices (an upstream provider
+        failed mid-stream, or an ``error`` object in the body)."""
+        last = ""
+        for attempt in range(_EMPTY_RETRIES + 1):
+            response = await self._client.chat.completions.create(**create_kwargs)
+            if response.choices:
+                return response
+            err = getattr(response, "error", None) or (getattr(response, "model_extra", None) or {}).get("error")
+            last = str(err or "no choices in the response")
+            logger.warning("OpenRouter turn %d: empty response (%s), attempt %d", turn, last, attempt + 1)
+            if attempt < _EMPTY_RETRIES:
+                await asyncio.sleep(_EMPTY_BACKOFF_SECONDS * (attempt + 1))
+        raise RuntimeError(f"OpenRouter returned no answer after {_EMPTY_RETRIES + 1} attempts: {last}")
+
+    def _usage_of(self, response: Any) -> TokenUsage:
+        """Tokens and cost of one response.
+
+        OpenAI-style ``prompt_tokens`` include the cached ones; they are split
+        out so cache reads are not priced as fresh input. ``usage.cost`` is
+        OpenRouter's own charge for the call (the provider that served it, its
+        cache discount, reasoning tokens); when it is missing the call is priced
+        from OpenRouter's published list or e2er's table.
+        """
+        u = getattr(response, "usage", None)
+        if u is None:
+            return TokenUsage()
+        prompt = _int(getattr(u, "prompt_tokens", 0))
+        completion = _int(getattr(u, "completion_tokens", 0))
+        details = getattr(u, "prompt_tokens_details", None)
+        cached = min(_int(getattr(details, "cached_tokens", 0)) if details is not None else 0, prompt)
+        part = TokenUsage(input_tokens=prompt - cached, output_tokens=completion, cache_read_tokens=cached)
+        cost = getattr(u, "cost", None)
+        if cost is None:
+            cost = (getattr(u, "model_extra", None) or {}).get("cost")
+        from ..tracking.costs import estimate_cost
+
+        estimate = float(estimate_cost(self._model, part))
+        if isinstance(cost, (int, float)) and not isinstance(cost, bool) and cost > 0:
+            part.cost_usd = float(cost)
+        elif isinstance(cost, (int, float)) and not isinstance(cost, bool) and cost == 0 and estimate == 0:
+            part.cost_usd = 0.0  # a free model
+        else:
+            # Missing, or a 0 for a priced model (seen from one provider on
+            # 2026-10-10): count the listed price rather than nothing, so the
+            # spending limit does not undercount.
+            part.cost_usd = estimate
+        return part
 
     def _convert_tools(self, tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Convert Anthropic-format tools to OpenAI function-calling format."""
@@ -85,7 +171,9 @@ class OpenRouterBackend(LLMBackend):
                 }
                 if oai_tools:
                     create_kwargs["tools"] = oai_tools
-                response = await self._client.chat.completions.create(**create_kwargs)
+                if getattr(self, "_provider_sort", ""):
+                    create_kwargs["extra_body"] = {"provider": {"sort": self._provider_sort}}
+                response = await self._create(create_kwargs, turn)
                 logger.info(
                     "OpenRouter turn %d: response in %.1fs (finish=%s)",
                     turn,
@@ -103,12 +191,7 @@ class OpenRouterBackend(LLMBackend):
                     duration_seconds=time.monotonic() - start,
                 )
 
-            # Accumulate usage
-            if response.usage:
-                usage = usage + TokenUsage(
-                    input_tokens=response.usage.prompt_tokens or 0,
-                    output_tokens=response.usage.completion_tokens or 0,
-                )
+            usage = usage + self._usage_of(response)
 
             choice = response.choices[0]
             finish_reason = choice.finish_reason
@@ -171,15 +254,16 @@ class OpenRouterBackend(LLMBackend):
 
             for tc in msg.tool_calls or []:
                 tool_calls_made += 1
-                import json
-
-                try:
-                    tool_input = json.loads(tc.function.arguments)
-                except Exception:
-                    tool_input = {}
+                tool_input, bad_args = _parse_arguments(tc.function.arguments)
                 logger.debug("Tool call: %s(%s)", tc.function.name, list(tool_input.keys()))
                 if tool_handler is None:
                     result_text = "Tool dispatch is disabled for this call."
+                elif bad_args:
+                    # Do not run the tool on guessed arguments; tell the model so it resends.
+                    result_text = (
+                        f"Error: the arguments for {tc.function.name} were not valid JSON ({bad_args}). "
+                        "Call the tool again with a single JSON object as its arguments."
+                    )
                 else:
                     result_text = await tool_handler.handle(tc.function.name, tool_input)
                 msgs.append(

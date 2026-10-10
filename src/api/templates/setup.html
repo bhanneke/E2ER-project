@@ -92,6 +92,10 @@
                   <option value="{{ value }}" {% if current_models.get(b.model_setting) == value %}selected{% endif %}>{{ label }}</option>
                 {% endfor %}
               </select>
+              {% if b.name == 'openrouter' %}
+                <small class="muted">Every model listed can work with files and data, as a study needs. Prices are the lowest
+                  OpenRouter lists; e2er records what OpenRouter actually charges. A token is about three quarters of a word.</small>
+              {% endif %}
             </label>
           {% endif %}
           {% if b.key_setting %}

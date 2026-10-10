@@ -41,6 +41,11 @@ class Settings(BaseSettings):
     anthropic_model: str = "claude-sonnet-4-5"
     openrouter_api_key: str | None = None
     openrouter_model: str = "anthropic/claude-sonnet-4-5"
+    #: Which of a model's providers OpenRouter sends each call to: "price" (the
+    #: cheapest), "throughput", "latency", or "" for OpenRouter's own balancing.
+    #: Measured 2026-10-10 on DeepSeek V4 Pro: OpenRouter's balancing sent calls to a
+    #: provider charging ~8x the listed price; "price" billed the listed price.
+    openrouter_provider_sort: Literal["price", "throughput", "latency", ""] = "price"
     enable_prompt_caching: bool = True
 
     # ── Governance regime (the experiment's treatment variable) ───────────────

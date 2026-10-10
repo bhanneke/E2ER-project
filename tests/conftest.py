@@ -473,6 +473,23 @@ def _isolate_the_cli_installs(monkeypatch, tmp_path_factory):
 
 
 @pytest.fixture(autouse=True)
+def _no_openrouter_model_list(monkeypatch, tmp_path_factory):
+    """Never fetch OpenRouter's model list or read the machine's cached copy.
+
+    The OpenRouter backend reads the list when it starts and the setup page
+    shows it; in the suite both see an empty list unless a test supplies one.
+    """
+    from src.modules.llm import openrouter_models
+
+    cache = tmp_path_factory.mktemp("no-openrouter-cache") / "openrouter-models.json"
+    monkeypatch.setattr(openrouter_models, "_fetch", lambda: None)
+    monkeypatch.setattr(openrouter_models, "cache_file", lambda: cache)
+    openrouter_models._reset_for_tests()
+    yield
+    openrouter_models._reset_for_tests()
+
+
+@pytest.fixture(autouse=True)
 def _isolate_the_corpus(monkeypatch, tmp_path_factory):
     """Never let the suite read the machine's real corpus at ~/.e2er/corpus.db.
 

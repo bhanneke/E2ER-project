@@ -146,6 +146,43 @@ def _codex_models() -> list[tuple[str, str]]:
     return out
 
 
+#: Shown first in the OpenRouter model list (when OpenRouter lists them), in this order.
+_OPENROUTER_SUGGESTED = (
+    ("anthropic/claude-sonnet-4.5", "recommended"),
+    ("anthropic/claude-haiku-4.5", "cheaper Claude"),
+    ("deepseek/deepseek-v4-pro", "open model, low price"),
+)
+
+
+def openrouter_models(current: str = "") -> list[tuple[str, str]]:
+    """The OpenRouter models a study can use, with their price, for the setup page.
+
+    Only models that can call tools (every specialist works through tools),
+    from OpenRouter's published list: a few suggestions first, then the rest
+    by name. Without the list (offline) the fixed suggestions. The model in
+    use stays in the list even when OpenRouter no longer offers it.
+    """
+    from .modules.llm.openrouter_models import canonical_id, tool_models
+
+    listed = tool_models()
+    if not listed:
+        out = list(BACKEND_MODELS["openrouter"][1])
+    else:
+        by_id = {m.id: m for m in listed}
+        out = []
+        for mid, note in _OPENROUTER_SUGGESTED:
+            if mid in by_id:
+                m = by_id[mid]
+                out.append((mid, f"{m.name} ({note}): {m.price_label()}"))
+        shown = {mid for mid, _ in out}
+        out += [(m.id, f"{m.name}: {m.price_label()}") for m in listed if m.id not in shown]
+    if current and current not in {mid for mid, _ in out}:
+        # The settings' spelling (claude-sonnet-4-5) of a listed model keeps that model's label.
+        same = next((label for mid, label in out if mid == canonical_id(current)), None)
+        out.insert(0, (current, same or f"{current} (in use; not in OpenRouter's list of models that can use tools)"))
+    return out
+
+
 def resolve_backend_cli(backend: str, settings: Any = None) -> str | None:
     """Where the backend's CLI is: CLAUDE_CODE_PATH / CODEX_PATH / GEMINI_PATH,
     PATH, and the ChatGPT app's own `codex`. None when not installed."""
@@ -257,6 +294,8 @@ def detect_backends(settings: Any = None) -> list[BackendStatus]:
         model_setting, models = BACKEND_MODELS[name]
         if name == "codex":
             models = _codex_models()
+        elif name == "openrouter":
+            models = openrouter_models(str(getattr(settings, "openrouter_model", "") or ""))
         info = BACKEND_HELP[name]
         if name in _BACKEND_CLI:
             path = resolve_backend_cli(name, settings)

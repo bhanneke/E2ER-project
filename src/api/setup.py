@@ -321,6 +321,10 @@ def build_env(req: SaveSetup, current: dict[str, str], root: Path) -> tuple[str,
     notes: list[str] = []
     model_setting, models = BACKEND_MODELS[req.backend]
     allowed_models = {m for m, _ in models}
+    if req.backend == "openrouter":
+        from ..doctor import openrouter_models
+
+        allowed_models |= {m for m, _ in openrouter_models(current.get("OPENROUTER_MODEL", ""))}
     if req.model and req.model not in allowed_models:
         raise HTTPException(status_code=422, detail=f"Unknown model {req.model!r} for {req.backend}.")
 
