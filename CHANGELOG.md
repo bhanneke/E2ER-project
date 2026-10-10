@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.1] — 2026-10-10
+
 ### Iterative mode, run end to end
 - **The iterative mode now runs at the replay level, from the question to the finished study.** A new
   replay scenario (`tests/fixtures/replay/fomc-iterative`, on top of the FOMC one) scripts two rounds
