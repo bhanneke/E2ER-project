@@ -1,0 +1,10 @@
+[
+  {
+    "id": "sa1",
+    "target": "section:introduction",
+    "edit_type": "replace_text",
+    "find": "However, a longer post-announcement window ($[0, +5]$, not pre-registered) shows a significant pooled mean CAR of $-1.47\\%$ ($p = 0.022$).",
+    "replace": "A longer post-announcement window ($[0, +5]$), which we did not pre-register and report as exploratory, shows a pooled mean CAR of $-1.47\\%$ ($p = 0.022$), without a correction for having looked at more than one window.",
+    "source_finding": "self_attack#0"
+  }
+]

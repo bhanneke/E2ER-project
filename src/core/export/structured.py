@@ -113,6 +113,8 @@ EXPORT_MAP: dict[str, list[tuple[str, str | None]]] = {
         ("review_*.md", None),
         ("review_aggregation.json", None),
         ("self_attack_report.json", None),
+        ("self_attack_corrections.json", None),
+        ("polish_corrections.json", None),
         ("polish_*.md", None),
         ("citation_integrity.json", None),
         # The number check's record when the run went on with tables that differ

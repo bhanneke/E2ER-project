@@ -2846,8 +2846,25 @@ def _template_progress(paper: dict[str, Any], events: list[dict[str, Any]]) -> d
                     _step_row(x, mode, status, completed, pending, opened, finished, halted, sub=True, spec=spec)
                     for x in inner
                 )
+    rounds = _labels.round_summary(events)
+    critique = _self_critique(events)
+    polish = _polish_note(events)
+    for row in steps:
+        if row["name"] == "iterative" and rounds and row["state"] in {"done", "running"}:
+            n = len(rounds)
+            note = f"{n} round{'s' if n != 1 else ''}"
+            if any(r.get("pivot") for r in rounds):
+                note += ", then a change of approach"
+            row["note"] = note if row["state"] == "done" else f"{note} so far; running now"
+        if row["name"] == "self_attack" and critique and row["state"] == "done":
+            row["note"] = critique["note"]
+        if row["name"] == "polish" and polish and row["state"] == "done":
+            row["note"] = polish
     current = next((s["label"] for s in steps if s["state"] in {"waiting", "running"}), "")
     return {
+        "rounds": rounds,
+        "self_critique": critique,
+        "polish": polish,
         "template": name,
         "template_label": _labels.template(name, spec),
         "steps": steps,
@@ -2856,6 +2873,53 @@ def _template_progress(paper: dict[str, Any], events: list[dict[str, Any]]) -> d
         "specialists_failed": failed_specialists,
         "checks": _gate_verdicts(workspace) if workspace.is_dir() else [],
     }
+
+
+def _self_critique(events: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """The last self-critique of the run in plain words (the ``self_critique`` event), or None."""
+    for e in events:  # most recent first
+        if str(e.get("event_type") or "") != "self_critique":
+            continue
+        data = e.get("payload")
+        if isinstance(data, str):
+            try:
+                data = json.loads(data)
+            except ValueError:
+                data = {}
+        if not isinstance(data, dict):
+            return None
+        n, serious = int(data.get("findings") or 0), int(data.get("serious") or 0)
+        if not n:
+            note = "no findings"
+        else:
+            note = f"{n} finding{'s' if n != 1 else ''}, {serious} serious"
+            if "corrections_made" in data:
+                made = int(data.get("corrections_made") or 0)
+                note += f"; {made} correction{'s' if made != 1 else ''} made in the draft"
+        return {"findings": n, "serious": serious, "note": note}
+    return None
+
+
+def _polish_note(events: list[dict[str, Any]]) -> str:
+    """What became of the polish notes (the ``polish_applied`` event), in plain words; empty when not recorded."""
+    for e in events:  # most recent first
+        if str(e.get("event_type") or "") != "polish_applied":
+            continue
+        data = e.get("payload")
+        if isinstance(data, str):
+            try:
+                data = json.loads(data)
+            except ValueError:
+                data = {}
+        if not isinstance(data, dict):
+            return ""
+        n = len(data.get("notes") or [])
+        made = int(data.get("changes_made") or 0)
+        notes = f"{n} note{'s' if n != 1 else ''}"
+        if made:
+            return f"{notes}; {made} change{'s' if made != 1 else ''} made in the draft"
+        return f"{notes}; {data.get('decision') or 'no change'}"
+    return ""
 
 
 def _step_row(
@@ -2998,7 +3062,7 @@ async def paper_live_fragment(request: Request, paper_id: str = Depends(_validat
     try:
         events = await fetch_all(
             """
-            SELECT event_type, stage, specialist, created_at
+            SELECT event_type, stage, specialist, payload, created_at
             FROM pipeline_events
             WHERE paper_id = %(id)s
             ORDER BY created_at DESC

@@ -47,7 +47,7 @@ if TYPE_CHECKING:
     from .review_aggregator import ReviewScore
 
 
-FindingSource = Literal["self_attack", "verify_numbers", "review"]
+FindingSource = Literal["self_attack", "verify_numbers", "review", "polish"]
 
 
 @dataclass(frozen=True)
@@ -61,7 +61,7 @@ class Finding:
     """
 
     source: FindingSource
-    source_detail: str  # "technical_reviewer" | "self_attack" | "verify_numbers"
+    source_detail: str  # "technical_reviewer" | "self_attack" | "verify_numbers" | "polish_numerics"
     target: str  # "section:identification" | "table:tab:main" | "references" | "abstract" | "paper:full"
     severity: int  # 1-10; >=7 critical, 4-6 major, 1-3 minor (cosmetic)
     problem: str  # one-sentence specific description

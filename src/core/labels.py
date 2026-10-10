@@ -157,6 +157,22 @@ EVENTS: dict[str, str] = {
     "checks_skipped": "Checks skipped",
     "edits_failed": "Corrections could not be applied",
     "submit_failed": "Submission failed",
+    "revision_not_applied": "Revision changed nothing",
+    # The iterative mode: rounds of improvement, the ceiling check after each,
+    # the one change of approach, and the self-critique.
+    "improvement_round": "Round of improvement",
+    "ceiling_check": "Ceiling check",
+    "pivot": "Change of approach",
+    "improvement_stopped": "Rounds ended",
+    "self_critique": "Self-critique",
+    "polish_applied": "Polish notes considered",
+}
+
+#: What the ceiling check after a round of improvement decided (its ``verdict``).
+CEILING_VERDICTS: dict[str, str] = {
+    "continue": "another round",
+    "pivot": "a change of approach",
+    "proceed_to_review": "ready for review",
 }
 
 #: The checks of Preflight and Setup (`e2er doctor`).
@@ -264,6 +280,54 @@ def stop_kind(kind: str) -> str:
 
 def event(name: str) -> str:
     return EVENTS.get(name) or _plain(name)
+
+
+def ceiling_verdict(verdict: str) -> str:
+    return CEILING_VERDICTS.get(verdict) or _plain(verdict).lower()
+
+
+def round_summary(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The rounds of the iterative mode in plain words, from the run's events.
+
+    ``events`` are rows with ``event_type`` and ``payload`` (a dict or its JSON
+    text), in any order: each round is found by its number. One entry per
+    round: ``round``, ``specialists`` (their names as the dashboard says them),
+    ``reason``, and, when recorded, ``ceiling`` (what the check decided),
+    ``ceiling_reason``, ``pivot`` (the specialists of the change of approach),
+    ``pivot_refused`` (those refused because they would rewrite the whole
+    draft) and ``ended`` (the strategist ended the rounds here).
+    """
+    import json
+
+    rounds: dict[int, dict[str, Any]] = {}
+    for e in events:
+        et = str(e.get("event_type") or "")
+        if et not in ("improvement_round", "ceiling_check", "pivot", "improvement_stopped"):
+            continue
+        data = e.get("payload")
+        if isinstance(data, str):
+            try:
+                data = json.loads(data)
+            except ValueError:
+                data = {}
+        if not isinstance(data, dict) or not isinstance(data.get("round"), int):
+            continue
+        r = rounds.setdefault(data["round"], {"round": data["round"], "specialists": [], "reason": ""})
+        if et == "improvement_round":
+            r["specialists"] = [specialist(str(x)) for x in data.get("specialists") or []]
+            r["reason"] = str(data.get("reason") or "")
+        elif et == "ceiling_check":
+            r["ceiling"] = ceiling_verdict(str(data.get("verdict") or ""))
+            r["ceiling_reason"] = str(data.get("reason") or "")
+        elif et == "pivot":
+            r["pivot"] = [specialist(str(x)) for x in data.get("specialists") or []]
+            refused = [x for x in data.get("refused") or [] if isinstance(x, dict)]
+            if refused:
+                r["pivot_refused"] = [specialist(str(x.get("specialist") or "")) for x in refused]
+        else:
+            r["ended"] = True
+            r["reason"] = r["reason"] or str(data.get("reason") or "")
+    return [rounds[k] for k in sorted(rounds)]
 
 
 def check(name: str) -> str:

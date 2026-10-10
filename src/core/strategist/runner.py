@@ -782,17 +782,42 @@ class PipelineRunner:
         self._contributions.extend(contributions)
 
     async def _run_iterative_phase(self) -> PaperStatus:
-        """Iterative improvement loop with ceiling detection."""
+        """Iterative improvement loop with ceiling detection.
+
+        Each round, its ceiling check and a change of approach (pivot) are
+        recorded as events (``improvement_round``, ``ceiling_check``,
+        ``pivot``, ``improvement_stopped``), so the run view and the dossier
+        can say what each round did and why the rounds ended. Before 0.15.1
+        the log showed only the specialists, one after another.
+        """
+        from ...db.events import log_event
+
         for iteration in range(1, _MAX_ITERATIONS + 1):
             self._iteration = iteration
             logger.info("Iteration %d for paper %s", iteration, self._paper_id)
 
             decision = await self._strategist.decide("in_progress", iteration=iteration)
             if decision.action == "complete":
+                await log_event(
+                    self._paper_id,
+                    "improvement_stopped",
+                    stage="iterative",
+                    payload={"round": iteration, "reason": decision.rationale or ""},
+                )
                 return PaperStatus.IN_PROGRESS
             if decision.action == "fail":
                 raise RuntimeError(f"Strategist declared failure: {decision.rationale}")
 
+            await log_event(
+                self._paper_id,
+                "improvement_round",
+                stage="iterative",
+                payload={
+                    "round": iteration,
+                    "specialists": [wo.specialist for wo in decision.work_orders],
+                    "reason": decision.rationale or "",
+                },
+            )
             contributions = await self._dispatch(decision)
             self._contributions.extend(contributions)
 
@@ -800,22 +825,44 @@ class PipelineRunner:
             if iteration >= 1:
                 ceiling = await self._strategist.ceiling_check(iteration, self._pivot_count)
                 logger.info("Ceiling check: %s (iter=%d)", ceiling.verdict, iteration)
+                pivot_allowed = ceiling.verdict == "pivot" and self._pivot_count < _MAX_PIVOTS
+                check: dict[str, Any] = {"round": iteration, "verdict": ceiling.verdict, "reason": ceiling.reason}
+                if ceiling.verdict == "pivot":
+                    check["pivot"] = [wo.specialist for wo in ceiling.suggested_pivots]
+                    if not pivot_allowed:
+                        check["pivot_refused"] = "one change of approach per study"
+                if ceiling.verdict == "continue" and iteration == _MAX_ITERATIONS:
+                    check["last_round"] = True
+                await log_event(self._paper_id, "ceiling_check", stage="iterative", payload=check)
 
                 if ceiling.verdict == "proceed_to_review":
                     break
-                if ceiling.verdict == "pivot" and self._pivot_count < _MAX_PIVOTS:
+                if pivot_allowed:
                     self._pivot_count += 1
-                    pivot_contributions = await execute_parallel(
-                        self._to_contract_orders(ceiling.suggested_pivots),
-                        self._backend,
-                        self._workspace,
-                        self._model,
-                        self._extra_tools,
-                        self._extra_handlers,
-                        self._backend_name,
-                        self._governance,
+                    # A change of approach runs like a round's work orders (_dispatch): the
+                    # guard against rewriting the whole draft, the circuit breaker and its
+                    # failure counts apply. Before 0.15.1 it went straight to
+                    # execute_parallel, past both.
+                    kept, refused = _split_full_rewrites(ceiling.suggested_pivots)
+                    await log_event(
+                        self._paper_id,
+                        "pivot",
+                        stage="iterative",
+                        payload={
+                            "round": iteration,
+                            "specialists": [wo.specialist for wo in kept],
+                            "focus": [wo.focus for wo in kept],
+                            **(
+                                {"refused": [{"specialist": sp, "note": FULL_REWRITE_REFUSED} for sp, _ in refused]}
+                                if refused
+                                else {}
+                            ),
+                        },
                     )
-                    self._contributions.extend(pivot_contributions)
+                    pivot_decision = StrategistDecision(
+                        action="dispatch_parallel", work_orders=kept, rationale=ceiling.reason
+                    )
+                    self._contributions.extend(await self._dispatch(pivot_decision, pivot=True))
                     break  # one pivot per paper
                 if ceiling.verdict == "continue":
                     # Explicitly fall through to the next iteration. On the final
@@ -828,11 +875,12 @@ class PipelineRunner:
                             iteration,
                         )
                     continue
-                # Any other verdict is unrecognised — log and proceed defensively.
+                # A pivot when the study has had its one, or any other verdict: proceed to review.
                 logger.warning(
-                    "Unrecognised ceiling decision '%s' at iter=%d; treating as proceed_to_review",
+                    "Ceiling decision '%s' at iter=%d (pivots used: %d); treating as proceed_to_review",
                     ceiling.verdict,
                     iteration,
+                    self._pivot_count,
                 )
                 break
 
@@ -1620,8 +1668,17 @@ class PipelineRunner:
             attack_report.overall_severity,
         )
 
+        from ...db.events import log_event
+
+        summary: dict[str, Any] = {
+            "findings": len(attack_report.findings),
+            "serious": len(attack_report.critical_findings),
+            "max_severity": attack_report.overall_severity,
+            "categories": sorted({f.category for f in attack_report.findings}),
+        }
         if not attack_report.findings:
             logger.info("Self-attack: no findings — skipping critical-finding revision step")
+            await log_event(self._paper_id, "self_critique", stage="self_attack", payload=summary)
             return PaperStatus.SELF_ATTACK
 
         # v0.6 step 4: critical findings drive ONE patch_revisor call,
@@ -1644,6 +1701,9 @@ class PipelineRunner:
             if findings:
                 try:
                     merge_result = await self._dispatch_patch_revisor(findings)
+                    summary["corrections_made"] = merge_result.n_applied
+                    summary["corrections_failed"] = merge_result.n_failed
+                    self._keep_self_attack_corrections(findings, merge_result)
                     if merge_result.fully_applied:
                         logger.info(
                             "Self-attack patch: applied %d edits to %d critical findings",
@@ -1663,12 +1723,43 @@ class PipelineRunner:
                             first_failures,
                         )
                 except FileNotFoundError as e:
+                    summary["corrections_made"] = 0
+                    summary["no_correction_file"] = True
                     logger.warning(
                         "Self-attack patch_revisor did not produce a patch file: %s",
                         e,
                     )
 
+        await log_event(self._paper_id, "self_critique", stage="self_attack", payload=summary)
         return PaperStatus.SELF_ATTACK
+
+    def _keep_self_attack_corrections(self, findings: list, merge_result: Any) -> None:
+        """Keep the self-critique's corrections in a file of their own.
+
+        The targeted corrections write ``paper_draft.tex.edits.json`` and
+        ``paper_draft.tex.applied.diff``, and the revision after the review
+        panel writes them again: without this copy the export kept only the
+        revision's (often empty) edits, and nothing showed what the
+        self-critique had changed in the draft.
+        """
+        edits_path = self._workspace / "paper_draft.tex.edits.json"
+        try:
+            edits = json.loads(edits_path.read_text(encoding="utf-8")) if edits_path.is_file() else []
+        except ValueError:
+            edits = []
+        record = {
+            "findings": [
+                {"target": f.target, "severity": f.severity, "problem": f.problem, "suggested_fix": f.suggested_fix}
+                for f in findings
+            ],
+            "edits": edits,
+            "applied": merge_result.n_applied,
+            "failed": [{"target": r.edit.target, "error": r.error} for r in merge_result.failed],
+            "diff": merge_result.diff,
+        }
+        (self._workspace / "self_attack_corrections.json").write_text(
+            json.dumps(record, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+        )
 
     async def _run_polish_phase(self) -> PaperStatus:
         """Parallel polish stack targeting specific paper pathologies."""
@@ -1699,7 +1790,95 @@ class PipelineRunner:
             self._governance,
         )
         self._contributions.extend(contributions)
+        await self._apply_polish_notes([c.specialist for c in contributions if c.success])
         return PaperStatus.POLISH
+
+    async def _apply_polish_notes(self, polished: list[str]) -> None:
+        """Turn the polish notes into targeted corrections of the draft, or a recorded decision not to.
+
+        Before 0.15.1 the notes (``polish_*.md``) were exported and read by no
+        later step. Now each note is a finding for the targeted corrections
+        (the patch revisor, as after the self-critique): it either edits the
+        draft or writes an empty patch, which is its recorded decision. The
+        number check guards the edits: when the corrected draft has more table
+        or text numbers that differ from the results than before, the
+        corrections are undone and that is recorded. The record is
+        ``polish_corrections.json`` and the ``polish_applied`` event.
+        """
+        from ...db.events import log_event
+        from ..pipeline.verify_numbers import verify
+        from .findings import Finding
+
+        notes = {
+            sp: (self._workspace / SPECIALIST_ARTIFACTS[sp]).read_text(encoding="utf-8", errors="replace")
+            for sp in polished
+            if sp in SPECIALIST_ARTIFACTS and (self._workspace / SPECIALIST_ARTIFACTS[sp]).is_file()
+        }
+        draft = self._workspace / "paper_draft.tex"
+        if not notes or not draft.is_file():
+            return
+        findings = [
+            Finding(
+                source="polish",
+                source_detail=sp,
+                target="paper:full",
+                severity=3,
+                problem=f"{_labels.specialist(sp)}: apply what this note asks for, or leave the draft as it is.\n\n"
+                + text[:6000],
+                suggested_fix="Change only the wording or the numbers the note names; every number must stay its "
+                "source's value.",
+            )
+            for sp, text in notes.items()
+        ]
+
+        def differ() -> tuple[int, int]:
+            r = verify(draft, self._workspace)
+            return len(r.critical_mismatches), r.prose_mismatched
+
+        before_text = draft.read_text(encoding="utf-8")
+        before = differ()
+        record: dict[str, Any] = {"notes": sorted(notes)}
+        try:
+            merge = await self._dispatch_patch_revisor(findings)
+        except FileNotFoundError:
+            record.update({"decision": "no correction file", "changes_made": 0})
+        else:
+            after = differ()
+            record.update(
+                {
+                    "edits": [
+                        {"find": r.edit.find, "replace": r.edit.replace, "source": r.edit.source_finding}
+                        for r in merge.applied
+                    ],
+                    "failed": [{"target": r.edit.target, "error": r.error} for r in merge.failed],
+                    "diff": merge.diff,
+                }
+            )
+            if merge.n_applied and (after[0] > before[0] or after[1] > before[1]):
+                draft.write_text(before_text, encoding="utf-8")
+                record.update(
+                    {
+                        "decision": "undone: the corrected draft had more numbers that differ from the results",
+                        "changes_made": 0,
+                        "numbers_before": {"tables": before[0], "text": before[1]},
+                        "numbers_after": {"tables": after[0], "text": after[1]},
+                    }
+                )
+            elif merge.n_applied:
+                record.update({"decision": "applied", "changes_made": merge.n_applied})
+            elif merge.failed:
+                record.update({"decision": "no change: the corrections could not be applied", "changes_made": 0})
+            else:
+                record.update({"decision": "no change: the notes asked for nothing the draft needs", "changes_made": 0})
+        (self._workspace / "polish_corrections.json").write_text(
+            json.dumps(record, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+        )
+        await log_event(
+            self._paper_id,
+            "polish_applied",
+            stage="polish",
+            payload={k: record[k] for k in ("notes", "decision", "changes_made") if k in record},
+        )
 
     def _reviewers_for_methodology(self) -> list[str]:
         """Filter the reviewer roster by methodology.
@@ -2752,7 +2931,7 @@ class PipelineRunner:
         await self._update_status(PaperStatus.COMPLETED)
         return PaperStatus.COMPLETED
 
-    async def _dispatch(self, decision: StrategistDecision) -> list[Contribution]:
+    async def _dispatch(self, decision: StrategistDecision, *, pivot: bool = False) -> list[Contribution]:
         if not decision.work_orders:
             return []
 
@@ -2773,15 +2952,8 @@ class PipelineRunner:
         # phase even though `paper_drafter` was correctly skipped.
         # v0.6.0's guard only filtered `paper_drafter`; v0.6.1 closes
         # the same drift door for `revisor`.
-        if self._iteration >= 2:
-            forbidden_full_rewriters = {"paper_drafter", "revisor"}
-            kept: list = []
-            dropped: list[tuple[str, str]] = []
-            for wo in decision.work_orders:
-                if wo.specialist in forbidden_full_rewriters:
-                    dropped.append((wo.specialist, wo.focus[:80] if wo.focus else "(no focus)"))
-                else:
-                    kept.append(wo)
+        if self._iteration >= 2 or pivot:
+            kept, dropped = _split_full_rewrites(decision.work_orders)
             if dropped:
                 logger.warning(
                     "Iterative-phase guard: dropped %d full-draft work "
@@ -3191,6 +3363,28 @@ def _estimation_next(orders: list[WorkOrder]) -> bool:
         return False
     first = min(o.parallel_group for o in orders)
     return any(o.specialist == _ESTIMATION_SPECIALIST and o.parallel_group == first for o in orders)
+
+
+#: Specialists that write paper_draft.tex from scratch: not after round 1, and never as a change of approach.
+_FULL_REWRITERS = frozenset({"paper_drafter", "revisor"})
+
+#: Why a full rewrite is refused, in the words the record and the run page use.
+FULL_REWRITE_REFUSED = (
+    "refused: it would rewrite the whole draft after the first round; a change to one section "
+    "(Sections and table layout) or the targeted corrections can do it"
+)
+
+
+def _split_full_rewrites(orders: list[Any]) -> tuple[list[Any], list[tuple[str, str]]]:
+    """The work orders that may run, and (specialist, focus) of those that would rewrite the whole draft."""
+    kept: list[Any] = []
+    dropped: list[tuple[str, str]] = []
+    for wo in orders:
+        if wo.specialist in _FULL_REWRITERS:
+            dropped.append((wo.specialist, wo.focus[:80] if wo.focus else "(no focus)"))
+        else:
+            kept.append(wo)
+    return kept, dropped
 
 
 def _select_polish_specialists(attack_report_path: Path) -> list[str]:
