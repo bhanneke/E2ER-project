@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.3] — 2026-10-11
+
 ### A subscription plan's usage limit pauses the run
 - **Codex, Claude Code and Gemini: a used-up plan pauses the run instead of failing it.** On
   2026-10-11 (0.15.2, Codex with gpt-6-astra) a run failed with "All specialists failed in parallel
