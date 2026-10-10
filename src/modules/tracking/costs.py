@@ -12,7 +12,9 @@ from ..llm.base import TokenUsage
 # for users on these backends and was actively harmful in v0.8: the
 # default ``--max-cost 5`` cap tripped after a single heavy specialist
 # on Claude Code (M4 finding #1). For these backends ``compute_cost``
-# returns ``Decimal("0")`` and the budget gate never fires.
+# returns ``Decimal("0")`` and the budget gate never fires. Gemini (not
+# tested) is kept here although since October 2026 it runs on a Gemini API
+# key that Google bills: e2er does not count that cost.
 _FLAT_RATE_BACKENDS = frozenset({"claude_code", "codex", "gemini"})
 
 

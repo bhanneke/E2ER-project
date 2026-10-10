@@ -122,6 +122,20 @@ class TestBackendPrereqs:
         assert ready is False
         assert any("npm i -g @google/gemini-cli" in n for n in notes)
 
+    def test_gemini_needs_a_key_and_says_it_is_not_tested(self, monkeypatch):
+        """Google ended Gemini CLI sign-in for individual accounts (October 2026):
+        init offers Gemini only with GEMINI_API_KEY, marked as not tested."""
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+        monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+        with patch("src.modules.llm.cli_support.shutil.which", return_value="/usr/bin/gemini"):
+            ready, notes = _check_backend_prereqs("gemini")
+        assert ready is False
+        text = "\n".join(notes)
+        assert "GEMINI_API_KEY not set" in text
+        assert "October 2026" in text and "not tested" in text
+        label = dict(_BACKEND_CHOICES)["gemini"]
+        assert "not tested" in label and "subscription" not in label.lower() and "Pro/Ultra" not in label
+
 
 # ---------------------------------------------------------------------------
 # .env body generation

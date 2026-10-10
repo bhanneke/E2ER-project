@@ -7,9 +7,13 @@ e2er runs its specialists through one of five backends, chosen with
 | --- | --- | --- |
 | `claude_code` | the Claude Code CLI (`claude`) | your Claude subscription |
 | `codex` | the Codex CLI (`codex`) | your ChatGPT plan |
-| `gemini` | the Gemini CLI (`gemini`) | your Google AI plan or a Gemini key |
+| `gemini` (not tested) | the Gemini CLI (`gemini`) | a Gemini API key (`GEMINI_API_KEY`), billed by Google |
 | `anthropic` | the Anthropic API | per use |
 | `openrouter` | OpenRouter | per use |
+
+Full runs are tested on Claude (Claude Code) and OpenAI (Codex CLI with a
+ChatGPT plan). Google ended Gemini CLI sign-in for individual accounts in
+October 2026, so the Gemini backend needs a Gemini API key and is not tested.
 
 The three CLI backends hand the CLI the specialist's whole prompt and let it
 work in the study's workspace folder with its own tools. They differ in what
@@ -45,9 +49,13 @@ command. What does hold:
 
 **Gemini** runs with `--approval-mode yolo`, so its shell tool can run any
 command too, and it has no sandbox unless you start it with one. The Gemini
-backend has not been run against a real Gemini CLI yet; its command line and
+backend is not tested. Since October 2026 the Gemini CLI refuses sign-in for
+individual accounts (version 0.63.0 answers "This client is no longer
+supported for Gemini Code Assist for individuals"), so the backend runs only
+with `GEMINI_API_KEY`, and no study has run that way. Its command line and
 output reading follow the CLI's documentation and are covered by tests with a
-simulated CLI only.
+simulated CLI only. Google bills the key; e2er records the cost of a Gemini
+study as $0, so its spending limit does not apply.
 
 The orchestrator does not rely on what a specialist ran: it re-runs the final
 analysis script itself, re-renders the tables and checks every number in the
@@ -74,5 +82,6 @@ answered its calls (the `backend_identity` event, kept with the study).
 `e2er run-matrix "<question>" --backends claude_code,codex --models
 claude_code=sonnet,codex=gpt-6-luna --repeats 1` runs the same question on each
 backend and exports each completed run. Without `--backends` it runs every
-subscription CLI that `e2er doctor` finds ready. `e2er compare <out>/matrix.json`
+subscription CLI that `e2er doctor` finds ready (Claude Code, Codex); Gemini
+runs only when `--backends` names it. `e2er compare <out>/matrix.json`
 then lists the design choices each run made, with the model that made them.

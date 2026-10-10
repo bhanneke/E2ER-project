@@ -14,7 +14,7 @@ no CoS dependencies.
 - `openrouter` — `openai.AsyncOpenAI` → openrouter.ai (SDK; owns the loop)
 - `claude_code` — shells out to the `claude` CLI ($0 under a Max plan)
 - `codex` — shells out to the `codex` CLI ($0 under ChatGPT Plus/Pro)
-- `gemini` — shells out to the `gemini` CLI ($0 under Google AI Pro/Ultra)
+- `gemini` — shells out to the `gemini` CLI with GEMINI_API_KEY (not tested: Google ended Gemini CLI sign-in for individual accounts in October 2026)
 
 The SDK backends run `LLMBackend.tool_loop()` in-process, so `AlliumToolHandler`
 intercepts every tool call and runs guardrails BEFORE any query reaches Allium.

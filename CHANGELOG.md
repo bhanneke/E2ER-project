@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Gemini: not tested, API key only
+- **Full runs are tested on Claude (Claude Code) and OpenAI (Codex CLI with a ChatGPT plan).** Google
+  ended Gemini CLI sign-in for individual accounts in October 2026: `gemini` 0.63.0 answers "This
+  client is no longer supported for Gemini Code Assist for individuals" and points to Antigravity. The
+  Gemini backend therefore needs a Gemini API key (`GEMINI_API_KEY`) and is not tested. The code stays.
+- **The setup page lists Gemini under "Other providers (not tested)"**, with a field for the Gemini
+  API key and no sign-in command. Its note no longer says Gemini runs on a subscription. A Gemini key
+  saved there is written to `.env` as `GEMINI_API_KEY`.
+- **`e2er doctor` and `e2er init`.** A Gemini sign-in file no longer counts as ready; only
+  `GEMINI_API_KEY` (or `GOOGLE_API_KEY`) does, from the environment or `.env`. The check names the
+  backend as not tested. `e2er init` offers Gemini last, as "Other provider, not tested", and checks
+  for the key.
+- **`e2er run-matrix` leaves Gemini out of its default backends.** It runs only when `--backends`
+  names it.
+- **Spending limit texts.** For a Gemini study, the new-study form and the run page say that Google
+  bills the Gemini API key and e2er does not count the cost; they no longer call it a subscription.
+- README, docs/BACKENDS.md and the command help say the same.
+
 ## [0.15.1] — 2026-10-10
 
 ### Iterative mode, run end to end

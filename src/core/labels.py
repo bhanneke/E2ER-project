@@ -212,7 +212,7 @@ VERIFY_CHECKS: dict[str, str] = {
 BACKENDS: dict[str, str] = {
     "claude_code": "Claude Code",
     "codex": "Codex",
-    "gemini": "Gemini CLI",
+    "gemini": "Gemini CLI (not tested)",
     "anthropic": "Anthropic API",
     "openrouter": "OpenRouter API",
 }

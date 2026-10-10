@@ -333,10 +333,11 @@ class Settings(BaseSettings):
     codex_sandbox: str = "workspace-write"
     codex_cwd: str = ""
 
-    # ── Gemini CLI backend (free under Google AI Pro/Ultra plan) ──────────────
+    # ── Gemini CLI backend (not tested) ───────────────────────────────────────
     # Set LLM_BACKEND=gemini to delegate to the `gemini` subprocess. Requires
-    # the Gemini CLI (`npm install -g @google/gemini-cli`); sign in by running
-    # `gemini` once. Not validated live yet.
+    # the Gemini CLI (`npm install -g @google/gemini-cli`) and GEMINI_API_KEY:
+    # Google ended Gemini CLI sign-in for individual accounts in October 2026.
+    # No full study has run on it; full runs are tested on Claude Code and Codex.
     gemini_path: str = "gemini"
     gemini_timeout: int = 1800
     gemini_model: str = ""  # Empty → CLI's default

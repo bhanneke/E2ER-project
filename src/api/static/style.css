@@ -443,6 +443,9 @@ button[disabled] { opacity: .5; cursor: not-allowed; }
 .choice-title { font-weight: 600; font-size: 14px; }
 .choice-detail { font-size: 12.5px; color: var(--muted); word-break: break-word; }
 .choice-more { padding: 4px 12px 10px 34px; }
+.more-providers { margin: 10px 0 0; }
+.more-providers > summary { cursor: pointer; font-size: 13px; color: var(--muted); }
+.more-providers > .card-note { margin: 6px 0 8px; }
 
 .field { display: block; margin: 10px 0; }
 .field > span { display: block; font-weight: 600; font-size: 13px; margin-bottom: 4px; }

@@ -361,3 +361,42 @@ def test_an_unwritable_workspace_blocks_the_run():
     from src.doctor import _BLOCKERS_PREFIXES
 
     assert any("workspace" in prefix for prefix in _BLOCKERS_PREFIXES)
+
+
+# ── Gemini: API key only, not tested (Google ended CLI sign-in for individuals, Oct 2026) ──
+
+
+def test_gemini_sign_in_file_no_longer_counts(tmp_path, monkeypatch):
+    from src.doctor import cli_signed_in
+
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    monkeypatch.setattr("src.doctor._env_file_has", lambda setting: False)
+    (tmp_path / ".gemini").mkdir()
+    (tmp_path / ".gemini" / "oauth_creds.json").write_text("{}")
+    signed, note = cli_signed_in("gemini", home=tmp_path)
+    assert signed is False
+    assert "GEMINI_API_KEY" in note and "October 2026" in note
+    monkeypatch.setenv("GEMINI_API_KEY", "k")
+    assert cli_signed_in("gemini", home=tmp_path)[0] is True
+
+
+def test_gemini_is_untested_and_offers_no_sign_in(monkeypatch):
+    from src.doctor import BACKEND_HELP, detect_backends, signin_command
+
+    assert signin_command("gemini", "/usr/local/bin/gemini") == ""
+    assert "not tested" in BACKEND_HELP["gemini"]["label"]
+    assert "subscription" not in BACKEND_HELP["gemini"]["label"].lower()
+    monkeypatch.setattr("src.doctor.resolve_backend_cli", lambda name, settings=None: f"/usr/local/bin/{name}")
+    rows = {b.name: b for b in detect_backends(SimpleNamespace(anthropic_api_key=None, openrouter_api_key=None))}
+    assert rows["gemini"].tested is False and rows["gemini"].key_setting == "GEMINI_API_KEY"
+    assert all(rows[n].tested for n in ("claude_code", "codex", "anthropic", "openrouter"))
+
+
+async def test_backend_gemini_with_key_passes_and_says_not_tested(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "k")
+    s = SimpleNamespace(llm_backend="gemini")
+    with patch("src.doctor.resolve_backend_cli", return_value="/usr/local/bin/gemini"):
+        c = await backend_check(s)
+    assert c.status == PASS
+    assert "subscription" not in c.detail and "Claude Code and Codex" in c.detail

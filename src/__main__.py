@@ -197,7 +197,8 @@ def main() -> None:
         "--max-cost",
         type=float,
         default=5.0,
-        help="Per-paper USD cost cap (default $5). $0 if on the Claude Code / Codex / Gemini CLI backends.",
+        help="Per-paper USD cost cap (default $5). $0 on the Claude Code / Codex CLI backends. The Gemini "
+        "backend (not tested) is also recorded as $0, while Google bills its API key.",
     )
     run_p.add_argument(
         "--monitor-seconds",
@@ -215,7 +216,7 @@ def main() -> None:
         "--acknowledge-unproven",
         action="store_true",
         help="Lift the $1 first-run floor for an unproven (model, methodology, mode) tuple "
-        "and use the full --max-cost. Auto-enabled on the $0 CLI backends (claude_code/codex/gemini).",
+        "and use the full --max-cost. Auto-enabled on the CLI backends (claude_code/codex/gemini).",
     )
 
     matrix_p = subparsers.add_parser(
@@ -231,8 +232,9 @@ def main() -> None:
         "--backends",
         default=None,
         help="Comma-separated backends to run, e.g. claude_code,codex. Default: every subscription CLI "
-        "(Claude Code, Codex, Gemini) that is installed and signed in on this computer, as `e2er doctor` "
-        "finds them; if there is none, every API backend with a key.",
+        "(Claude Code, Codex) that is installed and signed in on this computer, as `e2er doctor` "
+        "finds them; if there is none, every API backend with a key. Gemini (not tested) runs only "
+        "when named here.",
     )
     matrix_p.add_argument(
         "--models",

@@ -360,6 +360,36 @@ def test_setup_page_offers_backends_docker_and_instructions(project, session, mo
     assert "Haiku: cheapest" in html
 
 
+def test_setup_lists_gemini_apart_as_not_tested(project, session, monkeypatch):
+    """Google ended Gemini CLI sign-in for individual accounts (October 2026): the page
+    offers Gemini under "Other providers (not tested)" with a key field, no sign-in, and
+    no longer says it runs on a subscription."""
+    monkeypatch.setattr("shutil.which", lambda name: "/usr/local/bin/" + name)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    html = _client().get("/setup").text
+    assert "Other providers (not tested)" in html
+    assert "Google ended Gemini CLI sign-in for individual accounts in October 2026" in html
+    assert "Claude Code, Codex and Gemini run on your own subscription" not in html
+    assert "Claude Code and Codex run on your own subscription" in html
+    assert "Google AI subscription" not in html
+    main, _, other = html.partition("Other providers (not tested)")
+    assert 'value="gemini"' not in main and 'value="gemini"' in other
+    assert 'name="apikey-gemini"' in other
+    assert "https://aistudio.google.com/apikey" in other
+
+
+def test_setup_saves_the_gemini_key(project, session):
+    r = _client().post(
+        "/api/setup/save",
+        json={"backend": "gemini", "api_key": "gem-key-1234567890wxyz", "studies_folder": str(project)},
+        headers={"origin": BASE},
+    )
+    assert r.status_code == 200, r.text
+    text = (project / ".env").read_text()
+    assert "LLM_BACKEND=gemini" in text and "GEMINI_API_KEY=gem-key-1234567890wxyz" in text
+
+
 def test_setup_writes_env_mode_600_and_masks_keys(project, session):
     c = _client()
     lib = project.parent / "Documents" / "Zotero Export"

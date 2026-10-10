@@ -2159,6 +2159,8 @@ def _new_form_context(
         "error": error,
         "backend": getattr(settings, "llm_backend", ""),
         "billed": getattr(settings, "llm_backend", "") in {"anthropic", "openrouter"},
+        # Gemini (not tested) runs on a Gemini API key that e2er does not count.
+        "uncounted_key": getattr(settings, "llm_backend", "") == "gemini",
         "needs_setup": needs_setup(),
     }
 
@@ -3091,8 +3093,10 @@ async def paper_live_fragment(request: Request, paper_id: str = Depends(_validat
             "cost_spent": cost_spent,
             "cost_pct": cost_pct,
             "cost_cap": cap,
-            # Claude Code, Codex and Gemini run on the researcher's subscription: no spending limit applies.
+            # Claude Code and Codex run on the researcher's subscription: no spending limit applies.
+            # Gemini runs on a Gemini API key whose cost e2er does not count: no limit either.
             "subscription": str(paper.get("backend") or get_settings().llm_backend) in _SUBSCRIPTION_BACKENDS,
+            "uncounted_key": str(paper.get("backend") or get_settings().llm_backend) == "gemini",
             "events": (events or [])[:50],
             "can_cancel": (paper.get("status") not in _TERMINAL_STATUSES) and (paper_id in _RUNNING),
             # `e2er resume` takes a paused, failed or stopped study; so does the button.
@@ -3110,7 +3114,8 @@ async def paper_live_fragment(request: Request, paper_id: str = Depends(_validat
     )
 
 
-#: Providers that run on the researcher's subscription: nothing is billed, so no spending limit applies.
+#: Providers whose cost e2er records as $0, so no spending limit applies: Claude Code and Codex run
+#: on the researcher's subscription; Gemini (not tested) on a Gemini API key that Google bills.
 _SUBSCRIPTION_BACKENDS = {"claude_code", "codex", "gemini"}
 
 #: What `e2er resume` (and the Resume button) takes: a paused, failed or stopped study.

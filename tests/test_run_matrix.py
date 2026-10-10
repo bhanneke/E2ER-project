@@ -168,13 +168,16 @@ def test_default_backends_are_the_ready_ones(monkeypatch):
     from types import SimpleNamespace
 
     rows = [
-        SimpleNamespace(name="claude_code", kind="cli", ready=True),
-        SimpleNamespace(name="codex", kind="cli", ready=False),
-        SimpleNamespace(name="gemini", kind="cli", ready=True),
-        SimpleNamespace(name="anthropic", kind="api", ready=True),
+        SimpleNamespace(name="claude_code", kind="cli", ready=True, tested=True),
+        SimpleNamespace(name="codex", kind="cli", ready=True, tested=True),
+        SimpleNamespace(name="gemini", kind="cli", ready=True, tested=False),
+        SimpleNamespace(name="anthropic", kind="api", ready=True, tested=True),
     ]
     monkeypatch.setattr("src.doctor.detect_backends", lambda settings=None: rows)
-    assert m.available_backends(settings=object()) == ["claude_code", "gemini"]
+    # Gemini is ready (a key is set) but untested: never in the default.
+    assert m.available_backends(settings=object()) == ["claude_code", "codex"]
+    rows[1].ready = False
+    assert m.available_backends(settings=object()) == ["claude_code"]
     for r in rows:
         if r.kind == "cli":
             r.ready = False

@@ -66,9 +66,12 @@ KEY_LABELS = {
     "ZENODO_TOKEN": "Zenodo key",
     "ANTHROPIC_API_KEY": "Anthropic API key",
     "OPENROUTER_API_KEY": "OpenRouter API key",
+    "GEMINI_API_KEY": "Gemini API key",
 }
 
-_API_KEY_SETTINGS = {"ANTHROPIC_API_KEY", "OPENROUTER_API_KEY"}
+#: The AI providers' keys the setup page saves. GEMINI_API_KEY belongs to the
+#: Gemini CLI backend, which since October 2026 runs with a key only.
+_API_KEY_SETTINGS = {"ANTHROPIC_API_KEY", "OPENROUTER_API_KEY", "GEMINI_API_KEY"}
 _KNOWN_KEYS = {k for k, _, _ in OPTIONAL_KEYS} | _API_KEY_SETTINGS
 _MODEL_SETTINGS = {"CLAUDE_CODE_MODEL", "ANTHROPIC_MODEL", "OPENROUTER_MODEL", "CODEX_MODEL", "GEMINI_MODEL"}
 
@@ -213,13 +216,15 @@ def setup_view(request: Request, saved: bool = False) -> dict[str, Any]:
     backends = detect_backends(settings)
     chosen = current.get("LLM_BACKEND") or os.environ.get("LLM_BACKEND") or ""
     if not chosen:
-        ready = [b for b in backends if b.ready]
+        ready = [b for b in backends if b.ready and b.tested]
         chosen = ready[0].name if ready else "claude_code"
     lit_bib = current.get("LITERATURE_BIBTEX_FILE", "")
     lit_dir = current.get("LITERATURE_DIR", "")
     docker = docker_check()
     return {
-        "backends": backends,
+        "backends": [b for b in backends if b.tested],
+        # Listed apart, under "Other providers (not tested)".
+        "other_backends": [b for b in backends if not b.tested],
         "any_backend": any(b.ready for b in backends),
         "backend_help": BACKEND_HELP,
         "chosen": chosen,
@@ -282,7 +287,7 @@ async def setup_checks(request: Request) -> Any:
 class SaveSetup(BaseModel):
     backend: str
     model: str = ""
-    api_key: str = ""  # for the anthropic / openrouter backends; blank keeps the stored one
+    api_key: str = ""  # for the anthropic / openrouter / gemini backends; blank keeps the stored one
     literature: str = ""
     data_dir: str = ""
     keys: dict[str, str] = {}  # optional connector keys; blank keeps the stored one

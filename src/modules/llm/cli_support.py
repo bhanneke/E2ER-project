@@ -1,4 +1,4 @@
-"""What the three subscription CLI backends (Claude Code, Codex, Gemini) share.
+"""What the three CLI backends (Claude Code, Codex, Gemini) share.
 
 Finding the executable, the PATH the model's shell sees, the prompt layout, the
 process-group kill on timeout, and the CLI version stamp. Each of these was
