@@ -110,7 +110,10 @@ def inputs_view(workspace: Path) -> dict[str, Any]:
         for t in [load.get("table"), *(load.get("tables") or [])]:
             if t:
                 source_of.setdefault(str(t), what)
-    tables = [{"table": t, "rows": n, "source": source_of.get(t, "")} for t, n in sorted(counts.items())]
+    # A table no load recorded was made by the study's own code (a panel built from the others).
+    tables = [
+        {"table": t, "rows": n, "source": source_of.get(t, "made by the study")} for t, n in sorted(counts.items())
+    ]
 
     entries = _bib_entries(workspace)
     items = {str(i.get("key")): i for i in papers.get("items") or [] if isinstance(i, dict) and i.get("key")}

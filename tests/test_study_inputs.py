@@ -681,3 +681,17 @@ async def test_a_study_with_chosen_papers_takes_no_unchosen_library_paper(tmp_pa
         await acquire_literature(ws, "p", ["q"], SimpleNamespace(), limit=5, web_search=True, chosen=chosen)
     bib = (ws / "literature.bib").read_text()
     assert "NFT revolution" not in bib and "Mortgage Rates and Policy" in bib and "e2er_source = {web}" in bib
+
+
+def test_a_table_no_load_recorded_is_made_by_the_study(tmp_path: Path):
+    import sqlite3
+
+    from src.api.inputs import inputs_view
+
+    ws = tmp_path / "ws"
+    _workspace_with_inputs(ws)
+    con = sqlite3.connect(ws / "data.db")
+    con.execute("CREATE TABLE monthly_panel (x INT)")
+    con.commit()
+    con.close()
+    assert {t["table"]: t["source"] for t in inputs_view(ws)["tables"]}["monthly_panel"] == "made by the study"
