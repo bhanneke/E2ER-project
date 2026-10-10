@@ -1982,7 +1982,9 @@ class PipelineRunner:
                 )
             enforce_cites = self._governance_enforces("citations")
             failed_cites = not cite_report.passed
-            detail_cites = ""
+            # A draft with no citation is not checked; the record says why in plain
+            # words ("no references", or how many works the draft leaves uncited).
+            detail_cites = cite_report.skipped_reason or ""
             if failed_cites:
                 missing = ", ".join(c.cite_key for c in cite_report.missing_checks[:5])
                 unverif = ", ".join(c.cite_key for c in cite_report.unverifiable_checks[:5])

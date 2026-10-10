@@ -732,7 +732,7 @@ def _check_citations_offline(bundle: Path) -> Check:
     tex = bundle / "paper" / "paper.tex"
     if not tex.is_file():
         return Check("citations", SKIP, "no paper/paper.tex")
-    from .core.pipeline.verify_citations import load_bib, parse_cite_keys
+    from .core.pipeline.verify_citations import load_bib, parse_bibitem_keys, parse_cite_keys
 
     text = tex.read_text(encoding="utf-8", errors="replace")
     keys = parse_cite_keys(text)
@@ -763,6 +763,16 @@ def _check_citations_offline(bundle: Path) -> Check:
 
     if missing:
         return Check("citations", FAIL, f"{len(missing)} cited key(s) not in refs.bib: {', '.join(missing[:5])}")
+    if not keys and not parse_bibitem_keys(text):
+        if bib:
+            # The paper ignores the bibliography it ships: nothing it says is
+            # tied to a source (the 2026-10-10 Haiku paper, 21 entries, 0 cites).
+            return Check("citations", FAIL, f"paper.tex cites none of the {len(bib)} work(s) in refs.bib{snapshot}")
+        return Check(
+            "citations",
+            SKIP,
+            f"no references: paper.tex cites nothing and the bundle has no bibliography (paper/refs.bib){snapshot}",
+        )
     if not keys:
         return Check("citations", SKIP, f"paper.tex cites nothing, so there is no citation to check{snapshot}")
     return Check("citations", PASS, f"{len(keys)} cite key(s) resolve in refs.bib{snapshot}")

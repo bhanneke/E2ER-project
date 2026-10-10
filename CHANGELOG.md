@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Stale tables are set aside; a draft that cites nothing is caught
+- **The renderer sets aside tables the spec no longer declares.** In the 2026-10-10 Haiku run
+  section_writer cut `table_spec.json` from four tables to two; the two dropped tables (`---` in every
+  cell) stayed in `tables/` and shipped in the export's `paper/tables/`. A table an earlier render
+  wrote and the current spec drops now moves to the hidden `.history/tables/` (listed as `set_aside`
+  in `table_render_report.json`). Tables the renderer did not write (field-map tables, `\input` stubs)
+  stay. The export also leaves out of `paper/tables/` any table that is neither rendered nor included
+  by the paper, which covers workspaces from before this change.
+- **A draft for a study with references must cite them.** The same run's draft cited none of the 21
+  entries of `literature.bib`, and the citation check, which checks the cites a draft makes, skipped
+  itself. The output contract of the paper drafter and of the field review writer now fails such a
+  draft with "The draft cites no work; cite the papers in literature.bib where they support the text";
+  after the last attempt the run stops at the contract as usual. The study's references are the
+  entries of `literature.bib` and `user_refs.bib`, or the papers chosen for it.
+- **The citation check says why it checked nothing**: "no references: the draft cites no work and the
+  study has no bibliography", or "the draft cites none of the N work(s) in the study's bibliography",
+  in `citation_integrity.json` and the run's gate record. `e2er verify` fails a paper that cites none
+  of the works in its `refs.bib`, and says "no references" when the bundle has no bibliography.
+
 ### The number check stops when no table cell was checked
 - **A paper with rendered results tables and no traced table cell no longer passes the number
   check.** In the 2026-10-10 E2E-01 run on Claude Haiku the renderer wrote two tables from the results

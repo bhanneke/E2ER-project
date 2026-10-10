@@ -408,6 +408,29 @@ def _render_readme(
     return "\n".join(lines) + "\n"
 
 
+def _drop_unused_tables(workspace: Path, out: Path) -> None:
+    """Leave out of ``paper/tables/`` a table the renderer no longer writes and the paper does not include.
+
+    The renderer sets such tables aside itself (``.history/tables/``); this
+    covers a workspace from before it did, where a table from an earlier
+    table_spec.json still sits in tables/ with ``---`` in every cell.
+    """
+    from ..pipeline.verify_numbers import included_tables, rendered_tables
+
+    report = workspace / "table_render_report.json"
+    if not report.is_file():
+        return  # nothing says what the renderer wrote: keep everything
+    paper_tex = out / "paper" / "paper.tex"
+    text = paper_tex.read_text(encoding="utf-8", errors="replace") if paper_tex.is_file() else ""
+    keep = set(rendered_tables(workspace)) | included_tables(text)
+    for path in sorted((out / "paper" / "tables").glob("*.tex")):
+        if path.name not in keep:
+            logger.warning(
+                "export: left out tables/%s: not rendered from table_spec.json and not in the paper", path.name
+            )
+            path.unlink()
+
+
 def export_paper(
     workspace: Path, dest_root: Path, *, date_str: str, slug: str | None = None, template: str | None = None
 ) -> Path:
@@ -464,6 +487,7 @@ def export_paper(
     tbl_src = workspace / "tables"
     if tbl_src.is_dir():
         _copytree(tbl_src, out / "paper" / "tables", workspace)
+        _drop_unused_tables(workspace, out)
 
     # The field map: the network for other tools (Pajek, GEXF, VOSviewer, CSV)
     # and the papers retrieved from OpenAlex for each boundary (CC0), which the
