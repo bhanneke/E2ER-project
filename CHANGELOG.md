@@ -407,7 +407,8 @@ and contract tests on responses recorded live once.
     hits with the design's word list; topic models (LDA or NMF) with a recorded seed, a metric for at least
     two numbers of topics, runs under at least three seeds whose stability (mean best-match Jaccard of the
     top terms) e2er recomputes, top terms and example documents of the corpus per topic, shares adding
-    up to 1; a statement of sampling bias.
+    up to 1; a figure drawn from the results of every diachronic, keyness and topic model; a statement of
+    sampling bias.
   - `text_validation`, after a new specialist, the **text validator**, who judges every passage of the
     sample the analysis drew (with its seed) of each dictionary and sentiment measure: every passage must
     be in its document, every item judged with a reason for each wrong one, and the precision is

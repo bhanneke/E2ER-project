@@ -67,7 +67,10 @@ number check).
       Jaccard overlap), a topic without top terms or without
       ``min_examples`` example documents of the corpus, or prevalence shares
       that do not add up to 1 in a group;
-  (q) the results do not state the corpus's sampling bias.
+  (q) the results do not state the corpus's sampling bias;
+  (v) a diachronic, keyness or topic model has no figure in
+      ``figure_spec.json`` drawn from its results (frequency over time, key
+      terms, topic shares).
 
 It writes ``text_check.json``.
 
@@ -1109,7 +1112,10 @@ def _check_dictionary(ctx: _Ctx, key: str, m: dict[str, Any], analysis: dict[str
         if per is not None and n_tok and not close(per, got / n_tok * 10_000, rel=_REL, abs_=0.006):
             bad.append(f"{group}/{category}: per_10k {per} stated, {got / n_tok * 10_000:.4f} computed")
     if bad:
-        ctx.reasons.append(f"(o) models.{key}: {names(bad)}")
+        ctx.reasons.append(
+            f"(o) models.{key}: {names(bad)} (e2er counts tokens equal to an entry, or beginning with an entry "
+            "that ends in *: 'felt' matches felt only, 'feel*' feel, feels, feeling)"
+        )
 
 
 def _check_topics(
@@ -1230,6 +1236,45 @@ def _check_diachronic(ctx: _Ctx, key: str, m: dict[str, Any]) -> None:
         ctx.reasons.append(f"(l) models.{key}: {names(bad)}")
 
 
+#: The methods whose results the paper shows as a figure (frequency over time, key terms, topic shares).
+FIGURE_METHODS = {"diachronic": "frequency over time", "keyness": "key terms", "topic_model": "topic shares"}
+
+
+def _figure_sources(spec: Any) -> list[str]:
+    """The results paths every figure part of figure_spec.json reads (series, panels, the figure itself)."""
+    out: list[str] = []
+
+    def walk(part: Any) -> None:
+        if not isinstance(part, dict):
+            return
+        src = obj(part.get("source"))
+        if src.get("results") and str(src.get("file") or RESULTS_FILE) == RESULTS_FILE:
+            out.append(str(src["results"]))
+        for key in ("series", "panels"):
+            for sub in lst(part.get(key)):
+                walk(sub)
+
+    for fig in lst(obj(spec).get("figures")):
+        walk(fig)
+    return out
+
+
+def _check_figures(ctx: _Ctx, results: dict[str, Any]) -> None:
+    """(v) A figure drawn from the results of every diachronic, keyness and topic model."""
+    spec, _ = read_json(ctx.ws / "figure_spec.json")
+    sources = _figure_sources(spec)
+    for key, m in obj(results.get("models")).items():
+        method = method_name(obj(m).get("method"))
+        if method not in FIGURE_METHODS:
+            continue
+        if not any(src == f"models.{key}" or src.startswith(f"models.{key}.") for src in sources):
+            ctx.reasons.append(
+                f"(v) no figure shows models.{key} ({FIGURE_METHODS[method]}): add one to figure_spec.json with "
+                f'"source": {{"results": "models.{key}.outputs...", "fields": {{...}}}}, and name it in '
+                "the results' 'figures'"
+            )
+
+
 def check_text_results(
     workspace: Path,
     *,
@@ -1300,6 +1345,9 @@ def check_text_results(
     missing = sorted(str(x) for x in declared - done)
     if missing:
         ctx.reasons.append(f"(f) the design declares {', '.join(missing)}, which the results do not report")
+
+    # (v) the figures the template asks for, drawn from the results
+    _check_figures(ctx, results)
 
     # (q) limits
     if not str(obj(results.get("limits")).get("sampling_bias") or "").strip():

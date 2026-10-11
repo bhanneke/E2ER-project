@@ -256,6 +256,17 @@ def _study(ws: Path) -> Path:
         "limits": {"sampling_bias": "four invented documents"},
     }
     (ws / tc.RESULTS_FILE).write_text(json.dumps(results, ensure_ascii=False), encoding="utf-8")
+    figures = {
+        "figures": [
+            {"filename": "fig_key.pdf", "figure_type": "bar", "source": {"results": "models.key.outputs.terms"}},
+            {
+                "filename": "fig_topics.pdf",
+                "figure_type": "multi_panel",
+                "panels": [{"figure_type": "bar", "source": {"results": "models.topics.outputs.prevalence"}}],
+            },
+        ]
+    }
+    (ws / "figure_spec.json").write_text(json.dumps(figures), encoding="utf-8")
     sample = {
         "fear_words": {
             "seed": 7,
@@ -662,3 +673,9 @@ def test_sample_rows_of_a_corpus_table_show_the_start_of_a_text_not_the_whole_bo
     cell = list_tables_catalog_sync(tmp_path)[0]["samples"][0][1]
     assert cell.endswith("(500,000 characters)") and len(cell) < 300
     assert len(_list_data_tables(tmp_path)) < 1000
+
+
+def test_the_results_check_wants_a_figure_of_the_key_terms_and_the_topics(ws: Path):
+    _edit(ws, "figure_spec.json", lambda f: f["figures"][1]["panels"][0]["source"].update(results="corpus"))
+    r = _results_reasons(ws)
+    assert "(v) no figure shows models.topics (topic shares)" in r and "models.key" not in r.split("(v)")[1]

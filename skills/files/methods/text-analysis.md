@@ -322,7 +322,9 @@ the results state it).
 `text_results` recounts every term frequency, keyness score, collocation,
 dictionary hit and topic-stability figure, and stops the run on a difference.
 
-Figures (`figure_spec.json`, each with a `source` in the results):
+Figures (`figure_spec.json`, each with a `source` in the results; the results
+check stops the run when a diachronic, keyness or topic model has no figure
+drawn from its results, so name every one in the results' `figures`):
 frequency over time (`time_series` from `models.<id>.outputs.series` or the
 term frequencies of the period groups), key terms (`bar` of log ratio or G2
 from `models.<id>.outputs.terms`), topic prevalence by group (`bar` per group
