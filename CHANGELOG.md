@@ -70,6 +70,38 @@ and contract tests on responses recorded live once.
   a refusal's body (POWER's HTTP 422 messages).
 - **Recording fixtures**: two loads inside one `use_cassette` block now record (each request gets its own
   transport; before, the second load failed with "Event loop is closed").
+### New data sources: statistics, health, books and software
+- **World Bank Open Data** (`e2er-data worldbank indicators | series`): development indicators by
+  country and year through the Indicators API v2 (World Development Indicators by default, other
+  World Bank databases with `--database`), no key, CC BY 4.0. Each load records every indicator's
+  licence and data source from its metadata, names any indicator that is not CC BY 4.0, and cites in
+  the World Bank's format ("The World Bank: Dataset name: Data source").
+- **Eurostat** (`e2er-data eurostat datasets | dimensions | data`): EU statistics through the
+  dissemination API, filtered by dimension, NUTS level (`--geo-level nuts2`) and period; no key. The
+  citation follows Eurostat's copyright notice (the dataset's DOI and, for a filtered extract, its
+  datacode link with the access date); the terms note that non-EU/EFTA/candidate-country data and
+  data of other sources may be reused non-commercially only, and that Eurostat keeps no past versions.
+- **Our World in Data** (`e2er-data owid search | chart`): the data behind any OWID chart with each
+  indicator's origins and their licences (OWID's own data are CC BY; third-party data keep their
+  producers' licences, recorded per origin and named in the note when not open); charts OWID marks
+  as not redistributable are refused. The citation credits OWID and the producers, as OWID asks.
+- **WHO Global Health Observatory** (`e2er-data who_gho indicators | data`): WHO health statistics
+  by country, year, sex and age through the GHO OData API, no key. WHO's terms for its data allow use
+  for public health purposes and no changes without WHO's written authorization, so a published study
+  reloads GHO data (`get_data.py`) instead of shipping them, after the researcher confirms the terms.
+- **Project Gutenberg** (`e2er-data gutenberg books | text`): the catalogue through Gutendex and
+  plain texts from Project Gutenberg's own mirror (its website allows no automated access), at most 20
+  books per load, two seconds apart. Texts are stored without Project Gutenberg's header, footer,
+  licence and references (which leaves texts unrestricted by U.S. copyright, per its licence), and
+  the load records what was cut; books still under copyright are refused.
+- **GitHub** (`e2er-data github repos | repo | releases`): public repositories' metadata (search by
+  query, topic, language, stars and creation date; details, languages, contributor count; releases),
+  never their contents. Keyless within GitHub's limits; an optional `GITHUB_TOKEN` setting raises them
+  (the machine's `gh` login is never used). GitHub allows research use only with open-access
+  publications and grants no licence to pass the metadata on, so a published study reloads them.
+- **Connector kit**: recorded fixtures replay redirects and `Link` headers, and recording works across
+  several `e2er-data` calls in one test; a definition whose argument is one of e2er-data's own names
+  (`source`, `table`, …) is refused.
 
 ### A core without economics assumptions (for 0.16.0)
 - **A template declares the kind of results its study reports.** `results = "regression"` (the

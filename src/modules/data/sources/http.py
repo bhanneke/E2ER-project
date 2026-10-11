@@ -195,6 +195,17 @@ def _body_out(content: bytes, content_type: str) -> dict[str, str]:
     return {"base64": base64.b64encode(content).decode("ascii")}
 
 
+_REDIRECT = frozenset({301, 302, 303, 307, 308})
+
+
+def _headers_of(entry: dict[str, Any]) -> dict[str, str]:
+    headers = {"content-type": entry["content_type"]} if entry.get("content_type") else {}
+    for name in ("location", "link"):
+        if entry.get(name):
+            headers[name] = entry[name]
+    return headers
+
+
 class _Recorder(httpx.AsyncBaseTransport):
     def __init__(self, cassette: Cassette) -> None:
         self._cassette = cassette
@@ -205,16 +216,21 @@ class _Recorder(httpx.AsyncBaseTransport):
             resp = await real.handle_async_request(request)
             content = await resp.aread()
         ctype = resp.headers.get("content-type", "")
-        self._cassette.entries.append(
-            {
-                "method": request.method,
-                "url": _canonical(str(request.url)),
-                "status": resp.status_code,
-                "content_type": ctype,
-                **_body_out(content, ctype),
-            }
-        )
-        return httpx.Response(resp.status_code, headers={"content-type": ctype} if ctype else {}, content=content)
+        entry: dict[str, Any] = {
+            "method": request.method,
+            "url": _canonical(str(request.url)),
+            "status": resp.status_code,
+            "content_type": ctype,
+            **_body_out(content, ctype),
+        }
+        # A redirect is replayed with its target, so the client follows it as it did live; a paged
+        # API's Link header (GitHub's page counts) is replayed too.
+        if resp.status_code in _REDIRECT and resp.headers.get("location"):
+            entry["location"] = resp.headers["location"]
+        if resp.headers.get("link"):
+            entry["link"] = resp.headers["link"]
+        self._cassette.entries.append(entry)
+        return httpx.Response(resp.status_code, headers=_headers_of(entry), content=content)
 
     async def aclose(self) -> None:
         pass  # each request closes its own transport
@@ -237,8 +253,7 @@ class _Replayer(httpx.AsyncBaseTransport):
         entry = self._cassette.entries[matches[min(served, len(matches) - 1)]]
         self._cassette._served[hash(url)] = served + 1
         content = entry["text"].encode("utf-8") if "text" in entry else base64.b64decode(entry.get("base64", ""))
-        headers = {"content-type": entry["content_type"]} if entry.get("content_type") else {}
-        return httpx.Response(entry["status"], headers=headers, content=content, request=request)
+        return httpx.Response(entry["status"], headers=_headers_of(entry), content=content, request=request)
 
 
 @contextlib.contextmanager

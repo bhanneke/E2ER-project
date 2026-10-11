@@ -30,6 +30,10 @@ if TYPE_CHECKING:
     from .http import PoliteClient
 
 
+#: Argument names e2er-data uses itself (its subcommand parsers' destinations): an operation may not take them.
+RESERVED_ARGS = frozenset({"source", "command", "table", "save_to", "paper_id", "specialist"})
+
+
 @dataclass(frozen=True)
 class SourceInfo:
     """What e2er records about a source on every load: its name, terms and citation."""
@@ -332,6 +336,10 @@ class Source:
         for op in self.operations:
             if (op.fetch is None) == (op.run is None):
                 problems.append(f"{self.name} {op.name}: give exactly one of fetch (kit) or run (own handler)")
+        for op in self.operations:
+            taken = sorted({a.key for a in op.args} & RESERVED_ARGS)
+            if taken:
+                problems.append(f"{self.name} {op.name}: argument {', '.join(taken)} is e2er-data's own; rename it")
         if self.doctor and self.doctor.operation and self.operation(self.doctor.operation) is None:
             problems.append(f"{self.name}: the doctor check names no operation of the source")
         return problems

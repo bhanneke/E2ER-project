@@ -87,7 +87,9 @@ The fields, in plain words:
 - **Operations.** One per subcommand. `loads=False` for a listing that helps
   choose (it prints rows but takes no `--table`, and nothing is recorded).
   Arguments: `type=str|int|float|"list"|"flag"`; `--min-magnitude` arrives as
-  `params["min_magnitude"]`.
+  `params["min_magnitude"]`. `source`, `command`, `table`, `save-to`,
+  `paper-id` and `specialist` are e2er-data's own and refused as argument
+  names (call a database id `--database`).
 
 ## The fetch function
 
@@ -169,7 +171,9 @@ def test_events_load_a_table(ws, capsys):
 
 The first run, with `E2ER_RECORD_FIXTURES=1`, makes the requests live and
 writes them to the fixture; every run after replays them with no network and
-no waiting. A request the fixture does not hold fails the test with its URL.
+no waiting. A request the fixture does not hold fails the test with its URL. Redirects (with
+their target) and `Link` headers (GitHub's page counts) are recorded and
+replayed too; other response headers are not.
 Keep recorded requests small (a week, a few series). Mock failures and edge
 cases (the service's limits, refused requests) with `respx`, and switch off
 the waiting between requests in those tests
