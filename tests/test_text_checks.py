@@ -679,3 +679,17 @@ def test_the_results_check_wants_a_figure_of_the_key_terms_and_the_topics(ws: Pa
     _edit(ws, "figure_spec.json", lambda f: f["figures"][1]["panels"][0]["source"].update(results="corpus"))
     r = _results_reasons(ws)
     assert "(v) no figure shows models.topics (topic shares)" in r and "models.key" not in r.split("(v)")[1]
+
+
+def test_identical_topics_under_every_seed_of_an_nndsvd_start_pass_with_a_note(ws: Path):
+    def same(r: dict) -> None:
+        t = r["models"]["topics"]
+        for run in t["stability"]["runs"]:
+            run["topics"] = t["stability"]["runs"][0]["topics"]
+        t["stability"]["mean_best_match_jaccard"] = 1.0
+        t["init"] = "nndsvda"
+
+    _edit(ws, tc.RESULTS_FILE, same)
+    assert tc.check_corpus(ws).passed
+    v = tc.check_text_results(ws)
+    assert v.passed and any("ignores the seed" in n for n in v.notes), (v.reasons, v.notes)

@@ -255,8 +255,10 @@ fewer. A quote must appear verbatim in its document and contain the term as
 a token. Do not judge the items yourself: the text validator does.
 
 **Topic models** (Blei, Ng and Jordan 2003 for LDA; Lee and Seung 1999 for
-NMF). `sklearn.decomposition.NMF(n_components=k, init="nndsvda",
-random_state=seed, max_iter=500)` on a TF-IDF matrix, or
+NMF). `sklearn.decomposition.NMF(n_components=k, init="random",
+random_state=seed, max_iter=1000)` (record `"init"` in the results; with
+`nndsvd` or `nndsvda` the start does not depend on the seed, so a stability
+check across seeds shows nothing) on a TF-IDF matrix, or
 `LatentDirichletAllocation(n_components=k, random_state=seed)` on counts,
 both with the recorded stop words removed (`CountVectorizer(vocabulary=...)`
 or a `tokenizer` that calls `tokens()` and drops stop words; set

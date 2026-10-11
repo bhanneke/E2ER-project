@@ -1163,6 +1163,13 @@ def _check_topics(
                 )
             else:
                 ctx.stats[f"{key}_stability"] = round(got, 3)
+                init = str(m.get("init") or "").lower()
+                if got >= 0.999 and (alg == "nmf" and (not init or init.startswith("nndsvd"))):
+                    ctx.notes.append(
+                        f"models.{key}: every seed gives the same top terms; NMF started from nndsvd or nndsvda "
+                        "ignores the seed, so this shows the fit is deterministic, not that the topics are stable "
+                        '(record "init" and use init="random" to test the seeds)'
+                    )
                 if got < 0.5:
                     ctx.notes.append(
                         f"models.{key}: the topics change much between seeds (stability {got:.2f}); report them "
