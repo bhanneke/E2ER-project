@@ -144,7 +144,13 @@ and contract tests on responses recorded live once.
 - `e2er verify` runs the results side of these checks again on an export (`method checks`); the export
   carries `did_design.json`, `spatial_design.json` and the checks' findings. `e2er reproduce` no
   longer counts files the analysis script writes (`spatial_units.csv`, weights files, anything it
-  opens for writing) as its inputs.
+  opens for writing) as its inputs; a file it reads and writes back (`figure_spec.json`) is laid out
+  as the study left it; and a script that reads the data only through `e2er-data query sql` gets
+  `data.db` as its input (before, the recipe left it out and the rerun had no data; found in the
+  spatial live run).
+- Maps in a projected CRS (EPSG:3035, EPSG:3857) honour an `extent` given in degrees; before, the
+  extent was ignored and overseas regions shrank Europe to a corner (found in the spatial live run).
+  The spatial results check finds the units file's id column (`id`, else the one the results name).
 - A template's `[[credit]]` `published` date may be as precise as the publisher gives it (YYYY-MM for a
   journal issue, YYYY for a book). Both templates cite their method sources (DOIs checked on Crossref).
 - Tests: replay fixtures of a synthetic staggered panel and a synthetic grid of regions, run end to end

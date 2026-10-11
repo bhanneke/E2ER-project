@@ -84,6 +84,35 @@ def _identity(x: float, y: float) -> tuple[float, float]:
     return x, y
 
 
+def _etrs89_laea(lon: float, lat: float) -> tuple[float, float]:
+    """EPSG:3035 in metres, on a sphere (within a few km of the ellipsoidal projection): for framing maps."""
+    x, y = _laea_europe(lon, lat)
+    return 4321000.0 + 1000.0 * x, 3210000.0 + 1000.0 * y
+
+
+def _web_mercator(lon: float, lat: float) -> tuple[float, float]:
+    """EPSG:3857 in metres."""
+    r = 6378137.0
+    lat = max(-85.0, min(85.0, lat))
+    return r * math.radians(lon), r * math.log(math.tan(math.pi / 4 + math.radians(lat) / 2))
+
+
+def _extent_projection(proj_name: str, crs: str, proj: Any) -> Any:
+    """How an extent in degrees maps onto the drawn coordinates; None when it cannot."""
+    from ..pipeline.spatial_checks import crs_code
+
+    if proj_name != "none":
+        return proj
+    return {"3035": _etrs89_laea, "3857": _web_mercator}.get(crs_code(crs) or "")
+
+
+def _to_coords_or_same(proj_name: str, to_coords: Any, p: Any) -> tuple[float, float]:
+    """A vertex in the extent's drawn coordinates: projected from degrees, or as stored when already projected."""
+    if proj_name == "none":
+        return float(p[0]), float(p[1])
+    return to_coords(float(p[0]), float(p[1]))
+
+
 PROJECTIONS = {"laea_europe": _laea_europe, "equal_earth": _equal_earth, "plate_carree": _identity, "none": _identity}
 
 
@@ -329,19 +358,25 @@ def render_map(plt: Any, fig_spec: dict[str, Any], workspace: Path) -> tuple[Any
         else:
             ax.scatter(xs, ys, s=8, color="#1f4e79", zorder=3)
 
-    # The part of the world shown: the drawn vertices that lie inside the extent, with a margin.
-    if isinstance(extent, list) and len(extent) == 4 and proj_name != "none":
+    # The part of the world shown: the drawn vertices that lie inside the extent (given in degrees), with a
+    # margin. For coordinates already projected (EPSG:3035, EPSG:3857) the extent is projected the same way.
+    to_coords = _extent_projection(proj_name, str(fig_spec.get("crs") or ""), proj)
+    if isinstance(extent, list) and len(extent) == 4 and to_coords is not None:
         west, south, east, north = (float(v) for v in extent)
+        edge = [to_coords(west + (east - west) * i / 20, y) for i in range(21) for y in (south, north)]
+        edge += [to_coords(x, south + (north - south) * i / 20) for i in range(21) for x in (west, east)]
+        x0, x1 = min(p[0] for p in edge), max(p[0] for p in edge)
+        y0, y1 = min(p[1] for p in edge), max(p[1] for p in edge)
         inside = [
             proj(float(p[0]), float(p[1]))
             for g in geoms.values()
             for poly in _rings(g)
             for ring in poly
             for p in ring
-            if len(p) >= 2 and west <= float(p[0]) <= east and south <= float(p[1]) <= north
+            if len(p) >= 2 and x0 <= (q := _to_coords_or_same(proj_name, to_coords, p))[0] <= x1 and y0 <= q[1] <= y1
         ]
         if not inside:
-            inside = [proj(x, y) for x in (west, east) for y in (south, north)]
+            inside = edge if proj_name == "none" else [proj(x, y) for x in (west, east) for y in (south, north)]
         xs_, ys_ = [p[0] for p in inside], [p[1] for p in inside]
         mx, my = 0.02 * (max(xs_) - min(xs_) or 1), 0.02 * (max(ys_) - min(ys_) or 1)
         ax.set_xlim(min(xs_) - mx, max(xs_) + mx)

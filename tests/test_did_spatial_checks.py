@@ -316,3 +316,36 @@ def test_credits_json_carries_the_templates_method_sources():
     for name in ("policy-evaluation", "spatial-analysis"):
         path = Path(__file__).resolve().parents[1] / "pipelines" / f"{name}.toml"
         assert parts[f"template:{name}"] == tomllib.loads(path.read_text(encoding="utf-8"))["credit"]
+
+
+def test_an_extent_in_degrees_frames_a_map_drawn_in_etrs89_laea(tmp_path: Path):
+    """The spatial live run of 2026-10-11 drew NUTS 2024 boundaries in EPSG:3035 with an extent in degrees;
+    the extent was ignored and the overseas regions shrank Europe to a corner of the map."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    from src.core.renderer.maps import _etrs89_laea, render_map
+
+    def square(lon: float, lat: float) -> dict:
+        pts = [_etrs89_laea(lon + dx, lat + dy) for dx, dy in ((0, 0), (1, 0), (1, 1), (0, 1), (0, 0))]
+        return {"type": "Polygon", "coordinates": [[list(p) for p in pts]]}
+
+    feats = [
+        {"type": "Feature", "properties": {"id": "DE1"}, "geometry": square(9, 49)},
+        {"type": "Feature", "properties": {"id": "FRY4"}, "geometry": square(55, -21)},  # La Réunion
+    ]
+    (tmp_path / "b.geojson").write_text(json.dumps({"type": "FeatureCollection", "features": feats}), "utf-8")
+    spec = {
+        "figure_type": "map",
+        "boundaries": {"file": "b.geojson", "id_property": "id"},
+        "values": {"DE1": 1.0, "FRY4": 2.0},
+        "crs": "EPSG:3035",
+        "extent": [-12, 34, 35, 72],
+    }
+    fig, notes = render_map(plt, spec, tmp_path)
+    x0, x1 = fig.axes[0].get_xlim()
+    assert "projection: none" in notes
+    assert x1 - x0 < 300_000  # framed on the one region inside the extent, not on La Réunion as well
+    plt.close(fig)

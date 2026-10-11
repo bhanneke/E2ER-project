@@ -305,8 +305,15 @@ def referenced_files(workspace: Path, scripts: list[Path]) -> list[str]:
                 continue
             if (workspace / text).is_file():
                 found.add(Path(text).as_posix())
+        # `e2er-data query sql|tables` reads the study's data.db without naming it (the estimation
+        # skill allows it; in a rerun it reads the rerun's data.db), so data.db is an input then too.
+        if _QUERY_TOOL.search(source) and (workspace / "data.db").is_file():
+            found.add("data.db")
     names = {s.name for s in scripts}
     return sorted(f for f in found if f not in names)
+
+
+_QUERY_TOOL = re.compile(r"""e2er-data["']?\s*,?\s*["']?query\b""")
 
 
 # ── data_sources.json ────────────────────────────────────────────────────────
@@ -615,9 +622,16 @@ def write_recipe(workspace: Path, out: Path, *, date_str: str = "") -> Outcome:
         for f in e.get("files") or []
         if isinstance(f, dict)
     }
-    written = {RESULTS, *OTHER_RESULTS, *written_files(chain)}
+    outputs = written_files(chain)
     for rel in referenced_files(workspace, chain):
-        if rel in written or _SPATIAL_OUTPUT.match(rel):
+        if rel in (RESULTS, *OTHER_RESULTS):
+            continue
+        if rel in outputs or _SPATIAL_OUTPUT.match(rel):
+            # A file the scripts write: never an input to compare. One they also read first
+            # (figure_spec.json, updated in place) is laid out as the study left it.
+            copy = _exported_copy(out, rel, _sha256(workspace / rel))
+            if copy is not None:
+                files[rel] = copy
             continue
         src = workspace / rel
         sha = _sha256(src)
