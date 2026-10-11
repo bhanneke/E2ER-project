@@ -213,6 +213,19 @@ async def read_only_query(workspace: Path, sql: str, *, max_rows: int = MAX_RESU
 # ── catalog (for context injection) ──────────────────────────────────────────
 
 
+#: How much of a long text cell the catalogue's sample rows keep (a corpus table holds whole books).
+SAMPLE_CELL_CHARS = 200
+
+
+def _sample_cell(value: Any) -> Any:
+    """A sample cell for the catalogue: long text cut, with its length; a long blob as its size."""
+    if isinstance(value, str) and len(value) > SAMPLE_CELL_CHARS:
+        return f"{value[:SAMPLE_CELL_CHARS]}… ({len(value):,} characters)"
+    if isinstance(value, bytes) and len(value) > SAMPLE_CELL_CHARS:
+        return f"<{len(value):,} bytes>"
+    return value
+
+
 def list_tables_catalog_sync(workspace: Path, sample_rows: int = 3) -> list[dict[str, Any]]:
     """Describe every table in the paper's data.db: name, columns+types, row
     count, and a few sample rows. Returns ``[]`` when there's no data.db.
@@ -242,7 +255,10 @@ def list_tables_catalog_sync(workspace: Path, sample_rows: int = 3) -> list[dict
             except sqlite3.Error:
                 count = None
             try:
-                samples = [list(r) for r in conn.execute(f'SELECT * FROM "{t}" LIMIT {int(sample_rows)}').fetchall()]
+                samples = [
+                    [_sample_cell(v) for v in r]
+                    for r in conn.execute(f'SELECT * FROM "{t}" LIMIT {int(sample_rows)}').fetchall()
+                ]
             except sqlite3.Error:
                 samples = []
             out.append(

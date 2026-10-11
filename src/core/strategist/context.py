@@ -220,6 +220,21 @@ def build_self_attack_context(workspace: Path, paper_id: str) -> str:
     return "\n\n".join(sections)
 
 
+#: How much of a text cell a sample row shows. A text study's corpus table holds whole books in one
+#: column; printed in full, the sample rows of 20 novels made a 5.4-million-character prompt that the
+#: model could not take (live run, 2026-10-11).
+_SAMPLE_TEXT_CHARS = 200
+
+
+def _sample_value(value: object) -> str:
+    """A cell of a sample row, with long text cut and its length given."""
+    if isinstance(value, str) and len(value) > _SAMPLE_TEXT_CHARS:
+        return f"{value[:_SAMPLE_TEXT_CHARS]!r}… ({len(value):,} characters)"
+    if isinstance(value, bytes) and len(value) > _SAMPLE_TEXT_CHARS:
+        return f"<{len(value):,} bytes>"
+    return repr(value)
+
+
 def _list_data_tables(workspace: Path) -> str:
     """Describe the paper's data.db tables (name, columns+types, row count,
     sample rows) so specialists know what they can `query_data`. Empty string
@@ -248,7 +263,7 @@ def _list_data_tables(workspace: Path) -> str:
             col_names = [c["name"] for c in tbl["columns"]]
             lines.append("Sample rows:")
             for row in samples:
-                pairs = ", ".join(f"{n}={v!r}" for n, v in zip(col_names, row, strict=False))
+                pairs = ", ".join(f"{n}={_sample_value(v)}" for n, v in zip(col_names, row, strict=False))
                 lines.append(f"  - {pairs}")
         lines.append("")
     return "\n".join(lines).rstrip()

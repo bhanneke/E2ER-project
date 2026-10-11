@@ -120,6 +120,11 @@ stops the run):
     least three `seeds`, and `segment_tokens` when documents are cut into
     segments (topic models need many documents; a few books give few).
 
+Every file the design names (stop words, lemmas, a dictionary or lexicon file) is
+a path relative to the study folder: `stopwords.txt` is at its top level,
+`data/stopwords.txt` in its data folder. The build script writes the file at
+exactly that path.
+
 Write `data_dictionary.json` with the tables the data analyst loads (e.g. the
 `e2er-data gutenberg text` table). The corpus table is derived from them by
 the build script: name it in `corpus_design.json`, not in the dictionary.

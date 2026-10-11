@@ -210,12 +210,24 @@ def _sha256_file(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _missing(ws: Path, rel: str) -> str:
+    """Why a file the design names is not found, with the likely mix-up of folders spelled out."""
+    near = [p.relative_to(ws).as_posix() for p in sorted(ws.glob(f"*/{Path(rel).name}")) if p.is_file()]
+    hint = (
+        f" (there is {', '.join(near)}: paths in corpus_design.json are relative to the study folder; name "
+        "that path in the design or write the file where the design says)"
+        if near
+        else ""
+    )
+    return f"{rel} is missing{hint}"
+
+
 def _word_file(ws: Path, rel: str) -> tuple[list[str] | None, str]:
     path = (ws / rel).resolve()
     if not path.is_relative_to(ws.resolve()):
         return None, f"{rel} lies outside the study folder"
     if not path.is_file():
-        return None, f"{rel} is missing"
+        return None, _missing(ws, rel)
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
     except (OSError, UnicodeDecodeError) as e:
@@ -282,6 +294,7 @@ def parse_preprocessing(ws: Path, pre: Any, *, need_files: bool = True) -> tuple
         if not need_files and _inside(ws, rel):
             pass
         elif rows is None:
+            why = _missing(ws, rel) if _inside(ws, rel) and not (ws / rel).is_file() else why
             problems.append(f"(d) preprocessing.lemmatisation: {why or rel + ' lies outside the study folder'}")
         elif rows and not {"word", "lemma"} <= set(rows[0]):
             problems.append(f"(d) preprocessing.lemmatisation: {rel} needs the columns word and lemma")
@@ -849,7 +862,9 @@ def check_corpus(workspace: Path) -> Verdict:
     frozen: dict[str, str] = {}
     for rel in referenced_files(design):
         if not _inside(ws, rel) or not (ws / rel).is_file():
-            reasons.append(f"(h) {rel}, which corpus_design.json names, is not in the study folder")
+            reasons.append(
+                f"(h) {rel}, which corpus_design.json names, is not in the study folder: {_missing(ws, rel)}"
+            )
         else:
             frozen[rel] = _sha256_file(ws / rel)
 

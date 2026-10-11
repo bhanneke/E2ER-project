@@ -387,6 +387,11 @@ def test_the_design_check_lets_the_corpus_build_write_the_stop_words_later(ws: P
     assert tc.check_corpus_design(ws).passed
     v = tc.check_corpus(ws)
     assert not v.passed and "stopwords.txt is missing" in _reasons(v)
+    (ws / "data").mkdir()
+    (ws / "data" / "stopwords.txt").write_text("the\n", encoding="utf-8")
+    assert "there is data/stopwords.txt: paths in corpus_design.json are relative to the study folder" in _reasons(
+        tc.check_corpus(ws)
+    )
 
 
 # ── corpus (g)-(j) ─────────────────────────────────────────────────────────
@@ -642,3 +647,18 @@ def test_the_text_kind_traces_numbers_to_the_checks_reports():
     from src.core.pipeline.result_kinds import get
 
     assert {"corpus_check.json", "text_validation.json"} <= set(get("text").number_sources)
+
+
+def test_sample_rows_of_a_corpus_table_show_the_start_of_a_text_not_the_whole_book(tmp_path: Path):
+    """The live run's analysis prompt carried 20 novels in full through the table catalogue's sample rows."""
+    from src.core.strategist.context import _list_data_tables
+    from src.db.paper_data_db import list_tables_catalog_sync
+
+    con = sqlite3.connect(tmp_path / "data.db")
+    con.execute("CREATE TABLE corpus (doc_id TEXT, text TEXT)")
+    con.execute("INSERT INTO corpus VALUES ('pg1', ?)", ("word " * 100_000,))
+    con.commit()
+    con.close()
+    cell = list_tables_catalog_sync(tmp_path)[0]["samples"][0][1]
+    assert cell.endswith("(500,000 characters)") and len(cell) < 300
+    assert len(_list_data_tables(tmp_path)) < 1000

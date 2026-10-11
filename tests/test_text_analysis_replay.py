@@ -277,3 +277,52 @@ def test_an_unjudged_item_of_the_sample_sends_the_validator_back_and_then_stops_
         assert [g["passed"] for g in _gates(events, "text_validation")] == [False, False]
         started = [s for e, s, _pl in events if e == "specialist_start"]
         assert started.count("text_validator") == 2 and "paper_drafter" not in started
+
+
+def test_specialists_the_plan_left_out_are_sent_out_by_the_checks_that_need_their_work(tmp_path: Path):
+    """The strategist plans neither the data analyst nor the text validator (as in the live run).
+
+    The corpus check runs before the analysis, finds no corpus and sends the data analyst out for its
+    whole task; the validation check runs after the initial phase and sends the text validator out.
+    """
+    with _replay_server(tmp_path, "text-unplanned", []) as (api, _study):
+        pid = _start(api)
+        p, stops = _approve_to_the_end(api, pid)
+        assert p["status"] == "completed", (p.get("last_error"), stops)
+        assert stops == ["review_design", "review_draft"]
+        events = _events(tmp_path / "home" / ".e2er" / "papers.db", pid)
+        assert [g["passed"] for g in _gates(events, "corpus")] == [False, True]
+        assert [g["passed"] for g in _gates(events, "text_validation")] == [False, True]
+        order = [(e, s, pl.get("gate")) for e, s, pl in events if e in ("specialist_start", "gate_enforced")]
+        analyst = order.index(("specialist_start", "data_analyst", None))
+        assert analyst < order.index(("specialist_start", "econometrics_specialist", None))
+        started = [s for e, s, _pl in events if e == "specialist_start"]
+        assert started.count("data_analyst") == 1 and started.count("text_validator") == 1
+
+
+def test_checks_of_the_results_wait_for_an_analysis_left_to_the_iterative_rounds(tmp_path: Path):
+    """The initial phase ends with the design (as in the live run): the corpus check sends the data
+    analyst out, and the checks of the results run only once the first round has analysed."""
+    body = {
+        "title": SCENARIO["title"],
+        "research_question": SCENARIO["research_question"],
+        "mode": "iterative",
+        "pipeline": SCENARIO["template"],
+        "acknowledge_unproven_tuple": True,
+        "max_cost_usd": 5,
+    }
+    with _replay_server(tmp_path, "text-design-first", []) as (api, _study):
+        r = httpx.post(f"{api}/api/papers", json=body, headers=HEADERS, timeout=30)
+        assert r.status_code == 200, r.text
+        pid = r.json()["paper_id"]
+        p, stops = _approve_to_the_end(api, pid)
+        assert p["status"] == "completed", (p.get("last_error"), stops)
+        events = _events(tmp_path / "home" / ".e2er" / "papers.db", pid)
+        assert [g["passed"] for g in _gates(events, "corpus")] == [False, True]
+        assert all(g["passed"] for g in _gates(events, "text_results")), _gates(events, "text_results")
+        assert all(g["passed"] for g in _gates(events, "text_validation"))
+        order = [(e, s, pl.get("gate")) for e, s, pl in events if e in ("specialist_start", "gate_enforced")]
+        analysed = order.index(("specialist_start", "econometrics_specialist", None))
+        assert analysed < order.index(("gate_enforced", "", "text_results"))
+        started = [s for e, s, _pl in events if e == "specialist_start"]
+        assert started.count("econometrics_specialist") == 1 and started.count("data_analyst") == 1

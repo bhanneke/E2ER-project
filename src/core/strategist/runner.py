@@ -1110,6 +1110,10 @@ class PipelineRunner:
         for trig in getattr(self, "_triggers", []):
             if before_estimation and trig.check in _RESULT_CHECKS:
                 continue
+            if trig.check in _RESULT_CHECKS and not (self._workspace / "estimation_results.json").is_file():
+                # No analysis yet (a plan whose initial phase ends with the design, the analysis left to the
+                # iterative rounds): a check of the results waits for them, before every later step.
+                continue
             if trig.kind == "gate" and trig.applies_to(self._mode) and not state.is_complete(trig.name):
                 await self._run_gate_trigger(trig, state, remaining)
 
@@ -1140,6 +1144,20 @@ class PipelineRunner:
                 focus = _DESIGN_CHECK_FOCUS.get(step.check) or (
                     f"The check '{step.check}' refused the design in {design_file} before estimation. "
                     f"Revise {design_file} (and your strategy file where it changes) so that it passes: "
+                )
+            done = set((state.metadata or {}).get("done_specialists", [])) | {
+                c.specialist for c in getattr(self, "_contributions", []) if getattr(c, "success", False)
+            }
+            if owner not in done:
+                # The plan left out the specialist whose work the check reads: it does that work now,
+                # for the first time, rather than "fixing" something it never made.
+                from ..specialists.registry import SPECIALIST_DEFAULT_FOCUS
+
+                focus = (
+                    SPECIALIST_DEFAULT_FOCUS.get(owner) or "Carry out your part of this study as your skills describe."
+                ) + (
+                    f" You were not dispatched before the check '{step.check}', which reads your work and "
+                    "found it missing; do your whole task now. What the check found: "
                 )
             order = WorkOrder(paper_id=self._paper_id, specialist=owner, focus=focus + "; ".join(result.reasons))
             contribution = await execute_work_order(
