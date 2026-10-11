@@ -415,6 +415,14 @@ def apply_rerun(workspace: Path, state: PipelineState, spec: Any, step: str, rem
             state.metadata.pop(key, None)
     state.approved_stages = [a for a in state.approved_stages if a not in later]
     _withdraw_check_approvals(state, spec, later)
+    if any(spec.step(n).kind == "strategist" for n in later):
+        # The analysis runs again: so do the checks of its results that sit inside the dispatch
+        # (a gate with `after` naming the analysis, e.g. text_results, spatial_results).
+        for s in spec.steps:
+            if s.kind == "gate" and s.after and "econometrics_specialist" in s.after:
+                if s.name in state.completed_stages:
+                    state.completed_stages.remove(s.name)
+                state.metadata.pop(f"retried_{s.name}", None)
     step_done = state.metadata.get("step_done")
     if isinstance(step_done, dict):
         for name in later:  # a step run again runs all of its specialists

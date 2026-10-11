@@ -693,3 +693,22 @@ def test_identical_topics_under_every_seed_of_an_nndsvd_start_pass_with_a_note(w
     assert tc.check_corpus(ws).passed
     v = tc.check_text_results(ws)
     assert v.passed and any("ignores the seed" in n for n in v.notes), (v.reasons, v.notes)
+
+
+def test_a_rerun_of_the_analysis_runs_the_checks_of_its_results_again(tmp_path: Path):
+    """The live run was rerun from its iterative step; its results check had passed before and would not
+    have run again on the new results."""
+    from src.core.pipeline.researcher import apply_rerun
+    from src.core.pipeline.spec import find_spec
+    from src.core.pipeline.state import PipelineState
+
+    spec = find_spec("text-analysis")
+    done = ["corpus_design_gate", "corpus_gate", "text_results_gate", "text_validation_gate", "initial", "iterative"]
+    state = PipelineState(paper_id="p", mode="iterative", completed_stages=[*done, "review"])
+    state.metadata["retried_text_results_gate"] = True
+    apply_rerun(tmp_path, state, spec, "iterative", "Add the figures.")
+    assert "text_results_gate" not in state.completed_stages and "text_validation_gate" not in state.completed_stages
+    assert "corpus_gate" in state.completed_stages and "retried_text_results_gate" not in state.metadata
+    state = PipelineState(paper_id="p", mode="iterative", completed_stages=[*done, "review"])
+    apply_rerun(tmp_path, state, spec, "review", "Score again.")
+    assert "text_results_gate" in state.completed_stages
