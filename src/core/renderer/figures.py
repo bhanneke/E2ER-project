@@ -140,11 +140,24 @@ def _render_time_series(fig_spec: dict[str, Any], ax: Any) -> None:
         if not isinstance(x, list) or y is None or len(x) != len(y):
             continue
         label = str(s.get("label", "")) or None
-        ax.plot(x, y, marker="o", markersize=3, linewidth=1.5, label=label)
+        many = len(x) > 60
+        (line,) = ax.plot(x, y, marker="" if many else "o", markersize=3, linewidth=1.2 if many else 1.5, label=label)
+        lower, upper = _floats(s.get("lower")), _floats(s.get("upper"))
+        if lower is not None and upper is not None and len(lower) == len(upper) == len(x):
+            # A band around the series, e.g. a forecast's prediction interval.
+            ax.fill_between(x, lower, upper, color=line.get_color(), alpha=0.2, linewidth=0)
         have_labels = have_labels or label is not None
         plotted += 1
     if plotted == 0:
         raise ValueError("time_series had no plottable {label,x,y} series")
+    if any(isinstance(v, str) for s in series if isinstance(s, dict) for v in (s.get("x") or [])):
+        # Periods as text are categories: keep about twelve labels, not one per period.
+        from matplotlib.ticker import MaxNLocator
+
+        ax.xaxis.set_major_locator(MaxNLocator(nbins=12))
+        for tick in ax.get_xticklabels():
+            tick.set_rotation(30)
+            tick.set_ha("right")
     ax.set_xlabel(str(fig_spec.get("x_label", "")))
     ax.set_ylabel(str(fig_spec.get("y_label", "")))
     if have_labels:

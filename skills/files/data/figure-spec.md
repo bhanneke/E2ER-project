@@ -63,6 +63,11 @@ Do NOT write matplotlib/seaborn code or attempt to generate figures yourself.
 }
 ```
 
+A series may carry `lower` and `upper` (one value per point): the renderer
+shades the band between them, e.g. a forecast's prediction interval. Periods
+as text (`"2021-01"`) are drawn in the order given, with at most about
+twelve labels on the axis.
+
 ### bar — Categorical comparison
 ```json
 {
@@ -137,6 +142,32 @@ shows the counts the paper reports.
   ]
 }
 ```
+
+## Where the values come from (`source`)
+
+A template with a figure check (`figure_data`: the descriptive and the
+time-series templates) re-reads every figure from the data it names and
+stops the run when the values differ. Give each figure (each series of a
+`time_series`, each panel of a `multi_panel`) a `source`:
+
+```json
+{"figure_type": "scatter", "x": [...], "y": [...], "groups": [...],
+ "source": {"table": "planets", "columns": {"x": "pl_orbper", "y": "pl_rade", "groups": "discoverymethod"},
+            "where": "pl_rade IS NOT NULL AND pl_orbper > 0"}}
+{"figure_type": "histogram", "bins": [...], "source": {"results": "distributions.radius.bins"}}
+{"label": "Forecast", "x": [...], "y": [...], "lower": [...], "upper": [...],
+ "source": {"results": "forecasts.trend_2024.points",
+            "fields": {"x": "period", "y": "forecast", "lower": "lower", "upper": "upper"}}}
+```
+
+- `table` + `columns`: the figure's lists are those columns of the data.db
+  table, row for row (any order; rows with an empty value in a named column
+  are left out). `where` is a simple condition on the table's columns
+  (comparisons, AND, OR, NOT, IN, BETWEEN, LIKE, IS NULL).
+- `results` (+ `fields`, + `file`, default `estimation_results.json`): the
+  figure's lists are the keys of a list of objects in a results file. A
+  histogram's `bins` match the list at `results` without `fields`.
+- Numbers are compared at the precision the figure writes them.
 
 ## Rules
 

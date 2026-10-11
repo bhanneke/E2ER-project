@@ -1,0 +1,22 @@
+{
+  "tables": [
+    {
+      "name": "t2m_frankfurt",
+      "source": "nasa_power",
+      "series": "T2M",
+      "frequency": "monthly",
+      "role": "the series: monthly mean 2 m air temperature at the Frankfurt grid cell, 2001-01 to 2023-12",
+      "key": ["date"],
+      "coverage": {"column": "date", "from": "2001-01", "to": "2023-12"},
+      "columns": [
+        {"name": "lat", "type": "REAL", "unit": "degrees north", "description": "latitude requested"},
+        {"name": "lon", "type": "REAL", "unit": "degrees east", "description": "longitude requested"},
+        {"name": "elevation_m", "type": "REAL", "unit": "m", "description": "elevation of the grid cell"},
+        {"name": "year", "type": "INTEGER", "unit": "year", "description": "calendar year"},
+        {"name": "month", "type": "INTEGER", "unit": "month", "description": "calendar month"},
+        {"name": "date", "type": "TEXT", "description": "the month, YYYY-MM"},
+        {"name": "T2M", "type": "REAL", "unit": "degrees C", "description": "monthly mean air temperature at 2 m"}
+      ]
+    }
+  ]
+}

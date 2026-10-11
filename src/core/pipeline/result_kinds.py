@@ -358,7 +358,8 @@ KINDS: dict[str, ResultKind] = {
         label="descriptive statistics and distributions",
         schema_skill="data/descriptive-results-schema",
         method_skills=("data/cleaning", "data/figure-spec"),
-        number_sources=_NEUTRAL_SOURCES,
+        # The data check's report (data_quality.py): rows, missing values and units the paper states.
+        number_sources=(*_NEUTRAL_SOURCES, "data_quality.json"),
         causal_by_default=False,
         check=check_descriptive,
     ),
@@ -367,7 +368,8 @@ KINDS: dict[str, ResultKind] = {
         label="time-series models, forecasts and out-of-sample errors",
         schema_skill="data/timeseries-results-schema",
         method_skills=("econometrics/time-series", "data/figure-spec"),
-        number_sources=_NEUTRAL_SOURCES,
+        # The forecast check's recomputed errors (forecast_checks.py), e.g. RMSE relative to the baseline.
+        number_sources=(*_NEUTRAL_SOURCES, "forecast_check.json"),
         causal_by_default=False,
         check=check_timeseries,
     ),

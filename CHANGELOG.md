@@ -147,6 +147,61 @@ and contract tests on responses recorded live once.
   verifies with `e2er verify` (all 36 table cells at the precision shown). Contract tests per kind in `tests/test_result_kinds.py`, records
   tables and the new figures in `tests/test_records_tables.py`.
 
+### Templates: descriptive data study, time series and forecasting
+- **`descriptive-study`** (`pipelines/descriptive-study.toml`, until now a test fixture): a description
+  of a sample for any field, on the discipline-neutral core (descriptive results, no causal claim, the
+  researcher persona, its own panel of methods, data, plausibility, literature and writing reviewers,
+  polish of numbers and references). Stops for the design review and the draft review.
+  - **Data check** (`data_quality`, after the data analyst, before the analysis;
+    `src/core/pipeline/data_quality.py`): every table the data dictionary declares, read from data.db.
+    It stops the run on a numeric column without a `unit`, rows that repeat on the declared `key` (or as
+    whole rows), a declared column that misses more than 5% of its values without a `missing` reason, a
+    `coverage` the data do not span, or a declared table that is missing or empty. It writes
+    `data_quality.md` and `data_quality.json`; the number check reads the latter.
+  - **Figure check** (`figure_data`, after the analysis): every figure names its `source` (a data.db
+    table with columns and an optional simple condition, or a list in a results file) and is re-read from
+    it at the precision it states; a figure without a source, or with values that are not the data, stops
+    the run (`figure_check.json`).
+- **`time-series-forecasting`** (`pipelines/time-series-forecasting.toml`): a series, its trend and
+  seasonality, models and forecasts. A new specialist, the **forecast designer**, writes the setup
+  (`forecast_design.json`: series, hold-out, horizon, interval level, baselines, candidate models,
+  stationarity and trend diagnostics) after the data are loaded.
+  - **Hold-out frozen before fitting** (`forecast_design`; `src/core/pipeline/forecast_checks.py`): the
+    hold-out must be the last periods with a value in each, at least 24 periods must remain to fit on,
+    and a baseline (naive, seasonal naive, mean or drift), a candidate, a stationarity and a trend test
+    must be declared. It writes `holdout_freeze.json` with the SHA-256 of the setup and of the hold-out
+    values, refuses a setup written after a model was fitted, and refuses a change once results exist.
+  - **Forecast check** (`forecast_evaluation`, after the analysis): diagnostics and models on training
+    periods only (a model fitted into the hold-out is reported as leakage and stops the run), every
+    declared model evaluated on exactly the hold-out with all its predictions, RMSE, MAE and interval
+    coverage recomputed from the predictions and data.db, and a forecast beyond the data with the
+    declared horizon and interval level. `forecast_check.json` holds the recomputed errors and each
+    model's RMSE relative to the best baseline.
+  - **Optional pre-registration** of the setup: a template step can now be `optional = true` (researcher
+    and preregister steps only); it runs when the researcher chooses it on New study or with
+    `e2er run --review-at preregister`. The forecast setup is a plan file of the pre-registration.
+- **Method skills** `methods/descriptive-analysis` (sample definition, the dictionary fields the data
+  check reads, quantile definitions, bins, rank correlation, figures from saved data) and
+  `methods/time-series-forecasting` (the setup, decomposition, KPSS/ADF and Mann–Kendall with Sen's
+  slope on training periods, ETS/ARIMA/regression, rolling-origin cross-validation, leakage, honest
+  intervals with their hold-out coverage, MASE, Diebold–Mariano). The figure-spec skill documents
+  `source`; time-series figures can shade an interval (`lower`, `upper`) and keep about twelve period
+  labels on the axis.
+- **Method sources are credited** in each template's `[[credit]]` and in `credits.json` (relation
+  `cites`, DOIs checked on Crossref): for the descriptive template Emerson and Colditz (1983), Freedman
+  and Diaconis (1981), Hyndman and Fan (1996), Spearman (1904), Little and Rubin (2019), Wickham (2014);
+  for the time-series template Box, Jenkins and Reinsel (2008), Hyndman and Athanasopoulos (FPP3, 2021),
+  Hyndman and Khandakar (2008), Hyndman and Koehler (2006), Tashman (2000), Diebold and Mariano (1995),
+  Harvey, Leybourne and Newbold (1997), Dickey and Fuller (1979), Kwiatkowski et al. (1992), Mann (1945)
+  and Sen (1968).
+- The template list of New study, `e2er run --template` and the installed-package check now include
+  `field-map` and the two new templates.
+- **Tests**: the exoplanet replay runs the shipped descriptive template (both stops, the data and figure
+  checks, publish, verify, reproduce); a new climate replay on NASA POWER monthly temperature at
+  Frankfurt, 2001–2023 (recorded once through the connector) runs the time-series template end to end,
+  with the optional pre-registration, and with an analysis that fits on the hold-out, which stops the run
+  at the forecast check until the analysis is sent back; unit tests for every refusal of the four checks.
+
 ## [0.15.3] — 2026-10-11
 
 ### A subscription plan's usage limit pauses the run

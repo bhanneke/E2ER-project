@@ -1,0 +1,298 @@
+# Time series and forecasting: a series in, its description, models and checked forecasts out.
+#
+# For studies of one series (or a few) over time: trend and seasonal pattern,
+# stationarity, fitted models, forecasts with intervals, and their accuracy on
+# periods the models never saw, compared with simple baselines. Typical of
+# climate and hydrology records, energy and demand, epidemiological counts,
+# prices and economic indicators.
+#
+# What the template changes about e2er's economics defaults
+# (docs/templates.md): results are time-series models, forecasts and
+# out-of-sample errors (results = "timeseries"), no causal claim, the researcher
+# persona, no blockchain data skills, a panel of reviewers for any discipline,
+# and polish of formulas, numbers and references.
+#
+# The order that keeps the evaluation honest:
+#   review_design          the researcher reads the plan, the data and the
+#                          forecast setup (forecast_design.json: series,
+#                          hold-out, horizon, baselines, candidate models,
+#                          diagnostics, interval level) before any model is fitted
+#   preregister            OPTIONAL (choose it on New study, or
+#                          `e2er run --review-at preregister`): the setup
+#                          assembled into preregistration.md and frozen with its
+#                          fingerprint on approval
+#   forecast_design_gate   checks the setup against the series and freezes it
+#                          with its hold-out (holdout_freeze.json); refuses a
+#                          setup written after a model was fitted
+#   estimation_gate        the results file held to the time-series contract
+#   forecast_gate          diagnostics on training periods only, every model
+#                          fitted before the hold-out and evaluated on exactly
+#                          the hold-out, errors recomputed from the predictions,
+#                          baselines present, forecasts with intervals
+#                          (src/core/pipeline/forecast_checks.py)
+#   figure_gate            every figure re-read from the data or results it names
+#   review_draft           the researcher reads the draft before the reviewers
+#
+# The forecast designer is this template's own specialist. The method skill is
+# methods/time-series-forecasting; the method sources are the [[credit]] entries.
+
+name = "time-series-forecasting"
+title = "Time series and forecasting"
+description = "A series in, its trend, seasonality, models and forecasts out. The forecast setup and its hold-out are frozen before any model is fitted; every model is judged on the hold-out against naive baselines, with errors recomputed by e2er and forecasts given with intervals. Optional pre-registration of the setup."
+methodologies = ["empirical", "time series"]
+
+results     = "timeseries"
+causal      = false
+base_skill  = "base/researcher"
+data_skills = []
+review_weights = { methods_reviewer = 1.5, technical_reviewer = 1.25, data_reviewer = 1.0, plausibility_reviewer = 1.0, literature_reviewer = 0.75, writing_reviewer = 0.75 }
+
+# Teardown, not a step (see empirical.toml).
+finalize = ["compile", "audit_export", "github_push", "structured_export"]
+
+[skills]
+data_architect          = ["methods/time-series-forecasting"]
+data_analyst            = ["methods/time-series-forecasting"]
+econometrics_specialist = ["methods/time-series-forecasting"]
+paper_drafter           = ["methods/time-series-forecasting"]
+methods_reviewer        = ["methods/time-series-forecasting"]
+technical_reviewer      = ["methods/time-series-forecasting"]
+
+[[credit]]
+creator   = "George E. P. Box, Gwilym M. Jenkins and Gregory C. Reinsel"
+role      = "method"
+relation  = "cites"
+kind      = "book"
+title     = "Time Series Analysis: Forecasting and Control (4th edition)"
+publisher = "Wiley"
+year      = 2008
+url       = "https://doi.org/10.1002/9781118619193"
+accessed  = "2026-10-11"
+found_via = "Crossref record checked 2026-10-11"
+note      = "ARIMA modelling and the identify-estimate-check cycle."
+
+[[credit]]
+creator   = "Rob J. Hyndman and George Athanasopoulos"
+role      = "method"
+relation  = "cites"
+kind      = "book"
+title     = "Forecasting: Principles and Practice (3rd edition)"
+publisher = "OTexts, Melbourne"
+year      = 2021
+url       = "https://otexts.com/fpp3/"
+accessed  = "2026-10-11"
+found_via = "the book's website (no DOI)"
+note      = "Forecasting practice: baselines (naive, seasonal naive, mean, drift), decomposition, ETS and ARIMA, time-series cross-validation, prediction intervals and accuracy measures."
+
+[[credit]]
+creator   = "Rob J. Hyndman and Yeasmin Khandakar"
+role      = "method"
+relation  = "cites"
+kind      = "article"
+title     = "Automatic Time Series Forecasting: The forecast Package for R"
+publisher = "Journal of Statistical Software 27(3)"
+year      = 2008
+url       = "https://doi.org/10.18637/jss.v027.i03"
+accessed  = "2026-10-11"
+found_via = "Crossref record checked 2026-10-11"
+note      = "Automatic ETS and ARIMA selection on the training periods."
+
+[[credit]]
+creator   = "Rob J. Hyndman and Anne B. Koehler"
+role      = "method"
+relation  = "cites"
+kind      = "article"
+title     = "Another look at measures of forecast accuracy"
+publisher = "International Journal of Forecasting 22(4), 679-688"
+year      = 2006
+url       = "https://doi.org/10.1016/j.ijforecast.2006.03.001"
+accessed  = "2026-10-11"
+found_via = "Crossref record checked 2026-10-11"
+note      = "Forecast accuracy measures (MASE scaled by the seasonal naive method)."
+
+[[credit]]
+creator   = "Leonard J. Tashman"
+role      = "method"
+relation  = "cites"
+kind      = "article"
+title     = "Out-of-sample tests of forecasting accuracy: an analysis and review"
+publisher = "International Journal of Forecasting 16(4), 437-450"
+year      = 2000
+url       = "https://doi.org/10.1016/S0169-2070(00)00065-0"
+accessed  = "2026-10-11"
+found_via = "Crossref record checked 2026-10-11"
+note      = "Out-of-sample evaluation and rolling-origin cross-validation."
+
+[[credit]]
+creator   = "Francis X. Diebold and Roberto S. Mariano"
+role      = "method"
+relation  = "cites"
+kind      = "article"
+title     = "Comparing Predictive Accuracy"
+publisher = "Journal of Business & Economic Statistics 13(3), 253-263"
+year      = 1995
+url       = "https://doi.org/10.1080/07350015.1995.10524599"
+accessed  = "2026-10-11"
+found_via = "Crossref record checked 2026-10-11"
+note      = "Testing whether one forecast is more accurate than another."
+
+[[credit]]
+creator   = "David Harvey, Stephen Leybourne and Paul Newbold"
+role      = "method"
+relation  = "cites"
+kind      = "article"
+title     = "Testing the equality of prediction mean squared errors"
+publisher = "International Journal of Forecasting 13(2), 281-291"
+year      = 1997
+url       = "https://doi.org/10.1016/S0169-2070(96)00719-4"
+accessed  = "2026-10-11"
+found_via = "Crossref record checked 2026-10-11"
+note      = "Small-sample correction of the Diebold-Mariano test."
+
+[[credit]]
+creator   = "David A. Dickey and Wayne A. Fuller"
+role      = "method"
+relation  = "cites"
+kind      = "article"
+title     = "Distribution of the Estimators for Autoregressive Time Series with a Unit Root"
+publisher = "Journal of the American Statistical Association 74(366a), 427-431"
+year      = 1979
+url       = "https://doi.org/10.1080/01621459.1979.10482531"
+accessed  = "2026-10-11"
+found_via = "Crossref record checked 2026-10-11"
+note      = "Unit-root test (ADF) among the stationarity diagnostics."
+
+[[credit]]
+creator   = "Denis Kwiatkowski, Peter C.B. Phillips, Peter Schmidt and Yongcheol Shin"
+role      = "method"
+relation  = "cites"
+kind      = "article"
+title     = "Testing the null hypothesis of stationarity against the alternative of a unit root"
+publisher = "Journal of Econometrics 54(1-3), 159-178"
+year      = 1992
+url       = "https://doi.org/10.1016/0304-4076(92)90104-Y"
+accessed  = "2026-10-11"
+found_via = "Crossref record checked 2026-10-11"
+note      = "Stationarity test (KPSS) among the stationarity diagnostics."
+
+[[credit]]
+creator   = "Henry B. Mann"
+role      = "method"
+relation  = "cites"
+kind      = "article"
+title     = "Nonparametric Tests Against Trend"
+publisher = "Econometrica 13(3), 245-259"
+year      = 1945
+url       = "https://doi.org/10.2307/1907187"
+accessed  = "2026-10-11"
+found_via = "Crossref record checked 2026-10-11"
+note      = "Mann-Kendall trend test among the trend diagnostics."
+
+[[credit]]
+creator   = "Pranab Kumar Sen"
+role      = "method"
+relation  = "cites"
+kind      = "article"
+title     = "Estimates of the Regression Coefficient Based on Kendall's Tau"
+publisher = "Journal of the American Statistical Association 63(324), 1379-1389"
+year      = 1968
+url       = "https://doi.org/10.1080/01621459.1968.10480934"
+accessed  = "2026-10-11"
+found_via = "Crossref record checked 2026-10-11"
+note      = "Sen's slope, the size of a monotone trend."
+
+[[steps]]
+kind  = "researcher"
+name  = "review_design"
+after = ["idea_developer", "literature_scanner", "data_architect", "data_analyst", "forecast_designer"]
+files = ["paper_plan.md", "literature_review.md", "data_dictionary.json", "forecast_design.md", "forecast_design.json"]
+
+[[steps]]
+kind     = "preregister"
+name     = "preregister"
+optional = true
+after    = ["idea_developer", "literature_scanner", "data_architect", "data_analyst", "forecast_designer"]
+files    = ["paper_plan.md", "forecast_design.md", "forecast_design.json"]
+
+# Inside the initial phase, after the forecast designer and before the analysis.
+# On a failure the forecast designer is sent back once with the reasons.
+[[steps]]
+kind    = "gate"
+name    = "forecast_design_gate"
+check   = "forecast_design"
+after   = ["data_analyst", "forecast_designer"]
+on_fail = "retry"
+
+[steps.settings]
+min_train_periods = 24
+
+[[steps]]
+kind = "strategist"
+name = "initial"
+
+[[steps]]
+kind  = "strategist"
+name  = "iterative"
+modes = ["iterative"]
+
+[[steps]]
+kind      = "gate"
+name      = "estimation_gate"
+check     = "estimation"
+on_fail   = "halt"
+resumable = false
+
+[[steps]]
+kind      = "gate"
+name      = "forecast_gate"
+check     = "forecast_evaluation"
+on_fail   = "halt"
+resumable = false
+
+[[steps]]
+kind      = "gate"
+name      = "figure_gate"
+check     = "figure_data"
+on_fail   = "halt"
+resumable = false
+
+[[steps]]
+kind  = "researcher"
+name  = "review_draft"
+files = ["paper_draft.tex", "abstract.tex"]
+
+[[steps]]
+kind  = "specialists"
+name  = "self_attack"
+modes = ["iterative"]
+run   = ["self_attacker"]
+
+[[steps]]
+kind     = "specialists"
+name     = "polish"
+modes    = ["iterative"]
+parallel = true
+run      = ["polish_formula", "polish_numerics", "polish_bibliography"]
+
+[[steps]]
+kind     = "aggregate"
+name     = "review"
+parallel = true
+run = [
+    "methods_reviewer",
+    "technical_reviewer",
+    "data_reviewer",
+    "plausibility_reviewer",
+    "literature_reviewer",
+    "writing_reviewer",
+]
+
+[[steps]]
+kind = "specialists"
+name = "revision"
+run  = ["revisor", "patch_revisor"]
+
+[[steps]]
+kind = "specialists"
+name = "replication"
+run  = ["replication_packager"]

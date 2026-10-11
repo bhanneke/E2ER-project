@@ -1,12 +1,12 @@
 """A descriptive study end to end: no regression, no identification, its own contract and number check.
 
 The exoplanet scenario (tests/fixtures/replay/exoplanet) is a hand-made replay
-of a descriptive study of a SYNTHETIC planet sample under the test template
-``descriptive-study`` (in the scenario's ``pipelines/`` folder, copied into the
-study's own ``pipelines/`` so the server resolves it like a project template).
-The template declares ``results = "descriptive"``, ``causal = false``, the
-researcher persona, no blockchain data skills, its own review panel with
-weights and its own polish steps (src/core/pipeline/spec.py).
+of a descriptive study of a SYNTHETIC planet sample under the shipped template
+``descriptive-study`` (pipelines/descriptive-study.toml). The template declares
+``results = "descriptive"``, ``causal = false``, the researcher persona, no
+blockchain data skills, its own review panel with weights and its own polish
+steps (src/core/pipeline/spec.py), two researcher stops, the data check before
+the analysis and the figure check after it (src/core/pipeline/data_quality.py).
 """
 
 from __future__ import annotations
@@ -44,7 +44,6 @@ def _events(db: Path, pid: str) -> list[tuple[str, str, dict]]:
 def test_a_descriptive_study_replays_to_the_end_without_regression_or_identification(tmp_path: Path):
     study = tmp_path / "study"
     shutil.copytree(EXO / "inputs" / "data", study / "data")
-    shutil.copytree(EXO / "pipelines", study / "pipelines")
     with _replay_server(tmp_path, "exoplanet", [f"LOCAL_DATA_DIR={study / 'data'}"]) as (api, _):
         body = {
             "title": SCENARIO["title"],
@@ -59,7 +58,7 @@ def test_a_descriptive_study_replays_to_the_end_without_regression_or_identifica
         pid = r.json()["paper_id"]
         p, stops = _approve_to_the_end(api, pid)
         assert p["status"] == "completed", (p.get("last_error"), stops)
-        assert stops == []
+        assert stops == ["review_design", "review_draft"]
         ws = Path(p["workspace"])
 
         # No regression and no identification were asked for, and none was written.
@@ -72,6 +71,26 @@ def test_a_descriptive_study_replays_to_the_end_without_regression_or_identifica
         events = _events(tmp_path / "home" / ".e2er" / "papers.db", pid)
         gates = [pl for e, _s, pl in events if e in ("gate_enforced", "gate_shadow") and pl.get("gate") == "estimation"]
         assert gates and all(g.get("passed") for g in gates), gates
+
+        # The data check ran after the data analyst and before the analysis, and passed; so did the figure check.
+        order = [(e, s, pl.get("gate")) for e, s, pl in events if e in ("specialist_start", "gate_enforced")]
+        dq = order.index(("gate_enforced", "", "data_quality"))
+        assert order.index(("specialist_start", "data_analyst", None)) < dq
+        assert dq < order.index(("specialist_start", "econometrics_specialist", None))
+        for gate in ("data_quality", "figure_data"):
+            found = [pl for e, _s, pl in events if e == "gate_enforced" and pl.get("gate") == gate]
+            assert found and all(g["passed"] for g in found), (gate, found)
+        quality = json.loads((ws / "data_quality.json").read_text(encoding="utf-8"))
+        assert quality["passed"] and quality["tables"]["exoplanets"]["duplicate_rows"] == 0
+        assert quality["tables"]["exoplanets"]["columns"]["radius_earth"]["unit"] == "Earth radii"
+        assert "| radius_earth | REAL | Earth radii | 0 | 0.0% |" in (ws / "data_quality.md").read_text(
+            encoding="utf-8"
+        )
+        figures = json.loads((ws / "figure_check.json").read_text(encoding="utf-8"))
+        assert figures["passed"] and [f["figure"] for f in figures["figures"]] == [
+            "fig_radius_period.pdf",
+            "fig_radius_hist.pdf",
+        ]
 
         # Its own number check: the tables are records tables filled from the descriptive
         # results, every cell traced, nothing differing; the sources are the kind's files.
@@ -135,3 +154,10 @@ def test_a_descriptive_study_replays_to_the_end_without_regression_or_identifica
     assert "[PASS] numbers" in out.stdout
     assert "[PASS] results contract" in out.stdout, out.stdout
     assert "[SKIP] spec" in out.stdout  # no identification specification: none was required
+
+    # `e2er reproduce` reruns the analysis script on the shipped data and finds the same results.
+    out = subprocess.run(
+        [*cli, "reproduce", str(bundle)], cwd=study, env=env, capture_output=True, text=True, timeout=600
+    )
+    assert out.returncode == 0, out.stdout + out.stderr
+    assert "Reproduced" in out.stdout, out.stdout

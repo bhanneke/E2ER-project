@@ -226,9 +226,13 @@
             "field_network",
             "field_main_path",
             "field_robustness",
-            "field_map"
+            "field_map",
+            "data_quality",
+            "figure_data",
+            "forecast_design",
+            "forecast_evaluation"
           ],
-          "description": "Which deterministic check to run. Required for `gate`. event_window verifies an event study's design (event_design.json) before estimation: estimation window length and gap, overlapping events, event dates in the data calendar. package_integrity, sandbox and reproduction run as steps of their own in the replication template (no `after`): package_integrity downloads the Zenodo record the question names and verifies every file against Zenodo's checksum (SHA-256 recorded); sandbox runs the plan's entry points in Docker (pinned image, --network none, read-only package, limits); reproduction re-reads every number of reproduction_report.json from the run's output files. package_integrity and sandbox block in every governance regime. field_retrieve, field_network, field_main_path, field_robustness and field_map run as steps of their own in the field-map template: retrieval of the boundaries from OpenAlex, the citation network with its completeness check, SPC main paths and key routes, the same on every alternative boundary, and the map with its exports. field_network can be shadowed by a governance regime; the other four block in every regime. numbers and citations may also run as steps of their own (the field-map template has no review step to run them in)."
+          "description": "Which deterministic check to run. Required for `gate`. event_window verifies an event study's design (event_design.json) before estimation: estimation window length and gap, overlapping events, event dates in the data calendar. package_integrity, sandbox and reproduction run as steps of their own in the replication template (no `after`): package_integrity downloads the Zenodo record the question names and verifies every file against Zenodo's checksum (SHA-256 recorded); sandbox runs the plan's entry points in Docker (pinned image, --network none, read-only package, limits); reproduction re-reads every number of reproduction_report.json from the run's output files. package_integrity and sandbox block in every governance regime. field_retrieve, field_network, field_main_path, field_robustness and field_map run as steps of their own in the field-map template: retrieval of the boundaries from OpenAlex, the citation network with its completeness check, SPC main paths and key routes, the same on every alternative boundary, and the map with its exports. field_network can be shadowed by a governance regime; the other four block in every regime. numbers and citations may also run as steps of their own (the field-map template has no review step to run them in). data_quality (with `after`, in the descriptive template) reads every table data_dictionary.json declares from data.db and fails on numeric columns without a unit, duplicate rows (on the declared key), columns missing more than max_missing_share of their values without a stated reason, and coverage the data do not span; it writes data_quality.md. figure_data (a step of its own) re-reads every figure of figure_spec.json from the data.db table or results path its `source` names. forecast_design (with `after`, in the time-series template) checks forecast_design.json against the series (hold-out = the last periods, baselines, candidates, stationarity and trend diagnostics, interval level) and freezes it with its hold-out in holdout_freeze.json before any model is fitted. forecast_evaluation (a step of its own) holds the results to the frozen setup: diagnostics and models on training periods only, every model evaluated on exactly the hold-out with its predictions, RMSE and MAE recomputed from data.db, forecasts beyond the data with intervals."
         },
         "on_fail": {
           "enum": [
@@ -274,9 +278,14 @@
           },
           "description": "researcher, preregister and gate steps: act inside the strategist's dispatch, right after these specialists have written their output, instead of at this position in the list. A gate with `after` also runs before any group that contains the econometrics specialist, so the estimation cannot pass it by."
         },
+        "optional": {
+          "type": "boolean",
+          "default": false,
+          "description": "researcher and preregister steps: the step runs only when the researcher chooses it for the run (New study's stop choices, `e2er run --review-at <name>`), e.g. the time-series template's pre-registration."
+        },
         "settings": {
           "type": "object",
-          "description": "gate steps: parameters of the check. event_window takes min_estimation_days (default 120), min_gap_days (default 10) and max_overlap_share (0 to 1, default 0). package_integrity takes max_mb (default 1000). sandbox takes cpus (default 2), memory_gb (default 4), timeout_minutes per entry point (default 60) install_timeout_minutes (default 45) and snapshot (package-date, latest or YYYY-MM-DD; default package-date). reproduction takes minor_rel_tolerance (0 to 1, default 0.10). field_retrieve takes max_papers (default 5000; a boundary above it is refused before its pages are read) and max_requests (default 300). field_network takes max_isolated_share (0 to 1, default 0.5), max_missing_refs_share (0 to 1, default 0.4) and min_papers (default 100). field_main_path takes key_routes (default 10).",
+          "description": "gate steps: parameters of the check. event_window takes min_estimation_days (default 120), min_gap_days (default 10) and max_overlap_share (0 to 1, default 0). package_integrity takes max_mb (default 1000). sandbox takes cpus (default 2), memory_gb (default 4), timeout_minutes per entry point (default 60) install_timeout_minutes (default 45) and snapshot (package-date, latest or YYYY-MM-DD; default package-date). reproduction takes minor_rel_tolerance (0 to 1, default 0.10). field_retrieve takes max_papers (default 5000; a boundary above it is refused before its pages are read) and max_requests (default 300). field_network takes max_isolated_share (0 to 1, default 0.5), max_missing_refs_share (0 to 1, default 0.4) and min_papers (default 100). field_main_path takes key_routes (default 10). data_quality takes max_missing_share (0 to 1, default 0.05). forecast_design takes min_train_periods (default 24). forecast_evaluation takes error_tolerance (0 to 1, default 0.005: the relative difference allowed between a stated and a recomputed error).",
           "properties": {
             "min_estimation_days": {
               "type": "integer",
@@ -345,6 +354,20 @@
             "key_routes": {
               "type": "integer",
               "minimum": 0
+            },
+            "max_missing_share": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "min_train_periods": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "error_tolerance": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
             }
           },
           "additionalProperties": false

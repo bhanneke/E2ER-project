@@ -107,6 +107,28 @@ _ESTIMATION_SPECIALIST = "econometrics_specialist"
 #: file they read, and the specialist that writes it (sent back on `retry`).
 _DESIGN_CHECKS: dict[str, tuple[str, str]] = {
     "event_window": ("event_design.json", "identification_strategist"),
+    # The descriptive template: the loaded data, before the analysis (data_quality.py).
+    "data_quality": ("data_dictionary.json", "data_analyst"),
+    # The time-series template: the forecast setup and its hold-out, frozen before fitting.
+    "forecast_design": ("forecast_design.json", "forecast_designer"),
+}
+
+#: What else the researcher sees when a design check stops the run, besides the design file.
+_DESIGN_CHECK_FILES: dict[str, tuple[str, ...]] = {
+    "event_window": ("identification_strategy.md",),
+    "data_quality": ("data_quality.md", "data_summary.md"),
+    "forecast_design": ("forecast_design.md",),
+}
+
+#: The work order of a design check's retry, when the check needs more than "revise the design file".
+_DESIGN_CHECK_FOCUS: dict[str, str] = {
+    "data_quality": (
+        "The data check refused the loaded data before the analysis (its report is data_quality.md). Fix what "
+        "it names: remove duplicate rows when loading (or declare the key that identifies a row), write the unit "
+        "of every numeric column in data_dictionary.json, say for each column with many missing values why they "
+        'are missing and how the analysis treats them ("missing": "..."), and load the coverage the '
+        "dictionary declares. Problems: "
+    ),
 }
 
 
@@ -165,7 +187,8 @@ class PipelineRunner:
         self._mode = mode
         # The process this run follows. Resolved at construction so a bad
         # pipeline name fails before any model is called, not forty minutes in.
-        self._spec = find_spec(pipeline)
+        # Optional researcher steps (``optional = true``) run only when the researcher chose them.
+        self._spec = find_spec(pipeline).chosen(review_stages)
         # Governance regime (experiment treatment): off | contracts | full.
         # Selects which gates BLOCK; non-blocking gates still compute + log.
         self._governance = governance
@@ -1061,15 +1084,11 @@ class PipelineRunner:
         if not result.passed and blocking and step.on_fail == "retry" and owner and not state.metadata.get(retry_key):
             state.metadata[retry_key] = True
             state.save(self._workspace)
-            order = WorkOrder(
-                paper_id=self._paper_id,
-                specialist=owner,
-                focus=(
-                    f"The check '{step.check}' refused the design in {design_file} before estimation. "
-                    f"Revise {design_file} (and your strategy file where it changes) so that it passes: "
-                    + "; ".join(result.reasons)
-                ),
+            focus = _DESIGN_CHECK_FOCUS.get(step.check) or (
+                f"The check '{step.check}' refused the design in {design_file} before estimation. "
+                f"Revise {design_file} (and your strategy file where it changes) so that it passes: "
             )
+            order = WorkOrder(paper_id=self._paper_id, specialist=owner, focus=focus + "; ".join(result.reasons))
             contribution = await execute_work_order(
                 order,
                 self._backend,
@@ -1094,7 +1113,7 @@ class PipelineRunner:
             return
         if getattr(self, "_in_initial", False):
             state.metadata["pending_orders"] = [wo.model_dump() for wo in remaining]
-        files = [f for f in (design_file, "identification_strategy.md") if f]
+        files = [f for f in (design_file, *_DESIGN_CHECK_FILES.get(step.check, ())) if f]
         state.pending_review_stage = step.name
         state.metadata["review"] = {"kind": "gate", "files": files, "reasons": list(result.reasons)}
         state.save(self._workspace)
@@ -1203,6 +1222,14 @@ class PipelineRunner:
             from ..pipeline.event_window import check_event_window
 
             return check_event_window(self._workspace, **step.settings)
+        if step.check == "data_quality":
+            from ..pipeline.data_quality import check_data_quality
+
+            return check_data_quality(self._workspace, **step.settings)
+        if step.check == "forecast_design":
+            from ..pipeline.forecast_checks import check_forecast_design
+
+            return check_forecast_design(self._workspace, **step.settings)
         raise ValueError(f"check {step.check!r} cannot run inside the dispatch")
 
     async def _settle_researcher_decisions(self, state: Any) -> None:
@@ -3417,6 +3444,8 @@ _SEQUENCE_CHECK_FILES: dict[str, tuple[str, ...]] = {
     "sandbox": ("replication_plan.json", "sandbox_log.json"),
     "reproduction": ("reproduction_report.json", "reproduction_check.json"),
     **_FIELDMAP_FILES,
+    "figure_data": ("figure_spec.json", "figure_check.json"),
+    "forecast_evaluation": ("estimation_results.json", "forecast_check.json", "forecast_design.json"),
 }
 
 
@@ -3454,6 +3483,14 @@ def _sequence_check(check: str) -> Any:
         from ..pipeline.reproduction import check_reproduction
 
         return _reproduction_with_disclaimer(check_reproduction)
+    if check == "figure_data":
+        from ..pipeline.data_quality import check_figure_data
+
+        return check_figure_data
+    if check == "forecast_evaluation":
+        from ..pipeline.forecast_checks import check_forecast_evaluation
+
+        return check_forecast_evaluation
     from ..pipeline.fieldmap_checks import CHECKS as _FIELDMAP_CHECKS
 
     if check in _FIELDMAP_CHECKS:

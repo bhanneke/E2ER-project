@@ -1,0 +1,55 @@
+{
+  "tables": [
+    {
+      "filename": "diagnostics.tex",
+      "label": "tab:diagnostics",
+      "caption": "Diagnostics on the training years 2001--2020",
+      "layout": "records",
+      "source": "estimation_results.json",
+      "path": "diagnostics",
+      "rows": ["kpss_level", "mann_kendall_annual"],
+      "row_labels": {"kpss_level": "KPSS, level (monthly means removed)", "mann_kendall_annual": "Mann--Kendall $z$, annual means"},
+      "row_header": "Test",
+      "columns": [
+        {"field": "statistic", "header": "Statistic", "decimals": 3},
+        {"field": "p_value", "header": "$p$", "decimals": 3}
+      ],
+      "notes": "Computed on 2001-01 to 2020-12 only. The KPSS p-value is interpolated in the KPSS table and bounded below at 0.01."
+    },
+    {
+      "filename": "holdout.tex",
+      "label": "tab:holdout",
+      "caption": "Forecasts of the hold-out months 2021-01 to 2023-12",
+      "layout": "records",
+      "source": "estimation_results.json",
+      "path": "out_of_sample",
+      "rows": ["naive_test", "seasonal_naive_test", "trend_season_test"],
+      "row_labels": {"naive_test": "Naive", "seasonal_naive_test": "Seasonal naive", "trend_season_test": "Trend and monthly means"},
+      "row_header": "Forecast",
+      "columns": [
+        {"field": "n_test", "header": "Months", "decimals": 0},
+        {"field": "rmse", "header": "RMSE", "decimals": 3},
+        {"field": "mae", "header": "MAE", "decimals": 3},
+        {"field": "mase", "header": "MASE", "decimals": 3},
+        {"field": "coverage", "header": "Coverage", "decimals": 3}
+      ],
+      "notes": "Errors in degrees C, from one forecast origin (2020-12). MASE scales the MAE by the seasonal naive's in-sample MAE. Coverage is the share of hold-out months inside the 95\\% interval."
+    },
+    {
+      "filename": "forecast.tex",
+      "label": "tab:forecast",
+      "caption": "Forecast for 2024 with 95\\% intervals",
+      "layout": "records",
+      "source": "estimation_results.json",
+      "path": "forecasts.trend_season_2024.points",
+      "key_field": "period",
+      "row_header": "Month",
+      "columns": [
+        {"field": "forecast", "header": "Forecast", "decimals": 2},
+        {"field": "lower", "header": "Lower", "decimals": 2},
+        {"field": "upper", "header": "Upper", "decimals": 2}
+      ],
+      "notes": "Trend and monthly means refitted on 2001-01 to 2023-12; degrees C."
+    }
+  ]
+}

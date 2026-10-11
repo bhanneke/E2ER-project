@@ -1312,7 +1312,6 @@ async def rerun_paper(req: RerunRequest, paper_id: str = Depends(_validate_uuid)
     ``e2er rerun`` both come here.
     """
     from ..core.pipeline.researcher import ResearcherActionError, apply_rerun
-    from ..core.pipeline.spec import find_spec
     from ..core.pipeline.state import PipelineState
     from ..db.client import execute, fetch_one
     from ..db.events import log_event
@@ -1328,7 +1327,7 @@ async def rerun_paper(req: RerunRequest, paper_id: str = Depends(_validate_uuid)
         raise HTTPException(status_code=409, detail=_elsewhere_text(elsewhere))
     workspace = Path(row["workspace"])
     try:
-        spec = find_spec(row.get("pipeline") or "empirical")
+        spec = _chosen_spec(row.get("pipeline") or "empirical", row.get("review_stages"))
     except Exception as e:  # noqa: BLE001 — without its template the steps are unknown
         raise HTTPException(status_code=409, detail=f"the study's template cannot be loaded: {e}") from e
     state = PipelineState.load(workspace, paper_id, row.get("mode") or "single_pass")
@@ -2108,7 +2107,15 @@ async def install_skill_pack(pack: str = Form(...)) -> Any:
 
 
 #: The order the built-in templates are offered in; others follow by name.
-_TEMPLATE_ORDER = ("empirical", "empirical-preregistered", "event-study-finance", "replication")
+_TEMPLATE_ORDER = (
+    "empirical",
+    "empirical-preregistered",
+    "event-study-finance",
+    "replication",
+    "field-map",
+    "descriptive-study",
+    "time-series-forecasting",
+)
 
 
 def _step_label(name: str, spec: Any = None) -> str:
@@ -2199,7 +2206,7 @@ def _pipeline_choices() -> list[dict[str, Any]]:
                     "name": name,
                     "label": _labels.template(name, spec),
                     "description": spec.description,
-                    "pauses": [_step_label(st.name, spec) for st in spec.steps if _is_stop(st)],
+                    "pauses": [_step_label(st.name, spec) for st in spec.steps if _is_stop(st) and not st.optional],
                     # "Also stop for you after these steps": this template's own steps.
                     "review_choices": [{"name": n, "label": _step_label(n, spec)} for n in _review_at_choices(spec)],
                 }
@@ -2225,8 +2232,25 @@ def _is_stop(st: Any) -> bool:
 
 
 def _review_at_choices(spec: Any) -> list[str]:
-    """Steps a researcher may ask the run to stop after: the template's own, not its stops or inner checks."""
-    return [st.name for st in spec.steps if not _is_stop(st) and not st.after]
+    """Steps a researcher may ask the run to stop after: the template's own, not its stops or inner checks.
+
+    A template's optional researcher steps (``optional = true``, e.g. the time-series template's
+    pre-registration) are among them: choosing one turns it on for the run.
+    """
+    return [st.name for st in spec.steps if st.optional or (not _is_stop(st) and not st.after)]
+
+
+def _chosen_spec(name: str, review_stages: Any) -> Any:
+    """The template as the paper's run follows it: optional steps it did not choose left out."""
+    from ..core.pipeline.spec import find_spec
+
+    stages = review_stages
+    if isinstance(stages, str):
+        try:
+            stages = json.loads(stages or "[]")
+        except ValueError:
+            stages = []
+    return find_spec(name).chosen(stages if isinstance(stages, list) else [])
 
 
 #: The largest file New study accepts (each file).
@@ -2415,11 +2439,10 @@ def _study_actions(paper: dict[str, Any], workspace: Path) -> dict[str, Any]:
     from ..core.demonstration import study_purpose
     from ..core.pipeline.preregistration import load_lock
     from ..core.pipeline.researcher import rerunnable_steps
-    from ..core.pipeline.spec import find_spec
 
     mode = str(paper.get("mode") or "single_pass")
     try:
-        spec = find_spec(str(paper.get("pipeline") or "empirical"))
+        spec = _chosen_spec(str(paper.get("pipeline") or "empirical"), paper.get("review_stages"))
         names = rerunnable_steps(spec, mode)
     except Exception:  # noqa: BLE001 — without its template there is nothing to choose from
         spec, names = None, []
@@ -2797,7 +2820,6 @@ def _template_progress(paper: dict[str, Any], events: list[dict[str, Any]]) -> d
     Read from the template file, the run's saved state and its event log, so the
     page shows the steps this study's template has rather than a fixed list.
     """
-    from ..core.pipeline.spec import find_spec
     from ..core.pipeline.state import PipelineState
 
     name = str(paper.get("pipeline") or "empirical")
@@ -2805,7 +2827,7 @@ def _template_progress(paper: dict[str, Any], events: list[dict[str, Any]]) -> d
     status = str(paper.get("status") or "")
     workspace = _paper_workspace(paper)
     try:
-        spec = find_spec(name)
+        spec = _chosen_spec(name, paper.get("review_stages"))
     except Exception:  # noqa: BLE001 — a missing template must not break the page
         spec = None
     try:

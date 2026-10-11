@@ -149,6 +149,11 @@ def main() -> None:
                 "log_y": True,
                 "x_label": "Orbital period (days)",
                 "y_label": "Radius (Earth radii)",
+                # Where the values come from: the figure check re-reads them (data_quality.check_figure_data).
+                "source": {
+                    "table": "exoplanets",
+                    "columns": {"x": "period_days", "y": "radius_earth", "groups": "discovery_method"},
+                },
             },
             {
                 "filename": "fig_radius_hist.pdf",
@@ -159,6 +164,7 @@ def main() -> None:
                 "log_x": True,
                 "x_label": "Radius (Earth radii)",
                 "y_label": "Planets",
+                "source": {"results": "distributions.radius.bins"},
             },
         ]
     }

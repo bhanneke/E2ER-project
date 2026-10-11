@@ -53,6 +53,16 @@ GATES: tuple[str, ...] = (
     "reproduction",
     "preregistration",
     "field_network",
+    # The descriptive template's checks: the loaded data (units, duplicates,
+    # missing values, coverage) before the analysis, and every figure re-read
+    # from the data it names.
+    "data_quality",
+    "figure_data",
+    # The time-series template's checks: the forecast setup frozen with its
+    # hold-out before any model is fitted, and the out-of-sample evaluation
+    # against that hold-out.
+    "forecast_design",
+    "forecast_evaluation",
 )
 
 #: Deterministic steps of a template whose failure means the run cannot go on,

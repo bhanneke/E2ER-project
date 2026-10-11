@@ -1,0 +1,854 @@
+{
+  "result_kind": "timeseries",
+  "series": {
+    "name": "monthly mean 2 m air temperature, NASA POWER grid cell at 50.11 N, 8.68 E (Frankfurt am Main)",
+    "frequency": "monthly",
+    "start": "2001-01",
+    "end": "2023-12",
+    "n_observations": 276,
+    "unit": "degrees C",
+    "n_train": 240,
+    "n_holdout": 36
+  },
+  "diagnostics": {
+    "kpss_level": {
+      "test": "KPSS, level stationarity, monthly means removed",
+      "statistic": 0.8136,
+      "p_value": 0.01,
+      "lags": 4,
+      "sample_end": "2020-12",
+      "note": "p-value interpolated in the KPSS table and bounded to [0.01, 0.10]"
+    },
+    "mann_kendall_annual": {
+      "test": "Mann-Kendall on annual means, normal approximation with continuity correction",
+      "statistic": 2.4982,
+      "s": 78,
+      "p_value": 0.0125,
+      "sen_slope": 0.0698,
+      "sen_slope_per_decade": 0.6984,
+      "n_years": 20,
+      "sample_end": "2020-12"
+    }
+  },
+  "models": {
+    "naive": {
+      "model": "naive (last training value)",
+      "train_end": "2020-12",
+      "fit": {
+        "sigma2": 19.8453
+      }
+    },
+    "seasonal_naive": {
+      "model": "seasonal naive (same month of the last training year)",
+      "train_end": "2020-12",
+      "fit": {
+        "sigma2": 7.2
+      }
+    },
+    "trend_season": {
+      "model": "linear trend plus monthly means (OLS)",
+      "train_end": "2020-12",
+      "fit": {
+        "sigma2": 3.272,
+        "aic": 297.13,
+        "r_squared": 0.9455
+      },
+      "parameters": {
+        "trend_per_decade": {
+          "estimate": 0.692,
+          "se": 0.2025
+        }
+      }
+    },
+    "trend_season_full": {
+      "model": "linear trend plus monthly means (OLS), refitted on every period for the forecast beyond the data",
+      "train_end": "2023-12",
+      "fit": {
+        "sigma2": 3.2381,
+        "aic": 336.98,
+        "r_squared": 0.9455
+      },
+      "parameters": {
+        "trend_per_decade": {
+          "estimate": 0.7278,
+          "se": 0.1633
+        }
+      }
+    }
+  },
+  "out_of_sample": {
+    "naive_test": {
+      "model": "naive",
+      "train_end": "2020-12",
+      "test_start": "2021-01",
+      "test_end": "2023-12",
+      "n_test": 36,
+      "rmse": 11.7956,
+      "mae": 9.2989,
+      "mase": 4.4145,
+      "coverage": 1.0,
+      "predictions": [
+        {
+          "period": "2021-01",
+          "forecast": 1.95,
+          "lower": -6.7813,
+          "upper": 10.6813
+        },
+        {
+          "period": "2021-02",
+          "forecast": 1.95,
+          "lower": -10.3979,
+          "upper": 14.2979
+        },
+        {
+          "period": "2021-03",
+          "forecast": 1.95,
+          "lower": -13.173,
+          "upper": 17.073
+        },
+        {
+          "period": "2021-04",
+          "forecast": 1.95,
+          "lower": -15.5125,
+          "upper": 19.4125
+        },
+        {
+          "period": "2021-05",
+          "forecast": 1.95,
+          "lower": -17.5737,
+          "upper": 21.4737
+        },
+        {
+          "period": "2021-06",
+          "forecast": 1.95,
+          "lower": -19.4371,
+          "upper": 23.3371
+        },
+        {
+          "period": "2021-07",
+          "forecast": 1.95,
+          "lower": -21.1507,
+          "upper": 25.0507
+        },
+        {
+          "period": "2021-08",
+          "forecast": 1.95,
+          "lower": -22.7457,
+          "upper": 26.6457
+        },
+        {
+          "period": "2021-09",
+          "forecast": 1.95,
+          "lower": -24.2438,
+          "upper": 28.1438
+        },
+        {
+          "period": "2021-10",
+          "forecast": 1.95,
+          "lower": -25.6607,
+          "upper": 29.5607
+        },
+        {
+          "period": "2021-11",
+          "forecast": 1.95,
+          "lower": -27.0083,
+          "upper": 30.9083
+        },
+        {
+          "period": "2021-12",
+          "forecast": 1.95,
+          "lower": -28.296,
+          "upper": 32.196
+        },
+        {
+          "period": "2022-01",
+          "forecast": 1.95,
+          "lower": -29.531,
+          "upper": 33.431
+        },
+        {
+          "period": "2022-02",
+          "forecast": 1.95,
+          "lower": -30.7194,
+          "upper": 34.6194
+        },
+        {
+          "period": "2022-03",
+          "forecast": 1.95,
+          "lower": -31.866,
+          "upper": 35.766
+        },
+        {
+          "period": "2022-04",
+          "forecast": 1.95,
+          "lower": -32.975,
+          "upper": 36.875
+        },
+        {
+          "period": "2022-05",
+          "forecast": 1.95,
+          "lower": -34.0499,
+          "upper": 37.9499
+        },
+        {
+          "period": "2022-06",
+          "forecast": 1.95,
+          "lower": -35.0936,
+          "upper": 38.9936
+        },
+        {
+          "period": "2022-07",
+          "forecast": 1.95,
+          "lower": -36.1087,
+          "upper": 40.0087
+        },
+        {
+          "period": "2022-08",
+          "forecast": 1.95,
+          "lower": -37.0974,
+          "upper": 40.9974
+        },
+        {
+          "period": "2022-09",
+          "forecast": 1.95,
+          "lower": -38.0617,
+          "upper": 41.9617
+        },
+        {
+          "period": "2022-10",
+          "forecast": 1.95,
+          "lower": -39.0032,
+          "upper": 42.9032
+        },
+        {
+          "period": "2022-11",
+          "forecast": 1.95,
+          "lower": -39.9237,
+          "upper": 43.8237
+        },
+        {
+          "period": "2022-12",
+          "forecast": 1.95,
+          "lower": -40.8243,
+          "upper": 44.7243
+        },
+        {
+          "period": "2023-01",
+          "forecast": 1.95,
+          "lower": -41.7063,
+          "upper": 45.6063
+        },
+        {
+          "period": "2023-02",
+          "forecast": 1.95,
+          "lower": -42.5709,
+          "upper": 46.4709
+        },
+        {
+          "period": "2023-03",
+          "forecast": 1.95,
+          "lower": -43.419,
+          "upper": 47.319
+        },
+        {
+          "period": "2023-04",
+          "forecast": 1.95,
+          "lower": -44.2515,
+          "upper": 48.1515
+        },
+        {
+          "period": "2023-05",
+          "forecast": 1.95,
+          "lower": -45.0693,
+          "upper": 48.9693
+        },
+        {
+          "period": "2023-06",
+          "forecast": 1.95,
+          "lower": -45.8731,
+          "upper": 49.7731
+        },
+        {
+          "period": "2023-07",
+          "forecast": 1.95,
+          "lower": -46.6636,
+          "upper": 50.5636
+        },
+        {
+          "period": "2023-08",
+          "forecast": 1.95,
+          "lower": -47.4415,
+          "upper": 51.3415
+        },
+        {
+          "period": "2023-09",
+          "forecast": 1.95,
+          "lower": -48.2073,
+          "upper": 52.1073
+        },
+        {
+          "period": "2023-10",
+          "forecast": 1.95,
+          "lower": -48.9616,
+          "upper": 52.8616
+        },
+        {
+          "period": "2023-11",
+          "forecast": 1.95,
+          "lower": -49.7048,
+          "upper": 53.6048
+        },
+        {
+          "period": "2023-12",
+          "forecast": 1.95,
+          "lower": -50.4376,
+          "upper": 54.3376
+        }
+      ]
+    },
+    "seasonal_naive_test": {
+      "model": "seasonal_naive",
+      "train_end": "2020-12",
+      "test_start": "2021-01",
+      "test_end": "2023-12",
+      "n_test": 36,
+      "rmse": 2.1344,
+      "mae": 1.7886,
+      "mase": 0.8491,
+      "coverage": 1.0,
+      "predictions": [
+        {
+          "period": "2021-01",
+          "forecast": 2.59,
+          "lower": -2.6691,
+          "upper": 7.8491
+        },
+        {
+          "period": "2021-02",
+          "forecast": 5.1,
+          "lower": -0.1591,
+          "upper": 10.3591
+        },
+        {
+          "period": "2021-03",
+          "forecast": 5.76,
+          "lower": 0.5009,
+          "upper": 11.0191
+        },
+        {
+          "period": "2021-04",
+          "forecast": 11.41,
+          "lower": 6.1509,
+          "upper": 16.6691
+        },
+        {
+          "period": "2021-05",
+          "forecast": 13.41,
+          "lower": 8.1509,
+          "upper": 18.6691
+        },
+        {
+          "period": "2021-06",
+          "forecast": 18.35,
+          "lower": 13.0909,
+          "upper": 23.6091
+        },
+        {
+          "period": "2021-07",
+          "forecast": 20.77,
+          "lower": 15.5109,
+          "upper": 26.0291
+        },
+        {
+          "period": "2021-08",
+          "forecast": 22.52,
+          "lower": 17.2609,
+          "upper": 27.7791
+        },
+        {
+          "period": "2021-09",
+          "forecast": 17.1,
+          "lower": 11.8409,
+          "upper": 22.3591
+        },
+        {
+          "period": "2021-10",
+          "forecast": 10.69,
+          "lower": 5.4309,
+          "upper": 15.9491
+        },
+        {
+          "period": "2021-11",
+          "forecast": 5.88,
+          "lower": 0.6209,
+          "upper": 11.1391
+        },
+        {
+          "period": "2021-12",
+          "forecast": 1.95,
+          "lower": -3.3091,
+          "upper": 7.2091
+        },
+        {
+          "period": "2022-01",
+          "forecast": 2.59,
+          "lower": -4.8475,
+          "upper": 10.0275
+        },
+        {
+          "period": "2022-02",
+          "forecast": 5.1,
+          "lower": -2.3375,
+          "upper": 12.5375
+        },
+        {
+          "period": "2022-03",
+          "forecast": 5.76,
+          "lower": -1.6775,
+          "upper": 13.1975
+        },
+        {
+          "period": "2022-04",
+          "forecast": 11.41,
+          "lower": 3.9725,
+          "upper": 18.8475
+        },
+        {
+          "period": "2022-05",
+          "forecast": 13.41,
+          "lower": 5.9725,
+          "upper": 20.8475
+        },
+        {
+          "period": "2022-06",
+          "forecast": 18.35,
+          "lower": 10.9125,
+          "upper": 25.7875
+        },
+        {
+          "period": "2022-07",
+          "forecast": 20.77,
+          "lower": 13.3325,
+          "upper": 28.2075
+        },
+        {
+          "period": "2022-08",
+          "forecast": 22.52,
+          "lower": 15.0825,
+          "upper": 29.9575
+        },
+        {
+          "period": "2022-09",
+          "forecast": 17.1,
+          "lower": 9.6625,
+          "upper": 24.5375
+        },
+        {
+          "period": "2022-10",
+          "forecast": 10.69,
+          "lower": 3.2525,
+          "upper": 18.1275
+        },
+        {
+          "period": "2022-11",
+          "forecast": 5.88,
+          "lower": -1.5575,
+          "upper": 13.3175
+        },
+        {
+          "period": "2022-12",
+          "forecast": 1.95,
+          "lower": -5.4875,
+          "upper": 9.3875
+        },
+        {
+          "period": "2023-01",
+          "forecast": 2.59,
+          "lower": -6.5191,
+          "upper": 11.6991
+        },
+        {
+          "period": "2023-02",
+          "forecast": 5.1,
+          "lower": -4.0091,
+          "upper": 14.2091
+        },
+        {
+          "period": "2023-03",
+          "forecast": 5.76,
+          "lower": -3.3491,
+          "upper": 14.8691
+        },
+        {
+          "period": "2023-04",
+          "forecast": 11.41,
+          "lower": 2.3009,
+          "upper": 20.5191
+        },
+        {
+          "period": "2023-05",
+          "forecast": 13.41,
+          "lower": 4.3009,
+          "upper": 22.5191
+        },
+        {
+          "period": "2023-06",
+          "forecast": 18.35,
+          "lower": 9.2409,
+          "upper": 27.4591
+        },
+        {
+          "period": "2023-07",
+          "forecast": 20.77,
+          "lower": 11.6609,
+          "upper": 29.8791
+        },
+        {
+          "period": "2023-08",
+          "forecast": 22.52,
+          "lower": 13.4109,
+          "upper": 31.6291
+        },
+        {
+          "period": "2023-09",
+          "forecast": 17.1,
+          "lower": 7.9909,
+          "upper": 26.2091
+        },
+        {
+          "period": "2023-10",
+          "forecast": 10.69,
+          "lower": 1.5809,
+          "upper": 19.7991
+        },
+        {
+          "period": "2023-11",
+          "forecast": 5.88,
+          "lower": -3.2291,
+          "upper": 14.9891
+        },
+        {
+          "period": "2023-12",
+          "forecast": 1.95,
+          "lower": -7.1591,
+          "upper": 11.0591
+        }
+      ]
+    },
+    "trend_season_test": {
+      "model": "trend_season",
+      "train_end": "2020-12",
+      "test_start": "2021-01",
+      "test_end": "2023-12",
+      "n_test": 36,
+      "rmse": 1.7879,
+      "mae": 1.497,
+      "mase": 0.7107,
+      "coverage": 0.9444,
+      "predictions": [
+        {
+          "period": "2021-01",
+          "forecast": 1.0116,
+          "lower": -2.6451,
+          "upper": 4.6683
+        },
+        {
+          "period": "2021-02",
+          "forecast": 2.0776,
+          "lower": -1.5791,
+          "upper": 5.7343
+        },
+        {
+          "period": "2021-03",
+          "forecast": 5.7506,
+          "lower": 2.0939,
+          "upper": 9.4073
+        },
+        {
+          "period": "2021-04",
+          "forecast": 10.6246,
+          "lower": 6.9679,
+          "upper": 14.2813
+        },
+        {
+          "period": "2021-05",
+          "forecast": 15.0366,
+          "lower": 11.3799,
+          "upper": 18.6933
+        },
+        {
+          "period": "2021-06",
+          "forecast": 19.3476,
+          "lower": 15.6909,
+          "upper": 23.0043
+        },
+        {
+          "period": "2021-07",
+          "forecast": 21.6401,
+          "lower": 17.9834,
+          "upper": 25.2968
+        },
+        {
+          "period": "2021-08",
+          "forecast": 20.9996,
+          "lower": 17.3429,
+          "upper": 24.6563
+        },
+        {
+          "period": "2021-09",
+          "forecast": 16.3291,
+          "lower": 12.6724,
+          "upper": 19.9858
+        },
+        {
+          "period": "2021-10",
+          "forecast": 11.0171,
+          "lower": 7.3604,
+          "upper": 14.6738
+        },
+        {
+          "period": "2021-11",
+          "forecast": 5.7846,
+          "lower": 2.1279,
+          "upper": 9.4413
+        },
+        {
+          "period": "2021-12",
+          "forecast": 2.0561,
+          "lower": -1.6006,
+          "upper": 5.7128
+        },
+        {
+          "period": "2022-01",
+          "forecast": 1.0808,
+          "lower": -2.5806,
+          "upper": 4.7422
+        },
+        {
+          "period": "2022-02",
+          "forecast": 2.1468,
+          "lower": -1.5146,
+          "upper": 5.8082
+        },
+        {
+          "period": "2022-03",
+          "forecast": 5.8198,
+          "lower": 2.1584,
+          "upper": 9.4812
+        },
+        {
+          "period": "2022-04",
+          "forecast": 10.6938,
+          "lower": 7.0324,
+          "upper": 14.3552
+        },
+        {
+          "period": "2022-05",
+          "forecast": 15.1058,
+          "lower": 11.4444,
+          "upper": 18.7672
+        },
+        {
+          "period": "2022-06",
+          "forecast": 19.4168,
+          "lower": 15.7554,
+          "upper": 23.0782
+        },
+        {
+          "period": "2022-07",
+          "forecast": 21.7093,
+          "lower": 18.0479,
+          "upper": 25.3707
+        },
+        {
+          "period": "2022-08",
+          "forecast": 21.0688,
+          "lower": 17.4074,
+          "upper": 24.7302
+        },
+        {
+          "period": "2022-09",
+          "forecast": 16.3983,
+          "lower": 12.7369,
+          "upper": 20.0597
+        },
+        {
+          "period": "2022-10",
+          "forecast": 11.0863,
+          "lower": 7.4249,
+          "upper": 14.7477
+        },
+        {
+          "period": "2022-11",
+          "forecast": 5.8538,
+          "lower": 2.1924,
+          "upper": 9.5152
+        },
+        {
+          "period": "2022-12",
+          "forecast": 2.1253,
+          "lower": -1.5361,
+          "upper": 5.7867
+        },
+        {
+          "period": "2023-01",
+          "forecast": 1.15,
+          "lower": -2.5166,
+          "upper": 4.8166
+        },
+        {
+          "period": "2023-02",
+          "forecast": 2.216,
+          "lower": -1.4506,
+          "upper": 5.8826
+        },
+        {
+          "period": "2023-03",
+          "forecast": 5.889,
+          "lower": 2.2224,
+          "upper": 9.5556
+        },
+        {
+          "period": "2023-04",
+          "forecast": 10.763,
+          "lower": 7.0964,
+          "upper": 14.4296
+        },
+        {
+          "period": "2023-05",
+          "forecast": 15.175,
+          "lower": 11.5084,
+          "upper": 18.8416
+        },
+        {
+          "period": "2023-06",
+          "forecast": 19.486,
+          "lower": 15.8194,
+          "upper": 23.1526
+        },
+        {
+          "period": "2023-07",
+          "forecast": 21.7785,
+          "lower": 18.1119,
+          "upper": 25.4451
+        },
+        {
+          "period": "2023-08",
+          "forecast": 21.138,
+          "lower": 17.4714,
+          "upper": 24.8046
+        },
+        {
+          "period": "2023-09",
+          "forecast": 16.4675,
+          "lower": 12.8009,
+          "upper": 20.1341
+        },
+        {
+          "period": "2023-10",
+          "forecast": 11.1555,
+          "lower": 7.4889,
+          "upper": 14.8221
+        },
+        {
+          "period": "2023-11",
+          "forecast": 5.923,
+          "lower": 2.2564,
+          "upper": 9.5896
+        },
+        {
+          "period": "2023-12",
+          "forecast": 2.1945,
+          "lower": -1.4721,
+          "upper": 5.8611
+        }
+      ]
+    }
+  },
+  "forecasts": {
+    "trend_season_2024": {
+      "model": "trend_season_full",
+      "horizon": 12,
+      "interval_level": 0.95,
+      "points": [
+        {
+          "period": "2024-01",
+          "forecast": 1.3329,
+          "lower": -2.2903,
+          "upper": 4.9561
+        },
+        {
+          "period": "2024-02",
+          "forecast": 2.4507,
+          "lower": -1.1725,
+          "upper": 6.0739
+        },
+        {
+          "period": "2024-03",
+          "forecast": 5.9711,
+          "lower": 2.348,
+          "upper": 9.5943
+        },
+        {
+          "period": "2024-04",
+          "forecast": 10.5103,
+          "lower": 6.8871,
+          "upper": 14.1335
+        },
+        {
+          "period": "2024-05",
+          "forecast": 15.1385,
+          "lower": 11.5154,
+          "upper": 18.7617
+        },
+        {
+          "period": "2024-06",
+          "forecast": 19.8111,
+          "lower": 16.188,
+          "upper": 23.4343
+        },
+        {
+          "period": "2024-07",
+          "forecast": 21.8407,
+          "lower": 18.2175,
+          "upper": 25.4639
+        },
+        {
+          "period": "2024-08",
+          "forecast": 21.2233,
+          "lower": 17.6001,
+          "upper": 24.8465
+        },
+        {
+          "period": "2024-09",
+          "forecast": 16.6985,
+          "lower": 13.0754,
+          "upper": 20.3217
+        },
+        {
+          "period": "2024-10",
+          "forecast": 11.3985,
+          "lower": 7.7754,
+          "upper": 15.0217
+        },
+        {
+          "period": "2024-11",
+          "forecast": 6.012,
+          "lower": 2.3888,
+          "upper": 9.6352
+        },
+        {
+          "period": "2024-12",
+          "forecast": 2.3833,
+          "lower": -1.2399,
+          "upper": 6.0065
+        }
+      ]
+    }
+  },
+  "mase_scale": 2.1064,
+  "figures": [
+    "fig_series.pdf",
+    "fig_holdout.pdf"
+  ]
+}

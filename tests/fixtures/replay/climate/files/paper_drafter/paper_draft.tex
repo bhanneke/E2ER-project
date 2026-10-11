@@ -1,0 +1,63 @@
+\documentclass[11pt]{article}
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage{threeparttable}
+\usepackage{graphicx}
+\usepackage[margin=1in]{geometry}
+
+\title{Monthly Temperature at Frankfurt, 2001--2023: Trend and a One-Year Forecast}
+\author{Anonymous}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{center}
+\small \textit{Test fixture of e2er's replay level. The data are NASA POWER values; the text was written for the test.}
+\end{center}
+
+\section{Introduction}
+
+How has the monthly mean air temperature at the Frankfurt grid cell changed since 2001, and how well does a model with a linear trend and a fixed seasonal cycle forecast it? This study describes the series, tests for a trend on the training years, and compares the model's forecasts of the last 36 months with two naive forecasts. It makes no claim about the causes of the change.
+
+\section{Data}
+
+The series is NASA POWER's monthly mean air temperature at 2 m for the grid cell at 50.11 N, 8.68 E, from 2001-01 to 2023-12: 276 months without a missing value. The values are estimates from the MERRA-2 reanalysis, not station measurements. The mean is 10.358 degrees C and the monthly values range from -4.58 to 24.67 degrees C (Figure~\ref{fig:series}).
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.9\textwidth]{fig_series.pdf}
+\caption{Monthly mean 2 m air temperature at the Frankfurt grid cell, 2001--2023 (NASA POWER).}
+\label{fig:series}
+\end{figure}
+
+\section{Method}
+
+The setup was fixed before any model was fitted: training months 2001-01 to 2020-12, hold-out 2021-01 to 2023-12, horizon 12 months, 95\% intervals. The candidate model regresses temperature on a linear trend and twelve monthly means; the baselines are the naive forecast (the last training value) and the seasonal naive forecast (the same month of 2020). The diagnostics use the training years only.
+
+\section{Results}
+
+Table~\ref{tab:diagnostics} gives the diagnostics. With the monthly means removed, the KPSS test rejects level stationarity (statistic 0.814, $p \le 0.01$), and the Mann--Kendall test on the 20 annual means finds an upward trend ($z = 2.498$, $p = 0.0125$). Sen's slope is 0.6984 degrees C per decade; the regression's trend is 0.692 degrees C per decade (standard error 0.2025) on the training years.
+
+\input{tables/diagnostics.tex}
+
+Table~\ref{tab:holdout} compares the forecasts of the hold-out months. The trend-and-season model has an RMSE of 1.788 degrees C against 2.134 for the seasonal naive forecast and 11.796 for the naive forecast, which ignores the seasonal cycle. Its 95\% intervals cover 0.944 of the hold-out months. With 36 months from one forecast origin, the difference to the seasonal naive forecast is not tested here and should be read as indicative. Figure~\ref{fig:holdout} shows the hold-out.
+
+\input{tables/holdout.tex}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.9\textwidth]{fig_holdout.pdf}
+\caption{Hold-out 2021--2023: observed temperature, the trend-and-season forecast with its 95\% interval, and the seasonal naive forecast.}
+\label{fig:holdout}
+\end{figure}
+
+Refitted on all 276 months, the model's trend is 0.7278 degrees C per decade. Table~\ref{tab:forecast} gives its forecast for 2024.
+
+\input{tables/forecast.tex}
+
+\section{Conclusion}
+
+At the Frankfurt grid cell, monthly temperatures rose by about 0.7 degrees C per decade from 2001 to 2020, and a model of a linear trend with a fixed seasonal cycle forecast 2021 to 2023 better than the seasonal naive forecast. One grid cell, reanalysis values and twenty training years limit what the trend says about the region's climate.
+
+\end{document}

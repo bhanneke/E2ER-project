@@ -53,6 +53,15 @@ is computed from the data.
   Evaluate on periods the model was not fitted on, and compare with a simple
   benchmark (naive, seasonal naive or mean) so the error has a scale.
 
+The time-series template (`time-series-forecasting`) asks for more, and its
+forecast check verifies it against the frozen hold-out (see the skill
+`methods/time-series-forecasting`): `diagnostics` (each declared stationarity
+and trend test with `statistic`, `p_value` and `sample_end`, computed on the
+training periods), `train_end` on every model, `predictions` (period,
+forecast, lower, upper) on every `out_of_sample` entry so that RMSE, MAE and
+the interval `coverage` can be recomputed, and a forecast beyond the data
+with the declared horizon.
+
 Parameters may carry `estimate`/`se`/`p_value` like a regression coefficient.
 State stationarity tests, transformations and the chosen lag order in the
 model entry; the econometrics/time-series skill covers the methods.

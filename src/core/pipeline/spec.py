@@ -24,7 +24,8 @@ from __future__ import annotations
 
 import re
 import tomllib
-from dataclasses import dataclass, field
+from collections.abc import Iterable
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -74,6 +75,11 @@ CHECK_SETTINGS: dict[str, dict[str, type | tuple[type, ...]]] = {
     "field_retrieve": {"max_papers": int, "max_requests": int},
     "field_network": {"max_isolated_share": (int, float), "max_missing_refs_share": (int, float), "min_papers": int},
     "field_main_path": {"key_routes": int},
+    # The descriptive template's data check (src/core/pipeline/data_quality.py).
+    "data_quality": {"max_missing_share": (int, float)},
+    # The time-series template's checks (src/core/pipeline/forecast_checks.py).
+    "forecast_design": {"min_train_periods": int},
+    "forecast_evaluation": {"error_tolerance": (int, float)},
 }
 
 #: The persona skill specialists read unless the template names another (``base_skill``).
@@ -104,6 +110,11 @@ SEQUENCE_CHECKS: frozenset[str] = frozenset(
         # template without a review panel (inside the review step otherwise).
         "numbers",
         "citations",
+        # Figures re-read from the data they name (data_quality.py), and the
+        # out-of-sample evaluation of a forecast against the frozen hold-out
+        # (forecast_checks.py): both after the analysis, before the draft review.
+        "figure_data",
+        "forecast_evaluation",
     }
 )
 
@@ -131,6 +142,9 @@ class StepSpec:
     after: tuple[str, ...] = ()  # researcher/preregister/gate: act right after these specialists
     settings: dict[str, Any] = field(default_factory=dict, hash=False)  # gate: the check's parameters
     label: str = ""  # the step's name on the dashboard (src/core/labels.py when empty)
+    #: researcher/preregister: the step runs only when the researcher chooses it for the run
+    #: (New study's "also stop" choices, ``e2er run --review-at <name>``).
+    optional: bool = False
 
     def applies_to(self, mode: str) -> bool:
         return not self.modes or mode in self.modes
@@ -227,6 +241,17 @@ class PipelineSpec:
     def step(self, name: str) -> StepSpec | None:
         return next((s for s in self.steps if s.name == name), None)
 
+    def optional_steps(self) -> list[str]:
+        """The steps that run only when the researcher chooses them (``optional = true``)."""
+        return [s.name for s in self.steps if s.optional]
+
+    def chosen(self, stages: Iterable[str] | None) -> PipelineSpec:
+        """This template as a run follows it: optional steps the researcher did not choose left out."""
+        picked = set(stages or ())
+        if not any(s.optional and s.name not in picked for s in self.steps):
+            return self
+        return replace(self, steps=tuple(s for s in self.steps if not s.optional or s.name in picked))
+
 
 # ── parsing ──────────────────────────────────────────────────────────────────
 
@@ -253,6 +278,7 @@ def _step_from(raw: Any, source: Path | str, index: int) -> StepSpec:
         "after",
         "settings",
         "label",
+        "optional",
     }
     if unknown:
         # A typo is a mistake, not an extension point. Silently ignoring
@@ -347,9 +373,22 @@ def _step_from(raw: Any, source: Path | str, index: int) -> StepSpec:
                 _fail(source, f"{where} ({name}): setting {key} must be a non-negative number, not {value!r}")
             if not isinstance(value, allowed[key]):
                 _fail(source, f"{where} ({name}): setting {key} must be a whole number, not {value!r}")
-        for share in ("max_overlap_share", "minor_rel_tolerance", "max_isolated_share", "max_missing_refs_share"):
+        for share in (
+            "max_overlap_share",
+            "minor_rel_tolerance",
+            "max_isolated_share",
+            "max_missing_refs_share",
+            "max_missing_share",
+            "error_tolerance",
+        ):
             if share in settings and float(settings[share]) > 1:
                 _fail(source, f"{where} ({name}): {share} is a share between 0 and 1")
+
+    optional = raw.get("optional", False)
+    if not isinstance(optional, bool):
+        _fail(source, f"{where} ({name}): optional must be true or false, not {optional!r}")
+    if optional and kind not in RESEARCHER_KINDS:
+        _fail(source, f"{where} ({name}): only researcher and preregister steps can be optional")
 
     on_fail = raw.get("on_fail", "halt")
     if on_fail not in ("halt", "retry", "shadow"):
@@ -372,6 +411,7 @@ def _step_from(raw: Any, source: Path | str, index: int) -> StepSpec:
         after=after,
         settings=dict(settings),
         label=str(raw.get("label", "") or ""),
+        optional=optional,
     )
 
 

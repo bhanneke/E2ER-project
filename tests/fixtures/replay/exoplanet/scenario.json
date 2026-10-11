@@ -1,6 +1,6 @@
 {
   "name": "exoplanet",
-  "source": "Hand-made test fixture of the discipline-neutral core (0.16.0), not a recorded run: a descriptive study of a SYNTHETIC planet sample (make_fixture.py builds the data and the computed files; the plans, draft and reviews are written for the test). Template: pipelines/descriptive-study.toml in this folder, copied into the study's own pipelines/ folder by the test.",
+  "source": "Hand-made test fixture of the descriptive template (pipelines/descriptive-study.toml), not a recorded run: a descriptive study of a SYNTHETIC planet sample (make_fixture.py builds the data and the computed files; the plans, draft and reviews are written for the test).",
   "template": "descriptive-study",
   "research_question": "How are planet radii distributed in the sample, and how does radius vary with orbital period?",
   "title": "The radius-period distribution of a synthetic planet sample",

@@ -2,7 +2,7 @@
 
 A template is a pipeline file in `pipelines/` (schema:
 `docs/schemas/pipeline.schema.json`). A run follows the template chosen when the
-paper is created; resume keeps it. e2er ships five:
+paper is created; resume keeps it. e2er ships seven:
 
 | Template | For |
 |---|---|
@@ -11,6 +11,8 @@ paper is created; resume keeps it. e2er ships five:
 | `event-study-finance` | Abnormal-return event studies around announcements; checks the estimation window and overlapping events before estimation. |
 | `replication` | Computational reproduction of a published study from its Zenodo replication package; the product is a reproduction report, not a paper. |
 | `field-map` | A map of a research field by main path analysis of its citation network (OpenAlex), with robustness across alternative boundaries, a reading list, network exports and a short field review. |
+| `descriptive-study` | A description of a sample in any field: summary statistics, distributions, associations and figures, after a data check (units, duplicates, missing values, coverage); every figure re-read from its data. |
+| `time-series-forecasting` | A series, its trend and seasonality, models and forecasts: the setup and its hold-out frozen before fitting, every model judged on the hold-out against naive baselines, forecasts with intervals; optional pre-registration. |
 
 ## Skills and files a template adds
 
@@ -90,9 +92,18 @@ run  = ["data_reviewer", "methods_reviewer", "plausibility_reviewer", "literatur
 A template that sets none of these runs exactly as before. What a template
 changes is logged in the `template_components` event (`core`) and shown to
 every specialist and the strategist as a short template block in their
-context. `tests/fixtures/replay/exoplanet/pipelines/descriptive-study.toml` is
-a complete descriptive template (the replay test runs it end to end on a
-synthetic dataset).
+context. `pipelines/descriptive-study.toml` and
+`pipelines/time-series-forecasting.toml` are the shipped templates of two
+kinds (below); the replay tests run them end to end.
+
+## Optional researcher steps
+
+A `researcher` or `preregister` step with `optional = true` runs only when the
+researcher chooses it for the run: it is one of the "also stop" choices on New
+study and `e2er run --review-at <step>` turns it on. A run that does not choose
+it follows the template without the step (`PipelineSpec.chosen`), and its
+step list does not show it. The time-series template's pre-registration is
+optional this way.
 
 ## Credit
 
@@ -354,3 +365,58 @@ dispatches its `run` list with the registry's default work order
 (`package_integrity`, `sandbox`, `reproduction`) runs in sequence and halts
 like a check inside the dispatch. A template without a `revision` step is
 complete when its last step is done.
+
+## `descriptive-study`
+
+A description of a sample, for any field: astronomy catalogues, earth-science
+records, official statistics, the first part of most empirical papers. The
+results are of the kind `descriptive` (summary statistics, distributions,
+associations, figures; `data/descriptive-results-schema`), there is no causal
+claim and no identification strategy, the specialists read the researcher
+persona and the method skill `methods/descriptive-analysis`.
+
+| Step | Kind | What happens |
+|---|---|---|
+| `review_design` | researcher | After the research plan, the literature review and the data dictionary: the researcher approves or edits them before any data are loaded. |
+| `data_quality_gate` | check `data_quality`, inside the initial phase after the data analyst | Reads every table `data_dictionary.json` declares from `data.db` and writes `data_quality.json` and `data_quality.md` (rows, duplicates, missing values per column, units, ranges). Fails when a declared table is missing or empty, a numeric column the dictionary declares has no `unit`, rows repeat on the declared `key` (or as whole rows), a declared column misses more than `max_missing_share` (default 0.05) of its values and the dictionary gives no `missing` reason, or the data do not span the declared `coverage`. On a failure the data analyst is sent back once (`on_fail = "retry"`), then the run stops. |
+| `initial`, `iterative` | strategist | Data, analysis (the econometrics specialist as the analysis specialist, writing `estimation_results.json` in the descriptive schema), draft. |
+| `estimation_gate` | check `estimation` | The results file against the descriptive contract. |
+| `figure_gate` | check `figure_data` | Every figure of `figure_spec.json` re-read from the `source` it names: a data.db table and columns (with an optional simple condition), or a list in a results file (e.g. `distributions.radius.bins`); numbers compared at the precision the figure states. Writes `figure_check.json`. |
+| `review_draft` | researcher | The researcher reads the draft before the reviewers. |
+| `polish` | specialists | Numbers and references only (`polish_numerics`, `polish_bibliography`). |
+| `review` | reviewers | `data_reviewer`, `methods_reviewer` (1.5), `plausibility_reviewer`, `literature_reviewer`, `writing_reviewer`. |
+
+The number check also reads `data_quality.json`, so a paper can state its rows
+and missing values. Method sources (`[[credit]]`, relation `cites`): Emerson
+and Colditz (1983), Freedman and Diaconis (1981), Hyndman and Fan (1996),
+Spearman (1904), Little and Rubin (2019), Wickham (2014).
+
+## `time-series-forecasting`
+
+One series (or a few) over time: trend and seasonality, stationarity, fitted
+models, forecasts with intervals, and their accuracy on periods the models
+never saw, compared with simple baselines. The results are of the kind
+`timeseries`; the template has one specialist of its own, the **forecast
+designer**, who writes `forecast_design.json` and `forecast_design.md` after
+the data are loaded and before any model is fitted (schema in the skill
+`methods/time-series-forecasting`).
+
+| Step | Kind | What happens |
+|---|---|---|
+| `review_design` | researcher | After the plan, the literature, the data and the forecast setup: approve or edit the setup before anything is fitted. |
+| `preregister` | preregister, **optional** | When chosen: the plan and the forecast setup assembled into `preregistration.md` and frozen with their fingerprints on approval (the setup counts as a plan file: a later change is a deviation). |
+| `forecast_design_gate` | check `forecast_design`, inside the initial phase after the forecast designer | The setup against the series in `data.db`: the series exists and its periods do not repeat; the hold-out is the last `n_periods` periods, each with a value; at least `min_train_periods` (default 24) periods remain to fit on; a horizon and an interval level; at least one baseline (naive, seasonal naive, mean or drift) and one candidate; at least one stationarity and one trend diagnostic. When it passes it writes `holdout_freeze.json` (SHA-256 of the setup and of the hold-out values, the hold-out periods, the end of the training periods). It refuses a setup written after a model was fitted, and a changed setup once results exist; before that, a change is frozen again and listed. The forecast designer is sent back once on a failure. |
+| `initial`, `iterative` | strategist | The analysis specialist fits on the training periods, evaluates on the hold-out and forecasts beyond the data. |
+| `estimation_gate` | check `estimation` | The results file against the time-series contract. |
+| `forecast_gate` | check `forecast_evaluation` | The results against the frozen setup: setup and hold-out values unchanged; each declared diagnostic with statistic, p-value and `sample_end` inside the training periods; each declared model with `train_end` before the hold-out (else "leakage") and an out-of-sample entry on exactly the hold-out periods with all its predictions; RMSE, MAE and interval coverage recomputed from the predictions and `data.db` (tolerance `error_tolerance`, default 0.5%); a forecast beyond the data with the declared horizon and interval level. Writes `forecast_check.json` with the recomputed errors and each model's RMSE relative to the best baseline. |
+| `figure_gate` | check `figure_data` | As in `descriptive-study`. A `time_series` figure names a source per series; a series may carry `lower` and `upper` (a shaded interval). |
+| `review_draft` | researcher | The researcher reads the draft before the reviewers. |
+| `polish` | specialists | Formulas, numbers and references. |
+| `review` | reviewers | `methods_reviewer` (1.5), `technical_reviewer` (1.25), `data_reviewer`, `plausibility_reviewer`, `literature_reviewer`, `writing_reviewer`. |
+
+Method sources (`[[credit]]`, relation `cites`, DOIs checked on Crossref on
+2026-10-11): Box, Jenkins and Reinsel (2008); Hyndman and Athanasopoulos,
+*Forecasting: Principles and Practice* (3rd ed., 2021, no DOI); Hyndman and
+Khandakar (2008); Hyndman and Koehler (2006); Tashman (2000); Diebold and
+Mariano (1995); Harvey, Leybourne and Newbold (1997); Dickey and Fuller (1979);
+Kwiatkowski, Phillips, Schmidt and Shin (1992); Mann (1945); Sen (1968).

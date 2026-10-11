@@ -126,7 +126,8 @@ def main() -> None:
         dest="template",
         default="empirical",
         help="Template (pipeline file) the run follows, resolved in ./pipelines, ~/.e2er/pipelines, "
-        "then the built-in ones (e.g. empirical-preregistered, event-study-finance). Default: empirical.",
+        "then the built-in ones (empirical-preregistered, event-study-finance, replication, field-map, "
+        "descriptive-study, time-series-forecasting). Default: empirical.",
     )
     run_p.add_argument(
         "--mode",
@@ -168,9 +169,11 @@ def main() -> None:
             "review",
             "revision",
             "replication",
+            "preregister",
         ],
         help="Pause for human review after this pipeline stage (repeatable). The run pauses; "
-        "then `e2er review <paper_id>` to edit, instruct, send back or approve (or `e2er resume` to continue).",
+        "then `e2er review <paper_id>` to edit, instruct, send back or approve (or `e2er resume` to continue). "
+        "`preregister` turns on a template's optional pre-registration (time-series-forecasting).",
     )
     run_p.add_argument(
         "--data",
@@ -266,6 +269,7 @@ def main() -> None:
             "review",
             "revision",
             "replication",
+            "preregister",
         ],
         help="Pause every run for human review after this stage (repeatable). A paused run is recorded "
         "as paused and not exported; review it with `e2er review <paper_id>`, then `e2er export` it.",

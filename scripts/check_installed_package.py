@@ -14,7 +14,15 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-TEMPLATES = ("empirical", "empirical-preregistered", "event-study-finance", "replication")
+TEMPLATES = (
+    "empirical",
+    "empirical-preregistered",
+    "event-study-finance",
+    "replication",
+    "field-map",
+    "descriptive-study",
+    "time-series-forecasting",
+)
 
 
 def main(repo: Path) -> int:

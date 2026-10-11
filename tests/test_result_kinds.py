@@ -29,7 +29,7 @@ from src.core.strategist.review_aggregator import ReviewScore, aggregate_reviews
 ROOT = Path(__file__).resolve().parent.parent
 SKILLS = ROOT / "skills" / "files"
 EXO = ROOT / "tests" / "fixtures" / "replay" / "exoplanet"
-DESCRIPTIVE = load_spec(EXO / "pipelines" / "descriptive-study.toml")
+DESCRIPTIVE = load_spec(ROOT / "pipelines" / "descriptive-study.toml")
 
 
 def _schema_example(kind: str) -> dict:
@@ -282,8 +282,14 @@ def _template_dict(**top) -> dict:
     }
 
 
+#: Shipped templates built on the discipline-neutral core: they change e2er's defaults on purpose.
+NEUTRAL_TEMPLATES = {"descriptive-study", "time-series-forecasting"}
+
+
 def test_every_shipped_template_keeps_e2er_s_defaults():
     for name in available(ROOT):
+        if name in NEUTRAL_TEMPLATES:
+            continue
         spec = find_spec(name, project=ROOT)
         assert spec.results == "regression" and spec.causal and spec.is_default_core(), name
         assert spec.base_skill == "base/economist" and spec.data_skills is None and spec.review_weights == {}
@@ -296,6 +302,8 @@ def test_every_shipped_template_keeps_e2er_s_defaults():
 def test_shipped_templates_give_every_specialist_the_registry_s_skills():
     """The skills a run of an existing template reads are the registry's plus its own `[skills]`, as before."""
     for name in available(ROOT):
+        if name in NEUTRAL_TEMPLATES:
+            continue
         spec = find_spec(name, project=ROOT)
         for specialist, skills in SPECIALIST_SKILLS.items():
             want = list(dict.fromkeys([*skills, *spec.skills.get(specialist, ())]))
@@ -310,7 +318,8 @@ def test_the_descriptive_template_changes_the_persona_data_and_analysis_skills()
         assert not {"data/blockchain", "data/crypto-defi", "data/allium-cli"} & set(s(sp, DESCRIPTIVE))
         assert "data/fred" in s(sp, DESCRIPTIVE)  # general connectors stay
     analysis = s("econometrics_specialist", DESCRIPTIVE)
-    assert analysis[-1] == "data/descriptive-results-schema" and "econometrics/did" not in analysis
+    assert "data/descriptive-results-schema" in analysis and "econometrics/did" not in analysis
+    assert analysis[-1] == "methods/descriptive-analysis"  # the template's own [skills] come last
     assert "causal-inference/identification-spec-schema" not in s("identification_strategist", DESCRIPTIVE)
     assert DESCRIPTIVE.panel() == [
         "literature_reviewer",

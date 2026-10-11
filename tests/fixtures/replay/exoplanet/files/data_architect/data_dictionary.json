@@ -6,12 +6,14 @@
       "file": "exoplanets.csv",
       "frequency": "one row per planet",
       "role": "the planet sample: orbital period, radius, discovery method and year (synthetic test data)",
+      "key": ["planet"],
+      "coverage": {"column": "discovery_year", "from": 2009, "to": 2024},
       "columns": [
         {"name": "planet", "type": "TEXT", "description": "planet designation (synthetic)"},
-        {"name": "period_days", "type": "REAL", "description": "orbital period in days"},
-        {"name": "radius_earth", "type": "REAL", "description": "planet radius in Earth radii"},
+        {"name": "period_days", "type": "REAL", "unit": "days", "description": "orbital period"},
+        {"name": "radius_earth", "type": "REAL", "unit": "Earth radii", "description": "planet radius"},
         {"name": "discovery_method", "type": "TEXT", "description": "Transit or Radial velocity"},
-        {"name": "discovery_year", "type": "INTEGER", "description": "year of discovery"}
+        {"name": "discovery_year", "type": "INTEGER", "unit": "year", "description": "year of discovery"}
       ]
     }
   ]

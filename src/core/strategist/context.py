@@ -59,6 +59,20 @@ def template_context() -> str:
             "- No causal claim: no identification strategy is needed (do not dispatch identification_strategist "
             "or theory_specialist); describe patterns and associations, not effects."
         )
+    from ..labels import step as step_label
+    from ..specialists.registry import SPECIALIST_ARTIFACTS
+
+    for s in spec.steps:
+        if s.kind != "gate" or not s.after:
+            continue
+        # A check inside the dispatch runs once these specialists are done and before the analysis:
+        # the strategist must dispatch them (a template's own specialists are not in its default plan).
+        own = [a for a in s.after if a in SPECIALIST_ARTIFACTS]
+        lines.append(
+            f"- Check before the analysis: {step_label(s.name, spec)} ({s.check}). Dispatch "
+            f"{', '.join(own)} before econometrics_specialist; the check runs right after them and stops the "
+            "run when it fails."
+        )
     panel = spec.panel()
     lines.append(f"- Review panel: {', '.join(panel)}.")
     return "\n".join(lines)

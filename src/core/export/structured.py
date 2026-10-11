@@ -76,6 +76,11 @@ EXPORT_MAP: dict[str, list[tuple[str, str | None]]] = {
         ("robustness.md", None),
         ("field_boundary_counts.json", None),
         ("reading_list.json", None),
+        # The descriptive and time-series templates' checks (data_quality.py, forecast_checks.py).
+        ("data_quality.json", None),
+        ("data_quality.md", None),
+        ("figure_check.json", None),
+        ("forecast_check.json", None),
         ("*.csv", None),  # model-generated intermediate outputs at workspace root
     ],
     "design": [
@@ -101,6 +106,10 @@ EXPORT_MAP: dict[str, list[tuple[str, str | None]]] = {
         ("field_boundary.md", None),
         ("field_lanes.json", None),
         ("field_lanes.md", None),
+        # The time-series template's forecast setup and the freeze of its hold-out.
+        ("forecast_design.json", None),
+        ("forecast_design.md", None),
+        ("holdout_freeze.json", None),
     ],
     # Loose exploration scripts + logs the model writes (analysis.py, explore.py,
     # q.py, run_estimation.log, …). The broad globs run last so canonical files

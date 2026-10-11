@@ -49,6 +49,11 @@ STEPS: dict[str, str] = {
     "draw_map": "Map, reading list and exports",
     "write_review": "Field review draft",
     "citation_check": "Citation check",
+    # The descriptive and time-series templates.
+    "data_quality_gate": "Data check: units, duplicates, missing values",
+    "figure_gate": "Figures re-read from the data",
+    "forecast_design_gate": "Forecast setup and hold-out frozen",
+    "forecast_gate": "Forecasts judged on the hold-out",
     # Stops e2er makes on its own, outside the template's steps.
     "number_check": "Number check",
     "output_contract": "Output that failed its check",
@@ -99,6 +104,7 @@ SPECIALISTS: dict[str, str] = {
     "field_boundary_designer": "Boundary of the field",
     "field_lane_mapper": "Lanes of the field map",
     "field_review_writer": "Field review",
+    "forecast_designer": "Forecast setup and hold-out",
 }
 
 #: The built-in templates.
@@ -108,6 +114,8 @@ TEMPLATES: dict[str, str] = {
     "event-study-finance": "Event study in finance",
     "replication": "Replication of a published study",
     "field-map": "Map a research field",
+    "descriptive-study": "Descriptive data study",
+    "time-series-forecasting": "Time series and forecasting",
 }
 
 #: What a researcher did at a stop (the ``action`` of a ``researcher_action`` event).
@@ -263,6 +271,9 @@ def specialist(name: str) -> str:
 def step_or_specialist(name: str, spec: Any = None) -> str:
     """What a researcher can send back: a step of the template or one specialist."""
     if name in SPECIALISTS and (spec is None or spec.step(name) is None):
+        if name == "econometrics_specialist" and getattr(spec, "results", "regression") != "regression":
+            # The analysis specialist of a template that reports no regression.
+            return "Analysis (one specialist)"
         return f"{SPECIALISTS[name]} (one specialist)"
     return step(name, spec)
 

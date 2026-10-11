@@ -1,0 +1,56 @@
+{
+  "$comment": "Written by e2er-data: one entry per external-source load, with the source version, the URL and SHA-256 of every file read.",
+  "loads": [
+    {
+      "connector": "nasa_power",
+      "dataset": "NASA Prediction Of Worldwide Energy Resources (POWER), NASA Langley Research Center",
+      "terms_summary": "Free and keyless; NASA data without a marked restriction are CC0. POWER asks publications to give its reference with the API version and access date, and asks to be told when data are passed to others.",
+      "licence": "No licence stated by POWER; NASA's Earth science data use guidance (https://www.earthdata.nasa.gov/engage/open-data-services-software-policies/data-use-guidance): \"Unless the content is marked with a use restriction or license, data provided from a NASA-led mission are licensed as Creative Commons Zero (CC0). While there are no restrictions on the use of these data, data users are very strongly urged to cite the data used in their work products.\" POWER's referencing guide (https://power.larc.nasa.gov/docs/referencing/): \"When POWER data products are used in a publication include both POWER's Reference and POWER's Data Reference in any work product or publication\" and \"the Project requests notification if POWER data is transmitted to other researchers.\"",
+      "terms": "https://power.larc.nasa.gov/docs/referencing/",
+      "series": "NASA POWER monthly T2M at lat 50.11, lon 8.68, 2001–2023",
+      "link": "https://power.larc.nasa.gov/data-access-viewer/",
+      "retrieved_at": "2026-10-11T01:21:43Z",
+      "citation": "NASA Langley Research Center (LaRC) POWER Project. Prediction Of Worldwide Energy Resources (POWER), https://power.larc.nasa.gov/. The data was obtained from National Aeronautics and Space Administration (NASA) Langley Research Center's Prediction Of Worldwide Energy Resources (POWER) project funded through the NASA Earth Science Division. Data reference: The data was obtained from the POWER Monthly and Annual API version 2.10.0 on 2026/10/11.",
+      "citation_by": "source",
+      "cite_key": "NASA_POWER",
+      "version": "v2.10.0",
+      "query": "https://power.larc.nasa.gov/api/temporal/monthly/point?parameters=T2M&community=RE&latitude=50.11&longitude=8.68&start=2001&end=2023&format=JSON",
+      "files": [
+        {
+          "url": "https://power.larc.nasa.gov/api/temporal/monthly/point?parameters=T2M&community=RE&latitude=50.11&longitude=8.68&start=2001&end=2023&format=JSON",
+          "sha256": "6cb7e45604012d869e1453037acaf5f74f5276a01f16fed6b56d2fa3ef2ac911"
+        }
+      ],
+      "request": {
+        "command": "point",
+        "lat": 50.11,
+        "lon": 8.68,
+        "parameters": [
+          "T2M"
+        ],
+        "start": "2001",
+        "end": "2023",
+        "temporal": "monthly"
+      },
+      "api": "POWER Monthly and Annual API",
+      "api_version": "v2.10.0",
+      "community": "RE",
+      "temporal": "monthly",
+      "time_standard": "LST",
+      "data_sources": [
+        "MERRA2"
+      ],
+      "units": {
+        "T2M": "C"
+      },
+      "parameter_names": {
+        "T2M": "Temperature at 2 Meters"
+      },
+      "frequency": "monthly",
+      "table": "t2m_frankfurt",
+      "table_rows": 276,
+      "rows": 276,
+      "specialist": "data_analyst"
+    }
+  ]
+}

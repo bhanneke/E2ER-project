@@ -194,7 +194,15 @@
       "log_x": true,
       "log_y": true,
       "x_label": "Orbital period (days)",
-      "y_label": "Radius (Earth radii)"
+      "y_label": "Radius (Earth radii)",
+      "source": {
+        "table": "exoplanets",
+        "columns": {
+          "x": "period_days",
+          "y": "radius_earth",
+          "groups": "discovery_method"
+        }
+      }
     },
     {
       "filename": "fig_radius_hist.pdf",
@@ -245,7 +253,10 @@
       ],
       "log_x": true,
       "x_label": "Radius (Earth radii)",
-      "y_label": "Planets"
+      "y_label": "Planets",
+      "source": {
+        "results": "distributions.radius.bins"
+      }
     }
   ]
 }

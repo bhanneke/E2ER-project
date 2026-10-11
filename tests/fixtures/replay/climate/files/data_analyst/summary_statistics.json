@@ -1,0 +1,31 @@
+{
+  "n_observations": 276,
+  "n_units": 1,
+  "time_coverage": {
+    "start": "2001-01",
+    "end": "2023-12",
+    "frequency": "monthly"
+  },
+  "outcome": {
+    "n": 276,
+    "mean": 10.3576,
+    "sd": 7.5404,
+    "min": -4.58,
+    "p25": 3.8925,
+    "median": 9.71,
+    "p75": 17.155,
+    "max": 24.67,
+    "unit": "degrees C",
+    "variable": "T2M"
+  },
+  "missing": {
+    "T2M": 0
+  },
+  "sample_flow": [
+    {
+      "step": "NASA POWER monthly T2M, 2001-01 to 2023-12",
+      "rows": 276,
+      "dropped": 0
+    }
+  ]
+}

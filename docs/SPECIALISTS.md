@@ -6,10 +6,10 @@ Every specialist the strategist can dispatch, the skill files it is given, and
 the artifacts it must produce. A specialist that does not write its declared
 artifact fails its contract and is retried with the violation fed back.
 
-- **33** specialists
-- **81** skill files on disk
-- **66** referenced by at least one specialist
-- **15** never referenced
+- **34** specialists
+- **83** skill files on disk
+- **67** referenced by at least one specialist
+- **16** never referenced
 
 ## Shipped but never loaded
 
@@ -28,6 +28,7 @@ methodology guidance exists, and no specialist is given it.
 - `data/visualization`
 - `econometrics/rdd`
 - `econometrics/time-series`
+- `methods/descriptive-analysis`
 - `review/constructive-feedback`
 - `review/reference-check`
 - `synthesis/deliverables`
@@ -79,6 +80,12 @@ methodology guidance exists, and no specialist is given it.
 
 - **Writes:** `paper_draft.tex`
 - **Skills (4):** `synthesis/main-path-analysis`, `writing/personal-style`, `writing/cite-numbers-by-source`, `reasoning/anti-slop`
+
+### `forecast_designer`
+
+- **Writes:** `forecast_design.md`
+- **Sidecars:** `forecast_design.json`
+- **Skills (4):** `base/researcher`, `methods/time-series-forecasting`, `data/data-tables`, `data/query-data`
 
 ### `idea_developer`
 
@@ -216,7 +223,7 @@ The reverse index: who is affected if you edit a skill file.
 | Skill | Loaded by |
 |---|---|
 | `base/economist` | `data_architect`, `idea_developer`, `polish_institutions`, `theory_specialist` |
-| `base/researcher` | `field_boundary_designer`, `idea_developer`, `literature_scanner`, `paper_drafter`, `replication_packager` |
+| `base/researcher` | `field_boundary_designer`, `forecast_designer`, `idea_developer`, `literature_scanner`, `paper_drafter`, `replication_packager` |
 | `causal-inference/identification-spec-schema` | `identification_strategist` |
 | `causal-inference/judge-designs` | `identification_strategist` |
 | `causal-inference/natural-experiments` | `identification_strategist` |
@@ -226,7 +233,7 @@ The reverse index: who is affected if you edit a skill file.
 | `data/blockchain` | `data_architect` |
 | `data/cleaning` | `data_analyst`, `data_reviewer`, `polish_numerics`, `replication_packager` |
 | `data/crypto-defi` | `data_architect`, `polish_institutions` |
-| `data/data-tables` | `data_analyst`, `data_architect`, `identification_strategist` |
+| `data/data-tables` | `data_analyst`, `data_architect`, `forecast_designer`, `identification_strategist` |
 | `data/eurostat` | `data_analyst`, `data_architect` |
 | `data/exoplanets` | `data_analyst`, `data_architect` |
 | `data/figure-spec` | `data_analyst` |
@@ -238,7 +245,7 @@ The reverse index: who is affected if you edit a skill file.
 | `data/nasa_power` | `data_analyst`, `data_architect` |
 | `data/noaa` | `data_analyst`, `data_architect` |
 | `data/owid` | `data_analyst`, `data_architect` |
-| `data/query-data` | `data_analyst`, `data_architect`, `econometrics_specialist` |
+| `data/query-data` | `data_analyst`, `data_architect`, `econometrics_specialist`, `forecast_designer` |
 | `data/summary-statistics-schema` | `data_analyst` |
 | `data/table-spec` | `paper_drafter`, `section_writer` |
 | `data/usgs` | `data_analyst`, `data_architect` |
@@ -255,6 +262,7 @@ The reverse index: who is affected if you edit a skill file.
 | `latex/tables` | `latex_formatter` |
 | `math/optimization-verification` | `polish_formula` |
 | `math/proof-strategies` | `polish_equilibria`, `theory_specialist` |
+| `methods/time-series-forecasting` | `forecast_designer` |
 | `modeling/asset-pricing` | `theory_specialist` |
 | `modeling/game-theory` | `polish_equilibria`, `theory_specialist` |
 | `modeling/market-microstructure` | `mechanism_reviewer` |

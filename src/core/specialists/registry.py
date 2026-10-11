@@ -59,6 +59,11 @@ SPECIALIST_ARTIFACTS: dict[str, str] = {
     "field_boundary_designer": "field_boundary.md",
     "field_lane_mapper": "field_lanes.md",
     "field_review_writer": "paper_draft.tex",
+    # Time-series template (pipelines/time-series-forecasting.toml): declares the
+    # forecast setup (series, hold-out, horizon, baselines, candidate models,
+    # diagnostics, interval level) before any model is fitted; the setup and the
+    # hold-out are frozen by the forecast_design check (forecast_checks.py).
+    "forecast_designer": "forecast_design.md",
 }
 
 SPECIALIST_SKILLS: dict[str, list[str]] = {
@@ -205,6 +210,12 @@ SPECIALIST_SKILLS: dict[str, list[str]] = {
         "writing/cite-numbers-by-source",
         "reasoning/anti-slop",
     ],
+    "forecast_designer": [
+        "base/researcher",
+        "methods/time-series-forecasting",
+        "data/data-tables",
+        "data/query-data",
+    ],
 }
 
 
@@ -264,6 +275,8 @@ SPECIALIST_SIDECAR_ARTIFACTS: dict[str, list[str]] = {
     # retrieval step fetches, and the lanes the map step draws.
     "field_boundary_designer": ["field_boundary.json"],
     "field_lane_mapper": ["field_lanes.json"],
+    # The forecast setup the forecast_design check validates and freezes.
+    "forecast_designer": ["forecast_design.json"],
     "paper_drafter": [
         # Declarative results-table spec. Prompted via the multi-file
         # output block; the renderer (core/renderer/tables.py) fills the
@@ -340,7 +353,9 @@ SPECIALIST_NEEDS: dict[str, tuple[str, ...]] = {
     "data_analyst": ("data_architect",),
     # data.db and data_summary.md (the loaded data), data_dictionary.json, and
     # identification_spec.json (the declared specification the results are checked against).
-    "econometrics_specialist": ("data_architect", "data_analyst", "identification_strategist"),
+    "econometrics_specialist": ("data_architect", "data_analyst", "identification_strategist", "forecast_designer"),
+    # data.db (the series) and data_dictionary.json: the hold-out is chosen on the loaded series.
+    "forecast_designer": ("data_architect", "data_analyst"),
     # estimation_results.json (the results table), data_summary.md, model_spec.md.
     "paper_drafter": ("data_analyst", "econometrics_specialist", "theory_specialist"),
     # field_lanes.json names the lanes the review is organised by.
