@@ -476,3 +476,20 @@ def test_e2er_bookkeeping_files_and_a_bare_wildcard_are_not_inputs(tmp_path: Pat
     recipe = json.loads((out / "reproduce.json").read_text(encoding="utf-8"))
     assert [i["path"] for i in recipe["inputs"]] == ["data.db"]
     assert not any("which a script reads" in n for n in recipe.get("notes") or []), recipe.get("notes")
+
+
+def test_a_script_that_only_reads_the_results_is_not_a_step_of_the_rerun(tmp_path: Path):
+    """The live text run's analysis checked its own output with _validate_figs.py, which only reads
+    estimation_results.json; as a step of the rerun it failed and the study did not reproduce."""
+    ws = _fomc_workspace(tmp_path)
+    check = ws / "_validate_figs.py"
+    check.write_text(
+        'import json\nr = json.load(open("estimation_results.json", encoding="utf-8"))\nassert r["figures"]\n',
+        encoding="utf-8",
+    )
+    stamp = (ws / "run_estimation.py").stat().st_mtime + 1  # written between the estimation and the results
+    os.utime(check, (stamp, stamp))
+    out = export_paper(ws, tmp_path / "exports", date_str="20261011")
+    recipe = json.loads((out / "reproduce.json").read_text(encoding="utf-8"))
+    assert ["python", "_validate_figs.py"] not in [s["run"] for s in recipe["steps"]]
+    assert ["python", "compute_h2_v2.py"] in [s["run"] for s in recipe["steps"]]

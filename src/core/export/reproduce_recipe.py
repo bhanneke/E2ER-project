@@ -126,8 +126,22 @@ class Chain:
     notes: list[str] = field(default_factory=list)
 
 
+#: A script that can write a file: opened for writing, written in one call, or dumped.
+_WRITES = re.compile(
+    r"""open\([^)]*["'](?:[wax]|[wa]\+|r\+)b?["']|mode\s*=\s*["'][wax]|write_text\(|write_bytes\(|\.dump\(|to_json\("""
+)
+
+
+def _writes_results(source: str) -> bool:
+    """Whether a script names the results file and writes something (not only reads it, as a check does)."""
+    return RESULTS in source and bool(_WRITES.search(source))
+
+
 def _writers(workspace: Path) -> tuple[list[Path], Path | None]:
-    writers = sorted(p for p in workspace.glob("*.py") if p.is_file() and RESULTS in _read(p))
+    # A script that only reads the results (the analysis specialist's own checks, e.g. _validate_figs.py in
+    # the live text run of 2026-10-11) is not a step of the rerun: it ran on a results file edited by hand
+    # and failed the reproduction.
+    writers = sorted(p for p in workspace.glob("*.py") if p.is_file() and _writes_results(_read(p)))
     canonical = next((workspace / n for n in _estimation_names() if (workspace / n).is_file()), None)
     return writers, canonical
 
