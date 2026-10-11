@@ -595,7 +595,7 @@ def check_draft_cites(workspace: Path, relative: str = "paper_draft.tex") -> Con
 
 #: Writers of the paper's prose, and the file each writes: their prose passes the phrase check.
 _PHRASE_CHECKED: frozenset[str] = frozenset(
-    {"paper_drafter", "section_writer", "abstract_writer", "field_review_writer"}
+    {"paper_drafter", "section_writer", "abstract_writer", "field_review_writer", "meta_review_writer"}
 )
 
 

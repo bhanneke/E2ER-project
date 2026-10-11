@@ -315,6 +315,8 @@ and contract tests on responses recorded live once.
   open-access resolvers; failed downloads are not repeated at every start; the full-text step reads up
   to 150 records (60 would have left 37 of the 97 unread); the skill tells the extractor never to choose
   between estimates by size.
+- The review writer's draft passes the phrase check of the other writers (the live run's draft, written
+  before the check existed, has 22 of the constructions; the writer would now be sent back with them).
 - Method skill `methods/meta-analysis`; method sources credited in the template and `credits.json`
   (DOIs checked on Crossref): Page et al. (2021), DerSimonian and Laird (1986), Viechtbauer (2005),
   Higgins and Thompson (2002), Riley, Higgins and Deeks (2011), Egger et al. (1997), Duval and Tweedie
