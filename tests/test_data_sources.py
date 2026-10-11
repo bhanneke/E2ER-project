@@ -10,6 +10,7 @@ import pytest
 
 from src.core.specialists.contract_check import check_specialist_artifacts
 from src.core.specialists.data_sources import check_declared_sources, sources_block
+from src.modules.data.sources import all_sources
 
 
 def _settings(**kw):
@@ -37,7 +38,9 @@ def test_tables_from_unavailable_sources_are_violations_with_the_reason(tmp_path
     assert "table ff_factors_daily (source file)" in check.reason
     assert "no data files were chosen for this study" in check.reason
     assert "spy_prices" not in check.reason
-    assert "Available now: yfinance, gmd, usgs; no data files." in check.reason
+    keyless = ", ".join(s.name for s in all_sources() if s.key is None or s.key.optional)
+    assert keyless.startswith("yfinance, gmd, usgs")
+    assert f"Available now: {keyless}; no data files." in check.reason
 
 
 def test_available_connectors_and_local_files_pass(tmp_path: Path):

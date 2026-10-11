@@ -1,0 +1,12 @@
+{
+ "$comment": "Recorded live by the e2er connector kit (use_cassette); replayed in tests with no network.",
+ "interactions": [
+  {
+   "method": "GET",
+   "url": "https://gea.esac.esa.int/tap-server/tap/sync?FORMAT=csv&LANG=ADQL&MAXREC=50000&QUERY=SELECT+source_id%2C+phot_g_mean_mag%2C+DISTANCE%28POINT%28%27ICRS%27%2C+ra%2C+dec%29%2C+POINT%28%27ICRS%27%2C+56.75%2C+24.12%29%29+AS+dist_deg+FROM+gaiadr3.gaia_source+WHERE+1+%3D+CONTAINS%28POINT%28%27ICRS%27%2C+ra%2C+dec%29%2C+CIRCLE%28%27ICRS%27%2C+56.75%2C+24.12%2C+0.1%29%29+AND+phot_g_mean_mag+%3C+10.0+ORDER+BY+source_id&REQUEST=doQuery",
+   "status": 200,
+   "content_type": "text/csv",
+   "text": "source_id,phot_g_mean_mag,dist_deg\n65225611037551360,9.199545,0.08032691528884509\n66715105696289024,6.29883,0.08019553815952332\n66715174415764736,8.624058,0.0635832047677575\n66715273197982848,8.243902,0.0760405246049702\n"
+  }
+ ]
+}

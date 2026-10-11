@@ -83,9 +83,17 @@ class PoliteClient:
         _LAST_CALL[self.source] = time.monotonic()
 
     async def get(
-        self, url: str, params: dict[str, Any] | None = None, headers: dict[str, str] | None = None
+        self,
+        url: str,
+        params: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+        ok_status: tuple[int, ...] = (),
     ) -> httpx.Response:
-        """GET ``url``; the response when it is 2xx, else a FetchError naming the URL and status."""
+        """GET ``url``; the response when it is 2xx, else a FetchError naming the URL and status.
+
+        ``ok_status`` lists further statuses returned as responses (not errors): a service whose
+        refusals carry a message the fetch function reads (a TAP error VOTable, a JSON list of messages).
+        """
         if self._client is None:
             raise RuntimeError("use PoliteClient as `async with PoliteClient(...) as http`")
         clean = {k: v for k, v in (params or {}).items() if v is not None}
@@ -112,7 +120,7 @@ class PoliteClient:
                 attempt += 1
                 await self._backoff(attempt, resp.headers.get("Retry-After"))
                 continue
-            if resp.status_code // 100 != 2:
+            if resp.status_code // 100 != 2 and resp.status_code not in ok_status:
                 body = " ".join(resp.text[:300].split())
                 raise FetchError(f"{request.url}: HTTP {resp.status_code}" + (f": {body}" if body else ""))
             return resp
@@ -190,11 +198,12 @@ def _body_out(content: bytes, content_type: str) -> dict[str, str]:
 class _Recorder(httpx.AsyncBaseTransport):
     def __init__(self, cassette: Cassette) -> None:
         self._cassette = cassette
-        self._real = httpx.AsyncHTTPTransport()
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
-        resp = await self._real.handle_async_request(request)
-        content = await resp.aread()
+        # A transport per request: two loads in one cassette run in two event loops (two cli.main calls).
+        async with httpx.AsyncHTTPTransport() as real:
+            resp = await real.handle_async_request(request)
+            content = await resp.aread()
         ctype = resp.headers.get("content-type", "")
         self._cassette.entries.append(
             {
@@ -208,7 +217,7 @@ class _Recorder(httpx.AsyncBaseTransport):
         return httpx.Response(resp.status_code, headers={"content-type": ctype} if ctype else {}, content=content)
 
     async def aclose(self) -> None:
-        pass  # one real transport serves every client of the cassette; closed with the process
+        pass  # each request closes its own transport
 
 
 class _Replayer(httpx.AsyncBaseTransport):

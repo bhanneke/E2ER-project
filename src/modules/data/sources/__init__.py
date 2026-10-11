@@ -59,7 +59,7 @@ __all__ = [
 ]
 
 #: The definitions, in catalogue order (the planning catalogue, the README table, `e2er-data --help`).
-_MODULES = ("yfinance", "fred", "gmd", "usgs")
+_MODULES = ("yfinance", "fred", "gmd", "usgs", "exoplanets", "gaia", "nasa_power", "noaa")
 
 _REGISTRY: dict[str, Source] | None = None
 

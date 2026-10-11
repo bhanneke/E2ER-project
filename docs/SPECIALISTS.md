@@ -7,8 +7,8 @@ the artifacts it must produce. A specialist that does not write its declared
 artifact fails its contract and is retried with the violation fed back.
 
 - **31** specialists
-- **65** skill files on disk
-- **54** referenced by at least one specialist
+- **69** skill files on disk
+- **58** referenced by at least one specialist
 - **11** never referenced
 
 ## Shipped but never loaded
@@ -41,12 +41,12 @@ methodology guidance exists, and no specialist is given it.
 
 - **Writes:** `data_summary.md`
 - **Sidecars:** `summary_statistics.json`, `figure_spec.json` _(optional)_
-- **Skills (12):** `data/data-tables`, `data/query-data`, `data/cleaning`, `data/figure-spec`, `econometrics/panel-data`, `data/allium-cli`, `data/allium-developer-api`, `data/yfinance`, `data/fred`, `data/gmd`, `data/summary-statistics-schema`, `data/usgs`
+- **Skills (16):** `data/data-tables`, `data/query-data`, `data/cleaning`, `data/figure-spec`, `econometrics/panel-data`, `data/allium-cli`, `data/allium-developer-api`, `data/yfinance`, `data/fred`, `data/gmd`, `data/summary-statistics-schema`, `data/usgs`, `data/exoplanets`, `data/gaia`, `data/nasa_power`, `data/noaa`
 
 ### `data_architect`
 
 - **Writes:** `data_dictionary.json`
-- **Skills (11):** `data/data-tables`, `data/query-data`, `data/blockchain`, `data/crypto-defi`, `base/economist`, `data/allium-cli`, `data/allium-developer-api`, `data/yfinance`, `data/fred`, `data/gmd`, `data/usgs`
+- **Skills (15):** `data/data-tables`, `data/query-data`, `data/blockchain`, `data/crypto-defi`, `base/economist`, `data/allium-cli`, `data/allium-developer-api`, `data/yfinance`, `data/fred`, `data/gmd`, `data/usgs`, `data/exoplanets`, `data/gaia`, `data/nasa_power`, `data/noaa`
 
 ### `data_reviewer`
 
@@ -213,9 +213,13 @@ The reverse index: who is affected if you edit a skill file.
 | `data/cleaning` | `data_analyst`, `data_reviewer`, `polish_numerics`, `replication_packager` |
 | `data/crypto-defi` | `data_architect`, `polish_institutions` |
 | `data/data-tables` | `data_analyst`, `data_architect`, `identification_strategist` |
+| `data/exoplanets` | `data_analyst`, `data_architect` |
 | `data/figure-spec` | `data_analyst` |
 | `data/fred` | `data_analyst`, `data_architect` |
+| `data/gaia` | `data_analyst`, `data_architect` |
 | `data/gmd` | `data_analyst`, `data_architect` |
+| `data/nasa_power` | `data_analyst`, `data_architect` |
+| `data/noaa` | `data_analyst`, `data_architect` |
 | `data/query-data` | `data_analyst`, `data_architect`, `econometrics_specialist` |
 | `data/summary-statistics-schema` | `data_analyst` |
 | `data/table-spec` | `paper_drafter`, `section_writer` |

@@ -150,23 +150,63 @@ async def tap_query(http: PoliteClient, service: str, adql: str, *, max_rows: in
     the query goes to ``<service>/sync``. A TAP error (a VOTable with
     ``QUERY_STATUS="ERROR"``) becomes a FetchError with the service's message.
     """
+    df, url, _ = await _tap(http, service, adql, max_rows)
+    return df, url
+
+
+async def _tap(http: PoliteClient, service: str, adql: str, max_rows: int | None) -> tuple[Any, str, bytes]:
+    """``tap_query``, plus the CSV as read (for its SHA-256)."""
     import pandas as pd
 
     params: dict[str, Any] = {"REQUEST": "doQuery", "LANG": "ADQL", "FORMAT": "csv", "QUERY": " ".join(adql.split())}
     if max_rows is not None:
         params["MAXREC"] = max_rows
-    resp = await http.get(service.rstrip("/") + "/sync", params)
+    # A TAP service may answer a refused query with HTTP 400 and an error VOTable (Gaia): read its message.
+    resp = await http.get(service.rstrip("/") + "/sync", params, ok_status=(400,))
     text = resp.text
     if "<VOTABLE" in text[:500].upper() or 'QUERY_STATUS" VALUE="ERROR' in text.upper():
         import re
 
         msg = re.search(r"<INFO[^>]*ERROR[^>]*>(.*?)</INFO>", text, re.S | re.I)
-        raise FetchError(f"the TAP service refused the query: {(msg.group(1) if msg else text[:300]).strip()}")
+        import html
+
+        raise FetchError(
+            "the TAP service refused the query: " + " ".join(html.unescape(msg.group(1) if msg else text[:300]).split())
+        )
+    if resp.status_code // 100 != 2:
+        raise FetchError(f"{http.requests[-1]}: HTTP {resp.status_code}: {' '.join(text[:300].split())}")
     try:
         df = pd.read_csv(io.StringIO(text)) if text.strip() else pd.DataFrame()
     except ValueError as e:
         raise FetchError(f"{http.requests[-1]}: the answer is not CSV ({e})") from None
-    return df, http.requests[-1]
+    return df, http.requests[-1], resp.content
+
+
+def adql_select_only(adql: str) -> str:
+    """The query, one line, when it is a single ADQL SELECT; else a FetchError (a TAP service is read-only anyway)."""
+    q = " ".join(str(adql).split()).rstrip(";").strip()
+    if not q.lower().startswith(("select ", "with ")):
+        raise FetchError("--adql must be one ADQL SELECT query, e.g. SELECT TOP 10 * FROM ps")
+    if ";" in q:
+        raise FetchError("--adql must be one query (no ';')")
+    return q
+
+
+async def tap_capped(http: PoliteClient, service: str, adql: str, cap: int) -> tuple[Any, str, str]:
+    """``tap_query`` with a row cap that never cuts a table silently; also the SHA-256 of the CSV read.
+
+    The service is asked for ``cap + 1`` rows (``MAXREC``); more than ``cap``
+    rows back means the result would be cut, and the load stops with a
+    FetchError instead of saving a partial table.
+    """
+    df, url, content = await _tap(http, service, adql, cap + 1)
+    if len(df) > cap:
+        raise FetchError(
+            f"the query returns more than {cap:,} rows, the cap of this load; the table would be cut. "
+            "Narrow the query (fewer columns do not help: add conditions, a smaller region, a brighter limit) "
+            "or raise --max-rows if the source allows it"
+        )
+    return df, url, sha256_bytes(content)
 
 
 # ── CSV / ZIP download, versioned and hashed ─────────────────────────────────

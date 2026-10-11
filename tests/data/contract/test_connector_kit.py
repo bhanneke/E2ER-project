@@ -153,7 +153,9 @@ def test_every_source_is_a_subcommand_with_its_operations() -> None:
     for s in all_sources():
         assert set(dispatch[s.name]) == {op.name for op in s.operations}
         for op in s.operations:
-            required = [x for a in op.args if a.required for x in (f"--{a.name}", "v")]
+            required = [
+                x for a in op.args if a.required for x in (f"--{a.name}", "1" if a.type in (int, float) else "v")
+            ]
             ns = parser.parse_args([s.name, op.name, *required])
             assert ns.source == s.name and ns.command == op.name
             if op.loads:

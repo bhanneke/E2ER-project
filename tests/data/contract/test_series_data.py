@@ -20,6 +20,13 @@ def _settings(fred_api_key=None, allium_api_key=None):
     return SimpleNamespace(fred_api_key=fred_api_key, allium_api_key=allium_api_key)
 
 
+def _keyless() -> list[str]:
+    """The kit's sources that need no key, in catalogue order (USGS, the astronomy and earth sources, …)."""
+    from src.modules.data.sources import all_sources
+
+    return [s.name for s in all_sources() if s.key is None or s.key.optional]
+
+
 # ---------------------------------------------------------------------------
 # Registry availability + catalog
 # ---------------------------------------------------------------------------
@@ -27,19 +34,22 @@ def _settings(fred_api_key=None, allium_api_key=None):
 
 def test_yfinance_and_gmd_always_available():
     # usgs: the first source built on the connector kit alone (keyless).
-    assert [f.name for f in series_fetchers(_settings())] == ["yfinance", "gmd", "usgs"]
+    names = [f.name for f in series_fetchers(_settings())]
+    assert names[:3] == ["yfinance", "gmd", "usgs"] and names == _keyless()
+    assert "fred" not in names
 
 
 def test_fred_available_with_key():
     names = [f.name for f in series_fetchers(_settings(fred_api_key="k"))]
-    assert names == ["yfinance", "fred", "gmd", "usgs"]
+    assert names[:4] == ["yfinance", "fred", "gmd", "usgs"]
+    assert [n for n in names if n != "fred"] == _keyless()
 
 
 def test_catalog_includes_allium_card_only_with_key():
     plain = {c["name"] for c in data_catalog(_settings())}
-    assert plain == {"yfinance", "gmd", "usgs"}
+    assert plain == set(_keyless()) and {"yfinance", "gmd", "usgs"} <= plain
     withallium = {c["name"] for c in data_catalog(_settings(allium_api_key="k"))}
-    assert withallium == {"yfinance", "gmd", "usgs", "allium"}
+    assert withallium == {*_keyless(), "allium"}
 
 
 def test_allium_card_points_to_query_allium_not_fetch_data():
@@ -143,7 +153,7 @@ async def test_list_data_sources_returns_catalog():
     with patch(_SETTINGS, return_value=_settings(fred_api_key="k", allium_api_key="k")):
         out = json.loads(await handler.handle("list_data_sources", {}))
     names = {s["name"] for s in out["sources"]}
-    assert names == {"yfinance", "fred", "gmd", "usgs", "allium"}
+    assert names == {*_keyless(), "fred", "allium"} and {"yfinance", "gmd", "usgs"} <= names
 
 
 async def test_fetch_data_dispatches_to_provider():

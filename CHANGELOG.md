@@ -40,6 +40,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the worked example); `scripts/gen_sources.py` writes the README's data source table from the
   definitions and a skill stub for a new source; a test fails when the README lists other sources.
 
+### New data sources: astronomy and earth science
+Each with its terms quoted from the source's own pages, its citation from the provider's recommended
+citation or DOI record, a skill file (what is in it, typical calls, units, pitfalls), a doctor check,
+and contract tests on responses recorded live once.
+- **NASA Exoplanet Archive** (`e2er-data exoplanets planets|query`, no key): confirmed planets and
+  host stars from the archive's TAP service, one row per planet (`pscomppars`, default) or one
+  published solution per planet (`--catalogue ps`), with `--columns`, `--since`/`--until`, `--method`
+  and an ADQL `--where`; `query` runs one ADQL SELECT. The archive states no licence; each load carries
+  NASA's acknowledgement, the archive paper (Christiansen et al. 2025) and the table's DOI
+  (10.26133/NEA13 or NEA12).
+- **ESA Gaia** (`e2er-data gaia cone|query`, no key): Gaia DR3 sources in a cone (`--ra --dec
+  --radius`, `--max-mag`, `--min-parallax-over-error`) or any ADQL SELECT, within the archive's
+  anonymous quota (50,000 rows, 10 s). Gaia data are CC BY-NC 3.0 IGO: e2er handles them as data under
+  terms (publishing asks for `--accept-data-terms gaia`, a Zenodo deposit takes a non-commercial
+  licence, `get_data.py` reloads them from the fixed DR3 release); loads cite the Gaia mission and DR3
+  papers.
+- **NASA POWER** (`e2er-data nasa_power point|regional|parameters`, no key): daily, monthly or annual
+  weather and solar parameters for a place (up to 20) or a 2–10 degree region (one), since 1981. Each
+  load records the API version, community, time standard and units, and its citation names the API
+  version and access date as POWER asks; POWER's fill value −999 becomes an empty cell.
+- **NOAA Climate Data Online** (`e2er-data noaa daily|stations`, free token `NOAA_TOKEN`): GHCN-Daily
+  station records (temperature, precipitation, snow), paged and split by year within the token's
+  limits; the token travels in a header and is never recorded. Without a token the source is not
+  offered and says where to get one.
+- **TAP loads never cut a table**: `tap_capped` asks for one row more than the cap and stops the load
+  when the result is larger; a TAP service's error VOTable (also on HTTP 400, as Gaia sends it) becomes
+  the load's error with the service's message. `PoliteClient.get(ok_status=…)` lets a fetch function read
+  a refusal's body (POWER's HTTP 422 messages).
+- **Recording fixtures**: two loads inside one `use_cassette` block now record (each request gets its own
+  transport; before, the second load failed with "Event loop is closed").
+
 ## [0.15.3] — 2026-10-11
 
 ### A subscription plan's usage limit pauses the run

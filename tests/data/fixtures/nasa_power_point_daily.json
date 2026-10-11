@@ -1,0 +1,12 @@
+{
+ "$comment": "Recorded live by the e2er connector kit (use_cassette); replayed in tests with no network.",
+ "interactions": [
+  {
+   "method": "GET",
+   "url": "https://power.larc.nasa.gov/api/temporal/daily/point?community=RE&end=20240107&format=JSON&latitude=50.11&longitude=8.68&parameters=T2M%2CPRECTOTCORR&start=20240101",
+   "status": 200,
+   "content_type": "application/json",
+   "text": "{\"type\":\"Feature\",\"geometry\":{\"type\":\"Point\",\"coordinates\":[8.68,50.11,171.61]},\"properties\":{\"parameter\":{\"T2M\":{\"20240101\":5.68,\"20240102\":6.24,\"20240103\":8.88,\"20240104\":6.55,\"20240105\":4.77,\"20240106\":3.48,\"20240107\":0.45},\"PRECTOTCORR\":{\"20240101\":0.49,\"20240102\":24.58,\"20240103\":4.96,\"20240104\":2.97,\"20240105\":0.06,\"20240106\":0.84,\"20240107\":0.28}}},\"header\":{\"title\":\"NASA/POWER Source Native Resolution Daily Data\",\"api\":{\"version\":\"v2.10.0\",\"name\":\"POWER Daily API\"},\"sources\":[\"MERRA2\"],\"fill_value\":-999.0,\"time_standard\":\"LST\",\"start\":\"20240101\",\"end\":\"20240107\"},\"messages\":[],\"parameters\":{\"T2M\":{\"units\":\"C\",\"longname\":\"Temperature at 2 Meters\"},\"PRECTOTCORR\":{\"units\":\"mm/day\",\"longname\":\"Precipitation Corrected\"}},\"times\":{\"data\":0.127,\"process\":0.01}}"
+  }
+ ]
+}

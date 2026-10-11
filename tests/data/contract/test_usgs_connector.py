@@ -203,7 +203,8 @@ async def test_the_doctor_check_is_one_cheap_request(monkeypatch: pytest.MonkeyP
     from src.doctor import PASS, source_checks
 
     with use_cassette(Path(__file__).resolve().parents[1] / "fixtures" / "usgs_doctor.json"):
-        [check] = await source_checks(None)
+        # Other sources' checks find no response in this fixture and report FAIL; USGS's is the one pinned here.
+        check = {c.name: c for c in await source_checks(None)}["data.usgs.events"]
     assert check.name == "data.usgs.events" and check.status == PASS and "rows from USGS" in check.detail
 
 
