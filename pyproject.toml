@@ -34,6 +34,9 @@ dependencies = [
     # The econometrics skill requires them for every distribution function.
     "scipy>=1.11",
     "statsmodels>=0.14",
+    # Topic models (NMF, LDA) and text vectorisers for the text-analysis template's
+    # analysis scripts, and scikit-learn's English stop words. No model downloads.
+    "scikit-learn>=1.3",
     "matplotlib>=3.8",
     "yfinance>=0.2.40",
     "aiosqlite>=0.20.0",

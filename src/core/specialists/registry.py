@@ -77,6 +77,10 @@ SPECIALIST_ARTIFACTS: dict[str, str] = {
     "study_screener": "screening.md",
     "study_extractor": "extraction.md",
     "meta_review_writer": "paper_draft.tex",
+    # Text-analysis template (pipelines/text-analysis.toml): judges every passage of
+    # the sample the analysis drew of each dictionary and sentiment measure; the
+    # text_validation check (text_checks.py) recomputes the precision from it.
+    "text_validator": "text_validation.md",
 }
 
 SPECIALIST_SKILLS: dict[str, list[str]] = {
@@ -238,6 +242,10 @@ SPECIALIST_SKILLS: dict[str, list[str]] = {
         "writing/cite-numbers-by-source",
         "reasoning/anti-slop",
     ],
+    "text_validator": [
+        "base/researcher",
+        "methods/text-analysis",
+    ],
 }
 
 
@@ -304,6 +312,8 @@ SPECIALIST_SIDECAR_ARTIFACTS: dict[str, list[str]] = {
     "protocol_designer": ["review_protocol.json"],
     "study_screener": ["screening.json"],
     "study_extractor": ["extraction.json"],
+    # The judgements the text_validation check reads (one per item of validation_sample.json).
+    "text_validator": ["text_validation.json"],
     "paper_drafter": [
         # Declarative results-table spec. Prompted via the multi-file
         # output block; the renderer (core/renderer/tables.py) fills the
@@ -383,8 +393,11 @@ SPECIALIST_NEEDS: dict[str, tuple[str, ...]] = {
     "econometrics_specialist": ("data_architect", "data_analyst", "identification_strategist", "forecast_designer"),
     # data.db (the series) and data_dictionary.json: the hold-out is chosen on the loaded series.
     "forecast_designer": ("data_architect", "data_analyst"),
-    # estimation_results.json (the results table), data_summary.md, model_spec.md.
-    "paper_drafter": ("data_analyst", "econometrics_specialist", "theory_specialist"),
+    # validation_sample.json, which the analysis draws.
+    "text_validator": ("econometrics_specialist",),
+    # estimation_results.json (the results table), data_summary.md, model_spec.md,
+    # and the precision of a dictionary measure (text_validation.json).
+    "paper_drafter": ("data_analyst", "econometrics_specialist", "theory_specialist", "text_validator"),
     # field_lanes.json names the lanes the review is organised by.
     "field_review_writer": ("field_lane_mapper",),
 }

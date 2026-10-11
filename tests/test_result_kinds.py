@@ -289,6 +289,7 @@ NEUTRAL_TEMPLATES = {
     "policy-evaluation",
     "spatial-analysis",
     "systematic-review",
+    "text-analysis",
 }
 
 

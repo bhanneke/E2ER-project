@@ -1,0 +1,189 @@
+{
+  "question": "Do English-language short fiction works of 1820-1853 and of 1886-1892 differ in how often they use the vocabulary of fear, and which words are key in the later works?",
+  "corpus": {
+    "description": "Six short stories and novellas in English; one document is one work, the whole text as Project Gutenberg gives it (header, footer and licence removed).",
+    "selection": "Project Gutenberg books 41, 932, 11231 (published 1820-1853) and 43, 375, 1952 (published 1886-1892), chosen for the test fixture as well-known works of their decades that are short enough to record.",
+    "sampling": "purposive: three canonical works from each period, not a random sample",
+    "n_documents_planned": 6,
+    "table": "corpus",
+    "id_column": "doc_id",
+    "text_column": "text"
+  },
+  "metadata": {
+    "title": {
+      "description": "title as in the catalogue",
+      "source": "Gutendex catalogue (e2er-data gutenberg text)"
+    },
+    "author": {
+      "description": "first author as in the catalogue",
+      "source": "Gutendex catalogue (e2er-data gutenberg text)"
+    },
+    "year": {
+      "description": "year of first publication",
+      "source": "entered by hand for the test fixture: Irving 1820 (The Sketch Book), Poe 1839 (Burton's Gentleman's Magazine), Melville 1853 (Putnam's Monthly), Stevenson 1886, Bierce 1890 (San Francisco Examiner), Gilman 1892 (The New England Magazine)"
+    },
+    "period": {
+      "description": "1820-1853 or 1886-1892",
+      "source": "derived from year"
+    }
+  },
+  "preprocessing": {
+    "token_pattern": "[a-z]+(?:['’][a-z]+)?",
+    "lowercase": true,
+    "stopwords": {
+      "file": "stopwords.txt",
+      "source": "scikit-learn ENGLISH_STOP_WORDS (318 words), written by build_data.py"
+    },
+    "lemmatisation": "none",
+    "ngrams": [
+      1,
+      2
+    ],
+    "front_matter": "Project Gutenberg's header, footer and licence removed by the connector; titles and the table of contents of Jekyll and Hyde kept (a few hundred tokens)"
+  },
+  "groups": {
+    "early": {
+      "column": "period",
+      "value": "1820-1853"
+    },
+    "late": {
+      "column": "period",
+      "value": "1886-1892"
+    },
+    "y1820": {
+      "column": "year",
+      "value": 1820
+    },
+    "y1839": {
+      "column": "year",
+      "value": 1839
+    },
+    "y1853": {
+      "column": "year",
+      "value": 1853
+    },
+    "y1886": {
+      "column": "year",
+      "value": 1886
+    },
+    "y1890": {
+      "column": "year",
+      "value": 1890
+    },
+    "y1892": {
+      "column": "year",
+      "value": 1892
+    }
+  },
+  "analyses": [
+    {
+      "id": "frequencies",
+      "method": "term_frequency",
+      "terms": [
+        "fear",
+        "terror",
+        "horror",
+        "dread",
+        "afraid",
+        "door",
+        "house",
+        "night"
+      ],
+      "groups": [
+        "all",
+        "early",
+        "late"
+      ]
+    },
+    {
+      "id": "keyness_late",
+      "method": "keyness",
+      "target": "late",
+      "reference": "early",
+      "statistic": "log-likelihood G2",
+      "effect_size": "log ratio",
+      "min_count": 10,
+      "top": 15,
+      "min_documents": 2,
+      "note": "a key term must occur in at least 2 of the 3 later works, so one work's names and topics do not make the list"
+    },
+    {
+      "id": "pairs",
+      "method": "collocation",
+      "measure": "pmi",
+      "window": 1,
+      "min_count": 5,
+      "top": 10,
+      "group": "all"
+    },
+    {
+      "id": "fear_words",
+      "method": "dictionary",
+      "dictionary": {
+        "name": "fear vocabulary",
+        "terms": [
+          "fear",
+          "fears",
+          "feared",
+          "fearful",
+          "afraid",
+          "terror*",
+          "terrif*",
+          "horror*",
+          "horrib*",
+          "dread*",
+          "fright*",
+          "dismay*",
+          "panic*",
+          "alarm*",
+          "aghast",
+          "appal*",
+          "shudder*",
+          "trembl*"
+        ],
+        "source": "written for this test fixture: words for fear and its expression, not a published dictionary"
+      },
+      "validation_items": 20
+    },
+    {
+      "id": "fear_over_time",
+      "method": "diachronic",
+      "terms": [
+        "fear",
+        "terror",
+        "horror",
+        "dread"
+      ],
+      "groups": [
+        "y1820",
+        "y1839",
+        "y1853",
+        "y1886",
+        "y1890",
+        "y1892"
+      ],
+      "note": "one work per year, so a year's figure is one work's"
+    },
+    {
+      "id": "topics",
+      "method": "topic_model",
+      "algorithm": "nmf",
+      "k_candidates": [
+        3,
+        4,
+        5
+      ],
+      "seeds": [
+        1,
+        2,
+        3
+      ],
+      "segment_tokens": 1000,
+      "top_n": 10,
+      "selection": "reconstruction error of each k, and reading the top terms and example segments"
+    }
+  ],
+  "limits": {
+    "sampling_bias": "Six canonical works chosen by hand, three per period, all out of U.S. copyright and digitised by Project Gutenberg; American authors dominate the early period. The corpus describes these six works, not the fiction of either period."
+  }
+}

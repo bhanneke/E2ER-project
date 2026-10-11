@@ -74,6 +74,12 @@ GATES: tuple[str, ...] = (
     "meta_screening",
     "meta_extraction",
     "meta_synthesis",
+    # The text-analysis template's checks (text_checks.py): the corpus design, the
+    # corpus as built, the results recounted, and the hand-checked dictionary sample.
+    "corpus_design",
+    "corpus",
+    "text_results",
+    "text_validation",
 )
 
 #: Deterministic steps of a template whose failure means the run cannot go on,

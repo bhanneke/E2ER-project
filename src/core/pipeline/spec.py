@@ -88,6 +88,11 @@ CHECK_SETTINGS: dict[str, dict[str, type | tuple[type, ...]]] = {
     "meta_search": {"max_records": int, "max_requests": int, "max_crossref": int},
     "meta_screening": {"sample_size": int},
     "meta_fulltext": {"max_downloads": int},
+    # The text-analysis template's checks (src/core/pipeline/text_checks.py).
+    "corpus_design": {"min_seeds": int},
+    "corpus": {},
+    "text_results": {"min_seeds": int, "min_examples": int},
+    "text_validation": {"min_validation_items": int},
 }
 
 #: The persona skill specialists read unless the template names another (``base_skill``).

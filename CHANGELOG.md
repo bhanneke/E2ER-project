@@ -384,6 +384,53 @@ and contract tests on responses recorded live once.
   with the optional pre-registration, and with an analysis that fits on the hold-out, which stops the run
   at the forecast check until the analysis is sent back; unit tests for every refusal of the four checks.
 
+### Template: text analysis
+- **`text-analysis`**: counts and models of the language of a corpus, from Project Gutenberg
+  (`e2er-data gutenberg`) or the researcher's own texts (`.csv`/`.jsonl` with a text column, or `.txt`
+  files read by the build script). No causal claim; the researcher persona; a panel of methods, data,
+  plausibility (read as a scholar of the texts would), writing and technical reviewers; stops for the
+  design review and the draft review. Method skill `methods/text-analysis`; results in the text contract.
+- **Four checks** (`src/core/pipeline/text_checks.py`), each sending its specialist back once before it
+  stops the run:
+  - `corpus_design`, after the data architect: `corpus_design.json` states the question, the corpus and
+    how its documents were selected and sampled, the metadata with their sources, the preprocessing
+    (token pattern, lower-casing, stop words and lemmas as files with their sources, n-grams), the groups,
+    the analyses and the corpus's sampling bias. Dictionaries and topic-model seeds are fixed here,
+    before the analysis.
+  - `corpus`, after the data analyst: every document with its source, licence and SHA-256; token counts
+    and corpus statistics (documents, tokens, types, length distribution) recomputed with the recorded
+    preprocessing; duplicate texts refused; metadata filled or their absence explained. The word lists
+    are frozen with their SHA-256 (`corpus_check.json`).
+  - `text_results`, after the analysis: every term count, group size, frequency per 10,000 tokens and
+    dispersion recounted; keyness recomputed (log-likelihood G2, Dunning 1993 and Rayson and Garside
+    2000, with the log ratio and its direction); adjacent collocations and PMI; dictionary and sentiment
+    hits with the design's word list; topic models (LDA or NMF) with a recorded seed, a metric for at least
+    two numbers of topics, runs under at least three seeds whose stability (mean best-match Jaccard of the
+    top terms) e2er recomputes, top terms and example documents of the corpus per topic, shares adding
+    up to 1; a statement of sampling bias.
+  - `text_validation`, after a new specialist, the **text validator**, who judges every passage of the
+    sample the analysis drew (with its seed) of each dictionary and sentiment measure: every passage must
+    be in its document, every item judged with a reason for each wrong one, and the precision is
+    recomputed. A study without such a measure has nothing to validate.
+- `e2er verify` recounts the results and the validation on the exported corpus (`method checks`).
+  The text kind's number check also reads `corpus_check.json` and `text_validation.json`. Export puts
+  `corpus_design.json` in `design/`, `corpus_manifest.json` in `data/` and the checks' reports, the
+  sample and the judgements in `results/`.
+- The strategist is told which checks follow the analysis and which specialists to dispatch for them
+  (it had been told "dispatch econometrics_specialist before econometrics_specialist" for the spatial
+  template's results check).
+- **scikit-learn** is a dependency now (topic models, vectorisers, English stop words for the analysis
+  scripts; no model downloads).
+- Method sources credited in the template and `credits.json`: Dunning 1993, Rayson and Garside 2000,
+  Hardie's log ratio, Church and Hanks 1990, Blei, Ng and Jordan 2003, Lee and Seung 1999, Greene,
+  O'Callaghan and Cunningham 2014, Grimmer and Stewart 2013, Gentzkow, Kelly and Taddy 2019 (DOIs checked
+  on Crossref; the others by their pages).
+- Tests: unit tests for every refusal of the four checks and the statistics; a replay of six works of
+  short fiction (Project Gutenberg 41, 932, 11231, 43, 375, 1952, recorded once through the connector)
+  end to end (both stops, the four checks, figures, number check, panel, publish, verify with the recount
+  and a tampered export, reproduce); a dictionary widened after the design that stops at the results
+  check until the analysis is sent back; a validator that leaves an item unjudged.
+
 ## [0.15.3] — 2026-10-11
 
 ### A subscription plan's usage limit pauses the run

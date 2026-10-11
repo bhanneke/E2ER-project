@@ -23,6 +23,7 @@ TEMPLATES = (
     "descriptive-study",
     "time-series-forecasting",
     "systematic-review",
+    "text-analysis",
 )
 
 

@@ -2,7 +2,7 @@
 
 A template is a pipeline file in `pipelines/` (schema:
 `docs/schemas/pipeline.schema.json`). A run follows the template chosen when the
-paper is created; resume keeps it. e2er ships ten:
+paper is created; resume keeps it. e2er ships eleven:
 
 | Template | For |
 |---|---|
@@ -16,6 +16,7 @@ paper is created; resume keeps it. e2er ships ten:
 | `descriptive-study` | A description of a sample in any field: summary statistics, distributions, associations and figures, after a data check (units, duplicates, missing values, coverage); every figure re-read from its data. |
 | `time-series-forecasting` | A series, its trend and seasonality, models and forecasts: the setup and its hold-out frozen before fitting, every model judged on the hold-out against naive baselines, forecasts with intervals; optional pre-registration. |
 | `systematic-review` | A systematic review with a random-effects meta-analysis (PRISMA 2020): protocol, a recorded OpenAlex search, screening with a reason for every exclusion, open-access full texts, extraction with every number traced to its page and quote, e2er's own meta-analysis code, forest, funnel and flow figures; a narrative synthesis when too few studies can be pooled. |
+| `text-analysis` | Counts and models of the language of a corpus (Project Gutenberg or the researcher's texts): term frequencies, key terms by log-likelihood with the log ratio, collocations, dictionary and sentiment measures with a hand-checked sample, topic models with their stability across seeds. The corpus design is reviewed before the corpus is built; e2er recounts every number from the corpus. |
 
 ## Skills and files a template adds
 
@@ -324,6 +325,47 @@ Boundaries come from two sources added with the template:
 |---|---|---|
 | Eurostat GISCO | `gisco nuts --level 2 --year 2021 --scale 20M`, `gisco countries` | Non-commercial use with the notice "© EuroGeographics for the administrative boundaries" on every map; the files may not be passed on, so a published study loads them again (`get_data.py`), and e2er does not deposit them on Zenodo. |
 | Natural Earth | `naturalearth countries --scale 110m` (release v5.1.2) | Public domain. |
+
+## `text-analysis`
+
+Counts and models of language in a corpus: books from Project Gutenberg
+(`e2er-data gutenberg books|text`: Gutendex catalogue, texts from Project
+Gutenberg's mirror with its licence removed), or the researcher's own texts
+(`.csv` or `.jsonl` with a text column in the data folder, imported into
+`data.db`; plain `.txt` files read by the build script, one document per
+file). No causal claim; the researcher persona; the panel is methods, data,
+plausibility (read as a scholar of the texts would), writing and technical.
+The results follow the text contract (`results = "text"`); the skill
+`methods/text-analysis` gives the design file, the corpus build, the
+preprocessing every check applies, the statistics (Dunning 1993; Rayson and
+Garside 2000; Hardie's log ratio; Church and Hanks 1990), the topic models
+(LDA, Blei, Ng and Jordan 2003; NMF, Lee and Seung 1999) and their stability
+(Greene et al. 2014), and the validation Grimmer and Stewart (2013) ask for.
+numpy, scipy and scikit-learn; nothing is downloaded.
+
+One specialist is the template's own: the **text validator** reads every
+passage of the sample the analysis drew of each dictionary and sentiment
+measure and judges whether the word means there what the measure assumes
+(`text_validation.json`, with a reason for every item and the precision).
+
+The preprocessing is applied the same way everywhere: Unicode NFC,
+lower-casing when declared, every match of the recorded token pattern, then
+the recorded lemma table. Token counts count every token; the recorded stop
+words only leave term lists and models.
+
+| Step | Kind | What happens |
+|---|---|---|
+| `corpus_design_gate` | check `corpus_design`, after the data architect | Reads `corpus_design.json`. Fails when the question, the corpus definition, the selection or the sampling is missing; when the statement of sampling bias is missing; when the corpus table is not named; when a metadata field has no source; when the preprocessing is unusable (a token pattern with capturing groups or an empty match, lower-casing not true or false, stop words or lemmas neither `"none"` nor a file in the study folder with its source, n-grams beyond 3); when a group is not defined by a metadata column or a list of documents; or when an analysis lacks what makes it checkable (keyness its two groups, a dictionary or sentiment measure its word list and source, a topic model LDA or NMF with at least two candidate numbers of topics and `min_seeds`, default 3, seeds). Sends the data architect back once, then stops the run. |
+| `review_design` | your review | After the plan, the literature and the corpus design; before the corpus is built. |
+| `corpus_gate` | check `corpus`, after the data analyst | Reads the corpus table in `data.db` and `corpus_manifest.json`. Fails when a document has no source or licence, ids repeat, two documents have the same text, a SHA-256 or a token count is not e2er's, the corpus statistics (documents, tokens, types, the length distribution) are not e2er's, a word list the design names is missing, or a metadata value is missing without a stated reason. Freezes the word lists with their SHA-256 and writes `corpus_check.json`. Sends the data analyst back once, then stops. |
+| `text_results_gate` | check `text_results`, after the econometrics specialist, before drafting | Recounts from the corpus: the preprocessing the results state against the design's, the corpus figures, every term count, group size, frequency per 10,000 tokens and dispersion; every keyness score (G2, log ratio, p-value, direction); adjacent collocations and their PMI; the hits of every dictionary and sentiment measure, whose word list must be the design's. Topic models need a recorded seed, a metric for at least two numbers of topics, runs under at least `min_seeds` seeds whose stability (mean best-match Jaccard overlap of the top terms) e2er recomputes, at least five top terms and `min_examples` (default 2) example documents of the corpus per topic, and shares that add up to 1 per group. Fails also on a word list changed after the corpus check, a stop word in a term list, and a missing statement of sampling bias. Writes `text_check.json`. Sends the analysis back once, then stops. |
+| `text_validation_gate` | check `text_validation`, after the analysis and the text validator | For every dictionary and sentiment measure: a sample (`validation_sample.json`) drawn with a recorded seed, at least `min_validation_items` (default 20) items or every hit; every quoted passage found verbatim in its document with a hit of the word list; every item judged, nothing judged that is not in the sample, a reason for every item judged wrong; the precision equal to the share judged right. Writes `text_validation_check.json`. A study without such a measure passes with nothing to validate. Sends the text validator back once, then stops. |
+| `estimation_gate`, `figure_gate` | checks | The text results contract; every figure re-read from the results it names. |
+| `review_draft` | your review | Before the panel. |
+
+`e2er verify` recounts the results and the validation again on the exported
+corpus (`method checks`); without `data/data.db` in the folder it says that
+nothing was recounted. The template cites its method sources in `[[credit]]`.
 
 ## `event-study-finance`
 

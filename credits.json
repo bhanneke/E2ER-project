@@ -627,6 +627,125 @@
         "note": "The reference implementation e2er's estimates were checked against (the BCG vaccine trials: REML and DL estimates, tau^2, I^2, Q, trim and fill).",
         "cite_key": "viechtbauer2010conducting"
       }
+    ],
+    "template:text-analysis": [
+      {
+        "creator": "Ted Dunning",
+        "role": "method",
+        "relation": "cites",
+        "kind": "article",
+        "title": "Accurate Methods for the Statistics of Surprise and Coincidence",
+        "publisher": "Computational Linguistics 19(1), 61-74",
+        "published": "1993",
+        "url": "https://aclanthology.org/J93-1003/",
+        "accessed": "2026-10-11",
+        "found_via": "OpenAlex W2116780029 and the ACL Anthology (no Crossref DOI)",
+        "note": "The log-likelihood ratio (G2) for comparing word frequencies, sound for rare words."
+      },
+      {
+        "creator": "Paul Rayson and Roger Garside",
+        "role": "method",
+        "relation": "cites",
+        "kind": "article",
+        "title": "Comparing corpora using frequency profiling",
+        "publisher": "Proceedings of the Workshop on Comparing Corpora (ACL 2000), 1-6",
+        "published": "2000",
+        "url": "https://doi.org/10.3115/1117729.1117730",
+        "accessed": "2026-10-11",
+        "found_via": "Crossref record checked 2026-10-11",
+        "note": "Keyness: G2 between a target and a reference corpus from the two counts and the two corpus sizes."
+      },
+      {
+        "creator": "Andrew Hardie",
+        "role": "method",
+        "relation": "cites",
+        "kind": "webpage",
+        "title": "Log Ratio - an informal introduction",
+        "publisher": "ESRC Centre for Corpus Approaches to Social Science (CASS), Lancaster University",
+        "published": "2014",
+        "url": "https://cass.lancs.ac.uk/log-ratio-an-informal-introduction/",
+        "accessed": "2026-10-11",
+        "found_via": "the page itself (no DOI)",
+        "note": "Log ratio, the effect size reported with G2 (a zero count taken as 0.5)."
+      },
+      {
+        "creator": "Kenneth Ward Church and Patrick Hanks",
+        "role": "method",
+        "relation": "cites",
+        "kind": "article",
+        "title": "Word Association Norms, Mutual Information, and Lexicography",
+        "publisher": "Computational Linguistics 16(1), 22-29",
+        "published": "1990",
+        "url": "https://aclanthology.org/J90-1003/",
+        "accessed": "2026-10-11",
+        "found_via": "the ACL Anthology (no Crossref DOI for the journal version)",
+        "note": "Pointwise mutual information for collocations."
+      },
+      {
+        "creator": "David M. Blei, Andrew Y. Ng and Michael I. Jordan",
+        "role": "method",
+        "relation": "cites",
+        "kind": "article",
+        "title": "Latent Dirichlet Allocation",
+        "publisher": "Journal of Machine Learning Research 3, 993-1022",
+        "published": "2003",
+        "url": "https://jmlr.org/papers/v3/blei03a.html",
+        "accessed": "2026-10-11",
+        "found_via": "OpenAlex W1880262756 and the journal's page (no Crossref DOI)",
+        "note": "LDA topic models."
+      },
+      {
+        "creator": "Daniel D. Lee and H. Sebastian Seung",
+        "role": "method",
+        "relation": "cites",
+        "kind": "article",
+        "title": "Learning the parts of objects by non-negative matrix factorization",
+        "publisher": "Nature 401(6755), 788-791",
+        "published": "1999-10",
+        "url": "https://doi.org/10.1038/44565",
+        "accessed": "2026-10-11",
+        "found_via": "Crossref record checked 2026-10-11",
+        "note": "Non-negative matrix factorisation (NMF), the other topic model the template accepts."
+      },
+      {
+        "creator": "Derek Greene, Derek O'Callaghan and Pádraig Cunningham",
+        "role": "method",
+        "relation": "cites",
+        "kind": "article",
+        "title": "How Many Topics? Stability Analysis for Topic Models",
+        "publisher": "Machine Learning and Knowledge Discovery in Databases (ECML PKDD 2014), Lecture Notes in Computer Science, 498-513",
+        "published": "2014",
+        "url": "https://doi.org/10.1007/978-3-662-44848-9_32",
+        "accessed": "2026-10-11",
+        "found_via": "Crossref record checked 2026-10-11",
+        "note": "Topic stability as the agreement of top terms between runs; the check's best-match Jaccard overlap follows the idea."
+      },
+      {
+        "creator": "Justin Grimmer and Brandon M. Stewart",
+        "role": "method",
+        "relation": "cites",
+        "kind": "article",
+        "title": "Text as Data: The Promise and Pitfalls of Automatic Content Analysis Methods for Political Texts",
+        "publisher": "Political Analysis 21(3), 267-297",
+        "published": "2013",
+        "url": "https://doi.org/10.1093/pan/mps028",
+        "accessed": "2026-10-11",
+        "found_via": "Crossref record checked 2026-10-11",
+        "note": "Validate, validate, validate: dictionary measures checked on hand-read examples, models read, not trusted."
+      },
+      {
+        "creator": "Matthew Gentzkow, Bryan Kelly and Matt Taddy",
+        "role": "method",
+        "relation": "cites",
+        "kind": "article",
+        "title": "Text as Data",
+        "publisher": "Journal of Economic Literature 57(3), 535-574",
+        "published": "2019-09",
+        "url": "https://doi.org/10.1257/jel.20181020",
+        "accessed": "2026-10-11",
+        "found_via": "Crossref record checked 2026-10-11",
+        "note": "Representing text as counts, dictionary methods, topic models; preprocessing choices as part of the method."
+      }
     ]
   }
 }

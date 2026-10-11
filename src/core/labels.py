@@ -71,6 +71,11 @@ STEPS: dict[str, str] = {
     "review_extraction": "Extraction review",
     "synthesis": "Meta-analysis, forest, funnel and flow diagram",
     "write_draft": "Review draft",
+    # The text-analysis template.
+    "corpus_design_gate": "Corpus design and preprocessing check",
+    "corpus_gate": "Corpus check: sources, hashes, counts",
+    "text_results_gate": "Counts, keyness and topics recomputed",
+    "text_validation_gate": "Hand-checked sample of dictionary hits",
     # Stops e2er makes on its own, outside the template's steps.
     "number_check": "Number check",
     "output_contract": "Output that failed its check",
@@ -126,6 +131,7 @@ SPECIALISTS: dict[str, str] = {
     "study_screener": "Screening of the records",
     "study_extractor": "Extraction from the studies",
     "meta_review_writer": "Systematic review",
+    "text_validator": "Hand check of dictionary hits",
 }
 
 #: The built-in templates.
@@ -140,6 +146,7 @@ TEMPLATES: dict[str, str] = {
     "policy-evaluation": "Policy evaluation (difference-in-differences)",
     "spatial-analysis": "Spatial analysis",
     "systematic-review": "Systematic review and meta-analysis",
+    "text-analysis": "Text analysis",
 }
 
 #: What a researcher did at a stop (the ``action`` of a ``researcher_action`` event).

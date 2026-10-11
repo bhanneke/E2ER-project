@@ -540,7 +540,9 @@ KINDS: dict[str, ResultKind] = {
         label="corpus statistics, term frequencies and text-model outputs",
         schema_skill="data/text-results-schema",
         method_skills=("data/figure-spec",),
-        number_sources=_NEUTRAL_SOURCES,
+        # The text-analysis template's checks (text_checks.py): the corpus statistics e2er
+        # computed, and the precision of a dictionary measure's hand-checked sample.
+        number_sources=(*_NEUTRAL_SOURCES, "corpus_check.json", "text_validation.json", "text_validation_check.json"),
         causal_by_default=False,
         check=check_text,
     ),

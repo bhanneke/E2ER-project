@@ -6,9 +6,9 @@ Every specialist the strategist can dispatch, the skill files it is given, and
 the artifacts it must produce. A specialist that does not write its declared
 artifact fails its contract and is retried with the violation fed back.
 
-- **38** specialists
-- **89** skill files on disk
-- **70** referenced by at least one specialist
+- **39** specialists
+- **90** skill files on disk
+- **71** referenced by at least one specialist
 - **19** never referenced
 
 ## Shipped but never loaded
@@ -232,6 +232,12 @@ methodology guidance exists, and no specialist is given it.
 - **Writes:** `review_technical.md`
 - **Skills (2):** `review/technical-review`, `review/consistency-check`
 
+### `text_validator`
+
+- **Writes:** `text_validation.md`
+- **Sidecars:** `text_validation.json`
+- **Skills (2):** `base/researcher`, `methods/text-analysis`
+
 ### `theory_specialist`
 
 - **Writes:** `model_spec.md`
@@ -249,7 +255,7 @@ The reverse index: who is affected if you edit a skill file.
 | Skill | Loaded by |
 |---|---|
 | `base/economist` | `data_architect`, `idea_developer`, `polish_institutions`, `theory_specialist` |
-| `base/researcher` | `field_boundary_designer`, `forecast_designer`, `idea_developer`, `literature_scanner`, `paper_drafter`, `protocol_designer`, `replication_packager` |
+| `base/researcher` | `field_boundary_designer`, `forecast_designer`, `idea_developer`, `literature_scanner`, `paper_drafter`, `protocol_designer`, `replication_packager`, `text_validator` |
 | `causal-inference/identification-spec-schema` | `identification_strategist` |
 | `causal-inference/judge-designs` | `identification_strategist` |
 | `causal-inference/natural-experiments` | `identification_strategist` |
@@ -291,6 +297,7 @@ The reverse index: who is affected if you edit a skill file.
 | `math/optimization-verification` | `polish_formula` |
 | `math/proof-strategies` | `polish_equilibria`, `theory_specialist` |
 | `methods/meta-analysis` | `meta_review_writer`, `protocol_designer`, `study_extractor`, `study_screener` |
+| `methods/text-analysis` | `text_validator` |
 | `methods/time-series-forecasting` | `forecast_designer` |
 | `modeling/asset-pricing` | `theory_specialist` |
 | `modeling/game-theory` | `polish_equilibria`, `theory_specialist` |

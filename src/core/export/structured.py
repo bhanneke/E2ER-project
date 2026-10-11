@@ -57,6 +57,8 @@ EXPORT_MAP: dict[str, list[tuple[str, str | None]]] = {
         ("data_dictionary.json", None),
         # what e2er-data recorded per external-source load (release, URLs, SHA-256)
         ("data_sources.json", None),
+        # A text study's corpus: one entry per document (source, licence, SHA-256, tokens).
+        ("corpus_manifest.json", None),
     ],
     "results": [
         ("estimation_results.json", None),
@@ -99,6 +101,14 @@ EXPORT_MAP: dict[str, list[tuple[str, str | None]]] = {
         ("extraction_check.md", None),
         ("prisma_counts.json", None),
         ("meta_references.json", None),
+        # What the text-analysis template's checks found (text_checks.py), the sample the
+        # analysis drew of each dictionary measure, and the text validator's judgements.
+        ("corpus_check.json", None),
+        ("text_check.json", None),
+        ("validation_sample.json", None),
+        ("text_validation.json", None),
+        ("text_validation.md", None),
+        ("text_validation_check.json", None),
         ("*.csv", None),  # model-generated intermediate outputs at workspace root
     ],
     "design": [
@@ -115,6 +125,8 @@ EXPORT_MAP: dict[str, list[tuple[str, str | None]]] = {
         # The designs the policy-evaluation and spatial-analysis templates check.
         ("did_design.json", None),
         ("spatial_design.json", None),
+        # The text-analysis template's corpus design (corpus, preprocessing, analyses).
+        ("corpus_design.json", None),
         ("econometric_spec.md", None),
         ("model_spec.md", None),
         # The frozen pre-registration and its fingerprints (researcher step),

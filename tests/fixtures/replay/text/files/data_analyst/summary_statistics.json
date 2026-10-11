@@ -1,0 +1,37 @@
+{
+  "n_observations": 6,
+  "n_units": 6,
+  "time_coverage": {
+    "start_year": 1820,
+    "end_year": 1892
+  },
+  "outcome": {
+    "variable": "tokens per document",
+    "unit": "tokens",
+    "n": 6,
+    "mean": 11645.0,
+    "min": 3782,
+    "median": 9775.5,
+    "max": 25787
+  },
+  "groups": {
+    "1820-1853": {
+      "documents": 3,
+      "tokens": 34128
+    },
+    "1886-1892": {
+      "documents": 3,
+      "tokens": 35742
+    }
+  },
+  "missing": {
+    "year": 0
+  },
+  "sample_flow": [
+    {
+      "step": "Project Gutenberg books loaded",
+      "rows": 6,
+      "dropped": 0
+    }
+  ]
+}

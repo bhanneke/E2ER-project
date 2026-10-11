@@ -2118,6 +2118,7 @@ _TEMPLATE_ORDER = (
     "descriptive-study",
     "time-series-forecasting",
     "systematic-review",
+    "text-analysis",
 )
 
 

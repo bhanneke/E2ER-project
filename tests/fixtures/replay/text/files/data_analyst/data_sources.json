@@ -1,0 +1,113 @@
+{
+  "$comment": "Written by e2er-data: one entry per external-source load, with the source version, the URL and SHA-256 of every file read.",
+  "loads": [
+    {
+      "connector": "gutenberg",
+      "dataset": "Project Gutenberg ebooks (catalogue via Gutendex; texts from Project Gutenberg's mirror)",
+      "terms_summary": "The books are not restricted by copyright in the United States; e2er stores the text with Project Gutenberg's licence and all references to Project Gutenberg removed, which leaves \"a text unrestricted by U.S. intellectual property law\". Check the copyright law of your country.",
+      "licence": "Project Gutenberg licence (https://www.gutenberg.org/policy/license.html): \"These books are not restricted by copyright in the United States and anyone located in the United States — including Project Gutenberg and you — may read and distribute them. If you don't live in the United States you'll have to check the laws of the country you live in before downloading and distributing our ebooks.\" \"If you strip the Project Gutenberg license and all references to Project Gutenberg from the text, you are left with a text unrestricted by U.S. intellectual property law.\" Permissions (https://www.gutenberg.org/policy/permission.html): \"No permission is needed for non-commercial use.\" Catalogue (https://www.gutenberg.org/policy/robot_access.html): \"The catalog data are granted to the public domain.\"",
+      "terms": "https://www.gutenberg.org/policy/license.html",
+      "series": "Project Gutenberg texts 41, 932, 11231, 43, 375, 1952 (header, footer and licence removed)",
+      "link": "https://www.gutenberg.org/ebooks/41",
+      "retrieved_at": "2026-10-11T13:42:12Z",
+      "citation": "Irving, Washington. (n.d.). The Legend of Sleepy Hollow. Urbana, Illinois: Project Gutenberg. Retrieved October 11, 2026, from www.gutenberg.org/ebooks/41. Poe, Edgar Allan. (n.d.). The Fall of the House of Usher. Urbana, Illinois: Project Gutenberg. Retrieved October 11, 2026, from www.gutenberg.org/ebooks/932. Melville, Herman. (n.d.). Bartleby, the Scrivener: A Story of Wall-Street. Urbana, Illinois: Project Gutenberg. Retrieved October 11, 2026, from www.gutenberg.org/ebooks/11231. Stevenson, Robert Louis. (n.d.). The strange case of Dr. Jekyll and Mr. Hyde. Urbana, Illinois: Project Gutenberg. Retrieved October 11, 2026, from www.gutenberg.org/ebooks/43. Bierce, Ambrose. (n.d.). An Occurrence at Owl Creek Bridge. Urbana, Illinois: Project Gutenberg. Retrieved October 11, 2026, from www.gutenberg.org/ebooks/375. Gilman, Charlotte Perkins. (n.d.). The Yellow Wallpaper. Urbana, Illinois: Project Gutenberg. Retrieved October 11, 2026, from www.gutenberg.org/ebooks/1952.",
+      "citation_by": "source",
+      "cite_key": "ProjectGutenberg",
+      "version": "2026-10-11",
+      "query": "https://gutenberg.pglaf.org/cache/epub/<id>/pg<id>.txt for 41, 932, 11231, 43, 375, 1952; catalogue https://gutendex.com/books/?ids=41%2C932%2C11231%2C43%2C375%2C1952",
+      "files": [
+        {
+          "url": "https://gutenberg.pglaf.org/cache/epub/41/pg41.txt",
+          "sha256": "6847c02f49c9ff8a5e2a0e8f49842bf3bffc7f5a87216c895a6b64f26ecf9353",
+          "bytes": 90896,
+          "retrieved_at": "2026-10-11T13:42:12Z"
+        },
+        {
+          "url": "https://gutenberg.pglaf.org/cache/epub/932/pg932.txt",
+          "sha256": "f1093719bbbc8115a95fd0ed8e51ee9ed5c67ad94abf3229a2a96f8ed0762bf9",
+          "bytes": 63271,
+          "retrieved_at": "2026-10-11T13:42:12Z"
+        },
+        {
+          "url": "https://gutenberg.pglaf.org/cache/epub/11231/pg11231.txt",
+          "sha256": "dea1f82d1c6b9b978a5d3f0d7afdef9759e7dc477fdbc4fc94158b3ee4392cff",
+          "bytes": 104463,
+          "retrieved_at": "2026-10-11T13:42:12Z"
+        },
+        {
+          "url": "https://gutenberg.pglaf.org/cache/epub/43/pg43.txt",
+          "sha256": "b43448a88391591f9cf82b25553df00faf47a2752a873185fcdd1156eebdb990",
+          "bytes": 163495,
+          "retrieved_at": "2026-10-11T13:42:12Z"
+        },
+        {
+          "url": "https://gutenberg.pglaf.org/cache/epub/375/pg375.txt",
+          "sha256": "a64e03d1b1c8e5c24dc8a835083ab660b0690244487ec5c6f4a7884d47f882b4",
+          "bytes": 41575,
+          "retrieved_at": "2026-10-11T13:42:12Z"
+        },
+        {
+          "url": "https://gutenberg.pglaf.org/cache/epub/1952/pg1952.txt",
+          "sha256": "20c7788eeae2fe3a0efd51a1f08b6723366a4be0778d65db219149a3522651d4",
+          "bytes": 52571,
+          "retrieved_at": "2026-10-11T13:42:12Z"
+        }
+      ],
+      "request": {
+        "command": "text",
+        "ids": [
+          "41",
+          "932",
+          "11231",
+          "43",
+          "375",
+          "1952"
+        ]
+      },
+      "mirror": "https://gutenberg.pglaf.org",
+      "stripped": {
+        "41": {
+          "header_found": true,
+          "footer_found": true,
+          "lines_naming_project_gutenberg_removed": 0,
+          "characters_removed": 19351
+        },
+        "932": {
+          "header_found": true,
+          "footer_found": true,
+          "lines_naming_project_gutenberg_removed": 0,
+          "characters_removed": 19365
+        },
+        "11231": {
+          "header_found": true,
+          "footer_found": true,
+          "lines_naming_project_gutenberg_removed": 0,
+          "characters_removed": 19425
+        },
+        "43": {
+          "header_found": true,
+          "footer_found": true,
+          "lines_naming_project_gutenberg_removed": 0,
+          "characters_removed": 19383
+        },
+        "375": {
+          "header_found": true,
+          "footer_found": true,
+          "lines_naming_project_gutenberg_removed": 0,
+          "characters_removed": 19324
+        },
+        "1952": {
+          "header_found": true,
+          "footer_found": true,
+          "lines_naming_project_gutenberg_removed": 0,
+          "characters_removed": 19336
+        }
+      },
+      "stripping": "Header and footer cut at the *** START OF / *** END OF lines; any other line naming Project Gutenberg dropped (licence: strip the license and all references).",
+      "table": "gutenberg_texts",
+      "table_rows": 6,
+      "rows": 6,
+      "specialist": "data_analyst"
+    }
+  ]
+}

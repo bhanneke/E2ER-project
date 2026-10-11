@@ -1,0 +1,57 @@
+{
+  "tables": [
+    {
+      "filename": "fear_terms.tex",
+      "label": "tab:fear_terms",
+      "caption": "Fear words per 10,000 tokens, by period",
+      "layout": "records",
+      "source": "estimation_results.json",
+      "path": "term_frequencies.late.terms",
+      "key_field": "term",
+      "rows": ["fear", "terror", "horror", "afraid"],
+      "row_header": "Term (1886--1892)",
+      "columns": [
+        {"field": "count", "header": "Count", "decimals": 0},
+        {"field": "per_10k", "header": "Per 10,000", "decimals": 2},
+        {"field": "documents", "header": "Works", "decimals": 0}
+      ],
+      "notes": "The three works of 1886--1892, 35,742 tokens. Works: in how many of the three works the term occurs."
+    },
+    {
+      "filename": "keyness.tex",
+      "label": "tab:keyness",
+      "caption": "Key terms of the works of 1886--1892 against those of 1820--1853",
+      "layout": "records",
+      "source": "estimation_results.json",
+      "path": "models.keyness_late.outputs.terms",
+      "key_field": "term",
+      "row_header": "Term",
+      "columns": [
+        {"field": "count_target", "header": "1886--1892", "decimals": 0},
+        {"field": "count_reference", "header": "1820--1853", "decimals": 0},
+        {"field": "g2", "header": "$G^2$", "decimals": 2},
+        {"field": "log_ratio", "header": "Log ratio", "decimals": 2},
+        {"field": "documents_target", "header": "Works", "decimals": 0}
+      ],
+      "notes": "Words with at least 10 occurrences in at least 2 of the 3 later works, stop words excluded; the 15 with the highest $G^2$. Log ratio: log2 of the ratio of relative frequencies."
+    },
+    {
+      "filename": "fear_dictionary.tex",
+      "label": "tab:fear_dictionary",
+      "caption": "Hits of the fear dictionary per 10,000 tokens",
+      "layout": "records",
+      "source": "estimation_results.json",
+      "path": "models.fear_words.outputs.by_group",
+      "key_field": "group",
+      "rows": ["early", "late", "y1820", "y1839", "y1853", "y1886", "y1890", "y1892"],
+      "row_labels": {"early": "1820--1853 (3 works)", "late": "1886--1892 (3 works)", "y1820": "Sleepy Hollow", "y1839": "Usher", "y1853": "Bartleby", "y1886": "Jekyll and Hyde", "y1890": "Owl Creek Bridge", "y1892": "The Yellow Wallpaper"},
+      "row_header": "Period or work",
+      "columns": [
+        {"field": "hits", "header": "Hits", "decimals": 0},
+        {"field": "n_tokens", "header": "Tokens", "decimals": 0},
+        {"field": "per_10k", "header": "Per 10,000", "decimals": 2}
+      ],
+      "notes": "Precision of the dictionary on a random sample of 20 hits, judged by hand: 0.75."
+    }
+  ]
+}

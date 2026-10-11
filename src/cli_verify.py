@@ -493,6 +493,28 @@ def _reconstruct_workspace(bundle: Path, ws: Path) -> None:
     if resdir.is_dir():
         for f in resdir.glob("*.csv"):
             shutil.copy2(f, ws / f.name)
+    # A text study's checks recount the corpus: its design, the corpus (data.db) and
+    # the word lists the design names (stop words, lemmas, dictionaries, lexicons).
+    if (bundle / "design" / "corpus_design.json").is_file():
+        _reconstruct_text_workspace(bundle, ws)
+
+
+def _reconstruct_text_workspace(bundle: Path, ws: Path) -> None:
+    from .core.pipeline.text_checks import DESIGN_FILE, MANIFEST_FILE, referenced_files
+
+    shutil.copy2(bundle / "design" / DESIGN_FILE, ws / DESIGN_FILE)
+    for name in ("data.db", MANIFEST_FILE):
+        if (bundle / "data" / name).is_file():
+            shutil.copy2(bundle / "data" / name, ws / name)
+    design = _load_json(ws / DESIGN_FILE)
+    for rel in referenced_files(design if isinstance(design, dict) else {}):
+        target = ws / rel
+        if target.is_file() or not target.resolve().is_relative_to(ws.resolve()):
+            continue
+        found = sorted(p for p in bundle.rglob(Path(rel).name) if p.is_file())
+        if found:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(found[0], target)
 
 
 # ── check 2: numbers ─────────────────────────────────────────────────────────
@@ -782,6 +804,8 @@ def _check_method(ws: Path) -> Check | None:
         from .modules.metaanalysis.workflow import export_check
 
         what, verdict = "meta-analysis", export_check(ws)  # type: ignore[assignment]
+    elif (ws / "corpus_design.json").is_file():
+        return _check_text_method(ws)
     else:
         return None
     if verdict.passed:
@@ -789,6 +813,23 @@ def _check_method(ws: Path) -> Check | None:
         return Check("method checks", PASS, f"{what}: {found}")
     more = f"; and {len(verdict.reasons) - 3} more" if len(verdict.reasons) > 3 else ""
     return Check("method checks", FAIL, f"{what}: " + "; ".join(verdict.reasons[:3]) + more)
+
+
+def _check_text_method(ws: Path) -> Check:
+    """A text study's results and hand-checked samples, recounted from the exported corpus."""
+    from .core.pipeline.text_checks import check_text_results, check_text_validation
+
+    if not (ws / "data.db").is_file():
+        return Check(
+            "method checks", SKIP, "text: the corpus (data/data.db) is not in the folder, so nothing is recounted"
+        )
+    results, validation = check_text_results(ws), check_text_validation(ws)
+    reasons = [*results.reasons, *validation.reasons]
+    if reasons:
+        more = f"; and {len(reasons) - 3} more" if len(reasons) > 3 else ""
+        return Check("method checks", FAIL, "text: " + "; ".join(reasons[:3]) + more)
+    found = ", ".join(f"{k}={v}" for k, v in {**results.stats, **validation.stats}.items())
+    return Check("method checks", PASS, f"text: recounted from the corpus: {found}")
 
 
 # ── check 4: citations (offline) ─────────────────────────────────────────────

@@ -1,0 +1,70 @@
+\documentclass[11pt]{article}
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage{threeparttable}
+\usepackage{graphicx}
+\usepackage[margin=1in]{geometry}
+
+\title{The Vocabulary of Fear in Six Works of Short Fiction, 1820--1892}
+\author{Anonymous}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{center}
+\small \textit{Test fixture of e2er's replay level. The texts are Project Gutenberg's; the text of this paper was written for the test.}
+\end{center}
+
+\section{Introduction}
+
+Do three works of short fiction published between 1820 and 1853 and three published between 1886 and 1892 differ in how often they use the vocabulary of fear, and which words are key in the later works? This study counts words in six works and nothing more. It makes no claim about the fiction of either period, its readers or its authors' intentions.
+
+\section{Corpus}
+
+The corpus consists of The Legend of Sleepy Hollow (1820), The Fall of the House of Usher (1839) and Bartleby, the Scrivener (1853) for the earlier period, and The Strange Case of Dr.~Jekyll and Mr.~Hyde (1886), An Occurrence at Owl Creek Bridge (1890) and The Yellow Wallpaper (1892) for the later one. The texts are Project Gutenberg's plain-text editions with Project Gutenberg's header, footer and licence removed; the SHA-256 of each text is recorded. The works were chosen by hand, not sampled, and American authors dominate the earlier period.
+
+A token is a run of lower-case letters, with an apostrophe inside a word kept (\textit{don't}). The corpus has 6 documents, 69,870 tokens and 8,691 distinct words. The works differ in length from 3,782 tokens (Owl Creek Bridge) to 25,787 (Jekyll and Hyde); the earlier period has 34,128 tokens, the later 35,742. Stop words (scikit-learn's list of 318) are left out of key-term lists and the topic model, never out of the token counts.
+
+\section{Results}
+
+Table~\ref{tab:fear_terms} gives four fear words in the later works. \textit{Fear} occurs 14 times there (3.92 per 10,000 tokens) against 4 times in the earlier works, but all 14 occurrences are in Jekyll and Hyde. A difference between the periods that rests on one work is a difference between works.
+
+\input{tables/fear_terms.tex}
+
+The fear dictionary of 18 entries finds 76 hits in the earlier works (22.27 per 10,000 tokens) and 104 in the later ones (29.10). Table~\ref{tab:fear_dictionary} gives the hits per work: Jekyll and Hyde has 88 of the 104 later hits, and Usher has the highest rate (38.85). A random sample of 20 of the 180 hits, read in their passages, found 15 that express fear: a precision of 0.75. The wrong hits are other senses of the word (\textit{dreadfully incensed}, \textit{a horror of superstition}) and a negation. Figure~\ref{fig:fear_by_year} shows the rate per work.
+
+\input{tables/fear_dictionary.tex}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.9\textwidth]{fig_fear_by_year.pdf}
+\caption{Fear vocabulary per 10,000 tokens in each work, by year of first publication.}
+\label{fig:fear_by_year}
+\end{figure}
+
+Table~\ref{tab:keyness} lists the key terms of the later works, counting only words that occur in at least two of the three. Words of dialogue lead: \textit{said} (162 against 72, $G^2 = 31.49$, log ratio 1.10), \textit{know}, \textit{asked}, \textit{come}, \textit{don't}. None of the fear words is among them. Figure~\ref{fig:keyness} shows the log ratios.
+
+\input{tables/keyness.tex}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.9\textwidth]{fig_keyness.pdf}
+\caption{Key terms of the works of 1886--1892 against those of 1820--1853: log ratio.}
+\label{fig:keyness}
+\end{figure}
+
+An NMF topic model of the 73 segments of 1,000 tokens gives the same top terms with every seed for 3, 4 and 5 topics (stability 1.0); with three topics, each topic is in effect a group of works: Jekyll and Hyde, Bartleby, and a topic shared by Sleepy Hollow, Owl Creek Bridge and The Yellow Wallpaper. With six works the topic model finds the works, not themes across them (Figure~\ref{fig:topics}).
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.9\textwidth]{fig_topics.pdf}
+\caption{Mean topic shares of the 1,000-token segments, by period (NMF, three topics).}
+\label{fig:topics}
+\end{figure}
+
+\section{Conclusion}
+
+The later works use the fear dictionary somewhat more often per 10,000 tokens than the earlier ones, but one work carries most of the later hits, a quarter of the sampled hits are not about fear, and the key terms of the later works are words of dialogue. Six hand-picked works cannot show a change in the fiction of the century; they show how a count of fear words depends on which works are counted.
+
+\end{document}

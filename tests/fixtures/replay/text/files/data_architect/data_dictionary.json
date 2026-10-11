@@ -1,0 +1,32 @@
+{
+  "tables": [
+    {
+      "name": "gutenberg_texts",
+      "source": "gutenberg",
+      "frequency": "one row per book",
+      "role": "the six texts as loaded by e2er-data gutenberg text (header, footer and licence removed), with the catalogue fields",
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "description": "Project Gutenberg book number"
+        },
+        {
+          "name": "title",
+          "type": "TEXT",
+          "description": "title in the catalogue"
+        },
+        {
+          "name": "authors",
+          "type": "TEXT",
+          "description": "authors in the catalogue"
+        },
+        {
+          "name": "text",
+          "type": "TEXT",
+          "description": "the book text"
+        }
+      ]
+    }
+  ]
+}

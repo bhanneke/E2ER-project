@@ -119,12 +119,17 @@ _DESIGN_CHECKS: dict[str, tuple[str, str]] = {
     # The spatial-analysis template (src/core/pipeline/spatial_checks.py).
     "spatial_design": ("spatial_design.json", "data_architect"),
     "spatial_results": ("estimation_results.json", "econometrics_specialist"),
+    # The text-analysis template (src/core/pipeline/text_checks.py).
+    "corpus_design": ("corpus_design.json", "data_architect"),
+    "corpus": ("corpus_manifest.json", "data_analyst"),
+    "text_results": ("estimation_results.json", "econometrics_specialist"),
+    "text_validation": ("text_validation.json", "text_validator"),
 }
 
 #: Checks inside the dispatch that read the estimation's results: they run once their
 #: specialists are done (the estimation among them), never before the estimation like a
 #: design check, and an open one does not hold back the other specialists.
-_RESULT_CHECKS: frozenset[str] = frozenset({"did_results", "spatial_results"})
+_RESULT_CHECKS: frozenset[str] = frozenset({"did_results", "spatial_results", "text_results", "text_validation"})
 
 #: What else the researcher sees when a design check stops the run, besides the design file.
 _DESIGN_CHECK_FILES: dict[str, tuple[str, ...]] = {
@@ -135,6 +140,10 @@ _DESIGN_CHECK_FILES: dict[str, tuple[str, ...]] = {
     "did_results": ("did_design.json", "did_check.json", "figure_spec.json", "econometric_spec.md"),
     "spatial_design": ("spatial_design_check.json", "data_dictionary.json"),
     "spatial_results": ("spatial_design.json", "spatial_check.json", "figure_spec.json", "econometric_spec.md"),
+    "corpus_design": ("data_dictionary.json",),
+    "corpus": ("corpus_design.json", "corpus_check.json", "data_summary.md"),
+    "text_results": ("corpus_design.json", "text_check.json", "corpus_check.json", "econometric_spec.md"),
+    "text_validation": ("validation_sample.json", "text_validation_check.json", "text_validation.md"),
 }
 
 #: The work order of a design check's retry, when the check needs more than "revise the design file".
@@ -145,6 +154,19 @@ _DESIGN_CHECK_FOCUS: dict[str, str] = {
         "of every numeric column in data_dictionary.json, say for each column with many missing values why they "
         'are missing and how the analysis treats them ("missing": "..."), and load the coverage the '
         "dictionary declares. Problems: "
+    ),
+    "corpus": (
+        "The corpus check refused the corpus as built (its report is corpus_check.json). Fix the corpus build "
+        "script and run it again so that every document in the corpus table has its source, licence and the "
+        "SHA-256 of its text in corpus_manifest.json, the token counts and corpus statistics follow from the "
+        "preprocessing recorded in corpus_design.json, and every declared metadata field is filled or its "
+        'absence explained ("missing": "..." in corpus_design.json). Problems: '
+    ),
+    "text_validation": (
+        "The validation check refused the hand check of the dictionary and sentiment measures. Judge every item "
+        "of validation_sample.json in text_validation.json (doc_id and quote as in the sample, correct true or "
+        "false, a reason for every item judged wrong) and state the precision as the share judged right. If the "
+        "sample itself is missing or too small, say so in text_validation.md; the analysis draws it. Problems: "
     ),
 }
 
@@ -1109,7 +1131,7 @@ class PipelineRunner:
         if not result.passed and blocking and step.on_fail == "retry" and owner and not state.metadata.get(retry_key):
             state.metadata[retry_key] = True
             state.save(self._workspace)
-            if step.check in _RESULT_CHECKS:
+            if step.check in _RESULT_CHECKS and step.check not in _DESIGN_CHECK_FOCUS:
                 focus = (
                     f"The check '{step.check}' refused the results in {design_file}. Revise run_estimation.py "
                     "so that the results it writes pass (and the files it names exist): "
@@ -1275,6 +1297,16 @@ class PipelineRunner:
                 else spatial_checks.check_spatial_results
             )
             return sp_fn(self._workspace, **step.settings)
+        if step.check in ("corpus_design", "corpus", "text_results", "text_validation"):
+            from ..pipeline import text_checks
+
+            text_fn: Any = {
+                "corpus_design": text_checks.check_corpus_design,
+                "corpus": text_checks.check_corpus,
+                "text_results": text_checks.check_text_results,
+                "text_validation": text_checks.check_text_validation,
+            }[step.check]
+            return text_fn(self._workspace, **step.settings)
         raise ValueError(f"check {step.check!r} cannot run inside the dispatch")
 
     async def _settle_researcher_decisions(self, state: Any) -> None:
