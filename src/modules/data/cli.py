@@ -41,6 +41,7 @@ import argparse
 import asyncio
 import json
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -1146,12 +1147,31 @@ def _refuse_in_rerun(args: argparse.Namespace) -> int:
     return 5
 
 
+_NEGATIVE_VALUE = re.compile(r"^-\d[\d.]*(,\s*-?[\d.]+)+$")
+
+
+def _join_negative_values(argv: list[str]) -> list[str]:
+    """``--bbox -125,32,-114,42`` as ``--bbox=-125,32,-114,42``.
+
+    argparse reads a value that starts with a dash as an option and stops with
+    "expected one argument"; a comma-separated list of numbers (a region, a
+    range) is joined to its option so it reads as the value it is.
+    """
+    out: list[str] = []
+    for word in argv:
+        if out and out[-1].startswith("--") and "=" not in out[-1] and _NEGATIVE_VALUE.match(word):
+            out[-1] = f"{out[-1]}={word}"
+        else:
+            out.append(word)
+    return out
+
+
 def main(argv: list[str] | None = None) -> int:
     """Entry point. Returns process exit code."""
     import os
 
     parser = _build_parser()
-    args = parser.parse_args(argv)
+    args = parser.parse_args(_join_negative_values(list(sys.argv[1:] if argv is None else argv)))
 
     # Resolve paper_id / specialist: explicit flag wins, then env var, then
     # default. Without paper_id we cannot route the query (workspace lookup

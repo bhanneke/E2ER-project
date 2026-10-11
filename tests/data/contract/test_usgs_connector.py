@@ -205,3 +205,16 @@ async def test_the_doctor_check_is_one_cheap_request(monkeypatch: pytest.MonkeyP
     with use_cassette(Path(__file__).resolve().parents[1] / "fixtures" / "usgs_doctor.json"):
         [check] = await source_checks(None)
     assert check.name == "data.usgs.events" and check.status == PASS and "rows from USGS" in check.detail
+
+
+def test_a_region_west_of_greenwich_is_read_as_a_value() -> None:
+    """argparse takes "-125,…" for an option; e2er-data joins it to --bbox."""
+    argv = ["usgs", "events", "--start", "2024-01-01", "--bbox", "-125,32,-114,42"]
+    ns = cli._build_parser().parse_args(cli._join_negative_values(argv))
+    assert ns.bbox == "-125,32,-114,42"
+    assert cli._join_negative_values(["fred", "series", "--series-id", "DGS2"]) == [
+        "fred",
+        "series",
+        "--series-id",
+        "DGS2",
+    ]
