@@ -16,8 +16,10 @@ The template enforces the order that keeps the evaluation honest:
    model is fitted**;
 3. the `forecast_design` check validates the setup and freezes it with its
    hold-out (`holdout_freeze.json`: SHA-256 of the design and of the
-   hold-out values). From here, a changed setup stops the run once results
-   exist; with the optional pre-registration the researcher also reads and
+   hold-out values, the setup and the design as written). From here, a
+   changed setup (hold-out, horizon, interval level, models, diagnostics;
+   not the wording) stops the run once results exist; the forecast designer
+   is not dispatched again; with the optional pre-registration the researcher also reads and
    approves the setup before it is frozen;
 4. the analysis specialist fits on the training periods only, evaluates on
    the hold-out, and forecasts beyond the data;

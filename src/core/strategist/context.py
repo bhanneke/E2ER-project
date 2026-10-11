@@ -72,6 +72,12 @@ def template_context() -> str:
             f"- Check before the analysis: {step_label(s.name, spec)} ({s.check}). Dispatch "
             f"{', '.join(own)} before econometrics_specialist; the check runs right after them and stops the "
             "run when it fails."
+            + (
+                " Once it passes, the forecast setup and its hold-out are frozen: do not dispatch "
+                "forecast_designer again (a changed setup stops the run at the forecast check)."
+                if s.check == "forecast_design"
+                else ""
+            )
         )
     panel = spec.panel()
     lines.append(f"- Review panel: {', '.join(panel)}.")

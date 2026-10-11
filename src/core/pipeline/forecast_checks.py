@@ -262,6 +262,61 @@ def _design_problems(
     return problems, info
 
 
+def setup_of(design: dict[str, Any]) -> dict[str, Any]:
+    """The parts of a forecast setup that decide the evaluation, in a canonical form.
+
+    The series, the hold-out, the horizon, the interval level, the seasonal
+    period, the transformation, which models are fitted (baselines with the
+    baseline they are) and which diagnostics are computed. Descriptions and
+    notes are not part of it: rewording a method does not change what is
+    evaluated, and a frozen setup is compared on these parts only.
+    """
+    raw_series, raw_hold = design.get("series"), design.get("holdout")
+    series: dict[str, Any] = raw_series if isinstance(raw_series, dict) else {}
+    hold: dict[str, Any] = raw_hold if isinstance(raw_hold, dict) else {}
+    return {
+        "series": {k: series.get(k) for k in ("table", "time_column", "value_column", "frequency")},
+        "holdout": {k: hold.get(k) for k in ("start", "end", "n_periods")},
+        "horizon": design.get("horizon"),
+        "interval_level": design.get("interval_level"),
+        "seasonal_period": design.get("seasonal_period"),
+        "transformation": _method(design.get("transformation")) or None,
+        "baselines": sorted(
+            [str(b.get("model")), _baseline_method(b.get("method"))]
+            for b in design.get("baselines") or []
+            if isinstance(b, dict)
+        ),
+        "candidates": sorted(str(c.get("model")) for c in design.get("candidates") or [] if isinstance(c, dict)),
+        "diagnostics": sorted(
+            [str(d.get("name")), _method(d.get("kind"))] for d in design.get("diagnostics") or [] if isinstance(d, dict)
+        ),
+    }
+
+
+def _setup_sha(design: dict[str, Any]) -> str:
+    return _sha256_bytes(json.dumps(setup_of(design), sort_keys=True, separators=(",", ":")).encode("utf-8"))
+
+
+def _setup_changes(design: dict[str, Any], freeze: dict[str, Any]) -> list[str]:
+    """What of the setup differs from the frozen one (empty: only wording changed, or nothing)."""
+    frozen = freeze.get("setup")
+    now = setup_of(design)
+    if isinstance(frozen, dict):
+        return [k for k in now if now[k] != frozen.get(k)]
+    # A freeze written before the setup was recorded: compare what it holds.
+    changed = []
+    if now["series"] != {**now["series"], **(freeze.get("series") or {})}:
+        changed.append("series")
+    hold = now["holdout"]
+    if (hold["start"], hold["end"], hold["n_periods"]) != (
+        freeze.get("start"),
+        freeze.get("end"),
+        freeze.get("n_periods"),
+    ):
+        changed.append("holdout")
+    return changed
+
+
 def _design(ws: Path) -> tuple[dict[str, Any] | None, bytes, str | None]:
     path = ws / FORECAST_DESIGN_FILE
     try:
@@ -309,24 +364,39 @@ def check_forecast_design(workspace: Path, *, min_train_periods: int = DEFAULT_M
         "n_holdout": hold["n_periods"],
         "n_train": hold["n_train"],
     }
-    if (
-        previous
-        and previous.get("design_sha256") == design_sha
-        and previous.get("values_sha256") == hold["values_sha256"]
-    ):
+    same_values = previous is not None and previous.get("values_sha256") == hold["values_sha256"]
+    changed = _setup_changes(design, previous) if previous else []
+    if previous and same_values and previous.get("design_sha256") == design_sha:
         return CheckResult(True, (), (f"frozen at {previous.get('frozen_at')}",), stats)
+    if previous and same_values and not changed:
+        # Reworded, not changed: the freeze stands.
+        return CheckResult(
+            True, (), (f"frozen at {previous.get('frozen_at')}; the setup was reworded since, not changed",), stats
+        )
     if fitted:
-        what = "changed after the hold-out was frozen" if previous else "was not frozen before a model was fitted"
+        if previous:
+            what = (
+                f"changed after the hold-out was frozen ({', '.join(changed) or 'the hold-out values'})"
+                if changed or not same_values
+                else "changed after the hold-out was frozen"
+            )
+        else:
+            what = "was not frozen before a model was fitted"
         return CheckResult(
             False,
             (
-                f"the forecast setup {what}: estimation output exists ({_names(fitted)}). "
-                f"Put {FORECAST_DESIGN_FILE} back as frozen, or set the output aside and start the analysis again",
+                f"the forecast setup {what}: estimation output exists ({_names(fitted)}). Put "
+                f"{FORECAST_DESIGN_FILE} back as frozen ({FREEZE_FILE} holds it under 'design'), or set the output "
+                "aside and start the analysis again",
             ),
         )
     record = {
         "design_file": FORECAST_DESIGN_FILE,
         "design_sha256": design_sha,
+        # What decides the evaluation (setup_of) and the setup as written, to compare with and to put back.
+        "setup_sha256": _setup_sha(design),
+        "setup": setup_of(design),
+        "design": design,
         "series": {k: series.get(k) for k in ("table", "time_column", "value_column", "frequency")},
         **hold,
         "frozen_at": datetime.now(UTC).isoformat(timespec="seconds"),
@@ -377,8 +447,16 @@ def check_forecast_evaluation(workspace: Path, *, error_tolerance: float = DEFAU
     if err or design is None:
         return CheckResult(False, (err or "no design",))
     reasons: list[str] = []
+    notes: list[str] = []
     if _sha256_bytes(raw) != freeze.get("design_sha256"):
-        reasons.append(f"{FORECAST_DESIGN_FILE} changed after the hold-out was frozen ({freeze.get('frozen_at')})")
+        changed = _setup_changes(design, freeze)
+        if changed:
+            reasons.append(
+                f"{FORECAST_DESIGN_FILE} changed after the hold-out was frozen ({freeze.get('frozen_at')}): "
+                f"{', '.join(changed)}"
+            )
+        else:
+            notes.append(f"{FORECAST_DESIGN_FILE} was reworded after the freeze; the setup is unchanged")
     periods, values, err = _read_series(ws, design.get("series") or {})
     if err:
         return CheckResult(False, (err,))
@@ -557,4 +635,4 @@ def check_forecast_evaluation(workspace: Path, *, error_tolerance: float = DEFAU
         encoding="utf-8",
     )
     stats = {"evaluations": len(recomputed), "hold_out": f"{hold_start} to {hold_end}"}
-    return CheckResult(not reasons, tuple(reasons), (), stats)
+    return CheckResult(not reasons, tuple(reasons), tuple(notes), stats)

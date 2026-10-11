@@ -508,7 +508,11 @@ def _check_source(ws: Path, spec: dict[str, Any], where: str, con_holder: dict[s
     if source.get("results"):
         name = str(source.get("file") or "estimation_results.json")
         if name not in RESULT_FILES:
-            return f"{where}: source.file must be one of {', '.join(RESULT_FILES)}"
+            return (
+                f"{where}: source.file {name} is not a results file of the study; figures come from data.db or "
+                f"from {', '.join(RESULT_FILES)} (have the analysis script write these values into "
+                "estimation_results.json, or load them as a data.db table)"
+            )
         try:
             doc = _read_json(ws / name)
         except (OSError, ValueError):

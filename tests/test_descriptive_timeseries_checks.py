@@ -430,3 +430,31 @@ def test_a_baseline_may_describe_itself_after_its_name(ts: Path):
     d["baselines"] = [{"model": "naive", "method": "naively tuned ARIMA"}]
     _write(ts / "forecast_design.json", d)
     assert not check_forecast_design(ts).passed
+
+
+def test_a_reworded_setup_keeps_its_freeze_and_a_changed_one_names_what_changed(evaluated: Path):
+    freeze = json.loads((evaluated / FREEZE_FILE).read_text(encoding="utf-8"))
+    assert freeze["design"] == _design(evaluated) and freeze["setup"]["holdout"]["n_periods"] == 36
+    d = _design(evaluated)
+    d["candidates"][0]["method"] = "a linear trend and twelve monthly means, fitted by OLS"
+    d["evaluation"]["notes"] = "reworded after the freeze"
+    _write(evaluated / "forecast_design.json", d)
+    assert check_forecast_design(evaluated).passed
+    r = check_forecast_evaluation(evaluated)
+    assert r.passed and "reworded after the freeze" in r.notes[0]
+    d["candidates"].append({"model": "ets", "method": "ETS(A,N,A)"})
+    _write(evaluated / "forecast_design.json", d)
+    reasons = check_forecast_evaluation(evaluated).reasons
+    assert any("changed after the hold-out was frozen" in x and x.endswith(": candidates") for x in reasons)
+    assert "(candidates)" in check_forecast_design(evaluated).reasons[0]
+
+
+def test_the_strategist_is_told_not_to_redispatch_the_forecast_designer():
+    from src.core.pipeline.components import activate, deactivate
+    from src.core.strategist.context import template_context
+
+    token = activate(copy.copy(find_spec("time-series-forecasting")))
+    try:
+        assert "do not dispatch forecast_designer again" in template_context()
+    finally:
+        deactivate(token)
