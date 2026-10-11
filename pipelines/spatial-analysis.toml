@@ -57,6 +57,7 @@ name    = "spatial_results_gate"
 check   = "spatial_results"
 on_fail = "retry"
 after   = ["econometrics_specialist"]
+before  = ["paper_drafter"]
 
 [steps.settings]
 min_permutations = 99

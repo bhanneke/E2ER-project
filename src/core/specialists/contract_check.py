@@ -611,7 +611,8 @@ def check_draft_phrases(workspace: Path, relative: str) -> ContractCheck:
     target = workspace / relative
     if not target.is_file():
         return ContractCheck(relative, True, "", kind=KIND_VERIFICATION)
-    hits = find_in_file(target)
+    # With the claims the study's own checks refuse (writing_check.refused_claims).
+    hits = find_in_file(target, workspace)
     if not hits:
         return ContractCheck(relative, True, "", kind=KIND_VERIFICATION)
     return ContractCheck(relative, False, feedback(hits), kind=KIND_VERIFICATION)
@@ -623,7 +624,7 @@ def check_patch_phrases(workspace: Path, relative: str = "paper_draft.tex.edits.
     The revisor writes edits, not the draft, so its new sentences are checked
     here before the merger puts them into the paper.
     """
-    from ..writing_check import feedback, find
+    from ..writing_check import feedback, find, refused_claims
 
     target = workspace / relative
     if not target.is_file():
@@ -639,6 +640,7 @@ def check_patch_phrases(workspace: Path, relative: str = "paper_draft.tex.edits.
             text = edit.get("replace")
             if isinstance(text, str) and text.strip():
                 hits.extend(find(text))
+                hits.extend(refused_claims(workspace, text))
     if not hits:
         return ContractCheck(relative, True, "", kind=KIND_VERIFICATION)
     return ContractCheck(relative, False, feedback(hits), kind=KIND_VERIFICATION)

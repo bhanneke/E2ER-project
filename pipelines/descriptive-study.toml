@@ -20,6 +20,8 @@
 #                      duplicates, missing values and coverage of every
 #                      declared table (src/core/pipeline/data_quality.py);
 #                      writes data_quality.md
+#   figures_before_draft  the figures re-read from the data once the analysis
+#                      is done, before the paper drafter is dispatched
 #   estimation_gate    the results file held to the descriptive contract
 #   figure_gate        every figure re-read from the data or results it names
 #   review_draft       the researcher reads the draft before the reviewers
@@ -142,10 +144,23 @@ kind    = "gate"
 name    = "data_quality_gate"
 check   = "data_quality"
 after   = ["data_architect", "data_analyst"]
+before  = ["paper_drafter"]
 on_fail = "retry"
 
 [steps.settings]
 max_missing_share = 0.05
+
+# The figures re-read from the data before the draft is written (the figure
+# gate after the draft reads them again): a draft is never written around a
+# figure that does not show what its data say. No single author writes
+# figure_spec.json, so a failure stops the run for the researcher.
+[[steps]]
+kind    = "gate"
+name    = "figures_before_draft"
+check   = "figure_data"
+after   = ["data_analyst", "econometrics_specialist"]
+before  = ["paper_drafter"]
+on_fail = "halt"
 
 [[steps]]
 kind = "strategist"

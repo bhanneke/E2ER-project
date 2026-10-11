@@ -871,10 +871,14 @@ def _check_citations_offline(bundle: Path) -> Check:
     if missing:
         return Check("citations", FAIL, f"{len(missing)} cited key(s) not in refs.bib: {', '.join(missing[:5])}")
     if not keys and not parse_bibitem_keys(text):
-        if bib:
+        # The template's method sources are citable, never required: they do not count here.
+        literature = [k for k, f in bib.items() if f.get("e2er_source") != "template"]
+        if literature:
             # The paper ignores the bibliography it ships: nothing it says is
             # tied to a source (the 2026-10-10 Haiku paper, 21 entries, 0 cites).
-            return Check("citations", FAIL, f"paper.tex cites none of the {len(bib)} work(s) in refs.bib{snapshot}")
+            return Check(
+                "citations", FAIL, f"paper.tex cites none of the {len(literature)} work(s) in refs.bib{snapshot}"
+            )
         return Check(
             "citations",
             SKIP,
@@ -1258,7 +1262,7 @@ def _writing_notes(bundle: Path) -> list[str]:
     for rel in ("paper/paper.tex", "paper/abstract.tex"):
         path = bundle / rel
         if path.is_file():
-            notes += [f"{rel}: {h.line()}" for h in find_in_file(path)]
+            notes += [f"{rel}: {h.line()}" for h in find_in_file(path, bundle / "results")]
     return notes
 
 

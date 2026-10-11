@@ -124,12 +124,19 @@ _DESIGN_CHECKS: dict[str, tuple[str, str]] = {
     "corpus": ("corpus_manifest.json", "data_analyst"),
     "text_results": ("estimation_results.json", "econometrics_specialist"),
     "text_validation": ("text_validation.json", "text_validator"),
+    # Checks of the results that also run as steps of their own (spec.DISPATCH_TOO): inside the dispatch
+    # a template has them pass before the draft is written. The figures have no single author (the data
+    # analyst or the analysis writes figure_spec.json), so a failure stops the run instead of a send-back.
+    "figure_data": ("figure_spec.json", ""),
+    "forecast_evaluation": ("estimation_results.json", "econometrics_specialist"),
 }
 
 #: Checks inside the dispatch that read the estimation's results: they run once their
 #: specialists are done (the estimation among them), never before the estimation like a
 #: design check, and an open one does not hold back the other specialists.
-_RESULT_CHECKS: frozenset[str] = frozenset({"did_results", "spatial_results", "text_results", "text_validation"})
+_RESULT_CHECKS: frozenset[str] = frozenset(
+    {"did_results", "spatial_results", "text_results", "text_validation", "figure_data", "forecast_evaluation"}
+)
 
 #: What else the researcher sees when a design check stops the run, besides the design file.
 _DESIGN_CHECK_FILES: dict[str, tuple[str, ...]] = {
@@ -144,6 +151,8 @@ _DESIGN_CHECK_FILES: dict[str, tuple[str, ...]] = {
     "corpus": ("corpus_design.json", "corpus_check.json", "data_summary.md"),
     "text_results": ("corpus_design.json", "text_check.json", "corpus_check.json", "econometric_spec.md"),
     "text_validation": ("validation_sample.json", "text_validation_check.json", "text_validation.md"),
+    "figure_data": ("figure_check.json", "estimation_results.json"),
+    "forecast_evaluation": ("forecast_check.json", "forecast_design.json"),
 }
 
 #: The work order of a design check's retry, when the check needs more than "revise the design file".
@@ -443,6 +452,13 @@ class PipelineRunner:
             self._pivot_count = state.pivot_count
             prior_contributions = state.contributions_count
             self._state = state
+
+            # The template's method sources, citable from the first specialist on (method_sources.py).
+            from ..method_sources import add_method_sources
+
+            added = add_method_sources(self._workspace, self._spec)
+            if added:
+                await log_event(self._paper_id, "method_sources", payload={"keys": added})
 
             status = PaperStatus.DESIGNING
             await self._update_status(status)
@@ -1077,7 +1093,92 @@ class PipelineRunner:
             await log_event(self._paper_id, "preregistration", stage=name, payload=lock)
 
     async def _between_groups(self, done: set[str], remaining: list[WorkOrder]) -> None:
-        """After each group of a dispatch: stop if a researcher step's specialists are done."""
+        """After each group of a dispatch: stop if a researcher step's specialists are done;
+        then the checks the next group must wait for (``before``)."""
+        await self._researcher_steps_between_groups(done, remaining)
+        # What this dispatch has run so far (its contributions reach self._contributions only at its end).
+        self._ran_in_dispatch = set(getattr(self, "_ran_in_dispatch", set())) | set(done)
+        await self._checks_before(remaining)
+
+    async def _checks_before(self, orders: list[WorkOrder]) -> None:
+        """Run the checks the next group of ``orders`` must wait for (a gate's ``before``), first.
+
+        The text-analysis live run (2026-10-11): the plan left out the text
+        validator, the validation check sent it out only after the draft existed,
+        and the researcher had to send the draft back. A check with
+        ``before = ["paper_drafter"]`` now runs before the drafter is dispatched,
+        in any phase: the specialists of its ``after`` that have not run are sent
+        out first (each once), then the check runs (recorded, retried or halting
+        like every check inside the dispatch).
+        """
+        state = getattr(self, "_state", None)
+        if not orders or state is None or not hasattr(state, "is_complete"):
+            return
+        first = min(o.parallel_group for o in orders)
+        upcoming = {o.specialist for o in orders if o.parallel_group == first}
+        for trig in getattr(self, "_triggers", []):
+            if trig.kind != "gate" or not trig.before or not (set(trig.before) & upcoming):
+                continue
+            if not trig.applies_to(self._mode) or state.is_complete(trig.name):
+                continue
+            await self._send_out_missing(trig, state)
+            await self._run_gate_trigger(trig, state, orders)
+
+    def _done_specialists(self, state: Any) -> set[str]:
+        """The specialists that have run successfully in this study (recorded, or in this process)."""
+        meta = state.metadata if isinstance(getattr(state, "metadata", None), dict) else {}
+        return (
+            set(meta.get("done_specialists", []))
+            | set(getattr(self, "_ran_in_dispatch", set()))
+            | {c.specialist for c in getattr(self, "_contributions", []) if getattr(c, "success", False)}
+        )
+
+    async def _send_out_missing(self, step: Any, state: Any) -> None:
+        """The specialists a check reads (its ``after``) that the plan left out, dispatched in that order."""
+        from ...db.events import log_event
+        from ..specialists.dispatcher import execute_work_order
+        from ..specialists.registry import SPECIALIST_DEFAULT_FOCUS
+
+        missing = [a for a in step.after if a not in self._done_specialists(state)]
+        if not missing:
+            return
+        writers = ", ".join(step.before)
+        await log_event(
+            self._paper_id,
+            "sent_out_before",
+            stage=step.name,
+            payload={"check": step.check, "specialists": missing, "before": list(step.before)},
+        )
+        for spec_name in missing:
+            if spec_name == _ESTIMATION_SPECIALIST:
+                # The analysis itself was left out: the design checks it must pass run first, as before any analysis.
+                await self._run_open_gates(state, [], before_estimation=True)
+            default = SPECIALIST_DEFAULT_FOCUS.get(spec_name) or "Carry out your part of this study as your skills say."
+            focus = default + (
+                f" The plan left you out, but the check '{step.check}' reads your work and must pass before "
+                f"{writers} is dispatched; do your whole task now."
+            )
+            order = WorkOrder(paper_id=self._paper_id, specialist=spec_name, focus=focus)
+            contribution = await execute_work_order(
+                order,
+                self._backend,
+                self._workspace,
+                self._model,
+                self._extra_tools,
+                self._extra_handlers,
+                self._backend_name,
+                self._governance,
+            )
+            self._contributions.append(contribution)
+            self._update_failure_counts([contribution])
+            if contribution.success and isinstance(getattr(state, "metadata", None), dict):
+                state.metadata["done_specialists"] = sorted(
+                    set(state.metadata.get("done_specialists", [])) | {spec_name}
+                )
+        state.save(self._workspace)
+
+    async def _researcher_steps_between_groups(self, done: set[str], remaining: list[WorkOrder]) -> None:
+        """After each group of the initial dispatch: stop if a researcher step's specialists are done."""
         state = getattr(self, "_state", None)
         # Only the initial phase resumes from saved work orders, so that is the
         # only dispatch a researcher step may stop.
@@ -1145,10 +1246,7 @@ class PipelineRunner:
                     f"The check '{step.check}' refused the design in {design_file} before estimation. "
                     f"Revise {design_file} (and your strategy file where it changes) so that it passes: "
                 )
-            done = set((state.metadata or {}).get("done_specialists", [])) | {
-                c.specialist for c in getattr(self, "_contributions", []) if getattr(c, "success", False)
-            }
-            if owner not in done:
+            if owner not in self._done_specialists(state):
                 # The plan left out the specialist whose work the check reads: it does that work now,
                 # for the first time, rather than "fixing" something it never made.
                 from ..specialists.registry import SPECIALIST_DEFAULT_FOCUS
@@ -1315,6 +1413,8 @@ class PipelineRunner:
                 else spatial_checks.check_spatial_results
             )
             return sp_fn(self._workspace, **step.settings)
+        if step.check in ("figure_data", "forecast_evaluation"):
+            return _sequence_check(step.check)(self._workspace, **step.settings)
         if step.check in ("corpus_design", "corpus", "text_results", "text_validation"):
             from ..pipeline import text_checks
 
@@ -3355,6 +3455,8 @@ class PipelineRunner:
         if getattr(self, "_in_initial", False) and state is not None and _estimation_next(contract_orders):
             # The first group would estimate: an open design check runs first.
             await self._run_open_gates(state, contract_orders, before_estimation=True)
+        # The first group would write the draft: the checks it waits for run first.
+        await self._checks_before(contract_orders)
         if len(contract_orders) == 1:
             from ..specialists.dispatcher import (
                 execute_work_order,

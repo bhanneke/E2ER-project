@@ -54,7 +54,7 @@ Table~\ref{tab:keyness} lists the key terms of the later works, counting only wo
 \label{fig:keyness}
 \end{figure}
 
-An NMF topic model of the 73 segments of 1,000 tokens gives the same top terms with every seed for 3, 4 and 5 topics (stability 1.0); with three topics, each topic is in effect a group of works: Jekyll and Hyde, Bartleby, and a topic shared by Sleepy Hollow, Owl Creek Bridge and The Yellow Wallpaper. With six works the topic model finds the works, not themes across them (Figure~\ref{fig:topics}).
+An NMF topic model of the 73 segments of 1,000 tokens, started from nndsvda, does not depend on the seed: every seed gives the same fit for 3, 4 and 5 topics, so the runs say nothing about the stability of the topics. With three topics, each topic is in effect a group of works: Jekyll and Hyde, Bartleby, and a topic shared by Sleepy Hollow, Owl Creek Bridge and The Yellow Wallpaper. With six works the topic model finds the works, not themes across them (Figure~\ref{fig:topics}).
 
 \begin{figure}[t]
 \centering

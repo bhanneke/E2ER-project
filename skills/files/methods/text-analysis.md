@@ -258,7 +258,9 @@ a token. Do not judge the items yourself: the text validator does.
 NMF). `sklearn.decomposition.NMF(n_components=k, init="random",
 random_state=seed, max_iter=1000)` (record `"init"` in the results; with
 `nndsvd` or `nndsvda` the start does not depend on the seed, so a stability
-check across seeds shows nothing) on a TF-IDF matrix, or
+check across seeds shows nothing: the results check then notes it, and the
+draft may not claim that the topics are stable across seeds; the draft
+writer's output is sent back for every sentence that does) on a TF-IDF matrix, or
 `LatentDirichletAllocation(n_components=k, random_state=seed)` on counts,
 both with the recorded stop words removed (`CountVectorizer(vocabulary=...)`
 or a `tokenizer` that calls `tokens()` and drops stop words; set
@@ -334,7 +336,9 @@ term frequencies of the period groups), key terms (`bar` of log ratio or G2
 from `models.<id>.outputs.terms`), topic prevalence by group (`bar` per group
 or `multi_panel`).
 
-Writing: report counts per 10,000 tokens with the group sizes; give G2 with
+Writing: cite the sources of the methods the study used (Dunning 1993 for G2,
+Hardie 2014 for the log ratio, Lee and Seung 1999 for NMF, …); they are in
+`literature.bib`, marked [method source]. Report counts per 10,000 tokens with the group sizes; give G2 with
 the effect size; give topics as their top terms and example passages with
 the label marked as yours; give a dictionary measure with its precision.
 Claim nothing beyond the corpus: a selection of digitised, out-of-copyright

@@ -283,7 +283,9 @@ def test_specialists_the_plan_left_out_are_sent_out_by_the_checks_that_need_thei
     """The strategist plans neither the data analyst nor the text validator (as in the live run).
 
     The corpus check runs before the analysis, finds no corpus and sends the data analyst out for its
-    whole task; the validation check runs after the initial phase and sends the text validator out.
+    whole task. The validation check must pass before the draft (``before = ["paper_drafter"]``): the
+    text validator is sent out before the drafter is dispatched, the check passes at its first run,
+    and the draft is written once, on validated results (no send-back).
     """
     with _replay_server(tmp_path, "text-unplanned", []) as (api, _study):
         pid = _start(api)
@@ -292,12 +294,18 @@ def test_specialists_the_plan_left_out_are_sent_out_by_the_checks_that_need_thei
         assert stops == ["review_design", "review_draft"]
         events = _events(tmp_path / "home" / ".e2er" / "papers.db", pid)
         assert [g["passed"] for g in _gates(events, "corpus")] == [False, True]
-        assert [g["passed"] for g in _gates(events, "text_validation")] == [False, True]
+        assert [g["passed"] for g in _gates(events, "text_validation")] == [True]
         order = [(e, s, pl.get("gate")) for e, s, pl in events if e in ("specialist_start", "gate_enforced")]
         analyst = order.index(("specialist_start", "data_analyst", None))
         assert analyst < order.index(("specialist_start", "econometrics_specialist", None))
+        validator = order.index(("specialist_start", "text_validator", None))
+        validated = order.index(("gate_enforced", "", "text_validation"))
+        assert validator < validated < order.index(("specialist_start", "paper_drafter", None))
         started = [s for e, s, _pl in events if e == "specialist_start"]
         assert started.count("data_analyst") == 1 and started.count("text_validator") == 1
+        assert started.count("paper_drafter") == 1
+        sent = [pl for e, _s, pl in events if e == "sent_out_before"]
+        assert sent == [{"check": "text_validation", "specialists": ["text_validator"], "before": ["paper_drafter"]}]
 
 
 def test_checks_of_the_results_wait_for_an_analysis_left_to_the_iterative_rounds(tmp_path: Path):
@@ -326,3 +334,56 @@ def test_checks_of_the_results_wait_for_an_analysis_left_to_the_iterative_rounds
         assert analysed < order.index(("gate_enforced", "", "text_results"))
         started = [s for e, s, _pl in events if e == "specialist_start"]
         assert started.count("econometrics_specialist") == 1 and started.count("data_analyst") == 1
+
+
+def test_a_round_that_leaves_out_the_validator_gets_it_before_the_draft(tmp_path: Path):
+    """The iterative mode: the first round analyses and drafts without the text validator (the 2026-10-11
+    live run). The validation check must pass before the draft, so the validator is sent out before the
+    drafter is dispatched, the check passes at its first run, and the draft is written once."""
+    body = {
+        "title": SCENARIO["title"],
+        "research_question": SCENARIO["research_question"],
+        "mode": "iterative",
+        "pipeline": SCENARIO["template"],
+        "acknowledge_unproven_tuple": True,
+        "max_cost_usd": 5,
+    }
+    with _replay_server(tmp_path, "text-iterative-unplanned", []) as (api, _study):
+        r = httpx.post(f"{api}/api/papers", json=body, headers=HEADERS, timeout=30)
+        assert r.status_code == 200, r.text
+        pid = r.json()["paper_id"]
+        p, stops = _approve_to_the_end(api, pid)
+        assert p["status"] == "completed", (p.get("last_error"), stops)
+        events = _events(tmp_path / "home" / ".e2er" / "papers.db", pid)
+        assert [g["passed"] for g in _gates(events, "text_validation")] == [True]
+        assert all(g["passed"] for g in _gates(events, "text_results"))
+        order = [(e, s, pl.get("gate")) for e, s, pl in events if e in ("specialist_start", "gate_enforced")]
+        drafted = order.index(("specialist_start", "paper_drafter", None))
+        assert order.index(("specialist_start", "text_validator", None)) < drafted
+        assert order.index(("gate_enforced", "", "text_validation")) < drafted
+        assert order.index(("gate_enforced", "", "text_results")) < drafted
+        started = [s for e, s, _pl in events if e == "specialist_start"]
+        assert started.count("text_validator") == 1 and started.count("paper_drafter") == 1
+        assert started.count("econometrics_specialist") == 1
+
+
+def test_the_template_method_sources_are_in_the_bibliography_and_the_nndsvd_note_is_kept(tmp_path: Path):
+    """The text template's nine method sources are in literature.bib from the start, tagged as the
+    template's; the results check notes that NMF from nndsvd ignores the seed, and the draft (which says
+    so) passes the phrase check."""
+    with _replay_server(tmp_path, "text", []) as (api, _study):
+        pid = _start(api)
+        p, stops = _approve_to_the_end(api, pid)
+        assert p["status"] == "completed", (p.get("last_error"), stops)
+        ws = Path(p["workspace"])
+        events = _events(tmp_path / "home" / ".e2er" / "papers.db", pid)
+        added = next(pl for e, _s, pl in events if e == "method_sources")["keys"]
+        assert {"dunning1993accurate", "lee1999learning", "grimmer2013text", "blei2003latent"} <= set(added)
+        assert len(added) == 9
+        bib = (ws / "literature.bib").read_text(encoding="utf-8")
+        assert bib.count("e2er_source = {template}") == 9 and "doi = {10.1038/44565}" in bib
+        check = json.loads((ws / "text_check.json").read_text(encoding="utf-8"))
+        assert check["seed_independent_models"] == ["topics"]
+        assert any("ignores the seed" in n for n in check["notes"])
+        started = [s for e, s, _pl in events if e == "specialist_start"]
+        assert started.count("paper_drafter") == 1

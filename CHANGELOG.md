@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### From the text-analysis live run (2026-10-11): checks before the draft, method sources
+- **The draft waits for the checks it reports.** The plan left out the text validator; the
+  validation check sent it out only after the draft existed, and the researcher had to send the
+  draft back. A gate step inside the dispatch can now name `before = ["paper_drafter"]`: in every
+  phase, before a group with the drafter runs, the specialists of the check's `after` that have not
+  run are sent out (event `sent_out_before`), then the check runs (recorded, retried or stopping the
+  run like every check inside the dispatch), and only then is the drafter dispatched. The strategist
+  is told so. Applied to text analysis (results and validation checks), policy evaluation (DiD
+  results), spatial analysis (spatial results), the descriptive study (data check, and a new
+  `figures_before_draft` check of the figures) and time series (a new `forecasts_before_draft`
+  forecast check; the figure and forecast checks may now also sit inside the dispatch). A check that
+  runs as a step of its own may name `before` too; the template is refused unless it comes before
+  every step that runs the named specialists (systematic review: extraction and synthesis before the
+  review writer), and a check before a specialist the strategist dispatches needs `after`.
+- **The template's method sources are in the study's bibliography.** Each template's `[[credit]]`
+  entries with relation `cites` are written into `literature.bib` at the start of the run as BibTeX
+  (`e2er_source = {template}`, `e2er_template = {<template>}`; the key is the credit's `cite_key` or
+  surname, year and first title word, e.g. `dunning1993accurate`; an entry whose key is already in the
+  file is kept; the field map's and the systematic review's fuller entries are used under their own
+  keys). The writers' list of citable references marks them `[method source]` and tells them to cite
+  the methods the study used and leave the others out; the paper-structure and text-analysis skills
+  say the same. Nothing forces a paper to cite them. The citation check verifies them like every
+  reference; the dossier lists them with `"source": "template"` and the finish page as "method
+  source" (the site's references list needs the same label for `template`).
+- **NMF from nndsvd: no stability across seeds.** When a topic model is NMF started from nndsvd or
+  nndsvda (or no `init` recorded: scikit-learn's default is nndsvda), the text results check notes that
+  the runs under different seeds are one fit, whatever their stability, and lists the model in
+  `text_check.json` (`seed_independent_models`). The draft writers' phrase check then sends back every
+  sentence claiming the topics are stable (or the same, robust, consistent) across seeds, unless the
+  sentence says why (nndsvd, a deterministic fit, the seed ignored); `init="random"` (or `nndsvdar`)
+  lifts it. `e2er verify` prints the same sentences as a note.
+
 - **The targeted corrections pass the phrase check too.** The revisor writes edits, not the draft, so its replacement sentences were not checked; now they are, with the same feedback as the draft writers.
 
 

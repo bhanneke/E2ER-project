@@ -69,6 +69,7 @@ name    = "did_results_gate"
 check   = "did_results"
 on_fail = "retry"
 after   = ["econometrics_specialist"]
+before  = ["paper_drafter"]
 
 [steps.settings]
 min_pre_periods = 2

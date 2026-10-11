@@ -138,6 +138,11 @@ SEQUENCE_CHECKS: frozenset[str] = frozenset(
     }
 )
 
+#: Sequence checks that may also sit inside the dispatch (a gate with `after`): the figures
+#: and the forecast evaluation read the analysis's results, so a template can have them pass
+#: before the draft is written (`before = ["paper_drafter"]`) as well as after it.
+DISPATCH_TOO: frozenset[str] = frozenset({"figure_data", "forecast_evaluation"})
+
 
 class PipelineError(ValueError):
     """A pipeline file that cannot be trusted to run.
@@ -160,6 +165,9 @@ class StepSpec:
     resumable: bool = True
     files: tuple[str, ...] = ()  # researcher/preregister: files the researcher sees and may edit
     after: tuple[str, ...] = ()  # researcher/preregister/gate: act right after these specialists
+    #: gate: these specialists (the draft writers) are not dispatched until the check has passed;
+    #: a specialist in `after` that the plan left out is sent out first.
+    before: tuple[str, ...] = ()
     settings: dict[str, Any] = field(default_factory=dict, hash=False)  # gate: the check's parameters
     label: str = ""  # the step's name on the dashboard (src/core/labels.py when empty)
     #: researcher/preregister: the step runs only when the researcher chooses it for the run
@@ -296,6 +304,7 @@ def _step_from(raw: Any, source: Path | str, index: int) -> StepSpec:
         "resumable",
         "files",
         "after",
+        "before",
         "settings",
         "label",
         "optional",
@@ -358,7 +367,7 @@ def _step_from(raw: Any, source: Path | str, index: int) -> StepSpec:
         bad = [f for f in files if "/" in f or f.startswith(".")]
         if bad:
             _fail(source, f"{where} ({name}) names files outside the workspace: {', '.join(bad)}")
-    elif kind == "gate" and after and check in SEQUENCE_CHECKS:
+    elif kind == "gate" and after and check in SEQUENCE_CHECKS and check not in DISPATCH_TOO:
         _fail(source, f"{where} ({name}): the {check} check runs as a step of its own; it takes no `after`")
     elif kind == "gate" and after:
         # A gate with `after` runs inside the strategist's dispatch, right after
@@ -368,6 +377,20 @@ def _step_from(raw: Any, source: Path | str, index: int) -> StepSpec:
             _fail(source, f"{where} ({name}): `files` belongs to researcher and preregister steps")
     elif files or after:
         _fail(source, f"{where} ({name}): `files` and `after` belong to researcher, preregister and gate steps")
+
+    before = tuple(raw.get("before", ()) or ())
+    if before:
+        from ..specialists.registry import SPECIALIST_ARTIFACTS
+
+        if kind != "gate":
+            _fail(source, f"{where} ({name}): `before` belongs to gate steps")
+        if not all(isinstance(b, str) for b in before):
+            _fail(source, f"{where} ({name}): `before` must be a list of specialist names")
+        unknown_specs = [b for b in before if b not in SPECIALIST_ARTIFACTS]
+        if unknown_specs:
+            _fail(source, f"{where} ({name}): `before` names unknown specialist(s): {', '.join(unknown_specs)}")
+        if set(before) & set(after):
+            _fail(source, f"{where} ({name}): a specialist cannot be both `after` and `before` the check")
 
     settings: dict[str, Any] = raw.get("settings", {}) or {}
     if settings:
@@ -429,6 +452,7 @@ def _step_from(raw: Any, source: Path | str, index: int) -> StepSpec:
         resumable=bool(raw.get("resumable", True)),
         files=files,
         after=after,
+        before=before,
         settings=dict(settings),
         label=str(raw.get("label", "") or ""),
         optional=optional,
@@ -481,6 +505,7 @@ def spec_from_dict(data: dict[str, Any], *, source: Path | str = "<dict>") -> Pi
 
     results, causal = _results(data, source)
     _check_panel(steps, source)
+    _check_before(steps, source)
 
     return PipelineSpec(
         name=name,
@@ -535,6 +560,30 @@ def _data_skills(raw: Any, source: Path | str) -> tuple[str, ...] | None:
         if not skill_exists(item):
             _fail(source, f"data_skills: no skill {item!r} (a path under skills/files, without .md)")
     return tuple(dict.fromkeys(raw))
+
+
+def _check_before(steps: tuple[StepSpec, ...], source: Path | str) -> None:
+    """A check that must pass before a specialist can hold that promise.
+
+    Inside the dispatch (with `after`) the runner holds the named specialists
+    back until the check has passed. A check that runs as a step of its own
+    holds only when it comes before every step that runs them; a specialist that
+    no step of the file runs is dispatched by the strategist, so a check before
+    it needs `after`.
+    """
+    for i, s in enumerate(steps):
+        if not s.before or s.after:
+            continue
+        for b in s.before:
+            runs = [j for j, t in enumerate(steps) if t.kind in ("specialists", "aggregate") and b in t.run]
+            if not runs:
+                _fail(
+                    source,
+                    f"step {i + 1} ({s.name}): {b} is dispatched by the strategist, not by a step of this file; "
+                    "a check that must pass before it needs `after` (it then runs inside the dispatch)",
+                )
+            if min(runs) < i:
+                _fail(source, f"step {i + 1} ({s.name}) must come before the step that runs {b}")
 
 
 def _check_panel(steps: tuple[StepSpec, ...], source: Path | str) -> None:

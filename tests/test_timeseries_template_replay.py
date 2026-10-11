@@ -180,7 +180,9 @@ def test_a_model_fitted_on_the_hold_out_stops_the_run_until_the_analysis_is_redo
     overrides = tmp_path / "overrides.json"
     replace = {"run_estimation.py": [leak], "estimation_results.json": [[recorded, leaked]]}
     overrides.write_text(
-        json.dumps({"econometrics_specialist": {"attempts": [{"replace": replace}]}}), encoding="utf-8"
+        # Leaky twice: the check before the draft sends the analysis back once, then stops the run.
+        json.dumps({"econometrics_specialist": {"attempts": [{"replace": replace}, {"replace": replace}]}}),
+        encoding="utf-8",
     )
     monkeypatch.setenv("E2ER_REPLAY_OVERRIDES", str(overrides))  # read by the server the next line starts
     with _replay_server(tmp_path, "climate", []) as (api, _study):
@@ -192,18 +194,23 @@ def test_a_model_fitted_on_the_hold_out_stops_the_run_until_the_analysis_is_redo
                 pending = httpx.get(f"{api}/api/papers/{pid}/review", timeout=10).json()["pending"]
                 assert pending, (p.get("status"), p.get("last_error"), stops)
                 stops.append(pending["stage"])
-                if pending["stage"] == "forecast_gate":
+                if pending["stage"] == "forecasts_before_draft":
                     break
                 r = httpx.post(
                     f"{api}/api/papers/{pid}/review", json={"action": "approve"}, headers=HEADERS, timeout=30
                 )
                 assert r.status_code == 200, r.text
-            assert stops == ["review_design", "forecast_gate"], stops
+            # The forecast check runs before the draft: the run stops there, with no draft written.
+            assert stops == ["review_design", "forecasts_before_draft"], stops
             assert any(
                 "leakage: models.trend_season was fitted on periods up to 2023-12" in r for r in pending["reasons"]
             )
             ws = Path(p["workspace"])
             assert not json.loads((ws / "forecast_check.json").read_text(encoding="utf-8"))["passed"]
+            events = _events(tmp_path / "home" / ".e2er" / "papers.db", pid)
+            started = [e[2] for e in events if e[0] == "specialist_start"]
+            assert started.count("econometrics_specialist") == 2 and "paper_drafter" not in started
+            assert [g["passed"] for g in _gates(events, "forecast_evaluation")] == [False, False]
 
             # Approving does not pass a failed check; sending the analysis back does, once it is redone:
             # the analysis runs again, then the check, and the run continues when it passes.
@@ -222,5 +229,8 @@ def test_a_model_fitted_on_the_hold_out_stops_the_run_until_the_analysis_is_redo
             p, more = _approve_to_the_end(api, pid)
             assert p["status"] == "completed", (p.get("last_error"), more)
             # The check ran right after the redone analysis and passed: no second stop there, no approve.
-            assert "forecast_gate" not in more, more
+            assert "forecasts_before_draft" not in more and "forecast_gate" not in more, more
             assert json.loads((ws / "forecast_check.json").read_text(encoding="utf-8"))["passed"]
+            events = _events(tmp_path / "home" / ".e2er" / "papers.db", pid)
+            started = [e[2] for e in events if e[0] == "specialist_start"]
+            assert started.count("paper_drafter") == 1

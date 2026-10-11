@@ -30,6 +30,9 @@
 #   text_validation_gate   after the text validator: the sample of every
 #                          dictionary or sentiment measure, every passage found
 #                          in its document and judged, the precision recomputed
+#                          (both checks of the results pass before the paper
+#                          drafter is dispatched; a text validator the plan
+#                          left out is sent out first: `before`)
 #   estimation_gate        the results held to the text results contract
 #   figure_gate            every figure re-read from the results it names
 #   review_draft           the researcher reads the draft before the reviewers
@@ -95,6 +98,7 @@ name    = "text_results_gate"
 check   = "text_results"
 on_fail = "retry"
 after   = ["econometrics_specialist"]
+before  = ["paper_drafter"]
 
 [steps.settings]
 min_seeds    = 3
@@ -106,6 +110,7 @@ name    = "text_validation_gate"
 check   = "text_validation"
 on_fail = "retry"
 after   = ["econometrics_specialist", "text_validator"]
+before  = ["paper_drafter"]
 
 [steps.settings]
 min_validation_items = 20

@@ -128,6 +128,22 @@ VALIDATION_CHECK_FILE = "text_validation_check.json"
 DEFAULTS: dict[str, float] = {"min_seeds": 3, "min_examples": 2, "min_validation_items": 20}
 
 TOPIC_ALGORITHMS = ("lda", "nmf")
+
+#: Where text_check.json lists the topic models whose runs cannot differ between seeds.
+SEED_INDEPENDENT_KEY = "seed_independent_models"
+
+
+def seed_independent_init(init: Any) -> bool:
+    """True when an NMF start does not depend on the seed: nndsvd, nndsvda, or none recorded.
+
+    scikit-learn's default (``init=None``) is nndsvda whenever k is below the
+    matrix's dimensions, as it is for topics. ``nndsvdar`` fills its zeros with
+    random values and ``random`` draws the start, so both depend on the seed.
+    """
+    value = str(init or "").strip().lower()
+    return value in ("", "none", "nndsvd", "nndsvda")
+
+
 #: The analyses the template knows, by the `method` an analysis (and its model in the results) names.
 METHODS = ("term_frequency", "keyness", "collocation", "dictionary", "sentiment", "topic_model", "diachronic")
 _METHOD_ALIASES = {
@@ -920,6 +936,8 @@ class _Ctx:
     notes: list[str]
     stats: dict[str, Any]
     _groups: dict[str, tuple[list[str], int]] = field(default_factory=dict)
+    #: Topic models whose start does not depend on the seed (NMF from nndsvd/nndsvda).
+    seed_independent: list[str] = field(default_factory=list)
 
     def group(self, name: str, where: str) -> tuple[list[str], int] | None:
         if name not in self._groups:
@@ -1163,12 +1181,13 @@ def _check_topics(
                 )
             else:
                 ctx.stats[f"{key}_stability"] = round(got, 3)
-                init = str(m.get("init") or "").lower()
-                if got >= 0.999 and (alg == "nmf" and (not init or init.startswith("nndsvd"))):
+                if alg == "nmf" and seed_independent_init(m.get("init")):
+                    ctx.seed_independent.append(key)
                     ctx.notes.append(
-                        f"models.{key}: every seed gives the same top terms; NMF started from nndsvd or nndsvda "
-                        "ignores the seed, so this shows the fit is deterministic, not that the topics are stable "
-                        '(record "init" and use init="random" to test the seeds)'
+                        f"models.{key}: NMF started from {str(m.get('init') or '').strip() or 'nndsvda'} ignores "
+                        "the seed, so the runs under different seeds are the same fit: they say nothing about "
+                        "whether the topics are stable, and the draft may not claim stability across seeds. "
+                        'To test the seeds, use init="random" and record "init"'
                     )
                 if got < 0.5:
                     ctx.notes.append(
@@ -1361,10 +1380,11 @@ def check_text_results(
         ctx.reasons.append("(q) limits.sampling_bias must say what the corpus does not represent")
 
     ctx.stats.update({k: computed[k] for k in ("n_documents", "n_tokens")})
-    write_json(
-        ws / RESULTS_CHECK_FILE,
-        {"passed": not ctx.reasons, "reasons": ctx.reasons, "notes": ctx.notes, "stats": ctx.stats},
-    )
+    report: dict[str, Any] = {"passed": not ctx.reasons, "reasons": ctx.reasons, "notes": ctx.notes, "stats": ctx.stats}
+    if ctx.seed_independent:
+        # Read by the phrase check of the draft (writing_check.refused_claims): no stability across seeds.
+        report[SEED_INDEPENDENT_KEY] = ctx.seed_independent
+    write_json(ws / RESULTS_CHECK_FILE, report)
     return Verdict(not ctx.reasons, tuple(ctx.reasons), tuple(ctx.notes), ctx.stats)
 
 

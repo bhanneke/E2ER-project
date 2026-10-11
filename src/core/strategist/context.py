@@ -68,6 +68,12 @@ def template_context() -> str:
         # A check inside the dispatch runs once these specialists are done and before the analysis:
         # the strategist must dispatch them (a template's own specialists are not in its default plan).
         own = [a for a in s.after if a in SPECIALIST_ARTIFACTS]
+        held = (
+            f" {', '.join(s.before)} is not dispatched until this check has passed: a specialist it reads that "
+            "your plan leaves out is sent out first, so plan them yourself."
+            if s.before
+            else ""
+        )
         if "econometrics_specialist" in s.after:
             # A check of the results: it runs once the analysis (and the specialists named with it) are done.
             others = [a for a in own if a != "econometrics_specialist"]
@@ -79,6 +85,7 @@ def template_context() -> str:
                     else ""
                 )
                 + "the check runs once they are done, before the draft, and stops the run when it fails."
+                + held
             )
             continue
         lines.append(
@@ -91,6 +98,7 @@ def template_context() -> str:
                 if s.check == "forecast_design"
                 else ""
             )
+            + held
         )
     panel = spec.panel()
     lines.append(f"- Review panel: {', '.join(panel)}.")

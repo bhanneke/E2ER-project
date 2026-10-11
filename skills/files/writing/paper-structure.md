@@ -30,6 +30,9 @@
 - Econometric specification with equation
 - Identification argument
 - Threats and mitigating factors
+- Cite the source of each method the study used: the bibliography lists the
+  template's method sources (marked [method source] in the citable
+  references). Cite only the methods the study used, not the whole list.
 
 ### 6. Results (2–3 pages)
 - Main table: baseline specification

@@ -712,3 +712,24 @@ def test_a_rerun_of_the_analysis_runs_the_checks_of_its_results_again(tmp_path: 
     state = PipelineState(paper_id="p", mode="iterative", completed_stages=[*done, "review"])
     apply_rerun(tmp_path, state, spec, "review", "Score again.")
     assert "text_results_gate" in state.completed_stages
+
+
+def test_an_nmf_start_that_ignores_the_seed_is_noted_and_listed_for_the_draft_check(ws: Path):
+    """Whatever the stability, NMF from nndsvd(a) cannot differ between seeds: a note, and the model is
+    listed in text_check.json so the draft may not claim stability across seeds."""
+
+    def nmf(init: str):
+        def change(r: dict) -> None:
+            r["models"]["topics"]["algorithm"] = "nmf"
+            r["models"]["topics"]["init"] = init
+
+        return change
+
+    _edit(ws, tc.RESULTS_FILE, nmf("nndsvd"))
+    v = tc.check_text_results(ws)
+    assert v.passed and any("may not claim stability across seeds" in n for n in v.notes), (v.reasons, v.notes)
+    assert json.loads((ws / tc.RESULTS_CHECK_FILE).read_text(encoding="utf-8"))["seed_independent_models"] == ["topics"]
+    _edit(ws, tc.RESULTS_FILE, nmf("random"))
+    v = tc.check_text_results(ws)
+    assert v.passed and not any("ignores the seed" in n for n in v.notes)
+    assert "seed_independent_models" not in json.loads((ws / tc.RESULTS_CHECK_FILE).read_text(encoding="utf-8"))

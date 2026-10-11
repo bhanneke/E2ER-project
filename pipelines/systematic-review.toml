@@ -251,6 +251,7 @@ kind      = "gate"
 name      = "extraction_check"
 check     = "meta_extraction"
 resumable = false
+before    = ["meta_review_writer"]
 
 [[steps]]
 kind     = "researcher"
@@ -263,6 +264,7 @@ kind      = "gate"
 name      = "synthesis"
 check     = "meta_synthesis"
 resumable = false
+before    = ["meta_review_writer"]
 
 [[steps]]
 kind = "specialists"

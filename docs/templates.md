@@ -408,6 +408,15 @@ A gate step with `after = [...]` is how any check can sit inside the initial
 phase; it also runs before a group that contains the econometrics specialist,
 so a plan that leaves out one of the named specialists does not skip it.
 
+`before = ["paper_drafter"]` on such a gate holds the named specialists back until the check has
+passed, in every phase: when the next group of a dispatch contains one of them, the specialists of
+`after` that have not run are sent out first (the plan left them out), then the check runs, then the
+group. The text-analysis template's checks of the results, the policy-evaluation and spatial checks
+of the results, the descriptive data check and its figures, and the time-series forecast check pass
+before the draft is written this way. A check that runs as a step of its own may also name `before`;
+the file is refused unless it comes before every step that runs those specialists (the
+systematic-review extraction and synthesis before the review writer).
+
 ## `replication`
 
 A computational reproduction: rerun a published study with its own data and

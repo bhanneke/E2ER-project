@@ -1,0 +1,21 @@
+{
+  "name": "text-iterative-unplanned",
+  "base": "text",
+  "source": "The text replay (base) in the iterative mode with the plan of the 2026-10-11 live run that left out the text validator: the initial phase ends with the corpus design, and the first round analyses and drafts without validating. The validation check must pass before the draft (before = [\"paper_drafter\"]), so the text validator is sent out before the drafter.",
+  "initial_groups": [
+    ["idea_developer", "literature_scanner"],
+    ["data_architect"]
+  ],
+  "iterations": [
+    {
+      "work_orders": [
+        {"specialist": "econometrics_specialist", "parallel_group": 0, "context_tier": 2, "focus": "Run the analysis the corpus design declares."},
+        {"specialist": "paper_drafter", "parallel_group": 1, "context_tier": 2, "focus": "Draft the paper from the results."},
+        {"specialist": "abstract_writer", "parallel_group": 2, "context_tier": 2, "focus": "Write the abstract."}
+      ],
+      "rationale": "The corpus is built; analyse and draft."
+    }
+  ],
+  "ceiling_checks": [{"verdict": "proceed_to_review", "reason": "The draft reports the checked results.", "suggested_pivots": []}],
+  "self_attack": {"findings": []}
+}

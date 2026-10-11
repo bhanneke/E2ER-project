@@ -884,7 +884,7 @@ def _list_local_pdfs_for_prompt(specialist: str, paper_id: str) -> str:
 _BIB_ENTRY_RE = re.compile(r"^@\w+\s*\{\s*([^,\s]+)", re.MULTILINE)
 _BIB_FIELD_RE = re.compile(r"^\s*(title|year|e2er_source)\s*=\s*[{\"]?(.*?)[}\"]?,?\s*$", re.MULTILINE | re.IGNORECASE)
 #: How the citable list marks where an entry came from (the e2er_source field).
-_SOURCE_MARK = {"researcher": "  [researcher's paper]", "web": "  [found on the web]"}
+_SOURCE_MARK = {"researcher": "  [researcher's paper]", "web": "  [found on the web]", "template": "  [method source]"}
 
 
 def _workspace_bib_for_prompt(specialist: str, paper_id: str, limit: int = 40) -> str:
@@ -925,6 +925,8 @@ def _workspace_bib_for_prompt(specialist: str, paper_id: str, limit: int = 40) -
     if not entries:
         return ""
 
+    # The template's method sources first, so a long list never cuts them off.
+    entries.sort(key=lambda e: e[3] != "template")
     shown = entries[:limit]
     lines = [f"- \\cite{{{k}}}  {y or '????'}  {t[:110]}{_SOURCE_MARK.get(src, '')}" for k, y, t, src in shown]
     more = f"\n  ... and {len(entries) - limit} more in literature.bib." if len(entries) > limit else ""
@@ -935,7 +937,16 @@ def _workspace_bib_for_prompt(specialist: str, paper_id: str, limit: int = 40) -
         "reference and the citation gate reports it as missing_in_bib. Do not cite "
         "from memory.\n"
         'If you need a work that is not here, run `e2er-lit search "<query>"` first; '
-        "that records it and makes its key citable.\n" + "\n".join(lines) + more
+        "that records it and makes its key citable.\n"
+        + (
+            "Entries marked [method source] are the methods literature of this study's template: where the "
+            "paper describes a method the study used (in the methods or data section), cite its source from "
+            "these. Cite only the methods the study used; leave the others out.\n"
+            if any(e[3] == "template" for e in entries)
+            else ""
+        )
+        + "\n".join(lines)
+        + more
     )
 
 

@@ -76,6 +76,8 @@ STEPS: dict[str, str] = {
     "corpus_gate": "Corpus check: sources, hashes, counts",
     "text_results_gate": "Counts, keyness and topics recomputed",
     "text_validation_gate": "Hand-checked sample of dictionary hits",
+    "figures_before_draft": "Figures re-read before the draft",
+    "forecasts_before_draft": "Forecasts judged before the draft",
     # Stops e2er makes on its own, outside the template's steps.
     "number_check": "Number check",
     "output_contract": "Output that failed its check",
@@ -208,6 +210,8 @@ EVENTS: dict[str, str] = {
     "improvement_stopped": "Rounds ended",
     "self_critique": "Self-critique",
     "polish_applied": "Polish notes considered",
+    "method_sources": "The template's method sources added to the bibliography",
+    "sent_out_before": "Specialists sent out before the draft",
 }
 
 #: What the ceiling check after a round of improvement decided (its ``verdict``).
@@ -545,7 +549,11 @@ PAPER_ORIGINS: dict[str, str] = {
 PAPER_KINDS: dict[str, str] = {"pdf": "PDF", "bib": ".bib entry", "zotero": "Zotero", "library": "Library"}
 
 #: A reference's e2er_source tag (literature.bib, refs.bib, the dossier).
-REFERENCE_SOURCES: dict[str, str] = {"researcher": "from your papers", "web": "found on the web"}
+REFERENCE_SOURCES: dict[str, str] = {
+    "researcher": "from your papers",
+    "web": "found on the web",
+    "template": "method source",
+}
 
 #: Where a table of data.db came from (data_sources.json), as the pages name it.
 DATA_CONNECTORS: dict[str, str] = {

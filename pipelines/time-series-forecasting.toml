@@ -24,6 +24,8 @@
 #   forecast_design_gate   checks the setup against the series and freezes it
 #                          with its hold-out (holdout_freeze.json); refuses a
 #                          setup written after a model was fitted
+#   forecasts_before_draft the forecast check below, run once the analysis is
+#                          done and before the paper drafter is dispatched
 #   estimation_gate        the results file held to the time-series contract
 #   forecast_gate          diagnostics on training periods only, every model
 #                          fitted before the hold-out and evaluated on exactly
@@ -225,6 +227,17 @@ on_fail = "retry"
 
 [steps.settings]
 min_train_periods = 24
+
+# The forecasts held to the frozen hold-out once the analysis is done, before
+# the paper drafter is dispatched (the forecast gate after the draft runs the
+# same check again): a draft is never written around an evaluation that fails.
+[[steps]]
+kind    = "gate"
+name    = "forecasts_before_draft"
+check   = "forecast_evaluation"
+after   = ["econometrics_specialist"]
+before  = ["paper_drafter"]
+on_fail = "retry"
 
 [[steps]]
 kind = "strategist"

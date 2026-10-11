@@ -293,6 +293,13 @@
           },
           "description": "researcher, preregister and gate steps: act inside the strategist's dispatch, right after these specialists have written their output, instead of at this position in the list. A gate with `after` also runs before any group that contains the econometrics specialist, so the estimation cannot pass it by."
         },
+        "before": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "gate steps: specialists (the draft writers, e.g. paper_drafter) that are not dispatched until this check has passed. Inside the dispatch (with `after`) the runner sends out the specialists of `after` that the plan left out, runs the check, and only then dispatches these. A check that runs as a step of its own must come before every step that runs them."
+        },
         "optional": {
           "type": "boolean",
           "default": false,

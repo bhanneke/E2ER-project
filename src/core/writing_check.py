@@ -212,11 +212,76 @@ def _em_dash_chains(source: str, text: str) -> list[Hit]:
     return out
 
 
-def find_in_file(path: Path) -> list[Hit]:
+def find_in_file(path: Path, checks_dir: Path | None = None) -> list[Hit]:
+    """The constructions in the file's prose, and the claims its study's checks refuse (``checks_dir``)."""
     try:
-        return find(path.read_text(encoding="utf-8", errors="replace"))
+        tex = path.read_text(encoding="utf-8", errors="replace")
     except OSError:
         return []
+    return find(tex) + (refused_claims(checks_dir, tex) if checks_dir is not None else [])
+
+
+# ── claims the study's own checks refuse ────────────────────────────────────
+
+_SEED_RE = re.compile(r"\bseeds?\b", re.IGNORECASE)
+_TOPIC_RE = re.compile(r"\btopics?\b", re.IGNORECASE)
+#: Words that claim the topics hold across seeds (with "seed" in the sentence).
+_STABLE_WITH_SEED_RE = re.compile(
+    r"\bstab(?:le|ility|ly)\b|\brobust\w*|\bjaccard\b|\bconsisten(?:t|tly|cy)\b|\bidentical\b|"
+    r"\bsame\s+(?:top\s+)?(?:terms|topics|words)\b",
+    re.IGNORECASE,
+)
+#: Words that claim the topics are stable (with "topic" in the sentence).
+_STABLE_WITH_TOPIC_RE = re.compile(r"\bstab(?:le|ility)\b|\bjaccard\b", re.IGNORECASE)
+#: A sentence that says why the seeds cannot differ is the honest statement, not the claim.
+_SEED_HONEST_RE = re.compile(
+    r"nndsvd|determinis\w*|\bignor\w*\s+the\s+seeds?\b|\bindependent\s+of\s+the\s+seeds?\b|"
+    r"\b(?:not|never)\s+(?:\w+\s+)?(?:depend|vary|varies|change)\w*\s+(?:on|with)\s+the\s+seeds?\b|"
+    r"\bsays?\s+nothing\s+about\b|\bnot\s+(?:been\s+)?tested\b",
+    re.IGNORECASE,
+)
+
+
+def refused_claims(checks_dir: Path | None, tex: str) -> list[Hit]:
+    """Sentences claiming what the study's checks found it cannot claim, from the checks' reports in ``checks_dir``.
+
+    Today one claim: topics stable across seeds when the text results check
+    found an NMF model started from nndsvd or nndsvda (``seed_independent_models``
+    in ``text_check.json``). Such a start ignores the seed, so every seed gives
+    the same fit and a stability of 1.0 shows nothing; a sentence that says so
+    (names nndsvd, a deterministic fit, or that the seed is ignored) passes.
+    """
+    if checks_dir is None:
+        return []
+    from .pipeline.text_checks import RESULTS_CHECK_FILE, SEED_INDEPENDENT_KEY
+
+    try:
+        import json
+
+        report = json.loads((Path(checks_dir) / RESULTS_CHECK_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    models = [str(m) for m in (report.get(SEED_INDEPENDENT_KEY) or [])] if isinstance(report, dict) else []
+    if not models:
+        return []
+    source = _strip_comments(tex)
+    text = prose(tex)
+    fix = (
+        f"the topic model ({', '.join(models)}) is NMF started from nndsvd, which ignores the seed: its runs under "
+        "different seeds are one fit, so they show nothing about stability. Say that the fit does not depend on "
+        'the seed and claim no stability across seeds (a stability test needs init="random")'
+    )
+    hits: list[Hit] = []
+    seen: set[str] = set()
+    for rx, stable in ((_SEED_RE, _STABLE_WITH_SEED_RE), (_TOPIC_RE, _STABLE_WITH_TOPIC_RE)):
+        for m in rx.finditer(text):
+            sentence = _sentence(source, m.start(), m.end())
+            if sentence in seen:
+                continue
+            seen.add(sentence)
+            if stable.search(sentence) and not _SEED_HONEST_RE.search(sentence):
+                hits.append(Hit("stability across seeds", sentence, fix))
+    return hits
 
 
 def feedback(hits: list[Hit], limit: int = 12) -> str:
