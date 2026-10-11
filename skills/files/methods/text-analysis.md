@@ -326,7 +326,9 @@ dictionary hit and topic-stability figure, and stops the run on a difference.
 
 Figures (`figure_spec.json`, each with a `source` in the results; the results
 check stops the run when a diachronic, keyness or topic model has no figure
-drawn from its results, so name every one in the results' `figures`):
+drawn from its results; `run_estimation.py` writes the results' `figures` list
+itself, so the rerun of `e2er reproduce` writes the same file: never edit
+`estimation_results.json` by hand):
 frequency over time (`time_series` from `models.<id>.outputs.series` or the
 term frequencies of the period groups), key terms (`bar` of log ratio or G2
 from `models.<id>.outputs.terms`), topic prevalence by group (`bar` per group
