@@ -26,19 +26,20 @@ def _settings(fred_api_key=None, allium_api_key=None):
 
 
 def test_yfinance_and_gmd_always_available():
-    assert [f.name for f in series_fetchers(_settings())] == ["yfinance", "gmd"]
+    # usgs: the first source built on the connector kit alone (keyless).
+    assert [f.name for f in series_fetchers(_settings())] == ["yfinance", "gmd", "usgs"]
 
 
 def test_fred_available_with_key():
     names = [f.name for f in series_fetchers(_settings(fred_api_key="k"))]
-    assert names == ["yfinance", "fred", "gmd"]
+    assert names == ["yfinance", "fred", "gmd", "usgs"]
 
 
 def test_catalog_includes_allium_card_only_with_key():
     plain = {c["name"] for c in data_catalog(_settings())}
-    assert plain == {"yfinance", "gmd"}
+    assert plain == {"yfinance", "gmd", "usgs"}
     withallium = {c["name"] for c in data_catalog(_settings(allium_api_key="k"))}
-    assert withallium == {"yfinance", "gmd", "allium"}
+    assert withallium == {"yfinance", "gmd", "usgs", "allium"}
 
 
 def test_allium_card_points_to_query_allium_not_fetch_data():
@@ -142,7 +143,7 @@ async def test_list_data_sources_returns_catalog():
     with patch(_SETTINGS, return_value=_settings(fred_api_key="k", allium_api_key="k")):
         out = json.loads(await handler.handle("list_data_sources", {}))
     names = {s["name"] for s in out["sources"]}
-    assert names == {"yfinance", "fred", "gmd", "allium"}
+    assert names == {"yfinance", "fred", "gmd", "usgs", "allium"}
 
 
 async def test_fetch_data_dispatches_to_provider():

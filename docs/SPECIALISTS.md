@@ -7,8 +7,8 @@ the artifacts it must produce. A specialist that does not write its declared
 artifact fails its contract and is retried with the violation fed back.
 
 - **31** specialists
-- **64** skill files on disk
-- **53** referenced by at least one specialist
+- **65** skill files on disk
+- **54** referenced by at least one specialist
 - **11** never referenced
 
 ## Shipped but never loaded
@@ -41,12 +41,12 @@ methodology guidance exists, and no specialist is given it.
 
 - **Writes:** `data_summary.md`
 - **Sidecars:** `summary_statistics.json`, `figure_spec.json` _(optional)_
-- **Skills (11):** `data/data-tables`, `data/query-data`, `data/cleaning`, `data/figure-spec`, `econometrics/panel-data`, `data/allium-cli`, `data/allium-developer-api`, `data/yfinance`, `data/fred`, `data/gmd`, `data/summary-statistics-schema`
+- **Skills (12):** `data/data-tables`, `data/query-data`, `data/cleaning`, `data/figure-spec`, `econometrics/panel-data`, `data/allium-cli`, `data/allium-developer-api`, `data/yfinance`, `data/fred`, `data/gmd`, `data/summary-statistics-schema`, `data/usgs`
 
 ### `data_architect`
 
 - **Writes:** `data_dictionary.json`
-- **Skills (10):** `data/data-tables`, `data/query-data`, `data/blockchain`, `data/crypto-defi`, `base/economist`, `data/allium-cli`, `data/allium-developer-api`, `data/yfinance`, `data/fred`, `data/gmd`
+- **Skills (11):** `data/data-tables`, `data/query-data`, `data/blockchain`, `data/crypto-defi`, `base/economist`, `data/allium-cli`, `data/allium-developer-api`, `data/yfinance`, `data/fred`, `data/gmd`, `data/usgs`
 
 ### `data_reviewer`
 
@@ -219,6 +219,7 @@ The reverse index: who is affected if you edit a skill file.
 | `data/query-data` | `data_analyst`, `data_architect`, `econometrics_specialist` |
 | `data/summary-statistics-schema` | `data_analyst` |
 | `data/table-spec` | `paper_drafter`, `section_writer` |
+| `data/usgs` | `data_analyst`, `data_architect` |
 | `data/yfinance` | `data_analyst`, `data_architect` |
 | `econometrics/did` | `econometrics_specialist` |
 | `econometrics/estimation-results-schema` | `econometrics_specialist` |

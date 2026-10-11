@@ -167,6 +167,9 @@ class SeriesDataToolHandler(ToolHandler):
         entry: dict[str, Any] | None = None
         if provider == "gmd" and method == "series" and load:
             entry = {**load, "retrieved_at": now}
+        elif load and getattr(fetcher, "source", None) is not None:
+            # A connector-kit source: its operation wrote the record (sources/runtime.py).
+            entry = {**load, "retrieved_at": load.get("retrieved_at") or now}
         elif provider == "fred" and method == "observations" and params.get("series_id"):
             meta: dict[str, str] = {}
             info = getattr(getattr(fetcher, "_provider", None), "citation_info", None)

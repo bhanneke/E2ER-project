@@ -37,7 +37,7 @@ def test_tables_from_unavailable_sources_are_violations_with_the_reason(tmp_path
     assert "table ff_factors_daily (source file)" in check.reason
     assert "no data files were chosen for this study" in check.reason
     assert "spy_prices" not in check.reason
-    assert "Available now: yfinance, gmd; no data files." in check.reason
+    assert "Available now: yfinance, gmd, usgs; no data files." in check.reason
 
 
 def test_available_connectors_and_local_files_pass(tmp_path: Path):

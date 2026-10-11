@@ -554,3 +554,23 @@ def register(env: Any) -> None:
     env.filters["paper_kind_label"] = paper_kind
     env.filters["reference_source_label"] = reference_source
     env.filters["connector_label"] = data_connector
+
+
+def _add_source_labels() -> None:
+    """The names of the connector kit's sources (modules/data/sources/): their doctor check and their loads.
+
+    The sources written before the kit keep their entries above; a new source
+    is named by its definition (``label``, ``reached``, ``doctor.check``).
+    """
+    try:
+        from ..modules.data.sources import all_sources
+    except ImportError:  # pragma: no cover — a partial install without the data module
+        return
+    for s in all_sources():
+        DATA_CONNECTORS.setdefault(s.name, s.label)
+        if s.doctor:
+            CHECKS.setdefault(s.doctor.check, s.label)
+            _REACHED.setdefault(s.doctor.check, s.reached or s.label)
+
+
+_add_source_labels()

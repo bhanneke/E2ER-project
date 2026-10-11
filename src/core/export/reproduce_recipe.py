@@ -57,8 +57,15 @@ DATA_SUFFIXES = frozenset({".db", ".sqlite", ".sqlite3", ".csv", ".tsv", ".parqu
 MAX_INPUT_BYTES = 200 * 1024 * 1024
 #: Where an exported copy of a workspace file is looked for first.
 _PREFERRED = ("data/", "results/", "design/", "code/", "")
-#: Sources whose terms do not let the study pass their data on: reloaded by get_data.py.
-_YAHOO, _GMD = "yfinance", "gmd"
+#: Yahoo Finance: its reloaded prices can differ (adjusted for every new dividend).
+_YAHOO = "yfinance"
+
+
+def _restricted() -> dict[str, Any]:
+    """Sources whose terms do not let the study pass their data on, reloaded by get_data.py (by connector name)."""
+    from ...modules.data.sources import all_sources
+
+    return {s.name: s for s in all_sources() if not s.redistribution}
 
 
 @dataclass
@@ -349,59 +356,27 @@ def _db_source(db: Path, loads: list[dict[str, Any]]) -> str:
 
 
 def _reload_args(entry: dict[str, Any]) -> tuple[list[str], str] | None:
-    """The e2er-data command that repeats a Yahoo or GMD load (without its target), and a note; None if unknown."""
-    connector = entry.get("connector")
-    if connector == _GMD:
-        variables = entry.get("variables") or str(entry.get("series") or "").split(",")
-        variables = [str(v) for v in variables if str(v).strip()]
-        if not variables:
-            return None
-        args = ["gmd", "series", "--variables", ",".join(variables)]
-        countries = entry.get("countries")
-        if isinstance(countries, list) and countries:
-            args += ["--countries", ",".join(str(c) for c in countries)]
-        for key in ("start", "end"):
-            if entry.get(key) is not None:
-                args += [f"--{key}", str(entry[key])]
-        if entry.get("version"):
-            args += ["--version", str(entry["version"])]
-        return args, ""
-    if connector != _YAHOO:
-        return None
-    raw = entry.get("request")
-    req: dict[str, Any] = raw if isinstance(raw, dict) else {}
-    ticker = req.get("ticker")
-    if not ticker:
-        link = str(entry.get("link") or "")
-        ticker = link.rstrip("/").rsplit("/", 1)[-1] if "/quote/" in link else None
-    if not ticker:
-        return None
-    command = req.get("command") or ("dividends" if "dividends" in str(entry.get("series") or "") else "history")
-    if command == "fundamentals":
-        statement = str(req.get("statement") or "income")
-        return ["yfinance", "fundamentals", "--ticker", ticker, "--statement", statement], ""
-    if command == "dividends":
-        return ["yfinance", "dividends", "--ticker", ticker], ""
-    args = ["yfinance", "history", "--ticker", ticker, "--interval", str(req.get("interval") or "1d")]
-    note = ""
-    if req:
-        for key in ("start", "end"):
-            if req.get(key):
-                args += [f"--{key}", str(req[key])]
-        if req.get("adjusted") is False:
-            args.append("--raw")
-    else:
-        note = "dates not recorded"
-    return args, note
+    """The e2er-data command that repeats a load of a source with terms (without its target), and a note.
+
+    From the source's definition (its ``reload``, else the recorded request); None if unknown.
+    """
+    from ...modules.data.sources.runtime import reload_args
+
+    source = _restricted().get(str(entry.get("connector")))
+    return reload_args(source, entry) if source is not None else None
 
 
 def _reloads(workspace: Path, loads: list[dict[str, Any]], inputs: list[str]) -> tuple[list[dict[str, Any]], bool]:
-    """The loads get_data.py repeats: Yahoo and GMD loads that went into an input; (reloads, any without dates)."""
+    """The loads get_data.py repeats: loads of sources with terms (Yahoo, the GMD, …) that went into an input.
+
+    Returns (reloads, any without dates).
+    """
     out: list[dict[str, Any]] = []
     undated = False
     uses_db = "data.db" in inputs
+    restricted = _restricted()
     for e in loads:
-        if e.get("connector") not in (_YAHOO, _GMD):
+        if e.get("connector") not in restricted:
             continue
         made = _reload_args(e)
         if made is None:
@@ -607,7 +582,8 @@ def write_recipe(workspace: Path, out: Path, *, date_str: str = "") -> Outcome:
 
     inputs: list[dict[str, Any]] = []
     data_inputs: list[str] = []
-    unshippable = {s for e in loads if e.get("connector") in (_YAHOO, _GMD) and (s := _saved(e))}
+    restricted = _restricted()
+    unshippable = {s for e in loads if e.get("connector") in restricted and (s := _saved(e))}
     recorded_sha = {
         f.get("path"): f.get("sha256")
         for e in loads

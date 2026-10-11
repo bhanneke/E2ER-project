@@ -201,6 +201,24 @@ SPECIALIST_SKILLS: dict[str, list[str]] = {
     ],
 }
 
+
+def _add_source_skills() -> None:
+    """The data architect and the data analyst read the skill of every connector-kit source.
+
+    The sources written before the kit are listed above; a source added to
+    modules/data/sources/ brings its skill (``Source.skill``) here.
+    """
+    from ...modules.data.sources import all_sources
+
+    for specialist in ("data_architect", "data_analyst"):
+        skills = SPECIALIST_SKILLS[specialist]
+        for source in all_sources():
+            if source.skill and source.skill not in skills:
+                skills.append(source.skill)
+
+
+_add_source_skills()
+
 # Sidecar artifacts produced ALONGSIDE the primary SPECIALIST_ARTIFACTS file.
 # These are machine-readable JSON files that downstream specialists + the
 # verify_numbers gate consume. Pre-v0.5.0 the framework only declared one

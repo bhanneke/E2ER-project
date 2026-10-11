@@ -1058,151 +1058,20 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--chain", required=True)
     p.add_argument("--token-address", required=True)
 
-    # ── yfinance source — public Yahoo Finance data, no API key. ────────────
-    yf_parser = sources.add_parser(
-        "yfinance",
-        help="Yahoo Finance market data (equities, ETFs, crypto, FX). No API key.",
-    )
-    yf_sub = yf_parser.add_subparsers(dest="command", required=True)
+    # ── the connector kit's sources (sources/): yfinance, FRED, the GMD, USGS, … ──
+    # Each source's subcommands and their arguments come from its definition; a
+    # loading operation also takes --save-to and --table.
+    from .sources import all_sources
+    from .sources.runtime import add_arguments
 
-    p = yf_sub.add_parser(
-        "history",
-        help="OHLCV time series for a ticker over a date window.",
-    )
-    p.add_argument("--ticker", required=True, help="Ticker symbol (e.g. AAPL, BTC-USD, SPY).")
-    p.add_argument("--start", default=None, help="ISO date e.g. 2020-01-01. Omit for max history.")
-    p.add_argument("--end", default=None, help="ISO date e.g. 2024-12-31. Omit for today.")
-    p.add_argument(
-        "--interval",
-        default="1d",
-        help="Bar size: 1m, 5m, 15m, 30m, 60m, 1d (default), 5d, 1wk, 1mo. "
-        "Intraday intervals are rate-limited to ~60 days back.",
-    )
-    p.add_argument(
-        "--raw",
-        action="store_true",
-        help="Disable split/dividend adjustment (default auto-adjusts; you almost always want adjusted).",
-    )
-    _add_save_to(p)
-
-    p = yf_sub.add_parser(
-        "ticker-info",
-        help="Current snapshot for a ticker (price, market cap, sector, beta, P/E, ...).",
-    )
-    p.add_argument("--ticker", required=True)
-
-    p = yf_sub.add_parser(
-        "fundamentals",
-        help="Annual financial statements (income / balance_sheet / cash_flow). ~4 years of history.",
-    )
-    p.add_argument("--ticker", required=True)
-    p.add_argument(
-        "--statement",
-        choices=["income", "balance_sheet", "cash_flow"],
-        default="income",
-        help="Which statement to pull. Default: income.",
-    )
-    _add_save_to(p)
-
-    p = yf_sub.add_parser("dividends", help="Full dividend history (ex-date + amount).")
-    p.add_argument("--ticker", required=True)
-    _add_save_to(p)
-
-    p = yf_sub.add_parser(
-        "search",
-        help="Name-to-ticker lookup. Use when you know the company name but not the symbol.",
-    )
-    p.add_argument("--query", required=True, help="Company / asset name to search for.")
-    p.add_argument(
-        "--max-results",
-        dest="max_results",
-        type=int,
-        default=10,
-        help="Maximum number of candidates to return (default 10).",
-    )
-
-    # ── FRED source — Federal Reserve Economic Data (US macro). ─────────────
-    fred_parser = sources.add_parser(
-        "fred",
-        help="Federal Reserve Economic Data (CPI, unemployment, rates, GDP, …). Free key.",
-    )
-    fred_sub = fred_parser.add_subparsers(dest="command", required=True)
-
-    p = fred_sub.add_parser(
-        "series",
-        help="Pull a FRED time series. e.g. CPIAUCSL (CPI), UNRATE (unemployment), DGS10 (10y yield).",
-    )
-    p.add_argument("--series-id", dest="series_id", required=True, help="FRED series id, e.g. CPIAUCSL.")
-    p.add_argument("--start", default=None, help="Observation start date (YYYY-MM-DD).")
-    p.add_argument("--end", default=None, help="Observation end date (YYYY-MM-DD).")
-    p.add_argument(
-        "--frequency",
-        default=None,
-        help="Resample frequency: d, w, m, q, sa, a. Omit to use the series' native frequency.",
-    )
-    p.add_argument(
-        "--units",
-        default=None,
-        help="Transformation: lin (raw, default), chg (level change), ch1 (yoy change), pch (%% change), log.",
-    )
-    p.add_argument(
-        "--limit",
-        type=int,
-        default=100000,
-        help="Max observations (default 100000 = FRED's max).",
-    )
-    _add_save_to(p)
-
-    p = fred_sub.add_parser(
-        "series-info",
-        help="Metadata for a series: title, units, frequency. Use BEFORE pulling observations to sanity-check.",
-    )
-    p.add_argument("--series-id", dest="series_id", required=True)
-
-    p = fred_sub.add_parser(
-        "search",
-        help="Free-text search across FRED series titles + notes. Returns up to --limit hits.",
-    )
-    p.add_argument("--query", required=True, help="Search text, e.g. 'core CPI' or 'unemployment'.")
-    p.add_argument("--limit", type=int, default=20, help="Max hits (default 20).")
-    p.add_argument(
-        "--order-by",
-        dest="order_by",
-        default="popularity",
-        help="Sort order: popularity (default), observation_start, observation_end, search_rank.",
-    )
-
-    p = fred_sub.add_parser(
-        "releases",
-        help="List FRED releases (Consumer Price Index, Employment Situation, …).",
-    )
-    p.add_argument("--limit", type=int, default=100, help="Max releases returned (default 100).")
-
-    # ── GMD source — Global Macro Database (annual cross-country macro). ────
-    gmd_parser = sources.add_parser(
-        "gmd",
-        help="Global Macro Database: annual macro panels for 239 economies, versioned releases. No key.",
-    )
-    gmd_sub = gmd_parser.add_subparsers(dest="command", required=True)
-    gmd_sub.add_parser("versions", help="List GMD releases, newest first (the newest is the default).")
-    gmd_sub.add_parser("variables", help="List GMD variables with units and definitions.")
-    gmd_sub.add_parser("countries", help="List GMD countries: ISO3 code and name.")
-    p = gmd_sub.add_parser(
-        "series",
-        help="Load a country-year panel, e.g. --variables rGDP,infl --countries USA,DEU --start 2000 --end 2024.",
-    )
-    p.add_argument("--variables", required=True, help="Comma-separated GMD variable codes, e.g. rGDP,infl.")
-    p.add_argument(
-        "--countries", default=None, help="Comma-separated ISO3 codes, e.g. USA,DEU. Omit for all countries."
-    )
-    p.add_argument("--start", type=int, default=None, help="First year (e.g. 2000).")
-    p.add_argument("--end", type=int, default=None, help="Last year (e.g. 2024).")
-    p.add_argument(
-        "--version",
-        default=None,
-        help="GMD release, e.g. 2026_09. Default: the newest release. The release used is always recorded.",
-    )
-    _add_save_to(p)
+    for source in all_sources():
+        src_parser = sources.add_parser(source.name, help=source.help or source.label)
+        src_sub = src_parser.add_subparsers(dest="command", required=True)
+        for op in source.operations:
+            p = src_sub.add_parser(op.name, help=op.help)
+            add_arguments(p, op)
+            if op.loads:
+                _add_save_to(p)
 
     # ── query — read-only SQL over the paper's local data.db warehouse ──────
     # The CLI-backend path to the in-process `query_data` tool. Allow-listed as
@@ -1220,8 +1089,8 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 # Per-source dispatch table. Top-level key is the data source; nested key
-# is the subcommand within that source. New sources (FRED, EDGAR, …) get
-# their own entries here.
+# is the subcommand within that source. The connector kit's sources
+# (sources/) are added from their definitions by _dispatch().
 _DISPATCH: dict[str, dict[str, Any]] = {
     "allium": {
         "feasibility": _run_feasibility,
@@ -1236,30 +1105,22 @@ _DISPATCH: dict[str, dict[str, Any]] = {
         "get-prices-history": _run_dev_prices_history,
         "get-price": _run_dev_get_price,
     },
-    "yfinance": {
-        "history": _run_yf_history,
-        "ticker-info": _run_yf_ticker_info,
-        "fundamentals": _run_yf_fundamentals,
-        "dividends": _run_yf_dividends,
-        "search": _run_yf_search,
-    },
-    "fred": {
-        "series": _run_fred_series,
-        "series-info": _run_fred_series_info,
-        "search": _run_fred_search,
-        "releases": _run_fred_releases,
-    },
-    "gmd": {
-        "versions": _run_gmd_versions,
-        "variables": _run_gmd_variables,
-        "countries": _run_gmd_countries,
-        "series": _run_gmd_series,
-    },
     "query": {
         "sql": _run_query_sql,
         "tables": _run_query_tables,
     },
 }
+
+
+def _dispatch() -> dict[str, dict[str, Any]]:
+    """The dispatch table: Allium and query, and every source of the connector kit."""
+    from .sources import all_sources
+    from .sources.runtime import cli_handler
+
+    table = dict(_DISPATCH)
+    for source in all_sources():
+        table[source.name] = {op.name: op.run or cli_handler(source, op) for op in source.operations}
+    return table
 
 
 def _refuse_in_rerun(args: argparse.Namespace) -> int:
@@ -1309,9 +1170,10 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
 
-    source_dispatch = _DISPATCH.get(args.source)
+    dispatch = _dispatch()
+    source_dispatch = dispatch.get(args.source)
     if source_dispatch is None:
-        print(f"Unknown source: {args.source!r}. Known: {sorted(_DISPATCH.keys())}", file=sys.stderr)
+        print(f"Unknown source: {args.source!r}. Known: {sorted(dispatch.keys())}", file=sys.stderr)
         return 2
     runner = source_dispatch.get(args.command)
     if runner is None:

@@ -119,8 +119,11 @@ def _strings(node: ast.AST) -> list[str]:
     return []
 
 
-#: e2er-data's sources that load data (everything but ``query``).
-_LOADING_SOURCES = frozenset({"allium", "yfinance", "fred", "gmd"})
+def _loading_sources() -> frozenset[str]:
+    """e2er-data's sources that load data (everything but ``query``): Allium and the connector kit's sources."""
+    from ...modules.data.sources import names
+
+    return frozenset({"allium", *names()})
 
 
 def _argv_of(call: ast.Call) -> list[str]:
@@ -137,7 +140,7 @@ def _argv_of(call: ast.Call) -> list[str]:
         and arg.elts
         and not (isinstance(arg.elts[0], ast.Constant) and isinstance(arg.elts[0].value, str))
         and words
-        and (words[0] in _LOADING_SOURCES or words[0] == "query")
+        and (words[0] in _loading_sources() or words[0] == "query")
     ):
         return ["e2er-data", *words]
     return words

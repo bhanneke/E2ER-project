@@ -215,18 +215,21 @@ e2er ships with 64 skill files and 31 specialist roles. `e2er run --template NAM
 
 Your own data go in the folder that `LOCAL_DATA_DIR` names (`data/` after `e2er init`), your papers (PDFs, a `.bib` file or a Zotero folder) in the folder that `LITERATURE_DIR` names. New study lists both: tick the data files and papers the study uses, or add files there. `e2er run --data FILE… --papers FILE…` does the same in a terminal; without a choice a study takes everything in both folders. Data files (`.csv`, `.tsv`, `.jsonl`, `.parquet`, `.xlsx`) are loaded into a SQLite database for that study. Your papers are written into the study's bibliography with the keys the writers cite; a literature search for the research question adds papers found on the web, marked as such ("Use only my papers" turns it off). The run page and the finish page show what the study used.
 
-Specialists can also draw on four sources:
+<!-- sources:start -->
+Specialists can also draw on five sources:
 
 | Source | Coverage | Setting |
 |---|---|---|
-| yfinance | Equities, ETFs, crypto, FX, indices | no key |
+| Yahoo Finance (`yfinance`) | Equities, ETFs, crypto, FX, indices | no key |
 | FRED | US and international macroeconomic series | `FRED_API_KEY` (free) |
-| Global Macro Database (GMD) | Annual macroeconomic data for 239 economies, in versioned releases. Free for academic use. | no key |
+| Global Macro Database (`gmd`) | Annual macroeconomic data for 239 economies, in versioned releases. Free for academic use. | no key |
+| USGS Earthquake Catalog | Earthquakes worldwide (ANSS ComCat): time, place, depth, magnitude. Public domain. | no key |
 | Allium | On-chain blockchain data | `ALLIUM_API_KEY` (paid query credits) |
+<!-- sources:end -->
 
 Every Allium query passes five checks before it runs. A query on a table first runs as a feasibility query of at most 1000 rows, and the full query waits for the researcher's approval. Allium supported this project with data access and technical collaboration.
 
-Each GMD load records the release, the address and the SHA-256 of the file it read. The study's references then include the GMD citation.
+Each GMD load records the release, the address and the SHA-256 of the file it read. The study's references then include the GMD citation. Every load of a source records its terms, its citation and the request as made; a USGS load also records the query and the SHA-256 of every file read. A new source is one definition in `src/modules/data/sources/`: [docs/CONNECTORS.md](https://github.com/bhanneke/E2ER-project/blob/main/docs/CONNECTORS.md) shows how to add one.
 
 ## Literature
 

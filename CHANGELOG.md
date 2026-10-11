@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### A new data source is one definition (connector kit)
+- **One `Source` definition per source** (`src/modules/data/sources/<name>.py`): name, website,
+  terms (address, summary, full text), citation and BibTeX, key setting (or none), whether a published
+  study may pass the data on, politeness (spacing between requests, retries, request budget) and its
+  operations, each with its arguments and a fetch function returning rows. From it e2er builds the
+  `e2er-data <source> <operation>` subcommands (with `--table` and `--save-to`), the record of every
+  load in `data_sources.json` (terms, citation, the request as made, the query, the release, the
+  SHA-256 of every file read), the table's data dictionary entry, the citation in the study's
+  `literature.bib`, the planning catalogue and `fetch_data` method, the sources and aliases the data
+  architect may declare, the standalone check's loading commands, the dashboard's labels, a doctor
+  reachability check, and, for a source whose terms keep its data with the source, the terms gate on
+  publish and the reload in `get_data.py`. Before, a source touched about eight places.
+- **Adapters for the common services** (`sources/adapters.py`): REST JSON with paging (page numbers,
+  offset, next link), TAP/ADQL (astronomy archives), CSV/ZIP download cached by version and re-hashed
+  with SHA-256, and SDMX-CSV (official statistics). Every request names e2er in its User-Agent, is
+  spaced and retried after HTTP 429/502/503/504, and a failure names the URL and the status.
+- **Recorded fixtures for tests** (`use_cassette`): a test records the source's responses once, live
+  (`E2ER_RECORD_FIXTURES=1`), and replays them offline; a request the fixture does not hold fails the
+  test. No live calls in CI.
+- **Yahoo Finance, FRED and the Global Macro Database are defined the same way**, with no change in
+  behaviour: their subcommands, arguments, printed results, load records, citations, terms gates,
+  reload commands, labels and planning cards are identical (checked on 28 scenarios before and after).
+  Their fetching and handlers stay their own; the definitions are the one place for everything else.
+- **New source: the USGS Earthquake Catalog** (`e2er-data usgs events --start … --end …
+  --min-magnitude … --bbox west,south,east,north`): earthquakes worldwide from the ANSS Comprehensive
+  Catalog through the USGS FDSN event service, no key, U.S. public domain. A period with more than the
+  service's 20,000 events per request is split into windows by their counts. Each load records the
+  query URL, the service version and the SHA-256 of every CSV read, and adds the catalogue's citation
+  (DOI 10.5066/F7MS3QZH) to the study's references.
+- **Docs and generated text**: `docs/CONNECTORS.md` (how to add a source, with the USGS connector as
+  the worked example); `scripts/gen_sources.py` writes the README's data source table from the
+  definitions and a skill stub for a new source; a test fails when the README lists other sources.
+
 ## [0.15.3] — 2026-10-11
 
 ### A subscription plan's usage limit pauses the run

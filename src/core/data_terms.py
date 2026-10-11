@@ -1,7 +1,8 @@
 """Data a study loaded under a source's own terms, and what publishing it requires.
 
-A connector whose source sets terms of use (the Global Macro Database,
-``e2er-data gmd``, and Yahoo Finance, ``e2er-data yfinance``) records every
+A connector whose source sets terms of use that keep its data with the source
+(the Global Macro Database, ``e2er-data gmd``, Yahoo Finance, ``e2er-data
+yfinance``, and any source declared with ``redistribution=False``) records every
 load in ``data/data_sources.json`` and, for a table, in
 ``data/data_dictionary.json``. ``e2er publish`` reads both:
 
@@ -60,52 +61,17 @@ class SourceTerms:
         return f"{self.article}{self.short}"
 
 
-def _gmd() -> SourceTerms:
-    from ..modules.data import gmd_provider as gmd
-
-    return SourceTerms(
-        connector=gmd.SOURCE,
-        name=gmd.DATASET,
-        short="GMD",
-        terms_url=gmd.TERMS_URL,
-        plain=gmd.TERMS_PLAIN,
-        zenodo_licence="other-nc",
-        cite_key=gmd.CITE_KEY,
-        citation=gmd.CITATION,
-        licence=gmd.LICENCE,
-    )
-
-
-def _yahoo() -> SourceTerms:
-    from ..modules.data.load_record import YFINANCE
-
-    return SourceTerms(
-        connector=YFINANCE.connector,
-        name="Yahoo Finance",
-        short="Yahoo Finance",
-        terms_url=YFINANCE.terms_url,
-        # Verbatim from the load record's terms summary, one sentence per line.
-        plain=tuple(
-            s.strip() if s.strip().endswith(".") else s.strip() + "." for s in YFINANCE.terms_summary.split(". ")
-        ),
-        zenodo_licence=None,
-        no_zenodo_why=(
-            "Yahoo's terms allow personal use only, and a Zenodo deposit republishes the data for anyone to reuse"
-        ),
-        cite_key=None,
-        citation="",
-        licence=YFINANCE.licence,
-        limit="allow personal use only",
-        limit_finish="allow personal use only",
-        confirm="although Yahoo's terms allow personal use only",
-        warn="Yahoo's terms allow personal use only.",
-        article="",
-    )
-
-
 def known() -> dict[str, SourceTerms]:
-    """The sources with terms e2er knows, by connector name."""
-    return {t.connector: t for t in (_gmd(), _yahoo())}
+    """The sources with terms e2er knows, by connector name.
+
+    Every connector-kit source whose data a study may not pass on
+    (``redistribution=False`` in its definition, modules/data/sources/): the
+    GMD, Yahoo Finance, and any source added the same way.
+    """
+    from ..modules.data.sources import all_sources
+    from ..modules.data.sources.runtime import source_terms
+
+    return {s.name: source_terms(s) for s in all_sources() if not s.redistribution}
 
 
 @dataclass
