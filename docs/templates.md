@@ -2,7 +2,7 @@
 
 A template is a pipeline file in `pipelines/` (schema:
 `docs/schemas/pipeline.schema.json`). A run follows the template chosen when the
-paper is created; resume keeps it. e2er ships nine:
+paper is created; resume keeps it. e2er ships ten:
 
 | Template | For |
 |---|---|
@@ -15,6 +15,7 @@ paper is created; resume keeps it. e2er ships nine:
 | `field-map` | A map of a research field by main path analysis of its citation network (OpenAlex), with robustness across alternative boundaries, a reading list, network exports and a short field review. |
 | `descriptive-study` | A description of a sample in any field: summary statistics, distributions, associations and figures, after a data check (units, duplicates, missing values, coverage); every figure re-read from its data. |
 | `time-series-forecasting` | A series, its trend and seasonality, models and forecasts: the setup and its hold-out frozen before fitting, every model judged on the hold-out against naive baselines, forecasts with intervals; optional pre-registration. |
+| `systematic-review` | A systematic review with a random-effects meta-analysis (PRISMA 2020): protocol, a recorded OpenAlex search, screening with a reason for every exclusion, open-access full texts, extraction with every number traced to its page and quote, e2er's own meta-analysis code, forest, funnel and flow figures; a narrative synthesis when too few studies can be pooled. |
 
 ## Skills and files a template adds
 
@@ -46,7 +47,7 @@ and identification among them. A template for astronomy, earth science,
 geography, health or literature declares what it needs instead:
 
 ```toml
-results     = "descriptive"     # regression (default) | descriptive | timeseries | spatial | text
+results     = "descriptive"     # regression (default) | descriptive | timeseries | spatial | text | metaanalysis
 causal      = false             # default: true for regression, false for every other kind
 base_skill  = "base/researcher" # default base/economist
 data_skills = []                # replaces the blockchain/DeFi/Allium data skills; absent = as before
@@ -70,7 +71,11 @@ run  = ["data_reviewer", "methods_reviewer", "plausibility_reviewer", "literatur
   out-of-sample RMSE and MAE with MAE <= RMSE), *spatial* (units, spatial
   statistics with their weights, Moran's I expectation -1/(n - 1), p from z,
   map specifications), *text* (corpus counts, term frequencies whose
-  per-10,000 values follow from the counts, text-model outputs). The number
+  per-10,000 values follow from the counts, text-model outputs), *metaanalysis*
+  (studies with their effects and variances, the flow counts adding up, the
+  pooled estimate and tau^2 recomputed from the studies, heterogeneity,
+  prediction interval and Egger's test, or a narrative synthesis below the
+  minimum number of studies). The number
   check traces the paper's numbers to the kind's files, and `e2er verify`
   adds a `results contract` check for these kinds. Tables of statistics,
   bins, periods or terms are `records` tables in `table_spec.json` (see
@@ -146,6 +151,65 @@ url       = "https://www.linkedin.com/pulse/map-research-field-claude-main-path-
 accessed  = "2026-10-08"
 found_via = "shared by Björn Hanneke"
 ```
+
+
+## `systematic-review`
+
+A systematic review with a random-effects meta-analysis, following the PRISMA
+2020 statement (Page et al. 2021): the protocol is fixed before the search,
+the search is recorded and repeatable, every exclusion has a reason, studies
+are assessed on their full text where an open-access one exists, risk of bias
+is judged per study, heterogeneity is always reported, and the flow of records
+is drawn. What e2er adds: every number the extractor takes from a study is read
+back from the page and quote it cites, and the meta-analysis is e2er's own code
+(`src/modules/metaanalysis/stats.py`, numpy and scipy only), written into the
+study as `run_estimation.py` so that `e2er reproduce` reruns it. The code's
+REML and DerSimonian-Laird estimates, tau^2, I^2, H^2, Q and trim and fill
+reproduce metafor's published results for the BCG vaccine trials (13 studies)
+to four decimals (`tests/test_metaanalysis.py`).
+
+Four specialists of its own: the **protocol designer** (`review_protocol.json`
+and `.md`), the **study screener** (`screening.json`), the **study extractor**
+(`extraction.json`) and the **review writer** (`paper_draft.tex`). The rest is
+code. The method skill is `methods/meta-analysis` (the files' schemas, what to
+quote, the pitfalls); the results schema is `data/metaanalysis-results-schema`.
+
+| Step | Kind | What happens |
+|---|---|---|
+| `design_protocol` | specialist | The question in PICO, PECO or another form; eligibility criteria as `include` and `exclude` lists, each with an id (I1, E1, ...); `databases`; `searches` (Boolean concept blocks, years, types, optionally open access only); the outcome; the effect measure (SMD, MD, RD, OR, RR, HR, their logs, r, or generic) and what a positive value means; the synthesis (`tau2_method` REML or DL, `min_studies`, `ci_level`); the risk-of-bias tool, its domains and levels. The designer sizes each search with `e2er-fieldmap count` (one OpenAlex request each). |
+| `search` | check `meta_search` | Every search on OpenAlex (and Crossref when named: its most relevant `max_crossref` records only, since Crossref has no Boolean search, and the log says so). One request reads a search's size first; a search above `max_records` (default 600) is refused before its pages are read. Pages are cached in the workspace, so a rerun sends no request; at most `max_requests` (default 40). Duplicates are removed by DOI, then by title and year. Writes `records.json`, `records.csv`, `search_log.json` (each query as sent, the count reported, the records read, the time) and `search_counts.md`, and records each search in `data_sources.json` (OpenAlex, CC0). Runs at every start, so an edited protocol is searched again. |
+| `review_protocol` | researcher | Approve or edit the protocol, with the counts. |
+| `preregister` | preregister, **optional** | The protocol and the search counts assembled into `preregistration.md` and frozen; `review_protocol.json` is a plan file, and a change after the freeze stops the synthesis. |
+| `screen` | specialist | One decision per record on its title and abstract: include, exclude (with the ids of the criteria it meets or fails and a reason) or unsure (the full text decides). |
+| `screening_check` | check `meta_screening` | Every record decided once, no decision for anything else, every exclusion with a criterion the protocol defines and a reason. Writes `screening_check.json` and `screening_sample.md`: the unsure records, the inclusions and a seeded sample of `sample_size` (default 20) exclusions with their abstracts. The same check is the screener's output contract, so the screener is sent back with the problems before the run stops. |
+| `review_screening` | researcher | Read the sample and correct decisions in `screening.json`; the check runs again on approval. |
+| `fulltext` | check `meta_fulltext` | For every record included or unsure: a PDF the researcher saved (`data/fulltext/<id>.pdf`, or `fulltext/<id>.pdf` in a `LOCAL_DATA_DIR` folder; `<id>` is the record id or the DOI with `/` as `_`), else the open-access PDF OpenAlex lists, else the open-access resolvers by DOI. Text page by page (pypdf, running heads removed) to `fulltext/<id>.txt`; `fulltext_log.json` records the origin and SHA-256, or why no full text is available. At most `max_downloads` (default 60). Full texts stay in the workspace and are not exported. |
+| `extract` | specialist | Per record: include or exclude on the full text (or on the abstract when there is none, said in `source_text`), the effect exactly as printed, the study's characteristics, `n_total`, risk of bias per protocol domain, and for every number the page and a verbatim quote that prints it. A study with no poolable statistic stays included with `effect: null` and a reason. |
+| `extraction_check` | check `meta_extraction` | Every extracted number read back: the quote must be on the page given (elsewhere in the text is accepted with a note; across a page break too), or in the abstract for a study read from its abstract, and the number must be printed in the quote. Every full-text exclusion has a criterion and a reason; every included study has its risk of bias with the protocol's domains and levels; every effect can be put on the analysis scale. Writes `extraction_check.json` and `.md`, `meta_studies.csv`, `risk_of_bias.csv` and `prisma_counts.json`. The trace is also the extractor's output contract (a verification check: the extractor is sent back with the untraced numbers before the run stops). |
+| `review_extraction` | researcher, **optional** | Read the extraction table before anything is pooled. |
+| `synthesis` | check `meta_synthesis` | Writes `run_estimation.py` (e2er's code) and runs it: effects on the analysis scale (log ratios, Fisher's z for r, Hedges' g from group statistics; an SE as printed, else from the CI), the random-effects estimate with tau^2 by REML or DL, z, p and CI, Q, I^2 and H^2, the prediction interval (t on k - 2 df), the common-effect estimate, Egger's test and trim and fill (L0) with a low-power flag below ten studies, and leave-one-out. Below the protocol's `min_studies`: no pooling, `narrative_only`. The results are held to the meta-analysis contract (the pooled estimate and tau^2 recomputed from the studies, the flow counts adding up). Draws `fig_forest.pdf`, `fig_funnel.pdf` and `fig_prisma.pdf` (figure types `forest`, `funnel`, `prisma`), writes `tables/meta_flow.tex`, `tables/meta_studies.tex` and `tables/meta_results.tex`, and adds the methods' and the included studies' entries to `literature.bib` (keys in `meta_references.json`). |
+| `write_draft` | specialist | The review, PRISMA item by item, with the three tables and figures included (no table written by hand), every number from the results, every included study cited; its output contract checks the inclusions and the citations. |
+| `review_draft` | researcher | Read the draft. |
+| `review` | reviewers | Number check, citation check, then `methods_reviewer` (1.5), `data_reviewer` (1.25), `technical_reviewer`, `plausibility_reviewer`, `writing_reviewer` (0.75). |
+| `revision` | specialists | As in the other templates. |
+
+`e2er verify` on an exported review checks the results contract (pooled
+estimate recomputed, flow counts) and, as its method checks, that every effect
+in `meta_studies.csv` is the extraction's, that every extracted number is
+printed in its quote (and a quote from an abstract is in the record's
+abstract), that the run's trace left nothing untraced, and that each study's
+`yi` and `vi` follow from its statistics. The full texts are not in the export,
+so the page-level trace is the run's (`extraction_check.json`).
+
+What it does not do: a second independent screener and agreement statistics,
+searches of MEDLINE, Embase, PsycINFO or Web of Science, subgroup analyses and
+meta-regression, multilevel models for several effects per study, and risk of
+bias by a tool's full algorithm. A review should state these limits.
+
+Method sources (`[[credit]]`, DOIs checked on Crossref on 2026-10-11): Page et
+al. (2021) as the basis; DerSimonian and Laird (1986); Viechtbauer (2005);
+Higgins and Thompson (2002); Riley, Higgins and Deeks (2011); Egger et al.
+(1997); Duval and Tweedie (2000); Viechtbauer (2010).
 
 ## `field-map`
 

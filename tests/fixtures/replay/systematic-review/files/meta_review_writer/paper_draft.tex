@@ -1,0 +1,45 @@
+\title{Grit and grade point average in university students: a systematic review and meta-analysis of synthetic test data}
+\begin{abstract}
+This review is a test fixture of e2er: every record and study in it is invented. We searched OpenAlex for studies of
+grit and grade point average in university students, screened 11 records and included
+8 studies. The random-effects pooled correlation is 0.22
+(95\% CI 0.15 to 0.30), with
+$I^2$ = 72.7\%.
+\end{abstract}
+
+\section{Introduction}
+Whether grit goes with higher grades is a question for a meta-analysis; the studies here are synthetic and exist only to
+test the template \citep{page2021prisma}.
+
+\section{Methods}
+The protocol fixed the question, the eligibility criteria and the searches before any record was read. Two searches
+on OpenAlex found 12 records; 1 duplicate was removed. One screener
+decided every record on its title and abstract. Full texts were read where an open-access PDF existed. Correlations were
+pooled as Fisher's $z$ in a random-effects model with $\tau^2$ by restricted maximum likelihood
+\citep{viechtbauer2005bias,viechtbauer2010conducting}; heterogeneity is reported as $I^2$ \citep{higgins2002quantifying}
+with a prediction interval \citep{riley2011interpretation}, and small-study effects with Egger's test
+\citep{egger1997bias} and trim and fill \citep{duval2000trim}.
+
+\section{Results}
+Table~\ref{tab:flow} gives the flow of records and Figure~\ref{fig:prisma} the diagram.
+\begin{table}[h]\centering\caption{Flow of records}\label{tab:flow}
+\input{tables/meta_flow.tex}
+\end{table}
+\begin{figure}[h]\centering\includegraphics[width=0.8\textwidth]{fig_prisma.pdf}\caption{PRISMA 2020 flow diagram}\label{fig:prisma}\end{figure}
+The 8 included studies \citep{arendt2015grit, bauer2016grit, castro2017grit, dahl2018grit, ekstrom2019grit, fischer2020grit, garcia2021grit, huang2022grit} are listed in Table~\ref{tab:studies}.
+\begin{table}[h]\centering\caption{Included studies}\label{tab:studies}
+\input{tables/meta_studies.tex}
+\end{table}
+The pooled correlation is 0.22 with a prediction interval from
+-0.02 to 0.45: a new study could find almost no association.
+$\tau^2$ is 0.009. Egger's intercept is 4.40 ($p$ = 0.042) on 8 studies,
+a test with little power; trim and fill adds 2 studies.
+\begin{table}[h]\centering\caption{Meta-analysis}\label{tab:meta}
+\input{tables/meta_results.tex}
+\end{table}
+\begin{figure}[h]\centering\includegraphics[width=0.8\textwidth]{fig_forest.pdf}\caption{Forest plot}\end{figure}
+\begin{figure}[h]\centering\includegraphics[width=0.7\textwidth]{fig_funnel.pdf}\caption{Funnel plot}\end{figure}
+
+\section{Limitations}
+One open index was searched, one screener decided every record, extraction was done by a model and checked against the
+text by e2er, and the studies are synthetic.

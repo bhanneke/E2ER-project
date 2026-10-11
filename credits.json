@@ -513,6 +513,120 @@
         "accessed": "2026-10-11",
         "cite_key": "openshaw1984modifiable"
       }
+    ],
+    "template:systematic-review": [
+      {
+        "creator": "Matthew J. Page, Joanne E. McKenzie, Patrick M. Bossuyt, Isabelle Boutron, Tammy C. Hoffmann, Cynthia D. Mulrow and others",
+        "role": "method",
+        "relation": "based_on",
+        "kind": "article",
+        "title": "The PRISMA 2020 statement: an updated guideline for reporting systematic reviews",
+        "publisher": "BMJ 372, n71",
+        "published": "2021-03-29",
+        "url": "https://doi.org/10.1136/bmj.n71",
+        "accessed": "2026-10-11",
+        "found_via": "Crossref record checked 2026-10-11",
+        "note": "The steps (protocol, search, screening, eligibility, extraction, risk of bias, synthesis) and the flow diagram.",
+        "cite_key": "page2021prisma"
+      },
+      {
+        "creator": "Rebecca DerSimonian and Nan Laird",
+        "role": "method",
+        "relation": "cites",
+        "kind": "article",
+        "title": "Meta-analysis in clinical trials",
+        "publisher": "Controlled Clinical Trials 7(3), 177-188",
+        "published": "1986-09",
+        "url": "https://doi.org/10.1016/0197-2456(86)90046-2",
+        "accessed": "2026-10-11",
+        "found_via": "Crossref record checked 2026-10-11",
+        "note": "The random-effects model and the method-of-moments estimate of tau^2 (DL).",
+        "cite_key": "dersimonian1986meta"
+      },
+      {
+        "creator": "Wolfgang Viechtbauer",
+        "role": "method",
+        "relation": "cites",
+        "kind": "article",
+        "title": "Bias and Efficiency of Meta-Analytic Variance Estimators in the Random-Effects Model",
+        "publisher": "Journal of Educational and Behavioral Statistics 30(3), 261-293",
+        "published": "2005-09",
+        "url": "https://doi.org/10.3102/10769986030003261",
+        "accessed": "2026-10-11",
+        "found_via": "Crossref record checked 2026-10-11",
+        "note": "The REML estimate of tau^2 (the default) and its Fisher scoring.",
+        "cite_key": "viechtbauer2005bias"
+      },
+      {
+        "creator": "Julian P. T. Higgins and Simon G. Thompson",
+        "role": "method",
+        "relation": "cites",
+        "kind": "article",
+        "title": "Quantifying heterogeneity in a meta-analysis",
+        "publisher": "Statistics in Medicine 21(11), 1539-1558",
+        "published": "2002-06-15",
+        "url": "https://doi.org/10.1002/sim.1186",
+        "accessed": "2026-10-11",
+        "found_via": "Crossref record checked 2026-10-11",
+        "note": "I^2 and H^2.",
+        "cite_key": "higgins2002quantifying"
+      },
+      {
+        "creator": "Richard D. Riley, Julian P. T. Higgins and Jonathan J. Deeks",
+        "role": "method",
+        "relation": "cites",
+        "kind": "article",
+        "title": "Interpretation of random effects meta-analyses",
+        "publisher": "BMJ 342, d549",
+        "published": "2011-02-10",
+        "url": "https://doi.org/10.1136/bmj.d549",
+        "accessed": "2026-10-11",
+        "found_via": "Crossref record checked 2026-10-11",
+        "note": "The prediction interval (t on k - 2 degrees of freedom).",
+        "cite_key": "riley2011interpretation"
+      },
+      {
+        "creator": "Matthias Egger, George Davey Smith, Martin Schneider and Christoph Minder",
+        "role": "method",
+        "relation": "cites",
+        "kind": "article",
+        "title": "Bias in meta-analysis detected by a simple, graphical test",
+        "publisher": "BMJ 315(7109), 629-634",
+        "published": "1997-09-13",
+        "url": "https://doi.org/10.1136/bmj.315.7109.629",
+        "accessed": "2026-10-11",
+        "found_via": "Crossref record checked 2026-10-11",
+        "note": "Egger's regression test for funnel-plot asymmetry.",
+        "cite_key": "egger1997bias"
+      },
+      {
+        "creator": "Sue Duval and Richard Tweedie",
+        "role": "method",
+        "relation": "cites",
+        "kind": "article",
+        "title": "Trim and Fill: A Simple Funnel-Plot-Based Method of Testing and Adjusting for Publication Bias in Meta-Analysis",
+        "publisher": "Biometrics 56(2), 455-463",
+        "published": "2000-06",
+        "url": "https://doi.org/10.1111/j.0006-341X.2000.00455.x",
+        "accessed": "2026-10-11",
+        "found_via": "Crossref record checked 2026-10-11",
+        "note": "Trim and fill, estimator L0.",
+        "cite_key": "duval2000trim"
+      },
+      {
+        "creator": "Wolfgang Viechtbauer",
+        "role": "method",
+        "relation": "cites",
+        "kind": "article",
+        "title": "Conducting Meta-Analyses in R with the metafor Package",
+        "publisher": "Journal of Statistical Software 36(3)",
+        "published": "2010",
+        "url": "https://doi.org/10.18637/jss.v036.i03",
+        "accessed": "2026-10-11",
+        "found_via": "Crossref record checked 2026-10-11",
+        "note": "The reference implementation e2er's estimates were checked against (the BCG vaccine trials: REML and DL estimates, tau^2, I^2, Q, trim and fill).",
+        "cite_key": "viechtbauer2010conducting"
+      }
     ]
   }
 }

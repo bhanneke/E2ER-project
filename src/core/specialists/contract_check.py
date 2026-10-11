@@ -89,7 +89,7 @@ _REGRESSION_REQUIRED: dict[str, str] = {"econometrics_specialist": "estimation_r
 # model wrote itself. 53 of 110 values traced to nothing. The gate that
 # checks numbers ran afterwards and could only report the damage.
 _NO_INLINE_TABLES: frozenset[str] = frozenset(
-    {"paper_drafter", "section_writer", "latex_formatter", "revisor", "field_review_writer"}
+    {"paper_drafter", "section_writer", "latex_formatter", "revisor", "field_review_writer", "meta_review_writer"}
 )
 
 _TABULAR_RE = re.compile(r"\\begin\{tabular\}")
@@ -563,7 +563,7 @@ def check_draft_includes_declared_tables(workspace: Path, relative: str = "paper
 
 
 #: Writers of the paper's draft whose draft must cite the study's references.
-_MUST_CITE: frozenset[str] = frozenset({"paper_drafter", "field_review_writer"})
+_MUST_CITE: frozenset[str] = frozenset({"paper_drafter", "field_review_writer", "meta_review_writer"})
 
 
 def check_draft_cites(workspace: Path, relative: str = "paper_draft.tex") -> ContractCheck:
@@ -713,6 +713,34 @@ def _lanes_problems(workspace: Path) -> list[str]:
     return lanes_problems(workspace)
 
 
+def _protocol_problems(workspace: Path) -> list[str]:
+    from ...modules.metaanalysis.protocol import ProtocolError, load_protocol
+
+    try:
+        load_protocol(workspace)
+    except ProtocolError as e:
+        return str(e).split("; ")
+    return []
+
+
+def _screening_problems(workspace: Path) -> list[str]:
+    from ...modules.metaanalysis.screening import screening_problems
+
+    return screening_problems(workspace)
+
+
+def _extraction_problems(workspace: Path) -> list[str]:
+    from ...modules.metaanalysis.extraction import structure_problems
+
+    return structure_problems(workspace)
+
+
+def _meta_draft_problems(workspace: Path) -> list[str]:
+    from ...modules.metaanalysis.workflow import draft_problems
+
+    return draft_problems(workspace)
+
+
 def _report_problems(workspace: Path) -> list[str]:
     from ..pipeline.reproduction import check_report
 
@@ -725,6 +753,10 @@ _STRUCTURAL_CHECKS: dict[str, tuple[str, Any]] = {
     "reproduction_comparer": ("reproduction_report.json", _report_problems),
     "field_boundary_designer": ("field_boundary.json", _boundary_problems),
     "field_lane_mapper": ("field_lanes.json", _lanes_problems),
+    "protocol_designer": ("review_protocol.json", _protocol_problems),
+    "study_screener": ("screening.json", _screening_problems),
+    "study_extractor": ("extraction.json", _extraction_problems),
+    "meta_review_writer": ("paper_draft.tex", _meta_draft_problems),
 }
 
 DATA_DICTIONARY_FILE = "data_dictionary.json"
@@ -1008,6 +1040,17 @@ def check_specialist_artifacts(workspace: Path, specialist: str) -> list[Contrac
         if not any(c.artifact == filename and not c.ok for c in checks):
             problems = check(workspace)
             checks.append(ContractCheck(filename, not problems, "; ".join(problems[:8])))
+
+    # The extractor's numbers, each read back from the page and quote it cites
+    # (src/modules/metaanalysis/extraction.py). Verification: a regime may shadow it.
+    if specialist == "study_extractor" and not any(c.artifact == "extraction.json" and not c.ok for c in checks):
+        from ...modules.metaanalysis.extraction import trace, trace_problems
+
+        try:
+            problems = trace_problems(trace(workspace))
+        except (OSError, ValueError, KeyError) as e:
+            problems = [f"the extracted numbers could not be traced: {e}"]
+        checks.append(ContractCheck("extraction.json", not problems, "; ".join(problems), kind=KIND_VERIFICATION))
 
     # The data analyst loads what the data dictionary declares, into data.db,
     # and reports the real row counts (docs: skills/files/data/data-tables.md).

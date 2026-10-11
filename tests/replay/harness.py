@@ -13,6 +13,10 @@ Every change is test-only and named here:
 * Docker: the replication template's sandbox runs with a fake Docker that
   writes the recorded run's output files (``scenario.json`` → ``sandbox``)
   and reports the recorded environment. No container runs;
+* the systematic-review template's search and full texts: OpenAlex pages
+  and open-access PDFs come from the scenario's recordings (``http/index.json``:
+  address -> file), so the search and the full-text step run their real code
+  on recorded answers; an address without a recording fails like a dead link;
 * the network: every connection to a host other than this machine is
   refused and written to ``E2ER_REPLAY_NETLOG``, so a story can show that
   nothing reached Zenodo, GitHub, a model provider or a literature index.
@@ -203,6 +207,25 @@ def _patch_sandbox(scenario_root: Path) -> None:
     sandbox.run_sandbox = run_sandbox  # type: ignore[assignment]
 
 
+def _patch_recorded_http(scenario_root: Path) -> None:
+    """Serve the systematic-review template's HTTP reads from ``http/`` of the scenario."""
+    from src.modules.metaanalysis import fulltext, search
+
+    folder = scenario_root / "http"
+    index = json.loads((folder / "index.json").read_text(encoding="utf-8"))
+
+    def recorded(url: str) -> bytes:
+        name = index.get(url)
+        if not name:
+            _note_blocked(url)
+            raise ConnectionRefusedError(f"e2e replay: no recording for {url}")
+        return (folder / name).read_bytes()
+
+    search.fetch_text = lambda url, headers: recorded(url).decode("utf-8")  # type: ignore[assignment]
+    fulltext.fetch_pdf = recorded  # type: ignore[assignment]
+    fulltext.resolve_pdf = lambda doi: None  # type: ignore[assignment]
+
+
 def install() -> None:
     """Apply the replay level to this process (see module docstring)."""
     _guard_network()
@@ -213,5 +236,7 @@ def install() -> None:
         root = scenario_dir(os.environ["E2ER_REPLAY_SCENARIO"])
         if json.loads((root / "scenario.json").read_text(encoding="utf-8")).get("sandbox"):
             _patch_sandbox(root)
+        if (root / "http" / "index.json").is_file():
+            _patch_recorded_http(root)
     if os.environ.get(ENV_ZENODO):
         _patch_zenodo(os.environ[ENV_ZENODO])

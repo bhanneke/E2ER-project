@@ -17,6 +17,7 @@ from .. import labels as _labels
 from ..governance import DEFAULT_REGIME, KIND_RELIABILITY
 from ..governance import enforces as governance_enforces
 from ..pipeline.fieldmap_checks import FILES as _FIELDMAP_FILES
+from ..pipeline.meta_checks import FILES as _META_FILES
 from ..pipeline.spec import RESEARCHER_KINDS, SEQUENCE_CHECKS, find_spec
 from ..specialists.contracts import Contribution, WorkOrder
 from ..specialists.dispatcher import (
@@ -3527,6 +3528,7 @@ _SEQUENCE_CHECK_FILES: dict[str, tuple[str, ...]] = {
     **_FIELDMAP_FILES,
     "figure_data": ("figure_spec.json", "figure_check.json"),
     "forecast_evaluation": ("estimation_results.json", "forecast_check.json", "forecast_design.json"),
+    **_META_FILES,
 }
 
 
@@ -3573,9 +3575,12 @@ def _sequence_check(check: str) -> Any:
 
         return check_forecast_evaluation
     from ..pipeline.fieldmap_checks import CHECKS as _FIELDMAP_CHECKS
+    from ..pipeline.meta_checks import CHECKS as _META_CHECKS
 
     if check in _FIELDMAP_CHECKS:
         return _FIELDMAP_CHECKS[check]
+    if check in _META_CHECKS:
+        return _META_CHECKS[check]
     raise ValueError(f"check {check!r} cannot run as a step of its own")
 
 

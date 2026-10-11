@@ -313,6 +313,159 @@ def check_text(doc: dict[str, Any]) -> list[str]:
     return problems
 
 
+# ── meta-analysis ───────────────────────────────────────────────────────────
+
+#: The flow counts of a systematic review (PRISMA 2020) that must be whole numbers.
+_PRISMA_COUNTS = (
+    "duplicates_removed",
+    "screened",
+    "excluded_on_title_abstract",
+    "sought_for_full_text",
+    "full_text_not_retrieved",
+    "excluded_at_eligibility",
+    "included_in_review",
+    "included_in_meta_analysis",
+)
+
+
+def _check_prisma(p: Any, k: int | None, problems: list[str]) -> None:
+    if not isinstance(p, dict):
+        problems.append("'prisma' must hold the flow counts (identified, screened, excluded, included)")
+        return
+    ident = _count((p.get("identified") or {}).get("total")) if isinstance(p.get("identified"), dict) else None
+    counts = {key: _count(p.get(key)) for key in _PRISMA_COUNTS}
+    bad = [key for key, v in counts.items() if v is None] + (["identified.total"] if ident is None else [])
+    if bad:
+        problems.append(f"prisma: {', '.join(bad)} must be whole numbers")
+        return
+    c = {key: int(v) for key, v in counts.items() if v is not None}
+    assert ident is not None
+    rules = [
+        (ident - c["duplicates_removed"] == c["screened"], "identified - duplicates removed must equal screened"),
+        (
+            c["screened"] - c["excluded_on_title_abstract"] == c["sought_for_full_text"],
+            "screened - excluded on title and abstract must equal sought for full text",
+        ),
+        (
+            c["sought_for_full_text"] == c["excluded_at_eligibility"] + c["included_in_review"],
+            "sought for full text must equal excluded at eligibility + included in the review",
+        ),
+        (c["full_text_not_retrieved"] <= c["sought_for_full_text"], "more full texts not retrieved than sought"),
+        (
+            c["included_in_meta_analysis"] <= c["included_in_review"],
+            "more studies in the meta-analysis than in the review",
+        ),
+    ]
+    problems += [f"prisma: {why}" for ok, why in rules if not ok]
+    if k is not None and c["included_in_meta_analysis"] != k:
+        problems.append(f"prisma: included_in_meta_analysis = {c['included_in_meta_analysis']} but k = {k}")
+
+
+def check_metaanalysis(doc: dict[str, Any]) -> list[str]:
+    """A random-effects meta-analysis: studies, pooled estimate, heterogeneity, flow counts, all consistent.
+
+    The pooled estimate and tau^2 are recomputed from the studies' effects and
+    variances with e2er's code (src/modules/metaanalysis/stats.py).
+    """
+    from scipy import stats as st
+
+    from ...modules.metaanalysis.stats import MEASURES, TAU2_METHODS, pool
+
+    problems: list[str] = []
+    if doc.get("effect_measure") not in MEASURES:
+        problems.append(f"'effect_measure' must be one of {', '.join(MEASURES)}")
+    model: dict[str, Any] = doc["model"] if isinstance(doc.get("model"), dict) else {}
+    method = model.get("tau2_method")
+    level = _num(model.get("ci_level"))
+    min_k = _count(model.get("min_studies"))
+    if method not in TAU2_METHODS or level is None or not 0 < level < 1 or min_k in (None, 0, 1):
+        problems.append("'model' needs tau2_method (REML or DL), ci_level (e.g. 0.95) and min_studies (>= 2)")
+    studies = doc.get("studies")
+    k = _count(doc.get("k"))
+    if not isinstance(studies, list):
+        problems.append("'studies' must list the pooled studies (id, label, yi, vi, se, ci_lower, ci_upper)")
+        studies = []
+    if k is None or k != len(studies):
+        problems.append(f"'k' must be the number of studies listed ({len(studies)})")
+    y: list[float] = []
+    v: list[float] = []
+    for i, s in enumerate(studies):
+        yi, vi, se = (_num((s or {}).get(key)) for key in ("yi", "vi", "se"))
+        lo, hi = _num((s or {}).get("ci_lower")), _num((s or {}).get("ci_upper"))
+        if not str((s or {}).get("id") or "").strip() or yi is None or vi is None or vi <= 0 or se is None:
+            problems.append(f"studies[{i}] needs id, label, yi, vi > 0 and se")
+            continue
+        if not _close(se, math.sqrt(vi), rel=1e-6):
+            problems.append(f"studies[{i}].se is not the square root of vi")
+        if lo is None or hi is None or not lo <= yi <= hi:
+            problems.append(f"studies[{i}]: yi must lie inside [ci_lower, ci_upper]")
+        y.append(yi)
+        v.append(vi)
+    _check_prisma(doc.get("prisma"), k, problems)
+    narrative = doc.get("narrative_only")
+    if not isinstance(narrative, bool):
+        problems.append("'narrative_only' must be true (too few studies to pool) or false")
+    elif min_k and k is not None:
+        if k < min_k and not narrative:
+            problems.append(f"k = {k} is below min_studies = {min_k}: the results must be narrative_only, not pooled")
+        if narrative and k >= min_k:
+            problems.append(f"k = {k} reaches min_studies = {min_k}: pool the studies")
+    if narrative:
+        if doc.get("pooled") is not None or not str(doc.get("narrative_reason") or "").strip():
+            problems.append("a narrative synthesis has 'pooled': null and says why in 'narrative_reason'")
+    elif narrative is False and len(y) == len(studies) and y:
+        pooled: dict[str, Any] = doc["pooled"] if isinstance(doc.get("pooled"), dict) else {}
+        het: dict[str, Any] = doc["heterogeneity"] if isinstance(doc.get("heterogeneity"), dict) else {}
+        est, se_p, z, p = (_num(pooled.get(key)) for key in ("estimate", "se", "z", "p_value"))
+        lo, hi = _num(pooled.get("ci_lower")), _num(pooled.get("ci_upper"))
+        if est is None or se_p is None or lo is None or hi is None or z is None or p is None:
+            problems.append("'pooled' needs estimate, se, z, p_value, ci_lower and ci_upper")
+        elif not lo <= est <= hi:
+            problems.append("pooled: the estimate lies outside its confidence interval")
+        elif abs(2.0 * st.norm.sf(abs(z)) - p) > 0.0005:
+            problems.append(f"pooled: p = {p} does not follow from z = {z}")
+        tau2, i2, q = (_num(het.get(key)) for key in ("tau2", "i2", "q"))
+        if tau2 is None or i2 is None or q is None or _count(het.get("q_df")) is None:
+            problems.append("'heterogeneity' needs tau2, tau, i2, q and q_df (heterogeneity is always reported)")
+        else:
+            if tau2 < 0 or not 0 <= i2 <= 100:
+                problems.append("heterogeneity: tau2 must be >= 0 and i2 between 0 and 100")
+            if _count(het.get("q_df")) != len(y) - 1:
+                problems.append("heterogeneity: q_df must be k - 1")
+        weights = [_num((s or {}).get("weight_percent")) for s in studies]
+        if any(w is None for w in weights) or abs(sum(w or 0.0 for w in weights) - 100.0) > 0.5:
+            problems.append("every pooled study needs weight_percent, and the weights must add up to 100")
+        if method in TAU2_METHODS and level is not None and 0 < level < 1 and est is not None and tau2 is not None:
+            r = pool(y, v, method=str(method), level=level)
+            if not _close(r["estimate"], est, rel=1e-6, abs_=1e-9) or not _close(r["tau2"], tau2, rel=1e-5, abs_=1e-9):
+                problems.append(
+                    f"pooled: the estimate {est} and tau2 {tau2} do not follow from the studies' yi and vi "
+                    f"({method}: {r['estimate']:.6g}, tau2 {r['tau2']:.6g})"
+                )
+        pi = doc.get("prediction_interval")
+        if len(y) >= 3:
+            if not isinstance(pi, dict) or _num(pi.get("lower")) is None or _num(pi.get("upper")) is None:
+                problems.append("with 3 or more studies the results need a prediction_interval (lower, upper, df)")
+            elif lo is not None and hi is not None and not (pi["lower"] <= lo and pi["upper"] >= hi):
+                problems.append("the prediction interval must contain the confidence interval")
+        sse = doc.get("small_study_effects")
+        if not isinstance(sse, dict) or not isinstance(sse.get("egger"), dict):
+            problems.append("'small_study_effects' needs 'egger' (or its 'skipped' reason)")
+        else:
+            e = sse["egger"]
+            t, ep, df = _num(e.get("t")), _num(e.get("p_value")), _count(e.get("df"))
+            if "skipped" not in e and (t is None or ep is None or df is None):
+                problems.append("small_study_effects.egger needs t, df and p_value")
+            elif t is not None and ep is not None and df and abs(2.0 * st.t.sf(abs(t), df) - ep) > 0.0005:
+                problems.append(f"egger: p = {ep} does not follow from t = {t} on {df} df")
+    figures = doc.get("figures")
+    if not isinstance(figures, list) or "fig_prisma.pdf" not in figures:
+        problems.append("'figures' must list the PRISMA flow diagram (fig_prisma.pdf), and forest and funnel plots")
+    elif narrative is False and not {"fig_forest.pdf", "fig_funnel.pdf"} <= set(figures):
+        problems.append("a pooled meta-analysis lists its forest plot and funnel plot in 'figures'")
+    return problems
+
+
 # ── the kinds ───────────────────────────────────────────────────────────────
 
 
@@ -390,6 +543,16 @@ KINDS: dict[str, ResultKind] = {
         number_sources=_NEUTRAL_SOURCES,
         causal_by_default=False,
         check=check_text,
+    ),
+    "metaanalysis": ResultKind(
+        name="metaanalysis",
+        label="a systematic review's flow and a random-effects meta-analysis",
+        schema_skill="data/metaanalysis-results-schema",
+        method_skills=("methods/meta-analysis",),
+        # The search log and the screening counts (src/modules/metaanalysis): the numbers of records.
+        number_sources=("estimation_results.json", "figure_spec.json", "search_log.json", "screening_check.json"),
+        causal_by_default=False,
+        check=check_metaanalysis,
     ),
 }
 

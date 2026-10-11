@@ -6,10 +6,10 @@ Every specialist the strategist can dispatch, the skill files it is given, and
 the artifacts it must produce. A specialist that does not write its declared
 artifact fails its contract and is retried with the violation fed back.
 
-- **34** specialists
-- **87** skill files on disk
-- **69** referenced by at least one specialist
-- **18** never referenced
+- **38** specialists
+- **89** skill files on disk
+- **70** referenced by at least one specialist
+- **19** never referenced
 
 ## Shipped but never loaded
 
@@ -22,6 +22,7 @@ methodology guidance exists, and no specialist is given it.
 - `causal-inference/weak-instruments`
 - `data/byod`
 - `data/descriptive-results-schema`
+- `data/metaanalysis-results-schema`
 - `data/spatial-results-schema`
 - `data/spatial-statistics`
 - `data/text-results-schema`
@@ -125,6 +126,11 @@ methodology guidance exists, and no specialist is given it.
 - **Writes:** `review_mechanism.md`
 - **Skills (2):** `review/referee-simulation`, `modeling/market-microstructure`
 
+### `meta_review_writer`
+
+- **Writes:** `paper_draft.tex`
+- **Skills (4):** `methods/meta-analysis`, `writing/personal-style`, `writing/cite-numbers-by-source`, `reasoning/anti-slop`
+
 ### `methods_reviewer`
 
 - **Writes:** `review_methods.md`
@@ -171,6 +177,12 @@ methodology guidance exists, and no specialist is given it.
 - **Writes:** `polish_numerics.md`
 - **Skills (2):** `data/cleaning`, `review/consistency-check`
 
+### `protocol_designer`
+
+- **Writes:** `review_protocol.md`
+- **Sidecars:** `review_protocol.json`
+- **Skills (2):** `methods/meta-analysis`, `base/researcher`
+
 ### `replication_packager`
 
 - **Writes:** `replication/estimation.py`
@@ -203,6 +215,18 @@ methodology guidance exists, and no specialist is given it.
 - **Writes:** `self_attack_report.json`
 - **Skills (3):** `review/referee-simulation`, `reasoning/argument-audit`, `causal-inference/sensitivity`
 
+### `study_extractor`
+
+- **Writes:** `extraction.md`
+- **Sidecars:** `extraction.json`
+- **Skills (1):** `methods/meta-analysis`
+
+### `study_screener`
+
+- **Writes:** `screening.md`
+- **Sidecars:** `screening.json`
+- **Skills (1):** `methods/meta-analysis`
+
 ### `technical_reviewer`
 
 - **Writes:** `review_technical.md`
@@ -225,7 +249,7 @@ The reverse index: who is affected if you edit a skill file.
 | Skill | Loaded by |
 |---|---|
 | `base/economist` | `data_architect`, `idea_developer`, `polish_institutions`, `theory_specialist` |
-| `base/researcher` | `field_boundary_designer`, `forecast_designer`, `idea_developer`, `literature_scanner`, `paper_drafter`, `replication_packager` |
+| `base/researcher` | `field_boundary_designer`, `forecast_designer`, `idea_developer`, `literature_scanner`, `paper_drafter`, `protocol_designer`, `replication_packager` |
 | `causal-inference/identification-spec-schema` | `identification_strategist` |
 | `causal-inference/judge-designs` | `identification_strategist` |
 | `causal-inference/natural-experiments` | `identification_strategist` |
@@ -266,11 +290,12 @@ The reverse index: who is affected if you edit a skill file.
 | `latex/tables` | `latex_formatter` |
 | `math/optimization-verification` | `polish_formula` |
 | `math/proof-strategies` | `polish_equilibria`, `theory_specialist` |
+| `methods/meta-analysis` | `meta_review_writer`, `protocol_designer`, `study_extractor`, `study_screener` |
 | `methods/time-series-forecasting` | `forecast_designer` |
 | `modeling/asset-pricing` | `theory_specialist` |
 | `modeling/game-theory` | `polish_equilibria`, `theory_specialist` |
 | `modeling/market-microstructure` | `mechanism_reviewer` |
-| `reasoning/anti-slop` | `abstract_writer`, `field_lane_mapper`, `field_review_writer`, `patch_revisor`, `revisor`, `section_writer`, `writing_reviewer` |
+| `reasoning/anti-slop` | `abstract_writer`, `field_lane_mapper`, `field_review_writer`, `meta_review_writer`, `patch_revisor`, `revisor`, `section_writer`, `writing_reviewer` |
 | `reasoning/argument-audit` | `self_attacker` |
 | `reasoning/creative-ideation` | `idea_developer` |
 | `reasoning/identification` | `identification_strategist`, `theory_specialist` |
@@ -289,7 +314,7 @@ The reverse index: who is affected if you edit a skill file.
 | `synthesis/main-path-analysis` | `field_boundary_designer`, `field_lane_mapper`, `field_review_writer` |
 | `synthesis/replication-package` | `replication_packager` |
 | `writing/abstract` | `abstract_writer` |
-| `writing/cite-numbers-by-source` | `abstract_writer`, `field_review_writer`, `paper_drafter`, `patch_revisor`, `revisor`, `section_writer` |
+| `writing/cite-numbers-by-source` | `abstract_writer`, `field_review_writer`, `meta_review_writer`, `paper_drafter`, `patch_revisor`, `revisor`, `section_writer` |
 | `writing/paper-structure` | `paper_drafter`, `revisor`, `section_writer` |
-| `writing/personal-style` | `field_review_writer`, `paper_drafter`, `patch_revisor`, `revisor`, `section_writer` |
+| `writing/personal-style` | `field_review_writer`, `meta_review_writer`, `paper_drafter`, `patch_revisor`, `revisor`, `section_writer` |
 | `writing/scoped-revision` | `patch_revisor` |

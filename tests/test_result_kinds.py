@@ -283,7 +283,13 @@ def _template_dict(**top) -> dict:
 
 
 #: Shipped templates built on the discipline-neutral core: they change e2er's defaults on purpose.
-NEUTRAL_TEMPLATES = {"descriptive-study", "time-series-forecasting", "policy-evaluation", "spatial-analysis"}
+NEUTRAL_TEMPLATES = {
+    "descriptive-study",
+    "time-series-forecasting",
+    "policy-evaluation",
+    "spatial-analysis",
+    "systematic-review",
+}
 
 
 def test_every_shipped_template_keeps_e2er_s_defaults():

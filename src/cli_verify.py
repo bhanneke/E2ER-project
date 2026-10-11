@@ -487,7 +487,7 @@ def _reconstruct_workspace(bundle: Path, ws: Path) -> None:
         shutil.copy2(spec, ws / "identification_spec.json")
     # The method checks of the policy-evaluation and spatial-analysis templates read
     # their design file and the files the analysis wrote (units, weights).
-    for name in ("did_design.json", "spatial_design.json"):
+    for name in ("did_design.json", "spatial_design.json", "review_protocol.json", "extraction.json"):
         if (bundle / "design" / name).is_file():
             shutil.copy2(bundle / "design" / name, ws / name)
     if resdir.is_dir():
@@ -758,7 +758,7 @@ def _check_results_contract(ws: Path) -> Check | None:
 
 
 def _check_method(ws: Path) -> Check | None:
-    """The checks of a DiD or spatial study's results, again on the exported files.
+    """The checks of a DiD, spatial or meta-analysis study's results, again on the exported files.
 
     None when the bundle carries neither design file. The design-side checks
     need the study's data (data.db), which a bundle may not ship (boundaries
@@ -776,6 +776,12 @@ def _check_method(ws: Path) -> Check | None:
         what, verdict = "difference-in-differences", check_did_results(ws)
     elif (ws / SPATIAL_DESIGN).is_file():
         what, verdict = "spatial", check_spatial_results(ws)
+    elif (ws / "review_protocol.json").is_file() and (ws / "extraction.json").is_file():
+        # A meta-analysis: the extracted numbers against their quotes, and the effects
+        # against the extraction (src/modules/metaanalysis/workflow.py, export_check).
+        from .modules.metaanalysis.workflow import export_check
+
+        what, verdict = "meta-analysis", export_check(ws)  # type: ignore[assignment]
     else:
         return None
     if verdict.passed:

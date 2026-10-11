@@ -22,6 +22,7 @@ TEMPLATES = (
     "field-map",
     "descriptive-study",
     "time-series-forecasting",
+    "systematic-review",
 )
 
 

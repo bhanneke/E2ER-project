@@ -84,6 +84,10 @@ CHECK_SETTINGS: dict[str, dict[str, type | tuple[type, ...]]] = {
     "did_results": {"min_pre_periods": int, "pretrend_alpha": (int, float)},
     "spatial_design": {"max_unmatched_share": (int, float)},
     "spatial_results": {"min_permutations": int},
+    # The systematic-review template's steps (src/core/pipeline/meta_checks.py).
+    "meta_search": {"max_records": int, "max_requests": int, "max_crossref": int},
+    "meta_screening": {"sample_size": int},
+    "meta_fulltext": {"max_downloads": int},
 }
 
 #: The persona skill specialists read unless the template names another (``base_skill``).
@@ -119,6 +123,13 @@ SEQUENCE_CHECKS: frozenset[str] = frozenset(
         # (forecast_checks.py): both after the analysis, before the draft review.
         "figure_data",
         "forecast_evaluation",
+        # The systematic-review template (src/core/pipeline/meta_checks.py): search,
+        # screening, full texts, extraction and synthesis, in sequence.
+        "meta_search",
+        "meta_screening",
+        "meta_fulltext",
+        "meta_extraction",
+        "meta_synthesis",
     }
 )
 

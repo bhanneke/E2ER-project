@@ -163,6 +163,27 @@ category per unit, e.g. LISA clusters; `categories` maps each value to
 geometry but no value are drawn as "No data"; the legend counts each class.
 Put the boundaries' required credit in `attribution`.
 
+### forest, funnel, prisma — a meta-analysis (written by e2er)
+
+The `systematic-review` template's synthesis step writes these three entries from
+`estimation_results.json`; do not write them by hand.
+
+```json
+{"filename": "fig_forest.pdf", "figure_type": "forest", "x_label": "r", "log_x": false, "null_value": 0,
+ "studies": [{"label": "Smith 2019", "estimate": 0.31, "lower": 0.22, "upper": 0.39, "weight": 9.1}],
+ "pooled": {"label": "Random effects (REML)", "estimate": 0.20, "lower": 0.14, "upper": 0.25},
+ "prediction": {"lower": 0.01, "upper": 0.37}}
+{"filename": "fig_funnel.pdf", "figure_type": "funnel", "x_label": "Fisher's z",
+ "points": [{"estimate": 0.32, "se": 0.049}], "pooled": 0.20, "filled": [{"estimate": 0.05, "se": 0.11}]}
+{"filename": "fig_prisma.pdf", "figure_type": "prisma", "counts": {"identified": {"total": 214}, "screened": 214}}
+```
+
+`forest` draws each study's estimate and interval (marker sized by weight),
+the pooled diamond, the prediction interval and the line of no effect
+(`log_x` for ratios); `funnel` the estimates against their standard errors
+with the pooled estimate, its 95% region and the studies trim and fill added;
+`prisma` the PRISMA 2020 flow of records from the `prisma` counts.
+
 ### multi_panel — Grid of sub-figures
 ```json
 {

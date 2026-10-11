@@ -86,6 +86,19 @@ EXPORT_MAP: dict[str, list[tuple[str, str | None]]] = {
         ("did_check.json", None),
         ("spatial_design_check.json", None),
         ("spatial_check.json", None),
+        # The systematic-review template: the records found, the search as run, the screening
+        # counts, where each full text came from, every extracted number with its source and
+        # trace, the flow counts and the cite keys (full texts themselves are not exported).
+        ("records.json", None),
+        ("search_log.json", None),
+        ("search_counts.md", None),
+        ("screening_check.json", None),
+        ("screening_sample.md", None),
+        ("fulltext_log.json", None),
+        ("extraction_check.json", None),
+        ("extraction_check.md", None),
+        ("prisma_counts.json", None),
+        ("meta_references.json", None),
         ("*.csv", None),  # model-generated intermediate outputs at workspace root
     ],
     "design": [
@@ -118,6 +131,13 @@ EXPORT_MAP: dict[str, list[tuple[str, str | None]]] = {
         ("forecast_design.json", None),
         ("forecast_design.md", None),
         ("holdout_freeze.json", None),
+        # The systematic-review template's judgement files: protocol, screening, extraction.
+        ("review_protocol.json", None),
+        ("review_protocol.md", None),
+        ("screening.json", None),
+        ("screening.md", None),
+        ("extraction.json", None),
+        ("extraction.md", None),
     ],
     # Loose exploration scripts + logs the model writes (analysis.py, explore.py,
     # q.py, run_estimation.log, …). The broad globs run last so canonical files

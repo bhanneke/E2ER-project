@@ -250,6 +250,65 @@ and contract tests on responses recorded live once.
   verifies with `e2er verify` (all 36 table cells at the precision shown). Contract tests per kind in `tests/test_result_kinds.py`, records
   tables and the new figures in `tests/test_records_tables.py`.
 
+### Template: systematic review and meta-analysis
+- **`systematic-review`** (`pipelines/systematic-review.toml`): a systematic review with a random-effects
+  meta-analysis, following the PRISMA 2020 statement (Page et al. 2021). Four specialists of its own:
+  the protocol designer (`review_protocol.json`: the question in PICO, PECO or another form,
+  eligibility criteria with ids, databases, Boolean searches, outcome, effect measure, synthesis
+  settings, risk-of-bias tool with its domains and levels), the study screener, the study extractor
+  and the review writer. Everything counted is code (`src/modules/metaanalysis`), run as checks of the
+  template (`src/core/pipeline/meta_checks.py`). Stops for the protocol (with the search counts) and
+  the screening sample; optional pre-registration of the protocol and an optional review of the
+  extraction table.
+  - **Search** (`meta_search`): every search of the protocol on OpenAlex through the field map's client
+    (polite pool, optional key, cache, request ceiling; a search above `max_records` is refused after
+    one request), Crossref as an option (its most relevant records only, said in the log), duplicates
+    removed by DOI and then by title and year. `records.json`, `search_log.json` with each query as
+    sent, the count reported and the time, `search_counts.md`, and a load per search in
+    `data_sources.json`.
+  - **Screening check** (`meta_screening`): every record decided once, every exclusion with a criterion
+    the protocol defines and a reason; `screening_sample.md` for the researcher (the unsure records, the
+    inclusions, a seeded sample of exclusions). Also the screener's output contract.
+  - **Full texts** (`meta_fulltext`): a PDF the researcher saves in `data/fulltext/`, else the
+    open-access PDF OpenAlex lists, else the open-access resolvers; text page by page into
+    `fulltext/<id>.txt`; `fulltext_log.json` with the origin and SHA-256, or why no full text is
+    available. Full texts are not exported.
+  - **Every extracted number traced** (`meta_extraction`): the extractor gives, for each number, the
+    page and a verbatim quote; the check finds the quote on that page (elsewhere in the text with a
+    note, across a page break, or in the abstract for a study read from its abstract) and the number in
+    the quote. Exclusions on the full text need a criterion and a reason, every included study its risk
+    of bias per protocol domain. The trace is also the extractor's output contract, so the extractor is
+    sent back with the untraced numbers before the run stops.
+  - **Synthesis** (`meta_synthesis`): `run_estimation.py` is e2er's own code (numpy and scipy, nothing
+    from e2er imported, so `e2er reproduce` reruns it): log ratios, Fisher's z, Hedges' g from group
+    statistics, SE from a CI; random effects with tau^2 by REML or DerSimonian-Laird; z, p, CI, Q, I^2,
+    H^2, the prediction interval (t on k - 2 df), the common-effect estimate, Egger's test and trim and
+    fill (L0) with a low-power flag below ten studies, leave-one-out. On the BCG vaccine trials it gives
+    metafor's published REML, DL and trim-and-fill results to four decimals. Below the protocol's
+    `min_studies` the review is a narrative synthesis without a pooled estimate. A protocol changed after
+    the pre-registration stops the synthesis.
+  - **Results kind `metaanalysis`** (`result_kinds.py`, schema skill `data/metaanalysis-results-schema`):
+    the pooled estimate and tau^2 recomputed from the studies, flow counts that add up, p from z and
+    from Egger's t, a prediction interval containing the CI, weights adding to 100, a narrative synthesis
+    exactly when there are too few studies. `e2er verify` checks it, and as its method checks that the
+    effects are the extraction's, every extracted number is printed in its quote and the run traced all
+    of them.
+  - **Figures** `forest`, `funnel` and `prisma` (`src/core/renderer/meta_figures.py`) and the tables
+    `meta_flow`, `meta_studies` and `meta_results`, every cell a value of the results; the methods'
+    and the included studies' references are added to `literature.bib`. The writer's contract requires
+    the tables and figures and a citation of every included study.
+- Method skill `methods/meta-analysis`; method sources credited in the template and `credits.json`
+  (DOIs checked on Crossref): Page et al. (2021), DerSimonian and Laird (1986), Viechtbauer (2005),
+  Higgins and Thompson (2002), Riley, Higgins and Deeks (2011), Egger et al. (1997), Duval and Tweedie
+  (2000), Viechtbauer (2010).
+- Tests: unit tests for the statistics (metafor's published values, an independent OLS fit for
+  Egger's test), the protocol, the search, every refusal of the screening and extraction checks, the
+  narrative synthesis, the results contract, the pre-registration, the figures and the export check; a
+  replay of a synthetic review (recorded OpenAlex pages and PDFs) end to end through the three stops,
+  publish, verify (and a tampered extraction that verify catches) and reproduce, and a replay in which
+  an extracted number is not in its quote, which stops the run before anything is pooled until the
+  researcher corrects it.
+
 ### Templates: descriptive data study, time series and forecasting
 - **`descriptive-study`** (`pipelines/descriptive-study.toml`, until now a test fixture): a description
   of a sample for any field, on the discipline-neutral core (descriptive results, no causal claim, the

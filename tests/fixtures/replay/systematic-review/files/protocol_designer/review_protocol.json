@@ -1,0 +1,78 @@
+{
+  "question": "How strongly is grit associated with grades in university students (synthetic test data)?",
+  "framework": "PECO",
+  "elements": {
+    "population": "university students",
+    "exposure": "grit (Grit-S)",
+    "comparison": "lower grit",
+    "outcome": "grade point average"
+  },
+  "eligibility": {
+    "include": [
+      {
+        "id": "I1",
+        "criterion": "quantitative study of university students"
+      },
+      {
+        "id": "I2",
+        "criterion": "grit measured with the Grit-S scale"
+      },
+      {
+        "id": "I3",
+        "criterion": "reports the correlation of grit with GPA and the sample size"
+      }
+    ],
+    "exclude": [
+      {
+        "id": "E1",
+        "criterion": "review or meta-analysis"
+      },
+      {
+        "id": "E2",
+        "criterion": "same sample as another included study"
+      }
+    ]
+  },
+  "databases": [
+    "openalex"
+  ],
+  "searches": [
+    {
+      "name": "main",
+      "query": "grit AND (GPA OR \"grade point average\")",
+      "from_year": 2010,
+      "to_year": 2024
+    },
+    {
+      "name": "grades",
+      "query": "grit AND \"course grades\"",
+      "from_year": 2010,
+      "to_year": 2024
+    }
+  ],
+  "outcome": {
+    "name": "grade point average",
+    "description": "GPA as reported"
+  },
+  "effect_measure": "r",
+  "effect_direction": "positive r: more grit, higher GPA",
+  "synthesis": {
+    "tau2_method": "REML",
+    "min_studies": 3,
+    "ci_level": 0.95
+  },
+  "risk_of_bias": {
+    "tool": "JBI checklist for analytical cross-sectional studies (adapted)",
+    "domains": [
+      "sample",
+      "measurement",
+      "confounding"
+    ],
+    "levels": [
+      "low",
+      "some concerns",
+      "high",
+      "unclear"
+    ]
+  }
+}

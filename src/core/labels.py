@@ -58,6 +58,19 @@ STEPS: dict[str, str] = {
     "figure_gate": "Figures re-read from the data",
     "forecast_design_gate": "Forecast setup and hold-out frozen",
     "forecast_gate": "Forecasts judged on the hold-out",
+    # The systematic-review template (a meta-analysis).
+    "design_protocol": "Review protocol",
+    "search": "Search OpenAlex and record it",
+    "review_protocol": "Protocol review, with the search counts",
+    "screen": "Screening on title and abstract",
+    "screening_check": "Screening check: every record decided, every exclusion with a reason",
+    "review_screening": "Screening review",
+    "fulltext": "Open-access full texts",
+    "extract": "Eligibility, extraction and risk of bias",
+    "extraction_check": "Extracted numbers traced to their sources",
+    "review_extraction": "Extraction review",
+    "synthesis": "Meta-analysis, forest, funnel and flow diagram",
+    "write_draft": "Review draft",
     # Stops e2er makes on its own, outside the template's steps.
     "number_check": "Number check",
     "output_contract": "Output that failed its check",
@@ -109,6 +122,10 @@ SPECIALISTS: dict[str, str] = {
     "field_lane_mapper": "Lanes of the field map",
     "field_review_writer": "Field review",
     "forecast_designer": "Forecast setup and hold-out",
+    "protocol_designer": "Review protocol",
+    "study_screener": "Screening of the records",
+    "study_extractor": "Extraction from the studies",
+    "meta_review_writer": "Systematic review",
 }
 
 #: The built-in templates.
@@ -122,6 +139,7 @@ TEMPLATES: dict[str, str] = {
     "time-series-forecasting": "Time series and forecasting",
     "policy-evaluation": "Policy evaluation (difference-in-differences)",
     "spatial-analysis": "Spatial analysis",
+    "systematic-review": "Systematic review and meta-analysis",
 }
 
 #: What a researcher did at a stop (the ``action`` of a ``researcher_action`` event).

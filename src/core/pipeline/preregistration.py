@@ -39,6 +39,10 @@ SOURCES: tuple[tuple[str, str], ...] = (
     ("Forecast setup and hold-out (machine-readable)", "forecast_design.json"),
     # Written only in the policy-evaluation template.
     ("Difference-in-differences design (machine-readable)", "did_design.json"),
+    # Written only in the systematic-review template: the review protocol, and the search as run.
+    ("Review protocol", "review_protocol.md"),
+    ("Review protocol (machine-readable)", "review_protocol.json"),
+    ("Search counts", "search_counts.md"),
     ("Analysis plan", "econometric_spec.md"),
 )
 #: The files whose later change counts as a deviation from the plan.
@@ -47,6 +51,7 @@ PLAN_FILES: tuple[str, ...] = (
     "event_design.json",
     "forecast_design.json",
     "did_design.json",
+    "review_protocol.json",
     "econometric_spec.md",
 )
 

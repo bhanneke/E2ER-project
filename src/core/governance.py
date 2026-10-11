@@ -69,6 +69,11 @@ GATES: tuple[str, ...] = (
     "did_results",
     "spatial_design",
     "spatial_results",
+    # The systematic-review template's checks: every record screened with its reasons,
+    # every extracted number traced to its source, the synthesis held to its contract.
+    "meta_screening",
+    "meta_extraction",
+    "meta_synthesis",
 )
 
 #: Deterministic steps of a template whose failure means the run cannot go on,
@@ -85,6 +90,10 @@ RELIABILITY_CHECKS: tuple[str, ...] = (
     "field_main_path",
     "field_robustness",
     "field_map",
+    # The systematic-review template's search and full-text retrieval: a failure means
+    # the records or texts could not be read, not that a claim failed.
+    "meta_search",
+    "meta_fulltext",
 )
 
 _ENFORCEMENT: dict[str, frozenset[str]] = {

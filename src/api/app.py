@@ -2117,6 +2117,7 @@ _TEMPLATE_ORDER = (
     "field-map",
     "descriptive-study",
     "time-series-forecasting",
+    "systematic-review",
 )
 
 

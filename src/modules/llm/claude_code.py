@@ -113,7 +113,15 @@ _CHECK_TABLES_TOOL = "Bash(e2er-check-tables:*)"
 # 2026-09-01 repeats cell none of them could reach any of it: no run wrote a
 # bibliography, and both reviewed drafts cited from memory.
 _LITERATURE_SPECIALISTS = frozenset(
-    {"literature_scanner", "paper_drafter", "section_writer", "field_boundary_designer", "field_review_writer"}
+    {
+        "literature_scanner",
+        "paper_drafter",
+        "section_writer",
+        "field_boundary_designer",
+        "field_review_writer",
+        "protocol_designer",
+        "meta_review_writer",
+    }
 )
 _LIT_TOOL = "Bash(e2er-lit:*)"
 
@@ -122,7 +130,10 @@ _LIT_TOOL = "Bash(e2er-lit:*)"
 # lane mapper reads the mapped papers' titles and abstracts, the review writer
 # reads the results. `e2er-fieldmap` sends at most two OpenAlex requests per
 # count/sources call; the retrieval itself runs as a step of the template.
-_FIELDMAP_SPECIALISTS = frozenset({"field_boundary_designer", "field_lane_mapper", "field_review_writer"})
+_FIELDMAP_SPECIALISTS = frozenset(
+    # The systematic-review template's protocol designer sizes its searches with `e2er-fieldmap count`.
+    {"field_boundary_designer", "field_lane_mapper", "field_review_writer", "protocol_designer"}
+)
 _FIELDMAP_TOOL = "Bash(e2er-fieldmap:*)"
 
 #: How much of a backend error to keep. 500 chars was too little: the

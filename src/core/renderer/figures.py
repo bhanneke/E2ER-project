@@ -22,7 +22,8 @@ with CIs), ``event_study`` (point + error-bar path with treatment marker),
 ``scatter`` (points of two variables, optionally grouped and on log axes),
 ``histogram`` (counts in bins computed by the analysis), ``map`` (a
 choropleth, categories or point map drawn from saved data and boundaries, see
-``maps.py``), and ``multi_panel`` (a grid of ``panels``, each itself one of the
+``maps.py``), ``forest``, ``funnel`` and ``prisma`` (a meta-analysis, see
+``meta_figures.py``), and ``multi_panel`` (a grid of ``panels``, each itself one of the
 above except ``map``).
 Unknown types are skipped (reported), not guessed.
 """
@@ -228,6 +229,19 @@ _RENDERERS = {
 }
 
 
+def _meta_builders() -> dict[str, Any]:
+    """The meta-analysis figures (meta_figures.py): forest and PRISMA size their own canvas."""
+    from . import meta_figures
+
+    return meta_figures.BUILDERS
+
+
+def _meta_renderers() -> dict[str, Any]:
+    from . import meta_figures
+
+    return meta_figures.RENDERERS
+
+
 def _render_multi_panel(plt: Any, fig_spec: dict[str, Any]) -> Any:
     """Compose a grid of sub-panels, each itself a single-axes figure_type.
     Returns the matplotlib Figure. Raises if there are no usable panels."""
@@ -335,7 +349,22 @@ def render_figures(workspace: Path) -> FigureRenderReport:
                 except Exception:  # noqa: BLE001
                     pass
             continue
-        renderer = _RENDERERS.get(ftype)
+        builder = _meta_builders().get(ftype)
+        if builder is not None:
+            try:
+                fig = builder(plt, fig_spec)
+                fig.savefig(workspace / filename, format="pdf", bbox_inches="tight")
+                plt.close(fig)
+                report.rendered.append(filename)
+            except Exception as e:  # noqa: BLE001 — one bad figure must not abort the rest
+                logger.warning("render_figures: failed to render %s: %s", filename, e)
+                report.skipped.append(f"{filename}: {e}")
+                try:
+                    plt.close("all")
+                except Exception:  # noqa: BLE001
+                    pass
+            continue
+        renderer = _RENDERERS.get(ftype) or _meta_renderers().get(ftype)
         if renderer is None:
             report.skipped.append(f"{filename}: unknown figure_type {ftype!r}")
             continue
