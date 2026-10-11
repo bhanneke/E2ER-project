@@ -1,0 +1,183 @@
+# Spatial analysis: how a variable varies across places, and whether neighbours are alike.
+#
+# Regions, countries or points with a value each; the study maps the values,
+# measures spatial autocorrelation (Moran's I with permutation inference) and,
+# where it helps, local clusters (LISA). No causal claim. Nothing here is
+# economics-specific: the persona is the researcher's, the blockchain data
+# skills are left out, and the panel judges methods, data and plausibility.
+#
+#   spatial_design_gate   after the data are loaded. The data architect writes
+#                         spatial_design.json (units, boundaries and their
+#                         source, CRS, spatial weights; schema in
+#                         skills/files/data/spatial-statistics.md). The check
+#                         stops the run when the boundaries' source is not
+#                         recorded, the CRS is missing or does not fit the
+#                         coordinates, a unit of the data has no geometry and
+#                         is not listed with a reason, or the weights are not
+#                         documented. A failed check sends the data architect back
+#                         once with the reasons, then stops the run.
+#   spatial_results_gate  after the analysis, before drafting. The analysis
+#                         writes the units and values it used
+#                         (spatial_units.csv) and its weights
+#                         (spatial_weights.csv); the check recomputes every
+#                         Moran's I from them, requires permutation inference,
+#                         and builds a map figure for every map the results
+#                         name (choropleth or categories, from the boundaries in
+#                         data.db; rendered by src/core/renderer/maps.py). A failed
+#                         check sends the econometrics specialist back once.
+#
+# Maintained by the e2er contributors.
+
+name = "spatial-analysis"
+title = "Spatial analysis"
+description = "How a variable varies across regions or places: maps from the data and recorded boundaries, Moran's I with permutation inference recomputed by e2er, optional local clusters (LISA), with the boundaries' source, CRS and weights checked before the analysis."
+methodologies = ["empirical", "spatial analysis"]
+
+results     = "spatial"
+causal      = false
+base_skill  = "base/researcher"
+data_skills = ["data/spatial-statistics"]
+review_weights = { methods_reviewer = 1.5, data_reviewer = 1.25, plausibility_reviewer = 1.0, technical_reviewer = 1.0, writing_reviewer = 0.75 }
+
+finalize = ["compile", "audit_export", "github_push", "structured_export"]
+
+[[steps]]
+kind    = "gate"
+name    = "spatial_design_gate"
+check   = "spatial_design"
+on_fail = "retry"
+after   = ["data_architect", "data_analyst"]
+
+[steps.settings]
+max_unmatched_share = 0.2
+
+[[steps]]
+kind    = "gate"
+name    = "spatial_results_gate"
+check   = "spatial_results"
+on_fail = "retry"
+after   = ["econometrics_specialist"]
+
+[steps.settings]
+min_permutations = 99
+
+[[steps]]
+kind = "strategist"
+name = "initial"
+
+[[steps]]
+kind  = "strategist"
+name  = "iterative"
+modes = ["iterative"]
+
+[[steps]]
+kind      = "gate"
+name      = "estimation_gate"
+check     = "estimation"
+on_fail   = "halt"
+resumable = false
+
+[[steps]]
+kind  = "specialists"
+name  = "self_attack"
+modes = ["iterative"]
+run   = ["self_attacker"]
+
+[[steps]]
+kind     = "specialists"
+name     = "polish"
+modes    = ["iterative"]
+parallel = true
+run      = ["polish_numerics", "polish_bibliography"]
+
+[[steps]]
+kind     = "aggregate"
+name     = "review"
+parallel = true
+run = [
+    "methods_reviewer",
+    "data_reviewer",
+    "plausibility_reviewer",
+    "writing_reviewer",
+    "technical_reviewer",
+]
+
+[[steps]]
+kind = "specialists"
+name = "revision"
+run  = ["revisor", "patch_revisor"]
+
+[[steps]]
+kind = "specialists"
+name = "replication"
+run  = ["replication_packager"]
+
+[skills]
+econometrics_specialist = ["data/spatial-statistics"]
+methods_reviewer        = ["data/spatial-statistics"]
+paper_drafter           = ["data/spatial-statistics"]
+
+# The machine-readable design the checks read.
+[sidecars]
+data_architect = ["spatial_design.json"]
+
+# The method sources the checks and the skill follow (DOIs checked on Crossref, 2026-10-11).
+[[credit]]
+creator   = "P. A. P. Moran"
+role      = "method"
+relation  = "cites"
+kind      = "article"
+title     = "Notes on Continuous Stochastic Phenomena"
+publisher = "Biometrika 37(1/2), 17-23"
+published = "1950-06"
+url       = "https://doi.org/10.2307/2332142"
+accessed  = "2026-10-11"
+cite_key  = "moran1950notes"
+
+[[credit]]
+creator   = "Luc Anselin"
+role      = "method"
+relation  = "cites"
+kind      = "article"
+title     = "Local Indicators of Spatial Association—LISA"
+publisher = "Geographical Analysis 27(2), 93-115"
+published = "1995-04"
+url       = "https://doi.org/10.1111/j.1538-4632.1995.tb00338.x"
+accessed  = "2026-10-11"
+cite_key  = "anselin1995local"
+
+[[credit]]
+creator   = "Luc Anselin"
+role      = "method"
+relation  = "cites"
+kind      = "book"
+title     = "Spatial Econometrics: Methods and Models"
+publisher = "Springer Netherlands (Kluwer), Studies in Operational Regional Science"
+published = "1988"
+url       = "https://doi.org/10.1007/978-94-015-7799-1"
+accessed  = "2026-10-11"
+cite_key  = "anselin1988spatial"
+
+[[credit]]
+creator   = "Arthur Getis and J. K. Ord"
+role      = "method"
+relation  = "cites"
+kind      = "article"
+title     = "The Analysis of Spatial Association by Use of Distance Statistics"
+publisher = "Geographical Analysis 24(3), 189-206"
+published = "1992-07"
+url       = "https://doi.org/10.1111/j.1538-4632.1992.tb00261.x"
+accessed  = "2026-10-11"
+cite_key  = "getis1992analysis"
+
+[[credit]]
+creator   = "Stan Openshaw"
+role      = "method"
+relation  = "cites"
+kind      = "book"
+title     = "The Modifiable Areal Unit Problem (Concepts and Techniques in Modern Geography 38)"
+publisher = "Geo Books, Norwich. ISBN 0-86094-134-5 (no DOI)"
+published = "1984"
+url       = "https://github.com/qmrg/CATMOG/blob/master/38-maup-openshaw.pdf"
+accessed  = "2026-10-11"
+cite_key  = "openshaw1984modifiable"

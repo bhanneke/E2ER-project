@@ -485,6 +485,14 @@ def _reconstruct_workspace(bundle: Path, ws: Path) -> None:
     spec = bundle / "design" / "identification_spec.json"
     if spec.is_file():
         shutil.copy2(spec, ws / "identification_spec.json")
+    # The method checks of the policy-evaluation and spatial-analysis templates read
+    # their design file and the files the analysis wrote (units, weights).
+    for name in ("did_design.json", "spatial_design.json"):
+        if (bundle / "design" / name).is_file():
+            shutil.copy2(bundle / "design" / name, ws / name)
+    if resdir.is_dir():
+        for f in resdir.glob("*.csv"):
+            shutil.copy2(f, ws / f.name)
 
 
 # ── check 2: numbers ─────────────────────────────────────────────────────────
@@ -744,6 +752,37 @@ def _check_results_contract(ws: Path) -> Check | None:
         more = f"; and {len(problems) - 3} more" if len(problems) > 3 else ""
         return Check("results contract", FAIL, f"{kind}: " + "; ".join(problems[:3]) + more)
     return Check("results contract", PASS, f"{kind} results ({get(kind).label}) are complete and consistent")
+
+
+# ── check 4c: the template's method checks on the exported files ─────────────
+
+
+def _check_method(ws: Path) -> Check | None:
+    """The checks of a DiD or spatial study's results, again on the exported files.
+
+    None when the bundle carries neither design file. The design-side checks
+    need the study's data (data.db), which a bundle may not ship (boundaries
+    under terms that do not allow passing them on), so only the results side
+    runs here: for DiD the event-study path, the pre-trends test, the placebo or
+    sensitivity analysis and the declared estimator; for a spatial study the
+    weights file and Moran's I recomputed from the units and weights.
+    """
+    from .core.pipeline.did_checks import DESIGN_FILE as DID_DESIGN
+    from .core.pipeline.did_checks import check_did_results
+    from .core.pipeline.spatial_checks import DESIGN_FILE as SPATIAL_DESIGN
+    from .core.pipeline.spatial_checks import check_spatial_results
+
+    if (ws / DID_DESIGN).is_file():
+        what, verdict = "difference-in-differences", check_did_results(ws)
+    elif (ws / SPATIAL_DESIGN).is_file():
+        what, verdict = "spatial", check_spatial_results(ws)
+    else:
+        return None
+    if verdict.passed:
+        found = ", ".join(f"{k}={v}" for k, v in verdict.stats.items())
+        return Check("method checks", PASS, f"{what}: {found}")
+    more = f"; and {len(verdict.reasons) - 3} more" if len(verdict.reasons) > 3 else ""
+    return Check("method checks", FAIL, f"{what}: " + "; ".join(verdict.reasons[:3]) + more)
 
 
 # ── check 4: citations (offline) ─────────────────────────────────────────────
@@ -1006,6 +1045,9 @@ def _run_checks(bundle: Path, online: bool) -> list[Check]:
         contract = _check_results_contract(ws)
         if contract is not None:
             checks.append(contract)
+        method = _check_method(ws)
+        if method is not None:
+            checks.append(method)
         checks.append(_check_citations_offline(bundle))
     required = _required_checks(bundle)
     prereg = _check_preregistration(bundle, required.get("preregistration"))
@@ -1023,7 +1065,7 @@ def _run_checks(bundle: Path, online: bool) -> list[Check]:
 # provenance.json) proves only that the bundle is unchanged since export — a
 # bundle can be perfectly self-consistent and still have had nothing checked.
 _CONTENT_CHECKS = frozenset(
-    {"numbers", "tables", "spec", "results contract", "citations", "preregistration", "reproduction"}
+    {"numbers", "tables", "spec", "results contract", "method checks", "citations", "preregistration", "reproduction"}
 )
 
 

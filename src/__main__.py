@@ -126,8 +126,9 @@ def main() -> None:
         dest="template",
         default="empirical",
         help="Template (pipeline file) the run follows, resolved in ./pipelines, ~/.e2er/pipelines, "
-        "then the built-in ones (empirical-preregistered, event-study-finance, replication, field-map, "
-        "descriptive-study, time-series-forecasting). Default: empirical.",
+        "then the built-in ones (empirical-preregistered, event-study-finance, policy-evaluation, "
+        "spatial-analysis, replication, field-map, descriptive-study, time-series-forecasting). "
+        "Default: empirical.",
     )
     run_p.add_argument(
         "--mode",

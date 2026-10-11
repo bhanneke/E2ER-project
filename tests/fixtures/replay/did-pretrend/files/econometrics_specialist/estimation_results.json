@@ -1,0 +1,132 @@
+{
+  "main": {
+    "specification": "Callaway-Sant'Anna overall ATT, never-treated comparison group, universal base period",
+    "estimator": "callaway_santanna",
+    "hypothesis": "H1",
+    "n_observations": 384,
+    "n_clusters": 24,
+    "cluster_level": "iso3",
+    "fixed_effects": [],
+    "controls": [],
+    "inference": "bootstrap over units, 999 draws, seed 20261011",
+    "coefficients": {
+      "att": {
+        "estimate": -2.3116,
+        "se": 0.2857,
+        "t_stat": -8.0916,
+        "p_value": 0.0,
+        "df": 23,
+        "ci_lower": -2.8715,
+        "ci_upper": -1.7516
+      }
+    }
+  },
+  "event_study": {
+    "estimator": "callaway_santanna",
+    "reference_period": -1,
+    "base": "universal (g - 1)",
+    "periods": [
+      {
+        "relative_period": -5,
+        "estimate": -1.6874,
+        "se": 0.2897,
+        "ci_lower": -2.2552,
+        "ci_upper": -1.1197
+      },
+      {
+        "relative_period": -4,
+        "estimate": -1.3108,
+        "se": 0.3256,
+        "ci_lower": -1.9489,
+        "ci_upper": -0.6727
+      },
+      {
+        "relative_period": -3,
+        "estimate": -0.7097,
+        "se": 0.3424,
+        "ci_lower": -1.3809,
+        "ci_upper": -0.0385
+      },
+      {
+        "relative_period": -2,
+        "estimate": -0.2537,
+        "se": 0.2893,
+        "ci_lower": -0.8207,
+        "ci_upper": 0.3133
+      },
+      {
+        "relative_period": -1,
+        "estimate": 0.0,
+        "se": 0.0,
+        "ci_lower": 0.0,
+        "ci_upper": 0.0
+      },
+      {
+        "relative_period": 0,
+        "estimate": -2.5462,
+        "se": 0.397,
+        "ci_lower": -3.3243,
+        "ci_upper": -1.7681
+      },
+      {
+        "relative_period": 1,
+        "estimate": -2.3118,
+        "se": 0.364,
+        "ci_lower": -3.0253,
+        "ci_upper": -1.5983
+      },
+      {
+        "relative_period": 2,
+        "estimate": -2.5962,
+        "se": 0.3219,
+        "ci_lower": -3.2271,
+        "ci_upper": -1.9654
+      },
+      {
+        "relative_period": 3,
+        "estimate": -2.051,
+        "se": 0.2612,
+        "ci_lower": -2.5631,
+        "ci_upper": -1.539
+      },
+      {
+        "relative_period": 4,
+        "estimate": -2.5178,
+        "se": 0.4555,
+        "ci_lower": -3.4105,
+        "ci_upper": -1.625
+      },
+      {
+        "relative_period": 5,
+        "estimate": -2.2327,
+        "se": 0.3422,
+        "ci_lower": -2.9034,
+        "ci_upper": -1.5619
+      }
+    ]
+  },
+  "pre_trends": {
+    "test": "Wald test that the pre-treatment event-time effects are jointly zero (bootstrap covariance)",
+    "statistic": 47.1093,
+    "df": 4,
+    "p_value": 0.0,
+    "n_pre_periods": 4
+  },
+  "placebo": {
+    "fake_date_minus_3": {
+      "description": "treatment moved 3 years earlier, each cohort's post-treatment years dropped",
+      "estimate": 0.9897,
+      "se": 0.2338,
+      "p_value": 0.0003
+    }
+  },
+  "sensitivity": {
+    "not_yet_treated": {
+      "method": "comparison group: not yet treated",
+      "estimate": -2.4252,
+      "se": 0.2854,
+      "ci_lower": -2.9845,
+      "ci_upper": -1.8658
+    }
+  }
+}

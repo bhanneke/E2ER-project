@@ -20,8 +20,10 @@ Supported ``figure_type`` values: ``coefficient`` (horizontal dot-and-whisker
 with CIs), ``event_study`` (point + error-bar path with treatment marker),
 ``bar`` (category bars), ``time_series`` (one line per ``{label,x,y}`` series),
 ``scatter`` (points of two variables, optionally grouped and on log axes),
-``histogram`` (counts in bins computed by the analysis), and ``multi_panel``
-(a grid of ``panels``, each itself one of the above).
+``histogram`` (counts in bins computed by the analysis), ``map`` (a
+choropleth, categories or point map drawn from saved data and boundaries, see
+``maps.py``), and ``multi_panel`` (a grid of ``panels``, each itself one of the
+above except ``map``).
 Unknown types are skipped (reported), not guessed.
 """
 
@@ -44,6 +46,7 @@ class FigureRenderReport:
     skipped: list[str] = field(default_factory=list)  # "<filename>: <reason>"
     errors: list[str] = field(default_factory=list)
     placeholders: list[str] = field(default_factory=list)  # missing figs stubbed
+    notes: list[str] = field(default_factory=list)  # "<filename>: <note>" (e.g. a map's units without geometry)
     skipped_reason: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -299,6 +302,24 @@ def render_figures(workspace: Path) -> FigureRenderReport:
             report.errors.append(f"invalid figure filename: {filename!r}")
             continue
         ftype = str(fig_spec.get("figure_type", ""))
+        if ftype == "map":
+            # Reads the boundaries and values the figure names from the study folder (maps.py).
+            try:
+                from .maps import render_map
+
+                fig, notes = render_map(plt, fig_spec, workspace)
+                fig.savefig(workspace / filename, format="pdf", bbox_inches="tight")
+                plt.close(fig)
+                report.rendered.append(filename)
+                report.notes += [f"{filename}: {n}" for n in notes]
+            except Exception as e:  # noqa: BLE001 — one bad map must not abort the rest
+                logger.warning("render_figures: failed to render map %s: %s", filename, e)
+                report.skipped.append(f"{filename}: {e}")
+                try:
+                    plt.close("all")
+                except Exception:  # noqa: BLE001
+                    pass
+            continue
         if ftype == "multi_panel":
             try:
                 fig = _render_multi_panel(plt, fig_spec)

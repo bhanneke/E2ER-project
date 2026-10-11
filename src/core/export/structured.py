@@ -81,6 +81,11 @@ EXPORT_MAP: dict[str, list[tuple[str, str | None]]] = {
         ("data_quality.md", None),
         ("figure_check.json", None),
         ("forecast_check.json", None),
+        # What the method checks of the policy-evaluation and spatial-analysis templates found.
+        ("did_design_check.json", None),
+        ("did_check.json", None),
+        ("spatial_design_check.json", None),
+        ("spatial_check.json", None),
         ("*.csv", None),  # model-generated intermediate outputs at workspace root
     ],
     "design": [
@@ -94,6 +99,9 @@ EXPORT_MAP: dict[str, list[tuple[str, str | None]]] = {
         # An event study's design is a pre-registered plan file too: the lock
         # fingerprints it, so `e2er verify` looks for it here.
         ("event_design.json", None),
+        # The designs the policy-evaluation and spatial-analysis templates check.
+        ("did_design.json", None),
+        ("spatial_design.json", None),
         ("econometric_spec.md", None),
         ("model_spec.md", None),
         # The frozen pre-registration and its fingerprints (researcher step),

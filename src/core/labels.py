@@ -31,6 +31,10 @@ STEPS: dict[str, str] = {
     "preregister": "Pre-registration",
     "review_draft": "Draft review",
     "event_window_gate": "Event-window check",
+    "did_design_gate": "Difference-in-differences design check",
+    "did_results_gate": "Pre-trends and event-study check",
+    "spatial_design_gate": "Boundaries, CRS and weights check",
+    "spatial_results_gate": "Moran's I and maps check",
     "fetch": "Fetch and verify the package",
     "plan": "Plan the reproduction",
     "review_plan": "Plan review",
@@ -116,6 +120,8 @@ TEMPLATES: dict[str, str] = {
     "field-map": "Map a research field",
     "descriptive-study": "Descriptive data study",
     "time-series-forecasting": "Time series and forecasting",
+    "policy-evaluation": "Policy evaluation (difference-in-differences)",
+    "spatial-analysis": "Spatial analysis",
 }
 
 #: What a researcher did at a stop (the ``action`` of a ``researcher_action`` event).
@@ -213,6 +219,7 @@ VERIFY_CHECKS: dict[str, str] = {
     "numbers": "Every table number traces to its source",
     "tables": "The tables match the results",
     "spec": "The estimation follows the declared design",
+    "method checks": "The template's method checks hold on the exported files",
     "citations": "Every citation is in the bibliography",
     "preregistration": "The pre-registration is unchanged",
     "reproduction": "The reproduced numbers",

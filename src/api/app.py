@@ -2111,6 +2111,8 @@ _TEMPLATE_ORDER = (
     "empirical",
     "empirical-preregistered",
     "event-study-finance",
+    "policy-evaluation",
+    "spatial-analysis",
     "replication",
     "field-map",
     "descriptive-study",

@@ -1,0 +1,8 @@
+{
+  "name": "did-pretrend",
+  "base": "did",
+  "source": "Variant of the did fixture: the adopters' outcome drifts upwards before adoption (make_fixture.py in ../did), and the results carry no bound on violations of parallel trends. The did_results check must stop the run before drafting.",
+  "template": "policy-evaluation",
+  "research_question": "Did the units that adopted the policy see their outcome fall, compared with units that did not adopt it?",
+  "title": "A staggered difference-in-differences evaluation with a pre-trend (synthetic)"
+}

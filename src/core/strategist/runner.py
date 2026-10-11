@@ -111,13 +111,28 @@ _DESIGN_CHECKS: dict[str, tuple[str, str]] = {
     "data_quality": ("data_dictionary.json", "data_analyst"),
     # The time-series template: the forecast setup and its hold-out, frozen before fitting.
     "forecast_design": ("forecast_design.json", "forecast_designer"),
+    # The policy-evaluation template (src/core/pipeline/did_checks.py).
+    "did_design": ("did_design.json", "identification_strategist"),
+    "did_results": ("estimation_results.json", "econometrics_specialist"),
+    # The spatial-analysis template (src/core/pipeline/spatial_checks.py).
+    "spatial_design": ("spatial_design.json", "data_architect"),
+    "spatial_results": ("estimation_results.json", "econometrics_specialist"),
 }
+
+#: Checks inside the dispatch that read the estimation's results: they run once their
+#: specialists are done (the estimation among them), never before the estimation like a
+#: design check, and an open one does not hold back the other specialists.
+_RESULT_CHECKS: frozenset[str] = frozenset({"did_results", "spatial_results"})
 
 #: What else the researcher sees when a design check stops the run, besides the design file.
 _DESIGN_CHECK_FILES: dict[str, tuple[str, ...]] = {
     "event_window": ("identification_strategy.md",),
     "data_quality": ("data_quality.md", "data_summary.md"),
     "forecast_design": ("forecast_design.md",),
+    "did_design": ("identification_strategy.md", "did_design_check.json", "data_dictionary.json"),
+    "did_results": ("did_design.json", "did_check.json", "figure_spec.json", "econometric_spec.md"),
+    "spatial_design": ("spatial_design_check.json", "data_dictionary.json"),
+    "spatial_results": ("spatial_design.json", "spatial_check.json", "figure_spec.json", "econometric_spec.md"),
 }
 
 #: The work order of a design check's retry, when the check needs more than "revise the design file".
@@ -1051,7 +1066,9 @@ class PipelineRunner:
                 continue
             if trig.kind == "gate":
                 # A check is never approved past; it runs until the design passes.
-                if set(trig.after) <= finished or _estimation_next(remaining):
+                # A check of the results waits for its specialists (the estimation).
+                due = set(trig.after) <= finished
+                if due or (trig.check not in _RESULT_CHECKS and _estimation_next(remaining)):
                     await self._run_gate_trigger(trig, state, remaining)
                 continue
             if state.is_approved(trig.name):
@@ -1060,9 +1077,15 @@ class PipelineRunner:
                 state.metadata["pending_orders"] = [wo.model_dump() for wo in remaining]
                 await self._stop_for_researcher(trig, state)
 
-    async def _run_open_gates(self, state: Any, remaining: list[WorkOrder]) -> None:
-        """Run every gate trigger that applies and has not passed yet."""
+    async def _run_open_gates(self, state: Any, remaining: list[WorkOrder], before_estimation: bool = False) -> None:
+        """Run every gate trigger that applies and has not passed yet.
+
+        ``before_estimation``: the estimation is about to run, so checks of its
+        results (``_RESULT_CHECKS``) wait.
+        """
         for trig in getattr(self, "_triggers", []):
+            if before_estimation and trig.check in _RESULT_CHECKS:
+                continue
             if trig.kind == "gate" and trig.applies_to(self._mode) and not state.is_complete(trig.name):
                 await self._run_gate_trigger(trig, state, remaining)
 
@@ -1084,10 +1107,16 @@ class PipelineRunner:
         if not result.passed and blocking and step.on_fail == "retry" and owner and not state.metadata.get(retry_key):
             state.metadata[retry_key] = True
             state.save(self._workspace)
-            focus = _DESIGN_CHECK_FOCUS.get(step.check) or (
-                f"The check '{step.check}' refused the design in {design_file} before estimation. "
-                f"Revise {design_file} (and your strategy file where it changes) so that it passes: "
-            )
+            if step.check in _RESULT_CHECKS:
+                focus = (
+                    f"The check '{step.check}' refused the results in {design_file}. Revise run_estimation.py "
+                    "so that the results it writes pass (and the files it names exist): "
+                )
+            else:
+                focus = _DESIGN_CHECK_FOCUS.get(step.check) or (
+                    f"The check '{step.check}' refused the design in {design_file} before estimation. "
+                    f"Revise {design_file} (and your strategy file where it changes) so that it passes: "
+                )
             order = WorkOrder(paper_id=self._paper_id, specialist=owner, focus=focus + "; ".join(result.reasons))
             contribution = await execute_work_order(
                 order,
@@ -1230,6 +1259,20 @@ class PipelineRunner:
             from ..pipeline.forecast_checks import check_forecast_design
 
             return check_forecast_design(self._workspace, **step.settings)
+        if step.check in ("did_design", "did_results"):
+            from ..pipeline import did_checks
+
+            did_fn: Any = did_checks.check_did_design if step.check == "did_design" else did_checks.check_did_results
+            return did_fn(self._workspace, **step.settings)
+        if step.check in ("spatial_design", "spatial_results"):
+            from ..pipeline import spatial_checks
+
+            sp_fn: Any = (
+                spatial_checks.check_spatial_design
+                if step.check == "spatial_design"
+                else spatial_checks.check_spatial_results
+            )
+            return sp_fn(self._workspace, **step.settings)
         raise ValueError(f"check {step.check!r} cannot run inside the dispatch")
 
     async def _settle_researcher_decisions(self, state: Any) -> None:
@@ -3145,6 +3188,7 @@ class PipelineRunner:
             t
             for t in getattr(self, "_triggers", [])
             if t.applies_to(self._mode)
+            and t.check not in _RESULT_CHECKS
             and not (state.is_complete(t.name) if t.kind == "gate" else state.is_approved(t.name))
         ]
         if not open_steps:
@@ -3222,7 +3266,7 @@ class PipelineRunner:
         state = getattr(self, "_state", None)
         if getattr(self, "_in_initial", False) and state is not None and _estimation_next(contract_orders):
             # The first group would estimate: an open design check runs first.
-            await self._run_open_gates(state, contract_orders)
+            await self._run_open_gates(state, contract_orders, before_estimation=True)
         if len(contract_orders) == 1:
             from ..specialists.dispatcher import (
                 execute_work_order,

@@ -250,6 +250,30 @@ def _literals(source: str) -> list[str]:
     return [n.value for n in ast.walk(tree) if isinstance(n, ast.Constant) and isinstance(n.value, str)]
 
 
+#: A file a script opens for writing, or writes with pandas/matplotlib/numpy: an output of the run, not an input.
+_OPEN_WRITE = re.compile(r"""open\(\s*f?["'](?:\./)?([^"'{}]+?)["']\s*,\s*(?:mode\s*=\s*)?["'][wax]""")
+_OTHER_WRITE = re.compile(r"""(?:\.to_csv|\.to_json|\.to_parquet|savefig|savetxt)\(\s*f?["'](?:\./)?([^"'{}]+?)["']""")
+
+
+#: The files the spatial-analysis template's analysis writes for its checks (spatial_checks.py).
+_SPATIAL_OUTPUT = re.compile(r"^spatial_(units|weights[A-Za-z0-9_-]*)\.csv$")
+
+
+def written_files(scripts: list[Path]) -> set[str]:
+    """Names the scripts write (``open("x.csv", "w")``, ``df.to_csv("x.csv")``, ...): outputs, never inputs.
+
+    The spatial-analysis template's analysis writes the units and the weights it used
+    (spatial_units.csv, spatial_weights.csv); comparing them as inputs would call every
+    rerun a difference.
+    """
+    out: set[str] = set()
+    for script in scripts:
+        source = _read(script)
+        out.update(m.group(1).strip() for m in _OPEN_WRITE.finditer(source))
+        out.update(m.group(1).strip() for m in _OTHER_WRITE.finditer(source))
+    return out
+
+
 def referenced_files(workspace: Path, scripts: list[Path]) -> list[str]:
     """Workspace-relative paths of the files the scripts name (relative, by the workspace's full path, or by glob)."""
     roots = {str(workspace), str(workspace.resolve())}
@@ -591,9 +615,9 @@ def write_recipe(workspace: Path, out: Path, *, date_str: str = "") -> Outcome:
         for f in e.get("files") or []
         if isinstance(f, dict)
     }
-    written = {RESULTS, *OTHER_RESULTS}
+    written = {RESULTS, *OTHER_RESULTS, *written_files(chain)}
     for rel in referenced_files(workspace, chain):
-        if rel in written:
+        if rel in written or _SPATIAL_OUTPUT.match(rel):
             continue
         src = workspace / rel
         sha = _sha256(src)

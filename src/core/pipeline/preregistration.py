@@ -37,6 +37,8 @@ SOURCES: tuple[tuple[str, str], ...] = (
     # Written only in the time-series template: the forecast setup and its hold-out.
     ("Forecast setup", "forecast_design.md"),
     ("Forecast setup and hold-out (machine-readable)", "forecast_design.json"),
+    # Written only in the policy-evaluation template.
+    ("Difference-in-differences design (machine-readable)", "did_design.json"),
     ("Analysis plan", "econometric_spec.md"),
 )
 #: The files whose later change counts as a deviation from the plan.
@@ -44,6 +46,7 @@ PLAN_FILES: tuple[str, ...] = (
     "identification_spec.json",
     "event_design.json",
     "forecast_design.json",
+    "did_design.json",
     "econometric_spec.md",
 )
 
@@ -580,6 +583,10 @@ _NOT_RESULTS = frozenset(
         "figure_spec.json",
         "identification_spec.json",
         "event_design.json",
+        "did_design.json",
+        "did_design_check.json",
+        "spatial_design.json",
+        "spatial_design_check.json",
         "table_spec.json",
         "manifest.json",
         "figure_render_report.json",

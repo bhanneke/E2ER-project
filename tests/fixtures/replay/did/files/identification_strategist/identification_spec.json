@@ -1,0 +1,13 @@
+{
+  "primary": {
+    "estimator": "callaway_santanna",
+    "unit_of_analysis": "unit-year",
+    "outcome": "outcome",
+    "treatment": "adopted (first_year <= year)",
+    "fixed_effects": [],
+    "controls": [],
+    "cluster_level": "iso3",
+    "sample_size": 384,
+    "identifying_assumption": "Parallel trends of adopters and never-adopters without the policy, and no anticipation."
+  }
+}

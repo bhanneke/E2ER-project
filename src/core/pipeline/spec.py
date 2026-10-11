@@ -80,6 +80,10 @@ CHECK_SETTINGS: dict[str, dict[str, type | tuple[type, ...]]] = {
     # The time-series template's checks (src/core/pipeline/forecast_checks.py).
     "forecast_design": {"min_train_periods": int},
     "forecast_evaluation": {"error_tolerance": (int, float)},
+    "did_design": {"min_pre_periods": int},
+    "did_results": {"min_pre_periods": int, "pretrend_alpha": (int, float)},
+    "spatial_design": {"max_unmatched_share": (int, float)},
+    "spatial_results": {"min_permutations": int},
 }
 
 #: The persona skill specialists read unless the template names another (``base_skill``).
@@ -553,6 +557,8 @@ def _review_weights(raw: Any, steps: tuple[StepSpec, ...], source: Path | str) -
 CREDIT_REQUIRED = ("creator", "role", "relation", "title", "url", "accessed")
 CREDIT_RELATIONS = ("based_on", "related_work", "cites")
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+#: A publication date as precise as the publisher gives it (Crossref: a journal issue has a month, a book a year).
+_PUBLISHED_RE = re.compile(r"^\d{4}(-\d{2}(-\d{2})?)?$")
 
 
 def _credit(raw: Any, source: Path | str) -> tuple[dict[str, Any], ...]:
@@ -573,9 +579,12 @@ def _credit(raw: Any, source: Path | str) -> tuple[dict[str, Any], ...]:
             _fail(source, f"credit {i}: relation must be one of {', '.join(CREDIT_RELATIONS)}")
         if not str(c["url"]).startswith("https://"):
             _fail(source, f"credit {i}: url must be an https:// address")
-        for key in ("published", "accessed"):
-            if key in c and not _DATE_RE.match(str(c[key])):
-                _fail(source, f"credit {i}: {key} must be a date YYYY-MM-DD")
+        if "published" in c and not _PUBLISHED_RE.match(str(c["published"])):
+            _fail(
+                source, f"credit {i}: published must be a date YYYY-MM-DD (or YYYY-MM, YYYY when that is all it gives)"
+            )
+        if "accessed" in c and not _DATE_RE.match(str(c["accessed"])):
+            _fail(source, f"credit {i}: accessed must be a date YYYY-MM-DD")
     return tuple(dict(c) for c in raw)
 
 

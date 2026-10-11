@@ -1,0 +1,31 @@
+{
+  "n_observations": 384,
+  "n_units": 24,
+  "time_coverage": {
+    "start_year": 2000,
+    "end_year": 2015
+  },
+  "outcome": {
+    "n": 384,
+    "mean": 52.7033,
+    "sd": 6.2468,
+    "min": 39.383,
+    "max": 66.33
+  },
+  "treated_units": 12,
+  "never_treated_units": 12,
+  "cohorts": {
+    "2006": 6,
+    "2010": 6
+  },
+  "missing": {
+    "outcome": 0
+  },
+  "sample_flow": [
+    {
+      "step": "all rows of data/panel.csv",
+      "rows": 384,
+      "dropped": 0
+    }
+  ]
+}

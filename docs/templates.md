@@ -2,13 +2,15 @@
 
 A template is a pipeline file in `pipelines/` (schema:
 `docs/schemas/pipeline.schema.json`). A run follows the template chosen when the
-paper is created; resume keeps it. e2er ships seven:
+paper is created; resume keeps it. e2er ships nine:
 
 | Template | For |
 |---|---|
 | `empirical` | Question and data in, empirical paper out. The default. |
 | `empirical-preregistered` | `empirical` with a design review, a pre-registration frozen before estimation, and a review of the draft (see `researcher-step.md`). |
 | `event-study-finance` | Abnormal-return event studies around announcements; checks the estimation window and overlapping events before estimation. |
+| `policy-evaluation` | What a policy changed, by difference-in-differences: the design is checked against the data before estimation and pre-registered; the event study, pre-trends test and placebo or sensitivity analysis are checked after it. |
+| `spatial-analysis` | How a variable varies across regions or places: boundaries, CRS and weights checked before the analysis; Moran's I recomputed with permutation inference, and maps drawn from the saved data. |
 | `replication` | Computational reproduction of a published study from its Zenodo replication package; the product is a reproduction report, not a paper. |
 | `field-map` | A map of a research field by main path analysis of its citation network (OpenAlex), with robustness across alternative boundaries, a reading list, network exports and a short field review. |
 | `descriptive-study` | A description of a sample in any field: summary statistics, distributions, associations and figures, after a data check (units, duplicates, missing values, coverage); every figure re-read from its data. |
@@ -196,6 +198,68 @@ without references; the two niches are above 55% and 44%. The stops are set
 between the groups: 50% and 40% (before: 60% and 25%; 25% would have stopped the
 information-systems and economics boundaries). `skills/files/synthesis/main-path-analysis.md`
 has the full table.
+
+## `policy-evaluation`
+
+A policy reached some units at known dates and not others; the study
+estimates what it changed by comparing the treated units' change with the
+change of units not (yet) treated. The methods follow the recent
+difference-in-differences literature (Roth, Sant'Anna, Bilinski and Poe
+2023): with staggered timing a two-way fixed-effects regression averages
+comparisons that use earlier-treated units as controls, with weights that can
+be negative when effects differ (Goodman-Bacon 2021; de Chaisemartin and
+D'Haultfœuille 2020), so the template asks for a heterogeneity-robust
+estimator (Callaway and Sant'Anna 2021; Sun and Abraham 2021; Borusyak,
+Jaravel and Spiess 2024; and others). The skill
+`econometrics/did-practice` gives the design file's schema, the estimators,
+the results block and how to compute the pre-trends test and a
+relative-magnitudes bound with numpy and scipy.
+
+| Step | Kind | What happens |
+|---|---|---|
+| `did_design_gate` | check `did_design`, after the identification strategist, data architect and data analyst | Reads `did_design.json` (outcome, panel, treatment timing, comparison group, estimator) and the panel in `data.db`. Fails when the outcome or timing is not in the data, when there is no comparison group (no never-treated unit, or no later-treated unit for a not-yet-treated design), when timing is staggered and the estimator is `twfe`, or when no cohort has `min_pre_periods` (default 2) periods before treatment. Staggered timing with a robust estimator passes with a warning. A failed check sends the identification strategist back once with the reasons (`on_fail = "retry"`), then stops the run. Writes the cohorts, the treated, never-treated and always-treated units and the pre-periods per cohort to `did_design_check.json`. |
+| `preregister` | researcher, after the design specialists and the data analyst | The design (with `did_design.json`) is assembled into `preregistration.md` and frozen on approval; `did_design.json` is one of the plan files whose later change is a deviation. Approving straight away is the shortest path. |
+| `did_results_gate` | check `did_results`, after the econometrics specialist, before drafting | Requires in `estimation_results.json`: `event_study.periods` with at least `min_pre_periods` pre-treatment periods besides the reference period and at least one after treatment; `pre_trends` (joint test, its p-value and number of pre-periods, which must match the path); `placebo` or `sensitivity`; and `main.estimator` naming the declared estimator (never `twfe` on staggered timing). A pre-trends test that rejects at `pretrend_alpha` (default 0.05) stops the run unless `sensitivity` holds a Rambachan–Roth analysis (relative magnitudes or smoothness bounds), and then the check warns that the conclusion rests on it. The event-study plot (`fig_event_study.pdf`) is drawn from the results when `figure_spec.json` has none; one that is there must show the results' numbers. A failed check sends the econometrics specialist back once, then stops the run. Writes `did_check.json`. |
+
+The rest is the empirical template's: estimation check, panel review
+(identification, data, methods, writing and technical reviewers, the
+identification reviewer weighted 1.5), revision and replication package.
+`e2er verify` runs the results side of the check again on the export
+(`method checks`). The template cites its method sources in `[[credit]]`.
+
+## `spatial-analysis`
+
+How a variable varies across places, and whether neighbouring units are
+alike. No causal claim: no identification strategy is asked for, the
+specialists read the researcher persona, and the panel is methods, data,
+plausibility, writing and technical. The results follow the spatial contract
+(`results = "spatial"`); the skill `data/spatial-statistics` gives the
+design file, how to build contiguity and nearest-neighbour weights with
+numpy, Moran's I with permutation inference (Moran 1950), local clusters
+(Anselin 1995; Getis and Ord 1992), and the points that change the answer:
+the modifiable areal unit problem (Openshaw 1984), the choice of weights,
+edge effects and islands.
+
+| Step | Kind | What happens |
+|---|---|---|
+| `spatial_design_gate` | check `spatial_design`, after the data architect and the data analyst | Reads `spatial_design.json` (units, boundaries, CRS, weights). Fails when the boundaries' source is not recorded (a load from `e2er-data gisco` or `naturalearth` in `data_sources.json`, or the researcher's own file or table with its source, licence and attribution), when the CRS is missing or does not fit the coordinates, when a data unit has no geometry and is not listed under `units_without_geometry` with a reason (by its id, or by a pattern such as `"CH*"` for a group of ids; the ids a pattern covers are written out) (or more than `max_unmatched_share`, default 20%, have none), or when the weights are not documented (type and its parameter, row standardisation, islands). A failed check sends the data architect back once with the reasons, then stops the run. Writes the match to `spatial_design_check.json`. |
+| `spatial_results_gate` | check `spatial_results`, after the econometrics specialist, before drafting | Reads `spatial_units.csv` (the units and values the analysis used) and `spatial_weights.csv` (from, to, weight). Recomputes every Moran's I from them and stops the run when one differs, when no Moran's I has permutation inference with at least `min_permutations` (default 99) permutations, when a p-value is below 1/(permutations + 1), or when the weights file names unknown units, links a unit to itself or (row-standardised) has rows that do not sum to 1. LISA clusters are optional; their counts must add up to at most the number of units. Every map the results name becomes a `map` figure built from the design's boundaries and the units file. Writes `spatial_check.json`. |
+
+Maps are a figure type of their own (`figure_type: "map"`, see
+`skills/files/data/figure-spec.md` and `src/core/renderer/maps.py`):
+choropleths in quantile, equal-interval or given classes, category maps
+(LISA clusters), and point maps, drawn with matplotlib alone from a `data.db`
+table or a GeoJSON file and the values in a CSV or a table, in an equal-area
+projection for Europe or Equal Earth for the world; units without data are
+drawn as "No data", data units without geometry are named in the render
+report, and the boundaries' attribution is printed on the map.
+
+Boundaries come from two sources added with the template:
+
+| Source | `e2er-data` | Terms |
+|---|---|---|
+| Eurostat GISCO | `gisco nuts --level 2 --year 2021 --scale 20M`, `gisco countries` | Non-commercial use with the notice "© EuroGeographics for the administrative boundaries" on every map; the files may not be passed on, so a published study loads them again (`get_data.py`), and e2er does not deposit them on Zenodo. |
+| Natural Earth | `naturalearth countries --scale 110m` (release v5.1.2) | Public domain. |
 
 ## `event-study-finance`
 

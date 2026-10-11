@@ -1,0 +1,103 @@
+{
+  "result_kind": "spatial",
+  "units": {
+    "type": "region (synthetic grid)",
+    "n_units": 30,
+    "id_field": "id",
+    "file": "spatial_units.csv",
+    "crs": "EPSG:4326",
+    "year": 2023
+  },
+  "variables": {
+    "rate": {
+      "n": 30,
+      "mean": 7.7933,
+      "sd": 2.0267,
+      "min": 4.25,
+      "median": 7.675,
+      "max": 12.5
+    }
+  },
+  "spatial_statistics": {
+    "moran_rate_queen": {
+      "statistic": "morans_i",
+      "variable": "rate",
+      "weights": "queen contiguity, row-standardised",
+      "weights_file": "spatial_weights.csv",
+      "estimate": 0.5908,
+      "expected": -0.034483,
+      "z": 6.1611,
+      "p_value": 0.001,
+      "p_value_method": "permutation",
+      "n_permutations": 999,
+      "alternative": "two-sided"
+    },
+    "moran_rate_knn4": {
+      "statistic": "morans_i",
+      "variable": "rate",
+      "weights": "4 nearest neighbours, row-standardised",
+      "weights_file": "spatial_weights_knn4.csv",
+      "estimate": 0.5832,
+      "expected": -0.034483,
+      "z": 5.5036,
+      "p_value": 0.001,
+      "p_value_method": "permutation",
+      "n_permutations": 999,
+      "alternative": "two-sided"
+    }
+  },
+  "clusters": {
+    "HH": {
+      "count": 7
+    },
+    "LL": {
+      "count": 4
+    },
+    "HL": {
+      "count": 0
+    },
+    "LH": {
+      "count": 0
+    },
+    "ns": {
+      "count": 19
+    }
+  },
+  "maps": [
+    {
+      "id": "map_rate",
+      "variable": "rate",
+      "classification": "quantiles",
+      "classes": 5,
+      "legend_label": "Rate 2023 (%)"
+    },
+    {
+      "id": "map_lisa",
+      "variable": "lisa",
+      "classification": "categories",
+      "legend_label": "LISA cluster (queen, p < 0.05)",
+      "categories": {
+        "HH": {
+          "label": "High-high",
+          "color": "#b2182b"
+        },
+        "LL": {
+          "label": "Low-low",
+          "color": "#2166ac"
+        },
+        "HL": {
+          "label": "High-low",
+          "color": "#f4a582"
+        },
+        "LH": {
+          "label": "Low-high",
+          "color": "#92c5de"
+        },
+        "ns": {
+          "label": "Not significant",
+          "color": "#d9d9d9"
+        }
+      }
+    }
+  ]
+}

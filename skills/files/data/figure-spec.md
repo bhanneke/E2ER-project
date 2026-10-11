@@ -131,6 +131,38 @@ twelve labels on the axis.
 Use the bins of the results file (`distributions.<name>.bins`) so the figure
 shows the counts the paper reports.
 
+### map — Choropleth, categories or points, from saved data and boundaries
+```json
+{
+  "filename": "fig_map_unemployment.pdf",
+  "figure_type": "map",
+  "map_type": "choropleth",
+  "boundaries": {"table": "nuts2_boundaries", "id_column": "nuts_id", "geometry_column": "geometry"},
+  "data": {"file": "spatial_units.csv", "id_column": "id", "value_column": "unemployment_rate"},
+  "classification": "quantiles",
+  "classes": 5,
+  "crs": "EPSG:4326",
+  "projection": "auto",
+  "extent": [-25, 34, 45, 72],
+  "legend_label": "Unemployment rate 2023 (%)",
+  "attribution": "© EuroGeographics for the administrative boundaries"
+}
+```
+A map is the one figure that reads files: `boundaries` is a data.db table of
+GeoJSON geometries (as `e2er-data gisco` and `e2er-data naturalearth` load
+them) or a GeoJSON file in the study folder (`file`, `id_property`); `data` is
+a CSV in the study folder or a data.db table (`table`, `id_column`,
+`value_column`), so the map shows the saved values, never typed-in ones.
+`map_type`: `choropleth` (classed by `classification`: `quantiles`,
+`equal_interval`, or `breaks` with ascending `breaks`), `categories` (one
+category per unit, e.g. LISA clusters; `categories` maps each value to
+`{"label", "color"}`) or `points` (`lon_column`, `lat_column`, optional
+`value_column`, over the boundaries when given). `projection`: `auto`
+(equal-area for Europe, Equal Earth for the world), `laea_europe`,
+`equal_earth`, `plate_carree`, or `none` for projected coordinates. Units with
+geometry but no value are drawn as "No data"; the legend counts each class.
+Put the boundaries' required credit in `attribution`.
+
 ### multi_panel — Grid of sub-figures
 ```json
 {

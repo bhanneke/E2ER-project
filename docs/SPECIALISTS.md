@@ -7,9 +7,9 @@ the artifacts it must produce. A specialist that does not write its declared
 artifact fails its contract and is retried with the violation fed back.
 
 - **34** specialists
-- **83** skill files on disk
-- **67** referenced by at least one specialist
-- **16** never referenced
+- **87** skill files on disk
+- **69** referenced by at least one specialist
+- **18** never referenced
 
 ## Shipped but never loaded
 
@@ -23,9 +23,11 @@ methodology guidance exists, and no specialist is given it.
 - `data/byod`
 - `data/descriptive-results-schema`
 - `data/spatial-results-schema`
+- `data/spatial-statistics`
 - `data/text-results-schema`
 - `data/timeseries-results-schema`
 - `data/visualization`
+- `econometrics/did-practice`
 - `econometrics/rdd`
 - `econometrics/time-series`
 - `methods/descriptive-analysis`
@@ -46,12 +48,12 @@ methodology guidance exists, and no specialist is given it.
 
 - **Writes:** `data_summary.md`
 - **Sidecars:** `summary_statistics.json`, `figure_spec.json` _(optional)_
-- **Skills (22):** `data/data-tables`, `data/query-data`, `data/cleaning`, `data/figure-spec`, `econometrics/panel-data`, `data/allium-cli`, `data/allium-developer-api`, `data/yfinance`, `data/fred`, `data/gmd`, `data/summary-statistics-schema`, `data/usgs`, `data/exoplanets`, `data/gaia`, `data/nasa_power`, `data/noaa`, `data/worldbank`, `data/eurostat`, `data/owid`, `data/who_gho`, `data/gutenberg`, `data/github`
+- **Skills (24):** `data/data-tables`, `data/query-data`, `data/cleaning`, `data/figure-spec`, `econometrics/panel-data`, `data/allium-cli`, `data/allium-developer-api`, `data/yfinance`, `data/fred`, `data/gmd`, `data/summary-statistics-schema`, `data/usgs`, `data/exoplanets`, `data/gaia`, `data/nasa_power`, `data/noaa`, `data/worldbank`, `data/eurostat`, `data/owid`, `data/who_gho`, `data/gutenberg`, `data/github`, `data/gisco`, `data/naturalearth`
 
 ### `data_architect`
 
 - **Writes:** `data_dictionary.json`
-- **Skills (21):** `data/data-tables`, `data/query-data`, `data/blockchain`, `data/crypto-defi`, `base/economist`, `data/allium-cli`, `data/allium-developer-api`, `data/yfinance`, `data/fred`, `data/gmd`, `data/usgs`, `data/exoplanets`, `data/gaia`, `data/nasa_power`, `data/noaa`, `data/worldbank`, `data/eurostat`, `data/owid`, `data/who_gho`, `data/gutenberg`, `data/github`
+- **Skills (23):** `data/data-tables`, `data/query-data`, `data/blockchain`, `data/crypto-defi`, `base/economist`, `data/allium-cli`, `data/allium-developer-api`, `data/yfinance`, `data/fred`, `data/gmd`, `data/usgs`, `data/exoplanets`, `data/gaia`, `data/nasa_power`, `data/noaa`, `data/worldbank`, `data/eurostat`, `data/owid`, `data/who_gho`, `data/gutenberg`, `data/github`, `data/gisco`, `data/naturalearth`
 
 ### `data_reviewer`
 
@@ -239,10 +241,12 @@ The reverse index: who is affected if you edit a skill file.
 | `data/figure-spec` | `data_analyst` |
 | `data/fred` | `data_analyst`, `data_architect` |
 | `data/gaia` | `data_analyst`, `data_architect` |
+| `data/gisco` | `data_analyst`, `data_architect` |
 | `data/github` | `data_analyst`, `data_architect` |
 | `data/gmd` | `data_analyst`, `data_architect` |
 | `data/gutenberg` | `data_analyst`, `data_architect` |
 | `data/nasa_power` | `data_analyst`, `data_architect` |
+| `data/naturalearth` | `data_analyst`, `data_architect` |
 | `data/noaa` | `data_analyst`, `data_architect` |
 | `data/owid` | `data_analyst`, `data_architect` |
 | `data/query-data` | `data_analyst`, `data_architect`, `econometrics_specialist`, `forecast_designer` |

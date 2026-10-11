@@ -41,6 +41,13 @@ Write the file from `run_estimation.py` (run it with `e2er-run`).
 - `maps`: the map specifications, each with an `id` and the `variable` shown
   (and how values are classed).
 
+In the `spatial-analysis` template the analysis also writes the units and
+values it used (`spatial_units.csv`) and its weights (`spatial_weights.csv`:
+from, to, weight), and the template's check recomputes every Moran's I from
+them, requires permutation inference (`"p_value_method": "permutation"`,
+`n_permutations` >= 99) and builds a map figure for every entry of `maps`
+(see `data/spatial-statistics`).
+
 Units without neighbours (islands) change the weights: say how they were
 handled. Results depend on the weights; report a second weights definition as
 a robustness entry when the conclusion rests on clustering.

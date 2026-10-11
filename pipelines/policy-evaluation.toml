@@ -1,0 +1,233 @@
+# Policy evaluation by difference-in-differences.
+#
+# A policy reached some units (countries, regions, firms) at known dates and not
+# others; the study estimates what it changed in an outcome by comparing the
+# treated units' change with the change of units not (yet) treated. The design
+# carries the study, so it is declared machine-readably and checked twice.
+#
+#   did_design_gate   before estimation. The identification strategist writes
+#                     did_design.json (outcome, panel, treatment timing,
+#                     comparison group, estimator; schema in
+#                     skills/files/econometrics/did-practice.md). The check reads
+#                     the panel in data.db and stops the run when the outcome or
+#                     timing is not in the data, when there is no comparison
+#                     group, when timing is staggered and the estimator is
+#                     two-way fixed effects (it asks for a heterogeneity-robust
+#                     estimator), or when no cohort has `min_pre_periods`
+#                     periods before treatment.
+#                     A failed check sends the identification strategist back
+#                     once with the reasons, then stops the run for the researcher.
+#   preregister       the design, frozen before any estimation (approve it to
+#                     go on; edit it first to change it).
+#   did_results_gate  after estimation, before drafting. The results must hold
+#                     the event-study path with at least `min_pre_periods`
+#                     pre-treatment periods, a joint pre-trends test (a
+#                     rejection at `pretrend_alpha` stops the run unless a
+#                     Rambachan-Roth sensitivity analysis is reported), a placebo
+#                     test or a sensitivity analysis, and the declared estimator
+#                     under `main`. The event-study plot is drawn from the
+#                     results. A failed check sends the econometrics specialist
+#                     back once, then stops the run.
+#
+# Maintained by the e2er contributors.
+
+name = "policy-evaluation"
+title = "Policy evaluation (difference-in-differences)"
+description = "What a policy changed, by difference-in-differences: the design (treatment timing, comparison group, estimator) is checked against the data before estimation, and the event study, pre-trends test and placebo or sensitivity analysis after it."
+methodologies = ["empirical", "difference-in-differences"]
+
+results     = "regression"
+causal      = true
+data_skills = []
+review_weights = { identification_reviewer = 1.5, data_reviewer = 1.25, methods_reviewer = 1.0, technical_reviewer = 1.0, writing_reviewer = 0.75 }
+
+# Teardown, not a step (see empirical.toml). Declared above the first step
+# table, because TOML binds a bare key after a table array to that table.
+finalize = ["compile", "audit_export", "github_push", "structured_export"]
+
+# Listed before the pre-registration, so that when both are due the check runs
+# first and what is frozen is a design that passed it.
+[[steps]]
+kind    = "gate"
+name    = "did_design_gate"
+check   = "did_design"
+on_fail = "retry"
+after   = ["identification_strategist", "data_architect", "data_analyst"]
+
+[steps.settings]
+min_pre_periods = 2
+
+[[steps]]
+kind  = "preregister"
+name  = "preregister"
+after = ["idea_developer", "literature_scanner", "identification_strategist", "data_architect", "data_analyst"]
+
+# Runs as soon as the estimation is done, before anything is drafted around it.
+[[steps]]
+kind    = "gate"
+name    = "did_results_gate"
+check   = "did_results"
+on_fail = "retry"
+after   = ["econometrics_specialist"]
+
+[steps.settings]
+min_pre_periods = 2
+pretrend_alpha  = 0.05
+
+[[steps]]
+kind = "strategist"
+name = "initial"
+
+[[steps]]
+kind  = "strategist"
+name  = "iterative"
+modes = ["iterative"]
+
+[[steps]]
+kind      = "gate"
+name      = "estimation_gate"
+check     = "estimation"
+on_fail   = "halt"
+resumable = false
+
+[[steps]]
+kind  = "specialists"
+name  = "self_attack"
+modes = ["iterative"]
+run   = ["self_attacker"]
+
+[[steps]]
+kind     = "specialists"
+name     = "polish"
+modes    = ["iterative"]
+parallel = true
+run      = ["polish_formula", "polish_numerics", "polish_bibliography"]
+
+[[steps]]
+kind     = "aggregate"
+name     = "review"
+parallel = true
+run = [
+    "identification_reviewer",
+    "data_reviewer",
+    "methods_reviewer",
+    "writing_reviewer",
+    "technical_reviewer",
+]
+
+[[steps]]
+kind = "specialists"
+name = "revision"
+run  = ["revisor", "patch_revisor"]
+
+[[steps]]
+kind = "specialists"
+name = "replication"
+run  = ["replication_packager"]
+
+[skills]
+identification_strategist = ["econometrics/did-practice"]
+econometrics_specialist   = ["econometrics/did-practice"]
+identification_reviewer   = ["econometrics/did-practice"]
+methods_reviewer          = ["econometrics/did-practice"]
+
+# The machine-readable design the checks read.
+[sidecars]
+identification_strategist = ["did_design.json"]
+
+# The method sources the checks and the skill follow (DOIs checked on Crossref, 2026-10-11).
+[[credit]]
+creator   = "Brantly Callaway and Pedro H. C. Sant'Anna"
+role      = "method"
+relation  = "cites"
+kind      = "article"
+title     = "Difference-in-Differences with multiple time periods"
+publisher = "Journal of Econometrics 225(2), 200-230"
+published = "2021-12"
+url       = "https://doi.org/10.1016/j.jeconom.2020.12.001"
+accessed  = "2026-10-11"
+cite_key  = "callaway2021difference"
+
+[[credit]]
+creator   = "Andrew Goodman-Bacon"
+role      = "method"
+relation  = "cites"
+kind      = "article"
+title     = "Difference-in-differences with variation in treatment timing"
+publisher = "Journal of Econometrics 225(2), 254-277"
+published = "2021-12"
+url       = "https://doi.org/10.1016/j.jeconom.2021.03.014"
+accessed  = "2026-10-11"
+cite_key  = "goodmanbacon2021difference"
+
+[[credit]]
+creator   = "Liyang Sun and Sarah Abraham"
+role      = "method"
+relation  = "cites"
+kind      = "article"
+title     = "Estimating dynamic treatment effects in event studies with heterogeneous treatment effects"
+publisher = "Journal of Econometrics 225(2), 175-199"
+published = "2021-12"
+url       = "https://doi.org/10.1016/j.jeconom.2020.09.006"
+accessed  = "2026-10-11"
+cite_key  = "sun2021estimating"
+
+[[credit]]
+creator   = "Clément de Chaisemartin and Xavier D'Haultfœuille"
+role      = "method"
+relation  = "cites"
+kind      = "article"
+title     = "Two-Way Fixed Effects Estimators with Heterogeneous Treatment Effects"
+publisher = "American Economic Review 110(9), 2964-2996"
+published = "2020-09-01"
+url       = "https://doi.org/10.1257/aer.20181169"
+accessed  = "2026-10-11"
+cite_key  = "dechaisemartin2020twoway"
+
+[[credit]]
+creator   = "Kirill Borusyak, Xavier Jaravel and Jann Spiess"
+role      = "method"
+relation  = "cites"
+kind      = "article"
+title     = "Revisiting Event-Study Designs: Robust and Efficient Estimation"
+publisher = "Review of Economic Studies 91(6), 3253-3285"
+published = "2024-11-08"
+url       = "https://doi.org/10.1093/restud/rdae007"
+accessed  = "2026-10-11"
+cite_key  = "borusyak2024revisiting"
+
+[[credit]]
+creator   = "Jonathan Roth, Pedro H. C. Sant'Anna, Alyssa Bilinski and John Poe"
+role      = "method"
+relation  = "cites"
+kind      = "article"
+title     = "What's trending in difference-in-differences? A synthesis of the recent econometrics literature"
+publisher = "Journal of Econometrics 235(2), 2218-2244"
+published = "2023-08"
+url       = "https://doi.org/10.1016/j.jeconom.2023.03.008"
+accessed  = "2026-10-11"
+cite_key  = "roth2023trending"
+
+[[credit]]
+creator   = "Jonathan Roth"
+role      = "method"
+relation  = "cites"
+kind      = "article"
+title     = "Pretest with Caution: Event-Study Estimates after Testing for Parallel Trends"
+publisher = "American Economic Review: Insights 4(3), 305-322"
+published = "2022-09-01"
+url       = "https://doi.org/10.1257/aeri.20210236"
+accessed  = "2026-10-11"
+cite_key  = "roth2022pretest"
+
+[[credit]]
+creator   = "Ashesh Rambachan and Jonathan Roth"
+role      = "method"
+relation  = "cites"
+kind      = "article"
+title     = "A More Credible Approach to Parallel Trends"
+publisher = "Review of Economic Studies 90(5), 2555-2591"
+published = "2023-09-05"
+url       = "https://doi.org/10.1093/restud/rdad018"
+accessed  = "2026-10-11"
+cite_key  = "rambachan2023credible"

@@ -44,6 +44,8 @@ DEFAULT_REGIME = "full"
 #: `preregistration` (nothing estimated before the freeze) only in templates with
 #: a preregister step, and `reproduction` only in the replication template; they
 #: are listed so that `full` enforces them and `off`/`contracts` shadow them.
+#: `did_design` and `did_results` run only in the policy-evaluation template,
+#: `spatial_design` and `spatial_results` only in the spatial-analysis template.
 GATES: tuple[str, ...] = (
     "contracts",
     "estimation",
@@ -63,6 +65,10 @@ GATES: tuple[str, ...] = (
     # against that hold-out.
     "forecast_design",
     "forecast_evaluation",
+    "did_design",
+    "did_results",
+    "spatial_design",
+    "spatial_results",
 )
 
 #: Deterministic steps of a template whose failure means the run cannot go on,

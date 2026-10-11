@@ -353,6 +353,166 @@
         "found_via": "Crossref record checked 2026-10-11",
         "note": "Sen's slope, the size of a monotone trend."
       }
+    ],
+    "template:policy-evaluation": [
+      {
+        "creator": "Brantly Callaway and Pedro H. C. Sant'Anna",
+        "role": "method",
+        "relation": "cites",
+        "kind": "article",
+        "title": "Difference-in-Differences with multiple time periods",
+        "publisher": "Journal of Econometrics 225(2), 200-230",
+        "published": "2021-12",
+        "url": "https://doi.org/10.1016/j.jeconom.2020.12.001",
+        "accessed": "2026-10-11",
+        "cite_key": "callaway2021difference"
+      },
+      {
+        "creator": "Andrew Goodman-Bacon",
+        "role": "method",
+        "relation": "cites",
+        "kind": "article",
+        "title": "Difference-in-differences with variation in treatment timing",
+        "publisher": "Journal of Econometrics 225(2), 254-277",
+        "published": "2021-12",
+        "url": "https://doi.org/10.1016/j.jeconom.2021.03.014",
+        "accessed": "2026-10-11",
+        "cite_key": "goodmanbacon2021difference"
+      },
+      {
+        "creator": "Liyang Sun and Sarah Abraham",
+        "role": "method",
+        "relation": "cites",
+        "kind": "article",
+        "title": "Estimating dynamic treatment effects in event studies with heterogeneous treatment effects",
+        "publisher": "Journal of Econometrics 225(2), 175-199",
+        "published": "2021-12",
+        "url": "https://doi.org/10.1016/j.jeconom.2020.09.006",
+        "accessed": "2026-10-11",
+        "cite_key": "sun2021estimating"
+      },
+      {
+        "creator": "Clément de Chaisemartin and Xavier D'Haultfœuille",
+        "role": "method",
+        "relation": "cites",
+        "kind": "article",
+        "title": "Two-Way Fixed Effects Estimators with Heterogeneous Treatment Effects",
+        "publisher": "American Economic Review 110(9), 2964-2996",
+        "published": "2020-09-01",
+        "url": "https://doi.org/10.1257/aer.20181169",
+        "accessed": "2026-10-11",
+        "cite_key": "dechaisemartin2020twoway"
+      },
+      {
+        "creator": "Kirill Borusyak, Xavier Jaravel and Jann Spiess",
+        "role": "method",
+        "relation": "cites",
+        "kind": "article",
+        "title": "Revisiting Event-Study Designs: Robust and Efficient Estimation",
+        "publisher": "Review of Economic Studies 91(6), 3253-3285",
+        "published": "2024-11-08",
+        "url": "https://doi.org/10.1093/restud/rdae007",
+        "accessed": "2026-10-11",
+        "cite_key": "borusyak2024revisiting"
+      },
+      {
+        "creator": "Jonathan Roth, Pedro H. C. Sant'Anna, Alyssa Bilinski and John Poe",
+        "role": "method",
+        "relation": "cites",
+        "kind": "article",
+        "title": "What's trending in difference-in-differences? A synthesis of the recent econometrics literature",
+        "publisher": "Journal of Econometrics 235(2), 2218-2244",
+        "published": "2023-08",
+        "url": "https://doi.org/10.1016/j.jeconom.2023.03.008",
+        "accessed": "2026-10-11",
+        "cite_key": "roth2023trending"
+      },
+      {
+        "creator": "Jonathan Roth",
+        "role": "method",
+        "relation": "cites",
+        "kind": "article",
+        "title": "Pretest with Caution: Event-Study Estimates after Testing for Parallel Trends",
+        "publisher": "American Economic Review: Insights 4(3), 305-322",
+        "published": "2022-09-01",
+        "url": "https://doi.org/10.1257/aeri.20210236",
+        "accessed": "2026-10-11",
+        "cite_key": "roth2022pretest"
+      },
+      {
+        "creator": "Ashesh Rambachan and Jonathan Roth",
+        "role": "method",
+        "relation": "cites",
+        "kind": "article",
+        "title": "A More Credible Approach to Parallel Trends",
+        "publisher": "Review of Economic Studies 90(5), 2555-2591",
+        "published": "2023-09-05",
+        "url": "https://doi.org/10.1093/restud/rdad018",
+        "accessed": "2026-10-11",
+        "cite_key": "rambachan2023credible"
+      }
+    ],
+    "template:spatial-analysis": [
+      {
+        "creator": "P. A. P. Moran",
+        "role": "method",
+        "relation": "cites",
+        "kind": "article",
+        "title": "Notes on Continuous Stochastic Phenomena",
+        "publisher": "Biometrika 37(1/2), 17-23",
+        "published": "1950-06",
+        "url": "https://doi.org/10.2307/2332142",
+        "accessed": "2026-10-11",
+        "cite_key": "moran1950notes"
+      },
+      {
+        "creator": "Luc Anselin",
+        "role": "method",
+        "relation": "cites",
+        "kind": "article",
+        "title": "Local Indicators of Spatial Association—LISA",
+        "publisher": "Geographical Analysis 27(2), 93-115",
+        "published": "1995-04",
+        "url": "https://doi.org/10.1111/j.1538-4632.1995.tb00338.x",
+        "accessed": "2026-10-11",
+        "cite_key": "anselin1995local"
+      },
+      {
+        "creator": "Luc Anselin",
+        "role": "method",
+        "relation": "cites",
+        "kind": "book",
+        "title": "Spatial Econometrics: Methods and Models",
+        "publisher": "Springer Netherlands (Kluwer), Studies in Operational Regional Science",
+        "published": "1988",
+        "url": "https://doi.org/10.1007/978-94-015-7799-1",
+        "accessed": "2026-10-11",
+        "cite_key": "anselin1988spatial"
+      },
+      {
+        "creator": "Arthur Getis and J. K. Ord",
+        "role": "method",
+        "relation": "cites",
+        "kind": "article",
+        "title": "The Analysis of Spatial Association by Use of Distance Statistics",
+        "publisher": "Geographical Analysis 24(3), 189-206",
+        "published": "1992-07",
+        "url": "https://doi.org/10.1111/j.1538-4632.1992.tb00261.x",
+        "accessed": "2026-10-11",
+        "cite_key": "getis1992analysis"
+      },
+      {
+        "creator": "Stan Openshaw",
+        "role": "method",
+        "relation": "cites",
+        "kind": "book",
+        "title": "The Modifiable Areal Unit Problem (Concepts and Techniques in Modern Geography 38)",
+        "publisher": "Geo Books, Norwich. ISBN 0-86094-134-5 (no DOI)",
+        "published": "1984",
+        "url": "https://github.com/qmrg/CATMOG/blob/master/38-maup-openshaw.pdf",
+        "accessed": "2026-10-11",
+        "cite_key": "openshaw1984modifiable"
+      }
     ]
   }
 }

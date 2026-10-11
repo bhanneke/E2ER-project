@@ -74,6 +74,8 @@ _MODULES = (
     "who_gho",
     "gutenberg",
     "github",
+    "gisco",
+    "naturalearth",
 )
 
 _REGISTRY: dict[str, Source] | None = None

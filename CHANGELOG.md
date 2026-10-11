@@ -103,6 +103,56 @@ and contract tests on responses recorded live once.
   several `e2er-data` calls in one test; a definition whose argument is one of e2er-data's own names
   (`source`, `table`, …) is refused.
 
+### Templates: policy evaluation (difference-in-differences) and spatial analysis
+- **`policy-evaluation`**: what a policy changed, by difference-in-differences. The identification
+  strategist writes `did_design.json` (outcome, panel, treatment timing, comparison group,
+  estimator). The `did_design` check reads it against the panel in `data.db` before estimation and
+  stops the run when the outcome or timing is not in the data, there is no comparison group, timing
+  is staggered and the estimator is two-way fixed effects (it names the heterogeneity-robust
+  estimators: Callaway–Sant'Anna, Sun–Abraham, de Chaisemartin–D'Haultfœuille, Borusyak–Jaravel–Spiess,
+  Gardner, stacked, Wooldridge), or no cohort has two pre-treatment periods; staggered timing with a
+  robust estimator passes with a warning. The design is pre-registered (`did_design.json` is a plan
+  file). After estimation, before drafting, the `did_results` check requires the event study with at
+  least two pre-treatment periods, a joint pre-trends test (a rejection at 0.05 stops the run unless a
+  Rambachan–Roth sensitivity analysis is reported), a placebo test or a sensitivity analysis, and the
+  declared estimator under `main`; it draws the event-study plot from the results. Panel:
+  identification, data, methods, writing, technical. Skill `econometrics/did-practice`.
+- **`spatial-analysis`**: how a variable varies across places, with no causal claim (spatial results
+  contract, researcher persona). The data architect writes `spatial_design.json`; the
+  `spatial_design` check stops the run when the boundaries' source is not recorded, the CRS is
+  missing or does not fit the coordinates, a data unit without geometry is not listed with a reason,
+  or the weights are not documented. After the analysis the `spatial_results` check recomputes every
+  Moran's I from the units and weights the analysis wrote (`spatial_units.csv`,
+  `spatial_weights.csv`), requires permutation inference (at least 99 permutations), checks the
+  weights file, and builds a map figure for every map the results name. Panel: methods, data,
+  plausibility, writing, technical. Skill `data/spatial-statistics` (weights with numpy, Moran's I,
+  LISA, MAUP, edge effects, islands). Units without geometry are listed by id or by a pattern
+  (`"CH*"`, `"*ZZ"`); a sentence naming a group does not count.
+- In both templates a failed method check sends its specialist back once with the reasons
+  (`on_fail = "retry"`), then stops the run for the researcher; approving does not pass it.
+- **Maps** (`figure_type: "map"`, `src/core/renderer/maps.py`): choropleth (quantiles, equal intervals,
+  given breaks), categories (e.g. LISA clusters) and point maps, drawn from a `data.db` table of
+  GeoJSON geometries or a GeoJSON file and values from a CSV or a table, with matplotlib alone (no new
+  dependency); equal-area projection for Europe, Equal Earth for the world. Units without data are
+  drawn as "No data", data units without geometry are named in the render report, the boundaries'
+  attribution is printed on the map.
+- **New sources for boundaries**: `e2er-data gisco nuts|countries` (Eurostat GISCO; NUTS 2003–2024 at
+  1:1 to 1:60 million, EPSG 4326/3035/3857; terms checked 2026-10-11: non-commercial use, the notice
+  "© EuroGeographics for the administrative boundaries" on every map, no right to pass the files on,
+  so a published study loads them again and no Zenodo deposit holds them) and `e2er-data naturalearth
+  countries` (Natural Earth v5.1.2, public domain). Each row is a unit with its geometry as GeoJSON text.
+- `e2er verify` runs the results side of these checks again on an export (`method checks`); the export
+  carries `did_design.json`, `spatial_design.json` and the checks' findings. `e2er reproduce` no
+  longer counts files the analysis script writes (`spatial_units.csv`, weights files, anything it
+  opens for writing) as its inputs.
+- A template's `[[credit]]` `published` date may be as precise as the publisher gives it (YYYY-MM for a
+  journal issue, YYYY for a book). Both templates cite their method sources (DOIs checked on Crossref).
+- Tests: replay fixtures of a synthetic staggered panel and a synthetic grid of regions, run end to end
+  (stops, both checks, number check, panel, publish offline, verify with the method checks,
+  reproduce), a pre-trend that stops the run before drafting, a data unit without geometry that stops
+  it before the analysis, unit tests of the checks and the map renderer, and the connectors with mocked
+  files.
+
 ### A core without economics assumptions (for 0.16.0)
 - **A template declares the kind of results its study reports.** `results = "regression"` (the
   default, e2er's contract as before), `"descriptive"`, `"timeseries"`, `"spatial"` or `"text"`. The
