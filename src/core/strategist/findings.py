@@ -243,6 +243,8 @@ _REVIEWER_PRIMARY_TARGET: dict[str, str] = {
     "literature_reviewer": "section:literature",
     "data_reviewer": "section:data",
     "writing_reviewer": "paper:full",
+    "methods_reviewer": "section:results",
+    "plausibility_reviewer": "section:results",
 }
 
 

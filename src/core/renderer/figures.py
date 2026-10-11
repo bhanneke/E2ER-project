@@ -19,7 +19,9 @@ runner, NOT an LLM specialist. Design rules mirror ``tables.py``:
 Supported ``figure_type`` values: ``coefficient`` (horizontal dot-and-whisker
 with CIs), ``event_study`` (point + error-bar path with treatment marker),
 ``bar`` (category bars), ``time_series`` (one line per ``{label,x,y}`` series),
-and ``multi_panel`` (a grid of ``panels``, each itself one of the above).
+``scatter`` (points of two variables, optionally grouped and on log axes),
+``histogram`` (counts in bins computed by the analysis), and ``multi_panel``
+(a grid of ``panels``, each itself one of the above).
 Unknown types are skipped (reported), not guessed.
 """
 
@@ -150,6 +152,53 @@ def _render_time_series(fig_spec: dict[str, Any], ax: Any) -> None:
     ax.grid(ls=":", alpha=0.4)
 
 
+def _render_scatter(fig_spec: dict[str, Any], ax: Any) -> None:
+    """Points of two variables (``x``, ``y``), optionally in groups and on log axes.
+
+    For descriptive studies in any field (planet radius against orbital period,
+    a station's temperature against its altitude). ``groups`` (one label per
+    point) colours the points by group.
+    """
+    x, y = _floats(fig_spec.get("x")), _floats(fig_spec.get("y"))
+    if x is None or y is None or len(x) != len(y):
+        raise ValueError("scatter needs equal-length numeric 'x' and 'y'")
+    groups = fig_spec.get("groups")
+    if isinstance(groups, list) and len(groups) == len(x):
+        for g in dict.fromkeys(str(v) for v in groups):
+            idx = [i for i, v in enumerate(groups) if str(v) == g]
+            ax.scatter([x[i] for i in idx], [y[i] for i in idx], s=14, label=g)
+        ax.legend(fontsize=8)
+    else:
+        ax.scatter(x, y, s=14, color="#1f4e79")
+    if fig_spec.get("log_x"):
+        ax.set_xscale("log")
+    if fig_spec.get("log_y"):
+        ax.set_yscale("log")
+    ax.set_xlabel(str(fig_spec.get("x_label", "")))
+    ax.set_ylabel(str(fig_spec.get("y_label", "")))
+    ax.grid(ls=":", alpha=0.4)
+
+
+def _render_histogram(fig_spec: dict[str, Any], ax: Any) -> None:
+    """Counts in bins already computed (``bins``: lower, upper, count), as the results state them."""
+    bins = fig_spec.get("bins")
+    if not isinstance(bins, list) or not bins or not all(isinstance(b, dict) for b in bins):
+        raise ValueError("histogram needs 'bins', each with lower, upper and count")
+    lo = _floats([b.get("lower") for b in bins])
+    hi = _floats([b.get("upper") for b in bins])
+    counts = _floats([b.get("count") for b in bins])
+    if lo is None or hi is None or counts is None:
+        raise ValueError("histogram bins need numeric lower, upper and count")
+    ax.bar(
+        lo, counts, width=[b - a for a, b in zip(lo, hi, strict=True)], align="edge", color="#1f4e79", edgecolor="white"
+    )
+    if fig_spec.get("log_x"):
+        ax.set_xscale("log")
+    ax.set_xlabel(str(fig_spec.get("x_label", "")))
+    ax.set_ylabel(str(fig_spec.get("y_label", "Count")))
+    ax.grid(ls=":", alpha=0.4, axis="y")
+
+
 # Single-axes renderers, dispatched by figure_type. multi_panel is composed
 # from these onto subplots (it needs the figure, not one axes — handled in
 # render_figures).
@@ -158,6 +207,8 @@ _RENDERERS = {
     "event_study": _render_event_study,
     "bar": _render_bar,
     "time_series": _render_time_series,
+    "scatter": _render_scatter,
+    "histogram": _render_histogram,
 }
 
 

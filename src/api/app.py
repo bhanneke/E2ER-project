@@ -2471,6 +2471,8 @@ _PHASES: tuple[tuple[str, tuple[str, ...]], ...] = (
             "data_reviewer",
             "identification_reviewer",
             "writing_reviewer",
+            "methods_reviewer",
+            "plausibility_reviewer",
         ),
     ),
     ("Revision", ("revisor", "patch_revisor")),

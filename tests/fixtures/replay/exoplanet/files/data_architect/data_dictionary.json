@@ -1,0 +1,18 @@
+{
+  "tables": [
+    {
+      "name": "exoplanets",
+      "source": "file",
+      "file": "exoplanets.csv",
+      "frequency": "one row per planet",
+      "role": "the planet sample: orbital period, radius, discovery method and year (synthetic test data)",
+      "columns": [
+        {"name": "planet", "type": "TEXT", "description": "planet designation (synthetic)"},
+        {"name": "period_days", "type": "REAL", "description": "orbital period in days"},
+        {"name": "radius_earth", "type": "REAL", "description": "planet radius in Earth radii"},
+        {"name": "discovery_method", "type": "TEXT", "description": "Transit or Radial velocity"},
+        {"name": "discovery_year", "type": "INTEGER", "description": "year of discovery"}
+      ]
+    }
+  ]
+}

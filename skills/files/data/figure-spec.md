@@ -99,6 +99,33 @@ Do NOT write matplotlib/seaborn code or attempt to generate figures yourself.
 }
 ```
 
+### scatter — Two variables, point by point
+```json
+{
+  "figure_type": "scatter",
+  "x": [3.2, 11.8, 54.1],
+  "y": [1.4, 2.6, 11.2],
+  "groups": ["Transit", "Transit", "Radial velocity"],
+  "log_x": true,
+  "x_label": "Orbital period (days)",
+  "y_label": "Radius (Earth radii)"
+}
+```
+`groups` (optional, one label per point) colours the points; `log_x` /
+`log_y` put an axis on a log scale.
+
+### histogram — Counts in bins the analysis computed
+```json
+{
+  "figure_type": "histogram",
+  "bins": [{"lower": 0.5, "upper": 1.0, "count": 6}, {"lower": 1.0, "upper": 2.0, "count": 19}],
+  "x_label": "Radius (Earth radii)",
+  "y_label": "Planets"
+}
+```
+Use the bins of the results file (`distributions.<name>.bins`) so the figure
+shows the counts the paper reports.
+
 ### multi_panel — Grid of sub-figures
 ```json
 {

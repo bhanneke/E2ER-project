@@ -1,0 +1,39 @@
+{
+  "n_observations": 60,
+  "n_units": 60,
+  "time_coverage": {
+    "start_year": 2009,
+    "end_year": 2024
+  },
+  "outcome": {
+    "n": 60,
+    "mean": 3.8088,
+    "sd": 3.6045,
+    "min": 1.2,
+    "p25": 1.7325,
+    "median": 2.515,
+    "p75": 3.38,
+    "max": 14.29
+  },
+  "period_days": {
+    "n": 60,
+    "mean": 46.1622,
+    "sd": 63.7519,
+    "min": 0.87,
+    "p25": 4.6187,
+    "median": 14.814,
+    "p75": 56.463,
+    "max": 279.189
+  },
+  "missing": {
+    "radius_earth": 0,
+    "period_days": 0
+  },
+  "sample_flow": [
+    {
+      "step": "all rows of data/exoplanets.csv",
+      "rows": 60,
+      "dropped": 0
+    }
+  ]
+}

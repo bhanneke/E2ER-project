@@ -29,6 +29,38 @@ def build_tier0_context(workspace: Path, paper_id: str) -> str:
         "Research Question:",
         sanitize_for_prompt(data.get("research_question") or "TBD", max_chars=2000),
     ]
+    template = template_context()
+    if template:
+        lines += ["", template]
+    return "\n".join(lines)
+
+
+def template_context() -> str:
+    """What the running template changes about e2er's defaults, for every specialist and the strategist.
+
+    Empty for a template that keeps the defaults (a regression with a causal
+    claim, the economist persona), so those runs see exactly what they saw before.
+    """
+    from ..pipeline.components import active
+    from ..pipeline.result_kinds import RESULTS_FILE, get
+
+    spec = active()
+    if spec is None or spec.is_default_core():
+        return ""
+    k = get(spec.results)
+    lines = [f"Template: {spec.title or spec.name}"]
+    if spec.results != "regression":
+        lines.append(
+            f"- Results: {k.label}. The analysis step (econometrics_specialist) writes {RESULTS_FILE} in the "
+            f"{spec.results} results schema; nobody estimates a regression unless the plan asks for one."
+        )
+    if not spec.causal:
+        lines.append(
+            "- No causal claim: no identification strategy is needed (do not dispatch identification_strategist "
+            "or theory_specialist); describe patterns and associations, not effects."
+        )
+    panel = spec.panel()
+    lines.append(f"- Review panel: {', '.join(panel)}.")
     return "\n".join(lines)
 
 

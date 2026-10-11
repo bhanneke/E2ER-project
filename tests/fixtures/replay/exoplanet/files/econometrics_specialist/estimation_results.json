@@ -1,0 +1,116 @@
+{
+  "result_kind": "descriptive",
+  "sample": {
+    "n_observations": 60,
+    "unit": "planet",
+    "source": "data/exoplanets.csv (synthetic)"
+  },
+  "statistics": {
+    "radius_earth": {
+      "n": 60,
+      "mean": 3.8088,
+      "sd": 3.6045,
+      "min": 1.2,
+      "p25": 1.7325,
+      "median": 2.515,
+      "p75": 3.38,
+      "max": 14.29,
+      "unit": "Earth radii"
+    },
+    "period_days": {
+      "n": 60,
+      "mean": 46.1622,
+      "sd": 63.7519,
+      "min": 0.87,
+      "p25": 4.6187,
+      "median": 14.814,
+      "p75": 56.463,
+      "max": 279.189,
+      "unit": "days"
+    },
+    "transit": {
+      "n": 60,
+      "count": 47,
+      "share": 0.7833
+    }
+  },
+  "distributions": {
+    "radius": {
+      "variable": "radius_earth",
+      "n": 60,
+      "bins": [
+        {
+          "lower": 0.5,
+          "upper": 1.0,
+          "count": 0
+        },
+        {
+          "lower": 1.0,
+          "upper": 1.5,
+          "count": 10
+        },
+        {
+          "lower": 1.5,
+          "upper": 2.0,
+          "count": 7
+        },
+        {
+          "lower": 2.0,
+          "upper": 3.0,
+          "count": 24
+        },
+        {
+          "lower": 3.0,
+          "upper": 4.0,
+          "count": 9
+        },
+        {
+          "lower": 4.0,
+          "upper": 6.0,
+          "count": 0
+        },
+        {
+          "lower": 6.0,
+          "upper": 10.0,
+          "count": 2
+        },
+        {
+          "lower": 10.0,
+          "upper": 16.0,
+          "count": 8
+        }
+      ]
+    },
+    "method": {
+      "variable": "discovery_method",
+      "n": 60,
+      "categories": [
+        {
+          "category": "Radial velocity",
+          "count": 13
+        },
+        {
+          "category": "Transit",
+          "count": 47
+        }
+      ]
+    }
+  },
+  "associations": {
+    "radius_period": {
+      "x": "period_days",
+      "y": "radius_earth",
+      "method": "spearman",
+      "estimate": -0.1423,
+      "n": 60
+    }
+  },
+  "small_planets": {
+    "n_below_4_earth_radii": 50,
+    "n_between_1_5_and_2": 7
+  },
+  "figures": [
+    "fig_radius_period.pdf",
+    "fig_radius_hist.pdf"
+  ]
+}

@@ -1,0 +1,204 @@
+{
+  "name": "exoplanet",
+  "source": "Hand-made test fixture of the discipline-neutral core (0.16.0), not a recorded run: a descriptive study of a SYNTHETIC planet sample (make_fixture.py builds the data and the computed files; the plans, draft and reviews are written for the test). Template: pipelines/descriptive-study.toml in this folder, copied into the study's own pipelines/ folder by the test.",
+  "template": "descriptive-study",
+  "research_question": "How are planet radii distributed in the sample, and how does radius vary with orbital period?",
+  "title": "The radius-period distribution of a synthetic planet sample",
+  "model": "claude-haiku-4-5-20251001",
+  "initial_groups": [
+    [
+      "idea_developer",
+      "literature_scanner"
+    ],
+    [
+      "data_architect"
+    ],
+    [
+      "data_analyst"
+    ],
+    [
+      "econometrics_specialist"
+    ],
+    [
+      "paper_drafter",
+      "abstract_writer"
+    ]
+  ],
+  "specialists": {
+    "idea_developer": {
+      "files": [
+        "paper_plan.md"
+      ],
+      "output": "Wrote paper_plan.md.",
+      "usage": {
+        "input_tokens": 20,
+        "output_tokens": 1000,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      }
+    },
+    "literature_scanner": {
+      "files": [
+        "literature_review.md"
+      ],
+      "output": "Wrote literature_review.md.",
+      "usage": {
+        "input_tokens": 20,
+        "output_tokens": 1000,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      }
+    },
+    "data_architect": {
+      "files": [
+        "data_dictionary.json"
+      ],
+      "output": "Wrote data_dictionary.json.",
+      "usage": {
+        "input_tokens": 20,
+        "output_tokens": 1000,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      }
+    },
+    "data_analyst": {
+      "files": [
+        "data_summary.md",
+        "summary_statistics.json",
+        "figure_spec.json",
+        "data.db"
+      ],
+      "output": "Wrote data_summary.md, summary_statistics.json, figure_spec.json, data.db.",
+      "usage": {
+        "input_tokens": 20,
+        "output_tokens": 1000,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      }
+    },
+    "econometrics_specialist": {
+      "files": [
+        "econometric_spec.md",
+        "run_estimation.py",
+        "estimation_results.json"
+      ],
+      "output": "Wrote econometric_spec.md, run_estimation.py, estimation_results.json.",
+      "usage": {
+        "input_tokens": 20,
+        "output_tokens": 1000,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      }
+    },
+    "paper_drafter": {
+      "files": [
+        "paper_draft.tex",
+        "table_spec.json"
+      ],
+      "output": "Wrote paper_draft.tex, table_spec.json.",
+      "usage": {
+        "input_tokens": 20,
+        "output_tokens": 1000,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      }
+    },
+    "abstract_writer": {
+      "files": [
+        "abstract.tex"
+      ],
+      "output": "Wrote abstract.tex.",
+      "usage": {
+        "input_tokens": 20,
+        "output_tokens": 1000,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      }
+    },
+    "data_reviewer": {
+      "files": [
+        "review_data.md"
+      ],
+      "output": "Wrote review_data.md.",
+      "usage": {
+        "input_tokens": 20,
+        "output_tokens": 1000,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      }
+    },
+    "methods_reviewer": {
+      "files": [
+        "review_methods.md"
+      ],
+      "output": "Wrote review_methods.md.",
+      "usage": {
+        "input_tokens": 20,
+        "output_tokens": 1000,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      }
+    },
+    "plausibility_reviewer": {
+      "files": [
+        "review_plausibility.md"
+      ],
+      "output": "Wrote review_plausibility.md.",
+      "usage": {
+        "input_tokens": 20,
+        "output_tokens": 1000,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      }
+    },
+    "literature_reviewer": {
+      "files": [
+        "review_literature.md"
+      ],
+      "output": "Wrote review_literature.md.",
+      "usage": {
+        "input_tokens": 20,
+        "output_tokens": 1000,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      }
+    },
+    "writing_reviewer": {
+      "files": [
+        "review_writing.md"
+      ],
+      "output": "Wrote review_writing.md.",
+      "usage": {
+        "input_tokens": 20,
+        "output_tokens": 1000,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      }
+    },
+    "patch_revisor": {
+      "files": [
+        "paper_draft.tex.edits.json"
+      ],
+      "output": "Wrote paper_draft.tex.edits.json.",
+      "usage": {
+        "input_tokens": 20,
+        "output_tokens": 1000,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      }
+    },
+    "replication_packager": {
+      "files": [
+        "replication/estimation.py",
+        "replication/README.md"
+      ],
+      "output": "Wrote replication/estimation.py, replication/README.md.",
+      "usage": {
+        "input_tokens": 20,
+        "output_tokens": 1000,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      }
+    }
+  }
+}

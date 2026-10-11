@@ -132,6 +132,41 @@
         },
         "additionalProperties": false
       }
+    },
+    "results": {
+      "enum": [
+        "regression",
+        "descriptive",
+        "timeseries",
+        "spatial",
+        "text"
+      ],
+      "default": "regression",
+      "description": "The kind of results the study reports. Decides the contract the estimation check holds estimation_results.json to (src/core/pipeline/result_kinds.py), the files the number check traces the paper's numbers to, and the schema skill the analysis specialist reads (data/<kind>-results-schema). Default regression: e2er's contract before 0.16.0."
+    },
+    "causal": {
+      "type": "boolean",
+      "description": "Whether the study makes a causal claim. When true, the identification strategist's identification_spec.json is required and the headline regression must implement it. Default: true for regression results, false for every other kind."
+    },
+    "base_skill": {
+      "type": "string",
+      "default": "base/economist",
+      "description": "The persona skill specialists read in place of base/economist, e.g. base/researcher outside economics."
+    },
+    "data_skills": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "The domain data skills of the data architect and data analyst. When given, they replace the blockchain, DeFi and Allium skills (the general connector skills stay); [] keeps none. Absent: the registry's, as before."
+    },
+    "review_weights": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "number",
+        "exclusiveMinimum": 0
+      },
+      "description": "Weight of each reviewer of the template's panel (its aggregate step) in the combined score, in place of the default weight. Only reviewers of the panel."
     }
   },
   "$defs": {

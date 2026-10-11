@@ -24,7 +24,7 @@ from ..specialists.dispatcher import (
     execute_parallel,
     execute_with_dependencies,
 )
-from ..specialists.registry import POLISH_SPECIALISTS, REVIEWER_SPECIALISTS, SPECIALIST_ARTIFACTS
+from ..specialists.registry import ALL_REVIEWERS, POLISH_SPECIALISTS, REVIEWER_SPECIALISTS, SPECIALIST_ARTIFACTS
 from ..strategist.actions import StrategistDecision
 from ..strategist.engine import StrategistEngine
 from ..strategist.review_aggregator import aggregate_reviews, parse_review_output
@@ -315,13 +315,24 @@ class PipelineRunner:
     def _template_components(self) -> dict[str, Any] | None:
         """The ``template_components`` event: the template's skills, sidecars and credit; None when it has none."""
         spec = self._spec
-        if not (spec.skills or spec.sidecars or spec.credit):
+        if not (spec.skills or spec.sidecars or spec.credit or not spec.is_default_core()):
             return None
         out: dict[str, Any] = {
             "template": spec.name,
             "skills": {k: list(v) for k, v in spec.skills.items()},
             "sidecars": {k: list(v) for k, v in spec.sidecars.items()},
         }
+        if not spec.is_default_core():
+            # What the template changes about e2er's economics defaults (0.16.0): the
+            # results contract, the causal claim, the persona, the data skills, the panel.
+            out["core"] = {
+                "results": spec.results,
+                "causal": spec.causal,
+                "base_skill": spec.base_skill,
+                "data_skills": list(spec.data_skills) if spec.data_skills is not None else None,
+                "panel": spec.panel(),
+                "review_weights": dict(spec.review_weights),
+            }
         if spec.credit:
             # The work the template is based on (`[[credit]]`), as the template file says it, so that
             # the dossier credits it as the run recorded it. Without credit the event is as before.
@@ -1096,9 +1107,9 @@ class PipelineRunner:
         Each gets the registry's default focus for it; retries, contract
         feedback and the cascade guard are the dispatcher's, as everywhere.
         """
-        from ..specialists.registry import POLISH_SPECIALISTS, REVIEWER_SPECIALISTS, SPECIALIST_DEFAULT_FOCUS
+        from ..specialists.registry import SPECIALIST_DEFAULT_FOCUS
 
-        tolerant = set(REVIEWER_SPECIALISTS) | set(POLISH_SPECIALISTS)
+        tolerant = set(ALL_REVIEWERS) | set(POLISH_SPECIALISTS)
         state = getattr(self, "_state", None)
         meta = state.metadata if state is not None and isinstance(getattr(state, "metadata", None), dict) else {}
         # After a stop for output that failed its contract: the specialists of
@@ -1655,13 +1666,7 @@ class PipelineRunner:
             order = WorkOrder(
                 paper_id=self._paper_id,
                 specialist=specialist,
-                focus=(
-                    "The analysis phase ended WITHOUT a valid estimation, so the paper "
-                    "is blocked before drafting. Produce a working run_estimation.py and "
-                    "a populated estimation_results.json whose 'main' entry implements "
-                    "the declared identification (see identification_spec.json). Feedback "
-                    "from the failed attempt, if any, is included below."
-                ),
+                focus=_estimation_gate_focus(),
                 context_tier=2,
             )
             contribution = await execute_work_order(
@@ -1799,6 +1804,11 @@ class PipelineRunner:
 
         attack_report_path = self._workspace / "self_attack_report.json"
         active_polish = _select_polish_specialists(attack_report_path)
+        spec = getattr(self, "_spec", None)
+        if spec is not None:
+            # Only the polish steps the template declares (its `polish` step).
+            declared = spec.polish()
+            active_polish = [p for p in active_polish if p in declared]
 
         polish_orders = [
             WorkOrder(
@@ -1911,6 +1921,11 @@ class PipelineRunner:
             payload={k: record[k] for k in ("notes", "decision", "changes_made") if k in record},
         )
 
+    def _panel(self) -> list[str]:
+        """The template's reviewer panel (its `aggregate` step); e2er's default panel without a template."""
+        spec = getattr(self, "_spec", None)
+        return spec.panel() if spec is not None else list(REVIEWER_SPECIALISTS)
+
     def _reviewers_for_methodology(self) -> list[str]:
         """Filter the reviewer roster by methodology.
 
@@ -1918,9 +1933,10 @@ class PipelineRunner:
         reviewed an empty contract on paper cbe8048f (live test v0.4.5)
         and produced a generic stub for ~$0.34. Skip it.
         """
+        panel = self._panel()
         if self._methodology == "theoretical":
-            return [r for r in REVIEWER_SPECIALISTS if r != "data_reviewer"]
-        return list(REVIEWER_SPECIALISTS)
+            return [r for r in panel if r != "data_reviewer"]
+        return panel
 
     async def _run_review_phase(self) -> PaperStatus:
         """Parallel formal review by all reviewer specialists.
@@ -2063,7 +2079,7 @@ class PipelineRunner:
             why = "; ".join(
                 f"{c.specialist}: {(c.error or 'no score line in its review')[:200]}"
                 for c in contributions
-                if c.specialist in REVIEWER_SPECIALISTS
+                if c.specialist in self._panel()
             )
             raise StepFailedError(
                 PaperStatus.FAILED,
@@ -2120,7 +2136,7 @@ class PipelineRunner:
                 "revision",
             )
 
-        result = aggregate_reviews(scores)
+        result = aggregate_reviews(scores)  # the running template's panel and weights
         logger.info("Internal quality review: %.2f of 10 (%s)", result.weighted_avg, result.rule_triggered)
         self._write_review_aggregation(result)
 
@@ -2170,7 +2186,8 @@ class PipelineRunner:
         absent. Returns the list of parsed scores (possibly empty)."""
         scores = []
         seen = set()
-        for reviewer in REVIEWER_SPECIALISTS:
+        panel = self._panel()
+        for reviewer in panel:
             artifact = SPECIALIST_ARTIFACTS.get(reviewer, "")
             if artifact:
                 path = self._workspace / artifact
@@ -2180,7 +2197,7 @@ class PipelineRunner:
                         scores.append(score)
                         seen.add(reviewer)
         # Only each reviewer's latest reply: an earlier round's reply never stands in for this one.
-        latest = {c.specialist: c for c in self._contributions if c.specialist in REVIEWER_SPECIALISTS}
+        latest = {c.specialist: c for c in self._contributions if c.specialist in panel}
         for c in latest.values():
             if c.specialist not in seen:
                 score = parse_review_output(c.specialist, c.output)
@@ -2217,11 +2234,12 @@ class PipelineRunner:
         if scores is not None:
             reported = [s.reviewer for s in scores]
             salvaged = [s.reviewer for s in scores if getattr(s, "source", "file") != "file"]
+            panel = self._panel()
             doc["panel"] = {
-                "expected": len(REVIEWER_SPECIALISTS),
+                "expected": len(panel),
                 "reported": len(reported),
-                "complete": len(reported) == len(REVIEWER_SPECIALISTS),
-                "missing": sorted(set(REVIEWER_SPECIALISTS) - set(reported)),
+                "complete": len(reported) == len(panel),
+                "missing": sorted(set(panel) - set(reported)),
                 # Scored from the reviewer's reply text because it never wrote
                 # its file: the score counts, but no report exists for the
                 # revision round or the bundle.
@@ -2243,7 +2261,7 @@ class PipelineRunner:
         """Concatenate the reviewer reports from disk for the deep-revision
         prompt — the substantive findings the research must address."""
         parts: list[str] = []
-        for reviewer in REVIEWER_SPECIALISTS:
+        for reviewer in self._panel():
             art = SPECIALIST_ARTIFACTS.get(reviewer, "")
             if not art:
                 continue
@@ -2808,6 +2826,19 @@ class PipelineRunner:
             if isinstance(data, dict):
                 merged.update(data)
 
+        if any(u.kind in ("source", "path", "row", "field") for u in unresolved):
+            # A `records` table (rows of statistics, categories, periods): the
+            # checker's own report names what each table could not find.
+            from ..renderer.check_tables import format_report
+            from ..renderer.tables import RenderReport
+
+            return (
+                "Your `table_spec.json` has references that do not resolve, so those table cells rendered blank "
+                "(`---`). Correct them from the report below, using the exact names in the results files; keep the "
+                "table structure.\n\n" + format_report(RenderReport(unresolved=list(unresolved)), merged) + "\n\n"
+                "Output the corrected `table_spec.json` (and only that file).\n"
+            )
+
         spec_keys = sorted(k for k in merged if not k.startswith("_"))
         if not spec_keys:
             return None
@@ -3050,7 +3081,7 @@ class PipelineRunner:
         # forever (the run #14 failure mode). Tolerant specialists
         # (reviewers + polish) are exempt — they can fail without blocking
         # downstream work.
-        tolerant = set(REVIEWER_SPECIALISTS) | set(POLISH_SPECIALISTS)
+        tolerant = set(ALL_REVIEWERS) | set(POLISH_SPECIALISTS)
         for wo in decision.work_orders:
             spec = wo.specialist
             if spec in tolerant:
@@ -3183,7 +3214,7 @@ class PipelineRunner:
                 self._backend_name,
                 self._governance,
             )
-            if contract_orders[0].specialist in (set(REVIEWER_SPECIALISTS) | set(POLISH_SPECIALISTS)):
+            if contract_orders[0].specialist in (set(ALL_REVIEWERS) | set(POLISH_SPECIALISTS)):
                 c = await execute_work_order(*args)
             else:
                 # Output that fails its contract gets the same attempts as in a
@@ -3224,7 +3255,7 @@ class PipelineRunner:
         - Tolerant specialists (reviewers, polish) are not tracked because
           their failure is non-blocking and shouldn't trip the breaker.
         """
-        tolerant = set(REVIEWER_SPECIALISTS) | set(POLISH_SPECIALISTS)
+        tolerant = set(ALL_REVIEWERS) | set(POLISH_SPECIALISTS)
         for c in contributions:
             if c.specialist in tolerant:
                 continue
@@ -3428,6 +3459,28 @@ def _sequence_check(check: str) -> Any:
     if check in _FIELDMAP_CHECKS:
         return _FIELDMAP_CHECKS[check]
     raise ValueError(f"check {check!r} cannot run as a step of its own")
+
+
+def _estimation_gate_focus() -> str:
+    """The work order of a re-dispatch by the estimation gate, for the template's kind of results."""
+    from ..pipeline.result_kinds import RESULTS_FILE, active_causal, active_kind, get
+
+    kind = active_kind()
+    if kind == "regression" and active_causal():
+        return (
+            "The analysis phase ended WITHOUT a valid estimation, so the paper "
+            "is blocked before drafting. Produce a working run_estimation.py and "
+            "a populated estimation_results.json whose 'main' entry implements "
+            "the declared identification (see identification_spec.json). Feedback "
+            "from the failed attempt, if any, is included below."
+        )
+    k = get(kind)
+    return (
+        "The analysis phase ended WITHOUT valid results, so the paper is blocked before drafting. "
+        f"Produce a working run_estimation.py and a populated {RESULTS_FILE} with the {k.label} this "
+        f"study reports, as your {k.schema_skill} skill specifies. Feedback from the failed attempt, "
+        "if any, is included below."
+    )
 
 
 def _estimation_next(orders: list[WorkOrder]) -> bool:

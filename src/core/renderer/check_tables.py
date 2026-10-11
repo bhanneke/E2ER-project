@@ -41,6 +41,7 @@ from pathlib import Path
 from typing import Any
 
 from .tables import (
+    RECORD_SOURCES,
     RenderReport,
     UnresolvedRef,
     _load_json,
@@ -135,6 +136,9 @@ def _describe(kind: str, column: str, refs: list[UnresolvedRef], sources: dict[s
             lines.append(f"      that spec HAS these coefficients: {', '.join(names) if names else '(none)'}")
         return lines
 
+    if kind in _RECORD_KINDS:
+        return _describe_records(kind, column, refs)
+
     # "stat" — `column` is the column's spec_key.
     spec_obj = _spec_by_key(sources, column)
     lines = [f"  column {column!r}" if column else "  (no column recorded)"]
@@ -160,6 +164,26 @@ def _describe(kind: str, column: str, refs: list[UnresolvedRef], sources: dict[s
         names = sorted(_stat_field_names(spec_obj))
         lines.append(f"      that object HAS these fields: {', '.join(names) if names else '(none)'}")
     return lines
+
+
+#: Unresolved references of a ``records`` table (tables.py, ``_render_records_table``).
+_RECORD_KINDS = frozenset({"source", "path", "row", "field"})
+
+
+def _describe_records(kind: str, column: str, refs: list[UnresolvedRef]) -> list[str]:
+    """What a ``records`` table could not find, and what is there instead."""
+    missing = ", ".join(r.ref or "(empty)" for r in refs)
+    if kind == "source":
+        return [f"  source not readable by a records table: {missing}", f"      allowed: {', '.join(RECORD_SOURCES)}"]
+    if kind == "path":
+        return [
+            "  path not found, or not an object of objects / a list of objects, "
+            f"in {column or 'the source'}: {missing}",
+            "      name the dotted path to the entries the rows show (e.g. statistics, distributions.radius.bins)",
+        ]
+    if kind == "row":
+        return [f"  rows not found under {column!r}: {missing}"]
+    return [f"  row {column!r}: fields not found: {missing}"]
 
 
 def format_report(report: RenderReport, sources: dict[str, Any]) -> str:

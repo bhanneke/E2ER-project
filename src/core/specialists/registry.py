@@ -24,6 +24,10 @@ SPECIALIST_ARTIFACTS: dict[str, str] = {
     "writing_reviewer": "review_writing.md",
     "data_reviewer": "review_data.md",
     "identification_reviewer": "review_identification.md",
+    # Discipline-neutral reviewers (0.16.0) for templates outside economics: the
+    # methods the study used, and whether its numbers are plausible in its domain.
+    "methods_reviewer": "review_methods.md",
+    "plausibility_reviewer": "review_plausibility.md",
     # V3 extensions
     "self_attacker": "self_attack_report.json",
     "polish_formula": "polish_formula.md",
@@ -158,6 +162,8 @@ SPECIALIST_SKILLS: dict[str, list[str]] = {
     "writing_reviewer": ["review/writing-quality", "reasoning/anti-slop"],
     "data_reviewer": ["review/data-quality", "data/cleaning"],
     "identification_reviewer": ["causal-inference/sensitivity", "review/technical-review"],
+    "methods_reviewer": ["review/methods-review", "review/consistency-check"],
+    "plausibility_reviewer": ["review/domain-plausibility", "review/consistency-check"],
     "self_attacker": [
         "review/referee-simulation",
         "reasoning/argument-audit",
@@ -300,6 +306,19 @@ REVIEWER_SPECIALISTS = [
     "identification_reviewer",
 ]
 
+#: Every reviewer a template may put on its panel (its `aggregate` step): e2er's
+#: default panel above, then the discipline-neutral reviewers. Membership tests
+#: ("is this a reviewer?") use this list; REVIEWER_SPECIALISTS stays the panel of
+#: the economics templates, whose behaviour 0.16.0 leaves as it was.
+ALL_REVIEWERS = [*REVIEWER_SPECIALISTS, "methods_reviewer", "plausibility_reviewer"]
+
+#: Data skills that belong to one domain (blockchain and DeFi data, the Allium
+#: warehouse). A template that declares ``data_skills`` replaces these with its
+#: own; the general connector skills (FRED, yfinance, GMD, ...) stay.
+DOMAIN_DATA_SKILLS: frozenset[str] = frozenset(
+    {"data/blockchain", "data/crypto-defi", "data/allium-cli", "data/allium-developer-api"}
+)
+
 POLISH_SPECIALISTS = [
     "polish_formula",
     "polish_numerics",
@@ -340,7 +359,7 @@ SPECIALIST_REWRITES_OUTPUTS: frozenset[str] = frozenset(
         "reproduction_comparer",
         "field_boundary_designer",
         "field_lane_mapper",
-        *REVIEWER_SPECIALISTS,
+        *ALL_REVIEWERS,
     }
 )
 

@@ -89,6 +89,8 @@ SPECIALISTS: dict[str, str] = {
     "data_reviewer": "Review of the data",
     "identification_reviewer": "Review of the identification",
     "writing_reviewer": "Review of the writing",
+    "methods_reviewer": "Review of the methods",
+    "plausibility_reviewer": "Review of domain plausibility",
     "revisor": "Revision",
     "patch_revisor": "Targeted corrections",
     "replication_packager": "Replication package",

@@ -6,10 +6,10 @@ Every specialist the strategist can dispatch, the skill files it is given, and
 the artifacts it must produce. A specialist that does not write its declared
 artifact fails its contract and is retried with the violation fed back.
 
-- **31** specialists
-- **69** skill files on disk
-- **58** referenced by at least one specialist
-- **11** never referenced
+- **33** specialists
+- **75** skill files on disk
+- **60** referenced by at least one specialist
+- **15** never referenced
 
 ## Shipped but never loaded
 
@@ -21,6 +21,10 @@ methodology guidance exists, and no specialist is given it.
 - `causal-inference/shift-share`
 - `causal-inference/weak-instruments`
 - `data/byod`
+- `data/descriptive-results-schema`
+- `data/spatial-results-schema`
+- `data/text-results-schema`
+- `data/timeseries-results-schema`
 - `data/visualization`
 - `econometrics/rdd`
 - `econometrics/time-series`
@@ -112,6 +116,11 @@ methodology guidance exists, and no specialist is given it.
 - **Writes:** `review_mechanism.md`
 - **Skills (2):** `review/referee-simulation`, `modeling/market-microstructure`
 
+### `methods_reviewer`
+
+- **Writes:** `review_methods.md`
+- **Skills (2):** `review/methods-review`, `review/consistency-check`
+
 ### `paper_drafter`
 
 - **Writes:** `paper_draft.tex`
@@ -122,6 +131,11 @@ methodology guidance exists, and no specialist is given it.
 
 - **Writes:** `paper_draft.tex.edits.json`
 - **Skills (4):** `writing/scoped-revision`, `writing/cite-numbers-by-source`, `writing/personal-style`, `reasoning/anti-slop`
+
+### `plausibility_reviewer`
+
+- **Writes:** `review_plausibility.md`
+- **Skills (2):** `review/domain-plausibility`, `review/consistency-check`
 
 ### `polish_bibliography`
 
@@ -246,8 +260,10 @@ The reverse index: who is affected if you edit a skill file.
 | `replication/replication-plan` | `replication_planner` |
 | `replication/reproduction-protocol` | `replication_planner`, `reproduction_comparer` |
 | `replication/reproduction-report` | `reproduction_comparer` |
-| `review/consistency-check` | `polish_numerics`, `technical_reviewer` |
+| `review/consistency-check` | `methods_reviewer`, `plausibility_reviewer`, `polish_numerics`, `technical_reviewer` |
 | `review/data-quality` | `data_reviewer` |
+| `review/domain-plausibility` | `plausibility_reviewer` |
+| `review/methods-review` | `methods_reviewer` |
 | `review/referee-simulation` | `literature_reviewer`, `mechanism_reviewer`, `self_attacker` |
 | `review/technical-review` | `identification_reviewer`, `technical_reviewer` |
 | `review/writing-quality` | `writing_reviewer` |

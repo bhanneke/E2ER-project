@@ -339,6 +339,39 @@ def check_matches_declared_spec(workspace: Path, results_relative: str) -> Contr
 # ── p-values follow from t; every pre-registered hypothesis has a result ────
 
 
+def check_result_contract(workspace: Path, results_relative: str, kind: str) -> ContractCheck:
+    """The results file follows the contract of its template's kind of results (not regression).
+
+    Structure (the blocks the kind requires) and consistency (the relations its
+    numbers must satisfy); see src/core/pipeline/result_kinds.py and the kind's
+    schema skill. A verification check, like the regression contract: the file
+    exists and parses (reliability is satisfied); this asks whether what it
+    holds supports the paper.
+    """
+    from ..pipeline.result_kinds import check_results, get
+
+    try:
+        data = json.loads((workspace / results_relative).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        # Parse/read problems are owned by check_artifact_nonempty.
+        return ContractCheck(results_relative, True, "", kind=KIND_VERIFICATION)
+    problems = check_results(kind, data, workspace)
+    if not problems:
+        return ContractCheck(results_relative, True, "", kind=KIND_VERIFICATION)
+    more = f"; and {len(problems) - 8} more" if len(problems) > 8 else ""
+    k = get(kind)
+    return ContractCheck(
+        results_relative,
+        False,
+        f"{kind} results contract: "
+        + "; ".join(problems[:8])
+        + more
+        + f". This study reports {k.label}; write {results_relative} as the {k.schema_skill} skill specifies "
+        "(from the script that computes it, never by hand).",
+        kind=KIND_VERIFICATION,
+    )
+
+
 def check_statistics_consistent(workspace: Path, results_relative: str) -> ContractCheck:
     """t = estimate / se and p follows from t, for every coefficient (src/core/pipeline/statistics.py).
 
@@ -795,6 +828,8 @@ def check_specialist_artifacts(workspace: Path, specialist: str) -> list[Contrac
     """
     # Imported lazily so this module stays dependency-light and can
     # be unit-tested without the registry side effects.
+    from ..pipeline.components import optional_sidecars
+    from ..pipeline.result_kinds import active_causal, active_kind
     from .registry import (
         SPECIALIST_ARTIFACTS,
         SPECIALIST_OPTIONAL_SIDECARS,
@@ -806,19 +841,30 @@ def check_specialist_artifacts(workspace: Path, specialist: str) -> list[Contrac
     if primary:
         checks.append(check_artifact_nonempty(workspace, primary))
     # Best-effort sidecars are prompted + verify_numbers-checked when
-    # present, but not hard-gated here (no deterministic producer).
-    optional = SPECIALIST_OPTIONAL_SIDECARS.get(specialist, frozenset())
+    # present, but not hard-gated here (no deterministic producer). In a
+    # template without a causal claim the identification specification is one.
+    optional = SPECIALIST_OPTIONAL_SIDECARS.get(specialist, frozenset()) | optional_sidecars(specialist)
     for sidecar in SPECIALIST_SIDECAR_ARTIFACTS.get(specialist, []):
         if sidecar in optional:
             continue
         checks.append(check_artifact_nonempty(workspace, sidecar))
 
-    # Deterministic "an actual regression was run" gate. Only applied once the
-    # basic non-empty check for that file passed, so we don't pile a second
-    # failure on top of an already-flagged empty/invalid file.
+    # The results contract the template declares (`results` in the template,
+    # src/core/pipeline/result_kinds.py). Regression is the contract below;
+    # every other kind has its own structure and consistency checks.
     regression_file = _REGRESSION_REQUIRED.get(specialist)
-    if regression_file:
-        base_failed = any(c.artifact == regression_file and not c.ok for c in checks)
+    kind = active_kind(workspace) if regression_file else "regression"
+    base_failed = bool(regression_file) and any(c.artifact == regression_file and not c.ok for c in checks)
+    if regression_file and kind != "regression":
+        if not base_failed:
+            checks.append(check_result_contract(workspace, regression_file, kind))
+            prereg = check_preregistered_results(workspace, regression_file)
+            if prereg is not None:
+                checks.append(prereg)
+    elif regression_file:
+        # Deterministic "an actual regression was run" gate. Only applied once the
+        # basic non-empty check for that file passed, so we don't pile a second
+        # failure on top of an already-flagged empty/invalid file.
         if not base_failed:
             # These two are VERIFICATION, not reliability: the file exists and
             # parses (reliability is satisfied), and we are now asking whether
@@ -831,7 +877,12 @@ def check_specialist_artifacts(workspace: Path, specialist: str) -> list[Contrac
             # DECLARED thing"), and layering both failures would muddy the
             # retry feedback.
             if regression_check.ok:
-                checks.append(replace(check_matches_declared_spec(workspace, regression_file), kind=KIND_VERIFICATION))
+                # The identified-spec contract binds a template that makes a causal claim
+                # (every regression template unless it says `causal = false`).
+                if active_causal():
+                    checks.append(
+                        replace(check_matches_declared_spec(workspace, regression_file), kind=KIND_VERIFICATION)
+                    )
                 checks.append(check_statistics_consistent(workspace, regression_file))
                 prereg = check_preregistered_results(workspace, regression_file)
                 if prereg is not None:

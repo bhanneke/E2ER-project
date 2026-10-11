@@ -71,6 +71,50 @@ and contract tests on responses recorded live once.
 - **Recording fixtures**: two loads inside one `use_cassette` block now record (each request gets its own
   transport; before, the second load failed with "Event loop is closed").
 
+### A core without economics assumptions (for 0.16.0)
+- **A template declares the kind of results its study reports.** `results = "regression"` (the
+  default, e2er's contract as before), `"descriptive"`, `"timeseries"`, `"spatial"` or `"text"`. The
+  estimation check holds `estimation_results.json` to that kind's contract
+  (`src/core/pipeline/result_kinds.py`): descriptive (summary statistics with ordered quantiles,
+  distributions whose counts add up to their n, figures declared in `figure_spec.json`), time series
+  (models with fit statistics, forecasts inside their intervals, out-of-sample RMSE and MAE, MAE never
+  above RMSE), spatial (units, spatial statistics with their weights, Moran's I expectation
+  -1/(n - 1), p-values that follow from z, map specifications), text (corpus counts, term
+  frequencies whose per-10,000 values follow from the counts, text-model outputs). A results file of
+  these kinds starts with `"result_kind"`; one script and one file serve every kind, so rerun, export
+  and `e2er reproduce` are unchanged. Each kind has a schema skill
+  (`skills/files/data/<kind>-results-schema.md`) that the analysis specialist reads in place of the
+  econometrics skills, and whose example the tests check against the contract.
+- **The number check reads the kind's files**, and `e2er verify` adds a `results contract` check for a
+  study whose results are not a regression (none for regression studies, whose output is unchanged).
+- **Tables of statistics, categories and periods.** `table_spec.json` takes `"layout": "records"`: rows
+  are entries of the results (variables, bins, forecast periods, spatial statistics, terms) at a
+  `path` in the results or `summary_statistics.json`, columns are their fields; filled by lookup like
+  the regression layout, with unresolved paths, rows and fields reported by `e2er-check-tables` and
+  the repair round. Figures gain `scatter` and `histogram`.
+- **`causal = false`**: no `identification_spec.json` is required or asked for, and a regression need
+  not implement one. Default: causal for regression results, not for every other kind.
+- **Template-declared panel, weights and polish.** The review step scores the reviewers the template's
+  `aggregate` step names (until now the six economics reviewers ran whatever the template said) with
+  `review_weights` in place of the default weights; the mechanism rule applies only to a panel with a
+  mechanism reviewer. Two discipline-neutral reviewers can join a panel: `methods_reviewer` (skill
+  `review/methods-review`) and `plausibility_reviewer` (`review/domain-plausibility`). Polish runs only
+  the polish specialists the template's `polish` step lists.
+- **Persona and data skills from the template.** `base_skill = "base/researcher"` replaces
+  `base/economist` wherever a specialist reads it (`base/researcher` now speaks of the study's own
+  field); `data_skills = [...]` replaces the blockchain, DeFi and Allium skills of the data architect
+  and analyst (the general connector skills stay).
+- What a template changes is recorded in the `template_components` event (`core`) and shown to every
+  specialist and the strategist as a short template block; the declared skills in a study's
+  description follow the same merge. Templates that set none of this run exactly as before (tests
+  hold every shipped template to the registry's skills, panel and polish).
+- Tests: a descriptive template replays end to end on a synthetic exoplanet radius–period dataset
+  (`tests/fixtures/replay/exoplanet`, `tests/test_neutral_core_replay.py`): no regression or
+  identification is asked for, the estimation gate passes on the descriptive contract, the number
+  check traces the records tables, the five-reviewer panel scores with its weights, and the export
+  verifies with `e2er verify` (all 36 table cells at the precision shown). Contract tests per kind in `tests/test_result_kinds.py`, records
+  tables and the new figures in `tests/test_records_tables.py`.
+
 ## [0.15.3] — 2026-10-11
 
 ### A subscription plan's usage limit pauses the run

@@ -32,6 +32,68 @@ specialist or file name stops the template from loading. The merged skills are
 listed in the study's description (`e2er.json`, `components.skills`) and pinned
 in its dossier; the run also logs them as a `template_components` event.
 
+## Results, causal claim, persona, data skills and panel (outside economics)
+
+e2er's defaults come from economics: the analysis must report a regression
+(`coefficients`, t = estimate / se), an identification strategy is required,
+specialists read the economist persona, the data specialists read the
+blockchain and DeFi skills, and six reviewers score the draft with mechanism
+and identification among them. A template for astronomy, earth science,
+geography, health or literature declares what it needs instead:
+
+```toml
+results     = "descriptive"     # regression (default) | descriptive | timeseries | spatial | text
+causal      = false             # default: true for regression, false for every other kind
+base_skill  = "base/researcher" # default base/economist
+data_skills = []                # replaces the blockchain/DeFi/Allium data skills; absent = as before
+review_weights = { methods_reviewer = 1.5, data_reviewer = 1.25 }
+
+[[steps]]
+kind = "aggregate"
+name = "review"
+run  = ["data_reviewer", "methods_reviewer", "plausibility_reviewer", "literature_reviewer", "writing_reviewer"]
+```
+
+- **`results`** names the contract `estimation_results.json` is held to
+  (`src/core/pipeline/result_kinds.py`). Every kind is written by the same
+  script (`run_estimation.py`) to the same file, so rerun, export and
+  reproduce work unchanged; a file of a kind other than regression starts
+  with `"result_kind": "<kind>"`. Each kind has a schema skill
+  (`skills/files/data/<kind>-results-schema.md`) and deterministic checks:
+  *descriptive* (summary statistics with ordered quantiles, distributions
+  whose counts add up, figures declared in `figure_spec.json`), *timeseries*
+  (fitted models with fit statistics, forecasts inside their intervals,
+  out-of-sample RMSE and MAE with MAE <= RMSE), *spatial* (units, spatial
+  statistics with their weights, Moran's I expectation -1/(n - 1), p from z,
+  map specifications), *text* (corpus counts, term frequencies whose
+  per-10,000 values follow from the counts, text-model outputs). The number
+  check traces the paper's numbers to the kind's files, and `e2er verify`
+  adds a `results contract` check for these kinds. Tables of statistics,
+  bins, periods or terms are `records` tables in `table_spec.json` (see
+  `skills/files/data/table-spec.md`); figures may be `scatter` and
+  `histogram` besides the earlier types.
+- **`causal = false`**: `identification_spec.json` is not required and not
+  asked for, and a regression need not implement one.
+- **`base_skill`** replaces `base/economist` wherever a specialist reads it.
+- **`data_skills`** replaces the domain data skills of the data architect
+  and analyst (`data/blockchain`, `data/crypto-defi`, `data/allium-cli`,
+  `data/allium-developer-api`); the general connector skills stay.
+- **The panel** is the template's `aggregate` step, now honoured as written
+  (the six economics reviewers are the default panel). Two
+  discipline-neutral reviewers can join it: `methods_reviewer` (whether the
+  methods answer the question in the field's own terms) and
+  `plausibility_reviewer` (whether the numbers are plausible in the domain).
+  `review_weights` sets a reviewer's weight in the combined score; the
+  mechanism rule applies only to a panel with a mechanism reviewer.
+- **Polish** runs only the polish specialists the template's `polish` step lists.
+
+A template that sets none of these runs exactly as before. What a template
+changes is logged in the `template_components` event (`core`) and shown to
+every specialist and the strategist as a short template block in their
+context. `tests/fixtures/replay/exoplanet/pipelines/descriptive-study.toml` is
+a complete descriptive template (the replay test runs it end to end on a
+synthetic dataset).
+
 ## Credit
 
 A template names the work it is based on, draws from or cites in `[[credit]]`

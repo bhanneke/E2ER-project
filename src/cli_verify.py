@@ -725,6 +725,27 @@ def _check_spec(ws: Path) -> Check:
     return Check("spec", FAIL, c.reason)
 
 
+# ── check 4b: the results contract of a study that is not a regression ───────
+
+
+def _check_results_contract(ws: Path) -> Check | None:
+    """The results file against the contract of the kind it names (``result_kind``).
+
+    None for a regression study (the file names no kind): its contract is the
+    spec and numbers checks above, and its verify output stays as it was.
+    """
+    from .core.pipeline.result_kinds import RESULTS_FILE, check_results, file_kind, get
+
+    kind = file_kind(ws)
+    if kind is None or kind == "regression":
+        return None
+    problems = check_results(kind, _load_json(ws / RESULTS_FILE), ws)
+    if problems:
+        more = f"; and {len(problems) - 3} more" if len(problems) > 3 else ""
+        return Check("results contract", FAIL, f"{kind}: " + "; ".join(problems[:3]) + more)
+    return Check("results contract", PASS, f"{kind} results ({get(kind).label}) are complete and consistent")
+
+
 # ── check 4: citations (offline) ─────────────────────────────────────────────
 
 
@@ -982,6 +1003,9 @@ def _run_checks(bundle: Path, online: bool) -> list[Check]:
         checks.append(_check_numbers(bundle, ws))
         checks.append(_check_tables(bundle, ws))
         checks.append(_check_spec(ws))
+        contract = _check_results_contract(ws)
+        if contract is not None:
+            checks.append(contract)
         checks.append(_check_citations_offline(bundle))
     required = _required_checks(bundle)
     prereg = _check_preregistration(bundle, required.get("preregistration"))
@@ -998,7 +1022,9 @@ def _run_checks(bundle: Path, online: bool) -> list[Check]:
 # The checks that actually verify CONTENT. Integrity (hashing files against
 # provenance.json) proves only that the bundle is unchanged since export — a
 # bundle can be perfectly self-consistent and still have had nothing checked.
-_CONTENT_CHECKS = frozenset({"numbers", "tables", "spec", "citations", "preregistration", "reproduction"})
+_CONTENT_CHECKS = frozenset(
+    {"numbers", "tables", "spec", "results contract", "citations", "preregistration", "reproduction"}
+)
 
 
 def _verdict(checks: list[Check]) -> tuple[str, int]:

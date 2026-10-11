@@ -1,0 +1,73 @@
+# A descriptive data study: question and data in, a description of the data out.
+#
+# Test fixture of the discipline-neutral core (0.16.0): the template declares
+# the kind of results it reports (`results = "descriptive"`), makes no causal
+# claim (no identification strategy is required), reads the researcher persona
+# instead of the economist's, keeps the blockchain/DeFi data skills out, and
+# names its own review panel with weights and its own polish steps. The replay
+# test tests/test_neutral_core_replay.py runs it end to end on a synthetic
+# exoplanet dataset (tests/fixtures/replay/exoplanet).
+
+name = "descriptive-study"
+title = "Descriptive data study"
+description = "Question and data in, a description of the data out: summary statistics, distributions and figures, checked against the descriptive results contract."
+methodologies = ["empirical", "descriptive"]
+
+results     = "descriptive"
+causal      = false
+base_skill  = "base/researcher"
+data_skills = []
+review_weights = { methods_reviewer = 1.5, data_reviewer = 1.25, plausibility_reviewer = 1.25, literature_reviewer = 0.75, writing_reviewer = 0.75 }
+
+finalize = ["compile", "audit_export", "github_push", "structured_export"]
+
+[[steps]]
+kind = "strategist"
+name = "initial"
+
+[[steps]]
+kind  = "strategist"
+name  = "iterative"
+modes = ["iterative"]
+
+[[steps]]
+kind      = "gate"
+name      = "estimation_gate"
+check     = "estimation"
+on_fail   = "halt"
+resumable = false
+
+[[steps]]
+kind  = "specialists"
+name  = "self_attack"
+modes = ["iterative"]
+run   = ["self_attacker"]
+
+[[steps]]
+kind     = "specialists"
+name     = "polish"
+modes    = ["iterative"]
+parallel = true
+run      = ["polish_numerics", "polish_bibliography"]
+
+[[steps]]
+kind     = "aggregate"
+name     = "review"
+parallel = true
+run = [
+    "data_reviewer",
+    "methods_reviewer",
+    "plausibility_reviewer",
+    "literature_reviewer",
+    "writing_reviewer",
+]
+
+[[steps]]
+kind = "specialists"
+name = "revision"
+run  = ["revisor", "patch_revisor"]
+
+[[steps]]
+kind = "specialists"
+name = "replication"
+run  = ["replication_packager"]
