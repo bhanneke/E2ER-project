@@ -158,7 +158,11 @@ records have one; the rest are assessed on the abstract in `records.json`.
 
 - `decision` is `include` or `exclude`; a full-text exclusion names its
   criteria and the reason, like a screening exclusion.
-- `source_text`: `full text` when `fulltext_log.json` has one, else `abstract`.
+- `source_text`: `full text` when `fulltext_log.json` has one, else `abstract`;
+  `title` when the record has neither, and then the study can only be excluded
+  (the criterion that says the report could not be obtained, if the protocol
+  has one). A PDF the researcher saves as `data/fulltext/<id>.pdf` is read at
+  the next start.
 - `effect` holds what the study **prints**, in the protocol's measure:
   `value` with `se`, or with `ci_lower` and `ci_upper` (`ci_level` when not
   95%); for a correlation `value` and `n`; for an SMD either the printed
@@ -179,8 +183,13 @@ records have one; the rest are assessed on the abstract in `records.json`.
   included with `"effect": null` and `no_effect_reason`; it is described, not
   pooled.
 - Several effects in one study: take the one the protocol names (the total
-  score, the full sample, the primary outcome) and say in `extraction.md`
-  which you chose and why. Two reports of one sample: keep one (criterion E3
+  score, the full sample, the primary outcome, the first wave) and say in
+  `extraction.md` which you chose and why. Never choose by size: taking the
+  larger of two estimates biases the pooled effect upwards.
+- A statistic of another kind than the protocol names (a Spearman rho where it
+  asks for a Pearson r, a correlation between weekly measures within persons)
+  is not the same effect: include it only when the protocol allows it, and say
+  in `characteristics` which statistic it is. Two reports of one sample: keep one (criterion E3
   or its like).
 - `risk_of_bias`: every domain of the protocol judged with one of its
   `levels`, an `overall` judgement, and `support` naming the pages it rests on.

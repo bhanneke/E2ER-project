@@ -140,9 +140,15 @@ def structure_problems(ws: Path) -> list[str]:
             problems.append(f"{sid}: after the full text a study is included or excluded, not unsure")
             continue
         src = s.get("source_text")
-        if src not in ("full text", "abstract"):
-            problems.append(f"{sid}: `source_text` must be 'full text' or 'abstract'")
-        elif src == "full text" and (log.get(sid) or {}).get("status") != "ok":
+        has_text = (log.get(sid) or {}).get("status") == "ok"
+        if src not in ("full text", "abstract", "title"):
+            problems.append(f"{sid}: `source_text` must be 'full text', 'abstract' or (with neither) 'title'")
+        elif src == "title" and (has_text or abstracts.get(sid)):
+            problems.append(f"{sid}: says only the title was there, but it has a full text or an abstract")
+        elif src == "title" and decision != "exclude":
+            # Found in the live run (2026-10-11): records with no abstract and no open-access PDF.
+            problems.append(f"{sid}: a study with neither a full text nor an abstract can only be excluded")
+        elif src == "full text" and not has_text:
             problems.append(f"{sid}: says it was read from the full text, but fulltext_log.json has none for it")
         elif src == "abstract" and not abstracts.get(sid):
             problems.append(f"{sid}: says it was read from the abstract, but the record has no abstract")

@@ -239,7 +239,7 @@ check     = "meta_fulltext"
 resumable = false
 
 [steps.settings]
-max_downloads = 60
+max_downloads = 150
 
 [[steps]]
 kind = "specialists"

@@ -297,6 +297,24 @@ and contract tests on responses recorded live once.
     `meta_flow`, `meta_studies` and `meta_results`, every cell a value of the results; the methods'
     and the included studies' references are added to `literature.bib`. The writer's contract requires
     the tables and figures and a citation of every included study.
+- **Live run** (Claude Code, Sonnet; 2026-10-11): grit and grades in university students, open-access
+  studies in OpenAlex 2009-2025. 175 records, 1 duplicate, 174 screened (5 included, 92 unsure, 77
+  excluded), 97 sought, 40 open-access PDFs read, 16 studies pooled: r = 0.18 (95% CI 0.05 to 0.29),
+  I^2 = 97%, prediction interval -0.34 to 0.61; Egger p = 0.57. The extraction check stopped the run
+  on three numbers that were not printed where the extractor said: two sample sizes it had summed from
+  group sizes (145 + 107; 111 + 101 + 86 + 45) and one quote from the wrong sentence; the researcher
+  corrected one quote and excluded the study whose total sample size is not printed. Every one of the 48
+  remaining numbers traced; reading the correlation-matrix rows against their table headers confirmed
+  the right cells. Not caught by any check and named by the data reviewer: a study year taken as 2024
+  where the PDF says 2025. Two included studies report Spearman's rho and one a within-person
+  correlation from weekly data, which the protocol's Pearson criterion does not cover; the skill now
+  says so. `e2er verify` passed, `e2er reproduce` reproduced all 422 values, and the study is published
+  as a demonstration on a local e2er.org. Fixed from the run: a record with neither an abstract nor an
+  open-access PDF can be excluded with `source_text: "title"` (before, no value was valid and the
+  extractor failed its contract three times); OpenAlex addresses that are landing pages fall back to the
+  open-access resolvers; failed downloads are not repeated at every start; the full-text step reads up
+  to 150 records (60 would have left 37 of the 97 unread); the skill tells the extractor never to choose
+  between estimates by size.
 - Method skill `methods/meta-analysis`; method sources credited in the template and `credits.json`
   (DOIs checked on Crossref): Page et al. (2021), DerSimonian and Laird (1986), Viechtbauer (2005),
   Higgins and Thompson (2002), Riley, Higgins and Deeks (2011), Egger et al. (1997), Duval and Tweedie

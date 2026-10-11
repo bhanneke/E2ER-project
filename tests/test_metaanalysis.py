@@ -515,3 +515,45 @@ def test_the_specialists_and_checks_are_registered():
     for check in meta_checks.CHECKS:
         assert _sequence_check(check) is meta_checks.CHECKS[check]
         assert check in GATES or check in RELIABILITY_CHECKS
+
+
+def test_a_landing_page_falls_back_to_the_resolvers(ws: Path, fake, monkeypatch):
+    """OpenAlex's address is a landing page: the resolvers' PDF address is tried next (found in the live run)."""
+
+    def fetch(url: str) -> bytes:
+        if url.endswith("W102.pdf") and "resolved" not in url:
+            return b"<!doctype html><html>landing page</html>"
+        return mf.fake_pdf(url.replace("/resolved", ""))
+
+    monkeypatch.setattr(fulltext, "fetch_pdf", fetch)
+    monkeypatch.setattr(fulltext, "resolve_pdf", lambda doi: ("https://oa.example.org/resolved/W102.pdf", "unpaywall"))
+    _through(ws, "fulltext")
+    rec = json.loads((ws / "fulltext_log.json").read_text(encoding="utf-8"))["records"]["W102"]
+    assert rec["status"] == "ok" and rec["origin"] == "open access (unpaywall)"
+    assert rec["url"] == "https://oa.example.org/resolved/W102.pdf"
+
+
+def test_a_record_without_any_text_can_only_be_excluded(ws: Path, fake, monkeypatch):
+    """No abstract and no full text (found in the live run): source_text 'title', and only an exclusion."""
+    real = mf.fake_pdf
+    monkeypatch.setattr(fulltext, "fetch_pdf", lambda url: real(url) if "W111" not in url else b"")
+    excluded = _extract_with(ws, lambda d: _s(d, "W111").update(source_text="title"))
+    assert excluded.passed, excluded
+
+    def include(d: dict[str, Any]) -> None:
+        _s(d, "W111").update(source_text="title", decision="include")
+
+    v = _extract_with(ws, include)
+    assert not v.passed and "can only be excluded" in " ".join(v.reasons)
+    v = _extract_with(ws, lambda d: _s(d, "W101").update(source_text="title"))
+    assert not v.passed and "has a full text or an abstract" in " ".join(v.reasons)
+
+
+def test_full_texts_are_not_downloaded_again_but_a_supplied_pdf_is_read(ws: Path, fake, monkeypatch):
+    _through(ws, "fulltext")
+    calls: list[str] = []
+    monkeypatch.setattr(fulltext, "fetch_pdf", lambda url: calls.append(url) or mf.fake_pdf(url))
+    assert wf.fulltext_step(ws).passed and calls == []
+    (ws / "data" / "fulltext").mkdir(parents=True)
+    (ws / "data" / "fulltext" / "W108.pdf").write_bytes(mf.pdf_bytes("W101"))
+    assert wf.fulltext_step(ws).stats["retrieved"] == 9 and calls == []

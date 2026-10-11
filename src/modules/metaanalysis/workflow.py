@@ -163,7 +163,7 @@ def screening_step(ws: Path, *, sample_size: int = 20) -> Verdict:
 # ── full texts ──────────────────────────────────────────────────────────────
 
 
-def fulltext_step(ws: Path, *, max_downloads: int = 60) -> Verdict:
+def fulltext_step(ws: Path, *, max_downloads: int = 150) -> Verdict:
     ws = Path(ws)
     problems = sc.screening_problems(ws)
     if problems:

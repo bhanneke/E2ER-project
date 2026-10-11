@@ -38,7 +38,7 @@ def meta_screening(workspace: Path, *, sample_size: int = 20) -> Verdict:
     return wf.screening_step(Path(workspace), sample_size=sample_size)
 
 
-def meta_fulltext(workspace: Path, *, max_downloads: int = 60) -> Verdict:
+def meta_fulltext(workspace: Path, *, max_downloads: int = 150) -> Verdict:
     return wf.fulltext_step(Path(workspace), max_downloads=max_downloads)
 
 
