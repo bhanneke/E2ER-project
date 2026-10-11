@@ -198,7 +198,8 @@ stops the run when the values differ. Give each figure (each series of a
   (comparisons, AND, OR, NOT, IN, BETWEEN, LIKE, IS NULL).
 - `results` (+ `fields`, + `file`, default `estimation_results.json`): the
   figure's lists are the keys of a list of objects in a results file. A
-  histogram's `bins` match the list at `results` without `fields`.
+  histogram's `bins` match the list at `results` without `fields`. A `where`
+  on the entries' keys leaves some out (e.g. `"where": "lag > 0"`).
 - Numbers are compared at the precision the figure writes them.
 
 ## Rules

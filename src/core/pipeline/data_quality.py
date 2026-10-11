@@ -373,6 +373,31 @@ def _safe_where(where: str, columns: set[str]) -> str | None:
     return " ".join(out) if out else None
 
 
+def _where_entries(items: list[dict[str, Any]], condition: str) -> list[dict[str, Any]] | None:
+    """The entries of a results list that meet a simple condition on their keys; None for an unsafe condition."""
+    keys = sorted({k for i in items for k, v in i.items() if not isinstance(v, dict | list) and str(k).isidentifier()})
+    safe = _safe_where(condition, set(keys))
+    if safe is None or not keys:
+        return None
+    con = sqlite3.connect(":memory:")
+    try:
+        con.execute(f"CREATE TABLE entries (_i INTEGER, {', '.join(_quote(k) for k in keys)})")
+        con.executemany(
+            f"INSERT INTO entries VALUES (?, {', '.join('?' for _ in keys)})",
+            [
+                (n, *(i.get(k) if not isinstance(i.get(k), dict | list) else None for k in keys))
+                for n, i in enumerate(items)
+            ],
+        )
+        try:
+            rows = con.execute(f"SELECT _i FROM entries WHERE {safe} ORDER BY _i").fetchall()  # noqa: S608
+        except sqlite3.Error:
+            return None
+    finally:
+        con.close()
+    return [items[r[0]] for r in rows]
+
+
 def _decimals(v: Any) -> int:
     if isinstance(v, bool) or not isinstance(v, int | float):
         return 0
@@ -399,7 +424,10 @@ def _norm(value: Any, places: int | None) -> Any:
             x = float(value)
         except ValueError:
             return value
-        return round(x, places) if places is not None and math.isfinite(x) else value
+        if not math.isfinite(x):
+            return value
+        # A number written as text ("1", a category label for lag 1) is that number.
+        return round(x, places) if places is not None else x
     return "" if value is None else str(value)
 
 
@@ -429,6 +457,9 @@ def _compare(
         for i, (x, y) in enumerate(zip(a, b, strict=True)):
             if numeric[i] and isinstance(x, float) and isinstance(y, float):
                 if abs(x - y) > 0.5 * 10 ** (-places[i]) + 1e-9 * max(1.0, abs(y)):
+                    return f"{fields[i]}: the figure shows {x} where the data have {y}"
+            elif isinstance(x, float) and isinstance(y, float):
+                if abs(x - y) > 1e-9 * max(1.0, abs(y)):
                     return f"{fields[i]}: the figure shows {x} where the data have {y}"
             elif str(x) != str(y):
                 return f"{fields[i]}: the figure shows {x!r} where the data have {y!r}"
@@ -538,6 +569,15 @@ def _check_source(ws: Path, spec: dict[str, Any], where: str, con_holder: dict[s
             return f"{where}: source.fields must be an object"
         fields = [str(f) for f in mapping]
         keys = [str(mapping[f]) for f in fields]
+        if source.get("where"):
+            # The same simple condition as for a table, on the entries' keys (e.g. "lag > 0").
+            picked = _where_entries(items, str(source["where"]))
+            if picked is None:
+                return (
+                    f"{where}: source.where must be a simple condition on the keys of {path} "
+                    "(comparisons, AND/OR/NOT, IN, BETWEEN, LIKE, IS NULL)"
+                )
+            items = picked
         data_rows = []
         for i, item in enumerate(items):
             if any(k not in item for k in keys):

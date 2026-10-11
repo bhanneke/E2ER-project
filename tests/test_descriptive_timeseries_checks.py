@@ -458,3 +458,32 @@ def test_the_strategist_is_told_not_to_redispatch_the_forecast_designer():
         assert "do not dispatch forecast_designer again" in template_context()
     finally:
         deactivate(token)
+
+
+def test_a_results_source_can_leave_out_entries_by_a_condition(exo: Path):
+    spec = _figures(exo)
+    hist = spec["figures"][1]
+    hist["bins"] = [b for b in hist["bins"] if b["count"] > 0]
+    _write(exo / "figure_spec.json", spec)
+    assert "the figure has 6 points, the data 8" in check_figure_data(exo).reasons[0]
+    hist["source"] = {
+        "results": "distributions.radius.bins",
+        "fields": {"lower": "lower", "upper": "upper", "count": "count"},
+        "where": "count > 0",
+    }
+    hist["lower"] = [b["lower"] for b in hist["bins"]]
+    hist["upper"] = [b["upper"] for b in hist["bins"]]
+    hist["count"] = [b["count"] for b in hist["bins"]]
+    _write(exo / "figure_spec.json", spec)
+    assert check_figure_data(exo).passed, check_figure_data(exo).reasons
+    hist["source"]["where"] = "count > 0 OR 1=1; --"
+    _write(exo / "figure_spec.json", spec)
+    assert "simple condition on the keys" in check_figure_data(exo).reasons[0]
+
+
+def test_numbers_written_as_text_are_numbers(exo: Path):
+    spec = _figures(exo)
+    hist = spec["figures"][1]
+    hist["bins"] = [{**b, "count": str(b["count"])} for b in hist["bins"]]
+    _write(exo / "figure_spec.json", spec)
+    assert check_figure_data(exo).passed
