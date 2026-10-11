@@ -400,3 +400,33 @@ def test_the_strategist_is_told_to_dispatch_the_forecast_designer():
     finally:
         deactivate(token)
     assert "Dispatch data_analyst, forecast_designer before econometrics_specialist" in text
+
+
+def test_months_without_a_value_at_the_end_are_not_part_of_the_series(ts: Path):
+    # A source's latest months come back empty (not yet published): the hold-out ends at the last value.
+    con = sqlite3.connect(ts / "data.db")
+    con.execute(
+        "INSERT INTO t2m_frankfurt (lat, lon, elevation_m, year, month, date, T2M) "
+        "VALUES (50.11, 8.68, 171.61, 2024, 1, '2024-01', NULL)"
+    )
+    con.commit()
+    con.close()
+    assert check_forecast_design(ts).passed
+    d = _design(ts)
+    d["holdout"].update(start="2021-02", end="2024-01")
+    _write(ts / "forecast_design.json", d)
+    r = check_forecast_design(ts)
+    assert not r.passed and any("must be periods of the series (2001-01 to 2023-12)" in x for x in r.reasons)
+
+
+def test_a_baseline_may_describe_itself_after_its_name(ts: Path):
+    d = _design(ts)
+    d["baselines"] = [
+        {"model": "naive", "method": "naive: the last training value, held flat"},
+        {"model": "seasonal_naive", "method": "Seasonal naive (the same month one year earlier)"},
+    ]
+    _write(ts / "forecast_design.json", d)
+    assert check_forecast_design(ts).passed
+    d["baselines"] = [{"model": "naive", "method": "naively tuned ARIMA"}]
+    _write(ts / "forecast_design.json", d)
+    assert not check_forecast_design(ts).passed

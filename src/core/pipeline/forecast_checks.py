@@ -67,6 +67,16 @@ def _method(text: Any) -> str:
     return " ".join(str(text or "").lower().replace("_", " ").replace("-", " ").split())
 
 
+def _baseline_method(text: Any) -> str | None:
+    """The baseline a method names: the name itself, or the name followed by a description
+    ("seasonal naive: the value 12 months earlier"); None when it names none."""
+    m = _method(text)
+    for name in sorted(BASELINE_METHODS, key=len, reverse=True):
+        if m == name or (m.startswith(name) and not m[len(name)].isalnum()):
+            return name
+    return None
+
+
 def _sortable(values: list[Any]) -> list[Any]:
     """Periods in time order: numerically when every period is a number, else as text (ISO dates sort as text)."""
     try:
@@ -125,7 +135,15 @@ def _read_series(ws: Path, series: dict[str, Any]) -> tuple[list[Any], list[Any]
         return [], [], f"periods repeat in {table}.{tcol}: {_names(dups)}"
     order = _sortable(periods)
     by = {str(r[0]): r[1] for r in rows}
-    return order, [by[str(p)] for p in order], None
+    values = [by[str(p)] for p in order]
+    # Periods at the end without a value (a source's months not yet published) are not part of
+    # the series: the hold-out is the last periods WITH a value. Gaps inside the series stay.
+    while order and values[-1] is None:
+        order.pop()
+        values.pop()
+    if not order:
+        return [], [], f"{table}.{vcol} has no value"
+    return order, values, None
 
 
 def _fingerprint(periods: list[Any], values: list[Any]) -> str:
@@ -205,7 +223,7 @@ def _design_problems(
             if not isinstance(b, dict) or not str(b.get("model") or "").strip():
                 problems.append("every baseline needs a 'model' key")
                 continue
-            if _method(b.get("method")) not in BASELINE_METHODS:
+            if _baseline_method(b.get("method")) is None:
                 problems.append(
                     f"baseline {b.get('model')}: method {b.get('method')!r} is not naive, seasonal naive, mean or drift"
                 )
