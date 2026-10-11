@@ -121,6 +121,10 @@ def _terms(bundle: Path | None) -> list[dict[str, Any]]:
             "citation": u.terms.citation,
             "terms_url": u.terms.terms_url,
             "confirm": u.terms.confirm,
+            "reason": u.terms.reason,
+            # Set when the terms allow research use only with an open-access paper (GitHub): publishing needs
+            # the paper public, and the page says why.
+            "open_access_why": u.terms.open_access_why,
             # What readers on e2er.org see if the data stay private (publish's reader note says the same).
             "reader_note": (
                 f"If the data stay private, readers on e2er.org see a link to {u.terms.the_short} instead of a "

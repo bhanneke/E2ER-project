@@ -93,7 +93,7 @@ def test_public_yahoo_data_without_confirmation_are_refused_and_say_personal_use
         out = capsys.readouterr().out
         assert (
             "error: the study uses Yahoo Finance data. Publishing them with the study (--data public) "
-            f"needs your confirmation of the Yahoo Finance terms: {YFINANCE.terms_url}\n"
+            f"needs your confirmation of the Yahoo Finance terms (allow personal use only): {YFINANCE.terms_url}\n"
             "  Yahoo's terms allow personal use only.\n"
         ) in out
         assert "To confirm, add --accept-data-terms yfinance; to keep the data here, use --data private." in out
@@ -172,7 +172,7 @@ def test_in_a_terminal_the_researcher_confirms_knowing_yahoo_allows_personal_use
     assert asked[-1] == (
         "Publish the Yahoo Finance data with the study although Yahoo's terms allow personal use only? [y/N]: "
     )
-    assert "The study uses data from Yahoo Finance. Its terms:" in out
+    assert "The study uses data from Yahoo Finance. Its terms allow personal use only:" in out
     assert "  - Yahoo's terms of use apply.\n" in out
     assert "intended for personal use only" in out and YFINANCE.terms_url in out
     assert "Citation:" not in out
@@ -187,7 +187,7 @@ def test_gmd_and_yahoo_data_name_both_sources(gmd_bundle: Path, tmp_path: Path, 
     assert publish(str(gmd_bundle), **BASE, **REPO, data="private", out=str(tmp_path / "e")) == 0
     out = capsys.readouterr().out
     assert (
-        "note: The data come from the Global Macro Database (GMD), whose terms do not allow passing them on "
+        "note: The data come from the Global Macro Database (GMD), whose terms do not allow passing the data on "
         "outside the study's replication package, and Yahoo Finance, whose terms allow personal use only, "
         "so readers on e2er.org see links to the sources instead of a request button."
     ) in out

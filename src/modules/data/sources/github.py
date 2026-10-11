@@ -318,11 +318,15 @@ SOURCE = Source(
             "GitHub grants no licence to republish the metadata, and allows research use only with open-access "
             "publications"
         ),
-        limit="grant no licence to pass the metadata on, and allow research use only with open-access publications",
-        limit_finish="grant no licence to pass the metadata on",
+        reason="grant no licence to redistribute the repository metadata",
         confirm="although GitHub grants no licence to pass the metadata on (the paper must be open access)",
         warn="GitHub allows research use only if the resulting publications are open access.",
         article="",
+        open_access_why=(
+            "GitHub's Acceptable Use Policies (section 7, Information Usage Restrictions) allow research use of "
+            "public non-personal information only if the resulting publications are open access, so the paper "
+            "must be public."
+        ),
     ),
     use=(
         "Public GitHub repositories as research objects: search by words, topic, language, stars and creation "

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class WorkOrder(BaseModel):
@@ -57,6 +57,18 @@ class SelfAttackFinding(BaseModel):
     ]
     description: str
     suggested_fix: str = ""
+    #: Every passage of the draft with this problem, each a short verbatim quote.
+    locations: list[str] = Field(default_factory=list)
+
+    @field_validator("locations", mode="before")
+    @classmethod
+    def _as_list(cls, v: object) -> list[str]:
+        """One quote given as a string, or none at all, is still a list."""
+        if v is None:
+            return []
+        if isinstance(v, str):
+            return [v]
+        return [str(x) for x in v] if isinstance(v, list | tuple) else []
 
 
 class SelfAttackReport(BaseModel):

@@ -47,7 +47,13 @@ def _post(http: Any, paper_id: str, body: dict[str, Any]) -> int:
     }
     print(f"✓ {what.get(rec.get('action'), rec.get('action'))} (recorded for the dossier)")
     if "resumed" in r.json():
-        print("✓ the run continues")
+        if rec.get("then") == "check_runs_again":
+            print(
+                "✓ the run continues: the check runs again on the new output, "
+                "and the run stops here again only if it fails"
+            )
+        else:
+            print("✓ the run continues")
     return 0
 
 
@@ -120,7 +126,7 @@ def review(
 
 _LABELS = {
     "preregister": " (pre-registration)",
-    "gate": " (a check failed; it runs again on resume)",
+    "gate": " (a check failed; it runs again after a send-back or on resume)",
     "deviation": " (the pre-registered plan changed; approve the deviation, edit it back or send back)",
     "contract": " (output that failed its check after the last attempt)",
     "numbers": " (the number check: tables differ from the results)",

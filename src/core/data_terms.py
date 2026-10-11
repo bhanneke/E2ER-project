@@ -44,6 +44,8 @@ class SourceTerms:
     #: The source's own citation; empty when it publishes none.
     citation: str
     licence: str
+    #: Why the data stay with the source, in one line after "whose terms" / "its terms" (the source's own).
+    reason: str = "do not allow passing the data on outside the study's replication package"
     #: What the terms do, after "whose terms" (publish's reader note) and after "its terms" (the finish page).
     limit: str = "do not allow passing them on outside the study's replication package"
     limit_finish: str = "do not allow passing the data on outside the study's replication package"
@@ -55,6 +57,8 @@ class SourceTerms:
     article: str = "the "
     #: Why no Zenodo licence fits (when ``zenodo_licence`` is None).
     no_zenodo_why: str = ""
+    #: Why the paper must be open access when the study used these data; empty: no such rule.
+    open_access_why: str = ""
 
     @property
     def the_short(self) -> str:
@@ -185,7 +189,7 @@ def unknown_names(accepted: list[str] | None) -> list[str]:
 
 def terms_text(use: Use) -> str:
     """The terms in plain words, for the terminal."""
-    lines = [f"The study uses data from {use.the_label}. Its terms:"]
+    lines = [f"The study uses data from {use.the_label}. Its terms {use.terms.reason}:"]
     lines += [f"  - {p}" for p in use.terms.plain]
     if use.terms.citation:
         lines.append(f"  Citation: {use.terms.citation}")
@@ -199,7 +203,7 @@ def refusal(missing: list[Use]) -> str:
     for u in missing:
         lines.append(
             f"error: the study uses {u.label} data. Publishing them with the study (--data public) "
-            f"needs your confirmation of the {u.terms.short} terms: {u.terms.terms_url}"
+            f"needs your confirmation of the {u.terms.short} terms ({u.terms.reason}): {u.terms.terms_url}"
             + (f"\n  {u.terms.warn}" if u.terms.warn else "")
         )
     lines.append("  Nothing was written or sent.")
@@ -227,6 +231,22 @@ def bibliography_lacks(bundle: Path, found: list[Use]) -> list[Use]:
     except OSError:
         text = ""
     return [u for u in found if u.terms.cite_key and f"{{{u.terms.cite_key}," not in text.replace(" ", "")]
+
+
+def needs_open_paper(found: list[Use]) -> list[Use]:
+    """The sources whose terms allow research use only when the paper is open access (GitHub)."""
+    return [u for u in found if u.terms.open_access_why]
+
+
+def open_paper_refusal(found: list[Use]) -> str:
+    """Why a study that used such data cannot be published with a private paper, and what publishes it."""
+    lines = [f"error: the study uses {u.terms.article}{u.terms.name}. {u.terms.open_access_why}" for u in found]
+    lines.append("  Nothing was written or sent.")
+    lines.append(
+        "  Publish the paper with the study: --paper public --paper-url <address of the PDF> "
+        "(or, on the finish page, set the paper to public with its address)."
+    )
+    return "\n".join(lines)
 
 
 def no_zenodo(found: list[Use]) -> list[Use]:

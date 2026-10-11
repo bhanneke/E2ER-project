@@ -21,7 +21,9 @@ machine's `gh` login).
 
 - "Researchers may use public, non-personal information from the Service for
   research purposes, only if any publications resulting from that research are
-  open access." The paper must be open access.
+  open access." The paper must be open access: `e2er publish` refuses a study
+  that used GitHub data unless the paper is public (`--paper public`, or the
+  paper set to public on the finish page).
 - Personal information may be used only for the purpose its user authorized.
   Do not study individual developers.
 - Repository contents belong to their owners under their own licences (the

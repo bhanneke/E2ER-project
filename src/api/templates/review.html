@@ -37,8 +37,10 @@
         change as a deviation from the plan: your decision goes into the dossier and the deviation is disclosed.
         You can also edit the file back to the frozen version, or send back the step that changed it.
       {% elif pending.kind == "gate" %}
-        A check failed, so the run stopped here. Its reasons are below. Edit a file, give an instruction, or send a
-        step back; the check runs again when the run continues. Continuing does not pass the check.
+        A check failed, so the run stopped here. Its reasons are below. Send a step back: it runs again with your
+        remark, then the check runs again, and the run continues if the check passes (it stops here again only if
+        it fails). You can also edit a file or give an instruction and continue; the check runs again then.
+        Continuing does not pass the check.
       {% elif pending.kind == "review_at" %}
         You asked the run to stop after this step. Read what it wrote, edit it if you want, and let the run continue.
       {% else %}

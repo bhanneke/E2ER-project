@@ -241,6 +241,15 @@ Specialists can also draw on 17 sources:
 | Eurostat GISCO boundaries | NUTS 0–3 regions (2003–2024) and countries: boundaries as GeoJSON. Non-commercial use. | no key |
 | Natural Earth | Country boundaries of the world at 1:110m, 1:50m, 1:10m. Public domain. | no key |
 | Allium | On-chain blockchain data | `ALLIUM_API_KEY` (paid query credits) |
+
+Data from these sources come under terms of their own: publishing them with a study needs your confirmation (`--accept-data-terms`), and the replication package loads them again (`get_data.py`):
+
+- Yahoo Finance: its terms allow personal use only.
+- Global Macro Database: its terms do not allow passing the data on outside the study's replication package.
+- ESA Gaia Archive: its terms allow non-commercial use only, with credit to ESA/Gaia/DPAC (CC BY-NC 3.0 IGO).
+- WHO Global Health Observatory: its terms allow use for public health purposes only, and no changes without WHO's written permission.
+- GitHub: its terms grant no licence to redistribute the repository metadata.
+- Eurostat GISCO boundaries: its terms allow non-commercial use only, with the notice '© EuroGeographics for the administrative boundaries' on every map.
 <!-- sources:end -->
 
 Every Allium query passes five checks before it runs. A query on a table first runs as a feasibility query of at most 1000 rows, and the full query waits for the researcher's approval. Allium supported this project with data access and technical collaboration.

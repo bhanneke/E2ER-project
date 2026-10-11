@@ -214,10 +214,7 @@ SOURCE = Source(
         article="",
         zenodo_licence=None,
         no_zenodo_why="the GISCO terms grant a non-transferable right to use the boundaries, not to pass them on",
-        limit=(
-            "allow non-commercial use with the EuroGeographics notice, and do not allow passing the boundary files on"
-        ),
-        limit_finish="do not allow passing the boundary files on",
+        reason="allow non-commercial use only, with the notice '" + NOTICE + "' on every map",
         warn="Maps drawn from the boundaries carry: " + NOTICE + ".",
     ),
     polite=Polite(min_interval=1.0, max_requests=4, timeout=120.0),

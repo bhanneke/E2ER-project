@@ -210,7 +210,8 @@ def test_a_skill_stub_is_written_from_the_definition(fake: Source) -> None:
     stub = skill_stub(fake)
     assert stub.startswith("# Fake Statistics Office via `e2er-data fakestat`")
     assert "e2er-data fakestat obs --series <series>" in stub
-    assert "https://example.org/terms" in stub and "may not pass these data on" in stub
+    assert "https://example.org/terms" in stub
+    assert "The terms do not allow passing the data on outside the study's replication package: publishing" in stub
     assert "`FakeStat2026`" in stub and "- `--countries`: ISO3 codes." in stub
 
 

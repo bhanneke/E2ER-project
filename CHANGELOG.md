@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixes from the template live runs (2026-10-11)
+- **A phrase check on the draft's prose.** A live run kept "Against this background" although the
+  researcher had asked the writer not to use it. The paper drafter, the section writer, the abstract
+  writer and the field review writer now fail their output contract when their prose uses a
+  construction the researcher rejects, and the next attempt gets each sentence to rewrite:
+  "Against this background" (and "Against this backdrop"), "rather than", "not X but Y", "not only
+  X but also Y" (and "not just … but"), "It is important to note" (and "It should be noted", "It is
+  worth noting"), "In this section, we", "delve", "a testament to", "plays a crucial role" (also
+  pivotal or vital), "navigate the complexities", and more than two em-dashes on a page (500 words).
+  Quotations, citations, comments, maths, tables and the bibliography are left out; a negated action
+  followed by "but" ("we do not observe X, but we infer Y") is a concession and passes. Triads used
+  for rhythm are not checked: they cannot be told apart from lists reliably. `e2er verify` prints
+  the same sentences of `paper/paper.tex` and `paper/abstract.tex` as a note (`writing_notes` in
+  `--json`) that changes neither the verdict nor the exit code (`src/core/writing_check.py`).
+- **Targeted corrections fix every passage a finding names.** The descriptive run's revisor fixed
+  one of several passages that presented calculated exoplanet radii as measured. The self-critique
+  now quotes every passage with a problem (`locations`), the findings reach the revisor with their
+  locations and an id, and the revisor is told to search the whole draft and correct each passage.
+  A passage it leaves gets an entry `"edit_type": "keep"` with its reason. A check after the revisor
+  (its output contract) applies the patch to a copy and sends it back with every location neither
+  corrected nor kept, every corrected passage that occurs again elsewhere unchanged, and every keep
+  without a reason. What is still open after the last attempt is recorded (`revision_coverage`).
+- **A send-back at a check stop reruns the check.** After sending a specialist back at a failed
+  check, the run stopped at the same check again and needed an approve before the check ran. Now
+  the specialist runs, then the check, and the run continues if it passes; it stops again only if
+  the check still fails. Dashboard and `e2er review --send-back` alike (the CLI says so).
+- **Each source with terms states its own reason.** "Its terms do not allow passing the data on"
+  was too strong for Gaia (CC BY-NC 3.0 IGO) and GISCO (non-commercial use). Each restricted source
+  definition gives a one-line `reason`, used in the publish note, the finish page, the confirmation
+  and its refusal, `get_data.py`, the skill stub and the README: Yahoo Finance, personal use only;
+  the GMD, not outside the study's replication package; Gaia, non-commercial use with credit to
+  ESA/Gaia/DPAC; GISCO, non-commercial use with the EuroGeographics notice on every map; WHO, public
+  health purposes and no changes without WHO's written permission; GitHub, no licence to
+  redistribute the repository metadata. (The site's `RESTRICTED` map in `src/lib/requests-core.ts`
+  needs the same reasons and entries for Gaia, GISCO, WHO and GitHub.)
+- **GitHub data need an open-access paper.** GitHub's Acceptable Use Policies (section 7) allow
+  research use of public non-personal information only if the resulting publications are open
+  access. A study that used the `github` source is published only with `--paper public` (or the
+  paper set to public on the finish page); otherwise publish refuses, says why and changes nothing.
+  The finish page states the rule next to the paper.
+
 ### A new data source is one definition (connector kit)
 - **One `Source` definition per source** (`src/modules/data/sources/<name>.py`): name, website,
   terms (address, summary, full text), citation and BibTeX, key setting (or none), whether a published

@@ -88,7 +88,12 @@ SOURCE = Source(
         ),
     ),
     redistribution=False,
-    restricted=Restricted(short="GMD", name=gmd.DATASET, zenodo_licence="other-nc"),
+    restricted=Restricted(
+        short="GMD",
+        name=gmd.DATASET,
+        zenodo_licence="other-nc",
+        reason="do not allow passing the data on outside the study's replication package",
+    ),
     aliases=("global_macro_database",),
     skill="data/gmd",
     doctor=Doctor("data.gmd.versions", run=doctor_check("gmd_check")),

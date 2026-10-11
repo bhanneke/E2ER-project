@@ -147,8 +147,7 @@ SOURCE = Source(
         no_zenodo_why=(
             "Yahoo's terms allow personal use only, and a Zenodo deposit republishes the data for anyone to reuse"
         ),
-        limit="allow personal use only",
-        limit_finish="allow personal use only",
+        reason="allow personal use only",
         confirm="although Yahoo's terms allow personal use only",
         warn="Yahoo's terms allow personal use only.",
         article="",

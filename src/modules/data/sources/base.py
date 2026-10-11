@@ -83,8 +83,13 @@ class Restricted:
     name: str = ""
     #: Why no Zenodo licence fits (when ``zenodo_licence`` is None).
     no_zenodo_why: str = ""
-    limit: str = "do not allow passing them on outside the study's replication package"
-    limit_finish: str = "do not allow passing the data on outside the study's replication package"
+    #: Why the data stay with the source, in one line after "whose terms" / "its terms": "allow personal
+    #: use only". Each restricted source states its own; it is the sentence of the publish note, the finish
+    #: page, the confirmation, the skill file and the README. ``limit`` / ``limit_finish``, when set,
+    #: override it for the publish note / the finish page.
+    reason: str = "do not allow passing the data on outside the study's replication package"
+    limit: str = ""
+    limit_finish: str = ""
     confirm: str = "under these terms"
     warn: str = ""
     article: str = "the "
@@ -92,6 +97,9 @@ class Restricted:
     plain: tuple[str, ...] = ()
     #: False when the source publishes a citation the paper must carry but no BibTeX key is checked.
     cite_required: bool = True
+    #: Why a paper that used these data must be open access; empty: no such rule. Publishing refuses a
+    #: private paper then (``--paper public`` is required), with this sentence.
+    open_access_why: str = ""
 
 
 @dataclass(frozen=True)

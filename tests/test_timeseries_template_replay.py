@@ -205,7 +205,8 @@ def test_a_model_fitted_on_the_hold_out_stops_the_run_until_the_analysis_is_redo
             ws = Path(p["workspace"])
             assert not json.loads((ws / "forecast_check.json").read_text(encoding="utf-8"))["passed"]
 
-            # Approving does not pass a failed check; sending the analysis back does, once it is redone.
+            # Approving does not pass a failed check; sending the analysis back does, once it is redone:
+            # the analysis runs again, then the check, and the run continues when it passes.
             r = httpx.post(
                 f"{api}/api/papers/{pid}/review",
                 json={
@@ -217,6 +218,9 @@ def test_a_model_fitted_on_the_hold_out_stops_the_run_until_the_analysis_is_redo
                 timeout=30,
             )
             assert r.status_code == 200, r.text
+            assert r.json()["recorded"]["then"] == "check_runs_again"
             p, more = _approve_to_the_end(api, pid)
             assert p["status"] == "completed", (p.get("last_error"), more)
+            # The check ran right after the redone analysis and passed: no second stop there, no approve.
+            assert "forecast_gate" not in more, more
             assert json.loads((ws / "forecast_check.json").read_text(encoding="utf-8"))["passed"]

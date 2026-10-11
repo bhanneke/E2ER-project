@@ -29,9 +29,25 @@ def readme_block(sources: list[Source]) -> str:
         "|---|---|---|",
         *rows,
         _ALLIUM_ROW,
+        *_restricted_lines(sources),
         END,
     ]
     return "\n".join(lines)
+
+
+def _restricted_lines(sources: list[Source]) -> list[str]:
+    """After the table: each source whose terms keep its data with it, with its own reason."""
+    restricted = [s for s in sources if not s.redistribution and s.restricted is not None]
+    if not restricted:
+        return []
+    lines = [
+        "",
+        "Data from these sources come under terms of their own: publishing them with a study needs your "
+        "confirmation (`--accept-data-terms`), and the replication package loads them again (`get_data.py`):",
+        "",
+    ]
+    lines += [f"- {s.label}: its terms {s.restricted.reason}." for s in restricted if s.restricted]
+    return lines
 
 
 def _name_note(s: Source) -> str:
@@ -75,9 +91,10 @@ def skill_stub(s: Source) -> str:
         f"- Full terms: {s.terms_url}",
     ]
     if not s.redistribution:
+        reason = s.restricted.reason if s.restricted else "do not allow passing the data on"
         lines.append(
-            "- A published study may not pass these data on: publishing asks the researcher to confirm the "
-            "terms, and the replication package loads the data again (get_data.py) instead of shipping them."
+            f"- The terms {reason}: publishing asks the researcher to confirm them, and the replication "
+            "package loads the data again (get_data.py) instead of shipping them."
         )
     if s.citation:
         cite = f"`{s.cite_key}`, added to the study's literature.bib on the first load" if s.cite_key else "the load"

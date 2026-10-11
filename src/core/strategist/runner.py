@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -1361,12 +1362,17 @@ class PipelineRunner:
                 # pre-registration itself.
                 await self._guard_preregistration(pending, state)
                 await self._stop_for_researcher(step, state)
-            if state.metadata.get("review", {}).get("kind") in ("deviation", "numbers"):
+            if state.metadata.get("review", {}).get("kind") in ("deviation", "numbers", "gate"):
                 # Sent back from a change to the pre-registered plan: the plan
                 # check runs again in the estimation gate (halting again, with
                 # the files as they are now, if the change is still there).
                 # Likewise from the number check: the review step runs again and
-                # its number check with it, before any reviewer.
+                # its number check with it, before any reviewer. And from a
+                # failed check: the check has not passed, so the run reaches it
+                # again (a check step, a check inside the dispatch) and runs it
+                # on the specialist's new output; it continues when the check
+                # passes and stops here again only when it fails. Before, the
+                # run stopped at the check first and needed an approve to rerun it.
                 state.pending_review_stage = None
                 state.metadata.pop("review", None)
                 state.save(self._workspace)
@@ -2733,29 +2739,48 @@ class PipelineRunner:
         """
         import json
 
+        from ..specialists.contract_check import REVISION_FINDINGS_FILE
         from ..specialists.dispatcher import run_with_attempts
-        from .patch_merger import merge_patch_file
+        from .patch_merger import coverage_problems, merge_patch_file
 
         # Serialise findings into the work order's focus so the
         # patch_revisor can read them without an extra file load.
-        findings_json = json.dumps(
-            [
-                {
-                    "source": f.source,
-                    "source_detail": f.source_detail,
-                    "target": f.target,
-                    "severity": f.severity,
-                    "problem": f.problem,
-                    "suggested_fix": f.suggested_fix,
-                }
-                for f in findings
-            ],
-            indent=2,
-        )
+        serialised = [
+            {
+                "id": f"F{i}",
+                "source": f.source,
+                "source_detail": f.source_detail,
+                "target": f.target,
+                "severity": f.severity,
+                "problem": f.problem,
+                "suggested_fix": f.suggested_fix,
+                **({"locations": list(f.locations)} if getattr(f, "locations", ()) else {}),
+            }
+            for i, f in enumerate(findings, 1)
+        ]
+        findings_json = json.dumps(serialised, indent=2)
+        # The coverage check of the patch file (contract_check.check_patch_coverage) reads them back.
+        try:
+            draft = self._workspace / "paper_draft.tex"
+            record = {
+                "findings": serialised,
+                # The draft the findings are about: a later patch for another draft is not checked against them.
+                "draft_sha256": hashlib.sha256(draft.read_bytes()).hexdigest() if draft.is_file() else "",
+            }
+            (self._workspace / REVISION_FINDINGS_FILE).write_text(
+                json.dumps(record, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+            )
+        except OSError as e:
+            logger.warning("could not record the findings for the coverage check: %s", e)
         focus = (
             "Emit a patch file (`paper_draft.tex.edits.json`) that "
             "addresses the findings below. See your "
             "`writing/scoped-revision` skill for the patch file shape.\n\n"
+            "A finding names an issue, not one sentence. Search the whole draft (abstract, introduction, "
+            "body, conclusion, captions) for EVERY passage with the issue, the `locations` a finding lists and "
+            "any other, and correct each one (one edit per passage). A passage you leave as it is gets an "
+            'entry with "edit_type": "keep", the passage in "find" and the reason in "reason". A check '
+            "compares the patch with the findings and sends you back with every passage left open.\n\n"
             f"FINDINGS ({len(findings)} items, severity-sorted):\n"
             f"```json\n{findings_json}\n```"
         )
@@ -2783,7 +2808,19 @@ class PipelineRunner:
         )
         self._contributions.append(contribution)
 
-        return merge_patch_file(self._workspace, findings)
+        merged = merge_patch_file(self._workspace, findings)
+        # After the last attempt: what the patch still leaves open is recorded, not hidden.
+        merged.uncovered = coverage_problems(findings, merged)
+        if merged.uncovered:
+            from ...db.events import log_event
+
+            await log_event(
+                self._paper_id,
+                "revision_coverage",
+                specialist="patch_revisor",
+                payload={"open": merged.uncovered[:20], "findings": len(findings)},
+            )
+        return merged
 
     async def _resolve_table_spec(self) -> None:
         """Render results tables and close the loop on cross-specialist key

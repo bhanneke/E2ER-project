@@ -159,7 +159,7 @@ def test_the_frozen_preregistration_is_deposited_from_the_page(live_db, session,
 @pytest.mark.parametrize(
     ("kind", "button", "text"),
     [
-        ("gate", "Continue: run the check again", "the check runs again when the run continues"),
+        ("gate", "Continue: run the check again", "the run continues if the check passes"),
         ("deviation", "Approve the deviation and continue", "The pre-registered plan changed"),
         ("contract", "Keep the output as it is and continue", "failed its check in every attempt"),
         ("numbers", "Continue with these differences", "differ from the results files"),
@@ -285,7 +285,7 @@ def test_the_finish_page_says_yahoo_allows_personal_use_only(live_db, session):
     )
     export_paper(ws, live_db / "exports", date_str="20261005")
     html = _client().get(f"/papers/{PID}/finish").text
-    assert "The study uses data from Yahoo Finance. Its terms:" in html
+    assert "The study uses data from Yahoo Finance. Its terms allow personal use only:" in html
     assert 'class="confirm-terms" value="yfinance"' in html
     assert "Publish the Yahoo Finance data with the study although Yahoo&#39;s terms allow personal use only" in html
     assert (

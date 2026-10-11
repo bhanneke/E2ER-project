@@ -66,6 +66,10 @@ class Finding:
     severity: int  # 1-10; >=7 critical, 4-6 major, 1-3 minor (cosmetic)
     problem: str  # one-sentence specific description
     suggested_fix: str  # one-sentence concrete suggestion
+    #: Every passage of the draft with this problem, quoted verbatim (a phrase of each). A finding
+    #: names an issue, not one sentence: the targeted corrections fix it at each of these, or record
+    #: why a passage stays (patch_merger.coverage_problems checks it).
+    locations: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         # Frozen dataclass — must use object.__setattr__ in __post_init__
@@ -134,6 +138,7 @@ def collect_self_attack_findings(
                 severity=f.severity,
                 problem=f.description,
                 suggested_fix=f.suggested_fix or "",
+                locations=tuple(str(x) for x in getattr(f, "locations", None) or () if str(x).strip()),
             )
         )
     return out

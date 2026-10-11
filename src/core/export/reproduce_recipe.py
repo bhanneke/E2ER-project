@@ -678,7 +678,7 @@ def write_recipe(workspace: Path, out: Path, *, date_str: str = "") -> Outcome:
             [t for t in _db_tables(workspace / "data.db") if t not in reloaded_tables] if reloaded_tables else []
         )
         terms = " ".join(
-            f"{names[c][:1].upper() + names[c][1:]}'s terms {sources[c].limit}, so a published study may leave "
+            f"{names[c][:1].upper() + names[c][1:]}'s terms {sources[c].reason}, so a published study may leave "
             "its data out."
             for c in used
         )

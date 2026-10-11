@@ -412,9 +412,11 @@ def source_terms(source: Source) -> Any:
         cite_key=(source.cite_key or None) if r.cite_required else None,
         citation=source.citation if r.cite_required else "",
         licence=source.licence,
-        limit=r.limit,
-        limit_finish=r.limit_finish,
+        reason=r.reason,
+        limit=r.limit or r.reason,
+        limit_finish=r.limit_finish or r.reason,
         confirm=r.confirm,
         warn=r.warn,
         article=r.article,
+        open_access_why=r.open_access_why,
     )

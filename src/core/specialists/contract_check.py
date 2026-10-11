@@ -42,6 +42,7 @@ Coverage:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from dataclasses import dataclass, replace
@@ -592,6 +593,81 @@ def check_draft_cites(workspace: Path, relative: str = "paper_draft.tex") -> Con
     )
 
 
+#: Writers of the paper's prose, and the file each writes: their prose passes the phrase check.
+_PHRASE_CHECKED: frozenset[str] = frozenset(
+    {"paper_drafter", "section_writer", "abstract_writer", "field_review_writer"}
+)
+
+
+def check_draft_phrases(workspace: Path, relative: str) -> ContractCheck:
+    """The prose has none of the constructions the researcher rejects (``writing_check``).
+
+    A live run kept "Against this background" although the researcher had
+    asked the writer not to use it. The feedback names each sentence, so the
+    next attempt rewrites exactly those.
+    """
+    from ..writing_check import feedback, find_in_file
+
+    target = workspace / relative
+    if not target.is_file():
+        return ContractCheck(relative, True, "", kind=KIND_VERIFICATION)
+    hits = find_in_file(target)
+    if not hits:
+        return ContractCheck(relative, True, "", kind=KIND_VERIFICATION)
+    return ContractCheck(relative, False, feedback(hits), kind=KIND_VERIFICATION)
+
+
+#: The findings the targeted corrections work on, written by the runner before it dispatches them.
+REVISION_FINDINGS_FILE = ".revision_findings.json"
+
+
+def check_patch_coverage(workspace: Path, relative: str = "paper_draft.tex.edits.json") -> ContractCheck:
+    """Every finding of the targeted corrections is corrected at all its passages, or the revisor says why not.
+
+    The patch is applied to a copy (nothing is written) and compared with the
+    findings in ``.revision_findings.json`` (``patch_merger.coverage_problems``).
+    A run whose revisor fixed one of several passages with the same problem
+    (calculated exoplanet radii presented as measured) passed before.
+    """
+    from ..strategist.findings import Finding
+    from ..strategist.patch_merger import coverage_problems, merge_patch_file
+
+    record = workspace / REVISION_FINDINGS_FILE
+    if not record.is_file() or not (workspace / "paper_draft.tex").is_file() or not (workspace / relative).is_file():
+        return ContractCheck(relative, True, "", kind=KIND_VERIFICATION)
+    try:
+        data = json.loads(record.read_text(encoding="utf-8"))
+        draft_sha = hashlib.sha256((workspace / "paper_draft.tex").read_bytes()).hexdigest()
+        if data.get("draft_sha256") != draft_sha:
+            return ContractCheck(relative, True, "", kind=KIND_VERIFICATION)  # findings about another draft
+        raw = data.get("findings") or []
+        findings = [
+            Finding(
+                source=f["source"],
+                source_detail=str(f.get("source_detail", "")),
+                target=f["target"],
+                severity=int(f["severity"]),
+                problem=str(f.get("problem", "")),
+                suggested_fix=str(f.get("suggested_fix", "")),
+                locations=tuple(str(x) for x in f.get("locations") or ()),
+            )
+            for f in raw
+        ]
+        merged = merge_patch_file(workspace, findings, persist=False)
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        # An unreadable patch file is the non-empty check's to report; the findings record is ours.
+        return ContractCheck(relative, True, "", kind=KIND_VERIFICATION)
+    problems = coverage_problems(findings, merged)
+    if not problems:
+        return ContractCheck(relative, True, "", kind=KIND_VERIFICATION)
+    return ContractCheck(
+        relative,
+        False,
+        f"{len(problems)} passage(s) left open: " + "; ".join(problems[:12]),
+        kind=KIND_VERIFICATION,
+    )
+
+
 def _plan_problems(workspace: Path) -> list[str]:
     from ..pipeline.replication import check_plan
 
@@ -936,4 +1012,10 @@ def check_specialist_artifacts(workspace: Path, specialist: str) -> list[Contrac
     # A draft for a study with references cites them.
     if specialist in _MUST_CITE and draft_written:
         checks.append(check_draft_cites(workspace, draft))
+    # The targeted corrections fix every passage a finding names, or say why one stays.
+    if specialist == "patch_revisor" and not any(c.artifact == primary and not c.ok for c in checks):
+        checks.append(check_patch_coverage(workspace, primary or "paper_draft.tex.edits.json"))
+    # The prose has none of the constructions the researcher rejects (the abstract writer's too).
+    if specialist in _PHRASE_CHECKED and draft_written:
+        checks.append(check_draft_phrases(workspace, draft))
     return checks

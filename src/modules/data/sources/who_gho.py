@@ -261,8 +261,7 @@ SOURCE = Source(
             "WHO's terms allow use for public health purposes only and no modification without WHO's written "
             "authorization, and a Zenodo deposit republishes the data for anyone to reuse"
         ),
-        limit="allow use for public health purposes only and no changes without WHO's written authorization",
-        limit_finish="allow use for public health purposes only and no changes without WHO's written authorization",
+        reason="allow use for public health purposes only, and no changes without WHO's written permission",
         confirm="under WHO's terms (public health purposes, no changes without WHO's authorization)",
         warn="WHO's terms allow use for public health purposes only; the data may not be sold.",
     ),

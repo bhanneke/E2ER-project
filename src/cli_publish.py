@@ -410,6 +410,11 @@ def _describe(
         print(f"error: --accept-data-terms {', '.join(unknown)}: e2er knows the terms of {names} only")
         return 1, None
     licensed = data_terms.uses(b)
+    # Data whose terms allow research use only with open-access publications (GitHub): the paper is public.
+    open_needed = data_terms.needs_open_paper(licensed)
+    if open_needed and not access:
+        print(data_terms.open_paper_refusal(open_needed))
+        return 1, None
     if availability["data"]["access"] == "public":
         missing = data_terms.missing_confirmation(licensed, accept_data_terms)
         if missing:

@@ -762,7 +762,7 @@ def _check_method(ws: Path) -> Check | None:
 
     None when the bundle carries neither design file. The design-side checks
     need the study's data (data.db), which a bundle may not ship (boundaries
-    under terms that do not allow passing them on), so only the results side
+    under terms of their own), so only the results side
     runs here: for DiD the event-study path, the pre-trends test, the placebo or
     sensitivity analysis and the declared estimator; for a spatial study the
     weights file and Moran's I recomputed from the units and weights.
@@ -1161,6 +1161,7 @@ def verify(
         av_line = describe(av) if av is not None else None
     except (AttributeError, KeyError, TypeError):
         av_line = "stated in e2er.json, but not readable (see the anchor check)"
+    writing = _writing_notes(bundle_path)
     if json_output:
         from dataclasses import asdict
 
@@ -1179,6 +1180,7 @@ def verify(
                     "e2er_version": __version__,
                     "content_id": _content_id(bundle_path),
                     "availability": av if isinstance(av, dict) else None,
+                    "writing_notes": writing,
                 },
                 indent=2,
             )
@@ -1187,7 +1189,30 @@ def verify(
         print(_render(checks, bundle_path))
         if av_line is not None:
             print(f"   availability: {av_line}")
+        if writing:
+            # A note on the prose, not a check: it changes neither the verdict nor the exit code.
+            print(f"   note: {len(writing)} sentence(s) use a construction the writing guidance rejects:")
+            for line in writing[:20]:
+                print(f"     - {line}")
+            if len(writing) > 20:
+                print(f"     ... and {len(writing) - 20} more")
     return code
+
+
+def _writing_notes(bundle: Path) -> list[str]:
+    """Constructions the researcher rejects, in the paper's prose: a note, never a failed check.
+
+    The same phrase check the draft writers' output contract applies
+    (``core.writing_check``), on ``paper/paper.tex`` and ``paper/abstract.tex``.
+    """
+    from .core.writing_check import find_in_file
+
+    notes: list[str] = []
+    for rel in ("paper/paper.tex", "paper/abstract.tex"):
+        path = bundle / rel
+        if path.is_file():
+            notes += [f"{rel}: {h.line()}" for h in find_in_file(path)]
+    return notes
 
 
 def _availability(bundle: Path) -> Any:
