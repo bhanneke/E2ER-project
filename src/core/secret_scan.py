@@ -28,9 +28,10 @@ _ENV_LINE = re.compile(r"^([A-Z][A-Z0-9_]{2,})\s*=\s*[\"']?([^\s\"']{20,})[\"']?
 _HOME_PATH = re.compile(r"(?:/Users|/home)/[^/\s\"']+|[A-Za-z]:\\Users\\[^\\\s\"']+")
 #: A path on this machine: a home directory, an absolute path under a system root
 #: (/private, /var, /tmp, /Volumes, …), a Windows drive path or a network share.
-#: A URL's path ("https://e2er.org/d/…") is not one: it follows a host name.
+#: A URL's path ("https://e2er.org/d/…", "https://unstats.un.org/home/nso_sites/") is not one:
+#: it follows a host name.
 _LOCAL_PATH = re.compile(
-    r"(?:/Users|/home)/[^/\s\"']+"
+    r"(?<![\w.-])(?:/Users|/home)/[^/\s\"']+"
     r"|(?<![\w:/.~\\-])/(?:root|private|var|tmp|opt|mnt|Volumes|media|srv|etc|usr|nix|run|workspaces?)/[^\s\"']*"
     r"|(?<![\w])[A-Za-z]:[\\/][^\s\"']+"
     r"|\\\\[A-Za-z0-9._-]+\\[^\s\"']+"
@@ -40,7 +41,7 @@ _LOCAL_PATH = re.compile(
 #: The same places as `_LOCAL_PATH`, each matched to the end of the path (a home
 #: directory included), so the whole path can be taken out of a string.
 _LOCAL_PATH_WHOLE = re.compile(
-    r"(?:/Users|/home)/[^/\s\"']+[^\s\"']*"
+    r"(?<![\w.-])(?:/Users|/home)/[^/\s\"']+[^\s\"']*"
     r"|(?<![\w:/.~\\-])/(?:root|private|var|tmp|opt|mnt|Volumes|media|srv|etc|usr|nix|run|workspaces?)/[^\s\"']*"
     r"|(?<![\w])[A-Za-z]:[\\/][^\s\"']+"
     r"|\\\\[A-Za-z0-9._-]+\\[^\s\"']+"

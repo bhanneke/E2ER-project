@@ -189,3 +189,13 @@ def test_backends_record_the_cli_name_not_its_path(backend: str, monkeypatch):
     cli_support.cli_version.cache_clear()
     assert ident["cli"] == backend and ident["cli_version"] == "9.9.9"
     assert find_local_paths(ident) == []
+
+
+def test_a_url_whose_path_starts_with_home_is_not_a_local_path():
+    """World Bank's indicator metadata cite "https://unstats.un.org/home/nso_sites/" (2026-10-11 live run):
+    publishing refused the dossier as naming a path on this machine."""
+    from src.core.secret_scan import find_local_paths
+
+    assert find_local_paths({"citation": "uri: https://unstats.un.org/home/nso_sites/, publisher: UN"}) == []
+    assert find_local_paths({"f": "file:///Users/ada/data.csv"}) == ["$.f"]
+    assert find_local_paths({"f": "read /home/ada/data.csv"}) == ["$.f"]

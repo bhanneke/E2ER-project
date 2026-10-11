@@ -151,6 +151,9 @@ and contract tests on responses recorded live once.
 - Maps in a projected CRS (EPSG:3035, EPSG:3857) honour an `extent` given in degrees; before, the
   extent was ignored and overseas regions shrank Europe to a corner (found in the spatial live run).
   The spatial results check finds the units file's id column (`id`, else the one the results name).
+- Publishing no longer mistakes a URL whose path starts with `/home/` or `/Users/` for a path on this
+  machine (World Bank indicator metadata cite `https://unstats.un.org/home/nso_sites/`; found when
+  publishing the DiD live run).
 - A template's `[[credit]]` `published` date may be as precise as the publisher gives it (YYYY-MM for a
   journal issue, YYYY for a book). Both templates cite their method sources (DOIs checked on Crossref).
 - Tests: replay fixtures of a synthetic staggered panel and a synthetic grid of regions, run end to end
