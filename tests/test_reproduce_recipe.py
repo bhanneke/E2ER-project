@@ -458,3 +458,21 @@ def test_a_script_that_queries_data_db_and_updates_files_in_place_gets_the_right
     inputs = {i["path"] for i in recipe["inputs"]}
     assert inputs == {"data.db"}
     assert recipe["files"]["figure_spec.json"] == "results/figure_spec.json"  # read first, laid out as left
+
+
+def test_e2er_bookkeeping_files_and_a_bare_wildcard_are_not_inputs(tmp_path: Path):
+    """The live text run's analysis tested dictionary entries with `entry.endswith("*")`: the bare "*" was globbed
+    and every file of the study, the run's script log among them, became an input the rerun reported missing."""
+    ws = _fomc_workspace(tmp_path)
+    (ws / ".pipeline_state.json").write_text("{}", encoding="utf-8")
+    (ws / ".lit_budget.json").write_text("{}", encoding="utf-8")
+    script = ws / "run_estimation.py"
+    script.write_text(
+        script.read_text(encoding="utf-8")
+        + '\n_STATE = ".pipeline_state.json"\n_PREFIX = [e for e in ["fear*"] if e.endswith("*")]\n',
+        encoding="utf-8",
+    )
+    out = export_paper(ws, tmp_path / "exports", date_str="20261011")
+    recipe = json.loads((out / "reproduce.json").read_text(encoding="utf-8"))
+    assert [i["path"] for i in recipe["inputs"]] == ["data.db"]
+    assert not any("which a script reads" in n for n in recipe.get("notes") or []), recipe.get("notes")

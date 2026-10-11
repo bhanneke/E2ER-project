@@ -298,8 +298,16 @@ def referenced_files(workspace: Path, scripts: list[Path]) -> list[str]:
             if text.startswith("/") or ".." in Path(text).parts or not text:
                 continue
             if any(c in text for c in "*?["):
+                if not text.strip("*?./"):
+                    # A bare wildcard ("*", "?"): a dictionary entry's suffix or a regular expression in a
+                    # text study, not a file pattern. Globbed, it made every file of the study an input.
+                    continue
                 try:
-                    found.update(p.relative_to(workspace).as_posix() for p in workspace.glob(text) if p.is_file())
+                    found.update(
+                        p.relative_to(workspace).as_posix()
+                        for p in workspace.glob(text)
+                        if p.is_file() and not p.name.startswith(".")
+                    )
                 except (ValueError, NotImplementedError):
                     pass
                 continue
@@ -625,6 +633,10 @@ def write_recipe(workspace: Path, out: Path, *, date_str: str = "") -> Outcome:
     outputs = written_files(chain)
     for rel in referenced_files(workspace, chain):
         if rel in (RESULTS, *OTHER_RESULTS):
+            continue
+        if Path(rel).name.startswith(".e2er") or Path(rel).name.startswith(".pipeline_state"):
+            # e2er's own bookkeeping (the script log, the run state), never exported: not an input of the
+            # study (the live text run of 2026-10-11 was "not reproduced exactly" over its script log).
             continue
         if rel in outputs or _SPATIAL_OUTPUT.match(rel):
             # A file the scripts write: never an input to compare. One they also read first
