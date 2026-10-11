@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **The targeted corrections pass the phrase check too.** The revisor writes edits, not the draft, so its replacement sentences were not checked; now they are, with the same feedback as the draft writers.
+
+
 ### Fixes from the template live runs (2026-10-11)
 - **A phrase check on the draft's prose.** A live run kept "Against this background" although the
   researcher had asked the writer not to use it. The paper drafter, the section writer, the abstract

@@ -617,6 +617,33 @@ def check_draft_phrases(workspace: Path, relative: str) -> ContractCheck:
     return ContractCheck(relative, False, feedback(hits), kind=KIND_VERIFICATION)
 
 
+def check_patch_phrases(workspace: Path, relative: str = "paper_draft.tex.edits.json") -> ContractCheck:
+    """The replacement text of the targeted corrections has none of the constructions the researcher rejects.
+
+    The revisor writes edits, not the draft, so its new sentences are checked
+    here before the merger puts them into the paper.
+    """
+    from ..writing_check import feedback, find
+
+    target = workspace / relative
+    if not target.is_file():
+        return ContractCheck(relative, True, "", kind=KIND_VERIFICATION)
+    try:
+        data = json.loads(target.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return ContractCheck(relative, True, "", kind=KIND_VERIFICATION)
+    edits = data.get("edits", []) if isinstance(data, dict) else data
+    hits = []
+    for edit in edits if isinstance(edits, list) else []:
+        if isinstance(edit, dict) and edit.get("edit_type", "replace_text") != "keep":
+            text = edit.get("replace")
+            if isinstance(text, str) and text.strip():
+                hits.extend(find(text))
+    if not hits:
+        return ContractCheck(relative, True, "", kind=KIND_VERIFICATION)
+    return ContractCheck(relative, False, feedback(hits), kind=KIND_VERIFICATION)
+
+
 #: The findings the targeted corrections work on, written by the runner before it dispatches them.
 REVISION_FINDINGS_FILE = ".revision_findings.json"
 
@@ -1018,4 +1045,7 @@ def check_specialist_artifacts(workspace: Path, specialist: str) -> list[Contrac
     # The prose has none of the constructions the researcher rejects (the abstract writer's too).
     if specialist in _PHRASE_CHECKED and draft_written:
         checks.append(check_draft_phrases(workspace, draft))
+    # The revisor's replacement sentences pass the same phrase check.
+    if specialist == "patch_revisor":
+        checks.append(check_patch_phrases(workspace, primary or "paper_draft.tex.edits.json"))
     return checks
