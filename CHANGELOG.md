@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0] — 2026-10-13
+
 ### From the text-analysis live run (2026-10-11): checks before the draft, method sources
 - **The draft waits for the checks it reports.** The plan left out the text validator; the
   validation check sent it out only after the draft existed, and the researcher had to send the
