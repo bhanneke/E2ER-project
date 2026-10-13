@@ -134,7 +134,13 @@ EXECUTION_CONVENTIONS: dict[str, ExecutionConvention] = {
 
 
 # The script log (one implementation for e2er-run and the runner): src/core/script_log.py.
-from ..script_log import SCRIPT_RUNS, read_script_runs, record_script_run  # noqa: E402,F401
+from ..script_log import (  # noqa: E402,F401
+    SCRIPT_RUNS,
+    loaded_packages,
+    read_script_runs,
+    record_script_run,
+    script_command,
+)
 
 
 @dataclass(frozen=True)
@@ -301,12 +307,14 @@ def maybe_execute_specialist_script(workspace: Path, specialist: str) -> Executi
         convention.timeout_seconds,
     )
     started = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    # Through the script log's bootstrap, which records the packages the script loaded (reproduce.json pins them).
+    argv, extra, packages_file = script_command(sys.executable, script_path)
     try:
         completed = subprocess.run(
-            [sys.executable, str(script_path)],
+            argv,
             cwd=str(workspace),
             # Plain tracebacks for the model that reads them (Python 3.13+ colours them under FORCE_COLOR).
-            env={**os.environ, "PYTHON_COLORS": "0"},
+            env={**os.environ, "PYTHON_COLORS": "0", **extra},
             capture_output=True,
             text=True,
             timeout=convention.timeout_seconds,
@@ -326,6 +334,7 @@ def maybe_execute_specialist_script(workspace: Path, specialist: str) -> Executi
         stderr = stderr + f"\n[TIMEOUT after {convention.timeout_seconds}s]"
         logger.warning("post-specialist exec: %s timed out after %ds", rel_script, convention.timeout_seconds)
     except Exception as e:  # noqa: BLE001 — defensive, log + record
+        loaded_packages(packages_file)
         logger.warning("post-specialist exec: %s failed: %s", rel_script, e)
         return ExecutionAttempt(
             specialist=specialist,
@@ -337,7 +346,9 @@ def maybe_execute_specialist_script(workspace: Path, specialist: str) -> Executi
             discovered=discovered,
         )
 
-    record_script_run(workspace, rel_script, started, -1 if rc is None else rc, by="runner")
+    record_script_run(
+        workspace, rel_script, started, -1 if rc is None else rc, by="runner", packages=loaded_packages(packages_file)
+    )
 
     # If the script wrote a populated alternate output but not the canonical
     # sidecar, copy it across so M4.3 (which keys on the canonical name) sees it.

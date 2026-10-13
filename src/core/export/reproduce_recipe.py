@@ -21,7 +21,10 @@ without running anything:
   loads them again with ``e2er-data``, with the series and dates the run
   recorded, when the folder does not have them.
 - **Environment.** ``code/requirements.txt`` pins the packages the scripts
-  import, at the versions installed in the Python environment e2er runs in.
+  import, at the versions installed in the Python environment e2er runs in;
+  the optional backends their pandas calls need (openpyxl for ``read_excel``);
+  and every package the scripts loaded when the run ran them, at the run's
+  versions (the script log records them, e2er after 0.16.0).
 - **Compared.** ``results/estimation_results.json`` (and
   ``results/robustness_results.json`` when a script writes it); the tables are
   rendered again from the rerun's results when the study ships them.
@@ -553,26 +556,187 @@ def _imports(source: str) -> set[str]:
     return out
 
 
-def pinned_requirements(scripts: list[Path], local: set[str]) -> tuple[list[str], list[str]]:
+#: Packages pandas loads only when a call needs them (its "optional dependencies"): the scripts
+#: import pandas, never these, so pinning the imports alone leaves them out (the live Codex study of
+#: 2026-10-14 read an Excel file and its rerun failed: "Missing optional dependency 'openpyxl'").
+#: Method or function name → ((distribution, what pandas needs it for), ...).
+_PANDAS_BACKENDS: dict[str, tuple[tuple[str, str], ...]] = {
+    **dict.fromkeys(("read_excel", "ExcelFile"), (("openpyxl", "to read Excel files (.xlsx)"),)),
+    **dict.fromkeys(("to_excel", "ExcelWriter"), (("openpyxl", "to write Excel files (.xlsx)"),)),
+    **dict.fromkeys(
+        ("read_parquet", "to_parquet", "read_feather", "to_feather", "read_orc", "to_orc"),
+        (("pyarrow", "to read and write Parquet, Feather and ORC files"),),
+    ),
+    **dict.fromkeys(("read_xml", "to_xml"), (("lxml", "to read and write XML"),)),
+    "read_html": (
+        ("lxml", "to read HTML tables"),
+        ("beautifulsoup4", "to read HTML tables"),
+        ("html5lib", "to read HTML tables"),
+    ),
+    "to_markdown": (("tabulate", "to write Markdown tables"),),
+    **dict.fromkeys(("to_latex", "style"), (("jinja2", "to write LaTeX and styled tables"),)),
+    "read_spss": (("pyreadstat", "to read SPSS files"),),
+    **dict.fromkeys(("read_hdf", "to_hdf", "HDFStore"), (("tables", "to read and write HDF5 files"),)),
+}
+#: The engine a call names (``engine="xlrd"``) → (distribution, what for).
+_PANDAS_ENGINES: dict[str, tuple[str, str]] = {
+    "openpyxl": ("openpyxl", "to read and write Excel files (.xlsx)"),
+    "xlrd": ("xlrd", "to read old Excel files (.xls)"),
+    "xlsxwriter": ("XlsxWriter", "to write Excel files (.xlsx)"),
+    "odf": ("odfpy", "to read and write OpenDocument spreadsheets (.ods)"),
+    "pyxlsb": ("pyxlsb", "to read binary Excel files (.xlsb)"),
+    "calamine": ("python-calamine", "to read Excel files"),
+    "pyarrow": ("pyarrow", "to read and write Parquet, Feather and ORC files"),
+    "fastparquet": ("fastparquet", "to read and write Parquet files"),
+    "lxml": ("lxml", "to read and write XML"),
+    "bs4": ("beautifulsoup4", "to read HTML tables"),
+    "html5lib": ("html5lib", "to read HTML tables"),
+}
+_SQL_CALLS = frozenset({"read_sql", "read_sql_query", "read_sql_table", "to_sql"})
+_DB_URL = re.compile(r"^[a-z][a-z0-9]*(\+[a-z0-9_]+)?://", re.I)
+
+
+def optional_backends(source: str) -> dict[str, str]:
+    """{distribution: what pandas needs it for}, from the pandas calls in one script (no pandas import: none).
+
+    Matplotlib's backends are not needed: the rerun draws without a screen (Agg).
+    """
+    try:
+        tree = ast.parse(source)
+    except (SyntaxError, ValueError):
+        return {}
+    if "pandas" not in _imports(source):
+        return {}
+    found: dict[str, str] = {}
+    literals = [n.value for n in ast.walk(tree) if isinstance(n, ast.Constant) and isinstance(n.value, str)]
+    for node in ast.walk(tree):
+        name = None
+        if isinstance(node, ast.Attribute):
+            name = node.attr
+        elif isinstance(node, ast.Name):
+            name = node.id
+        if name in _PANDAS_BACKENDS:
+            for dist, why in _PANDAS_BACKENDS[name]:
+                found.setdefault(dist, why)
+        if name in _SQL_CALLS and any(_DB_URL.match(v.strip()) for v in literals):
+            found.setdefault("SQLAlchemy", "to read and write databases named by a URL")
+        if isinstance(node, ast.Call):
+            for kw in node.keywords:
+                if kw.arg in ("engine", "flavor") and isinstance(kw.value, ast.Constant):
+                    engine = _PANDAS_ENGINES.get(str(kw.value.value))
+                    if engine:
+                        found.setdefault(*engine)
+    if "openpyxl" in found and any(re.search(r"\.xls$", v.strip(), re.I) for v in literals):
+        found.setdefault("xlrd", "to read old Excel files (.xls)")
+    return found
+
+
+def recorded_packages(workspace: Path, scripts: list[Path]) -> dict[str, str]:
+    """{distribution: version} the scripts loaded when the run last ran them successfully (the script log).
+
+    Only runs of the version the study ships (same SHA-256) count; e2er up to 0.16.0 recorded none.
+    """
+    from ..script_log import read_script_runs
+
+    wanted = {s.name: _sha256(s) for s in scripts if s.is_file()}
+    latest: dict[str, dict[str, str]] = {}
+    for row in read_script_runs(workspace):
+        name = row.get("script")
+        packages = row.get("packages")
+        if (
+            name in wanted
+            and row.get("exit_code") == 0
+            and row.get("sha256") == wanted[name]
+            and isinstance(packages, dict)
+        ):
+            latest[name] = {str(k): str(v) for k, v in packages.items()}
+    out: dict[str, str] = {}
+    for script in scripts:
+        out.update(latest.get(script.name, {}))
+    return out
+
+
+@dataclass
+class Requirements:
+    #: ``name==version`` (or a bare name) lines, each with its reason as a comment when it has one.
+    lines: list[str]
+    #: Modules the scripts import that this environment does not have.
+    missing: list[str]
+    #: Optional backends not installed where e2er runs: written unpinned (the latest compatible release).
+    unpinned: list[str] = field(default_factory=list)
+    #: How many distributions came from the script log's record of what the scripts loaded.
+    recorded: int = 0
+
+
+def pinned_requirements(
+    scripts: list[Path], local: set[str], workspace: Path | None = None
+) -> tuple[list[str], list[str]]:
     """(``name==version`` lines, modules the scripts import that this environment does not have)."""
+    req = requirements_for(scripts, local, workspace)
+    return req.lines, req.missing
+
+
+def requirements_for(scripts: list[Path], local: set[str], workspace: Path | None = None) -> Requirements:
+    """The pins of ``code/requirements.txt``.
+
+    Three sources, the first that knows a package wins: what the scripts loaded when the run ran them
+    (the script log, versions of the run's own interpreter); the packages they import, at the versions
+    installed where e2er runs; and the optional backends their pandas calls need (openpyxl for
+    ``read_excel``), at the installed version or, when not installed, unpinned.
+    """
     import importlib.metadata as md
 
-    modules = set().union(*(_imports(_read(s)) for s in scripts)) if scripts else set()
+    sources = [_read(s) for s in scripts]
+    modules = set().union(*(_imports(src) for src in sources)) if sources else set()
     modules -= set(sys.stdlib_module_names) | local | {"__future__"}
     dists = md.packages_distributions()
+    recorded = recorded_packages(workspace, scripts) if workspace is not None else {}
     pins: dict[str, str] = {}
+    why: dict[str, str] = {}
     missing: list[str] = []
     for mod in sorted(modules):
         names = dists.get(mod) or []
         if not names:
-            missing.append(mod)
+            if not any(_canon(n) == _canon(mod) for n in recorded):
+                missing.append(mod)
             continue
         for name in names:
             try:
                 pins[name] = md.version(name)
             except md.PackageNotFoundError:
                 missing.append(mod)
-    return [f"{n}=={v}" for n, v in sorted(pins.items(), key=lambda kv: kv[0].lower())], missing
+    backends: dict[str, str] = {}
+    for src in sources:
+        for dist, reason in optional_backends(src).items():
+            backends.setdefault(dist, reason)
+    unpinned: list[str] = []
+    for dist, reason in backends.items():
+        why[dist] = f"pandas needs it {reason}"
+        if any(_canon(n) == _canon(dist) for n in [*pins, *recorded]):
+            continue
+        try:
+            pins[dist] = md.version(dist)
+        except md.PackageNotFoundError:
+            pins[dist] = ""
+            unpinned.append(dist)
+    # The run's own record wins over this environment's versions (same distribution, other spelling too).
+    for name, version in recorded.items():
+        for other in [n for n in pins if _canon(n) == _canon(name)]:
+            del pins[other]
+        pins[name] = version
+    canon_why = {_canon(k): v for k, v in why.items()}
+    lines = []
+    for name, version in sorted(pins.items(), key=lambda kv: kv[0].lower()):
+        line = f"{name}=={version}" if version else name
+        comment = canon_why.get(_canon(name), "")
+        if comment and not version:
+            comment += "; not installed where e2er ran the study, so the rerun installs the latest compatible release"
+        lines.append(f"{line}  # {comment}" if comment else line)
+    return Requirements(lines, missing, unpinned, len(recorded))
+
+
+def _canon(name: str) -> str:
+    return re.sub(r"[-_.]+", "-", name).lower()
 
 
 # ── the writer ───────────────────────────────────────────────────────────────
@@ -740,7 +904,8 @@ def write_recipe(workspace: Path, out: Path, *, date_str: str = "") -> Outcome:
         requirements_note = "code/requirements.txt is the run's own."
     else:
         local = {p.stem for p in workspace.glob("*.py")}
-        pins, missing = pinned_requirements(chain, local)
+        req = requirements_for(chain, local, workspace)
+        pins, missing = req.lines, req.missing
         py = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
         lines = [
             "# The packages the study's scripts import, at the versions of the Python environment",
@@ -750,8 +915,18 @@ def write_recipe(workspace: Path, out: Path, *, date_str: str = "") -> Outcome:
         if missing:
             lines.append(f"# Imported but not installed when the study ran: {', '.join(missing)}")
         (out / "code").mkdir(parents=True, exist_ok=True)
+        if req.recorded:
+            lines.append(
+                "# Also every package the scripts loaded when the run ran them (recorded by e2er), at the run's"
+                " versions."
+            )
         (out / "code" / "requirements.txt").write_text("\n".join([*lines, *pins]) + "\n", encoding="utf-8")
         requirements_note = f"code/requirements.txt pins {len(pins)} package(s) at the versions the run used."
+        if req.unpinned:
+            notes.append(
+                f"The scripts' pandas calls need {', '.join(req.unpinned)}, which was not installed where e2er ran "
+                "the study; requirements.txt lists it unpinned, so the rerun installs the latest compatible release."
+            )
         if missing:
             notes.append(
                 f"The scripts import {', '.join(missing)}, which was not installed when the study ran, so "

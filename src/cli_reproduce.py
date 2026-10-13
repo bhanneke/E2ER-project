@@ -68,6 +68,8 @@ def render(
         if web and not s.reload:
             lines.append(f"       It read from the web (allowed with --allow-network): {', '.join(web)}.")
         if s.exit_code:
+            if s.missing:
+                lines.append(f"       {s.missing}")
             lines += [f"       {t}" for t in s.tail.splitlines()]
             lines.append(f"       full output: {s.log}")
     if len(steps) < len(recipe["steps"]):

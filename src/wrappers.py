@@ -64,19 +64,29 @@ def run_main(argv: list[str] | None = None) -> int:
     python = os.environ.get("E2ER_PYTHON") or sys.executable
     print(f"e2er-run: executing {target} (timeout {timeout:.0f}s)", file=sys.stderr, flush=True)
     # Plain tracebacks: a model reads them (Python 3.13+ colours them under FORCE_COLOR).
-    env = {**os.environ, "PYTHON_COLORS": "0"}
+    from .core.script_log import loaded_packages, record_script_run, script_command
+
+    # Run through the script log's bootstrap: it records the packages the script loaded (reproduce.json pins them).
+    argv, extra, packages_file = script_command(python, resolved)
+    env = {**os.environ, "PYTHON_COLORS": "0", **extra}
     started = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     try:
-        code = subprocess.run([python, str(resolved)], cwd=workspace, env=env, timeout=timeout, check=False).returncode
+        code = subprocess.run(argv, cwd=workspace, env=env, timeout=timeout, check=False).returncode
     except subprocess.TimeoutExpired:
         print(f"e2er-run: stopped {target} after {timeout:.0f}s", file=sys.stderr)
         code = TIMED_OUT
     except OSError as e:
+        loaded_packages(packages_file)
         print(f"e2er-run: could not start {python}: {e}", file=sys.stderr)
         return REFUSED
-    from .core.script_log import record_script_run
-
-    record_script_run(workspace, resolved.relative_to(workspace).as_posix(), started, code, by="e2er-run")
+    record_script_run(
+        workspace,
+        resolved.relative_to(workspace).as_posix(),
+        started,
+        code,
+        by="e2er-run",
+        packages=loaded_packages(packages_file),
+    )
     return code
 
 

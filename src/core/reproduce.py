@@ -542,6 +542,8 @@ class StepResult:
     reload: bool = False
     #: What the step tried to reach on the network, or to load with e2er-data: {"host"/"command", "blocked"}.
     network: list[dict[str, Any]] = field(default_factory=list)
+    #: A failed step's missing package, in a sentence ("The recipe does not pin openpyxl, ..."); empty otherwise.
+    missing: str = ""
 
     @property
     def blocked(self) -> list[dict[str, Any]]:
@@ -563,6 +565,13 @@ def is_reload_step(step: dict[str, Any], recipe: dict[str, Any]) -> bool:
     return any(Path(a).name in names for a in step_argv(step))
 
 
+def _read_text(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+
+
 def _read_network_log(path: Path) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -582,6 +591,58 @@ def _read_network_log(path: Path) -> list[dict[str, Any]]:
             seen.add(key)
             out.append(row)
     return out
+
+
+_OPTIONAL_DEPENDENCY = re.compile(r"Missing optional dependency '([\w.\-]+)'")
+_NO_MODULE = re.compile(r"(?:ModuleNotFoundError|ImportError): No module named '([\w.]+)'")
+_SITE_PACKAGE = re.compile(r'File "[^"]*[/\\]site-packages[/\\]([A-Za-z_]\w*)[/\\]')
+#: Import name → distribution, where they differ (what to name in the recipe).
+_DISTRIBUTION_OF = {
+    "sklearn": "scikit-learn", "yaml": "PyYAML", "bs4": "beautifulsoup4", "PIL": "Pillow",
+    "cv2": "opencv-python", "dateutil": "python-dateutil", "dotenv": "python-dotenv", "Bio": "biopython",
+    "skimage": "scikit-image", "attr": "attrs", "google": "google-api-python-client", "docx": "python-docx",
+    "pptx": "python-pptx", "calamine": "python-calamine", "odf": "odfpy", "xlsxwriter": "XlsxWriter",
+}  # fmt: skip
+#: What a package that another loads only when needed is for (the end of "which pandas needs ...").
+_NEEDED_FOR = {
+    "openpyxl": "to read and write Excel files (.xlsx)",
+    "xlrd": "to read old Excel files (.xls)",
+    "XlsxWriter": "to write Excel files",
+    "odfpy": "to read OpenDocument spreadsheets",
+    "pyarrow": "to read and write Parquet and Feather files",
+    "fastparquet": "to read and write Parquet files",
+    "lxml": "to read XML and HTML",
+    "beautifulsoup4": "to read HTML tables",
+    "html5lib": "to read HTML tables",
+    "tabulate": "to write Markdown tables",
+    "jinja2": "to write LaTeX and styled tables",
+    "pyreadstat": "to read SPSS files",
+    "tables": "to read and write HDF5 files",
+    "SQLAlchemy": "to read and write databases",
+    "sqlalchemy": "to read and write databases",
+}
+
+
+def missing_dependency(output: str) -> str:
+    """A plain sentence when a step failed because the recipe left a package out; empty otherwise.
+
+    Reads the step's output for pandas' "Missing optional dependency 'X'" and Python's
+    "No module named 'X'"; names the package that needed it when the traceback shows one.
+    """
+    m = _OPTIONAL_DEPENDENCY.findall(output) or _NO_MODULE.findall(output)
+    if not m:
+        return ""
+    module = m[-1].split(".")[0]
+    dist = _DISTRIBUTION_OF.get(module, module)
+    # The library that asked for it: the innermost site-packages frame of the last traceback.
+    last = output[output.rfind("Traceback (most recent call last)") :] if "Traceback" in output else output
+    needers = [p for p in _SITE_PACKAGE.findall(last) if p != module and p not in ("importlib",)]
+    if needers:
+        purpose = _NEEDED_FOR.get(dist, "")
+        need = f", which {needers[-1]} needs" + (f" {purpose}" if purpose else "")
+    else:
+        need = ", which the study's code imports"
+    return f"The recipe does not pin {dist}{need}."
 
 
 def run_steps(
@@ -625,6 +686,7 @@ def run_steps(
                 log=str(log),
                 reload=reload,
                 network=_read_network_log(net_log),
+                missing=missing_dependency(_read_text(log)) if code else "",
             )
         )
         if code != 0:
@@ -672,6 +734,8 @@ def verdict(
         why = blocked_words(failed)
         if why:
             return f"Could not reproduce: the step `{failed.command}` {why}.", 2
+        if failed.missing:
+            return f"Could not reproduce: the step `{failed.command}` failed. {failed.missing}", 2
         return f"Could not reproduce: the step `{failed.command}` failed.", 2
     unwritten = [f.published for f in files if f.problem == NOT_WRITTEN]
     if files and len(unwritten) == len(files):

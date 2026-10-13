@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -239,13 +240,23 @@ def _trace_md(report: dict[str, Any]) -> str:
 
 
 def run_script(ws: Path, *, timeout: int = 300) -> tuple[int, str]:
-    from ...core.script_log import record_script_run
+    from ...core.script_log import loaded_packages, record_script_run, script_command
 
     started = _now()
-    proc = subprocess.run(
-        [sys.executable, SCRIPT], cwd=ws, capture_output=True, text=True, timeout=timeout, check=False
-    )
-    record_script_run(ws, SCRIPT, started, proc.returncode, by="e2er")
+    argv, extra, packages_file = script_command(sys.executable, ws / SCRIPT)
+    try:
+        proc = subprocess.run(
+            argv,
+            cwd=ws,
+            env={**os.environ, **extra},
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+    finally:
+        packages = loaded_packages(packages_file)
+    record_script_run(ws, SCRIPT, started, proc.returncode, by="e2er", packages=packages)
     return proc.returncode, (proc.stderr or proc.stdout)[-1500:]
 
 
