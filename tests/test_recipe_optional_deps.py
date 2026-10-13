@@ -19,7 +19,7 @@ from src import wrappers
 from src.cli_reproduce import reproduce
 from src.core import reproduce as rp
 from src.core.export import reproduce_recipe as rr
-from src.core.script_log import loaded_packages, read_script_runs, script_command
+from src.core.script_log import read_script_runs, script_command, script_record
 
 pd = pytest.importorskip("pandas")
 pytest.importorskip("openpyxl")
@@ -99,6 +99,7 @@ def test_the_script_log_records_what_the_script_loaded_and_the_recipe_pins_it(tm
     ws = _excel_study(tmp_path, run=True)
 
     [run] = read_script_runs(ws)
+    assert run["python"] == sys.version.split()[0]
     loaded = run["packages"]
     # openpyxl is never imported by the script; pandas loaded it to read the sheet. numpy came with pandas.
     assert loaded["openpyxl"] == md.version("openpyxl")
@@ -148,7 +149,7 @@ def test_the_bootstrap_runs_a_script_as_python_would(tmp_path: Path):
     )
     assert proc.returncode == 3, proc.stderr
     assert proc.stdout.strip() == "__main__ True True 7", "a sibling module imports, as with `python main.py`"
-    assert loaded_packages(packages_file) == {}
+    assert script_record(packages_file) == {"python": sys.version.split()[0], "packages": {}}
     assert not packages_file.exists()
 
 
@@ -255,3 +256,33 @@ def test_reproduce_says_which_package_the_recipe_left_out(tmp_path: Path, this_p
     assert sentence in report
     assert f"Could not reproduce: the step `python run_estimation.py` failed. {sentence}" in report
     assert "full output: " in report and "step-1.log" in report
+
+
+def test_the_recipe_names_the_python_the_run_recorded_not_the_exporting_one(tmp_path: Path, monkeypatch):
+    """Exported under another interpreter (e2er's 3.14 for a run on 3.12), the recipe keeps the run's 3.12."""
+    import hashlib
+
+    ws = _excel_study(tmp_path, run=False)
+    sha = hashlib.sha256((ws / "run_estimation.py").read_bytes()).hexdigest()
+    rows = [
+        {"script": "run_estimation.py", "sha256": sha, "exit_code": 0, "python": "3.11.9", "packages": {}},
+        {"script": "run_estimation.py", "sha256": sha, "exit_code": 0, "python": "3.12.12", "packages": {}},
+        {"script": "run_estimation.py", "sha256": sha, "exit_code": 1, "python": "3.13.1", "packages": {}},
+    ]
+    (ws / ".e2er-script-runs.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
+    out = _export(ws, tmp_path / "export")
+    recipe = rr.write_recipe(ws, out, date_str="20261014").recipe
+    assert recipe["python"] == "3.12"
+    assert not any("recorded no Python version" in n for n in recipe["notes"])
+    assert "(Python 3.12.12)" in (out / "code" / "requirements.txt").read_text(encoding="utf-8")
+
+
+def test_an_older_run_without_a_record_falls_back_to_the_export_python_with_a_note(tmp_path: Path):
+    ws = _excel_study(tmp_path, run=False)
+    out = _export(ws, tmp_path / "export")
+    recipe = rr.write_recipe(ws, out, date_str="20261014").recipe
+    here = f"{sys.version_info.major}.{sys.version_info.minor}"
+    assert recipe["python"] == here
+    [note] = [n for n in recipe["notes"] if "recorded no Python version" in n]
+    assert sys.version.split()[0] in note
+    assert "at export; the run recorded none" in (out / "code" / "requirements.txt").read_text(encoding="utf-8")

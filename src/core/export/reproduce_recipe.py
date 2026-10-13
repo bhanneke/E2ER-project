@@ -656,6 +656,32 @@ def recorded_packages(workspace: Path, scripts: list[Path]) -> dict[str, str]:
     return out
 
 
+def recorded_python(workspace: Path, scripts: list[Path]) -> str | None:
+    """The Python version (``3.12.12``) the run's interpreter ran the scripts with, from the script log.
+
+    The last successful run of the version the study ships of the estimation script (the first of
+    ``scripts``), else of any later script; None when the run recorded none (e2er up to 0.16.0).
+    The script log is the source because the study's scripts may run on another interpreter than
+    e2er's server (``E2ER_PYTHON``), and export may run on yet another.
+    """
+    from ..script_log import read_script_runs
+
+    wanted = {s.name: _sha256(s) for s in scripts if s.is_file()}
+    latest: dict[str, str] = {}
+    for row in read_script_runs(workspace):
+        name = row.get("script")
+        version = row.get("python")
+        if (
+            name in wanted
+            and row.get("exit_code") == 0
+            and row.get("sha256") == wanted[name]
+            and isinstance(version, str)
+            and re.fullmatch(r"\d+\.\d+(\.\d+)?\S*", version)
+        ):
+            latest[name] = version
+    return next((latest[s.name] for s in scripts if s.name in latest), None)
+
+
 @dataclass
 class Requirements:
     #: ``name==version`` (or a bare name) lines, each with its reason as a comment when it has one.
@@ -900,16 +926,27 @@ def write_recipe(workspace: Path, out: Path, *, date_str: str = "") -> Outcome:
         about = "the estimation script" if i == 0 else f"a later script of the run that writes {RESULTS} again"
         steps.append({"run": ["python", script.name], "about": about})
 
+    # The Python the run ran the scripts with (its script log), not the one this export runs on.
+    py = recorded_python(workspace, chain)
+    py_words = f"Python {py}"
+    if py is None:
+        py = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+        notes.append(
+            f"The run recorded no Python version for its scripts (e2er up to 0.16.0), so the recipe names the "
+            f"Python e2er exported the study with ({py}); the study may have run on another."
+        )
+        py_words = f"Python {py} at export; the run recorded none"
+    python_minor = ".".join(py.split(".")[:2])
+
     if (out / "code" / "requirements.txt").is_file():
         requirements_note = "code/requirements.txt is the run's own."
     else:
         local = {p.stem for p in workspace.glob("*.py")}
         req = requirements_for(chain, local, workspace)
         pins, missing = req.lines, req.missing
-        py = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
         lines = [
             "# The packages the study's scripts import, at the versions of the Python environment",
-            f"# e2er ran the study in (Python {py}), written by e2er at export. `e2er reproduce` installs",
+            f"# e2er ran the study in ({py_words}), written by e2er at export. `e2er reproduce` installs",
             "# them in a new environment.",
         ]
         if missing:
@@ -955,7 +992,7 @@ def write_recipe(workspace: Path, out: Path, *, date_str: str = "") -> Outcome:
             f"recorded: the scripts that wrote {RESULTS}, from the estimation script on, {order_words}; the files "
             f"they read; and the packages they import. {requirements_note}"
         ),
-        "python": f"{sys.version_info.major}.{sys.version_info.minor}",
+        "python": python_minor,
         "requirements": "code/requirements.txt",
         "files": files,
         "steps": steps,

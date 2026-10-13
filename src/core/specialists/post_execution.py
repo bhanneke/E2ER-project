@@ -136,10 +136,10 @@ EXECUTION_CONVENTIONS: dict[str, ExecutionConvention] = {
 # The script log (one implementation for e2er-run and the runner): src/core/script_log.py.
 from ..script_log import (  # noqa: E402,F401
     SCRIPT_RUNS,
-    loaded_packages,
     read_script_runs,
     record_script_run,
     script_command,
+    script_record,
 )
 
 
@@ -334,7 +334,7 @@ def maybe_execute_specialist_script(workspace: Path, specialist: str) -> Executi
         stderr = stderr + f"\n[TIMEOUT after {convention.timeout_seconds}s]"
         logger.warning("post-specialist exec: %s timed out after %ds", rel_script, convention.timeout_seconds)
     except Exception as e:  # noqa: BLE001 — defensive, log + record
-        loaded_packages(packages_file)
+        script_record(packages_file)
         logger.warning("post-specialist exec: %s failed: %s", rel_script, e)
         return ExecutionAttempt(
             specialist=specialist,
@@ -347,7 +347,7 @@ def maybe_execute_specialist_script(workspace: Path, specialist: str) -> Executi
         )
 
     record_script_run(
-        workspace, rel_script, started, -1 if rc is None else rc, by="runner", packages=loaded_packages(packages_file)
+        workspace, rel_script, started, -1 if rc is None else rc, by="runner", record=script_record(packages_file)
     )
 
     # If the script wrote a populated alternate output but not the canonical
