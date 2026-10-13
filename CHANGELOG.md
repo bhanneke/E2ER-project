@@ -40,6 +40,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   now sent out at the end of a single-pass initial phase when no draft exists and a review follows
   (event `drafter_sent_out`), after
   the checks it waits for.
+- **The estimation script may not read e2er's records of the run.** A Codex analysis asserted on the
+  completed stages in `.pipeline_state.json`, which the export does not ship, so `e2er reproduce`
+  failed on its first step (all 29,146 values reproduced once that line was stubbed). The standalone
+  check of the estimation chain now names a script that reads `.pipeline_state.json`,
+  `.study_inputs.json` or `.e2er-script-runs.jsonl`, and the analyst fixes it within its attempts.
 
 ## [0.16.0] — 2026-10-13
 
