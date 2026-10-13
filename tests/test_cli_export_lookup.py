@@ -117,3 +117,22 @@ def test_the_cli_expands_the_prefix_before_asking_the_server(monkeypatch):
         cli.main()
     assert e.value.code == 0
     assert seen["id"] == PID
+
+
+def test_json_reports_keep_log_lines_off_stdout(capsys):
+    import logging
+    import sys
+
+    from src.logging_config import _STREAM, get_logger, logs_to_stderr
+
+    before = _STREAM["to"]
+    try:
+        log = get_logger("src.test_json_stdout_probe")
+        logs_to_stderr()
+        get_logger("src.test_json_stdout_probe_new").info("new logger")
+        log.info("old logger")
+        out, err = capsys.readouterr()
+        assert "logger" not in out
+        assert all(h.stream is not sys.stdout for h in logging.getLogger("src.test_json_stdout_probe").handlers)
+    finally:
+        _STREAM["to"] = before

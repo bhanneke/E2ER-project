@@ -45,6 +45,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   failed on its first step (all 29,146 values reproduced once that line was stubbed). The standalone
   check of the estimation chain now names a script that reads `.pipeline_state.json`,
   `.study_inputs.json` or `.e2er-script-runs.jsonl`, and the analyst fixes it within its attempts.
+- **`--json` output is JSON only.** `e2er verify --json` printed a log line ("… INFO … render_tables:
+  wrote 2 table(s) …") before the report, so the report could not be parsed. With `--json` every log
+  line goes to stderr.
+- **A number inside an identifier is not checked as a number.** The number check of the text read the
+  198 of the WHO indicator code `RS\_198` (and then its tail 98) as a value and reported it as
+  differing from the sample of 195 countries. Digits after a letter, an underscore or another digit
+  are no longer taken as the start of a number.
 
 ## [0.16.0] — 2026-10-13
 

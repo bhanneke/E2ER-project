@@ -924,3 +924,12 @@ def test_math_minus_and_year_to_month_spans_in_cells():
         "\\bottomrule\n\\end{tabular}\n"
     )
     assert [n for n, _ in _extract_table_numbers(tex)] == ["0.80", "-0.93", "-0.39", "-1.5"]
+
+
+def test_a_number_inside_an_identifier_is_a_name(tmp_path: Path):
+    """RS\\_198 (a WHO indicator code) is not the number 198 next to a sample of 195 countries."""
+    est = {"sample": {"countries": 195}}
+    ws = _ws_with_est(tmp_path, est, "The indicator RS\\_198 covers 195 countries.\n")
+    report = verify(tmp_path / "paper_draft.tex", ws)
+    assert report.prose_mismatched == 0
+    assert report.prose_matched == 1

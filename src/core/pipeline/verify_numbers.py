@@ -224,7 +224,9 @@ _TABULAR_RE = re.compile(
 #   - numbers with significance stars: 0.45***, 0.45**
 #   - percentages: 52\%
 _NUMBER_RE = re.compile(
-    r"(?<![a-zA-Z])"  # not preceded by a letter
+    # not preceded by a letter, an underscore or a digit: the 198 of an identifier such as RS\_198
+    # (a WHO indicator code) is a name, not a number, and neither is its tail 98 (2026-10-13 demo)
+    r"(?<![a-zA-Z_\d])"
     r"[\$\(]*"  # optional $ or (
     # A minus sign right after a digit or a dash is a range dash: the upper
     # bound of "0.12--0.15" or "5-10" is positive.

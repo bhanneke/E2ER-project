@@ -761,6 +761,11 @@ def main() -> None:
     )
 
     args = parser.parse_args()
+    if getattr(args, "json", None) is True:
+        # The command prints its report as JSON on stdout: log lines go to stderr.
+        from .logging_config import logs_to_stderr
+
+        logs_to_stderr()
     _clean_path_args(args)
 
     if args.command == "publish":
