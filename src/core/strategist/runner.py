@@ -1218,6 +1218,25 @@ class PipelineRunner:
             if trig.kind == "gate" and trig.applies_to(self._mode) and not state.is_complete(trig.name):
                 await self._run_gate_trigger(trig, state, remaining)
 
+    async def _recheck_after_send_back(self, sent: set[str], state: Any) -> None:
+        """Run again the checks inside the dispatch that read the work of a specialist the researcher sent back.
+
+        The 2026-10-13 school-fee demo: sent back from the pre-registration, the data analyst rebuilt
+        the panel (8 treated countries instead of 15, ending in 2010), and the design check that had
+        passed on the old panel was not run again; its report still described the old one. A check
+        that has not run yet is left to the dispatch; one of the results waits for the results.
+        """
+        for trig in getattr(self, "_triggers", []):
+            if trig.kind != "gate" or not trig.applies_to(self._mode) or not (set(trig.after) & sent):
+                continue
+            if not state.is_complete(trig.name):
+                continue  # not run yet: the dispatch runs it when its specialists are done
+            if trig.check in _RESULT_CHECKS and not (self._workspace / "estimation_results.json").is_file():
+                continue
+            state.completed_stages = [c for c in state.completed_stages if c != trig.name]
+            state.metadata.pop(f"retried_{trig.name}", None)  # the new work gets its own retry
+            await self._run_gate_trigger(trig, state, [])
+
     async def _run_gate_trigger(self, step: Any, state: Any, remaining: list[WorkOrder]) -> None:
         """Run a check that sits inside the dispatch; pass, record, retry once, or halt.
 
@@ -1474,6 +1493,7 @@ class PipelineRunner:
                 )
         step_names = [s.name for s in self._spec.steps]
         rerun_steps = False
+        sent_specialists: set[str] = set()
         for r in reruns:
             target, remark = r["target"], r["remark"]
             await log_event(self._paper_id, "researcher_rerun", stage=target, payload={"remark": remark})
@@ -1484,6 +1504,7 @@ class PipelineRunner:
                 state.completed_stages = [c for c in state.completed_stages if c not in later]
                 rerun_steps = True
             else:
+                sent_specialists.add(target)
                 protected = await self._researcher_edited_files()
                 focus = f"Revise your output. The researcher sent it back with this remark: {remark}"
                 extra: dict[str, Any] = {}
@@ -1502,6 +1523,8 @@ class PipelineRunner:
                 contributions = await self._execute_orders([order])
                 self._contributions.extend(contributions)
                 await self._restore_researcher_edits(before, target)
+        if sent_specialists and not rerun_steps:
+            await self._recheck_after_send_back(sent_specialists, state)
         state.save(self._workspace)
         pending = state.pending_review_stage
         if pending and not state.is_approved(pending) and not rerun_steps:

@@ -27,6 +27,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   no data source holds (a policy's adoption year, a book's first publication) instead of filling them
   in from memory. In the school-fee demo the architect was asked to source each abolition year and
   every search was refused; the dates stayed "recalled".
+- **A specialist sent back from a researcher step has the checks that read its work run again.** At
+  the school-fee demo's pre-registration the data analyst was sent back and rebuilt the panel (8
+  treated countries instead of 15, ending in 2010); the design check that had passed on the old panel
+  did not run again, and its report still described the old one. Now every check inside the dispatch
+  that names the specialist in `after` and has run before runs again on the new work (with a retry
+  of its own); a check that has not run yet is left to the dispatch.
 
 ## [0.16.0] — 2026-10-13
 
