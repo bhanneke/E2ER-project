@@ -286,6 +286,24 @@ def _entry_hypotheses(entry: dict[str, Any]) -> list[str]:
     return [_norm_hypothesis(h) for h in raw or [] if isinstance(h, str | int) and str(h).strip()]
 
 
+def _nested_tagged(value: Any, path: str, depth: int = 0) -> list[tuple[str, dict[str, Any]]]:
+    """Entries below the top level of a results file that name a hypothesis in a 'hypothesis' field."""
+    if depth > 6:
+        return []
+    found: list[tuple[str, dict[str, Any]]] = []
+    if isinstance(value, dict):
+        if depth > 0 and "hypothesis" in value:
+            found.append((path, value))
+        for k, v in value.items():
+            if isinstance(v, dict | list):
+                found += _nested_tagged(v, f"{path}.{k}", depth + 1)
+    elif isinstance(value, list):
+        for i, v in enumerate(value):
+            if isinstance(v, dict | list):
+                found += _nested_tagged(v, f"{path}[{i}]", depth + 1)
+    return found
+
+
 def _excluded_count(item: dict[str, Any]) -> int:
     n = item.get("n", item.get("count"))
     if isinstance(n, int) and not isinstance(n, bool) and n >= 0:
@@ -318,14 +336,22 @@ def result_coverage(
         if isinstance(doc.get("exclusions"), list):
             exclusions += doc["exclusions"]
         for key, entry in doc.items():
-            if not isinstance(entry, dict) or key == "exclusions":
+            if key == "exclusions":
                 continue
-            tags = _entry_hypotheses(entry)
-            if not tags and "coefficients" in entry:
-                untagged += 1
-            for t in tags:
-                for hid in {t, hypothesis_parent(t)}:
-                    tested.setdefault(hid, []).append(key)
+            if isinstance(entry, dict):
+                tags = _entry_hypotheses(entry)
+                if not tags and "coefficients" in entry:
+                    untagged += 1
+                for t in tags:
+                    for hid in {t, hypothesis_parent(t)}:
+                        tested.setdefault(hid, []).append(key)
+            # Results that are not a regression keep their entries deeper (a list of
+            # hypothesis results, trend fits under `trend`): each nested entry with its
+            # own 'hypothesis' field counts too (0.16.0 time-series demo, 2026-10-13).
+            for path, nested in _nested_tagged(entry, key):
+                for t in _entry_hypotheses({"hypothesis": nested.get("hypothesis")}):
+                    for hid in {t, hypothesis_parent(t)}:
+                        tested.setdefault(hid, []).append(path)
     missing = [h for h in wanted if h not in tested]
     if missing:
         hint = f"; {untagged} result entr{'y names' if untagged == 1 else 'ies name'} no hypothesis" if untagged else ""

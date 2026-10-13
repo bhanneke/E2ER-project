@@ -484,3 +484,21 @@ def test_paper_bundles_have_no_reproduction_check(tmp_path: Path):
 )
 def test_label_for_uses_the_thresholds_of_the_check(value: float, published: float, dp: int, label: str):
     assert label_for(value, published, dp, 0.10)["label"] == label
+
+
+def test_nested_results_name_their_hypotheses():
+    """A time-series results file kept its tags in a list and under `trend` (0.16.0 demo, 2026-10-13)."""
+    doc = {
+        "result_kind": "timeseries",
+        "trend": {"annual": {"slope_per_decade": 0.5, "hypothesis": "H1"}},
+        "hypothesis_results": [{"hypothesis": "H2", "models": {"ets": {"mase": 0.48}}}],
+    }
+    problems, notes = result_coverage([doc], _prereg(), None)
+    assert problems == [] and "(H1, H2)" in notes[0]
+
+
+def test_a_list_of_hypothesis_ids_is_not_a_result():
+    """Naming the hypotheses (a `hypotheses` block) does not count as testing them."""
+    doc = {"hypotheses": {"H1": {"statement": "x"}, "H2": {"statement": "y"}}, "trend": {"slope": 0.5}}
+    problems, _ = result_coverage([doc], _prereg(), None)
+    assert problems and "H1, H2" in problems[0]
