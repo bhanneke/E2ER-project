@@ -19,7 +19,7 @@ runner, NOT an LLM specialist. Design rules mirror ``tables.py``:
 Supported ``figure_type`` values: ``coefficient`` (horizontal dot-and-whisker
 with CIs), ``event_study`` (point + error-bar path with treatment marker),
 ``bar`` (category bars), ``time_series`` (one line per ``{label,x,y}`` series),
-``scatter`` (points of two variables, optionally grouped and on log axes),
+``scatter`` (points of two variables, optionally grouped, on log axes or with an axis reversed),
 ``histogram`` (counts in bins computed by the analysis), ``map`` (a
 choropleth, categories or point map drawn from saved data and boundaries, see
 ``maps.py``), ``forest``, ``funnel`` and ``prisma`` (a meta-analysis, see
@@ -170,11 +170,12 @@ def _render_time_series(fig_spec: dict[str, Any], ax: Any) -> None:
 
 
 def _render_scatter(fig_spec: dict[str, Any], ax: Any) -> None:
-    """Points of two variables (``x``, ``y``), optionally in groups and on log axes.
+    """Points of two variables (``x``, ``y``), optionally in groups, on log axes or reversed.
 
     For descriptive studies in any field (planet radius against orbital period,
     a station's temperature against its altitude). ``groups`` (one label per
-    point) colours the points by group.
+    point) colours the points by group; ``invert_x`` / ``invert_y`` reverse an
+    axis (magnitudes in a colour-magnitude diagram).
     """
     x, y = _floats(fig_spec.get("x")), _floats(fig_spec.get("y"))
     if x is None or y is None or len(x) != len(y):
@@ -191,6 +192,12 @@ def _render_scatter(fig_spec: dict[str, Any], ax: Any) -> None:
         ax.set_xscale("log")
     if fig_spec.get("log_y"):
         ax.set_yscale("log")
+    # Magnitudes grow towards fainter stars: a colour-magnitude diagram puts
+    # bright stars at the top (`invert_y`). Found in the Gaia demo (2026-10-13).
+    if fig_spec.get("invert_x"):
+        ax.invert_xaxis()
+    if fig_spec.get("invert_y"):
+        ax.invert_yaxis()
     ax.set_xlabel(str(fig_spec.get("x_label", "")))
     ax.set_ylabel(str(fig_spec.get("y_label", "")))
     ax.grid(ls=":", alpha=0.4)

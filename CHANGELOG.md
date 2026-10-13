@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`e2er serve` (and `e2er` alone) bind `PORT` from `.env`**, the port `e2er run` and the other commands talk to; before, they bound 8280 unless `--port` was given.
 - **`fetch_data` sends the model at most 50 rows of a load.** It returned every row: a USGS load of 277,935 events made the next OpenRouter request exceed its 8 MB limit and failed the data analyst. The reply now carries the first 50 rows, `items_total` and a note; a materialized load stays complete in data.db (API backends; the CLI backends load through `e2er-data`).
 - **A pre-registered hypothesis tagged below the top level of the results counts.** The check that every pre-registered hypothesis has a result read the `hypothesis` field only on top-level entries; the time-series demo tagged H1 to H3 in a list of hypothesis results and under `trend`, and the estimation failed its contract three times. Nested entries with their own `hypothesis` field now count (also in `e2er verify`); a block that only lists the hypotheses does not.
+- **Scatter figures can reverse an axis** (`invert_x`, `invert_y`): a colour-magnitude diagram puts bright stars, with small magnitudes, at the top. The Gaia demo had to draw the Pleiades diagram upside down and say so in the caption. The figure-spec skill shows it.
 
 ### From the demo studies 5–8 (2026-10-13)
 - **`e2er status`, `review`, `resume`, `cancel` and `rerun` take the first characters of the id**,
