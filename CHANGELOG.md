@@ -34,6 +34,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   did not run again, and its report still described the old one. Now every check inside the dispatch
   that names the specialist in `after` and has run before runs again on the new work (with a retry
   of its own); a check that has not run yet is left to the dispatch.
+- **An initial phase that ends without a draft sends the paper drafter out.** The school-fee demo's
+  plan left the drafter out; the run went on to the review with no `paper_draft.tex`, the five
+  reviewers judged the plan (4.3 of 10), and the study "completed" without a paper. The drafter is
+  now sent out at the end of a single-pass initial phase when no draft exists and a review follows
+  (event `drafter_sent_out`), after
+  the checks it waits for.
 
 ## [0.16.0] — 2026-10-13
 

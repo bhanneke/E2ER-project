@@ -212,6 +212,7 @@ EVENTS: dict[str, str] = {
     "polish_applied": "Polish notes considered",
     "method_sources": "The template's method sources added to the bibliography",
     "sent_out_before": "Specialists sent out before the draft",
+    "drafter_sent_out": "Paper drafter sent out: the plan left the draft out",
 }
 
 #: What the ceiling check after a round of improvement decided (its ``verdict``).

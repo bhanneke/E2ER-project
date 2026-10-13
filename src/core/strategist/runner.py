@@ -794,6 +794,7 @@ class PipelineRunner:
         token = specialist_done.set(self._record_initial_done)
         try:
             await self._initial_phase_body()
+            await self._draft_if_left_out()
             state = getattr(self, "_state", None)
             if state is not None and isinstance(getattr(state, "metadata", None), dict):
                 # The phase is done: nothing of it is left to resume.
@@ -802,6 +803,32 @@ class PipelineRunner:
         finally:
             specialist_done.reset(token)
             self._in_initial = False
+
+    async def _draft_if_left_out(self) -> None:
+        """The initial phase ended without a draft: send the paper drafter out (after its checks).
+
+        Every template with a strategist step reports in ``paper_draft.tex``, and the strategist
+        plans who writes it. The 2026-10-13 school-fee demo (policy evaluation): its plan left the
+        drafter out, the run went on to the review with no draft, the five reviewers judged the
+        plan (4.3 of 10), and the study "completed" without a paper.
+        """
+        if getattr(self, "_mode", "single_pass") != "single_pass" or (self._workspace / "paper_draft.tex").is_file():
+            return  # in the iterative mode the rounds may write the draft (and often do)
+        spec = getattr(self, "_spec", None)
+        if spec is None or not any(st.kind == "aggregate" for st in spec.steps):
+            return  # no review of a draft follows
+        from ...db.events import log_event
+        from ..specialists.registry import SPECIALIST_DEFAULT_FOCUS
+
+        focus = (SPECIALIST_DEFAULT_FOCUS.get("paper_drafter") or "Write the paper from the study's results.") + (
+            " The plan left you out, and the study has no draft yet: write the whole paper now from the "
+            "results and files in the workspace."
+        )
+        order = WorkOrder(paper_id=self._paper_id, specialist="paper_drafter", focus=focus)
+        await log_event(
+            self._paper_id, "drafter_sent_out", stage="initial", payload={"reason": "no draft after the initial phase"}
+        )
+        self._contributions.extend(await self._execute_orders([order]))
 
     @staticmethod
     def _order_key(wo: WorkOrder) -> str:
