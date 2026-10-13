@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixes from the 0.16.0 demo runs (2026-10-13)
 - **`e2er run` works when it has to start the server.** It started uvicorn without the session token it then sends, so the server made its own and refused the new study with 403 ("This browser tab is not signed in to e2er"). The server it starts now gets the computer's session token, and `~/.e2er/session-<port>.json` is written once it answers, so later `e2er review`/`resume` commands are accepted too.
 - **`e2er serve` (and `e2er` alone) bind `PORT` from `.env`**, the port `e2er run` and the other commands talk to; before, they bound 8280 unless `--port` was given.
+- **`fetch_data` sends the model at most 50 rows of a load.** It returned every row: a USGS load of 277,935 events made the next OpenRouter request exceed its 8 MB limit and failed the data analyst. The reply now carries the first 50 rows, `items_total` and a note; a materialized load stays complete in data.db (API backends; the CLI backends load through `e2er-data`).
 
 ### From the demo studies 5–8 (2026-10-13)
 - **`e2er status`, `review`, `resume`, `cancel` and `rerun` take the first characters of the id**,

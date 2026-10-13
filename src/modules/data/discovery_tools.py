@@ -39,7 +39,9 @@ DATA_DISCOVERY_TOOLS: list[dict[str, Any]] = [
             "list_data_sources. For blockchain/on-chain data use query_allium instead — "
             "fetch_data does not handle Allium. Set materialize=true to also store the "
             "fetched rows as a table in this paper's data.db, so you can join/aggregate it "
-            "later with query_data alongside the researcher's own data."
+            "later with query_data alongside the researcher's own data. At most "
+            "50 rows come back in the reply (with the total); a larger load is complete "
+            "only in data.db, so materialize it."
         ),
         "input_schema": {
             "type": "object",
@@ -66,6 +68,33 @@ DATA_DISCOVERY_TOOLS: list[dict[str, Any]] = [
         },
     },
 ]
+
+
+#: Rows of a fetch that go back to the model. The rest stay in data.db (materialize=true):
+#: a USGS load of 277,935 events sent in full exceeded OpenRouter's 8 MB request limit and
+#: failed the specialist (0.16.0 demo run, 2026-10-13).
+PREVIEW_ROWS = 50
+
+
+def _preview(envelope: Any, materialized: str | None) -> Any:
+    """The envelope with at most PREVIEW_ROWS of its items, and the total, for the conversation."""
+    if not isinstance(envelope, dict):
+        return envelope
+    items = envelope.get("items")
+    if not isinstance(items, list) or len(items) <= PREVIEW_ROWS:
+        return envelope
+    where = (
+        f"all {len(items)} rows are in data.db table {materialized}; use query_data for them"
+        if materialized
+        else "set materialize=true to keep all rows in data.db and query them with query_data"
+    )
+    return {
+        **envelope,
+        "items": items[:PREVIEW_ROWS],
+        "items_total": len(items),
+        "items_returned": PREVIEW_ROWS,
+        "note": f"Only the first {PREVIEW_ROWS} of {len(items)} rows are shown here; {where}.",
+    }
 
 
 class SeriesDataToolHandler(ToolHandler):
@@ -143,7 +172,7 @@ class SeriesDataToolHandler(ToolHandler):
             if materialized:
                 envelope = {**envelope, "materialized_table": materialized}
         await self._record(fetcher, provider, method, params, envelope, load, materialized)
-        return json.dumps(envelope, default=str)
+        return json.dumps(_preview(envelope, materialized), default=str)
 
     async def _record(
         self,
