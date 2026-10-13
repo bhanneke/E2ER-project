@@ -1942,8 +1942,43 @@ def _workflow_inventory() -> dict[str, Any]:
     }
 
 
-async def _preflight() -> dict[str, Any]:
-    """Run the same checks `e2er doctor` runs."""
+#: Seconds a Preflight result is shown again without asking the services again: opening Preflight,
+#: then New study (its banner), then Preflight once more costs one round of checks, not three.
+PREFLIGHT_TTL = 180.0
+#: The last result: when it was made (monotonic seconds), for which settings, and the view.
+_preflight_cache: dict[str, Any] = {"at": None, "key": None, "view": None}
+#: The round of checks under way, so a page and its banner opened together wait for the same one.
+_preflight_running: dict[str, Any] = {"key": None, "task": None}
+
+
+def _preflight_key() -> str:
+    """The settings the checks ran with: a result made for other settings is never shown."""
+    import hashlib
+
+    try:
+        dump = get_settings().model_dump_json()
+    except Exception:  # noqa: BLE001 — settings that cannot be read: the checks themselves say so
+        dump = ""
+    return hashlib.sha256(dump.encode()).hexdigest()
+
+
+def _preflight_cached() -> dict[str, Any] | None:
+    """The last result, while it is fresh and was made for the settings in use; else None."""
+    import time
+
+    at, key, view = _preflight_cache["at"], _preflight_cache["key"], _preflight_cache["view"]
+    if view is None or at is None or time.monotonic() - at > PREFLIGHT_TTL or key != _preflight_key():
+        return None
+    return dict(view, age=int(time.monotonic() - at))
+
+
+def forget_preflight() -> None:
+    """Drop the kept result (the settings were saved, so the next look checks again)."""
+    _preflight_cache.update(at=None, key=None, view=None)
+
+
+async def _run_preflight() -> dict[str, Any]:
+    """Run the same checks `e2er doctor` runs, as the view the templates show."""
     from ..doctor import _BLOCKERS_PREFIXES, FAIL, PASS, SKIP, run_doctor
 
     try:
@@ -1965,10 +2000,44 @@ async def _preflight() -> dict[str, Any]:
     }
 
 
+async def _preflight(fresh: bool = False) -> dict[str, Any]:
+    """The Preflight view: the kept result while it is fresh, else a new round of checks.
+
+    ``fresh`` always checks again ("Check again", and Setup after saving). Requests that arrive
+    while a round is under way wait for that round instead of starting their own.
+    """
+    import time
+
+    if not fresh and (cached := _preflight_cached()) is not None:
+        return cached
+    key = _preflight_key()
+    task = _preflight_running["task"]
+    reusable = (
+        task is not None
+        and not task.done()
+        and _preflight_running["key"] == key
+        and task.get_loop() is asyncio.get_running_loop()
+    )
+    if not reusable:
+        task = asyncio.ensure_future(_run_preflight())
+        _preflight_running.update(key=key, task=task)
+    view = await asyncio.shield(task)
+    if not view.get("error"):
+        _preflight_cache.update(at=time.monotonic(), key=key, view=view)
+    return dict(view, age=0)
+
+
 @app.get("/preflight", response_class=HTMLResponse)
 async def dashboard_preflight(request: Request) -> Any:
-    """Is this machine able to run a paper?"""
-    return templates.TemplateResponse(request, "preflight.html", await _preflight())
+    """Is this machine able to run a paper? Opens at once; the checks fill in when they are done."""
+    cached = _preflight_cached()
+    return templates.TemplateResponse(request, "preflight.html", cached or {"pending": True})
+
+
+@app.get("/htmx/preflight-checks", response_class=HTMLResponse)
+async def preflight_checks(request: Request, fresh: int = 0) -> Any:
+    """The checks, for the Preflight page (``fresh=1``: "Check again")."""
+    return templates.TemplateResponse(request, "_preflight_checks.html", await _preflight(fresh=bool(fresh)))
 
 
 @app.get("/htmx/preflight-banner", response_class=HTMLResponse)

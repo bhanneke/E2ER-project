@@ -1,0 +1,37 @@
+{% if error %}
+  <p class="error">The checks could not run: {{ error }}</p>
+{% else %}
+<div class="pf-verdict {% if ready %}ok{% else %}bad{% endif %}">
+  {% if ready %}
+    <strong>Ready.</strong> Nothing stops a study on this computer.
+  {% else %}
+    <strong>Not ready.</strong> Fix these first: {{ blockers | map("check_label") | join(", ") }}.
+  {% endif %}
+  <span class="muted">{{ n_pass }} passed · {{ n_skip }} not set up (optional) · {{ n_fail }} failed</span>
+</div>
+
+<div class="pf-list">
+  {% for c in checks %}
+    <div class="pf pf-{{ c.status | lower }}">
+      <span class="pf-mark">{% if c.status == "PASS" %}✓{% elif c.status == "FAIL" %}✗{% else %}·{% endif %}</span>
+      <span class="pf-name">{{ c.name | check_label }}</span>
+      <span class="pf-detail">{{ c.detail | check_detail(c.name) | ticks }}</span>
+    </div>
+  {% endfor %}
+</div>
+
+<p class="muted" style="margin-top:18px">
+  A check that is not set up is optional: without a FRED key, for instance, e2er has no macroeconomic series,
+  and everything else works.
+</p>
+<p class="muted small">
+  {% if age and age >= 60 %}Checked {{ age // 60 }} min ago.{% elif age %}Checked {{ age }} seconds ago.{% else %}Checked just now.{% endif %}
+  <button type="button" class="btn" hx-get="/htmx/preflight-checks?fresh=1" hx-target="#pf-checks"
+    hx-swap="innerHTML" hx-indicator="#pf-checking">Check again</button>
+  <span id="pf-checking" class="htmx-indicator">Checking…</span>
+</p>
+<details class="tech">
+  <summary>Technical details</summary>
+  <p class="small mono">{% for c in checks %}{{ c.name }}: {{ c.status }}: {{ c.detail }}{% if not loop.last %}<br>{% endif %}{% endfor %}</p>
+</details>
+{% endif %}

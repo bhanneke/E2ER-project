@@ -41,6 +41,24 @@ _LAST_CALL: dict[str, float] = {}
 _RETRY_STATUS = frozenset({429, 502, 503, 504})
 #: False in tests that mock the network (respx): no waiting between requests or before a retry.
 PACING = True
+#: Set by ``reachability()``: (connect, read) timeouts in seconds, and no retries. The preflight's mode.
+_REACHABILITY: contextvars.ContextVar[tuple[float, float] | None] = contextvars.ContextVar(
+    "e2er_kit_reachability", default=None
+)
+
+
+@contextlib.contextmanager
+def reachability(connect: float = 3.0, read: float = 5.0) -> Iterator[None]:
+    """Requests made inside answer one question, "can this service be reached?" (``e2er doctor``).
+
+    Short timeouts, and no retries: a refused connection or a name that does not resolve fails at
+    once instead of after the backoff a data load deserves. Tasks started inside inherit the mode.
+    """
+    token = _REACHABILITY.set((connect, read))
+    try:
+        yield
+    finally:
+        _REACHABILITY.reset(token)
 
 
 def user_agent() -> str:
@@ -58,11 +76,20 @@ class PoliteClient:
         #: Every URL requested, in order (with its query string).
         self.requests: list[str] = []
         self._client: httpx.AsyncClient | None = None
+        self._retries = self.polite.retries
 
     async def __aenter__(self) -> PoliteClient:
         headers = {"User-Agent": user_agent(), **dict(self.polite.headers)}
+        reach = _REACHABILITY.get()
+        if reach is None:
+            timeout = httpx.Timeout(self.polite.timeout)
+            self._retries = self.polite.retries
+        else:
+            connect, read = reach
+            timeout = httpx.Timeout(min(read, self.polite.timeout), connect=connect)
+            self._retries = 0
         self._client = httpx.AsyncClient(
-            timeout=httpx.Timeout(self.polite.timeout),
+            timeout=timeout,
             follow_redirects=True,
             headers=headers,
             transport=_TRANSPORT.get(),
@@ -111,12 +138,12 @@ class PoliteClient:
             try:
                 resp = await self._client.send(request)
             except httpx.HTTPError as e:
-                if attempt < self.polite.retries and isinstance(e, httpx.TransportError):
+                if attempt < self._retries and isinstance(e, httpx.TransportError):
                     attempt += 1
                     await self._backoff(attempt, None)
                     continue
                 raise FetchError(f"{request.url}: transport error: {type(e).__name__}: {e}") from None
-            if resp.status_code in _RETRY_STATUS and attempt < self.polite.retries:
+            if resp.status_code in _RETRY_STATUS and attempt < self._retries:
                 attempt += 1
                 await self._backoff(attempt, resp.headers.get("Retry-After"))
                 continue

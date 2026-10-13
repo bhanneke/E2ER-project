@@ -17,7 +17,9 @@ import os
 import re
 import shutil
 import sys
+from collections.abc import Awaitable, Callable
 from dataclasses import asdict, dataclass, field
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -658,25 +660,41 @@ async def gmd_check(_settings) -> Check:
     return Check("data.gmd.versions", PASS, f"newest release {env['latest']} ({env['row_count']} releases)")
 
 
+def _source_jobs() -> list[tuple[str, Any]]:
+    """(check name, source) for every connector-kit source whose check is the kit's generic one."""
+    from .modules.data.sources import all_sources
+
+    return [
+        (source.doctor.check, source)
+        for source in all_sources()
+        if source.doctor is not None and source.doctor.run is None  # yfinance, FRED, GMD: own checks above
+    ]
+
+
+async def _source_check(source: Any, settings: Any) -> Check | None:
+    from .modules.data.sources.runtime import doctor_check
+
+    try:
+        return await doctor_check(source, settings)
+    except Exception as e:  # noqa: BLE001 — reported as the check's result
+        return Check(source.doctor.check, FAIL, repr(e)[:200])
+
+
 async def source_checks(settings) -> list[Check]:
     """The reachability check of every connector-kit source that has no check of its own above.
 
-    Each is one cheap request declared in the source's definition (``Source.doctor``).
+    Each is one cheap request declared in the source's definition (``Source.doctor``), run side by
+    side with the others (at most ``MAX_CONCURRENT_CHECKS`` at once, each within ``CHECK_TIMEOUT``).
     """
-    from .modules.data.sources import all_sources
-    from .modules.data.sources.runtime import doctor_check
-
-    out: list[Check] = []
-    for source in all_sources():
-        if source.doctor is None or source.doctor.run is not None:
-            continue  # yfinance, FRED and the GMD have their own checks above
-        try:
-            check = await doctor_check(source, settings)
-        except Exception as e:  # noqa: BLE001 — reported as the check's result
-            check = Check(source.doctor.check, FAIL, repr(e)[:200])
-        if check is not None:
-            out.append(check)
-    return out
+    sem = asyncio.Semaphore(MAX_CONCURRENT_CHECKS)
+    with _reachability():
+        results = await asyncio.gather(
+            *(
+                _bounded(sem, name, partial(_source_check, source, settings), CHECK_TIMEOUT)
+                for name, source in _source_jobs()
+            )
+        )
+    return [c for c in results if c is not None]
 
 
 async def allium_check(settings) -> Check:
@@ -734,8 +752,8 @@ async def zotero_check(settings) -> Check:
     try:
         from .modules.literature.zotero import fetch_library
 
-        papers = fetch_library(
-            settings.zotero_api_key, user_id=settings.zotero_user_id, group_id=settings.zotero_group_id
+        papers = await asyncio.to_thread(  # a synchronous client: off the event loop, so the others run meanwhile
+            fetch_library, settings.zotero_api_key, user_id=settings.zotero_user_id, group_id=settings.zotero_group_id
         )
         with_pdf = sum(1 for p in papers if p.pdf_url)
         note = f"{len(papers)} items, {with_pdf} with API-servable PDFs"
@@ -749,23 +767,64 @@ async def zotero_check(settings) -> Check:
 # ── Orchestrators ────────────────────────────────────────────────────────────
 
 
+#: How long one service may take to accept the connection, and to answer, in a preflight (seconds).
+CONNECT_TIMEOUT = 3.0
+#: How long one reachability check may take in all; then it fails as "timed out".
+CHECK_TIMEOUT = 5.0
+#: The checks that do a little more than one small request: the literature search (OpenAlex, then
+#: arXiv), the PDF download, Yahoo Finance (its own client), the GMD's release list, Allium, Zotero.
+SLOW_CHECK_TIMEOUT = 6.0
+#: The most checks that run at the same time.
+MAX_CONCURRENT_CHECKS = 16
+
+
+def _reachability() -> Any:
+    from .modules.data.sources.http import reachability
+
+    return reachability(connect=CONNECT_TIMEOUT, read=CHECK_TIMEOUT)
+
+
+async def _bounded(
+    sem: asyncio.Semaphore, name: str, run: Callable[[], Awaitable[Check | None]], budget: float
+) -> Check | None:
+    """Run one check when a slot is free; a check that takes longer than ``budget`` fails as timed out."""
+    async with sem:
+        try:
+            return await asyncio.wait_for(run(), timeout=budget)
+        except TimeoutError:
+            return Check(name, FAIL, f"timed out: no answer within {budget:g} s")
+        except Exception as e:  # noqa: BLE001 — a broken check is its own result, never the preflight's end
+            return Check(name, FAIL, repr(e)[:200])
+
+
 async def run_provider_checks(settings) -> list[Check]:
     """The provider/network probes — what a paper would have access to.
 
+    They run side by side (at most ``MAX_CONCURRENT_CHECKS`` at once), each within its time budget,
+    with short timeouts and no retries, so a computer that is offline learns it in seconds. The
+    order of the result is the order below, whatever finishes first.
+
     Used by both ``e2er doctor`` and ``scripts/live_check.py`` (DRY).
     """
-    return [
-        await data_catalog_check(settings),
-        await yfinance_check(settings),
-        fred_key_check(settings),
-        await fred_check(settings),
-        await gmd_check(settings),
-        *await source_checks(settings),
-        await allium_check(settings),
-        await openalex_check(settings),
-        await read_reference_check(settings),
-        await zotero_check(settings),
+    jobs: list[tuple[str, Callable[[], Awaitable[Check | None]], float]] = [
+        ("data.list_data_sources", partial(data_catalog_check, settings), CHECK_TIMEOUT),
+        ("data.yfinance.history", partial(yfinance_check, settings), SLOW_CHECK_TIMEOUT),
+        ("data.fred.observations", partial(fred_check, settings), CHECK_TIMEOUT),
+        ("data.gmd.versions", partial(gmd_check, settings), SLOW_CHECK_TIMEOUT),
+        *((name, partial(_source_check, source, settings), CHECK_TIMEOUT) for name, source in _source_jobs()),
+        ("data.allium.list_tables", partial(allium_check, settings), SLOW_CHECK_TIMEOUT),
+        ("lit.search_papers", partial(openalex_check, settings), SLOW_CHECK_TIMEOUT),
+        ("lit.read_reference (OA PDF)", partial(read_reference_check, settings), SLOW_CHECK_TIMEOUT),
+        ("lit.zotero.library", partial(zotero_check, settings), SLOW_CHECK_TIMEOUT),
     ]
+    sem = asyncio.Semaphore(MAX_CONCURRENT_CHECKS)
+    with _reachability():
+        results = await asyncio.gather(*(_bounded(sem, name, run, budget) for name, run, budget in jobs))
+    checks = [c for c in results if c is not None]
+    # The key's format is checked without a request; it stands before the request it decides on.
+    key = fred_key_check(settings)
+    at = next((i for i, c in enumerate(checks) if c.name == "data.fred.observations"), len(checks))
+    return [*checks[:at], key, *checks[at:]]
 
 
 #: Config trees the CLI backends refuse to write into. The Claude Code CLI
@@ -809,8 +868,12 @@ def workspace_writable_check(settings) -> Check:
 
 
 async def run_doctor(settings) -> list[Check]:
-    """Full preflight: setup (backend, skills, DB) + BYOD corpus + provider probes."""
-    return [
+    """Full preflight: setup (backend, skills, DB) + BYOD corpus + provider probes.
+
+    Docker (a subprocess that may take seconds) and the network probes run at the same time.
+    """
+    docker = asyncio.create_task(asyncio.to_thread(docker_check))
+    setup = [
         python_check(),
         await backend_check(settings),
         await skills_check(settings),
@@ -818,9 +881,9 @@ async def run_doctor(settings) -> list[Check]:
         workspace_writable_check(settings),
         await byod_local_data_check(settings),
         await byod_literature_check(settings),
-        docker_check(),
-        *await run_provider_checks(settings),
     ]
+    providers = await run_provider_checks(settings)
+    return [*setup, await docker, *providers]
 
 
 # ── Output ───────────────────────────────────────────────────────────────────
@@ -858,7 +921,14 @@ def main_doctor(json_output: bool = False) -> int:
     """Entry point for `e2er doctor`. Exit 0 if no failures, 1 otherwise."""
     from .config import get_settings
 
-    checks = asyncio.run(run_doctor(get_settings()))
+    # Not asyncio.run: it waits for every worker thread, and a check that timed out may leave one
+    # waiting on the network (yfinance's own client). The answer is printed first; the thread ends on its own.
+    loop = asyncio.new_event_loop()
+    try:
+        checks = loop.run_until_complete(run_doctor(get_settings()))
+        loop.run_until_complete(loop.shutdown_asyncgens())
+    finally:
+        loop.close()
     if json_output:
         print(json.dumps({"checks": [asdict(c) for c in checks]}, indent=2))
     else:

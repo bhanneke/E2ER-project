@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Preflight is quick with many data sources
+- **Preflight and `e2er doctor` ask the data sources side by side** (at most 16 at once) instead of one after the other, each with a short time limit: 3 s to connect, 5 s in all (6 s for the literature search, the PDF download, Yahoo Finance and the GMD), and no retries, since a refused connection or a name that does not resolve answers the question at once. A source that does not answer in time reads "… could not be reached" like any other. Offline (connections refused, as in the site's E2E suite) the checks took 44 s and now take 1 s; online 15 s, now about 4 s; with a network that drops every packet, about 7 s.
+- **The dashboard keeps the result for 3 minutes**, so opening Preflight, then New study (its banner), then Preflight again runs the checks once. The page opens at once and the checks fill in when they are done; "Check again" asks again, and saving the settings on Setup always checks again.
+
 ### Fixes from the 0.16.0 demo runs (2026-10-13)
 - **`e2er run` works when it has to start the server.** It started uvicorn without the session token it then sends, so the server made its own and refused the new study with 403 ("This browser tab is not signed in to e2er"). The server it starts now gets the computer's session token, and `~/.e2er/session-<port>.json` is written once it answers, so later `e2er review`/`resume` commands are accepted too.
 - **`e2er serve` (and `e2er` alone) bind `PORT` from `.env`**, the port `e2er run` and the other commands talk to; before, they bound 8280 unless `--port` was given.
