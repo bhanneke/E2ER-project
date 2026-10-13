@@ -34,10 +34,26 @@ SOURCES: tuple[tuple[str, str], ...] = (
     ("Identification (machine-readable)", "identification_spec.json"),
     # Written only in templates that ask for it (event-study-finance).
     ("Events and windows (machine-readable)", "event_design.json"),
+    # Written only in the time-series template: the forecast setup and its hold-out.
+    ("Forecast setup", "forecast_design.md"),
+    ("Forecast setup and hold-out (machine-readable)", "forecast_design.json"),
+    # Written only in the policy-evaluation template.
+    ("Difference-in-differences design (machine-readable)", "did_design.json"),
+    # Written only in the systematic-review template: the review protocol, and the search as run.
+    ("Review protocol", "review_protocol.md"),
+    ("Review protocol (machine-readable)", "review_protocol.json"),
+    ("Search counts", "search_counts.md"),
     ("Analysis plan", "econometric_spec.md"),
 )
 #: The files whose later change counts as a deviation from the plan.
-PLAN_FILES: tuple[str, ...] = ("identification_spec.json", "event_design.json", "econometric_spec.md")
+PLAN_FILES: tuple[str, ...] = (
+    "identification_spec.json",
+    "event_design.json",
+    "forecast_design.json",
+    "did_design.json",
+    "review_protocol.json",
+    "econometric_spec.md",
+)
 
 
 def _sha256(path: Path) -> str:
@@ -572,6 +588,10 @@ _NOT_RESULTS = frozenset(
         "figure_spec.json",
         "identification_spec.json",
         "event_design.json",
+        "did_design.json",
+        "did_design_check.json",
+        "spatial_design.json",
+        "spatial_design_check.json",
         "table_spec.json",
         "manifest.json",
         "figure_render_report.json",

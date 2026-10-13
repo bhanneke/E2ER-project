@@ -24,7 +24,8 @@ from __future__ import annotations
 
 import re
 import tomllib
-from dataclasses import dataclass, field
+from collections.abc import Iterable
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -74,7 +75,28 @@ CHECK_SETTINGS: dict[str, dict[str, type | tuple[type, ...]]] = {
     "field_retrieve": {"max_papers": int, "max_requests": int},
     "field_network": {"max_isolated_share": (int, float), "max_missing_refs_share": (int, float), "min_papers": int},
     "field_main_path": {"key_routes": int},
+    # The descriptive template's data check (src/core/pipeline/data_quality.py).
+    "data_quality": {"max_missing_share": (int, float)},
+    # The time-series template's checks (src/core/pipeline/forecast_checks.py).
+    "forecast_design": {"min_train_periods": int},
+    "forecast_evaluation": {"error_tolerance": (int, float)},
+    "did_design": {"min_pre_periods": int},
+    "did_results": {"min_pre_periods": int, "pretrend_alpha": (int, float)},
+    "spatial_design": {"max_unmatched_share": (int, float)},
+    "spatial_results": {"min_permutations": int},
+    # The systematic-review template's steps (src/core/pipeline/meta_checks.py).
+    "meta_search": {"max_records": int, "max_requests": int, "max_crossref": int},
+    "meta_screening": {"sample_size": int},
+    "meta_fulltext": {"max_downloads": int},
+    # The text-analysis template's checks (src/core/pipeline/text_checks.py).
+    "corpus_design": {"min_seeds": int},
+    "corpus": {},
+    "text_results": {"min_seeds": int, "min_examples": int},
+    "text_validation": {"min_validation_items": int},
 }
+
+#: The persona skill specialists read unless the template names another (``base_skill``).
+DEFAULT_BASE_SKILL = "base/economist"
 
 #: Text settings and the form each must take.
 TEXT_SETTINGS: dict[str, re.Pattern[str]] = {
@@ -101,8 +123,25 @@ SEQUENCE_CHECKS: frozenset[str] = frozenset(
         # template without a review panel (inside the review step otherwise).
         "numbers",
         "citations",
+        # Figures re-read from the data they name (data_quality.py), and the
+        # out-of-sample evaluation of a forecast against the frozen hold-out
+        # (forecast_checks.py): both after the analysis, before the draft review.
+        "figure_data",
+        "forecast_evaluation",
+        # The systematic-review template (src/core/pipeline/meta_checks.py): search,
+        # screening, full texts, extraction and synthesis, in sequence.
+        "meta_search",
+        "meta_screening",
+        "meta_fulltext",
+        "meta_extraction",
+        "meta_synthesis",
     }
 )
+
+#: Sequence checks that may also sit inside the dispatch (a gate with `after`): the figures
+#: and the forecast evaluation read the analysis's results, so a template can have them pass
+#: before the draft is written (`before = ["paper_drafter"]`) as well as after it.
+DISPATCH_TOO: frozenset[str] = frozenset({"figure_data", "forecast_evaluation"})
 
 
 class PipelineError(ValueError):
@@ -126,8 +165,14 @@ class StepSpec:
     resumable: bool = True
     files: tuple[str, ...] = ()  # researcher/preregister: files the researcher sees and may edit
     after: tuple[str, ...] = ()  # researcher/preregister/gate: act right after these specialists
+    #: gate: these specialists (the draft writers) are not dispatched until the check has passed;
+    #: a specialist in `after` that the plan left out is sent out first.
+    before: tuple[str, ...] = ()
     settings: dict[str, Any] = field(default_factory=dict, hash=False)  # gate: the check's parameters
     label: str = ""  # the step's name on the dashboard (src/core/labels.py when empty)
+    #: researcher/preregister: the step runs only when the researcher chooses it for the run
+    #: (New study's "also stop" choices, ``e2er run --review-at <name>``).
+    optional: bool = False
 
     def applies_to(self, mode: str) -> bool:
         return not self.modes or mode in self.modes
@@ -157,6 +202,51 @@ class PipelineSpec:
     sidecars: dict[str, tuple[str, ...]] = field(default_factory=dict, hash=False)
     #: Work this template is based on or draws from (``[[credit]]``), as written in the file.
     credit: tuple[dict[str, Any], ...] = field(default=(), hash=False)
+    #: The kind of results the study reports (``result_kinds.py``): which contract the
+    #: estimation check holds the results file to, which files the number check reads,
+    #: and which schema skill the analysis specialist reads.
+    results: str = "regression"
+    #: Whether the study makes a causal claim: then the identification strategist's
+    #: identification_spec.json is required and the results must implement it.
+    causal: bool = True
+    #: The persona skill read in place of ``base/economist`` (``base/researcher`` outside economics).
+    base_skill: str = DEFAULT_BASE_SKILL
+    #: The domain data skills of the data architect and analyst (None: the registry's,
+    #: blockchain and DeFi included; a list replaces those with its own).
+    data_skills: tuple[str, ...] | None = None
+    #: Weight of each reviewer of the panel in the combined score (absent: the default weight).
+    review_weights: dict[str, float] = field(default_factory=dict, hash=False)
+
+    def panel(self) -> list[str]:
+        """The reviewers of this template: its `aggregate` step's, in the registry's order.
+
+        Without an aggregate step, e2er's default panel (a template that never
+        reviews never asks).
+        """
+        from ..specialists.registry import ALL_REVIEWERS, REVIEWER_SPECIALISTS
+
+        step = next((s for s in self.steps if s.kind == "aggregate"), None)
+        if step is None:
+            return list(REVIEWER_SPECIALISTS)
+        return [r for r in ALL_REVIEWERS if r in step.run]
+
+    def polish(self) -> list[str]:
+        """The polish specialists of this template (its ``polish`` step), in the registry's order."""
+        from ..specialists.registry import POLISH_SPECIALISTS
+
+        step = self.step("polish")
+        if step is None:
+            return list(POLISH_SPECIALISTS)
+        return [p for p in POLISH_SPECIALISTS if p in step.run]
+
+    def is_default_core(self) -> bool:
+        """True when the template keeps e2er's economics defaults (results, causal, persona, data skills)."""
+        return (
+            self.results == "regression"
+            and self.causal
+            and self.base_skill == DEFAULT_BASE_SKILL
+            and self.data_skills is None
+        )
 
     def sequence_for(self, mode: str, complete: frozenset[str] | set[str] = frozenset()) -> list[str]:
         """The stage names that would run, in order.
@@ -178,6 +268,17 @@ class PipelineSpec:
 
     def step(self, name: str) -> StepSpec | None:
         return next((s for s in self.steps if s.name == name), None)
+
+    def optional_steps(self) -> list[str]:
+        """The steps that run only when the researcher chooses them (``optional = true``)."""
+        return [s.name for s in self.steps if s.optional]
+
+    def chosen(self, stages: Iterable[str] | None) -> PipelineSpec:
+        """This template as a run follows it: optional steps the researcher did not choose left out."""
+        picked = set(stages or ())
+        if not any(s.optional and s.name not in picked for s in self.steps):
+            return self
+        return replace(self, steps=tuple(s for s in self.steps if not s.optional or s.name in picked))
 
 
 # ── parsing ──────────────────────────────────────────────────────────────────
@@ -203,8 +304,10 @@ def _step_from(raw: Any, source: Path | str, index: int) -> StepSpec:
         "resumable",
         "files",
         "after",
+        "before",
         "settings",
         "label",
+        "optional",
     }
     if unknown:
         # A typo is a mistake, not an extension point. Silently ignoring
@@ -216,7 +319,18 @@ def _step_from(raw: Any, source: Path | str, index: int) -> StepSpec:
         # table, so a top-level setting written at the foot of the file is
         # parsed as a key of the last step. Written this file that way first
         # time; "unknown key: finalize" is a baffling thing to be told.
-        misplaced = unknown & {"name", "description", "methodologies", "finalize", "steps"}
+        misplaced = unknown & {
+            "name",
+            "description",
+            "methodologies",
+            "finalize",
+            "steps",
+            "results",
+            "causal",
+            "base_skill",
+            "data_skills",
+            "review_weights",
+        }
         if misplaced:
             _fail(
                 source,
@@ -253,7 +367,7 @@ def _step_from(raw: Any, source: Path | str, index: int) -> StepSpec:
         bad = [f for f in files if "/" in f or f.startswith(".")]
         if bad:
             _fail(source, f"{where} ({name}) names files outside the workspace: {', '.join(bad)}")
-    elif kind == "gate" and after and check in SEQUENCE_CHECKS:
+    elif kind == "gate" and after and check in SEQUENCE_CHECKS and check not in DISPATCH_TOO:
         _fail(source, f"{where} ({name}): the {check} check runs as a step of its own; it takes no `after`")
     elif kind == "gate" and after:
         # A gate with `after` runs inside the strategist's dispatch, right after
@@ -263,6 +377,20 @@ def _step_from(raw: Any, source: Path | str, index: int) -> StepSpec:
             _fail(source, f"{where} ({name}): `files` belongs to researcher and preregister steps")
     elif files or after:
         _fail(source, f"{where} ({name}): `files` and `after` belong to researcher, preregister and gate steps")
+
+    before = tuple(raw.get("before", ()) or ())
+    if before:
+        from ..specialists.registry import SPECIALIST_ARTIFACTS
+
+        if kind != "gate":
+            _fail(source, f"{where} ({name}): `before` belongs to gate steps")
+        if not all(isinstance(b, str) for b in before):
+            _fail(source, f"{where} ({name}): `before` must be a list of specialist names")
+        unknown_specs = [b for b in before if b not in SPECIALIST_ARTIFACTS]
+        if unknown_specs:
+            _fail(source, f"{where} ({name}): `before` names unknown specialist(s): {', '.join(unknown_specs)}")
+        if set(before) & set(after):
+            _fail(source, f"{where} ({name}): a specialist cannot be both `after` and `before` the check")
 
     settings: dict[str, Any] = raw.get("settings", {}) or {}
     if settings:
@@ -288,9 +416,22 @@ def _step_from(raw: Any, source: Path | str, index: int) -> StepSpec:
                 _fail(source, f"{where} ({name}): setting {key} must be a non-negative number, not {value!r}")
             if not isinstance(value, allowed[key]):
                 _fail(source, f"{where} ({name}): setting {key} must be a whole number, not {value!r}")
-        for share in ("max_overlap_share", "minor_rel_tolerance", "max_isolated_share", "max_missing_refs_share"):
+        for share in (
+            "max_overlap_share",
+            "minor_rel_tolerance",
+            "max_isolated_share",
+            "max_missing_refs_share",
+            "max_missing_share",
+            "error_tolerance",
+        ):
             if share in settings and float(settings[share]) > 1:
                 _fail(source, f"{where} ({name}): {share} is a share between 0 and 1")
+
+    optional = raw.get("optional", False)
+    if not isinstance(optional, bool):
+        _fail(source, f"{where} ({name}): optional must be true or false, not {optional!r}")
+    if optional and kind not in RESEARCHER_KINDS:
+        _fail(source, f"{where} ({name}): only researcher and preregister steps can be optional")
 
     on_fail = raw.get("on_fail", "halt")
     if on_fail not in ("halt", "retry", "shadow"):
@@ -311,8 +452,10 @@ def _step_from(raw: Any, source: Path | str, index: int) -> StepSpec:
         resumable=bool(raw.get("resumable", True)),
         files=files,
         after=after,
+        before=before,
         settings=dict(settings),
         label=str(raw.get("label", "") or ""),
+        optional=optional,
     )
 
 
@@ -328,6 +471,11 @@ def spec_from_dict(data: dict[str, Any], *, source: Path | str = "<dict>") -> Pi
         "skills",
         "sidecars",
         "credit",
+        "results",
+        "causal",
+        "base_skill",
+        "data_skills",
+        "review_weights",
     }
     if unknown:
         _fail(source, f"unknown top-level key(s): {', '.join(sorted(unknown))}")
@@ -355,6 +503,10 @@ def spec_from_dict(data: dict[str, Any], *, source: Path | str = "<dict>") -> Pi
     if bad:
         _fail(source, f"unknown finalize action(s): {', '.join(sorted(bad))}")
 
+    results, causal = _results(data, source)
+    _check_panel(steps, source)
+    _check_before(steps, source)
+
     return PipelineSpec(
         name=name,
         description=data.get("description", ""),
@@ -366,13 +518,112 @@ def spec_from_dict(data: dict[str, Any], *, source: Path | str = "<dict>") -> Pi
         skills=_components(data.get("skills"), "skills", source),
         sidecars=_components(data.get("sidecars"), "sidecars", source),
         credit=_credit(data.get("credit"), source),
+        results=results,
+        causal=causal,
+        base_skill=_base_skill(data.get("base_skill"), source),
+        data_skills=_data_skills(data.get("data_skills"), source),
+        review_weights=_review_weights(data.get("review_weights"), steps, source),
     )
+
+
+def _results(data: dict[str, Any], source: Path | str) -> tuple[str, bool]:
+    """``results`` (the kind of results) and ``causal``, checked; causal follows the kind unless stated."""
+    from .result_kinds import DEFAULT_KIND, KINDS
+
+    results = data.get("results", DEFAULT_KIND)
+    if not isinstance(results, str) or results not in KINDS:
+        _fail(source, f"results must be one of {', '.join(KINDS)}, not {results!r}")
+    causal = data.get("causal", KINDS[results].causal_by_default)
+    if not isinstance(causal, bool):
+        _fail(source, f"causal must be true or false, not {causal!r}")
+    return results, causal
+
+
+def _base_skill(raw: Any, source: Path | str) -> str:
+    if raw is None:
+        return DEFAULT_BASE_SKILL
+    from ...skills.loader import skill_exists
+
+    if not isinstance(raw, str) or not skill_exists(raw):
+        _fail(source, f"base_skill: no skill {raw!r} (a path under skills/files, without .md)")
+    return str(raw)
+
+
+def _data_skills(raw: Any, source: Path | str) -> tuple[str, ...] | None:
+    if raw is None:
+        return None
+    from ...skills.loader import skill_exists
+
+    if not isinstance(raw, list) or not all(isinstance(i, str) and i for i in raw):
+        _fail(source, "data_skills must be a list of skill names")
+    for item in raw:
+        if not skill_exists(item):
+            _fail(source, f"data_skills: no skill {item!r} (a path under skills/files, without .md)")
+    return tuple(dict.fromkeys(raw))
+
+
+def _check_before(steps: tuple[StepSpec, ...], source: Path | str) -> None:
+    """A check that must pass before a specialist can hold that promise.
+
+    Inside the dispatch (with `after`) the runner holds the named specialists
+    back until the check has passed. A check that runs as a step of its own
+    holds only when it comes before every step that runs them; a specialist that
+    no step of the file runs is dispatched by the strategist, so a check before
+    it needs `after`.
+    """
+    for i, s in enumerate(steps):
+        if not s.before or s.after:
+            continue
+        for b in s.before:
+            runs = [j for j, t in enumerate(steps) if t.kind in ("specialists", "aggregate") and b in t.run]
+            if not runs:
+                _fail(
+                    source,
+                    f"step {i + 1} ({s.name}): {b} is dispatched by the strategist, not by a step of this file; "
+                    "a check that must pass before it needs `after` (it then runs inside the dispatch)",
+                )
+            if min(runs) < i:
+                _fail(source, f"step {i + 1} ({s.name}) must come before the step that runs {b}")
+
+
+def _check_panel(steps: tuple[StepSpec, ...], source: Path | str) -> None:
+    """An `aggregate` step runs reviewers only: a name that is not one would never be scored."""
+    from ..specialists.registry import ALL_REVIEWERS
+
+    for s in steps:
+        if s.kind != "aggregate":
+            continue
+        unknown = [r for r in s.run if r not in ALL_REVIEWERS]
+        if unknown:
+            _fail(
+                source,
+                f"step {s.name!r}: {', '.join(unknown)} is not a reviewer (reviewers: {', '.join(ALL_REVIEWERS)})",
+            )
+
+
+def _review_weights(raw: Any, steps: tuple[StepSpec, ...], source: Path | str) -> dict[str, float]:
+    """``review_weights``: reviewer -> its weight in the combined score; only reviewers of the panel."""
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        _fail(source, "review_weights must be a table of reviewer = weight")
+    panel = {r for s in steps if s.kind == "aggregate" for r in s.run}
+    out: dict[str, float] = {}
+    for reviewer, weight in raw.items():
+        if reviewer not in panel:
+            _fail(source, f"review_weights: {reviewer!r} is not a reviewer of this template's panel")
+        if isinstance(weight, bool) or not isinstance(weight, int | float) or not weight > 0:
+            _fail(source, f"review_weights: {reviewer} must be a positive number, not {weight!r}")
+        out[reviewer] = float(weight)
+    return out
 
 
 #: What every `[[credit]]` entry names: who, what they contributed, and where it is.
 CREDIT_REQUIRED = ("creator", "role", "relation", "title", "url", "accessed")
 CREDIT_RELATIONS = ("based_on", "related_work", "cites")
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+#: A publication date as precise as the publisher gives it (Crossref: a journal issue has a month, a book a year).
+_PUBLISHED_RE = re.compile(r"^\d{4}(-\d{2}(-\d{2})?)?$")
 
 
 def _credit(raw: Any, source: Path | str) -> tuple[dict[str, Any], ...]:
@@ -393,9 +644,12 @@ def _credit(raw: Any, source: Path | str) -> tuple[dict[str, Any], ...]:
             _fail(source, f"credit {i}: relation must be one of {', '.join(CREDIT_RELATIONS)}")
         if not str(c["url"]).startswith("https://"):
             _fail(source, f"credit {i}: url must be an https:// address")
-        for key in ("published", "accessed"):
-            if key in c and not _DATE_RE.match(str(c[key])):
-                _fail(source, f"credit {i}: {key} must be a date YYYY-MM-DD")
+        if "published" in c and not _PUBLISHED_RE.match(str(c["published"])):
+            _fail(
+                source, f"credit {i}: published must be a date YYYY-MM-DD (or YYYY-MM, YYYY when that is all it gives)"
+            )
+        if "accessed" in c and not _DATE_RE.match(str(c["accessed"])):
+            _fail(source, f"credit {i}: accessed must be a date YYYY-MM-DD")
     return tuple(dict(c) for c in raw)
 
 

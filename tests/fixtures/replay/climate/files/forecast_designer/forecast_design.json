@@ -1,0 +1,22 @@
+{
+  "series": {"table": "t2m_frankfurt", "time_column": "date", "value_column": "T2M",
+             "name": "monthly mean 2 m air temperature, NASA POWER grid cell at Frankfurt am Main",
+             "frequency": "monthly", "unit": "degrees C"},
+  "seasonal_period": 12,
+  "transformation": "none",
+  "holdout": {"start": "2021-01", "end": "2023-12", "n_periods": 36},
+  "horizon": 12,
+  "interval_level": 0.95,
+  "baselines": [
+    {"model": "naive", "method": "naive"},
+    {"model": "seasonal_naive", "method": "seasonal naive"}
+  ],
+  "candidates": [
+    {"model": "trend_season", "method": "linear trend plus monthly means, OLS, normal prediction intervals with parameter uncertainty"}
+  ],
+  "diagnostics": [
+    {"name": "kpss_level", "kind": "stationarity", "test": "KPSS (level) on the training series with the monthly means removed"},
+    {"name": "mann_kendall_annual", "kind": "trend", "test": "Mann-Kendall with Sen's slope on the annual means of the training years"}
+  ],
+  "evaluation": {"scheme": "fixed origin at 2020-12", "metrics": ["rmse", "mae", "mase", "coverage"]}
+}

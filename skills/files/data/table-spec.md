@@ -1,8 +1,10 @@
 # Table Specification Format
 
-When producing a regression / results table, output a `table_spec.json` file
-that declares the table's STRUCTURE — which specifications are the columns and
-which coefficients / statistics are the rows. The pipeline fills the numbers
+When producing a results table, output a `table_spec.json` file that declares
+the table's STRUCTURE. A regression table has specifications as columns and
+coefficients / statistics as rows (below); a table of statistics, categories or
+periods has entries of the results as rows (`"layout": "records"`, further
+below). The pipeline fills the numbers
 **deterministically from `estimation_results.json` and `robustness_results.json`**
 and renders publication-quality LaTeX into `tables/<filename>.tex`.
 
@@ -119,6 +121,57 @@ flagged as unresolved.
    own entry in the `tables` list.
 7. `caption`, `notes`, `header`, and row `label` are LaTeX — write them as you
    want them typeset (math like `$R^2$` is fine).
+
+## Tables of statistics, categories and periods (`"layout": "records"`)
+
+Not every results table has specifications as columns. A table of summary
+statistics has one row per variable; a distribution one row per bin or
+category; a forecast one row per period; a spatial study one row per
+statistic or unit; a text study one row per term. Declare such a table with
+`"layout": "records"`: its rows are the entries found at `path` (an object of
+objects, or a list of objects) inside `source`, and its columns are fields of
+each entry.
+
+```json
+{
+  "filename": "summary.tex",
+  "label": "tab:summary",
+  "caption": "Summary statistics of the planet sample",
+  "layout": "records",
+  "source": "estimation_results.json",
+  "path": "statistics",
+  "rows": ["radius_earth", "period_days"],
+  "row_labels": {"radius_earth": "Radius ($R_\\oplus$)", "period_days": "Orbital period (days)"},
+  "row_header": "Variable",
+  "columns": [
+    {"field": "n", "header": "$N$", "decimals": 0},
+    {"field": "mean", "header": "Mean", "decimals": 2},
+    {"field": "median", "header": "Median", "decimals": 2},
+    {"field": "sd", "header": "SD", "decimals": 2}
+  ]
+}
+```
+
+- `source`: `estimation_results.json` (default), `robustness_results.json`
+  or `summary_statistics.json`.
+- `path`: dotted path to the entries, e.g. `statistics`,
+  `distributions.radius.bins`, `forecasts.arima_2025.points`,
+  `term_frequencies.all.terms`. List items are reached by number
+  (`models.0`).
+- `rows` (optional): which entries, in this order (object keys; for a list,
+  the value of `key_field`). Without it, every entry in file order.
+- `key_field` (for a list): the field that names each row (`period`,
+  `term`, `category`); without it rows are numbered.
+- `row_labels` (optional): LaTeX labels for row names; otherwise the name
+  is printed as text. `row_header` heads the first column.
+- `columns`: each names a `field` of the entry (dotted for nested fields,
+  `_key` for the row's own name), its `header` and `decimals`. Text values
+  are printed as text.
+
+Same rules as above: you write the structure, code fills the values,
+`e2er-check-tables` lists what did not resolve. A row label that is a bare
+number (a year) is read by the number check like any cell; label periods with
+the period as the results write it (`2025-01`) or in words.
 
 ## What still goes in hand-written LaTeX
 

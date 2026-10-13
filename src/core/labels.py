@@ -31,6 +31,10 @@ STEPS: dict[str, str] = {
     "preregister": "Pre-registration",
     "review_draft": "Draft review",
     "event_window_gate": "Event-window check",
+    "did_design_gate": "Difference-in-differences design check",
+    "did_results_gate": "Pre-trends and event-study check",
+    "spatial_design_gate": "Boundaries, CRS and weights check",
+    "spatial_results_gate": "Moran's I and maps check",
     "fetch": "Fetch and verify the package",
     "plan": "Plan the reproduction",
     "review_plan": "Plan review",
@@ -49,6 +53,31 @@ STEPS: dict[str, str] = {
     "draw_map": "Map, reading list and exports",
     "write_review": "Field review draft",
     "citation_check": "Citation check",
+    # The descriptive and time-series templates.
+    "data_quality_gate": "Data check: units, duplicates, missing values",
+    "figure_gate": "Figures re-read from the data",
+    "forecast_design_gate": "Forecast setup and hold-out frozen",
+    "forecast_gate": "Forecasts judged on the hold-out",
+    # The systematic-review template (a meta-analysis).
+    "design_protocol": "Review protocol",
+    "search": "Search OpenAlex and record it",
+    "review_protocol": "Protocol review, with the search counts",
+    "screen": "Screening on title and abstract",
+    "screening_check": "Screening check: every record decided, every exclusion with a reason",
+    "review_screening": "Screening review",
+    "fulltext": "Open-access full texts",
+    "extract": "Eligibility, extraction and risk of bias",
+    "extraction_check": "Extracted numbers traced to their sources",
+    "review_extraction": "Extraction review",
+    "synthesis": "Meta-analysis, forest, funnel and flow diagram",
+    "write_draft": "Review draft",
+    # The text-analysis template.
+    "corpus_design_gate": "Corpus design and preprocessing check",
+    "corpus_gate": "Corpus check: sources, hashes, counts",
+    "text_results_gate": "Counts, keyness and topics recomputed",
+    "text_validation_gate": "Hand-checked sample of dictionary hits",
+    "figures_before_draft": "Figures re-read before the draft",
+    "forecasts_before_draft": "Forecasts judged before the draft",
     # Stops e2er makes on its own, outside the template's steps.
     "number_check": "Number check",
     "output_contract": "Output that failed its check",
@@ -89,6 +118,8 @@ SPECIALISTS: dict[str, str] = {
     "data_reviewer": "Review of the data",
     "identification_reviewer": "Review of the identification",
     "writing_reviewer": "Review of the writing",
+    "methods_reviewer": "Review of the methods",
+    "plausibility_reviewer": "Review of domain plausibility",
     "revisor": "Revision",
     "patch_revisor": "Targeted corrections",
     "replication_packager": "Replication package",
@@ -97,6 +128,12 @@ SPECIALISTS: dict[str, str] = {
     "field_boundary_designer": "Boundary of the field",
     "field_lane_mapper": "Lanes of the field map",
     "field_review_writer": "Field review",
+    "forecast_designer": "Forecast setup and hold-out",
+    "protocol_designer": "Review protocol",
+    "study_screener": "Screening of the records",
+    "study_extractor": "Extraction from the studies",
+    "meta_review_writer": "Systematic review",
+    "text_validator": "Hand check of dictionary hits",
 }
 
 #: The built-in templates.
@@ -106,6 +143,12 @@ TEMPLATES: dict[str, str] = {
     "event-study-finance": "Event study in finance",
     "replication": "Replication of a published study",
     "field-map": "Map a research field",
+    "descriptive-study": "Descriptive data study",
+    "time-series-forecasting": "Time series and forecasting",
+    "policy-evaluation": "Policy evaluation (difference-in-differences)",
+    "spatial-analysis": "Spatial analysis",
+    "systematic-review": "Systematic review and meta-analysis",
+    "text-analysis": "Text analysis",
 }
 
 #: What a researcher did at a stop (the ``action`` of a ``researcher_action`` event).
@@ -167,6 +210,8 @@ EVENTS: dict[str, str] = {
     "improvement_stopped": "Rounds ended",
     "self_critique": "Self-critique",
     "polish_applied": "Polish notes considered",
+    "method_sources": "The template's method sources added to the bibliography",
+    "sent_out_before": "Specialists sent out before the draft",
 }
 
 #: What the ceiling check after a round of improvement decided (its ``verdict``).
@@ -203,6 +248,7 @@ VERIFY_CHECKS: dict[str, str] = {
     "numbers": "Every table number traces to its source",
     "tables": "The tables match the results",
     "spec": "The estimation follows the declared design",
+    "method checks": "The template's method checks hold on the exported files",
     "citations": "Every citation is in the bibliography",
     "preregistration": "The pre-registration is unchanged",
     "reproduction": "The reproduced numbers",
@@ -261,6 +307,9 @@ def specialist(name: str) -> str:
 def step_or_specialist(name: str, spec: Any = None) -> str:
     """What a researcher can send back: a step of the template or one specialist."""
     if name in SPECIALISTS and (spec is None or spec.step(name) is None):
+        if name == "econometrics_specialist" and getattr(spec, "results", "regression") != "regression":
+            # The analysis specialist of a template that reports no regression.
+            return "Analysis (one specialist)"
         return f"{SPECIALISTS[name]} (one specialist)"
     return step(name, spec)
 
@@ -500,7 +549,11 @@ PAPER_ORIGINS: dict[str, str] = {
 PAPER_KINDS: dict[str, str] = {"pdf": "PDF", "bib": ".bib entry", "zotero": "Zotero", "library": "Library"}
 
 #: A reference's e2er_source tag (literature.bib, refs.bib, the dossier).
-REFERENCE_SOURCES: dict[str, str] = {"researcher": "from your papers", "web": "found on the web"}
+REFERENCE_SOURCES: dict[str, str] = {
+    "researcher": "from your papers",
+    "web": "found on the web",
+    "template": "method source",
+}
 
 #: Where a table of data.db came from (data_sources.json), as the pages name it.
 DATA_CONNECTORS: dict[str, str] = {
@@ -554,3 +607,23 @@ def register(env: Any) -> None:
     env.filters["paper_kind_label"] = paper_kind
     env.filters["reference_source_label"] = reference_source
     env.filters["connector_label"] = data_connector
+
+
+def _add_source_labels() -> None:
+    """The names of the connector kit's sources (modules/data/sources/): their doctor check and their loads.
+
+    The sources written before the kit keep their entries above; a new source
+    is named by its definition (``label``, ``reached``, ``doctor.check``).
+    """
+    try:
+        from ..modules.data.sources import all_sources
+    except ImportError:  # pragma: no cover — a partial install without the data module
+        return
+    for s in all_sources():
+        DATA_CONNECTORS.setdefault(s.name, s.label)
+        if s.doctor:
+            CHECKS.setdefault(s.doctor.check, s.label)
+            _REACHED.setdefault(s.doctor.check, s.reached or s.label)
+
+
+_add_source_labels()

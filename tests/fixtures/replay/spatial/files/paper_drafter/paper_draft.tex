@@ -1,0 +1,55 @@
+\documentclass[11pt]{article}
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage{threeparttable}
+\usepackage{graphicx}
+\usepackage[margin=1in]{geometry}
+
+\title{Is the Regional Rate Spatially Clustered? Moran's I and Local Clusters on a Synthetic Grid of Regions}
+\author{Anonymous}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{center}
+\small \textit{Test fixture of e2er's replay level: the regions and the rate are synthetic.}
+\end{center}
+
+\section{Introduction}
+
+How does the rate vary across the regions in 2023, and are neighbouring regions alike? The study maps the rate, measures spatial autocorrelation with Moran's $I$ and locates local clusters.
+
+\section{Data}
+
+The study covers 30 regions of a synthetic grid with a 2023 rate; the extra-regio code RZZ has no territory and is left out. Table~\ref{tab:rate} describes the rate: its mean is 7.7933 and it ranges from 4.25 to 12.5.
+
+\input{tables/rate.tex}
+
+\section{Results}
+
+Figure~\ref{fig:map_rate} maps the rate. Under queen contiguity Moran's $I$ is 0.5908 against an expectation of $-0.034483$ under no autocorrelation (permutation $p = 0.001$, 999 permutations); with the 4 nearest neighbours as weights it is 0.5832 (Table~\ref{tab:moran}). Neighbouring regions are alike under both definitions.
+
+\input{tables/moran.tex}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.8\textwidth]{fig_map_rate.pdf}
+\caption{The 2023 rate in five quantile classes (synthetic regions).}
+\label{fig:map_rate}
+\end{figure}
+
+The local indicators find 7 high-high and 4 low-low regions at the 5\% level (Figure~\ref{fig:map_lisa}); with 30 local tests about 1.5 would be significant by chance.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.8\textwidth]{fig_map_lisa.pdf}
+\caption{LISA clusters under queen contiguity, $p < 0.05$ (synthetic regions).}
+\label{fig:map_lisa}
+\end{figure}
+
+\section{Conclusion}
+
+The rate is spatially clustered on this synthetic grid: high values in the north-east, low values in the south-west, under either neighbour definition. The grid is synthetic, and Moran's $I$ describes association between neighbours, not its cause.
+
+\end{document}

@@ -34,7 +34,6 @@ import os
 import shutil
 import time
 from collections.abc import Iterator
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -46,58 +45,26 @@ logger = get_logger(__name__)
 DATA_SOURCES_FILE = "data_sources.json"
 
 
-@dataclass(frozen=True)
-class SourceInfo:
-    """What e2er records about a source on every load: its name, terms and citation."""
-
-    connector: str
-    dataset: str
-    website: str
-    terms_url: str
-    #: The terms in one or two sentences, for a study page.
-    terms_summary: str
-    #: The terms in full, as the connector states them.
-    licence: str
-    #: ``source``: the source publishes the citation format; ``e2er``: it publishes none.
-    citation_by: str
+# A source's name, terms and citation are declared once, in its definition (sources/<name>.py).
+from .sources.base import SourceInfo as SourceInfo  # noqa: E402
 
 
-FRED = SourceInfo(
-    connector="fred",
-    dataset="FRED, Federal Reserve Bank of St. Louis",
-    website="https://fred.stlouisfed.org",
-    terms_url="https://fred.stlouisfed.org/legal/",
-    terms_summary=(
-        "FRED's terms of use apply. Each series page states its copyright status: public domain (citation "
-        "requested), copyrighted with citation required, or copyrighted with the owner's permission needed "
-        "for any use beyond personal use."
-    ),
-    licence=(
-        "FRED legal notices, information and terms of use (https://fred.stlouisfed.org/legal/). Copyright status "
-        "is stated beneath each series on FRED: Public Domain: Citation Requested; Copyrighted: Citation Required; "
-        "Copyrighted: Pre-approval Required. Before using data series owned by third parties for anything other "
-        "than your own personal use, you must contact the data owner to obtain permission. Cite each series "
-        "with the suggested citation on its Cite tab."
-    ),
-    citation_by="source",
-)
+def _info(name: str) -> SourceInfo:
+    """The SourceInfo of a source declared in the connector kit (sources/)."""
+    from . import sources
 
-YFINANCE = SourceInfo(
-    connector="yfinance",
-    dataset="Yahoo Finance (through yfinance)",
-    website="https://finance.yahoo.com",
-    terms_url="https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html",
-    terms_summary=(
-        "Yahoo's terms of use apply. The yfinance project notes that Yahoo's finance data are intended "
-        "for personal use only; yfinance is not affiliated with Yahoo."
-    ),
-    licence=(
-        "Yahoo terms of service (https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html). The data are "
-        "read through yfinance, which is not affiliated with Yahoo; its documentation refers users to "
-        "Yahoo's terms for their rights to use the data and notes that the data are intended for personal use only."
-    ),
-    citation_by="e2er",
-)
+    source = sources.get(name)
+    if source is None:
+        raise KeyError(f"no data source {name!r}")
+    return source.info
+
+
+def __getattr__(name: str) -> SourceInfo:
+    # FRED and YFINANCE, from their definitions (read when first asked for: the definitions import this module).
+    if name in ("FRED", "YFINANCE"):
+        return _info(name.lower())
+    raise AttributeError(name)
+
 
 ALLIUM = SourceInfo(
     connector="allium",
@@ -161,14 +128,14 @@ def fred_citation(series_id: str, retrieved_at: str, *, title: str = "", source:
 def fred_load(
     series_id: str, retrieved_at: str, *, title: str = "", source: str = "", last_updated: str = ""
 ) -> dict[str, Any]:
-    out = base(FRED)
+    out = base(_info("fred"))
     out.update(
         {
             "series": series_id,
             "link": f"https://fred.stlouisfed.org/series/{series_id}",
             "retrieved_at": retrieved_at,
             "citation": fred_citation(series_id, retrieved_at, title=title, source=source),
-            "citation_by": FRED.citation_by,
+            "citation_by": _info("fred").citation_by,
         }
     )
     if title:
@@ -180,7 +147,7 @@ def fred_load(
 
 
 def yfinance_load(ticker: str, retrieved_at: str, *, what: str = "daily prices") -> dict[str, Any]:
-    out = base(YFINANCE)
+    out = base(_info("yfinance"))
     out.update(
         {
             "series": f"{ticker} {what}",
@@ -190,7 +157,7 @@ def yfinance_load(ticker: str, retrieved_at: str, *, what: str = "daily prices")
                 f"Yahoo Finance, {ticker} {what}, retrieved through yfinance on {retrieved_at[:10]}, "
                 f"https://finance.yahoo.com/quote/{ticker}."
             ),
-            "citation_by": YFINANCE.citation_by,
+            "citation_by": _info("yfinance").citation_by,
         }
     )
     return out

@@ -44,6 +44,8 @@ DEFAULT_REGIME = "full"
 #: `preregistration` (nothing estimated before the freeze) only in templates with
 #: a preregister step, and `reproduction` only in the replication template; they
 #: are listed so that `full` enforces them and `off`/`contracts` shadow them.
+#: `did_design` and `did_results` run only in the policy-evaluation template,
+#: `spatial_design` and `spatial_results` only in the spatial-analysis template.
 GATES: tuple[str, ...] = (
     "contracts",
     "estimation",
@@ -53,6 +55,31 @@ GATES: tuple[str, ...] = (
     "reproduction",
     "preregistration",
     "field_network",
+    # The descriptive template's checks: the loaded data (units, duplicates,
+    # missing values, coverage) before the analysis, and every figure re-read
+    # from the data it names.
+    "data_quality",
+    "figure_data",
+    # The time-series template's checks: the forecast setup frozen with its
+    # hold-out before any model is fitted, and the out-of-sample evaluation
+    # against that hold-out.
+    "forecast_design",
+    "forecast_evaluation",
+    "did_design",
+    "did_results",
+    "spatial_design",
+    "spatial_results",
+    # The systematic-review template's checks: every record screened with its reasons,
+    # every extracted number traced to its source, the synthesis held to its contract.
+    "meta_screening",
+    "meta_extraction",
+    "meta_synthesis",
+    # The text-analysis template's checks (text_checks.py): the corpus design, the
+    # corpus as built, the results recounted, and the hand-checked dictionary sample.
+    "corpus_design",
+    "corpus",
+    "text_results",
+    "text_validation",
 )
 
 #: Deterministic steps of a template whose failure means the run cannot go on,
@@ -69,6 +96,10 @@ RELIABILITY_CHECKS: tuple[str, ...] = (
     "field_main_path",
     "field_robustness",
     "field_map",
+    # The systematic-review template's search and full-text retrieval: a failure means
+    # the records or texts could not be read, not that a claim failed.
+    "meta_search",
+    "meta_fulltext",
 )
 
 _ENFORCEMENT: dict[str, frozenset[str]] = {

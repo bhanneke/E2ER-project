@@ -1,0 +1,12 @@
+{
+ "$comment": "Recorded live by the e2er connector kit (use_cassette); replayed in tests with no network.",
+ "interactions": [
+  {
+   "method": "GET",
+   "url": "https://exoplanetarchive.ipac.caltech.edu/TAP/sync?FORMAT=csv&LANG=ADQL&MAXREC=100001&QUERY=select+pl_name%2C+hostname%2C+pl_orbsmax%2C+pl_bmasse%2C+disc_year+from+pscomppars+where+disc_year+%3E%3D+2024+and+disc_year+%3C%3D+2024+and+discoverymethod+%3D+%27Imaging%27+order+by+pl_name&REQUEST=doQuery",
+   "status": 200,
+   "content_type": "text/plain",
+   "text": "pl_name,hostname,pl_orbsmax,pl_bmasse,disc_year\n\"2MASS J03590986+2009361 b\",\"2MASS J03590986+2009361\",572.0000000000,5720.91132600,2024\n\"2MASS J11011926-7732383 b\",\"2MASS J11011926-7732383\",266.0000000000,8899.19539600,2024\n\"2MASS J11550485-7919108 b\",\"2MASS J11550485-7919108\",587.0000000000,6356.56814000,2024\n\"2MASS J21252752-8138278 b\",\"2MASS J21252752-8138278\",7493.0000000000,3813.94088400,2024\n\"G 196-3 b\",\"G 196-3\",350.0000000000,8263.53858200,2024\n\"GJ 900 b\",\"GJ 900 A\",12000.0000000000,3496.11247700,2024\n\"HIP 39017 b\",\"HIP 39017\",22.1000000000,7500.75040520,2024\n\"HIP 77900 b\",\"HIP 77900\",3319.0000000000,6674.39654700,2024\n\"ITG 15 b\",\"ITG 15 A\",435.0000000000,6674.39654700,2024\n\"UCAC3 113-933 b\",\"UCAC3 113-933\",6100.0000000000,6674.39654700,2024\n\"UCAC4 328-061594 b\",\"UCAC4 328-061594\",19000.0000000000,6674.39654700,2024\n"
+  }
+ ]
+}

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -16,6 +17,7 @@ from .. import labels as _labels
 from ..governance import DEFAULT_REGIME, KIND_RELIABILITY
 from ..governance import enforces as governance_enforces
 from ..pipeline.fieldmap_checks import FILES as _FIELDMAP_FILES
+from ..pipeline.meta_checks import FILES as _META_FILES
 from ..pipeline.spec import RESEARCHER_KINDS, SEQUENCE_CHECKS, find_spec
 from ..specialists.contracts import Contribution, WorkOrder
 from ..specialists.dispatcher import (
@@ -24,7 +26,7 @@ from ..specialists.dispatcher import (
     execute_parallel,
     execute_with_dependencies,
 )
-from ..specialists.registry import POLISH_SPECIALISTS, REVIEWER_SPECIALISTS, SPECIALIST_ARTIFACTS
+from ..specialists.registry import ALL_REVIEWERS, POLISH_SPECIALISTS, REVIEWER_SPECIALISTS, SPECIALIST_ARTIFACTS
 from ..strategist.actions import StrategistDecision
 from ..strategist.engine import StrategistEngine
 from ..strategist.review_aggregator import aggregate_reviews, parse_review_output
@@ -107,6 +109,74 @@ _ESTIMATION_SPECIALIST = "econometrics_specialist"
 #: file they read, and the specialist that writes it (sent back on `retry`).
 _DESIGN_CHECKS: dict[str, tuple[str, str]] = {
     "event_window": ("event_design.json", "identification_strategist"),
+    # The descriptive template: the loaded data, before the analysis (data_quality.py).
+    "data_quality": ("data_dictionary.json", "data_analyst"),
+    # The time-series template: the forecast setup and its hold-out, frozen before fitting.
+    "forecast_design": ("forecast_design.json", "forecast_designer"),
+    # The policy-evaluation template (src/core/pipeline/did_checks.py).
+    "did_design": ("did_design.json", "identification_strategist"),
+    "did_results": ("estimation_results.json", "econometrics_specialist"),
+    # The spatial-analysis template (src/core/pipeline/spatial_checks.py).
+    "spatial_design": ("spatial_design.json", "data_architect"),
+    "spatial_results": ("estimation_results.json", "econometrics_specialist"),
+    # The text-analysis template (src/core/pipeline/text_checks.py).
+    "corpus_design": ("corpus_design.json", "data_architect"),
+    "corpus": ("corpus_manifest.json", "data_analyst"),
+    "text_results": ("estimation_results.json", "econometrics_specialist"),
+    "text_validation": ("text_validation.json", "text_validator"),
+    # Checks of the results that also run as steps of their own (spec.DISPATCH_TOO): inside the dispatch
+    # a template has them pass before the draft is written. The figures have no single author (the data
+    # analyst or the analysis writes figure_spec.json), so a failure stops the run instead of a send-back.
+    "figure_data": ("figure_spec.json", ""),
+    "forecast_evaluation": ("estimation_results.json", "econometrics_specialist"),
+}
+
+#: Checks inside the dispatch that read the estimation's results: they run once their
+#: specialists are done (the estimation among them), never before the estimation like a
+#: design check, and an open one does not hold back the other specialists.
+_RESULT_CHECKS: frozenset[str] = frozenset(
+    {"did_results", "spatial_results", "text_results", "text_validation", "figure_data", "forecast_evaluation"}
+)
+
+#: What else the researcher sees when a design check stops the run, besides the design file.
+_DESIGN_CHECK_FILES: dict[str, tuple[str, ...]] = {
+    "event_window": ("identification_strategy.md",),
+    "data_quality": ("data_quality.md", "data_summary.md"),
+    "forecast_design": ("forecast_design.md",),
+    "did_design": ("identification_strategy.md", "did_design_check.json", "data_dictionary.json"),
+    "did_results": ("did_design.json", "did_check.json", "figure_spec.json", "econometric_spec.md"),
+    "spatial_design": ("spatial_design_check.json", "data_dictionary.json"),
+    "spatial_results": ("spatial_design.json", "spatial_check.json", "figure_spec.json", "econometric_spec.md"),
+    "corpus_design": ("data_dictionary.json",),
+    "corpus": ("corpus_design.json", "corpus_check.json", "data_summary.md"),
+    "text_results": ("corpus_design.json", "text_check.json", "corpus_check.json", "econometric_spec.md"),
+    "text_validation": ("validation_sample.json", "text_validation_check.json", "text_validation.md"),
+    "figure_data": ("figure_check.json", "estimation_results.json"),
+    "forecast_evaluation": ("forecast_check.json", "forecast_design.json"),
+}
+
+#: The work order of a design check's retry, when the check needs more than "revise the design file".
+_DESIGN_CHECK_FOCUS: dict[str, str] = {
+    "data_quality": (
+        "The data check refused the loaded data before the analysis (its report is data_quality.md). Fix what "
+        "it names: remove duplicate rows when loading (or declare the key that identifies a row), write the unit "
+        "of every numeric column in data_dictionary.json, say for each column with many missing values why they "
+        'are missing and how the analysis treats them ("missing": "..."), and load the coverage the '
+        "dictionary declares. Problems: "
+    ),
+    "corpus": (
+        "The corpus check refused the corpus as built (its report is corpus_check.json). Fix the corpus build "
+        "script and run it again so that every document in the corpus table has its source, licence and the "
+        "SHA-256 of its text in corpus_manifest.json, the token counts and corpus statistics follow from the "
+        "preprocessing recorded in corpus_design.json, and every declared metadata field is filled or its "
+        'absence explained ("missing": "..." in corpus_design.json). Problems: '
+    ),
+    "text_validation": (
+        "The validation check refused the hand check of the dictionary and sentiment measures. Judge every item "
+        "of validation_sample.json in text_validation.json (doc_id and quote as in the sample, correct true or "
+        "false, a reason for every item judged wrong) and state the precision as the share judged right. If the "
+        "sample itself is missing or too small, say so in text_validation.md; the analysis draws it. Problems: "
+    ),
 }
 
 
@@ -165,7 +235,8 @@ class PipelineRunner:
         self._mode = mode
         # The process this run follows. Resolved at construction so a bad
         # pipeline name fails before any model is called, not forty minutes in.
-        self._spec = find_spec(pipeline)
+        # Optional researcher steps (``optional = true``) run only when the researcher chose them.
+        self._spec = find_spec(pipeline).chosen(review_stages)
         # Governance regime (experiment treatment): off | contracts | full.
         # Selects which gates BLOCK; non-blocking gates still compute + log.
         self._governance = governance
@@ -315,13 +386,24 @@ class PipelineRunner:
     def _template_components(self) -> dict[str, Any] | None:
         """The ``template_components`` event: the template's skills, sidecars and credit; None when it has none."""
         spec = self._spec
-        if not (spec.skills or spec.sidecars or spec.credit):
+        if not (spec.skills or spec.sidecars or spec.credit or not spec.is_default_core()):
             return None
         out: dict[str, Any] = {
             "template": spec.name,
             "skills": {k: list(v) for k, v in spec.skills.items()},
             "sidecars": {k: list(v) for k, v in spec.sidecars.items()},
         }
+        if not spec.is_default_core():
+            # What the template changes about e2er's economics defaults (0.16.0): the
+            # results contract, the causal claim, the persona, the data skills, the panel.
+            out["core"] = {
+                "results": spec.results,
+                "causal": spec.causal,
+                "base_skill": spec.base_skill,
+                "data_skills": list(spec.data_skills) if spec.data_skills is not None else None,
+                "panel": spec.panel(),
+                "review_weights": dict(spec.review_weights),
+            }
         if spec.credit:
             # The work the template is based on (`[[credit]]`), as the template file says it, so that
             # the dossier credits it as the run recorded it. Without credit the event is as before.
@@ -370,6 +452,13 @@ class PipelineRunner:
             self._pivot_count = state.pivot_count
             prior_contributions = state.contributions_count
             self._state = state
+
+            # The template's method sources, citable from the first specialist on (method_sources.py).
+            from ..method_sources import add_method_sources
+
+            added = add_method_sources(self._workspace, self._spec)
+            if added:
+                await log_event(self._paper_id, "method_sources", payload={"keys": added})
 
             status = PaperStatus.DESIGNING
             await self._update_status(status)
@@ -1004,7 +1093,92 @@ class PipelineRunner:
             await log_event(self._paper_id, "preregistration", stage=name, payload=lock)
 
     async def _between_groups(self, done: set[str], remaining: list[WorkOrder]) -> None:
-        """After each group of a dispatch: stop if a researcher step's specialists are done."""
+        """After each group of a dispatch: stop if a researcher step's specialists are done;
+        then the checks the next group must wait for (``before``)."""
+        await self._researcher_steps_between_groups(done, remaining)
+        # What this dispatch has run so far (its contributions reach self._contributions only at its end).
+        self._ran_in_dispatch = set(getattr(self, "_ran_in_dispatch", set())) | set(done)
+        await self._checks_before(remaining)
+
+    async def _checks_before(self, orders: list[WorkOrder]) -> None:
+        """Run the checks the next group of ``orders`` must wait for (a gate's ``before``), first.
+
+        The text-analysis live run (2026-10-11): the plan left out the text
+        validator, the validation check sent it out only after the draft existed,
+        and the researcher had to send the draft back. A check with
+        ``before = ["paper_drafter"]`` now runs before the drafter is dispatched,
+        in any phase: the specialists of its ``after`` that have not run are sent
+        out first (each once), then the check runs (recorded, retried or halting
+        like every check inside the dispatch).
+        """
+        state = getattr(self, "_state", None)
+        if not orders or state is None or not hasattr(state, "is_complete"):
+            return
+        first = min(o.parallel_group for o in orders)
+        upcoming = {o.specialist for o in orders if o.parallel_group == first}
+        for trig in getattr(self, "_triggers", []):
+            if trig.kind != "gate" or not trig.before or not (set(trig.before) & upcoming):
+                continue
+            if not trig.applies_to(self._mode) or state.is_complete(trig.name):
+                continue
+            await self._send_out_missing(trig, state)
+            await self._run_gate_trigger(trig, state, orders)
+
+    def _done_specialists(self, state: Any) -> set[str]:
+        """The specialists that have run successfully in this study (recorded, or in this process)."""
+        meta = state.metadata if isinstance(getattr(state, "metadata", None), dict) else {}
+        return (
+            set(meta.get("done_specialists", []))
+            | set(getattr(self, "_ran_in_dispatch", set()))
+            | {c.specialist for c in getattr(self, "_contributions", []) if getattr(c, "success", False)}
+        )
+
+    async def _send_out_missing(self, step: Any, state: Any) -> None:
+        """The specialists a check reads (its ``after``) that the plan left out, dispatched in that order."""
+        from ...db.events import log_event
+        from ..specialists.dispatcher import execute_work_order
+        from ..specialists.registry import SPECIALIST_DEFAULT_FOCUS
+
+        missing = [a for a in step.after if a not in self._done_specialists(state)]
+        if not missing:
+            return
+        writers = ", ".join(step.before)
+        await log_event(
+            self._paper_id,
+            "sent_out_before",
+            stage=step.name,
+            payload={"check": step.check, "specialists": missing, "before": list(step.before)},
+        )
+        for spec_name in missing:
+            if spec_name == _ESTIMATION_SPECIALIST:
+                # The analysis itself was left out: the design checks it must pass run first, as before any analysis.
+                await self._run_open_gates(state, [], before_estimation=True)
+            default = SPECIALIST_DEFAULT_FOCUS.get(spec_name) or "Carry out your part of this study as your skills say."
+            focus = default + (
+                f" The plan left you out, but the check '{step.check}' reads your work and must pass before "
+                f"{writers} is dispatched; do your whole task now."
+            )
+            order = WorkOrder(paper_id=self._paper_id, specialist=spec_name, focus=focus)
+            contribution = await execute_work_order(
+                order,
+                self._backend,
+                self._workspace,
+                self._model,
+                self._extra_tools,
+                self._extra_handlers,
+                self._backend_name,
+                self._governance,
+            )
+            self._contributions.append(contribution)
+            self._update_failure_counts([contribution])
+            if contribution.success and isinstance(getattr(state, "metadata", None), dict):
+                state.metadata["done_specialists"] = sorted(
+                    set(state.metadata.get("done_specialists", [])) | {spec_name}
+                )
+        state.save(self._workspace)
+
+    async def _researcher_steps_between_groups(self, done: set[str], remaining: list[WorkOrder]) -> None:
+        """After each group of the initial dispatch: stop if a researcher step's specialists are done."""
         state = getattr(self, "_state", None)
         # Only the initial phase resumes from saved work orders, so that is the
         # only dispatch a researcher step may stop.
@@ -1017,7 +1191,9 @@ class PipelineRunner:
                 continue
             if trig.kind == "gate":
                 # A check is never approved past; it runs until the design passes.
-                if set(trig.after) <= finished or _estimation_next(remaining):
+                # A check of the results waits for its specialists (the estimation).
+                due = set(trig.after) <= finished
+                if due or (trig.check not in _RESULT_CHECKS and _estimation_next(remaining)):
                     await self._run_gate_trigger(trig, state, remaining)
                 continue
             if state.is_approved(trig.name):
@@ -1026,9 +1202,19 @@ class PipelineRunner:
                 state.metadata["pending_orders"] = [wo.model_dump() for wo in remaining]
                 await self._stop_for_researcher(trig, state)
 
-    async def _run_open_gates(self, state: Any, remaining: list[WorkOrder]) -> None:
-        """Run every gate trigger that applies and has not passed yet."""
+    async def _run_open_gates(self, state: Any, remaining: list[WorkOrder], before_estimation: bool = False) -> None:
+        """Run every gate trigger that applies and has not passed yet.
+
+        ``before_estimation``: the estimation is about to run, so checks of its
+        results (``_RESULT_CHECKS``) wait.
+        """
         for trig in getattr(self, "_triggers", []):
+            if before_estimation and trig.check in _RESULT_CHECKS:
+                continue
+            if trig.check in _RESULT_CHECKS and not (self._workspace / "estimation_results.json").is_file():
+                # No analysis yet (a plan whose initial phase ends with the design, the analysis left to the
+                # iterative rounds): a check of the results waits for them, before every later step.
+                continue
             if trig.kind == "gate" and trig.applies_to(self._mode) and not state.is_complete(trig.name):
                 await self._run_gate_trigger(trig, state, remaining)
 
@@ -1050,15 +1236,28 @@ class PipelineRunner:
         if not result.passed and blocking and step.on_fail == "retry" and owner and not state.metadata.get(retry_key):
             state.metadata[retry_key] = True
             state.save(self._workspace)
-            order = WorkOrder(
-                paper_id=self._paper_id,
-                specialist=owner,
-                focus=(
+            if step.check in _RESULT_CHECKS and step.check not in _DESIGN_CHECK_FOCUS:
+                focus = (
+                    f"The check '{step.check}' refused the results in {design_file}. Revise run_estimation.py "
+                    "so that the results it writes pass (and the files it names exist): "
+                )
+            else:
+                focus = _DESIGN_CHECK_FOCUS.get(step.check) or (
                     f"The check '{step.check}' refused the design in {design_file} before estimation. "
                     f"Revise {design_file} (and your strategy file where it changes) so that it passes: "
-                    + "; ".join(result.reasons)
-                ),
-            )
+                )
+            if owner not in self._done_specialists(state):
+                # The plan left out the specialist whose work the check reads: it does that work now,
+                # for the first time, rather than "fixing" something it never made.
+                from ..specialists.registry import SPECIALIST_DEFAULT_FOCUS
+
+                focus = (
+                    SPECIALIST_DEFAULT_FOCUS.get(owner) or "Carry out your part of this study as your skills describe."
+                ) + (
+                    f" You were not dispatched before the check '{step.check}', which reads your work and "
+                    "found it missing; do your whole task now. What the check found: "
+                )
+            order = WorkOrder(paper_id=self._paper_id, specialist=owner, focus=focus + "; ".join(result.reasons))
             contribution = await execute_work_order(
                 order,
                 self._backend,
@@ -1083,7 +1282,7 @@ class PipelineRunner:
             return
         if getattr(self, "_in_initial", False):
             state.metadata["pending_orders"] = [wo.model_dump() for wo in remaining]
-        files = [f for f in (design_file, "identification_strategy.md") if f]
+        files = [f for f in (design_file, *_DESIGN_CHECK_FILES.get(step.check, ())) if f]
         state.pending_review_stage = step.name
         state.metadata["review"] = {"kind": "gate", "files": files, "reasons": list(result.reasons)}
         state.save(self._workspace)
@@ -1096,9 +1295,9 @@ class PipelineRunner:
         Each gets the registry's default focus for it; retries, contract
         feedback and the cascade guard are the dispatcher's, as everywhere.
         """
-        from ..specialists.registry import POLISH_SPECIALISTS, REVIEWER_SPECIALISTS, SPECIALIST_DEFAULT_FOCUS
+        from ..specialists.registry import SPECIALIST_DEFAULT_FOCUS
 
-        tolerant = set(REVIEWER_SPECIALISTS) | set(POLISH_SPECIALISTS)
+        tolerant = set(ALL_REVIEWERS) | set(POLISH_SPECIALISTS)
         state = getattr(self, "_state", None)
         meta = state.metadata if state is not None and isinstance(getattr(state, "metadata", None), dict) else {}
         # After a stop for output that failed its contract: the specialists of
@@ -1192,6 +1391,40 @@ class PipelineRunner:
             from ..pipeline.event_window import check_event_window
 
             return check_event_window(self._workspace, **step.settings)
+        if step.check == "data_quality":
+            from ..pipeline.data_quality import check_data_quality
+
+            return check_data_quality(self._workspace, **step.settings)
+        if step.check == "forecast_design":
+            from ..pipeline.forecast_checks import check_forecast_design
+
+            return check_forecast_design(self._workspace, **step.settings)
+        if step.check in ("did_design", "did_results"):
+            from ..pipeline import did_checks
+
+            did_fn: Any = did_checks.check_did_design if step.check == "did_design" else did_checks.check_did_results
+            return did_fn(self._workspace, **step.settings)
+        if step.check in ("spatial_design", "spatial_results"):
+            from ..pipeline import spatial_checks
+
+            sp_fn: Any = (
+                spatial_checks.check_spatial_design
+                if step.check == "spatial_design"
+                else spatial_checks.check_spatial_results
+            )
+            return sp_fn(self._workspace, **step.settings)
+        if step.check in ("figure_data", "forecast_evaluation"):
+            return _sequence_check(step.check)(self._workspace, **step.settings)
+        if step.check in ("corpus_design", "corpus", "text_results", "text_validation"):
+            from ..pipeline import text_checks
+
+            text_fn: Any = {
+                "corpus_design": text_checks.check_corpus_design,
+                "corpus": text_checks.check_corpus,
+                "text_results": text_checks.check_text_results,
+                "text_validation": text_checks.check_text_validation,
+            }[step.check]
+            return text_fn(self._workspace, **step.settings)
         raise ValueError(f"check {step.check!r} cannot run inside the dispatch")
 
     async def _settle_researcher_decisions(self, state: Any) -> None:
@@ -1280,12 +1513,17 @@ class PipelineRunner:
                 # pre-registration itself.
                 await self._guard_preregistration(pending, state)
                 await self._stop_for_researcher(step, state)
-            if state.metadata.get("review", {}).get("kind") in ("deviation", "numbers"):
+            if state.metadata.get("review", {}).get("kind") in ("deviation", "numbers", "gate"):
                 # Sent back from a change to the pre-registered plan: the plan
                 # check runs again in the estimation gate (halting again, with
                 # the files as they are now, if the change is still there).
                 # Likewise from the number check: the review step runs again and
-                # its number check with it, before any reviewer.
+                # its number check with it, before any reviewer. And from a
+                # failed check: the check has not passed, so the run reaches it
+                # again (a check step, a check inside the dispatch) and runs it
+                # on the specialist's new output; it continues when the check
+                # passes and stops here again only when it fails. Before, the
+                # run stopped at the check first and needed an approve to rerun it.
                 state.pending_review_stage = None
                 state.metadata.pop("review", None)
                 state.save(self._workspace)
@@ -1655,13 +1893,7 @@ class PipelineRunner:
             order = WorkOrder(
                 paper_id=self._paper_id,
                 specialist=specialist,
-                focus=(
-                    "The analysis phase ended WITHOUT a valid estimation, so the paper "
-                    "is blocked before drafting. Produce a working run_estimation.py and "
-                    "a populated estimation_results.json whose 'main' entry implements "
-                    "the declared identification (see identification_spec.json). Feedback "
-                    "from the failed attempt, if any, is included below."
-                ),
+                focus=_estimation_gate_focus(),
                 context_tier=2,
             )
             contribution = await execute_work_order(
@@ -1799,6 +2031,11 @@ class PipelineRunner:
 
         attack_report_path = self._workspace / "self_attack_report.json"
         active_polish = _select_polish_specialists(attack_report_path)
+        spec = getattr(self, "_spec", None)
+        if spec is not None:
+            # Only the polish steps the template declares (its `polish` step).
+            declared = spec.polish()
+            active_polish = [p for p in active_polish if p in declared]
 
         polish_orders = [
             WorkOrder(
@@ -1911,6 +2148,11 @@ class PipelineRunner:
             payload={k: record[k] for k in ("notes", "decision", "changes_made") if k in record},
         )
 
+    def _panel(self) -> list[str]:
+        """The template's reviewer panel (its `aggregate` step); e2er's default panel without a template."""
+        spec = getattr(self, "_spec", None)
+        return spec.panel() if spec is not None else list(REVIEWER_SPECIALISTS)
+
     def _reviewers_for_methodology(self) -> list[str]:
         """Filter the reviewer roster by methodology.
 
@@ -1918,9 +2160,10 @@ class PipelineRunner:
         reviewed an empty contract on paper cbe8048f (live test v0.4.5)
         and produced a generic stub for ~$0.34. Skip it.
         """
+        panel = self._panel()
         if self._methodology == "theoretical":
-            return [r for r in REVIEWER_SPECIALISTS if r != "data_reviewer"]
-        return list(REVIEWER_SPECIALISTS)
+            return [r for r in panel if r != "data_reviewer"]
+        return panel
 
     async def _run_review_phase(self) -> PaperStatus:
         """Parallel formal review by all reviewer specialists.
@@ -2063,7 +2306,7 @@ class PipelineRunner:
             why = "; ".join(
                 f"{c.specialist}: {(c.error or 'no score line in its review')[:200]}"
                 for c in contributions
-                if c.specialist in REVIEWER_SPECIALISTS
+                if c.specialist in self._panel()
             )
             raise StepFailedError(
                 PaperStatus.FAILED,
@@ -2120,7 +2363,7 @@ class PipelineRunner:
                 "revision",
             )
 
-        result = aggregate_reviews(scores)
+        result = aggregate_reviews(scores)  # the running template's panel and weights
         logger.info("Internal quality review: %.2f of 10 (%s)", result.weighted_avg, result.rule_triggered)
         self._write_review_aggregation(result)
 
@@ -2170,7 +2413,8 @@ class PipelineRunner:
         absent. Returns the list of parsed scores (possibly empty)."""
         scores = []
         seen = set()
-        for reviewer in REVIEWER_SPECIALISTS:
+        panel = self._panel()
+        for reviewer in panel:
             artifact = SPECIALIST_ARTIFACTS.get(reviewer, "")
             if artifact:
                 path = self._workspace / artifact
@@ -2180,7 +2424,7 @@ class PipelineRunner:
                         scores.append(score)
                         seen.add(reviewer)
         # Only each reviewer's latest reply: an earlier round's reply never stands in for this one.
-        latest = {c.specialist: c for c in self._contributions if c.specialist in REVIEWER_SPECIALISTS}
+        latest = {c.specialist: c for c in self._contributions if c.specialist in panel}
         for c in latest.values():
             if c.specialist not in seen:
                 score = parse_review_output(c.specialist, c.output)
@@ -2217,11 +2461,12 @@ class PipelineRunner:
         if scores is not None:
             reported = [s.reviewer for s in scores]
             salvaged = [s.reviewer for s in scores if getattr(s, "source", "file") != "file"]
+            panel = self._panel()
             doc["panel"] = {
-                "expected": len(REVIEWER_SPECIALISTS),
+                "expected": len(panel),
                 "reported": len(reported),
-                "complete": len(reported) == len(REVIEWER_SPECIALISTS),
-                "missing": sorted(set(REVIEWER_SPECIALISTS) - set(reported)),
+                "complete": len(reported) == len(panel),
+                "missing": sorted(set(panel) - set(reported)),
                 # Scored from the reviewer's reply text because it never wrote
                 # its file: the score counts, but no report exists for the
                 # revision round or the bundle.
@@ -2243,7 +2488,7 @@ class PipelineRunner:
         """Concatenate the reviewer reports from disk for the deep-revision
         prompt — the substantive findings the research must address."""
         parts: list[str] = []
-        for reviewer in REVIEWER_SPECIALISTS:
+        for reviewer in self._panel():
             art = SPECIALIST_ARTIFACTS.get(reviewer, "")
             if not art:
                 continue
@@ -2645,29 +2890,48 @@ class PipelineRunner:
         """
         import json
 
+        from ..specialists.contract_check import REVISION_FINDINGS_FILE
         from ..specialists.dispatcher import run_with_attempts
-        from .patch_merger import merge_patch_file
+        from .patch_merger import coverage_problems, merge_patch_file
 
         # Serialise findings into the work order's focus so the
         # patch_revisor can read them without an extra file load.
-        findings_json = json.dumps(
-            [
-                {
-                    "source": f.source,
-                    "source_detail": f.source_detail,
-                    "target": f.target,
-                    "severity": f.severity,
-                    "problem": f.problem,
-                    "suggested_fix": f.suggested_fix,
-                }
-                for f in findings
-            ],
-            indent=2,
-        )
+        serialised = [
+            {
+                "id": f"F{i}",
+                "source": f.source,
+                "source_detail": f.source_detail,
+                "target": f.target,
+                "severity": f.severity,
+                "problem": f.problem,
+                "suggested_fix": f.suggested_fix,
+                **({"locations": list(f.locations)} if getattr(f, "locations", ()) else {}),
+            }
+            for i, f in enumerate(findings, 1)
+        ]
+        findings_json = json.dumps(serialised, indent=2)
+        # The coverage check of the patch file (contract_check.check_patch_coverage) reads them back.
+        try:
+            draft = self._workspace / "paper_draft.tex"
+            record = {
+                "findings": serialised,
+                # The draft the findings are about: a later patch for another draft is not checked against them.
+                "draft_sha256": hashlib.sha256(draft.read_bytes()).hexdigest() if draft.is_file() else "",
+            }
+            (self._workspace / REVISION_FINDINGS_FILE).write_text(
+                json.dumps(record, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+            )
+        except OSError as e:
+            logger.warning("could not record the findings for the coverage check: %s", e)
         focus = (
             "Emit a patch file (`paper_draft.tex.edits.json`) that "
             "addresses the findings below. See your "
             "`writing/scoped-revision` skill for the patch file shape.\n\n"
+            "A finding names an issue, not one sentence. Search the whole draft (abstract, introduction, "
+            "body, conclusion, captions) for EVERY passage with the issue, the `locations` a finding lists and "
+            "any other, and correct each one (one edit per passage). A passage you leave as it is gets an "
+            'entry with "edit_type": "keep", the passage in "find" and the reason in "reason". A check '
+            "compares the patch with the findings and sends you back with every passage left open.\n\n"
             f"FINDINGS ({len(findings)} items, severity-sorted):\n"
             f"```json\n{findings_json}\n```"
         )
@@ -2695,7 +2959,19 @@ class PipelineRunner:
         )
         self._contributions.append(contribution)
 
-        return merge_patch_file(self._workspace, findings)
+        merged = merge_patch_file(self._workspace, findings)
+        # After the last attempt: what the patch still leaves open is recorded, not hidden.
+        merged.uncovered = coverage_problems(findings, merged)
+        if merged.uncovered:
+            from ...db.events import log_event
+
+            await log_event(
+                self._paper_id,
+                "revision_coverage",
+                specialist="patch_revisor",
+                payload={"open": merged.uncovered[:20], "findings": len(findings)},
+            )
+        return merged
 
     async def _resolve_table_spec(self) -> None:
         """Render results tables and close the loop on cross-specialist key
@@ -2807,6 +3083,19 @@ class PipelineRunner:
                 continue
             if isinstance(data, dict):
                 merged.update(data)
+
+        if any(u.kind in ("source", "path", "row", "field") for u in unresolved):
+            # A `records` table (rows of statistics, categories, periods): the
+            # checker's own report names what each table could not find.
+            from ..renderer.check_tables import format_report
+            from ..renderer.tables import RenderReport
+
+            return (
+                "Your `table_spec.json` has references that do not resolve, so those table cells rendered blank "
+                "(`---`). Correct them from the report below, using the exact names in the results files; keep the "
+                "table structure.\n\n" + format_report(RenderReport(unresolved=list(unresolved)), merged) + "\n\n"
+                "Output the corrected `table_spec.json` (and only that file).\n"
+            )
 
         spec_keys = sorted(k for k in merged if not k.startswith("_"))
         if not spec_keys:
@@ -3050,7 +3339,7 @@ class PipelineRunner:
         # forever (the run #14 failure mode). Tolerant specialists
         # (reviewers + polish) are exempt — they can fail without blocking
         # downstream work.
-        tolerant = set(REVIEWER_SPECIALISTS) | set(POLISH_SPECIALISTS)
+        tolerant = set(ALL_REVIEWERS) | set(POLISH_SPECIALISTS)
         for wo in decision.work_orders:
             spec = wo.specialist
             if spec in tolerant:
@@ -3087,6 +3376,7 @@ class PipelineRunner:
             t
             for t in getattr(self, "_triggers", [])
             if t.applies_to(self._mode)
+            and t.check not in _RESULT_CHECKS
             and not (state.is_complete(t.name) if t.kind == "gate" else state.is_approved(t.name))
         ]
         if not open_steps:
@@ -3164,7 +3454,9 @@ class PipelineRunner:
         state = getattr(self, "_state", None)
         if getattr(self, "_in_initial", False) and state is not None and _estimation_next(contract_orders):
             # The first group would estimate: an open design check runs first.
-            await self._run_open_gates(state, contract_orders)
+            await self._run_open_gates(state, contract_orders, before_estimation=True)
+        # The first group would write the draft: the checks it waits for run first.
+        await self._checks_before(contract_orders)
         if len(contract_orders) == 1:
             from ..specialists.dispatcher import (
                 execute_work_order,
@@ -3183,7 +3475,7 @@ class PipelineRunner:
                 self._backend_name,
                 self._governance,
             )
-            if contract_orders[0].specialist in (set(REVIEWER_SPECIALISTS) | set(POLISH_SPECIALISTS)):
+            if contract_orders[0].specialist in (set(ALL_REVIEWERS) | set(POLISH_SPECIALISTS)):
                 c = await execute_work_order(*args)
             else:
                 # Output that fails its contract gets the same attempts as in a
@@ -3224,7 +3516,7 @@ class PipelineRunner:
         - Tolerant specialists (reviewers, polish) are not tracked because
           their failure is non-blocking and shouldn't trip the breaker.
         """
-        tolerant = set(REVIEWER_SPECIALISTS) | set(POLISH_SPECIALISTS)
+        tolerant = set(ALL_REVIEWERS) | set(POLISH_SPECIALISTS)
         for c in contributions:
             if c.specialist in tolerant:
                 continue
@@ -3386,6 +3678,9 @@ _SEQUENCE_CHECK_FILES: dict[str, tuple[str, ...]] = {
     "sandbox": ("replication_plan.json", "sandbox_log.json"),
     "reproduction": ("reproduction_report.json", "reproduction_check.json"),
     **_FIELDMAP_FILES,
+    "figure_data": ("figure_spec.json", "figure_check.json"),
+    "forecast_evaluation": ("estimation_results.json", "forecast_check.json", "forecast_design.json"),
+    **_META_FILES,
 }
 
 
@@ -3423,11 +3718,44 @@ def _sequence_check(check: str) -> Any:
         from ..pipeline.reproduction import check_reproduction
 
         return _reproduction_with_disclaimer(check_reproduction)
+    if check == "figure_data":
+        from ..pipeline.data_quality import check_figure_data
+
+        return check_figure_data
+    if check == "forecast_evaluation":
+        from ..pipeline.forecast_checks import check_forecast_evaluation
+
+        return check_forecast_evaluation
     from ..pipeline.fieldmap_checks import CHECKS as _FIELDMAP_CHECKS
+    from ..pipeline.meta_checks import CHECKS as _META_CHECKS
 
     if check in _FIELDMAP_CHECKS:
         return _FIELDMAP_CHECKS[check]
+    if check in _META_CHECKS:
+        return _META_CHECKS[check]
     raise ValueError(f"check {check!r} cannot run as a step of its own")
+
+
+def _estimation_gate_focus() -> str:
+    """The work order of a re-dispatch by the estimation gate, for the template's kind of results."""
+    from ..pipeline.result_kinds import RESULTS_FILE, active_causal, active_kind, get
+
+    kind = active_kind()
+    if kind == "regression" and active_causal():
+        return (
+            "The analysis phase ended WITHOUT a valid estimation, so the paper "
+            "is blocked before drafting. Produce a working run_estimation.py and "
+            "a populated estimation_results.json whose 'main' entry implements "
+            "the declared identification (see identification_spec.json). Feedback "
+            "from the failed attempt, if any, is included below."
+        )
+    k = get(kind)
+    return (
+        "The analysis phase ended WITHOUT valid results, so the paper is blocked before drafting. "
+        f"Produce a working run_estimation.py and a populated {RESULTS_FILE} with the {k.label} this "
+        f"study reports, as your {k.schema_skill} skill specifies. Feedback from the failed attempt, "
+        "if any, is included below."
+    )
 
 
 def _estimation_next(orders: list[WorkOrder]) -> bool:

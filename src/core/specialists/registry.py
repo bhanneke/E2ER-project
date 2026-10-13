@@ -24,6 +24,10 @@ SPECIALIST_ARTIFACTS: dict[str, str] = {
     "writing_reviewer": "review_writing.md",
     "data_reviewer": "review_data.md",
     "identification_reviewer": "review_identification.md",
+    # Discipline-neutral reviewers (0.16.0) for templates outside economics: the
+    # methods the study used, and whether its numbers are plausible in its domain.
+    "methods_reviewer": "review_methods.md",
+    "plausibility_reviewer": "review_plausibility.md",
     # V3 extensions
     "self_attacker": "self_attack_report.json",
     "polish_formula": "polish_formula.md",
@@ -55,6 +59,28 @@ SPECIALIST_ARTIFACTS: dict[str, str] = {
     "field_boundary_designer": "field_boundary.md",
     "field_lane_mapper": "field_lanes.md",
     "field_review_writer": "paper_draft.tex",
+    # Time-series template (pipelines/time-series-forecasting.toml): declares the
+    # forecast setup (series, hold-out, horizon, baselines, candidate models,
+    # diagnostics, interval level) before any model is fitted; the setup and the
+    # hold-out are frozen by the forecast_design check (forecast_checks.py).
+    "forecast_designer": "forecast_design.md",
+    # Meta-analysis template (pipelines/systematic-review.toml): a systematic review
+    # with a random-effects meta-analysis. The protocol designer writes the
+    # protocol (question, eligibility criteria, searches, outcome, effect
+    # measure, risk-of-bias tool); the screener decides every record on title
+    # and abstract; the extractor reads the full texts and extracts effects,
+    # characteristics and risk of bias, each number with its page and quote; the
+    # review writer drafts from the computed results. Search, full texts, the
+    # tracing of every extracted number and the synthesis are code
+    # (src/modules/metaanalysis), run as steps of the template.
+    "protocol_designer": "review_protocol.md",
+    "study_screener": "screening.md",
+    "study_extractor": "extraction.md",
+    "meta_review_writer": "paper_draft.tex",
+    # Text-analysis template (pipelines/text-analysis.toml): judges every passage of
+    # the sample the analysis drew of each dictionary and sentiment measure; the
+    # text_validation check (text_checks.py) recomputes the precision from it.
+    "text_validator": "text_validation.md",
 }
 
 SPECIALIST_SKILLS: dict[str, list[str]] = {
@@ -158,6 +184,8 @@ SPECIALIST_SKILLS: dict[str, list[str]] = {
     "writing_reviewer": ["review/writing-quality", "reasoning/anti-slop"],
     "data_reviewer": ["review/data-quality", "data/cleaning"],
     "identification_reviewer": ["causal-inference/sensitivity", "review/technical-review"],
+    "methods_reviewer": ["review/methods-review", "review/consistency-check"],
+    "plausibility_reviewer": ["review/domain-plausibility", "review/consistency-check"],
     "self_attacker": [
         "review/referee-simulation",
         "reasoning/argument-audit",
@@ -199,7 +227,44 @@ SPECIALIST_SKILLS: dict[str, list[str]] = {
         "writing/cite-numbers-by-source",
         "reasoning/anti-slop",
     ],
+    "forecast_designer": [
+        "base/researcher",
+        "methods/time-series-forecasting",
+        "data/data-tables",
+        "data/query-data",
+    ],
+    "protocol_designer": ["methods/meta-analysis", "base/researcher"],
+    "study_screener": ["methods/meta-analysis"],
+    "study_extractor": ["methods/meta-analysis"],
+    "meta_review_writer": [
+        "methods/meta-analysis",
+        "writing/personal-style",
+        "writing/cite-numbers-by-source",
+        "reasoning/anti-slop",
+    ],
+    "text_validator": [
+        "base/researcher",
+        "methods/text-analysis",
+    ],
 }
+
+
+def _add_source_skills() -> None:
+    """The data architect and the data analyst read the skill of every connector-kit source.
+
+    The sources written before the kit are listed above; a source added to
+    modules/data/sources/ brings its skill (``Source.skill``) here.
+    """
+    from ...modules.data.sources import all_sources
+
+    for specialist in ("data_architect", "data_analyst"):
+        skills = SPECIALIST_SKILLS[specialist]
+        for source in all_sources():
+            if source.skill and source.skill not in skills:
+                skills.append(source.skill)
+
+
+_add_source_skills()
 
 # Sidecar artifacts produced ALONGSIDE the primary SPECIALIST_ARTIFACTS file.
 # These are machine-readable JSON files that downstream specialists + the
@@ -240,6 +305,15 @@ SPECIALIST_SIDECAR_ARTIFACTS: dict[str, list[str]] = {
     # retrieval step fetches, and the lanes the map step draws.
     "field_boundary_designer": ["field_boundary.json"],
     "field_lane_mapper": ["field_lanes.json"],
+    # The forecast setup the forecast_design check validates and freezes.
+    "forecast_designer": ["forecast_design.json"],
+    # The systematic-review template's judgement files, read by code: the protocol the
+    # search runs, the screening decisions, the extraction whose numbers are traced.
+    "protocol_designer": ["review_protocol.json"],
+    "study_screener": ["screening.json"],
+    "study_extractor": ["extraction.json"],
+    # The judgements the text_validation check reads (one per item of validation_sample.json).
+    "text_validator": ["text_validation.json"],
     "paper_drafter": [
         # Declarative results-table spec. Prompted via the multi-file
         # output block; the renderer (core/renderer/tables.py) fills the
@@ -282,6 +356,19 @@ REVIEWER_SPECIALISTS = [
     "identification_reviewer",
 ]
 
+#: Every reviewer a template may put on its panel (its `aggregate` step): e2er's
+#: default panel above, then the discipline-neutral reviewers. Membership tests
+#: ("is this a reviewer?") use this list; REVIEWER_SPECIALISTS stays the panel of
+#: the economics templates, whose behaviour 0.16.0 leaves as it was.
+ALL_REVIEWERS = [*REVIEWER_SPECIALISTS, "methods_reviewer", "plausibility_reviewer"]
+
+#: Data skills that belong to one domain (blockchain and DeFi data, the Allium
+#: warehouse). A template that declares ``data_skills`` replaces these with its
+#: own; the general connector skills (FRED, yfinance, GMD, ...) stay.
+DOMAIN_DATA_SKILLS: frozenset[str] = frozenset(
+    {"data/blockchain", "data/crypto-defi", "data/allium-cli", "data/allium-developer-api"}
+)
+
 POLISH_SPECIALISTS = [
     "polish_formula",
     "polish_numerics",
@@ -303,9 +390,14 @@ SPECIALIST_NEEDS: dict[str, tuple[str, ...]] = {
     "data_analyst": ("data_architect",),
     # data.db and data_summary.md (the loaded data), data_dictionary.json, and
     # identification_spec.json (the declared specification the results are checked against).
-    "econometrics_specialist": ("data_architect", "data_analyst", "identification_strategist"),
-    # estimation_results.json (the results table), data_summary.md, model_spec.md.
-    "paper_drafter": ("data_analyst", "econometrics_specialist", "theory_specialist"),
+    "econometrics_specialist": ("data_architect", "data_analyst", "identification_strategist", "forecast_designer"),
+    # data.db (the series) and data_dictionary.json: the hold-out is chosen on the loaded series.
+    "forecast_designer": ("data_architect", "data_analyst"),
+    # validation_sample.json, which the analysis draws.
+    "text_validator": ("econometrics_specialist",),
+    # estimation_results.json (the results table), data_summary.md, model_spec.md,
+    # and the precision of a dictionary measure (text_validation.json).
+    "paper_drafter": ("data_analyst", "econometrics_specialist", "theory_specialist", "text_validator"),
     # field_lanes.json names the lanes the review is organised by.
     "field_review_writer": ("field_lane_mapper",),
 }
@@ -322,7 +414,10 @@ SPECIALIST_REWRITES_OUTPUTS: frozenset[str] = frozenset(
         "reproduction_comparer",
         "field_boundary_designer",
         "field_lane_mapper",
-        *REVIEWER_SPECIALISTS,
+        "protocol_designer",
+        "study_screener",
+        "study_extractor",
+        *ALL_REVIEWERS,
     }
 )
 
@@ -400,5 +495,74 @@ SPECIALIST_DEFAULT_FOCUS: dict[str, str] = {
         "the result, recent papers are under-cited so the end of the path is unsettled, database coverage and "
         "short reference lists drop links, and a main path shows how citations flow, not what the field "
         "believes. Two to four pages."
+    ),
+    "protocol_designer": (
+        "Write the protocol of a systematic review with a meta-analysis for the research question, as your "
+        "meta-analysis skill describes, before any record is seen. Write `review_protocol.json` exactly in the "
+        "skill's schema: the question; its parts (`framework` PICO, PECO or another, and `elements`); eligibility "
+        "criteria as `include` and `exclude` lists, each with an `id` (I1, I2, ..., E1, E2, ...) and the criterion "
+        "in words (study design, population, exposure or intervention, comparison, outcome, the statistic a study "
+        "must report, language, years); `databases` (openalex; crossref adds only its most relevant records); "
+        "`searches` with concept blocks of synonyms joined by OR and the blocks joined by AND, phrases in double "
+        "quotes, no commas; the `outcome`; the `effect_measure` (one of SMD, MD, RD, OR, RR, HR, logOR, logRR, "
+        "logHR, r, generic) and `effect_direction`; `synthesis` (tau2_method REML unless there is a reason for DL, "
+        "min_studies, ci_level); and the `risk_of_bias` tool that fits the designs (RoB 2 for randomised trials, "
+        "ROBINS-I for non-randomised interventions, Newcastle-Ottawa or JBI for observational studies, or a "
+        "named custom set), its domains and the judgements allowed. Size each search with `e2er-fieldmap count "
+        "--query '<query>' --from <year> --to <year> --types article` (one OpenAlex request each, at most 8 "
+        "calls); aim at 50 to 400 records in all, so that every record can be screened. Write "
+        "`review_protocol.md` for the researcher, who approves or edits the protocol after seeing the counts: "
+        "the question, each criterion and why, the searches with the counts you saw, the effect measure and how "
+        "a study's statistics become it, and the limits of searching one or two open indexes."
+    ),
+    "study_screener": (
+        "Screen every record of `records.json` (the search's results: id, title, abstract, year, journal) on its "
+        "title and abstract against the eligibility criteria of `review_protocol.json`, as your meta-analysis "
+        "skill describes. Write `screening.json`: `decisions`, one per record and none for anything else, each "
+        "with `id`, `decision` (include, exclude or unsure), and for an exclusion `criteria` (the ids of the "
+        'criteria it meets or fails, e.g. ["E2"] or ["I3"]) and `reason` (one sentence naming what in the '
+        "title or abstract shows it). Exclude only what the title and abstract show to be ineligible; when they "
+        "do not show it (a missing abstract, a statistic that may be in the full text), decide unsure: the full "
+        "text decides. Decide from the record only, not from what you remember of a paper. Write `screening.md`: "
+        "the counts and the criteria used most, and the records you found hardest. The researcher reads a sample "
+        "before the full texts are read."
+    ),
+    "study_extractor": (
+        "Assess and extract every study that passed screening, as your meta-analysis skill describes. The "
+        "protocol is `review_protocol.json`; the screening is `screening.json` (records decided include or "
+        "unsure); `fulltext_log.json` says, per record, whether a full text was retrieved; the full texts are "
+        "`fulltext/<id>.txt`, page by page (`=== page N ===`); the abstracts are in `records.json`. For each of "
+        "these records write one entry in `extraction.json`: `decision` (include or exclude, never unsure), "
+        "`source_text` ('full text' when a full text exists, else 'abstract', or 'title' when the record has "
+        "neither, which allows only an exclusion); for an exclusion `criteria` and "
+        "`reason`; for an inclusion `label` ('Author Year'), `year`, `characteristics` (design, country, "
+        "population, measures, as the skill lists), `n_total`, `effect` in the protocol's effect measure exactly "
+        "as the study prints it (value with se or ci_lower and ci_upper, or n for a correlation, or group means, "
+        "SDs and sizes for an SMD; never a number you computed), `sources` (for every number of `effect` and "
+        "`n_total`: the page and a verbatim quote of 8 or more characters from that page that contains the "
+        "number), and `risk_of_bias` (every domain of the protocol judged with an allowed level, `overall`, and "
+        "`support` quoting or citing what the judgement rests on). An included study that reports no usable "
+        "statistic keeps `effect: null` and says why in `no_effect_reason`. e2er reads every number back from the "
+        "quote and the page you give and stops the run on a quote that is not in the text or a number that is "
+        "not in its quote. Write `extraction.md`: what was extracted, the hard cases and every judgement call."
+    ),
+    "meta_review_writer": (
+        "Write the systematic review in LaTeX (`paper_draft.tex`: \\title, the abstract and the body, without "
+        "\\documentclass or a bibliography command; e2er adds the preamble and the bibliography), as your "
+        "meta-analysis skill describes, following the PRISMA 2020 items. Read `estimation_results.json` (every "
+        "number you may state), `review_protocol.json` and `review_protocol.md`, `search_log.json`, "
+        "`screening.md`, `extraction.md`, `extraction_check.md`, `risk_of_bias.csv`, `fulltext_log.json` and "
+        "`meta_references.json` (the cite keys of the included studies and of the methods, all in "
+        "`literature.bib`). Include \\input{tables/meta_flow.tex} and \\input{tables/meta_studies.tex}, and, when "
+        "the studies were pooled, \\input{tables/meta_results.tex}, the forest plot `fig_forest.pdf` and the "
+        "funnel plot `fig_funnel.pdf`; always the flow diagram `fig_prisma.pdf`. Write no table yourself. When "
+        "`narrative_only` is true, say plainly that too few studies could be pooled, report no pooled estimate "
+        "and describe the studies one by one. Report heterogeneity (tau^2, I^2, the prediction interval) with "
+        "the pooled estimate, the small-study checks with their low power when there are fewer than ten studies, "
+        "risk of bias, the searches as run (databases, queries, dates), and the limits: the databases searched, "
+        "full texts not available, a single screener, and extraction by a model checked against the text. Cite "
+        "every included study and the methods (page2021prisma, dersimonian1986meta or viechtbauer2005bias, "
+        "higgins2002quantifying, riley2011interpretation, egger1997bias, duval2000trim, viechtbauer2010conducting) "
+        "by their keys. Every number in the text must be a value of `estimation_results.json`."
     ),
 }

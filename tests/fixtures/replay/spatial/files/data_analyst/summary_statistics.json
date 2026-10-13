@@ -1,0 +1,29 @@
+{
+  "n_observations": 62,
+  "n_units": 30,
+  "time_coverage": {
+    "start_year": 2022,
+    "end_year": 2023
+  },
+  "outcome": {
+    "n": 30,
+    "mean": 7.7933,
+    "min": 4.25,
+    "max": 12.5
+  },
+  "missing": {
+    "rate": 0
+  },
+  "sample_flow": [
+    {
+      "step": "rows of data/regional.csv",
+      "rows": 62,
+      "dropped": 0
+    },
+    {
+      "step": "2023 rows of regions with geometry (RZZ has none)",
+      "rows": 30,
+      "dropped": 1
+    }
+  ]
+}

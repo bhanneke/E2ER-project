@@ -1,0 +1,208 @@
+{
+  "name": "spatial",
+  "source": "Hand-made test fixture of the spatial-analysis template, not a recorded run: a spatial analysis of a SYNTHETIC grid of 30 regions (make_fixture.py builds the data and the computed files by running the recorded run_estimation.py; the plans, draft and reviews are written for the test).",
+  "template": "spatial-analysis",
+  "research_question": "How does the rate vary across the regions in 2023, and are neighbouring regions alike?",
+  "title": "Spatial autocorrelation of a rate on a synthetic grid of regions",
+  "model": "claude-haiku-4-5-20251001",
+  "initial_groups": [
+    [
+      "idea_developer",
+      "literature_scanner"
+    ],
+    [
+      "data_architect"
+    ],
+    [
+      "data_analyst"
+    ],
+    [
+      "econometrics_specialist"
+    ],
+    [
+      "paper_drafter",
+      "abstract_writer"
+    ]
+  ],
+  "specialists": {
+    "idea_developer": {
+      "files": [
+        "paper_plan.md"
+      ],
+      "output": "Wrote paper_plan.md.",
+      "usage": {
+        "input_tokens": 20,
+        "output_tokens": 1000,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      }
+    },
+    "literature_scanner": {
+      "files": [
+        "literature_review.md"
+      ],
+      "output": "Wrote literature_review.md.",
+      "usage": {
+        "input_tokens": 20,
+        "output_tokens": 1000,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      }
+    },
+    "data_architect": {
+      "files": [
+        "data_dictionary.json",
+        "spatial_design.json"
+      ],
+      "output": "Wrote data_dictionary.json, spatial_design.json.",
+      "usage": {
+        "input_tokens": 20,
+        "output_tokens": 1000,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      }
+    },
+    "data_analyst": {
+      "files": [
+        "data_summary.md",
+        "summary_statistics.json",
+        "figure_spec.json",
+        "data.db"
+      ],
+      "output": "Wrote data_summary.md, summary_statistics.json, figure_spec.json, data.db.",
+      "usage": {
+        "input_tokens": 20,
+        "output_tokens": 1000,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      }
+    },
+    "econometrics_specialist": {
+      "files": [
+        "econometric_spec.md",
+        "run_estimation.py",
+        "estimation_results.json",
+        "spatial_units.csv",
+        "spatial_weights.csv",
+        "spatial_weights_knn4.csv"
+      ],
+      "output": "Wrote econometric_spec.md, run_estimation.py, estimation_results.json, spatial_units.csv, spatial_weights.csv, spatial_weights_knn4.csv.",
+      "usage": {
+        "input_tokens": 20,
+        "output_tokens": 1000,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      }
+    },
+    "paper_drafter": {
+      "files": [
+        "paper_draft.tex",
+        "table_spec.json"
+      ],
+      "output": "Wrote paper_draft.tex, table_spec.json.",
+      "usage": {
+        "input_tokens": 20,
+        "output_tokens": 1000,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      }
+    },
+    "abstract_writer": {
+      "files": [
+        "abstract.tex"
+      ],
+      "output": "Wrote abstract.tex.",
+      "usage": {
+        "input_tokens": 20,
+        "output_tokens": 1000,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      }
+    },
+    "methods_reviewer": {
+      "files": [
+        "review_methods.md"
+      ],
+      "output": "Wrote review_methods.md.",
+      "usage": {
+        "input_tokens": 20,
+        "output_tokens": 1000,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      }
+    },
+    "data_reviewer": {
+      "files": [
+        "review_data.md"
+      ],
+      "output": "Wrote review_data.md.",
+      "usage": {
+        "input_tokens": 20,
+        "output_tokens": 1000,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      }
+    },
+    "plausibility_reviewer": {
+      "files": [
+        "review_plausibility.md"
+      ],
+      "output": "Wrote review_plausibility.md.",
+      "usage": {
+        "input_tokens": 20,
+        "output_tokens": 1000,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      }
+    },
+    "writing_reviewer": {
+      "files": [
+        "review_writing.md"
+      ],
+      "output": "Wrote review_writing.md.",
+      "usage": {
+        "input_tokens": 20,
+        "output_tokens": 1000,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      }
+    },
+    "technical_reviewer": {
+      "files": [
+        "review_technical.md"
+      ],
+      "output": "Wrote review_technical.md.",
+      "usage": {
+        "input_tokens": 20,
+        "output_tokens": 1000,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      }
+    },
+    "patch_revisor": {
+      "files": [
+        "paper_draft.tex.edits.json"
+      ],
+      "output": "Wrote paper_draft.tex.edits.json.",
+      "usage": {
+        "input_tokens": 20,
+        "output_tokens": 1000,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      }
+    },
+    "replication_packager": {
+      "files": [
+        "replication/estimation.py",
+        "replication/README.md"
+      ],
+      "output": "Wrote replication/estimation.py, replication/README.md.",
+      "usage": {
+        "input_tokens": 20,
+        "output_tokens": 1000,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      }
+    }
+  }
+}

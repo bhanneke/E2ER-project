@@ -1,0 +1,134 @@
+{
+  "name": "systematic-review",
+  "source": "Hand-made test fixture of the systematic-review template, not a recorded run: a review of SYNTHETIC records on grit and grades (tests/meta_fixture.py). make_fixture.py records the OpenAlex pages and PDFs the search and full-text steps request and writes the specialists' files; the draft's numbers come from e2er's own steps run once on these files.",
+  "template": "systematic-review",
+  "research_question": "How strongly is grit associated with grades in university students (synthetic test data)?",
+  "title": "Grit and grade point average: a synthetic systematic review",
+  "model": "claude-haiku-4-5-20251001",
+  "initial_groups": [],
+  "specialists": {
+    "protocol_designer": {
+      "files": [
+        "review_protocol.json",
+        "review_protocol.md"
+      ],
+      "output": "Wrote review_protocol.json, review_protocol.md.",
+      "usage": {
+        "input_tokens": 20,
+        "output_tokens": 1000,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      }
+    },
+    "study_screener": {
+      "files": [
+        "screening.json",
+        "screening.md"
+      ],
+      "output": "Wrote screening.json, screening.md.",
+      "usage": {
+        "input_tokens": 20,
+        "output_tokens": 1000,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      }
+    },
+    "study_extractor": {
+      "files": [
+        "extraction.json",
+        "extraction.md"
+      ],
+      "output": "Wrote extraction.json, extraction.md.",
+      "usage": {
+        "input_tokens": 20,
+        "output_tokens": 1000,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      }
+    },
+    "meta_review_writer": {
+      "files": [
+        "paper_draft.tex"
+      ],
+      "output": "Wrote paper_draft.tex.",
+      "usage": {
+        "input_tokens": 20,
+        "output_tokens": 1000,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      }
+    },
+    "methods_reviewer": {
+      "files": [
+        "review_methods.md"
+      ],
+      "output": "Wrote review_methods.md.",
+      "usage": {
+        "input_tokens": 20,
+        "output_tokens": 1000,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      }
+    },
+    "data_reviewer": {
+      "files": [
+        "review_data.md"
+      ],
+      "output": "Wrote review_data.md.",
+      "usage": {
+        "input_tokens": 20,
+        "output_tokens": 1000,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      }
+    },
+    "plausibility_reviewer": {
+      "files": [
+        "review_plausibility.md"
+      ],
+      "output": "Wrote review_plausibility.md.",
+      "usage": {
+        "input_tokens": 20,
+        "output_tokens": 1000,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      }
+    },
+    "writing_reviewer": {
+      "files": [
+        "review_writing.md"
+      ],
+      "output": "Wrote review_writing.md.",
+      "usage": {
+        "input_tokens": 20,
+        "output_tokens": 1000,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      }
+    },
+    "technical_reviewer": {
+      "files": [
+        "review_technical.md"
+      ],
+      "output": "Wrote review_technical.md.",
+      "usage": {
+        "input_tokens": 20,
+        "output_tokens": 1000,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      }
+    },
+    "patch_revisor": {
+      "files": [
+        "paper_draft.tex.edits.json"
+      ],
+      "output": "Wrote paper_draft.tex.edits.json.",
+      "usage": {
+        "input_tokens": 20,
+        "output_tokens": 1000,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      }
+    }
+  }
+}

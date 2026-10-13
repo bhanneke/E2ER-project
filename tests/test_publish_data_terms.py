@@ -105,7 +105,7 @@ def test_private_gmd_data_publish_without_confirmation_and_state_the_terms(bundl
     assert "uses Global Macro Database (GMD), release 2026_09 data (kept private)" in out
     assert "warning" not in out  # the paper cites the GMD
     # No nudge to publish data the GMD's terms keep: readers on e2er.org are sent to the source.
-    assert "note: The data come from the Global Macro Database (GMD), whose terms do not allow passing them on" in out
+    assert "note: The data come from the Global Macro Database (GMD), whose terms do not allow passing the data" in out
     assert "--data public (with --data-url" not in out
     m = _manifest(bundle)
     assert m["availability"]["data"] == {"access": "private"}
@@ -148,7 +148,9 @@ def test_confirmed_public_gmd_data_publish_and_state_the_terms(bundle: Path, tmp
 def test_unknown_terms_name_is_refused(bundle: Path, tmp_path: Path, capsys):
     rc = publish(str(bundle), **BASE, **REPO, data="public", accept_data_terms=["gdm"], out=str(tmp_path / "e"))
     assert rc == 1
-    assert "--accept-data-terms gdm: e2er knows the terms of gmd, yfinance only" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "--accept-data-terms gdm: e2er knows the terms of " in out and " only" in out
+    assert "gmd" in out and "yfinance" in out
     assert not (bundle / "e2er.json").exists()
 
 

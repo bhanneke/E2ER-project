@@ -1,0 +1,38 @@
+{
+  "tables": [
+    {
+      "filename": "event_study.tex",
+      "label": "tab:event_study",
+      "caption": "Effect of adoption by year relative to adoption",
+      "layout": "records",
+      "source": "estimation_results.json",
+      "path": "event_study.periods",
+      "key_field": "relative_period",
+      "row_header": "Years from adoption",
+      "columns": [
+        {"field": "estimate", "header": "Effect", "decimals": 4},
+        {"field": "se", "header": "SE", "decimals": 4},
+        {"field": "ci_lower", "header": "95\\% CI lower", "decimals": 4},
+        {"field": "ci_upper", "header": "95\\% CI upper", "decimals": 4}
+      ],
+      "notes": "Callaway--Sant'Anna group-time effects aggregated by event time, never-adopters as comparison group, base year one year before adoption (event time $-1$, the reference). Bootstrap over units, 999 draws. Synthetic test panel."
+    },
+    {
+      "filename": "checks.tex",
+      "label": "tab:checks",
+      "caption": "Overall effect, placebo and sensitivity",
+      "layout": "records",
+      "source": "estimation_results.json",
+      "path": "sensitivity",
+      "row_labels": {"not_yet_treated": "Not-yet-adopted comparison group", "honest_did_rm": "Relative-magnitudes bound, event time 0"},
+      "row_header": "Analysis",
+      "columns": [
+        {"field": "estimate", "header": "Estimate", "decimals": 4},
+        {"field": "se", "header": "SE", "decimals": 4},
+        {"field": "ci_lower", "header": "Lower", "decimals": 4},
+        {"field": "ci_upper", "header": "Upper", "decimals": 4}
+      ],
+      "notes": "The bound widens the event-time-0 interval by the largest change between consecutive pre-adoption effects (Mbar = 1)."
+    }
+  ]
+}

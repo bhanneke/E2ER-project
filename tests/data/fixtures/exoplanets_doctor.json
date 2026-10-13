@@ -1,0 +1,12 @@
+{
+ "$comment": "Recorded live by the e2er connector kit (use_cassette); replayed in tests with no network.",
+ "interactions": [
+  {
+   "method": "GET",
+   "url": "https://exoplanetarchive.ipac.caltech.edu/TAP/sync?FORMAT=csv&LANG=ADQL&MAXREC=100001&QUERY=select+pl_name%2C+pl_rade%2C+pl_orbper+from+pscomppars+where+%28pl_name+%3D+%27Kepler-22+b%27%29+order+by+pl_name&REQUEST=doQuery",
+   "status": 200,
+   "content_type": "text/plain",
+   "text": "pl_name,pl_rade,pl_orbper\n\"Kepler-22 b\",2.10000000,289.86387600000\n"
+  }
+ ]
+}

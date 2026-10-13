@@ -48,9 +48,9 @@ class UnresolvedRef:
     """A ``table_spec`` reference that did not resolve to a JSON value."""
 
     table: str  # the table filename
-    kind: str  # "spec_key" | "coefficient" | "stat"
+    kind: str  # "spec_key" | "coefficient" | "stat"; records tables: "source" | "path" | "row" | "field"
     ref: str  # the offending key/var/field
-    column: str = ""  # the column spec_key the row was resolved against
+    column: str = ""  # the column spec_key the row was resolved against (records: the row, or the path)
 
 
 @dataclass
@@ -403,6 +403,144 @@ def _render_one_table(
     return "\n".join(lines) + "\n", unresolved, normalized
 
 
+#: Files a ``records`` table may read its rows from (default: the results file).
+RECORD_SOURCES = ("estimation_results.json", "robustness_results.json", "summary_statistics.json")
+#: The field of a ``records`` column that prints the row's own name.
+ROW_KEY = "_key"
+
+_LATEX_SPECIAL = {
+    "\\": r"\textbackslash{}",
+    "&": r"\&",
+    "%": r"\%",
+    "$": r"\$",
+    "#": r"\#",
+    "_": r"\_",
+    "{": r"\{",
+    "}": r"\}",
+    "~": r"\textasciitilde{}",
+    "^": r"\textasciicircum{}",
+}
+
+
+def _escape(text: str) -> str:
+    """A text value from the results, typeset as text (``exoplanet_count`` -> ``exoplanet\\_count``)."""
+    return "".join(_LATEX_SPECIAL.get(ch, ch) for ch in text)
+
+
+def _at_path(doc: Any, path: str) -> tuple[Any, bool]:
+    """The node at a dotted path (``distributions.radius.bins``); (None, False) when absent."""
+    node = doc
+    for part in [p for p in path.split(".") if p]:
+        if isinstance(node, dict) and part in node:
+            node = node[part]
+        elif isinstance(node, list) and part.isdigit() and int(part) < len(node):
+            node = node[int(part)]
+        else:
+            return None, False
+    return node, True
+
+
+def _records(node: Any, key_field: str) -> list[tuple[str, dict[str, Any]]] | None:
+    """(row name, row object) for an object of objects or a list of objects; None for anything else."""
+    if isinstance(node, dict) and node and all(isinstance(v, dict) for v in node.values()):
+        return [(str(k), v) for k, v in node.items()]
+    if isinstance(node, list) and node and all(isinstance(v, dict) for v in node):
+        return [(str(v.get(key_field, i + 1)) if key_field else str(i + 1), v) for i, v in enumerate(node)]
+    return None
+
+
+def _cell(value: Any, decimals: int) -> str:
+    if isinstance(value, str):
+        return _escape(value)
+    return _fmt(value, decimals)
+
+
+def _render_records_table(
+    table: dict[str, Any],
+    files: dict[str, dict[str, Any]],
+) -> tuple[str, list[UnresolvedRef], list[Normalized]]:
+    """A table whose rows are entries of the results (``"layout": "records"``).
+
+    For results that are not regression columns: rows of statistics (one per
+    variable), categories (a distribution's bins), periods (a forecast's
+    points), units or terms. ``path`` names an object of objects or a list of
+    objects inside ``source``; each row is one entry, each column one field of
+    it. The first column is the row's name (``row_labels`` or the entry's key,
+    or its ``key_field`` for a list). Lookup only, never arithmetic, as for
+    the regression layout.
+    """
+    filename = str(table.get("filename", "table.tex"))
+    label = str(table.get("label", ""))
+    caption = str(table.get("caption", ""))
+    notes = str(table.get("notes", ""))
+    columns = [c for c in table.get("columns") or [] if isinstance(c, dict)]
+    source = str(table.get("source") or "estimation_results.json")
+    path = str(table.get("path", "")).strip()
+    key_field = str(table.get("key_field", "") or "")
+    wanted = table.get("rows")
+    raw_labels = table.get("row_labels")
+    row_labels: dict[str, Any] = raw_labels if isinstance(raw_labels, dict) else {}
+    unresolved: list[UnresolvedRef] = []
+
+    records: list[tuple[str, dict[str, Any]]] = []
+    if source not in RECORD_SOURCES:
+        unresolved.append(UnresolvedRef(filename, "source", source))
+    else:
+        node, found = _at_path(files.get(source, {}), path) if path else (None, False)
+        rows = _records(node, key_field) if found else None
+        if rows is None:
+            unresolved.append(UnresolvedRef(filename, "path", path, source))
+        else:
+            records = rows
+            if isinstance(wanted, list) and wanted:
+                by_name = dict(rows)
+                records = []
+                for name in (str(w) for w in wanted):
+                    if name in by_name:
+                        records.append((name, by_name[name]))
+                    else:
+                        unresolved.append(UnresolvedRef(filename, "row", name, path))
+                        records.append((name, {}))
+
+    headers = [str(table.get("row_header", ""))] + [str(c.get("header", c.get("field", ""))) for c in columns]
+    lines: list[str] = ["\\begin{table}[t]", "\\centering", "\\begin{threeparttable}"]
+    if caption:
+        lines.append(f"\\caption{{{caption}}}")
+    if label:
+        lines.append(f"\\label{{{label}}}")
+    lines.append(f"\\begin{{tabular}}{{l{'c' * len(columns)}}}")
+    lines.append("\\toprule")
+    lines.append(" & ".join(headers) + " \\\\")
+    lines.append("\\midrule")
+    for name, rec in records:
+        row_label = str(row_labels.get(name)) if name in row_labels else _escape(name)
+        cells = [row_label]
+        for col in columns:
+            fname = str(col.get("field", ""))
+            decimals = int(col.get("decimals", 3))
+            if fname == ROW_KEY:
+                cells.append(_escape(name))
+                continue
+            value, found = _at_path(rec, fname) if fname else (None, False)
+            if not found:
+                if rec:
+                    unresolved.append(UnresolvedRef(filename, "field", fname, name))
+                cells.append(_MISSING)
+            else:
+                cells.append(_cell(value, decimals))
+        lines.append(" & ".join(cells) + " \\\\")
+    lines.append("\\bottomrule")
+    lines.append("\\end{tabular}")
+    if notes:
+        lines.append("\\begin{tablenotes}[flushleft]")
+        lines.append("\\footnotesize")
+        lines.append(f"\\item {notes}")
+        lines.append("\\end{tablenotes}")
+    lines.append("\\end{threeparttable}")
+    lines.append("\\end{table}")
+    return "\n".join(lines) + "\n", unresolved, []
+
+
 def _spec_name(spec_obj: dict[str, Any]) -> str:
     spec = spec_obj.get("specification")
     return str(spec)[:40] if isinstance(spec, str) else ""
@@ -436,6 +574,8 @@ def render_tables(workspace: Path) -> RenderReport:
     sources: dict[str, Any] = {}
     sources.update(_load_json(workspace / "estimation_results.json"))
     sources.update(_load_json(workspace / "robustness_results.json"))
+    # `records` tables read one file each, by name (summary statistics included).
+    files = {name: _load_json(workspace / name) for name in RECORD_SOURCES}
 
     tables_dir = workspace / "tables"
     tables_dir.mkdir(exist_ok=True)
@@ -451,7 +591,10 @@ def render_tables(workspace: Path) -> RenderReport:
             report.errors.append(f"invalid table filename: {filename!r}")
             continue
         try:
-            latex, unresolved, normalized = _render_one_table(table, sources)
+            if table.get("layout") == "records":
+                latex, unresolved, normalized = _render_records_table(table, files)
+            else:
+                latex, unresolved, normalized = _render_one_table(table, sources)
         except Exception as e:  # noqa: BLE001 — never let one bad table abort the rest
             logger.warning("render_tables: failed to render %s: %s", filename, e)
             report.errors.append(f"{filename}: {e!r}")

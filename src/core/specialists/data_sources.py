@@ -10,8 +10,8 @@ table, its source and why it is unavailable. After the last attempt the run
 stops for the researcher, who can add data files or keys, or instruct the
 architect to use other sources.
 
-Available: yfinance and GMD (no key), FRED with FRED_API_KEY, Allium with
-ALLIUM_API_KEY, and the data files of this study: the files staged into its
+Available: the connector kit's keyless sources (yfinance, the GMD, USGS, …),
+FRED with FRED_API_KEY, Allium with ALLIUM_API_KEY, and the data files of this study: the files staged into its
 ``data/`` folder when it started (the files chosen on New study or with
 ``e2er run --data``, else every data file of the data folder). The data folder
 itself is not read again: a file added there later is not part of this study.
@@ -26,19 +26,32 @@ from typing import Any
 
 from ...modules.local_corpus import DATA_EXTENSIONS
 
-#: Connectors e2er has: source name -> (the setting that holds its key, its variable), None when keyless.
-CONNECTORS: dict[str, tuple[str, str] | None] = {
-    "yfinance": None,
-    "gmd": None,
-    "fred": ("fred_api_key", "FRED_API_KEY"),
-    "allium": ("allium_api_key", "ALLIUM_API_KEY"),
-}
-#: Other names for a connector, written as _norm writes them (lower case, "_" for spaces and dashes).
-_ALIASES = {
-    "yahoo": "yfinance",
-    "yahoo_finance": "yfinance",
-    "global_macro_database": "gmd",
-}
+
+def _connectors() -> dict[str, tuple[str, str] | None]:
+    """Connectors e2er has: source name -> (the setting that holds its key, its variable), None when keyless.
+
+    The connector kit's sources (modules/data/sources/): the keyless ones first, then those that
+    need a key, each in catalogue order; then Allium.
+    """
+    from ...modules.data.sources import all_sources
+
+    kit = sorted(all_sources(), key=lambda s: bool(s.key and not s.key.optional))
+    out: dict[str, tuple[str, str] | None] = {
+        s.name: (s.key.setting, s.key.env) if s.key and not s.key.optional else None for s in kit
+    }
+    out["allium"] = ("allium_api_key", "ALLIUM_API_KEY")
+    return out
+
+
+def _aliases() -> dict[str, str]:
+    """Other names for a connector, written as _norm writes them (lower case, "_" for spaces and dashes)."""
+    from ...modules.data.sources import all_sources
+
+    return {alias: s.name for s in all_sources() for alias in s.aliases}
+
+
+#: The connectors when this module was imported (``_connectors()`` is the live list).
+CONNECTORS: dict[str, tuple[str, str] | None] = _connectors()
 #: A table from the study's own files.
 LOCAL_SOURCES = frozenset(
     {"local", "file", "data", "data_folder", "researcher", "researcher_supplied", "supplied", "byod", "upload"}
@@ -67,7 +80,12 @@ def available_sources(workspace: Path, settings: Any = None) -> Sources:
         from ...config import get_settings
 
         settings = get_settings()
-    connectors = {name: key is None or bool(getattr(settings, key[0], None)) for name, key in CONNECTORS.items()}
+    from ...modules.data.sources import get as source_of
+
+    connectors = {}
+    for name, key in _connectors().items():
+        src = source_of(name)
+        connectors[name] = src.available(settings) if src else key is None or bool(getattr(settings, key[0], None))
     files: list[str] = []
     for d in _data_dirs(workspace, settings):
         if d.is_dir():
@@ -82,7 +100,7 @@ def available_sources(workspace: Path, settings: Any = None) -> Sources:
 def _norm(source: Any) -> str:
     """A source as named in the data dictionary, in one spelling: "Yahoo-Finance" and "yahoo finance" are yfinance."""
     s = "_".join(str(source or "").strip().lower().replace("-", " ").replace("_", " ").split())
-    return _ALIASES.get(s, s)
+    return _aliases().get(s, s)
 
 
 def _has_file(wanted: str, files: tuple[str, ...]) -> bool:
@@ -101,10 +119,11 @@ def why_unavailable(entry: dict[str, Any], sources: Sources) -> str | None:
     source = _norm(entry.get("source"))
     if not source:
         return "declares no source"
-    if source in CONNECTORS:
+    known = _connectors()
+    if source in known:
         if sources.connectors.get(source):
             return None
-        key = CONNECTORS[source]
+        key = known[source]
         return f"{source} needs {key[1]}, which is not set" if key else f"{source} is not available"
     if source in LOCAL_SOURCES:
         wanted = str(entry.get("file") or "").strip()
@@ -170,7 +189,7 @@ def sources_block(workspace: Path, settings: Any = None) -> str:
         "Declare tables only from these sources (the `source` of each table in data_dictionary.json). "
         "A table from any other source is rejected by the contract check.",
     ]
-    for name, key in CONNECTORS.items():
+    for name, key in _connectors().items():
         if s.connectors[name]:
             lines.append(f"- `{name}`" + (f" (its key {key[1]} is set)" if key else " (no key needed)"))
         else:

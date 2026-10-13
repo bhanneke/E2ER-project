@@ -1,0 +1,57 @@
+{
+  "decisions": [
+    {
+      "id": "W101",
+      "decision": "include"
+    },
+    {
+      "id": "W102",
+      "decision": "include"
+    },
+    {
+      "id": "W103",
+      "decision": "include"
+    },
+    {
+      "id": "W104",
+      "decision": "include"
+    },
+    {
+      "id": "W105",
+      "decision": "include"
+    },
+    {
+      "id": "W106",
+      "decision": "include"
+    },
+    {
+      "id": "W107",
+      "decision": "include"
+    },
+    {
+      "id": "W108",
+      "decision": "include"
+    },
+    {
+      "id": "W109",
+      "decision": "exclude",
+      "criteria": [
+        "E1"
+      ],
+      "reason": "a meta-analysis, not a primary study"
+    },
+    {
+      "id": "W110",
+      "decision": "exclude",
+      "criteria": [
+        "I1"
+      ],
+      "reason": "high-school pupils"
+    },
+    {
+      "id": "W111",
+      "decision": "unsure",
+      "reason": "no abstract"
+    }
+  ]
+}

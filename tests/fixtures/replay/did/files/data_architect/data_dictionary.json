@@ -1,0 +1,27 @@
+{
+  "tables": [
+    {
+      "name": "panel",
+      "source": "file",
+      "file": "panel.csv",
+      "frequency": "one row per unit and year",
+      "role": "the outcome panel, 24 units, 2000 to 2015 (synthetic test data)",
+      "columns": [
+        {"name": "iso3", "type": "TEXT", "description": "unit code (synthetic, no real country)"},
+        {"name": "year", "type": "INTEGER", "description": "calendar year"},
+        {"name": "outcome", "type": "REAL", "description": "the outcome"}
+      ]
+    },
+    {
+      "name": "adoption",
+      "source": "file",
+      "file": "adoption.csv",
+      "frequency": "one row per unit",
+      "role": "the first year each unit had the policy in force; empty for never-adopters",
+      "columns": [
+        {"name": "iso3", "type": "TEXT", "description": "unit code"},
+        {"name": "first_year", "type": "INTEGER", "description": "first year with the policy in force; NULL if never", "min_non_null": 0}
+      ]
+    }
+  ]
+}

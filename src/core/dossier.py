@@ -1150,7 +1150,8 @@ def stamp_paper(
 
 
 def _references(bundle: Path | None) -> list[dict[str, Any]]:
-    """The references the paper cites, each with where it came from: the researcher's papers or a web search.
+    """The references the paper cites, each with where it came from: the researcher's papers, the template's
+    method sources, or a web search.
 
     Read from the exported ``paper/refs.bib`` (its ``e2er_source`` tags, written
     since 0.15.0 by study_inputs.prepare_papers and the literature search) and
@@ -1178,7 +1179,8 @@ def _references(bundle: Path | None) -> list[dict[str, Any]]:
         entry: dict[str, Any] = {
             "key": key,
             "title": " ".join(str(f.get("title") or "").replace("{", "").replace("}", "").split()),
-            "source": "researcher" if f.get(SOURCE_FIELD) == "researcher" else "web",
+            # The template's method sources are tagged "template" (shown as "method source").
+            "source": tag if (tag := str(f.get(SOURCE_FIELD) or "")) in ("researcher", "template") else "web",
         }
         if str(f.get("year") or "").strip():
             entry["year"] = str(f["year"]).strip()

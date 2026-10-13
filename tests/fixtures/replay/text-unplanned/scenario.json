@@ -1,0 +1,11 @@
+{
+  "name": "text-unplanned",
+  "base": "text",
+  "source": "The text replay (base) with the plan the live run's strategist made on 2026-10-11: no data analyst and no text validator in the initial phase. The checks that read their work find it missing and send each of them out for the first time.",
+  "initial_groups": [
+    ["idea_developer", "literature_scanner"],
+    ["data_architect"],
+    ["econometrics_specialist"],
+    ["paper_drafter", "abstract_writer"]
+  ]
+}

@@ -1,0 +1,19 @@
+{
+ "$comment": "Recorded live by the e2er connector kit (use_cassette); replayed in tests with no network.",
+ "interactions": [
+  {
+   "method": "GET",
+   "url": "https://power.larc.nasa.gov/api/temporal/monthly/point?community=RE&end=2023&format=JSON&latitude=50.11&longitude=8.68&parameters=T2M&start=2023",
+   "status": 200,
+   "content_type": "application/json",
+   "text": "{\"type\":\"Feature\",\"geometry\":{\"type\":\"Point\",\"coordinates\":[8.68,50.11,171.61]},\"properties\":{\"parameter\":{\"T2M\":{\"202301\":3.24,\"202302\":3.15,\"202303\":6.28,\"202304\":8.38,\"202305\":14.41,\"202306\":21.19,\"202307\":21.63,\"202308\":20.31,\"202309\":19.39,\"202310\":12.93,\"202311\":5.96,\"202312\":3.84,\"202313\":11.77}}},\"header\":{\"title\":\"NASA/POWER Source Native Resolution Monthly and Annual\",\"api\":{\"version\":\"v2.10.0\",\"name\":\"POWER Monthly and Annual API\"},\"sources\":[\"MERRA2\"],\"fill_value\":-999.0,\"time_standard\":\"LST\",\"start\":\"20230101\",\"end\":\"20231231\"},\"messages\":[],\"parameters\":{\"T2M\":{\"units\":\"C\",\"longname\":\"Temperature at 2 Meters\"}},\"times\":{\"data\":0.055,\"process\":0.01}}"
+  },
+  {
+   "method": "GET",
+   "url": "https://power.larc.nasa.gov/api/temporal/monthly/point?community=RE&end=2023&format=JSON&latitude=50.11&longitude=8.68&parameters=T2M&start=2023",
+   "status": 200,
+   "content_type": "application/json",
+   "text": "{\"type\":\"Feature\",\"geometry\":{\"type\":\"Point\",\"coordinates\":[8.68,50.11,171.61]},\"properties\":{\"parameter\":{\"T2M\":{\"202301\":3.24,\"202302\":3.15,\"202303\":6.28,\"202304\":8.38,\"202305\":14.41,\"202306\":21.19,\"202307\":21.63,\"202308\":20.31,\"202309\":19.39,\"202310\":12.93,\"202311\":5.96,\"202312\":3.84,\"202313\":11.77}}},\"header\":{\"title\":\"NASA/POWER Source Native Resolution Monthly and Annual\",\"api\":{\"version\":\"v2.10.0\",\"name\":\"POWER Monthly and Annual API\"},\"sources\":[\"MERRA2\"],\"fill_value\":-999.0,\"time_standard\":\"LST\",\"start\":\"20230101\",\"end\":\"20231231\"},\"messages\":[],\"parameters\":{\"T2M\":{\"units\":\"C\",\"longname\":\"Temperature at 2 Meters\"}},\"times\":{\"data\":0.059,\"process\":0.01}}"
+  }
+ ]
+}

@@ -7,6 +7,465 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0] — 2026-10-13
+
+### From the text-analysis live run (2026-10-11): checks before the draft, method sources
+- **The draft waits for the checks it reports.** The plan left out the text validator; the
+  validation check sent it out only after the draft existed, and the researcher had to send the
+  draft back. A gate step inside the dispatch can now name `before = ["paper_drafter"]`: in every
+  phase, before a group with the drafter runs, the specialists of the check's `after` that have not
+  run are sent out (event `sent_out_before`), then the check runs (recorded, retried or stopping the
+  run like every check inside the dispatch), and only then is the drafter dispatched. The strategist
+  is told so. Applied to text analysis (results and validation checks), policy evaluation (DiD
+  results), spatial analysis (spatial results), the descriptive study (data check, and a new
+  `figures_before_draft` check of the figures) and time series (a new `forecasts_before_draft`
+  forecast check; the figure and forecast checks may now also sit inside the dispatch). A check that
+  runs as a step of its own may name `before` too; the template is refused unless it comes before
+  every step that runs the named specialists (systematic review: extraction and synthesis before the
+  review writer), and a check before a specialist the strategist dispatches needs `after`.
+- **The template's method sources are in the study's bibliography.** Each template's `[[credit]]`
+  entries with relation `cites` are written into `literature.bib` at the start of the run as BibTeX
+  (`e2er_source = {template}`, `e2er_template = {<template>}`; the key is the credit's `cite_key` or
+  surname, year and first title word, e.g. `dunning1993accurate`; an entry whose key is already in the
+  file is kept; the field map's and the systematic review's fuller entries are used under their own
+  keys). The writers' list of citable references marks them `[method source]` and tells them to cite
+  the methods the study used and leave the others out; the paper-structure and text-analysis skills
+  say the same. Nothing forces a paper to cite them. The citation check verifies them like every
+  reference; the dossier lists them with `"source": "template"` and the finish page as "method
+  source" (the site's references list needs the same label for `template`).
+- **NMF from nndsvd: no stability across seeds.** When a topic model is NMF started from nndsvd or
+  nndsvda (or no `init` recorded: scikit-learn's default is nndsvda), the text results check notes that
+  the runs under different seeds are one fit, whatever their stability, and lists the model in
+  `text_check.json` (`seed_independent_models`). The draft writers' phrase check then sends back every
+  sentence claiming the topics are stable (or the same, robust, consistent) across seeds, unless the
+  sentence says why (nndsvd, a deterministic fit, the seed ignored); `init="random"` (or `nndsvdar`)
+  lifts it. `e2er verify` prints the same sentences as a note.
+
+- **The targeted corrections pass the phrase check too.** The revisor writes edits, not the draft, so its replacement sentences were not checked; now they are, with the same feedback as the draft writers.
+
+
+### Fixes from the template live runs (2026-10-11)
+- **A phrase check on the draft's prose.** A live run kept "Against this background" although the
+  researcher had asked the writer not to use it. The paper drafter, the section writer, the abstract
+  writer and the field review writer now fail their output contract when their prose uses a
+  construction the researcher rejects, and the next attempt gets each sentence to rewrite:
+  "Against this background" (and "Against this backdrop"), "rather than", "not X but Y", "not only
+  X but also Y" (and "not just … but"), "It is important to note" (and "It should be noted", "It is
+  worth noting"), "In this section, we", "delve", "a testament to", "plays a crucial role" (also
+  pivotal or vital), "navigate the complexities", and more than two em-dashes on a page (500 words).
+  Quotations, citations, comments, maths, tables and the bibliography are left out; a negated action
+  followed by "but" ("we do not observe X, but we infer Y") is a concession and passes. Triads used
+  for rhythm are not checked: they cannot be told apart from lists reliably. `e2er verify` prints
+  the same sentences of `paper/paper.tex` and `paper/abstract.tex` as a note (`writing_notes` in
+  `--json`) that changes neither the verdict nor the exit code (`src/core/writing_check.py`).
+- **Targeted corrections fix every passage a finding names.** The descriptive run's revisor fixed
+  one of several passages that presented calculated exoplanet radii as measured. The self-critique
+  now quotes every passage with a problem (`locations`), the findings reach the revisor with their
+  locations and an id, and the revisor is told to search the whole draft and correct each passage.
+  A passage it leaves gets an entry `"edit_type": "keep"` with its reason. A check after the revisor
+  (its output contract) applies the patch to a copy and sends it back with every location neither
+  corrected nor kept, every corrected passage that occurs again elsewhere unchanged, and every keep
+  without a reason. What is still open after the last attempt is recorded (`revision_coverage`).
+- **A send-back at a check stop reruns the check.** After sending a specialist back at a failed
+  check, the run stopped at the same check again and needed an approve before the check ran. Now
+  the specialist runs, then the check, and the run continues if it passes; it stops again only if
+  the check still fails. Dashboard and `e2er review --send-back` alike (the CLI says so).
+- **Each source with terms states its own reason.** "Its terms do not allow passing the data on"
+  was too strong for Gaia (CC BY-NC 3.0 IGO) and GISCO (non-commercial use). Each restricted source
+  definition gives a one-line `reason`, used in the publish note, the finish page, the confirmation
+  and its refusal, `get_data.py`, the skill stub and the README: Yahoo Finance, personal use only;
+  the GMD, not outside the study's replication package; Gaia, non-commercial use with credit to
+  ESA/Gaia/DPAC; GISCO, non-commercial use with the EuroGeographics notice on every map; WHO, public
+  health purposes and no changes without WHO's written permission; GitHub, no licence to
+  redistribute the repository metadata. (The site's `RESTRICTED` map in `src/lib/requests-core.ts`
+  needs the same reasons and entries for Gaia, GISCO, WHO and GitHub.)
+- **GitHub data need an open-access paper.** GitHub's Acceptable Use Policies (section 7) allow
+  research use of public non-personal information only if the resulting publications are open
+  access. A study that used the `github` source is published only with `--paper public` (or the
+  paper set to public on the finish page); otherwise publish refuses, says why and changes nothing.
+  The finish page states the rule next to the paper.
+
+### A new data source is one definition (connector kit)
+- **One `Source` definition per source** (`src/modules/data/sources/<name>.py`): name, website,
+  terms (address, summary, full text), citation and BibTeX, key setting (or none), whether a published
+  study may pass the data on, politeness (spacing between requests, retries, request budget) and its
+  operations, each with its arguments and a fetch function returning rows. From it e2er builds the
+  `e2er-data <source> <operation>` subcommands (with `--table` and `--save-to`), the record of every
+  load in `data_sources.json` (terms, citation, the request as made, the query, the release, the
+  SHA-256 of every file read), the table's data dictionary entry, the citation in the study's
+  `literature.bib`, the planning catalogue and `fetch_data` method, the sources and aliases the data
+  architect may declare, the standalone check's loading commands, the dashboard's labels, a doctor
+  reachability check, and, for a source whose terms keep its data with the source, the terms gate on
+  publish and the reload in `get_data.py`. Before, a source touched about eight places.
+- **Adapters for the common services** (`sources/adapters.py`): REST JSON with paging (page numbers,
+  offset, next link), TAP/ADQL (astronomy archives), CSV/ZIP download cached by version and re-hashed
+  with SHA-256, and SDMX-CSV (official statistics). Every request names e2er in its User-Agent, is
+  spaced and retried after HTTP 429/502/503/504, and a failure names the URL and the status.
+- **Recorded fixtures for tests** (`use_cassette`): a test records the source's responses once, live
+  (`E2ER_RECORD_FIXTURES=1`), and replays them offline; a request the fixture does not hold fails the
+  test. No live calls in CI.
+- **Yahoo Finance, FRED and the Global Macro Database are defined the same way**, with no change in
+  behaviour: their subcommands, arguments, printed results, load records, citations, terms gates,
+  reload commands, labels and planning cards are identical (checked on 28 scenarios before and after).
+  Their fetching and handlers stay their own; the definitions are the one place for everything else.
+- **New source: the USGS Earthquake Catalog** (`e2er-data usgs events --start … --end …
+  --min-magnitude … --bbox west,south,east,north`): earthquakes worldwide from the ANSS Comprehensive
+  Catalog through the USGS FDSN event service, no key, U.S. public domain. A period with more than the
+  service's 20,000 events per request is split into windows by their counts. Each load records the
+  query URL, the service version and the SHA-256 of every CSV read, and adds the catalogue's citation
+  (DOI 10.5066/F7MS3QZH) to the study's references.
+- **Docs and generated text**: `docs/CONNECTORS.md` (how to add a source, with the USGS connector as
+  the worked example); `scripts/gen_sources.py` writes the README's data source table from the
+  definitions and a skill stub for a new source; a test fails when the README lists other sources.
+
+### New data sources: astronomy and earth science
+Each with its terms quoted from the source's own pages, its citation from the provider's recommended
+citation or DOI record, a skill file (what is in it, typical calls, units, pitfalls), a doctor check,
+and contract tests on responses recorded live once.
+- **NASA Exoplanet Archive** (`e2er-data exoplanets planets|query`, no key): confirmed planets and
+  host stars from the archive's TAP service, one row per planet (`pscomppars`, default) or one
+  published solution per planet (`--catalogue ps`), with `--columns`, `--since`/`--until`, `--method`
+  and an ADQL `--where`; `query` runs one ADQL SELECT. The archive states no licence; each load carries
+  NASA's acknowledgement, the archive paper (Christiansen et al. 2025) and the table's DOI
+  (10.26133/NEA13 or NEA12).
+- **ESA Gaia** (`e2er-data gaia cone|query`, no key): Gaia DR3 sources in a cone (`--ra --dec
+  --radius`, `--max-mag`, `--min-parallax-over-error`) or any ADQL SELECT, within the archive's
+  anonymous quota (50,000 rows, 10 s). Gaia data are CC BY-NC 3.0 IGO: e2er handles them as data under
+  terms (publishing asks for `--accept-data-terms gaia`, a Zenodo deposit takes a non-commercial
+  licence, `get_data.py` reloads them from the fixed DR3 release); loads cite the Gaia mission and DR3
+  papers.
+- **NASA POWER** (`e2er-data nasa_power point|regional|parameters`, no key): daily, monthly or annual
+  weather and solar parameters for a place (up to 20) or a 2–10 degree region (one), since 1981. Each
+  load records the API version, community, time standard and units, and its citation names the API
+  version and access date as POWER asks; POWER's fill value −999 becomes an empty cell.
+- **NOAA Climate Data Online** (`e2er-data noaa daily|stations`, free token `NOAA_TOKEN`): GHCN-Daily
+  station records (temperature, precipitation, snow), paged and split by year within the token's
+  limits; the token travels in a header and is never recorded. Without a token the source is not
+  offered and says where to get one.
+- **TAP loads never cut a table**: `tap_capped` asks for one row more than the cap and stops the load
+  when the result is larger; a TAP service's error VOTable (also on HTTP 400, as Gaia sends it) becomes
+  the load's error with the service's message. `PoliteClient.get(ok_status=…)` lets a fetch function read
+  a refusal's body (POWER's HTTP 422 messages).
+- **Recording fixtures**: two loads inside one `use_cassette` block now record (each request gets its own
+  transport; before, the second load failed with "Event loop is closed").
+### New data sources: statistics, health, books and software
+- **World Bank Open Data** (`e2er-data worldbank indicators | series`): development indicators by
+  country and year through the Indicators API v2 (World Development Indicators by default, other
+  World Bank databases with `--database`), no key, CC BY 4.0. Each load records every indicator's
+  licence and data source from its metadata, names any indicator that is not CC BY 4.0, and cites in
+  the World Bank's format ("The World Bank: Dataset name: Data source").
+- **Eurostat** (`e2er-data eurostat datasets | dimensions | data`): EU statistics through the
+  dissemination API, filtered by dimension, NUTS level (`--geo-level nuts2`) and period; no key. The
+  citation follows Eurostat's copyright notice (the dataset's DOI and, for a filtered extract, its
+  datacode link with the access date); the terms note that non-EU/EFTA/candidate-country data and
+  data of other sources may be reused non-commercially only, and that Eurostat keeps no past versions.
+- **Our World in Data** (`e2er-data owid search | chart`): the data behind any OWID chart with each
+  indicator's origins and their licences (OWID's own data are CC BY; third-party data keep their
+  producers' licences, recorded per origin and named in the note when not open); charts OWID marks
+  as not redistributable are refused. The citation credits OWID and the producers, as OWID asks.
+- **WHO Global Health Observatory** (`e2er-data who_gho indicators | data`): WHO health statistics
+  by country, year, sex and age through the GHO OData API, no key. WHO's terms for its data allow use
+  for public health purposes and no changes without WHO's written authorization, so a published study
+  reloads GHO data (`get_data.py`) instead of shipping them, after the researcher confirms the terms.
+- **Project Gutenberg** (`e2er-data gutenberg books | text`): the catalogue through Gutendex and
+  plain texts from Project Gutenberg's own mirror (its website allows no automated access), at most 20
+  books per load, two seconds apart. Texts are stored without Project Gutenberg's header, footer,
+  licence and references (which leaves texts unrestricted by U.S. copyright, per its licence), and
+  the load records what was cut; books still under copyright are refused.
+- **GitHub** (`e2er-data github repos | repo | releases`): public repositories' metadata (search by
+  query, topic, language, stars and creation date; details, languages, contributor count; releases),
+  never their contents. Keyless within GitHub's limits; an optional `GITHUB_TOKEN` setting raises them
+  (the machine's `gh` login is never used). GitHub allows research use only with open-access
+  publications and grants no licence to pass the metadata on, so a published study reloads them.
+- **Connector kit**: recorded fixtures replay redirects and `Link` headers, and recording works across
+  several `e2er-data` calls in one test; a definition whose argument is one of e2er-data's own names
+  (`source`, `table`, …) is refused.
+
+### Templates: policy evaluation (difference-in-differences) and spatial analysis
+- **`policy-evaluation`**: what a policy changed, by difference-in-differences. The identification
+  strategist writes `did_design.json` (outcome, panel, treatment timing, comparison group,
+  estimator). The `did_design` check reads it against the panel in `data.db` before estimation and
+  stops the run when the outcome or timing is not in the data, there is no comparison group, timing
+  is staggered and the estimator is two-way fixed effects (it names the heterogeneity-robust
+  estimators: Callaway–Sant'Anna, Sun–Abraham, de Chaisemartin–D'Haultfœuille, Borusyak–Jaravel–Spiess,
+  Gardner, stacked, Wooldridge), or no cohort has two pre-treatment periods; staggered timing with a
+  robust estimator passes with a warning. The design is pre-registered (`did_design.json` is a plan
+  file). After estimation, before drafting, the `did_results` check requires the event study with at
+  least two pre-treatment periods, a joint pre-trends test (a rejection at 0.05 stops the run unless a
+  Rambachan–Roth sensitivity analysis is reported), a placebo test or a sensitivity analysis, and the
+  declared estimator under `main`; it draws the event-study plot from the results. Panel:
+  identification, data, methods, writing, technical. Skill `econometrics/did-practice`.
+- **`spatial-analysis`**: how a variable varies across places, with no causal claim (spatial results
+  contract, researcher persona). The data architect writes `spatial_design.json`; the
+  `spatial_design` check stops the run when the boundaries' source is not recorded, the CRS is
+  missing or does not fit the coordinates, a data unit without geometry is not listed with a reason,
+  or the weights are not documented. After the analysis the `spatial_results` check recomputes every
+  Moran's I from the units and weights the analysis wrote (`spatial_units.csv`,
+  `spatial_weights.csv`), requires permutation inference (at least 99 permutations), checks the
+  weights file, and builds a map figure for every map the results name. Panel: methods, data,
+  plausibility, writing, technical. Skill `data/spatial-statistics` (weights with numpy, Moran's I,
+  LISA, MAUP, edge effects, islands). Units without geometry are listed by id or by a pattern
+  (`"CH*"`, `"*ZZ"`); a sentence naming a group does not count.
+- In both templates a failed method check sends its specialist back once with the reasons
+  (`on_fail = "retry"`), then stops the run for the researcher; approving does not pass it.
+- **Maps** (`figure_type: "map"`, `src/core/renderer/maps.py`): choropleth (quantiles, equal intervals,
+  given breaks), categories (e.g. LISA clusters) and point maps, drawn from a `data.db` table of
+  GeoJSON geometries or a GeoJSON file and values from a CSV or a table, with matplotlib alone (no new
+  dependency); equal-area projection for Europe, Equal Earth for the world. Units without data are
+  drawn as "No data", data units without geometry are named in the render report, the boundaries'
+  attribution is printed on the map.
+- **New sources for boundaries**: `e2er-data gisco nuts|countries` (Eurostat GISCO; NUTS 2003–2024 at
+  1:1 to 1:60 million, EPSG 4326/3035/3857; terms checked 2026-10-11: non-commercial use, the notice
+  "© EuroGeographics for the administrative boundaries" on every map, no right to pass the files on,
+  so a published study loads them again and no Zenodo deposit holds them) and `e2er-data naturalearth
+  countries` (Natural Earth v5.1.2, public domain). Each row is a unit with its geometry as GeoJSON text.
+- `e2er verify` runs the results side of these checks again on an export (`method checks`); the export
+  carries `did_design.json`, `spatial_design.json` and the checks' findings. `e2er reproduce` no
+  longer counts files the analysis script writes (`spatial_units.csv`, weights files, anything it
+  opens for writing) as its inputs; a file it reads and writes back (`figure_spec.json`) is laid out
+  as the study left it; and a script that reads the data only through `e2er-data query sql` gets
+  `data.db` as its input (before, the recipe left it out and the rerun had no data; found in the
+  spatial live run).
+- Maps in a projected CRS (EPSG:3035, EPSG:3857) honour an `extent` given in degrees; before, the
+  extent was ignored and overseas regions shrank Europe to a corner (found in the spatial live run).
+  The spatial results check finds the units file's id column (`id`, else the one the results name).
+- Publishing no longer mistakes a URL whose path starts with `/home/` or `/Users/` for a path on this
+  machine (World Bank indicator metadata cite `https://unstats.un.org/home/nso_sites/`; found when
+  publishing the DiD live run).
+- A template's `[[credit]]` `published` date may be as precise as the publisher gives it (YYYY-MM for a
+  journal issue, YYYY for a book). Both templates cite their method sources (DOIs checked on Crossref).
+- Tests: replay fixtures of a synthetic staggered panel and a synthetic grid of regions, run end to end
+  (stops, both checks, number check, panel, publish offline, verify with the method checks,
+  reproduce), a pre-trend that stops the run before drafting, a data unit without geometry that stops
+  it before the analysis, unit tests of the checks and the map renderer, and the connectors with mocked
+  files.
+
+### A core without economics assumptions (for 0.16.0)
+- **A template declares the kind of results its study reports.** `results = "regression"` (the
+  default, e2er's contract as before), `"descriptive"`, `"timeseries"`, `"spatial"` or `"text"`. The
+  estimation check holds `estimation_results.json` to that kind's contract
+  (`src/core/pipeline/result_kinds.py`): descriptive (summary statistics with ordered quantiles,
+  distributions whose counts add up to their n, figures declared in `figure_spec.json`), time series
+  (models with fit statistics, forecasts inside their intervals, out-of-sample RMSE and MAE, MAE never
+  above RMSE), spatial (units, spatial statistics with their weights, Moran's I expectation
+  -1/(n - 1), p-values that follow from z, map specifications), text (corpus counts, term
+  frequencies whose per-10,000 values follow from the counts, text-model outputs). A results file of
+  these kinds starts with `"result_kind"`; one script and one file serve every kind, so rerun, export
+  and `e2er reproduce` are unchanged. Each kind has a schema skill
+  (`skills/files/data/<kind>-results-schema.md`) that the analysis specialist reads in place of the
+  econometrics skills, and whose example the tests check against the contract.
+- **The number check reads the kind's files**, and `e2er verify` adds a `results contract` check for a
+  study whose results are not a regression (none for regression studies, whose output is unchanged).
+- **Tables of statistics, categories and periods.** `table_spec.json` takes `"layout": "records"`: rows
+  are entries of the results (variables, bins, forecast periods, spatial statistics, terms) at a
+  `path` in the results or `summary_statistics.json`, columns are their fields; filled by lookup like
+  the regression layout, with unresolved paths, rows and fields reported by `e2er-check-tables` and
+  the repair round. Figures gain `scatter` and `histogram`.
+- **`causal = false`**: no `identification_spec.json` is required or asked for, and a regression need
+  not implement one. Default: causal for regression results, not for every other kind.
+- **Template-declared panel, weights and polish.** The review step scores the reviewers the template's
+  `aggregate` step names (until now the six economics reviewers ran whatever the template said) with
+  `review_weights` in place of the default weights; the mechanism rule applies only to a panel with a
+  mechanism reviewer. Two discipline-neutral reviewers can join a panel: `methods_reviewer` (skill
+  `review/methods-review`) and `plausibility_reviewer` (`review/domain-plausibility`). Polish runs only
+  the polish specialists the template's `polish` step lists.
+- **Persona and data skills from the template.** `base_skill = "base/researcher"` replaces
+  `base/economist` wherever a specialist reads it (`base/researcher` now speaks of the study's own
+  field); `data_skills = [...]` replaces the blockchain, DeFi and Allium skills of the data architect
+  and analyst (the general connector skills stay).
+- What a template changes is recorded in the `template_components` event (`core`) and shown to every
+  specialist and the strategist as a short template block; the declared skills in a study's
+  description follow the same merge. Templates that set none of this run exactly as before (tests
+  hold every shipped template to the registry's skills, panel and polish).
+- Tests: a descriptive template replays end to end on a synthetic exoplanet radius–period dataset
+  (`tests/fixtures/replay/exoplanet`, `tests/test_neutral_core_replay.py`): no regression or
+  identification is asked for, the estimation gate passes on the descriptive contract, the number
+  check traces the records tables, the five-reviewer panel scores with its weights, and the export
+  verifies with `e2er verify` (all 36 table cells at the precision shown). Contract tests per kind in `tests/test_result_kinds.py`, records
+  tables and the new figures in `tests/test_records_tables.py`.
+
+### Template: systematic review and meta-analysis
+- **`systematic-review`** (`pipelines/systematic-review.toml`): a systematic review with a random-effects
+  meta-analysis, following the PRISMA 2020 statement (Page et al. 2021). Four specialists of its own:
+  the protocol designer (`review_protocol.json`: the question in PICO, PECO or another form,
+  eligibility criteria with ids, databases, Boolean searches, outcome, effect measure, synthesis
+  settings, risk-of-bias tool with its domains and levels), the study screener, the study extractor
+  and the review writer. Everything counted is code (`src/modules/metaanalysis`), run as checks of the
+  template (`src/core/pipeline/meta_checks.py`). Stops for the protocol (with the search counts) and
+  the screening sample; optional pre-registration of the protocol and an optional review of the
+  extraction table.
+  - **Search** (`meta_search`): every search of the protocol on OpenAlex through the field map's client
+    (polite pool, optional key, cache, request ceiling; a search above `max_records` is refused after
+    one request), Crossref as an option (its most relevant records only, said in the log), duplicates
+    removed by DOI and then by title and year. `records.json`, `search_log.json` with each query as
+    sent, the count reported and the time, `search_counts.md`, and a load per search in
+    `data_sources.json`.
+  - **Screening check** (`meta_screening`): every record decided once, every exclusion with a criterion
+    the protocol defines and a reason; `screening_sample.md` for the researcher (the unsure records, the
+    inclusions, a seeded sample of exclusions). Also the screener's output contract.
+  - **Full texts** (`meta_fulltext`): a PDF the researcher saves in `data/fulltext/`, else the
+    open-access PDF OpenAlex lists, else the open-access resolvers; text page by page into
+    `fulltext/<id>.txt`; `fulltext_log.json` with the origin and SHA-256, or why no full text is
+    available. Full texts are not exported.
+  - **Every extracted number traced** (`meta_extraction`): the extractor gives, for each number, the
+    page and a verbatim quote; the check finds the quote on that page (elsewhere in the text with a
+    note, across a page break, or in the abstract for a study read from its abstract) and the number in
+    the quote. Exclusions on the full text need a criterion and a reason, every included study its risk
+    of bias per protocol domain. The trace is also the extractor's output contract, so the extractor is
+    sent back with the untraced numbers before the run stops.
+  - **Synthesis** (`meta_synthesis`): `run_estimation.py` is e2er's own code (numpy and scipy, nothing
+    from e2er imported, so `e2er reproduce` reruns it): log ratios, Fisher's z, Hedges' g from group
+    statistics, SE from a CI; random effects with tau^2 by REML or DerSimonian-Laird; z, p, CI, Q, I^2,
+    H^2, the prediction interval (t on k - 2 df), the common-effect estimate, Egger's test and trim and
+    fill (L0) with a low-power flag below ten studies, leave-one-out. On the BCG vaccine trials it gives
+    metafor's published REML, DL and trim-and-fill results to four decimals. Below the protocol's
+    `min_studies` the review is a narrative synthesis without a pooled estimate. A protocol changed after
+    the pre-registration stops the synthesis.
+  - **Results kind `metaanalysis`** (`result_kinds.py`, schema skill `data/metaanalysis-results-schema`):
+    the pooled estimate and tau^2 recomputed from the studies, flow counts that add up, p from z and
+    from Egger's t, a prediction interval containing the CI, weights adding to 100, a narrative synthesis
+    exactly when there are too few studies. `e2er verify` checks it, and as its method checks that the
+    effects are the extraction's, every extracted number is printed in its quote and the run traced all
+    of them.
+  - **Figures** `forest`, `funnel` and `prisma` (`src/core/renderer/meta_figures.py`) and the tables
+    `meta_flow`, `meta_studies` and `meta_results`, every cell a value of the results; the methods'
+    and the included studies' references are added to `literature.bib`. The writer's contract requires
+    the tables and figures and a citation of every included study.
+- **Live run** (Claude Code, Sonnet; 2026-10-11): grit and grades in university students, open-access
+  studies in OpenAlex 2009-2025. 175 records, 1 duplicate, 174 screened (5 included, 92 unsure, 77
+  excluded), 97 sought, 40 open-access PDFs read, 16 studies pooled: r = 0.18 (95% CI 0.05 to 0.29),
+  I^2 = 97%, prediction interval -0.34 to 0.61; Egger p = 0.57. The extraction check stopped the run
+  on three numbers that were not printed where the extractor said: two sample sizes it had summed from
+  group sizes (145 + 107; 111 + 101 + 86 + 45) and one quote from the wrong sentence; the researcher
+  corrected one quote and excluded the study whose total sample size is not printed. Every one of the 48
+  remaining numbers traced; reading the correlation-matrix rows against their table headers confirmed
+  the right cells. Not caught by any check and named by the data reviewer: a study year taken as 2024
+  where the PDF says 2025. Two included studies report Spearman's rho and one a within-person
+  correlation from weekly data, which the protocol's Pearson criterion does not cover; the skill now
+  says so. `e2er verify` passed, `e2er reproduce` reproduced all 422 values, and the study is published
+  as a demonstration on a local e2er.org. Fixed from the run: a record with neither an abstract nor an
+  open-access PDF can be excluded with `source_text: "title"` (before, no value was valid and the
+  extractor failed its contract three times); OpenAlex addresses that are landing pages fall back to the
+  open-access resolvers; failed downloads are not repeated at every start; the full-text step reads up
+  to 150 records (60 would have left 37 of the 97 unread); the skill tells the extractor never to choose
+  between estimates by size.
+- The review writer's draft passes the phrase check of the other writers (the live run's draft, written
+  before the check existed, has 22 of the constructions; the writer would now be sent back with them).
+- Method skill `methods/meta-analysis`; method sources credited in the template and `credits.json`
+  (DOIs checked on Crossref): Page et al. (2021), DerSimonian and Laird (1986), Viechtbauer (2005),
+  Higgins and Thompson (2002), Riley, Higgins and Deeks (2011), Egger et al. (1997), Duval and Tweedie
+  (2000), Viechtbauer (2010).
+- Tests: unit tests for the statistics (metafor's published values, an independent OLS fit for
+  Egger's test), the protocol, the search, every refusal of the screening and extraction checks, the
+  narrative synthesis, the results contract, the pre-registration, the figures and the export check; a
+  replay of a synthetic review (recorded OpenAlex pages and PDFs) end to end through the three stops,
+  publish, verify (and a tampered extraction that verify catches) and reproduce, and a replay in which
+  an extracted number is not in its quote, which stops the run before anything is pooled until the
+  researcher corrects it.
+
+### Templates: descriptive data study, time series and forecasting
+- **`descriptive-study`** (`pipelines/descriptive-study.toml`, until now a test fixture): a description
+  of a sample for any field, on the discipline-neutral core (descriptive results, no causal claim, the
+  researcher persona, its own panel of methods, data, plausibility, literature and writing reviewers,
+  polish of numbers and references). Stops for the design review and the draft review.
+  - **Data check** (`data_quality`, after the data analyst, before the analysis;
+    `src/core/pipeline/data_quality.py`): every table the data dictionary declares, read from data.db.
+    It stops the run on a numeric column without a `unit`, rows that repeat on the declared `key` (or as
+    whole rows), a declared column that misses more than 5% of its values without a `missing` reason, a
+    `coverage` the data do not span, or a declared table that is missing or empty. It writes
+    `data_quality.md` and `data_quality.json`; the number check reads the latter.
+  - **Figure check** (`figure_data`, after the analysis): every figure names its `source` (a data.db
+    table with columns and an optional simple condition, or a list in a results file) and is re-read from
+    it at the precision it states; a figure without a source, or with values that are not the data, stops
+    the run (`figure_check.json`).
+- **`time-series-forecasting`** (`pipelines/time-series-forecasting.toml`): a series, its trend and
+  seasonality, models and forecasts. A new specialist, the **forecast designer**, writes the setup
+  (`forecast_design.json`: series, hold-out, horizon, interval level, baselines, candidate models,
+  stationarity and trend diagnostics) after the data are loaded.
+  - **Hold-out frozen before fitting** (`forecast_design`; `src/core/pipeline/forecast_checks.py`): the
+    hold-out must be the last periods with a value in each, at least 24 periods must remain to fit on,
+    and a baseline (naive, seasonal naive, mean or drift), a candidate, a stationarity and a trend test
+    must be declared. It writes `holdout_freeze.json` with the SHA-256 of the setup and of the hold-out
+    values, refuses a setup written after a model was fitted, and refuses a change once results exist.
+  - **Forecast check** (`forecast_evaluation`, after the analysis): diagnostics and models on training
+    periods only (a model fitted into the hold-out is reported as leakage and stops the run), every
+    declared model evaluated on exactly the hold-out with all its predictions, RMSE, MAE and interval
+    coverage recomputed from the predictions and data.db, and a forecast beyond the data with the
+    declared horizon and interval level. `forecast_check.json` holds the recomputed errors and each
+    model's RMSE relative to the best baseline.
+  - **Optional pre-registration** of the setup: a template step can now be `optional = true` (researcher
+    and preregister steps only); it runs when the researcher chooses it on New study or with
+    `e2er run --review-at preregister`. The forecast setup is a plan file of the pre-registration.
+- **Method skills** `methods/descriptive-analysis` (sample definition, the dictionary fields the data
+  check reads, quantile definitions, bins, rank correlation, figures from saved data) and
+  `methods/time-series-forecasting` (the setup, decomposition, KPSS/ADF and Mann–Kendall with Sen's
+  slope on training periods, ETS/ARIMA/regression, rolling-origin cross-validation, leakage, honest
+  intervals with their hold-out coverage, MASE, Diebold–Mariano). The figure-spec skill documents
+  `source`; time-series figures can shade an interval (`lower`, `upper`) and keep about twelve period
+  labels on the axis.
+- **Method sources are credited** in each template's `[[credit]]` and in `credits.json` (relation
+  `cites`, DOIs checked on Crossref): for the descriptive template Emerson and Colditz (1983), Freedman
+  and Diaconis (1981), Hyndman and Fan (1996), Spearman (1904), Little and Rubin (2019), Wickham (2014);
+  for the time-series template Box, Jenkins and Reinsel (2008), Hyndman and Athanasopoulos (FPP3, 2021),
+  Hyndman and Khandakar (2008), Hyndman and Koehler (2006), Tashman (2000), Diebold and Mariano (1995),
+  Harvey, Leybourne and Newbold (1997), Dickey and Fuller (1979), Kwiatkowski et al. (1992), Mann (1945)
+  and Sen (1968).
+- The template list of New study, `e2er run --template` and the installed-package check now include
+  `field-map` and the two new templates.
+- **Tests**: the exoplanet replay runs the shipped descriptive template (both stops, the data and figure
+  checks, publish, verify, reproduce); a new climate replay on NASA POWER monthly temperature at
+  Frankfurt, 2001–2023 (recorded once through the connector) runs the time-series template end to end,
+  with the optional pre-registration, and with an analysis that fits on the hold-out, which stops the run
+  at the forecast check until the analysis is sent back; unit tests for every refusal of the four checks.
+
+### Template: text analysis
+- **`text-analysis`**: counts and models of the language of a corpus, from Project Gutenberg
+  (`e2er-data gutenberg`) or the researcher's own texts (`.csv`/`.jsonl` with a text column, or `.txt`
+  files read by the build script). No causal claim; the researcher persona; a panel of methods, data,
+  plausibility (read as a scholar of the texts would), writing and technical reviewers; stops for the
+  design review and the draft review. Method skill `methods/text-analysis`; results in the text contract.
+- **Four checks** (`src/core/pipeline/text_checks.py`), each sending its specialist back once before it
+  stops the run:
+  - `corpus_design`, after the data architect: `corpus_design.json` states the question, the corpus and
+    how its documents were selected and sampled, the metadata with their sources, the preprocessing
+    (token pattern, lower-casing, stop words and lemmas as files with their sources, n-grams), the groups,
+    the analyses and the corpus's sampling bias. Dictionaries and topic-model seeds are fixed here,
+    before the analysis.
+  - `corpus`, after the data analyst: every document with its source, licence and SHA-256; token counts
+    and corpus statistics (documents, tokens, types, length distribution) recomputed with the recorded
+    preprocessing; duplicate texts refused; metadata filled or their absence explained. The word lists
+    are frozen with their SHA-256 (`corpus_check.json`).
+  - `text_results`, after the analysis: every term count, group size, frequency per 10,000 tokens and
+    dispersion recounted; keyness recomputed (log-likelihood G2, Dunning 1993 and Rayson and Garside
+    2000, with the log ratio and its direction); adjacent collocations and PMI; dictionary and sentiment
+    hits with the design's word list; topic models (LDA or NMF) with a recorded seed, a metric for at least
+    two numbers of topics, runs under at least three seeds whose stability (mean best-match Jaccard of the
+    top terms) e2er recomputes, top terms and example documents of the corpus per topic, shares adding
+    up to 1; a figure drawn from the results of every diachronic, keyness and topic model; a statement of
+    sampling bias.
+  - `text_validation`, after a new specialist, the **text validator**, who judges every passage of the
+    sample the analysis drew (with its seed) of each dictionary and sentiment measure: every passage must
+    be in its document, every item judged with a reason for each wrong one, and the precision is
+    recomputed. A study without such a measure has nothing to validate.
+- `e2er verify` recounts the results and the validation on the exported corpus (`method checks`).
+  The text kind's number check also reads `corpus_check.json` and `text_validation.json`. Export puts
+  `corpus_design.json` in `design/`, `corpus_manifest.json` in `data/` and the checks' reports, the
+  sample and the judgements in `results/`.
+- The strategist is told which checks follow the analysis and which specialists to dispatch for them
+  (it had been told "dispatch econometrics_specialist before econometrics_specialist" for the spatial
+  template's results check).
+- **scikit-learn** is a dependency now (topic models, vectorisers, English stop words for the analysis
+  scripts; no model downloads).
+- Method sources credited in the template and `credits.json`: Dunning 1993, Rayson and Garside 2000,
+  Hardie's log ratio, Church and Hanks 1990, Blei, Ng and Jordan 2003, Lee and Seung 1999, Greene,
+  O'Callaghan and Cunningham 2014, Grimmer and Stewart 2013, Gentzkow, Kelly and Taddy 2019 (DOIs checked
+  on Crossref; the others by their pages).
+- Tests: unit tests for every refusal of the four checks and the statistics; a replay of six works of
+  short fiction (Project Gutenberg 41, 932, 11231, 43, 375, 1952, recorded once through the connector)
+  end to end (both stops, the four checks, figures, number check, panel, publish, verify with the recount
+  and a tampered export, reproduce); a dictionary widened after the design that stops at the results
+  check until the analysis is sent back; a validator that leaves an item unjudged.
+
 ## [0.15.3] — 2026-10-11
 
 ### A subscription plan's usage limit pauses the run

@@ -1,0 +1,40 @@
+{
+  "tables": [
+    {
+      "filename": "moran.tex",
+      "label": "tab:moran",
+      "caption": "Moran's I of the 2023 rate under two neighbour definitions",
+      "layout": "records",
+      "source": "estimation_results.json",
+      "path": "spatial_statistics",
+      "row_labels": {"moran_rate_queen": "Queen contiguity", "moran_rate_knn4": "4 nearest neighbours"},
+      "row_header": "Weights",
+      "columns": [
+        {"field": "estimate", "header": "Moran's $I$", "decimals": 4},
+        {"field": "expected", "header": "$E[I]$", "decimals": 4},
+        {"field": "z", "header": "$z$", "decimals": 4},
+        {"field": "p_value", "header": "$p$", "decimals": 3},
+        {"field": "n_permutations", "header": "Permutations", "decimals": 0}
+      ],
+      "notes": "Row-standardised weights. Pseudo p-values from 999 random permutations, two-sided. Synthetic regions."
+    },
+    {
+      "filename": "rate.tex",
+      "label": "tab:rate",
+      "caption": "The 2023 rate across the 30 regions",
+      "layout": "records",
+      "source": "estimation_results.json",
+      "path": "variables",
+      "row_labels": {"rate": "Rate (\\%)"},
+      "row_header": "Variable",
+      "columns": [
+        {"field": "n", "header": "$N$", "decimals": 0},
+        {"field": "mean", "header": "Mean", "decimals": 4},
+        {"field": "sd", "header": "SD", "decimals": 4},
+        {"field": "min", "header": "Min", "decimals": 4},
+        {"field": "median", "header": "Median", "decimals": 4},
+        {"field": "max", "header": "Max", "decimals": 4}
+      ]
+    }
+  ]
+}

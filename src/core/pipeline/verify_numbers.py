@@ -191,7 +191,9 @@ class VerificationReport:
 _NOTHING_VERIFIED = "draft contains no table values and no checkable prose numbers; nothing was verified"
 
 # JSON filenames that the analyst + econometrics specialist must produce.
-# Look at workspace root (v3 layout). Order: by stage of production.
+# Look at workspace root (v3 layout). Order: by stage of production. These are
+# the regression contract's; a template of another kind of results names its
+# own (src/core/pipeline/result_kinds.py, `number_sources`).
 _SOURCE_JSON_FILES = (
     "summary_statistics.json",
     "estimation_results.json",
@@ -200,6 +202,14 @@ _SOURCE_JSON_FILES = (
     # The field map's results (src/modules/fieldmap/workflow.py), written by code.
     "field_map_results.json",
 )
+
+
+def source_files(workspace: Path) -> tuple[str, ...]:
+    """The files this study's numbers are traced to: those of its kind of results."""
+    from .result_kinds import active_kind, get
+
+    return get(active_kind(workspace)).number_sources
+
 
 # Regex to extract content of \begin{tabular}...\end{tabular}
 _TABULAR_RE = re.compile(
@@ -909,7 +919,7 @@ def _find_source_jsons(workspace: Path) -> dict[str, Path]:
     are not included; the caller decides whether the absence is fatal.
     """
     found: dict[str, Path] = {}
-    for fn in _SOURCE_JSON_FILES:
+    for fn in source_files(workspace):
         fp = workspace / fn
         if fp.is_file():
             found[fn] = fp
@@ -995,16 +1005,15 @@ def verify(
 
     source_jsons = _find_source_jsons(workspace)
     report.source_files_found = sorted(str(p) for p in source_jsons.values())
-    report.source_files_missing = sorted(fn for fn in _SOURCE_JSON_FILES if fn not in source_jsons)
+    sources = source_files(workspace)
+    report.source_files_missing = sorted(fn for fn in sources if fn not in source_jsons)
 
     if not source_jsons:
         # No JSON contract output from analyst/econometrics. Skip the
         # audit per the v0.5.0 design (warn + pass). Once specialists
         # are retrained to produce these files, the gate activates
         # automatically.
-        report.skipped_reason = "no source JSON files found in workspace; expected one of: " + ", ".join(
-            _SOURCE_JSON_FILES
-        )
+        report.skipped_reason = "no source JSON files found in workspace; expected one of: " + ", ".join(sources)
         logger.warning("verify_numbers: %s", report.skipped_reason)
         return report
 

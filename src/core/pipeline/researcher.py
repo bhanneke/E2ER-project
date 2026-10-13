@@ -10,6 +10,9 @@ stage named with `--review-at`) the run pauses. The researcher can
     later specialist and the strategist receive it;
   * send a step back — a template step or a specialist runs again with the
     researcher's remark, and the run stops at the same researcher step again.
+    At a failed check (kinds ``gate``, ``numbers``, ``deviation``) it does
+    not: the check runs again on the new output, and the run continues when
+    it passes and stops here again only when it fails.
 
 A study that finished, failed or stopped can be sent back as well:
 ``apply_rerun`` reruns one template step and every step after it with the
@@ -60,6 +63,9 @@ NUMBERS_STEP = "number_check"
 #: work that produced the results.
 NUMBERS_SENDABLE = ("paper_drafter", "section_writer", "econometrics_specialist", "data_analyst")
 ACTIONS = ("approve", "edit", "instruction", "send_back")
+#: Stops at a failed check: a send-back there reruns the specialist, then the check, and the run
+#: continues when the check passes (stopping here again only when it fails).
+CHECK_KINDS = ("gate", "numbers", "deviation")
 _EDITABLE_SUFFIXES = (".md", ".tex", ".json", ".txt", ".bib")
 #: e2er's own record of the run, never offered for editing at a stop.
 _NOT_THE_STUDYS = frozenset({"manifest.json"})
@@ -315,6 +321,9 @@ def apply_action(
             encoding="utf-8",
         )
         payload.update(target=target, remark=remark)
+        if pending.kind in CHECK_KINDS:
+            # At a failed check the run does not stop here again: the check runs on the new output.
+            payload.update(then="check_runs_again")
 
     return payload
 
@@ -406,6 +415,14 @@ def apply_rerun(workspace: Path, state: PipelineState, spec: Any, step: str, rem
             state.metadata.pop(key, None)
     state.approved_stages = [a for a in state.approved_stages if a not in later]
     _withdraw_check_approvals(state, spec, later)
+    if any(spec.step(n).kind == "strategist" for n in later):
+        # The analysis runs again: so do the checks of its results that sit inside the dispatch
+        # (a gate with `after` naming the analysis, e.g. text_results, spatial_results).
+        for s in spec.steps:
+            if s.kind == "gate" and s.after and "econometrics_specialist" in s.after:
+                if s.name in state.completed_stages:
+                    state.completed_stages.remove(s.name)
+                state.metadata.pop(f"retried_{s.name}", None)
     step_done = state.metadata.get("step_done")
     if isinstance(step_done, dict):
         for name in later:  # a step run again runs all of its specialists

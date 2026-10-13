@@ -1,0 +1,12 @@
+{
+ "$comment": "Recorded live by the e2er connector kit (use_cassette); replayed in tests with no network.",
+ "interactions": [
+  {
+   "method": "GET",
+   "url": "https://power.larc.nasa.gov/api/temporal/daily/point?community=RE&end=20240102&format=JSON&latitude=50.11&longitude=8.68&parameters=T2M&start=20240101",
+   "status": 200,
+   "content_type": "application/json",
+   "text": "{\"type\":\"Feature\",\"geometry\":{\"type\":\"Point\",\"coordinates\":[8.68,50.11,171.61]},\"properties\":{\"parameter\":{\"T2M\":{\"20240101\":5.68,\"20240102\":6.24}}},\"header\":{\"title\":\"NASA/POWER Source Native Resolution Daily Data\",\"api\":{\"version\":\"v2.10.0\",\"name\":\"POWER Daily API\"},\"sources\":[\"MERRA2\"],\"fill_value\":-999.0,\"time_standard\":\"LST\",\"start\":\"20240101\",\"end\":\"20240102\"},\"messages\":[],\"parameters\":{\"T2M\":{\"units\":\"C\",\"longname\":\"Temperature at 2 Meters\"}},\"times\":{\"data\":0.052,\"process\":0.01}}"
+  }
+ ]
+}

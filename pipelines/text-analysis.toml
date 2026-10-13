@@ -1,0 +1,298 @@
+# Text analysis: a corpus in, counts, key terms, dictionary measures and topics out.
+#
+# For studies that count and model language in a corpus of documents: books
+# (Project Gutenberg through `e2er-data gutenberg`), speeches, articles,
+# abstracts, or the researcher's own texts (.txt, .csv or .jsonl in the data
+# folder). Term frequencies and their dispersion, keyness between groups
+# (log-likelihood G2 with the log ratio), collocations, dictionary and sentiment
+# measures with a hand-checked sample, topic models (LDA or NMF) with their
+# stability across seeds, and change over time. No causal claim; the
+# researcher persona; no blockchain data skills.
+#
+# The order of the work and its checks (src/core/pipeline/text_checks.py; the
+# method skill is methods/text-analysis):
+#   corpus_design_gate     after the data architect: corpus_design.json states
+#                          the question, the corpus and how it was sampled, the
+#                          metadata with their sources, the preprocessing
+#                          (token pattern, lower-casing, stop words, lemmas,
+#                          n-grams), the groups, the analyses and the sampling
+#                          bias; dictionaries and topic-model seeds are fixed
+#                          here, before the analysis
+#   review_design          the researcher reads the plan and the corpus design
+#                          before the corpus is built
+#   corpus_gate            after the data analyst: every document with its
+#                          source, licence and SHA-256; token counts and corpus
+#                          statistics recomputed with the recorded preprocessing
+#   text_results_gate      after the analysis: term counts, keyness (G2, log
+#                          ratio), collocations, dictionary hits recounted;
+#                          topic models with seeds, k-selection evidence,
+#                          stability across seeds recomputed, example documents
+#   text_validation_gate   after the text validator: the sample of every
+#                          dictionary or sentiment measure, every passage found
+#                          in its document and judged, the precision recomputed
+#                          (both checks of the results pass before the paper
+#                          drafter is dispatched; a text validator the plan
+#                          left out is sent out first: `before`)
+#   estimation_gate        the results held to the text results contract
+#   figure_gate            every figure re-read from the results it names
+#   review_draft           the researcher reads the draft before the reviewers
+#
+# A failed check inside the dispatch sends its specialist back once with the
+# reasons, then stops the run.
+
+name = "text-analysis"
+title = "Text analysis"
+description = "A corpus in, counts and models of its language out: term frequencies, key terms (log-likelihood with the log ratio), collocations, dictionary and sentiment measures with a hand-checked sample, topic models with their stability across seeds, change over time. The corpus design and preprocessing are fixed before the corpus is built; e2er recounts every number from the corpus."
+methodologies = ["empirical", "text analysis"]
+
+results     = "text"
+causal      = false
+base_skill  = "base/researcher"
+data_skills = []
+review_weights = { methods_reviewer = 1.5, data_reviewer = 1.25, plausibility_reviewer = 1.0, technical_reviewer = 1.0, writing_reviewer = 0.75 }
+
+finalize = ["compile", "audit_export", "github_push", "structured_export"]
+
+[skills]
+data_architect          = ["methods/text-analysis"]
+data_analyst            = ["methods/text-analysis"]
+econometrics_specialist = ["methods/text-analysis"]
+paper_drafter           = ["methods/text-analysis"]
+methods_reviewer        = ["methods/text-analysis"]
+technical_reviewer      = ["methods/text-analysis"]
+# The plausibility reviewer reads the study as a scholar of the texts would:
+# whether the counts and topics say what the paper claims about the works.
+plausibility_reviewer   = ["methods/text-analysis"]
+
+# The machine-readable files the checks read.
+[sidecars]
+data_architect = ["corpus_design.json"]
+data_analyst   = ["corpus_manifest.json"]
+
+[[steps]]
+kind    = "gate"
+name    = "corpus_design_gate"
+check   = "corpus_design"
+on_fail = "retry"
+after   = ["data_architect"]
+
+[steps.settings]
+min_seeds = 3
+
+[[steps]]
+kind  = "researcher"
+name  = "review_design"
+after = ["idea_developer", "literature_scanner", "data_architect"]
+files = ["paper_plan.md", "literature_review.md", "corpus_design.json", "data_dictionary.json"]
+
+[[steps]]
+kind    = "gate"
+name    = "corpus_gate"
+check   = "corpus"
+on_fail = "retry"
+after   = ["data_analyst"]
+
+[[steps]]
+kind    = "gate"
+name    = "text_results_gate"
+check   = "text_results"
+on_fail = "retry"
+after   = ["econometrics_specialist"]
+before  = ["paper_drafter"]
+
+[steps.settings]
+min_seeds    = 3
+min_examples = 2
+
+[[steps]]
+kind    = "gate"
+name    = "text_validation_gate"
+check   = "text_validation"
+on_fail = "retry"
+after   = ["econometrics_specialist", "text_validator"]
+before  = ["paper_drafter"]
+
+[steps.settings]
+min_validation_items = 20
+
+[[steps]]
+kind = "strategist"
+name = "initial"
+
+[[steps]]
+kind  = "strategist"
+name  = "iterative"
+modes = ["iterative"]
+
+[[steps]]
+kind      = "gate"
+name      = "estimation_gate"
+check     = "estimation"
+on_fail   = "halt"
+resumable = false
+
+[[steps]]
+kind      = "gate"
+name      = "figure_gate"
+check     = "figure_data"
+on_fail   = "halt"
+resumable = false
+
+[[steps]]
+kind  = "researcher"
+name  = "review_draft"
+files = ["paper_draft.tex", "abstract.tex"]
+
+[[steps]]
+kind  = "specialists"
+name  = "self_attack"
+modes = ["iterative"]
+run   = ["self_attacker"]
+
+[[steps]]
+kind     = "specialists"
+name     = "polish"
+modes    = ["iterative"]
+parallel = true
+run      = ["polish_numerics", "polish_bibliography"]
+
+[[steps]]
+kind     = "aggregate"
+name     = "review"
+parallel = true
+run = [
+    "methods_reviewer",
+    "data_reviewer",
+    "plausibility_reviewer",
+    "writing_reviewer",
+    "technical_reviewer",
+]
+
+[[steps]]
+kind = "specialists"
+name = "revision"
+run  = ["revisor", "patch_revisor"]
+
+[[steps]]
+kind = "specialists"
+name = "replication"
+run  = ["replication_packager"]
+
+# The method sources the checks and the skill follow (DOIs checked on Crossref, other
+# addresses opened, 2026-10-11).
+[[credit]]
+creator   = "Ted Dunning"
+role      = "method"
+relation  = "cites"
+kind      = "article"
+title     = "Accurate Methods for the Statistics of Surprise and Coincidence"
+publisher = "Computational Linguistics 19(1), 61-74"
+published = "1993"
+url       = "https://aclanthology.org/J93-1003/"
+accessed  = "2026-10-11"
+found_via = "OpenAlex W2116780029 and the ACL Anthology (no Crossref DOI)"
+note      = "The log-likelihood ratio (G2) for comparing word frequencies, sound for rare words."
+
+[[credit]]
+creator   = "Paul Rayson and Roger Garside"
+role      = "method"
+relation  = "cites"
+kind      = "article"
+title     = "Comparing corpora using frequency profiling"
+publisher = "Proceedings of the Workshop on Comparing Corpora (ACL 2000), 1-6"
+published = "2000"
+url       = "https://doi.org/10.3115/1117729.1117730"
+accessed  = "2026-10-11"
+found_via = "Crossref record checked 2026-10-11"
+note      = "Keyness: G2 between a target and a reference corpus from the two counts and the two corpus sizes."
+
+[[credit]]
+creator   = "Andrew Hardie"
+role      = "method"
+relation  = "cites"
+kind      = "webpage"
+title     = "Log Ratio - an informal introduction"
+publisher = "ESRC Centre for Corpus Approaches to Social Science (CASS), Lancaster University"
+published = "2014"
+url       = "https://cass.lancs.ac.uk/log-ratio-an-informal-introduction/"
+accessed  = "2026-10-11"
+found_via = "the page itself (no DOI)"
+note      = "Log ratio, the effect size reported with G2 (a zero count taken as 0.5)."
+
+[[credit]]
+creator   = "Kenneth Ward Church and Patrick Hanks"
+role      = "method"
+relation  = "cites"
+kind      = "article"
+title     = "Word Association Norms, Mutual Information, and Lexicography"
+publisher = "Computational Linguistics 16(1), 22-29"
+published = "1990"
+url       = "https://aclanthology.org/J90-1003/"
+accessed  = "2026-10-11"
+found_via = "the ACL Anthology (no Crossref DOI for the journal version)"
+note      = "Pointwise mutual information for collocations."
+
+[[credit]]
+creator   = "David M. Blei, Andrew Y. Ng and Michael I. Jordan"
+role      = "method"
+relation  = "cites"
+kind      = "article"
+title     = "Latent Dirichlet Allocation"
+publisher = "Journal of Machine Learning Research 3, 993-1022"
+published = "2003"
+url       = "https://jmlr.org/papers/v3/blei03a.html"
+accessed  = "2026-10-11"
+found_via = "OpenAlex W1880262756 and the journal's page (no Crossref DOI)"
+note      = "LDA topic models."
+
+[[credit]]
+creator   = "Daniel D. Lee and H. Sebastian Seung"
+role      = "method"
+relation  = "cites"
+kind      = "article"
+title     = "Learning the parts of objects by non-negative matrix factorization"
+publisher = "Nature 401(6755), 788-791"
+published = "1999-10"
+url       = "https://doi.org/10.1038/44565"
+accessed  = "2026-10-11"
+found_via = "Crossref record checked 2026-10-11"
+note      = "Non-negative matrix factorisation (NMF), the other topic model the template accepts."
+
+[[credit]]
+creator   = "Derek Greene, Derek O'Callaghan and Pádraig Cunningham"
+role      = "method"
+relation  = "cites"
+kind      = "article"
+title     = "How Many Topics? Stability Analysis for Topic Models"
+publisher = "Machine Learning and Knowledge Discovery in Databases (ECML PKDD 2014), Lecture Notes in Computer Science, 498-513"
+published = "2014"
+url       = "https://doi.org/10.1007/978-3-662-44848-9_32"
+accessed  = "2026-10-11"
+found_via = "Crossref record checked 2026-10-11"
+note      = "Topic stability as the agreement of top terms between runs; the check's best-match Jaccard overlap follows the idea."
+
+[[credit]]
+creator   = "Justin Grimmer and Brandon M. Stewart"
+role      = "method"
+relation  = "cites"
+kind      = "article"
+title     = "Text as Data: The Promise and Pitfalls of Automatic Content Analysis Methods for Political Texts"
+publisher = "Political Analysis 21(3), 267-297"
+published = "2013"
+url       = "https://doi.org/10.1093/pan/mps028"
+accessed  = "2026-10-11"
+found_via = "Crossref record checked 2026-10-11"
+note      = "Validate, validate, validate: dictionary measures checked on hand-read examples, models read, not trusted."
+
+[[credit]]
+creator   = "Matthew Gentzkow, Bryan Kelly and Matt Taddy"
+role      = "method"
+relation  = "cites"
+kind      = "article"
+title     = "Text as Data"
+publisher = "Journal of Economic Literature 57(3), 535-574"
+published = "2019-09"
+url       = "https://doi.org/10.1257/jel.20181020"
+accessed  = "2026-10-11"
+found_via = "Crossref record checked 2026-10-11"
+note      = "Representing text as counts, dictionary methods, topic models; preprocessing choices as part of the method."

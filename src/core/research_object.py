@@ -129,6 +129,18 @@ def _skills_for(agents: list[str], template_file: Path | None = None) -> dict[st
     """Each agent's skills: the registry's, then the ones the template adds (as the run merged them)."""
     from .specialists.registry import SPECIALIST_SKILLS
 
+    if template_file is not None and template_file.is_file():
+        # As the run merges them, the template's core settings included (base_skill,
+        # data_skills, results: src/core/pipeline/components.py).
+        from .pipeline.components import skills_for
+        from .pipeline.spec import PipelineError, load_spec
+
+        try:
+            spec = load_spec(template_file)
+        except PipelineError:
+            spec = None
+        if spec is not None:
+            return {a: skills_for(a, spec) for a in agents}
     extra = _template_components(template_file, "skills")
     return {a: list(dict.fromkeys([*SPECIALIST_SKILLS.get(a, []), *extra.get(a, [])])) for a in agents}
 

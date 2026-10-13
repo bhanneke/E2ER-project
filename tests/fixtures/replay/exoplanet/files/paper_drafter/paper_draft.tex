@@ -1,0 +1,57 @@
+\documentclass[11pt]{article}
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage{threeparttable}
+\usepackage{graphicx}
+\usepackage[margin=1in]{geometry}
+
+\title{The Radius--Period Distribution of a Synthetic Planet Sample}
+\author{Anonymous}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{center}
+\small \textit{Test fixture of e2er's replay level: the planet sample is synthetic and describes no real planet.}
+\end{center}
+
+\section{Introduction}
+
+How are planet radii distributed in a sample, and how does radius vary with orbital period? This study describes a sample of 60 planets: the summary statistics of radius and period, the distribution of radii, and the radius--period plane. It is descriptive and makes no causal claim.
+
+\section{Data}
+
+The sample is the researcher's file of 60 planets with orbital period, radius, discovery method and discovery year. The rows are synthetic test data. Of the 60 planets, 47 were found by the transit method and 13 by radial velocity. No row was dropped.
+
+\section{Results}
+
+Table~\ref{tab:summary} gives the summary statistics. The median radius is 2.515 Earth radii and the median period 14.814 days; both distributions are skewed to the right, with means above their medians.
+
+\input{tables/summary.tex}
+
+Table~\ref{tab:radius_bins} counts the planets per radius bin. Most planets lie between 2 and 3 Earth radii (24 planets); 7 planets lie between 1.5 and 2 Earth radii, fewer than in the bins on either side, and no planet lies between 4 and 6 Earth radii. Figure~\ref{fig:radius_hist} shows the same counts.
+
+\input{tables/radius_bins.tex}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.8\textwidth]{fig_radius_hist.pdf}
+\caption{Planets by radius bin (synthetic sample).}
+\label{fig:radius_hist}
+\end{figure}
+
+Figure~\ref{fig:radius_period} plots radius against period. Spearman's rank correlation of radius and period is $-0.1423$, a weak negative association across the sample; it describes the sample and is not an effect of period on radius.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.8\textwidth]{fig_radius_period.pdf}
+\caption{Radius against orbital period, by discovery method (synthetic sample).}
+\label{fig:radius_period}
+\end{figure}
+
+\section{Conclusion}
+
+The sample's radii concentrate between 2 and 3 Earth radii, with a sparse bin between 1.5 and 2 Earth radii and a separate group of large planets. The sample is synthetic, and detection methods select planets unequally, so the distribution describes this sample and not the population of planets.
+
+\end{document}

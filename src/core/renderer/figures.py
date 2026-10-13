@@ -19,7 +19,12 @@ runner, NOT an LLM specialist. Design rules mirror ``tables.py``:
 Supported ``figure_type`` values: ``coefficient`` (horizontal dot-and-whisker
 with CIs), ``event_study`` (point + error-bar path with treatment marker),
 ``bar`` (category bars), ``time_series`` (one line per ``{label,x,y}`` series),
-and ``multi_panel`` (a grid of ``panels``, each itself one of the above).
+``scatter`` (points of two variables, optionally grouped and on log axes),
+``histogram`` (counts in bins computed by the analysis), ``map`` (a
+choropleth, categories or point map drawn from saved data and boundaries, see
+``maps.py``), ``forest``, ``funnel`` and ``prisma`` (a meta-analysis, see
+``meta_figures.py``), and ``multi_panel`` (a grid of ``panels``, each itself one of the
+above except ``map``).
 Unknown types are skipped (reported), not guessed.
 """
 
@@ -42,6 +47,7 @@ class FigureRenderReport:
     skipped: list[str] = field(default_factory=list)  # "<filename>: <reason>"
     errors: list[str] = field(default_factory=list)
     placeholders: list[str] = field(default_factory=list)  # missing figs stubbed
+    notes: list[str] = field(default_factory=list)  # "<filename>: <note>" (e.g. a map's units without geometry)
     skipped_reason: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -138,16 +144,76 @@ def _render_time_series(fig_spec: dict[str, Any], ax: Any) -> None:
         if not isinstance(x, list) or y is None or len(x) != len(y):
             continue
         label = str(s.get("label", "")) or None
-        ax.plot(x, y, marker="o", markersize=3, linewidth=1.5, label=label)
+        many = len(x) > 60
+        (line,) = ax.plot(x, y, marker="" if many else "o", markersize=3, linewidth=1.2 if many else 1.5, label=label)
+        lower, upper = _floats(s.get("lower")), _floats(s.get("upper"))
+        if lower is not None and upper is not None and len(lower) == len(upper) == len(x):
+            # A band around the series, e.g. a forecast's prediction interval.
+            ax.fill_between(x, lower, upper, color=line.get_color(), alpha=0.2, linewidth=0)
         have_labels = have_labels or label is not None
         plotted += 1
     if plotted == 0:
         raise ValueError("time_series had no plottable {label,x,y} series")
+    if any(isinstance(v, str) for s in series if isinstance(s, dict) for v in (s.get("x") or [])):
+        # Periods as text are categories: keep about twelve labels, not one per period.
+        from matplotlib.ticker import MaxNLocator
+
+        ax.xaxis.set_major_locator(MaxNLocator(nbins=12))
+        for tick in ax.get_xticklabels():
+            tick.set_rotation(30)
+            tick.set_ha("right")
     ax.set_xlabel(str(fig_spec.get("x_label", "")))
     ax.set_ylabel(str(fig_spec.get("y_label", "")))
     if have_labels:
         ax.legend(fontsize=8)
     ax.grid(ls=":", alpha=0.4)
+
+
+def _render_scatter(fig_spec: dict[str, Any], ax: Any) -> None:
+    """Points of two variables (``x``, ``y``), optionally in groups and on log axes.
+
+    For descriptive studies in any field (planet radius against orbital period,
+    a station's temperature against its altitude). ``groups`` (one label per
+    point) colours the points by group.
+    """
+    x, y = _floats(fig_spec.get("x")), _floats(fig_spec.get("y"))
+    if x is None or y is None or len(x) != len(y):
+        raise ValueError("scatter needs equal-length numeric 'x' and 'y'")
+    groups = fig_spec.get("groups")
+    if isinstance(groups, list) and len(groups) == len(x):
+        for g in dict.fromkeys(str(v) for v in groups):
+            idx = [i for i, v in enumerate(groups) if str(v) == g]
+            ax.scatter([x[i] for i in idx], [y[i] for i in idx], s=14, label=g)
+        ax.legend(fontsize=8)
+    else:
+        ax.scatter(x, y, s=14, color="#1f4e79")
+    if fig_spec.get("log_x"):
+        ax.set_xscale("log")
+    if fig_spec.get("log_y"):
+        ax.set_yscale("log")
+    ax.set_xlabel(str(fig_spec.get("x_label", "")))
+    ax.set_ylabel(str(fig_spec.get("y_label", "")))
+    ax.grid(ls=":", alpha=0.4)
+
+
+def _render_histogram(fig_spec: dict[str, Any], ax: Any) -> None:
+    """Counts in bins already computed (``bins``: lower, upper, count), as the results state them."""
+    bins = fig_spec.get("bins")
+    if not isinstance(bins, list) or not bins or not all(isinstance(b, dict) for b in bins):
+        raise ValueError("histogram needs 'bins', each with lower, upper and count")
+    lo = _floats([b.get("lower") for b in bins])
+    hi = _floats([b.get("upper") for b in bins])
+    counts = _floats([b.get("count") for b in bins])
+    if lo is None or hi is None or counts is None:
+        raise ValueError("histogram bins need numeric lower, upper and count")
+    ax.bar(
+        lo, counts, width=[b - a for a, b in zip(lo, hi, strict=True)], align="edge", color="#1f4e79", edgecolor="white"
+    )
+    if fig_spec.get("log_x"):
+        ax.set_xscale("log")
+    ax.set_xlabel(str(fig_spec.get("x_label", "")))
+    ax.set_ylabel(str(fig_spec.get("y_label", "Count")))
+    ax.grid(ls=":", alpha=0.4, axis="y")
 
 
 # Single-axes renderers, dispatched by figure_type. multi_panel is composed
@@ -158,7 +224,22 @@ _RENDERERS = {
     "event_study": _render_event_study,
     "bar": _render_bar,
     "time_series": _render_time_series,
+    "scatter": _render_scatter,
+    "histogram": _render_histogram,
 }
+
+
+def _meta_builders() -> dict[str, Any]:
+    """The meta-analysis figures (meta_figures.py): forest and PRISMA size their own canvas."""
+    from . import meta_figures
+
+    return meta_figures.BUILDERS
+
+
+def _meta_renderers() -> dict[str, Any]:
+    from . import meta_figures
+
+    return meta_figures.RENDERERS
 
 
 def _render_multi_panel(plt: Any, fig_spec: dict[str, Any]) -> Any:
@@ -235,6 +316,24 @@ def render_figures(workspace: Path) -> FigureRenderReport:
             report.errors.append(f"invalid figure filename: {filename!r}")
             continue
         ftype = str(fig_spec.get("figure_type", ""))
+        if ftype == "map":
+            # Reads the boundaries and values the figure names from the study folder (maps.py).
+            try:
+                from .maps import render_map
+
+                fig, notes = render_map(plt, fig_spec, workspace)
+                fig.savefig(workspace / filename, format="pdf", bbox_inches="tight")
+                plt.close(fig)
+                report.rendered.append(filename)
+                report.notes += [f"{filename}: {n}" for n in notes]
+            except Exception as e:  # noqa: BLE001 — one bad map must not abort the rest
+                logger.warning("render_figures: failed to render map %s: %s", filename, e)
+                report.skipped.append(f"{filename}: {e}")
+                try:
+                    plt.close("all")
+                except Exception:  # noqa: BLE001
+                    pass
+            continue
         if ftype == "multi_panel":
             try:
                 fig = _render_multi_panel(plt, fig_spec)
@@ -250,7 +349,22 @@ def render_figures(workspace: Path) -> FigureRenderReport:
                 except Exception:  # noqa: BLE001
                     pass
             continue
-        renderer = _RENDERERS.get(ftype)
+        builder = _meta_builders().get(ftype)
+        if builder is not None:
+            try:
+                fig = builder(plt, fig_spec)
+                fig.savefig(workspace / filename, format="pdf", bbox_inches="tight")
+                plt.close(fig)
+                report.rendered.append(filename)
+            except Exception as e:  # noqa: BLE001 — one bad figure must not abort the rest
+                logger.warning("render_figures: failed to render %s: %s", filename, e)
+                report.skipped.append(f"{filename}: {e}")
+                try:
+                    plt.close("all")
+                except Exception:  # noqa: BLE001
+                    pass
+            continue
+        renderer = _RENDERERS.get(ftype) or _meta_renderers().get(ftype)
         if renderer is None:
             report.skipped.append(f"{filename}: unknown figure_type {ftype!r}")
             continue

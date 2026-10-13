@@ -1,0 +1,198 @@
+{
+  "figures": [
+    {
+      "filename": "fig_fear_by_year.pdf",
+      "figure_type": "time_series",
+      "label": "fig:fear_by_year",
+      "caption_hint": "Fear vocabulary per 10,000 tokens in each work, by year of first publication",
+      "series": [
+        {
+          "label": "Fear dictionary",
+          "x": [
+            1820,
+            1839,
+            1853,
+            1886,
+            1890,
+            1892
+          ],
+          "y": [
+            27.546,
+            38.8457,
+            9.6042,
+            34.1257,
+            18.5087,
+            14.5796
+          ],
+          "source": {
+            "results": "models.fear_words.outputs.by_group",
+            "fields": {
+              "x": "year",
+              "y": "per_10k"
+            },
+            "where": "year IS NOT NULL"
+          }
+        },
+        {
+          "label": "'fear'",
+          "x": [
+            1820,
+            1839,
+            1853,
+            1886,
+            1890,
+            1892
+          ],
+          "y": [
+            1.6204,
+            1.3873,
+            0.686,
+            5.4291,
+            0.0,
+            0.0
+          ],
+          "source": {
+            "results": "models.fear_over_time.outputs.series",
+            "fields": {
+              "x": "year",
+              "y": "per_10k"
+            },
+            "where": "term = 'fear'"
+          }
+        },
+        {
+          "label": "'terror'",
+          "x": [
+            1820,
+            1839,
+            1853,
+            1886,
+            1890,
+            1892
+          ],
+          "y": [
+            3.2407,
+            8.3241,
+            0.0,
+            5.0413,
+            0.0,
+            1.62
+          ],
+          "source": {
+            "results": "models.fear_over_time.outputs.series",
+            "fields": {
+              "x": "year",
+              "y": "per_10k"
+            },
+            "where": "term = 'terror'"
+          }
+        }
+      ],
+      "x_label": "Year of first publication (one work per year)",
+      "y_label": "Per 10,000 tokens"
+    },
+    {
+      "filename": "fig_keyness.pdf",
+      "figure_type": "bar",
+      "label": "fig:keyness",
+      "caption_hint": "Key terms of the later works against the earlier ones: log ratio",
+      "categories": [
+        "henry",
+        "john",
+        "don’t",
+        "said",
+        "doctor",
+        "pattern",
+        "god",
+        "dear",
+        "know",
+        "used",
+        "garden",
+        "asked",
+        "come",
+        "paper",
+        "really"
+      ],
+      "values": [
+        5.933,
+        3.808,
+        4.181,
+        1.103,
+        4.634,
+        4.634,
+        4.518,
+        5.103,
+        1.753,
+        3.255,
+        4.518,
+        2.577,
+        1.893,
+        1.978,
+        2.741
+      ],
+      "y_label": "Log ratio (later vs earlier)",
+      "source": {
+        "results": "models.keyness_late.outputs.terms",
+        "fields": {
+          "categories": "term",
+          "values": "log_ratio"
+        }
+      }
+    },
+    {
+      "filename": "fig_topics.pdf",
+      "figure_type": "multi_panel",
+      "label": "fig:topics",
+      "caption_hint": "Mean topic shares of the 1,000-token segments, by period (NMF, k = 3)",
+      "ncols": 2,
+      "panels": [
+        {
+          "figure_type": "bar",
+          "title": "1820-1853",
+          "categories": [
+            "early T0",
+            "early T1",
+            "early T2"
+          ],
+          "values": [
+            0.027,
+            0.5715,
+            0.4015
+          ],
+          "y_label": "Mean topic share",
+          "source": {
+            "results": "models.topics.outputs.prevalence",
+            "fields": {
+              "categories": "label",
+              "values": "share"
+            },
+            "where": "group = 'early'"
+          }
+        },
+        {
+          "figure_type": "bar",
+          "title": "1886-1892",
+          "categories": [
+            "late T0",
+            "late T1",
+            "late T2"
+          ],
+          "values": [
+            0.5472,
+            0.4053,
+            0.0475
+          ],
+          "y_label": "Mean topic share",
+          "source": {
+            "results": "models.topics.outputs.prevalence",
+            "fields": {
+              "categories": "label",
+              "values": "share"
+            },
+            "where": "group = 'late'"
+          }
+        }
+      ]
+    }
+  ]
+}

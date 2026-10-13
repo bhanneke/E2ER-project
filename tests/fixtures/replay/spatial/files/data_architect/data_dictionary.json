@@ -1,0 +1,28 @@
+{
+  "tables": [
+    {
+      "name": "regions",
+      "source": "file",
+      "file": "regions.csv",
+      "frequency": "one row per region",
+      "role": "the regions' boundaries (synthetic grid of 30 squares, EPSG:4326)",
+      "columns": [
+        {"name": "id", "type": "TEXT", "description": "region id (synthetic)"},
+        {"name": "name", "type": "TEXT", "description": "region name"},
+        {"name": "geometry", "type": "TEXT", "description": "the boundary as a GeoJSON Polygon, longitude and latitude"}
+      ]
+    },
+    {
+      "name": "regional",
+      "source": "file",
+      "file": "regional.csv",
+      "frequency": "one row per region and year",
+      "role": "the rate by region, 2022 and 2023 (synthetic)",
+      "columns": [
+        {"name": "geo", "type": "TEXT", "description": "region id, as in regions.id; RZZ is an extra-regio code"},
+        {"name": "year", "type": "INTEGER", "description": "year"},
+        {"name": "rate", "type": "REAL", "description": "the rate, percent"}
+      ]
+    }
+  ]
+}

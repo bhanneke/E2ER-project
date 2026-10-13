@@ -1,0 +1,12 @@
+{
+  "units": {"type": "region (synthetic grid)", "table": "regional", "id_column": "geo", "year": 2023},
+  "boundaries": {"table": "regions", "id_column": "id", "geometry_column": "geometry",
+                 "source": "the researcher's file data/regions.csv (a synthetic grid made for e2er's tests)",
+                 "licence": "CC0 (synthetic test geometry)",
+                 "attribution": "Synthetic test geometry"},
+  "crs": "EPSG:4326",
+  "weights": {"type": "queen", "row_standardised": true,
+              "islands": "none expected on a grid; a region without neighbours would be kept with none and reported"},
+  "units_without_geometry": [{"id": "RZZ", "reason": "extra-regio code: data not attributed to any region, no territory"}],
+  "map_projection": "laea_europe"
+}

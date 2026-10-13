@@ -57,8 +57,15 @@ DATA_SUFFIXES = frozenset({".db", ".sqlite", ".sqlite3", ".csv", ".tsv", ".parqu
 MAX_INPUT_BYTES = 200 * 1024 * 1024
 #: Where an exported copy of a workspace file is looked for first.
 _PREFERRED = ("data/", "results/", "design/", "code/", "")
-#: Sources whose terms do not let the study pass their data on: reloaded by get_data.py.
-_YAHOO, _GMD = "yfinance", "gmd"
+#: Yahoo Finance: its reloaded prices can differ (adjusted for every new dividend).
+_YAHOO = "yfinance"
+
+
+def _restricted() -> dict[str, Any]:
+    """Sources whose terms do not let the study pass their data on, reloaded by get_data.py (by connector name)."""
+    from ...modules.data.sources import all_sources
+
+    return {s.name: s for s in all_sources() if not s.redistribution}
 
 
 @dataclass
@@ -119,8 +126,22 @@ class Chain:
     notes: list[str] = field(default_factory=list)
 
 
+#: A script that can write a file: opened for writing, written in one call, or dumped.
+_WRITES = re.compile(
+    r"""open\([^)]*["'](?:[wax]|[wa]\+|r\+)b?["']|mode\s*=\s*["'][wax]|write_text\(|write_bytes\(|\.dump\(|to_json\("""
+)
+
+
+def _writes_results(source: str) -> bool:
+    """Whether a script names the results file and writes something (not only reads it, as a check does)."""
+    return RESULTS in source and bool(_WRITES.search(source))
+
+
 def _writers(workspace: Path) -> tuple[list[Path], Path | None]:
-    writers = sorted(p for p in workspace.glob("*.py") if p.is_file() and RESULTS in _read(p))
+    # A script that only reads the results (the analysis specialist's own checks, e.g. _validate_figs.py in
+    # the live text run of 2026-10-11) is not a step of the rerun: it ran on a results file edited by hand
+    # and failed the reproduction.
+    writers = sorted(p for p in workspace.glob("*.py") if p.is_file() and _writes_results(_read(p)))
     canonical = next((workspace / n for n in _estimation_names() if (workspace / n).is_file()), None)
     return writers, canonical
 
@@ -243,6 +264,30 @@ def _literals(source: str) -> list[str]:
     return [n.value for n in ast.walk(tree) if isinstance(n, ast.Constant) and isinstance(n.value, str)]
 
 
+#: A file a script opens for writing, or writes with pandas/matplotlib/numpy: an output of the run, not an input.
+_OPEN_WRITE = re.compile(r"""open\(\s*f?["'](?:\./)?([^"'{}]+?)["']\s*,\s*(?:mode\s*=\s*)?["'][wax]""")
+_OTHER_WRITE = re.compile(r"""(?:\.to_csv|\.to_json|\.to_parquet|savefig|savetxt)\(\s*f?["'](?:\./)?([^"'{}]+?)["']""")
+
+
+#: The files the spatial-analysis template's analysis writes for its checks (spatial_checks.py).
+_SPATIAL_OUTPUT = re.compile(r"^spatial_(units|weights[A-Za-z0-9_-]*)\.csv$")
+
+
+def written_files(scripts: list[Path]) -> set[str]:
+    """Names the scripts write (``open("x.csv", "w")``, ``df.to_csv("x.csv")``, ...): outputs, never inputs.
+
+    The spatial-analysis template's analysis writes the units and the weights it used
+    (spatial_units.csv, spatial_weights.csv); comparing them as inputs would call every
+    rerun a difference.
+    """
+    out: set[str] = set()
+    for script in scripts:
+        source = _read(script)
+        out.update(m.group(1).strip() for m in _OPEN_WRITE.finditer(source))
+        out.update(m.group(1).strip() for m in _OTHER_WRITE.finditer(source))
+    return out
+
+
 def referenced_files(workspace: Path, scripts: list[Path]) -> list[str]:
     """Workspace-relative paths of the files the scripts name (relative, by the workspace's full path, or by glob)."""
     roots = {str(workspace), str(workspace.resolve())}
@@ -267,15 +312,30 @@ def referenced_files(workspace: Path, scripts: list[Path]) -> list[str]:
             if text.startswith("/") or ".." in Path(text).parts or not text:
                 continue
             if any(c in text for c in "*?["):
+                if not text.strip("*?./"):
+                    # A bare wildcard ("*", "?"): a dictionary entry's suffix or a regular expression in a
+                    # text study, not a file pattern. Globbed, it made every file of the study an input.
+                    continue
                 try:
-                    found.update(p.relative_to(workspace).as_posix() for p in workspace.glob(text) if p.is_file())
+                    found.update(
+                        p.relative_to(workspace).as_posix()
+                        for p in workspace.glob(text)
+                        if p.is_file() and not p.name.startswith(".")
+                    )
                 except (ValueError, NotImplementedError):
                     pass
                 continue
             if (workspace / text).is_file():
                 found.add(Path(text).as_posix())
+        # `e2er-data query sql|tables` reads the study's data.db without naming it (the estimation
+        # skill allows it; in a rerun it reads the rerun's data.db), so data.db is an input then too.
+        if _QUERY_TOOL.search(source) and (workspace / "data.db").is_file():
+            found.add("data.db")
     names = {s.name for s in scripts}
     return sorted(f for f in found if f not in names)
+
+
+_QUERY_TOOL = re.compile(r"""e2er-data["']?\s*,?\s*["']?query\b""")
 
 
 # ── data_sources.json ────────────────────────────────────────────────────────
@@ -349,59 +409,27 @@ def _db_source(db: Path, loads: list[dict[str, Any]]) -> str:
 
 
 def _reload_args(entry: dict[str, Any]) -> tuple[list[str], str] | None:
-    """The e2er-data command that repeats a Yahoo or GMD load (without its target), and a note; None if unknown."""
-    connector = entry.get("connector")
-    if connector == _GMD:
-        variables = entry.get("variables") or str(entry.get("series") or "").split(",")
-        variables = [str(v) for v in variables if str(v).strip()]
-        if not variables:
-            return None
-        args = ["gmd", "series", "--variables", ",".join(variables)]
-        countries = entry.get("countries")
-        if isinstance(countries, list) and countries:
-            args += ["--countries", ",".join(str(c) for c in countries)]
-        for key in ("start", "end"):
-            if entry.get(key) is not None:
-                args += [f"--{key}", str(entry[key])]
-        if entry.get("version"):
-            args += ["--version", str(entry["version"])]
-        return args, ""
-    if connector != _YAHOO:
-        return None
-    raw = entry.get("request")
-    req: dict[str, Any] = raw if isinstance(raw, dict) else {}
-    ticker = req.get("ticker")
-    if not ticker:
-        link = str(entry.get("link") or "")
-        ticker = link.rstrip("/").rsplit("/", 1)[-1] if "/quote/" in link else None
-    if not ticker:
-        return None
-    command = req.get("command") or ("dividends" if "dividends" in str(entry.get("series") or "") else "history")
-    if command == "fundamentals":
-        statement = str(req.get("statement") or "income")
-        return ["yfinance", "fundamentals", "--ticker", ticker, "--statement", statement], ""
-    if command == "dividends":
-        return ["yfinance", "dividends", "--ticker", ticker], ""
-    args = ["yfinance", "history", "--ticker", ticker, "--interval", str(req.get("interval") or "1d")]
-    note = ""
-    if req:
-        for key in ("start", "end"):
-            if req.get(key):
-                args += [f"--{key}", str(req[key])]
-        if req.get("adjusted") is False:
-            args.append("--raw")
-    else:
-        note = "dates not recorded"
-    return args, note
+    """The e2er-data command that repeats a load of a source with terms (without its target), and a note.
+
+    From the source's definition (its ``reload``, else the recorded request); None if unknown.
+    """
+    from ...modules.data.sources.runtime import reload_args
+
+    source = _restricted().get(str(entry.get("connector")))
+    return reload_args(source, entry) if source is not None else None
 
 
 def _reloads(workspace: Path, loads: list[dict[str, Any]], inputs: list[str]) -> tuple[list[dict[str, Any]], bool]:
-    """The loads get_data.py repeats: Yahoo and GMD loads that went into an input; (reloads, any without dates)."""
+    """The loads get_data.py repeats: loads of sources with terms (Yahoo, the GMD, …) that went into an input.
+
+    Returns (reloads, any without dates).
+    """
     out: list[dict[str, Any]] = []
     undated = False
     uses_db = "data.db" in inputs
+    restricted = _restricted()
     for e in loads:
-        if e.get("connector") not in (_YAHOO, _GMD):
+        if e.get("connector") not in restricted:
             continue
         made = _reload_args(e)
         if made is None:
@@ -607,7 +635,8 @@ def write_recipe(workspace: Path, out: Path, *, date_str: str = "") -> Outcome:
 
     inputs: list[dict[str, Any]] = []
     data_inputs: list[str] = []
-    unshippable = {s for e in loads if e.get("connector") in (_YAHOO, _GMD) and (s := _saved(e))}
+    restricted = _restricted()
+    unshippable = {s for e in loads if e.get("connector") in restricted and (s := _saved(e))}
     recorded_sha = {
         f.get("path"): f.get("sha256")
         for e in loads
@@ -615,9 +644,20 @@ def write_recipe(workspace: Path, out: Path, *, date_str: str = "") -> Outcome:
         for f in e.get("files") or []
         if isinstance(f, dict)
     }
-    written = {RESULTS, *OTHER_RESULTS}
+    outputs = written_files(chain)
     for rel in referenced_files(workspace, chain):
-        if rel in written:
+        if rel in (RESULTS, *OTHER_RESULTS):
+            continue
+        if Path(rel).name.startswith(".e2er") or Path(rel).name.startswith(".pipeline_state"):
+            # e2er's own bookkeeping (the script log, the run state), never exported: not an input of the
+            # study (the live text run of 2026-10-11 was "not reproduced exactly" over its script log).
+            continue
+        if rel in outputs or _SPATIAL_OUTPUT.match(rel):
+            # A file the scripts write: never an input to compare. One they also read first
+            # (figure_spec.json, updated in place) is laid out as the study left it.
+            copy = _exported_copy(out, rel, _sha256(workspace / rel))
+            if copy is not None:
+                files[rel] = copy
             continue
         src = workspace / rel
         sha = _sha256(src)
@@ -664,7 +704,7 @@ def write_recipe(workspace: Path, out: Path, *, date_str: str = "") -> Outcome:
             [t for t in _db_tables(workspace / "data.db") if t not in reloaded_tables] if reloaded_tables else []
         )
         terms = " ".join(
-            f"{names[c][:1].upper() + names[c][1:]}'s terms {sources[c].limit}, so a published study may leave "
+            f"{names[c][:1].upper() + names[c][1:]}'s terms {sources[c].reason}, so a published study may leave "
             "its data out."
             for c in used
         )

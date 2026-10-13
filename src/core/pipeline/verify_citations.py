@@ -371,10 +371,14 @@ STUDY_BIBLIOGRAPHIES = ("literature.bib", "user_refs.bib")
 
 
 def study_references(workspace: Path) -> int:
-    """How many works the study can cite: the entries of its bibliographies, else the papers chosen for it."""
+    """How many works the study can cite: the entries of its bibliographies, else the papers chosen for it.
+
+    The template's method sources (``e2er_source = {template}``) are not counted: they are there to be
+    cited where the study used the method, never required, so a study with only those has no literature.
+    """
     keys: set[str] = set()
     for name in STUDY_BIBLIOGRAPHIES:
-        keys.update(load_bib(workspace / name))
+        keys.update(k for k, f in load_bib(workspace / name).items() if f.get("e2er_source") != "template")
     if keys:
         return len(keys)
     from ..study_inputs import read_record, section

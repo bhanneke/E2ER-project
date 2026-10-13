@@ -29,6 +29,79 @@ def build_tier0_context(workspace: Path, paper_id: str) -> str:
         "Research Question:",
         sanitize_for_prompt(data.get("research_question") or "TBD", max_chars=2000),
     ]
+    template = template_context()
+    if template:
+        lines += ["", template]
+    return "\n".join(lines)
+
+
+def template_context() -> str:
+    """What the running template changes about e2er's defaults, for every specialist and the strategist.
+
+    Empty for a template that keeps the defaults (a regression with a causal
+    claim, the economist persona), so those runs see exactly what they saw before.
+    """
+    from ..pipeline.components import active
+    from ..pipeline.result_kinds import RESULTS_FILE, get
+
+    spec = active()
+    if spec is None or spec.is_default_core():
+        return ""
+    k = get(spec.results)
+    lines = [f"Template: {spec.title or spec.name}"]
+    if spec.results != "regression":
+        lines.append(
+            f"- Results: {k.label}. The analysis step (econometrics_specialist) writes {RESULTS_FILE} in the "
+            f"{spec.results} results schema; nobody estimates a regression unless the plan asks for one."
+        )
+    if not spec.causal:
+        lines.append(
+            "- No causal claim: no identification strategy is needed (do not dispatch identification_strategist "
+            "or theory_specialist); describe patterns and associations, not effects."
+        )
+    from ..labels import step as step_label
+    from ..specialists.registry import SPECIALIST_ARTIFACTS
+
+    for s in spec.steps:
+        if s.kind != "gate" or not s.after:
+            continue
+        # A check inside the dispatch runs once these specialists are done and before the analysis:
+        # the strategist must dispatch them (a template's own specialists are not in its default plan).
+        own = [a for a in s.after if a in SPECIALIST_ARTIFACTS]
+        held = (
+            f" {', '.join(s.before)} is not dispatched until this check has passed: a specialist it reads that "
+            "your plan leaves out is sent out first, so plan them yourself."
+            if s.before
+            else ""
+        )
+        if "econometrics_specialist" in s.after:
+            # A check of the results: it runs once the analysis (and the specialists named with it) are done.
+            others = [a for a in own if a != "econometrics_specialist"]
+            lines.append(
+                f"- Check after the analysis: {step_label(s.name, spec)} ({s.check}). "
+                + (
+                    f"Dispatch {', '.join(others)} after econometrics_specialist and before paper_drafter; "
+                    if others
+                    else ""
+                )
+                + "the check runs once they are done, before the draft, and stops the run when it fails."
+                + held
+            )
+            continue
+        lines.append(
+            f"- Check before the analysis: {step_label(s.name, spec)} ({s.check}). Dispatch "
+            f"{', '.join(own)} before econometrics_specialist; the check runs right after them and stops the "
+            "run when it fails."
+            + (
+                " Once it passes, the forecast setup and its hold-out are frozen: do not dispatch "
+                "forecast_designer again (a changed setup stops the run at the forecast check)."
+                if s.check == "forecast_design"
+                else ""
+            )
+            + held
+        )
+    panel = spec.panel()
+    lines.append(f"- Review panel: {', '.join(panel)}.")
     return "\n".join(lines)
 
 
@@ -155,6 +228,21 @@ def build_self_attack_context(workspace: Path, paper_id: str) -> str:
     return "\n\n".join(sections)
 
 
+#: How much of a text cell a sample row shows. A text study's corpus table holds whole books in one
+#: column; printed in full, the sample rows of 20 novels made a 5.4-million-character prompt that the
+#: model could not take (live run, 2026-10-11).
+_SAMPLE_TEXT_CHARS = 200
+
+
+def _sample_value(value: object) -> str:
+    """A cell of a sample row, with long text cut and its length given."""
+    if isinstance(value, str) and len(value) > _SAMPLE_TEXT_CHARS:
+        return f"{value[:_SAMPLE_TEXT_CHARS]!r}… ({len(value):,} characters)"
+    if isinstance(value, bytes) and len(value) > _SAMPLE_TEXT_CHARS:
+        return f"<{len(value):,} bytes>"
+    return repr(value)
+
+
 def _list_data_tables(workspace: Path) -> str:
     """Describe the paper's data.db tables (name, columns+types, row count,
     sample rows) so specialists know what they can `query_data`. Empty string
@@ -183,7 +271,7 @@ def _list_data_tables(workspace: Path) -> str:
             col_names = [c["name"] for c in tbl["columns"]]
             lines.append("Sample rows:")
             for row in samples:
-                pairs = ", ".join(f"{n}={v!r}" for n, v in zip(col_names, row, strict=False))
+                pairs = ", ".join(f"{n}={_sample_value(v)}" for n, v in zip(col_names, row, strict=False))
                 lines.append(f"  - {pairs}")
         lines.append("")
     return "\n".join(lines).rstrip()

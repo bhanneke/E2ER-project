@@ -164,6 +164,9 @@ For each finding, assign:
 - category: identification | mechanism | numerics | institutions | equilibrium | bibliography | framing | novelty
 - description: specific, actionable description of the problem
 - suggested_fix: concrete suggestion
+- locations: EVERY passage of the draft that has this problem, each a phrase of at least six words copied
+  exactly from the draft. Search the whole draft (abstract, introduction, body, conclusion, captions): a
+  problem stated in the abstract, the results and the conclusion has three locations.
 
 Output JSON: {"findings": [...], "overall_severity": N}
 """

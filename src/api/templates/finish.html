@@ -112,6 +112,8 @@
       <label><input type="radio" name="paper" value="public"> public</label>
     </div>
     <p class="small muted reader-note" id="paper-note">Private: readers on e2er.org see a button to ask you for the paper.</p>
+    {# Data whose terms allow research use only with an open-access paper (GitHub): publishing needs the paper public. #}
+    <div id="paper-open-access">{% for t in data_terms if t.open_access_why %}<p class="small error">The study uses {{ t.the_label }} data. {{ t.open_access_why }}</p>{% endfor %}</div>
   </div>
   <label class="field" id="paper-url-field" hidden>
     <span>Address of the public PDF (https; empty: paper/paper.pdf in the repository at the commit below)</span>
@@ -151,7 +153,7 @@
   <div id="terms-box">
     {% for t in data_terms %}
       <div class="pf-banner terms" data-connector="{{ t.connector }}">
-        <p>The study uses data from {{ t.the_label }}. Its terms:</p>
+        <p>The study uses data from {{ t.the_label }}. Its terms {{ t.reason }}:</p>
         <ul>{% for line in t.plain %}<li>{{ line }}</li>{% endfor %}</ul>
         <p class="small">{% if t.citation %}Citation: {{ t.citation }} · {% endif %}<a href="{{ t.terms_url }}" target="_blank" rel="noopener">Full terms</a></p>
         <label class="check">
@@ -291,8 +293,10 @@
   availability();
   const showTerms = (terms) => {
     if ((terms || []).length) document.getElementById('data-note').textContent = terms.map((t) => t.reader_note).join(' ');
+    document.getElementById('paper-open-access').innerHTML = (terms || []).filter((t) => t.open_access_why).map((t) =>
+      '<p class="small error">The study uses ' + esc(t.the_label) + ' data. ' + esc(t.open_access_why) + '</p>').join('');
     document.getElementById('terms-box').innerHTML = (terms || []).map((t) =>
-      '<div class="pf-banner terms" data-connector="' + esc(t.connector) + '"><p>The study uses data from ' + esc(t.the_label) + '. Its terms:</p><ul>' +
+      '<div class="pf-banner terms" data-connector="' + esc(t.connector) + '"><p>The study uses data from ' + esc(t.the_label) + '. Its terms ' + esc(t.reason) + ':</p><ul>' +
       t.plain.map((l) => '<li>' + esc(l) + '</li>').join('') + '</ul><p class="small">' + (t.citation ? 'Citation: ' + esc(t.citation) + ' · ' : '') +
       '<a href="' + esc(t.terms_url) + '" target="_blank" rel="noopener">Full terms</a></p><label class="check"><input type="checkbox" class="confirm-terms" value="' +
       esc(t.connector) + '"><span>Publish the ' + esc(t.short) + ' data with the study ' + esc(t.confirm) + ' (needed when the data are public).</span></label>' +

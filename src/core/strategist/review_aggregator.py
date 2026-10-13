@@ -1,8 +1,11 @@
-"""e2er's internal quality review: six reviewer scores combined into one score.
+"""e2er's internal quality review: the panel's reviewer scores combined into one score.
 
 Each reviewer specialist scores the draft from one angle (data,
-identification, literature, mechanism, technical, writing) on a scale of 0 to
-10. The combined score is their weighted average (``_WEIGHTS``). The result's
+identification, literature, mechanism, technical, writing; outside economics
+also methods and domain plausibility) on a scale of 0 to 10. The panel is the
+template's (its `aggregate` step; six reviewers by default). The combined
+score is their weighted average (``_WEIGHTS``, or the template's
+``review_weights``). The result's
 ``verdict`` is an internal code that picks the revision round the runner runs
 (runner._run_revision_phase); it is never shown. Readers see the score:
 
@@ -58,6 +61,9 @@ _WEIGHTS: dict[str, float] = {
     "writing_reviewer": 0.75,
     "data_reviewer": 1.25,
     "identification_reviewer": 1.5,
+    # The discipline-neutral reviewers (0.16.0); a template's `review_weights` may set its own.
+    "methods_reviewer": 1.5,
+    "plausibility_reviewer": 1.25,
 }
 
 _RECOMMENDATION_FLOOR = {
@@ -68,28 +74,45 @@ _RECOMMENDATION_FLOOR = {
 }
 
 
-def aggregate_reviews(scores: list[ReviewScore]) -> AggregationResult:
+def aggregate_reviews(
+    scores: list[ReviewScore],
+    *,
+    panel: list[str] | None = None,
+    weights: dict[str, float] | None = None,
+) -> AggregationResult:
     """Apply 3-rule mechanical aggregation to produce a final verdict.
 
     Rule 1: If mechanism_reviewer < 5 → MECHANISM_FAIL (hard gate).
     Rule 2: If any reviewer < 4 → HARD_REJECT.
     Rule 3: Weighted average — technical_reviewer has 1.5x weight.
+
+    ``panel`` is the template's reviewers and ``weights`` its ``review_weights``,
+    which take the place of the default weight of each reviewer they name; by
+    default those of the running template, else e2er's six reviewers and their
+    weights. Rule 1 applies only to a panel with a mechanism reviewer.
     """
     from ...logging_config import get_logger
+    from ..pipeline.components import active
     from ..specialists.registry import REVIEWER_SPECIALISTS
 
-    expected = len(REVIEWER_SPECIALISTS)
+    spec = active()
+    if panel is None:
+        panel = spec.panel() if spec is not None else list(REVIEWER_SPECIALISTS)
+    if weights is None and spec is not None:
+        weights = dict(spec.review_weights)
+    expected = len(panel)
     if len(scores) < expected:
         get_logger(__name__).warning(
             "Partial review aggregation: only %d/%d reviewer scores present "
             "(missing: %s). Combined score computed on partial data — treat with caution.",
             len(scores),
             expected,
-            sorted(set(REVIEWER_SPECIALISTS) - {s.reviewer for s in scores}),
+            sorted(set(panel) - {s.reviewer for s in scores}),
         )
 
+    template_weights = weights or {}
     for s in scores:
-        s.weight = _WEIGHTS.get(s.reviewer, 1.0)
+        s.weight = template_weights.get(s.reviewer, _WEIGHTS.get(s.reviewer, 1.0))
 
     # Rule 1 — mechanism gate
     mech_scores = [s for s in scores if s.reviewer == "mechanism_reviewer"]
@@ -108,7 +131,7 @@ def aggregate_reviews(scores: list[ReviewScore]) -> AggregationResult:
     # an expected reviewer but produced no parseable score, do NOT let the
     # paper be ACCEPTED on the remaining reviewers' average — that silently
     # skips the load-bearing gate. Require another review round.
-    if "mechanism_reviewer" in REVIEWER_SPECIALISTS and not mech_scores:
+    if "mechanism_reviewer" in panel and not mech_scores:
         total_w = sum(s.weight for s in scores) or 1.0
         avg = sum(s.score * s.weight for s in scores) / total_w
         return AggregationResult(

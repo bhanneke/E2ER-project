@@ -54,7 +54,7 @@ e2er review <paper_id> --send-back identification_strategist --remark "Add an in
 e2er review <paper_id> --approve
 ```
 
-An instruction is kept in `researcher_instructions.md`; every later specialist and the strategist receive it. Sending back re-runs that template step (and the steps after it) or that specialist with the remark, then the run stops at the same researcher step again.
+An instruction is kept in `researcher_instructions.md`; every later specialist and the strategist receive it. Sending back re-runs that template step (and the steps after it) or that specialist with the remark, then the run stops at the same researcher step again. At a stop for a failed check (a check step, a check inside a step, the number check, a change to the pre-registered plan) it does not: after the specialist, the check runs again on its new output, and the run continues when the check passes. It stops at the check again only when the check still fails, so a send-back there needs no approve afterwards.
 
 A study that completed, failed or stopped can be sent back too:
 

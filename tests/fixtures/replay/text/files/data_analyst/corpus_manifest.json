@@ -1,0 +1,83 @@
+{
+  "documents": [
+    {
+      "doc_id": "pg41",
+      "title": "The Legend of Sleepy Hollow",
+      "author": "Irving, Washington",
+      "year": 1820,
+      "period": "1820-1853",
+      "source": "Project Gutenberg ebook 41, plain text from the mirror gutenberg.pglaf.org",
+      "licence": "public domain in the USA; Project Gutenberg's licence and header removed (e2er-data gutenberg)",
+      "sha256": "14dfbab6784099770a04cfc20b67213929595d47078f14143980e0f87b4e1338",
+      "n_tokens": 12343
+    },
+    {
+      "doc_id": "pg43",
+      "title": "The strange case of Dr. Jekyll and Mr. Hyde",
+      "author": "Stevenson, Robert Louis",
+      "year": 1886,
+      "period": "1886-1892",
+      "source": "Project Gutenberg ebook 43, plain text from the mirror gutenberg.pglaf.org",
+      "licence": "public domain in the USA; Project Gutenberg's licence and header removed (e2er-data gutenberg)",
+      "sha256": "688062a341d34e7ef6718ecb5e352978b136766ea4131966f4245ccff9ac6000",
+      "n_tokens": 25787
+    },
+    {
+      "doc_id": "pg375",
+      "title": "An Occurrence at Owl Creek Bridge",
+      "author": "Bierce, Ambrose",
+      "year": 1890,
+      "period": "1886-1892",
+      "source": "Project Gutenberg ebook 375, plain text from the mirror gutenberg.pglaf.org",
+      "licence": "public domain in the USA; Project Gutenberg's licence and header removed (e2er-data gutenberg)",
+      "sha256": "feb870fce1912c0903efab701fccc9e8454d1c7337d5fe5af1202b5229e9dddc",
+      "n_tokens": 3782
+    },
+    {
+      "doc_id": "pg932",
+      "title": "The Fall of the House of Usher",
+      "author": "Poe, Edgar Allan",
+      "year": 1839,
+      "period": "1820-1853",
+      "source": "Project Gutenberg ebook 932, plain text from the mirror gutenberg.pglaf.org",
+      "licence": "public domain in the USA; Project Gutenberg's licence and header removed (e2er-data gutenberg)",
+      "sha256": "481964b9f46ee40227d028fdb8b27bf6ebf1933948c7cc7b9fd3c2ed6fb90734",
+      "n_tokens": 7208
+    },
+    {
+      "doc_id": "pg1952",
+      "title": "The Yellow Wallpaper",
+      "author": "Gilman, Charlotte Perkins",
+      "year": 1892,
+      "period": "1886-1892",
+      "source": "Project Gutenberg ebook 1952, plain text from the mirror gutenberg.pglaf.org",
+      "licence": "public domain in the USA; Project Gutenberg's licence and header removed (e2er-data gutenberg)",
+      "sha256": "bfb16b1ebb0bef2051490e1599934607e7aa06fe6805275cfd3e554bf0c186d2",
+      "n_tokens": 6173
+    },
+    {
+      "doc_id": "pg11231",
+      "title": "Bartleby, the Scrivener: A Story of Wall-Street",
+      "author": "Melville, Herman",
+      "year": 1853,
+      "period": "1820-1853",
+      "source": "Project Gutenberg ebook 11231, plain text from the mirror gutenberg.pglaf.org",
+      "licence": "public domain in the USA; Project Gutenberg's licence and header removed (e2er-data gutenberg)",
+      "sha256": "18d4c2dd0221665b5c17ba96019f4349fe914e639f7616c364a88fcc4d20409b",
+      "n_tokens": 14577
+    }
+  ],
+  "corpus": {
+    "n_documents": 6,
+    "n_tokens": 69870,
+    "n_types": 8691,
+    "length": {
+      "min": 3782,
+      "p25": 6431.75,
+      "median": 9775.5,
+      "p75": 14018.5,
+      "max": 25787,
+      "mean": 11645.0
+    }
+  }
+}

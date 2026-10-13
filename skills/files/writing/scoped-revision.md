@@ -21,8 +21,37 @@ JSON-serialised list of `Finding` objects. Each Finding has:
 - `target`: the canonical scope — `section:<name>`, `table:<label>`,
   `references`, `abstract`, or `paper:full`
 - `severity`: 1–10
+- `id`: `F1`, `F2`, … — put it in each edit's `source_finding`
 - `problem`: the issue to fix
 - `suggested_fix`: a concrete starting point for the patch
+- `locations` (when given): passages of the draft with the problem, each
+  quoted verbatim
+
+## A finding names an issue, not one sentence
+
+Fix the issue at EVERY passage of the draft that has it. The `locations`
+are where the finding saw it; search the whole draft (abstract,
+introduction, body, conclusion, figure and table captions) for the same
+issue elsewhere, and emit one edit per passage. A draft that presents a
+calculated quantity as measured usually does so in the abstract, the data
+section, the results and the conclusion: four edits, not one.
+
+A passage you decide to leave as it is gets an entry of its own, so the
+decision is on record:
+
+```json
+{
+  "edit_type": "keep",
+  "find": "the radii reported in the archive",
+  "reason": "this sentence describes the archive's column, which is a calculated radius and says so",
+  "source_finding": "F1"
+}
+```
+
+A deterministic check reads your patch against the findings before it is
+applied. A listed location that no edit corrects and no `keep` entry
+explains, a corrected passage that occurs again elsewhere unchanged, or a
+`keep` without a reason sends you back with each passage named.
 
 **You may only edit the targets named in this list.** The merger
 refuses any edit whose target isn't in the findings. Trying to "while
@@ -65,6 +94,7 @@ one edit. Currently the merger supports one `edit_type`:
 | `find_must_be_unique` | optional, default true | When true, the merger fails the edit if `find` matches more than once in the target. Set false ONLY when you genuinely want every occurrence in the region replaced. |
 | `source_finding` | optional | Free-text provenance (e.g. `"verify_numbers#0"`). Appears in the merger's report; helps the operator audit which Finding drove which edit. |
 | `id` | optional | Stable identifier for this edit. The merger generates `e0`, `e1`, ... if absent. |
+| `reason` | for `keep` | Why the passage in `find` stays as it is. A `keep` entry changes nothing in the draft. |
 
 ## Before you compose any edits — list the draft's actual targets
 

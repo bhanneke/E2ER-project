@@ -199,34 +199,64 @@ e2er logout
 
 ## Templates
 
-A template is a `.toml` file. e2er ships five in [`pipelines/`](https://github.com/bhanneke/E2ER-project/tree/main/pipelines):
+A template is a `.toml` file. e2er ships eleven in [`pipelines/`](https://github.com/bhanneke/E2ER-project/tree/main/pipelines):
 
 - `empirical` (default): from a research question and data to an empirical paper.
 - `empirical-preregistered`: `empirical` with three pauses for the researcher (design review, pre-registration frozen before any estimation, draft review).
 - `event-study-finance`: abnormal-return event studies around announcements, with the pauses of `empirical-preregistered`. A check before estimation tests the estimation window, the overlap between events and the event dates.
+- `policy-evaluation`: what a policy changed, by difference-in-differences. The design (treatment timing, comparison group, outcome, estimator) is written as `did_design.json` and checked against the data before estimation: staggered timing needs a heterogeneity-robust estimator (Callaway and Sant'Anna, Sun and Abraham, and others) instead of two-way fixed effects. The design is pre-registered. After estimation a check requires the event study with at least two pre-treatment periods, a joint pre-trends test (a rejection stops the run unless a Rambachan–Roth sensitivity analysis is reported), and a placebo test or a sensitivity analysis; the event-study plot is drawn from the results.
+- `spatial-analysis`: how a variable varies across regions or places, with no causal claim. Before the analysis a check requires the boundaries' source (Eurostat GISCO, Natural Earth or the researcher's own file with its terms), the CRS, every data unit without geometry listed with a reason, and documented spatial weights. After it, e2er recomputes Moran's I from the units and weights the analysis used, requires permutation inference, and draws the maps (choropleth, LISA clusters, points) from the saved data and boundaries.
 - `replication`: reproduction of a published study from its replication package on Zenodo, executed in a Docker container (R or Python code only). The result is a reproduction report.
 - `field-map`: a map of a research field by main path analysis. A specialist proposes the boundary (search terms with the topic's older names, a journal set, years, and two to six alternative boundaries), and the researcher approves it with the paper counts. Code retrieves the papers from OpenAlex, builds the network of citations inside the boundary with a completeness report, weights each citation by search path count, finds the main path and the key routes, and repeats this on the alternative boundaries to show which papers hold. A specialist names lanes as questions, the researcher approves them, and code draws the map by year and lane and writes a reading list, Pajek, GEXF, VOSviewer and CSV files, and the numbers of a short field review, which the number check verifies. The workflow follows Michal Hron's article "Map a research field with Claude: main path analysis, step by step" (LinkedIn Pulse, 8 October 2026, [link](https://www.linkedin.com/pulse/map-research-field-claude-main-path-analysis-step-michal-hron-jm2ge/)); this implementation is independent and uses OpenAlex. The methods are those of Hummon and Doreian (1989), Batagelj (2003) and Liu and Lu (2012); the skill `synthesis/main-path-analysis` describes them.
+- `descriptive-study`: a description of a sample, for any field: the sample and its filters, summary statistics, distributions and associations, and figures. A data check after loading stops the run on numeric columns without a unit, duplicate rows, columns with many missing values and no stated reason, and coverage the data do not span (it writes `data_quality.md`); a figure check re-reads every figure from the data or results it names. No regression and no causal claim; the review panel judges methods, data, domain plausibility, literature and writing. Stops for the design review and the draft review.
+- `time-series-forecasting`: a series, its trend and seasonality, models and forecasts. A forecast designer declares the setup (hold-out, horizon, naive and seasonal naive baselines, candidate models, stationarity and trend tests, interval level), and a check freezes it with its hold-out before any model is fitted. After the analysis a forecast check stops the run on leakage (a model or a diagnostic that saw the hold-out), recomputes every out-of-sample error from the predictions and the data, and requires the baselines and forecasts with intervals. Optional pre-registration of the setup. The method sources (Box and Jenkins; Hyndman and Athanasopoulos; Mann and Sen; Diebold and Mariano; and others) are credited in the template.
+- `systematic-review`: a systematic review with a random-effects meta-analysis, following the PRISMA 2020 statement. A specialist writes the protocol (the question, eligibility criteria with ids, the searches, the outcome, the effect measure, the risk-of-bias tool), and the researcher approves it with the search counts; optional pre-registration freezes it. Code runs the searches on OpenAlex (Crossref optional), records the queries and counts and removes duplicates. A specialist screens every record on its title and abstract, every exclusion with a criterion and a reason, and the researcher reads the unsure records and a sample of the exclusions. Code fetches the open-access full texts page by page (or a PDF the researcher saves), a specialist decides eligibility and extracts the effects, study characteristics and risk of bias with the page and quote of every number, and code reads every number back from that quote and page. The meta-analysis is e2er's own code, checked against metafor: REML or DerSimonian-Laird, tau^2, I^2, the prediction interval, Egger's test, trim and fill, leave-one-out, forest and funnel plots and the PRISMA flow diagram; with fewer studies than the protocol's minimum it is a narrative synthesis without a pooled estimate. Method sources (Page et al. 2021; DerSimonian and Laird 1986; Higgins and Thompson 2002; Egger et al. 1997; Duval and Tweedie 2000; Viechtbauer 2005, 2010; Riley, Higgins and Deeks 2011) are credited in the template.
+- `text-analysis`: counts and models of the language of a corpus, from Project Gutenberg (`e2er-data gutenberg`) or the researcher's own texts. The data architect writes the corpus design (the corpus and how it was chosen, metadata with their sources, the preprocessing, the groups, the analyses and the corpus's sampling bias), which the researcher reads before the corpus is built. A check then traces every document (source, licence, SHA-256) and recomputes the token counts. After the analysis e2er recounts every term frequency, keyness score (log-likelihood with the log ratio), collocation and dictionary hit from the corpus, recomputes the stability of a topic model across seeds, and holds every dictionary or sentiment measure to a sample of hits that a text validator judged by hand, with its precision. The method sources (Dunning; Rayson and Garside; Blei, Ng and Jordan; Grimmer and Stewart; Gentzkow, Kelly and Taddy; and others) are credited in the template.
 
-The three empirical templates end with e2er's internal quality review. Six reviewer specialists each score the draft from one angle on a scale of 0 to 10. The six angles are data, identification, literature, mechanism, technical quality and writing. The score is their weighted average. The score decides whether the draft is revised before the study ends, and the study reports it, for example "e2er's internal quality review: 6.1 of 10". A study that finishes its steps is completed whatever its score.
+The three empirical templates end with e2er's internal quality review (the descriptive, time-series, policy-evaluation, spatial-analysis and systematic-review templates name their own panels). Six reviewer specialists each score the draft from one angle on a scale of 0 to 10. The six angles are data, identification, literature, mechanism, technical quality and writing. The score is their weighted average. The score decides whether the draft is revised before the study ends, and the study reports it, for example "e2er's internal quality review: 6.1 of 10". A study that finishes its steps is completed whatever its score.
 
-e2er ships with 64 skill files and 31 specialist roles. `e2er run --template NAME` looks for a template in `./pipelines`, then in `~/.e2er/pipelines`, then among the five above. [docs/templates.md](https://github.com/bhanneke/E2ER-project/blob/main/docs/templates.md) describes the file format, and [docs/researcher-step.md](https://github.com/bhanneke/E2ER-project/blob/main/docs/researcher-step.md) describes the pauses. `e2er skills list` and `e2er skills install <pack>` read the [RISE catalogue](https://github.com/bhanneke/RISE) of skill packs: e2er downloads its pack list from GitHub (refreshed daily), or reads a local clone named by `RISE_PATH` or `--catalogue`. Packs are installed from their own sources; `e2er skills installed` lists the packs on your computer and `e2er skills remove <pack>` deletes one.
+e2er ships with 90 skill files and 39 specialist roles. `e2er run --template NAME` looks for a template in `./pipelines`, then in `~/.e2er/pipelines`, then among the eleven above. [docs/templates.md](https://github.com/bhanneke/E2ER-project/blob/main/docs/templates.md) describes the file format, and [docs/researcher-step.md](https://github.com/bhanneke/E2ER-project/blob/main/docs/researcher-step.md) describes the pauses. `e2er skills list` and `e2er skills install <pack>` read the [RISE catalogue](https://github.com/bhanneke/RISE) of skill packs: e2er downloads its pack list from GitHub (refreshed daily), or reads a local clone named by `RISE_PATH` or `--catalogue`. Packs are installed from their own sources; `e2er skills installed` lists the packs on your computer and `e2er skills remove <pack>` deletes one.
 
 ## Data sources
 
 Your own data go in the folder that `LOCAL_DATA_DIR` names (`data/` after `e2er init`), your papers (PDFs, a `.bib` file or a Zotero folder) in the folder that `LITERATURE_DIR` names. New study lists both: tick the data files and papers the study uses, or add files there. `e2er run --data FILE… --papers FILE…` does the same in a terminal; without a choice a study takes everything in both folders. Data files (`.csv`, `.tsv`, `.jsonl`, `.parquet`, `.xlsx`) are loaded into a SQLite database for that study. Your papers are written into the study's bibliography with the keys the writers cite; a literature search for the research question adds papers found on the web, marked as such ("Use only my papers" turns it off). The run page and the finish page show what the study used.
 
-Specialists can also draw on four sources:
+<!-- sources:start -->
+Specialists can also draw on 17 sources:
 
 | Source | Coverage | Setting |
 |---|---|---|
-| yfinance | Equities, ETFs, crypto, FX, indices | no key |
+| Yahoo Finance (`yfinance`) | Equities, ETFs, crypto, FX, indices | no key |
 | FRED | US and international macroeconomic series | `FRED_API_KEY` (free) |
-| Global Macro Database (GMD) | Annual macroeconomic data for 239 economies, in versioned releases. Free for academic use. | no key |
+| Global Macro Database (`gmd`) | Annual macroeconomic data for 239 economies, in versioned releases. Free for academic use. | no key |
+| USGS Earthquake Catalog | Earthquakes worldwide (ANSS ComCat): time, place, depth, magnitude. Public domain. | no key |
+| NASA Exoplanet Archive (`exoplanets`) | Confirmed exoplanets and host stars (Planetary Systems tables), via TAP/ADQL. Keyless. | no key |
+| ESA Gaia Archive | Gaia DR3 stars: astrometry and photometry (cone search, ADQL). CC BY-NC 3.0 IGO. | no key |
+| NASA POWER (`nasa_power`) | Weather and solar parameters for any point or region, daily/monthly/annual since 1981. Keyless. | no key |
+| NOAA Climate Data Online | Daily weather-station records worldwide (GHCN-Daily): temperature, precipitation, snow. | `NOAA_TOKEN` (free) |
+| World Bank Open Data | Development indicators by country and year (WDI and other World Bank databases). CC BY 4.0. | no key |
+| Eurostat | Official EU statistics by country and NUTS region (thousands of datasets). | no key |
+| Our World in Data (`owid`) | The data behind any Our World in Data chart, with each indicator's sources and licences. | no key |
+| WHO Global Health Observatory (`who_gho`) | WHO health statistics by country, year, sex and age (about 2,000 indicators). | no key |
+| Project Gutenberg | Public-domain (U.S.) books: catalogue and plain text, Project Gutenberg's licence removed. | no key |
+| GitHub | Public repositories' metadata: search, details, languages, contributors count, releases. | `GITHUB_TOKEN` (optional) |
+| Eurostat GISCO boundaries | NUTS 0–3 regions (2003–2024) and countries: boundaries as GeoJSON. Non-commercial use. | no key |
+| Natural Earth | Country boundaries of the world at 1:110m, 1:50m, 1:10m. Public domain. | no key |
 | Allium | On-chain blockchain data | `ALLIUM_API_KEY` (paid query credits) |
+
+Data from these sources come under terms of their own: publishing them with a study needs your confirmation (`--accept-data-terms`), and the replication package loads them again (`get_data.py`):
+
+- Yahoo Finance: its terms allow personal use only.
+- Global Macro Database: its terms do not allow passing the data on outside the study's replication package.
+- ESA Gaia Archive: its terms allow non-commercial use only, with credit to ESA/Gaia/DPAC (CC BY-NC 3.0 IGO).
+- WHO Global Health Observatory: its terms allow use for public health purposes only, and no changes without WHO's written permission.
+- GitHub: its terms grant no licence to redistribute the repository metadata.
+- Eurostat GISCO boundaries: its terms allow non-commercial use only, with the notice '© EuroGeographics for the administrative boundaries' on every map.
+<!-- sources:end -->
 
 Every Allium query passes five checks before it runs. A query on a table first runs as a feasibility query of at most 1000 rows, and the full query waits for the researcher's approval. Allium supported this project with data access and technical collaboration.
 
-Each GMD load records the release, the address and the SHA-256 of the file it read. The study's references then include the GMD citation.
+Each GMD load records the release, the address and the SHA-256 of the file it read. The study's references then include the GMD citation. Every load of a source records its terms, its citation and the request as made; a USGS load also records the query and the SHA-256 of every file read. A new source is one definition in `src/modules/data/sources/`: [docs/CONNECTORS.md](https://github.com/bhanneke/E2ER-project/blob/main/docs/CONNECTORS.md) shows how to add one.
 
 ## Literature
 
@@ -301,7 +331,7 @@ make smoke-paid   # one real study on Claude Haiku 4.5 (needs ANTHROPIC_API_KEY,
   title        = {{e2er (End-to-End Research): The Open Infrastructure for
                    Publishing, Verifying, Reproducing and Reusing AI-Enabled Research}},
   year         = {2026},
-  version      = {0.15.3},
+  version      = {0.16.0},
   url          = {https://github.com/bhanneke/E2ER-project},
   doi          = {10.5281/zenodo.20187238},
   license      = {MIT},

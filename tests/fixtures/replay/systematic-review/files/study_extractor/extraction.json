@@ -1,0 +1,325 @@
+{
+  "studies": [
+    {
+      "id": "W101",
+      "decision": "include",
+      "source_text": "full text",
+      "label": "Arendt 2015",
+      "year": 2015,
+      "characteristics": {
+        "design": "cross-sectional",
+        "population": "undergraduates"
+      },
+      "n_total": 412,
+      "effect": {
+        "value": 0.31,
+        "n": 412
+      },
+      "sources": {
+        "effect.value": {
+          "page": 2,
+          "quote": "positively correlated with GPA (r = .31, p < .01)"
+        },
+        "effect.n": {
+          "page": 1,
+          "quote": "The final sample comprised 412 students"
+        },
+        "n_total": {
+          "page": 1,
+          "quote": "The final sample comprised 412 students"
+        }
+      },
+      "risk_of_bias": {
+        "domains": {
+          "sample": "some concerns",
+          "measurement": "low",
+          "confounding": "high"
+        },
+        "overall": "high",
+        "support": "convenience sample (p. 1); no adjustment (p. 2)"
+      }
+    },
+    {
+      "id": "W102",
+      "decision": "include",
+      "source_text": "full text",
+      "label": "Bauer 2016",
+      "year": 2016,
+      "characteristics": {
+        "design": "cross-sectional",
+        "population": "undergraduates"
+      },
+      "n_total": 250,
+      "effect": {
+        "value": 0.18,
+        "n": 250
+      },
+      "sources": {
+        "effect.value": {
+          "page": 2,
+          "quote": "positively correlated with GPA (r = .18, p < .01)"
+        },
+        "effect.n": {
+          "page": 1,
+          "quote": "The final sample comprised 250 students"
+        },
+        "n_total": {
+          "page": 1,
+          "quote": "The final sample comprised 250 students"
+        }
+      },
+      "risk_of_bias": {
+        "domains": {
+          "sample": "some concerns",
+          "measurement": "low",
+          "confounding": "high"
+        },
+        "overall": "high",
+        "support": "convenience sample (p. 1); no adjustment (p. 2)"
+      }
+    },
+    {
+      "id": "W103",
+      "decision": "include",
+      "source_text": "full text",
+      "label": "Castro 2017",
+      "year": 2017,
+      "characteristics": {
+        "design": "cross-sectional",
+        "population": "undergraduates"
+      },
+      "n_total": 180,
+      "effect": {
+        "value": 0.25,
+        "n": 180
+      },
+      "sources": {
+        "effect.value": {
+          "page": 2,
+          "quote": "positively correlated with GPA (r = .25, p < .01)"
+        },
+        "effect.n": {
+          "page": 1,
+          "quote": "The final sample comprised 180 students"
+        },
+        "n_total": {
+          "page": 1,
+          "quote": "The final sample comprised 180 students"
+        }
+      },
+      "risk_of_bias": {
+        "domains": {
+          "sample": "some concerns",
+          "measurement": "low",
+          "confounding": "high"
+        },
+        "overall": "high",
+        "support": "convenience sample (p. 1); no adjustment (p. 2)"
+      }
+    },
+    {
+      "id": "W104",
+      "decision": "include",
+      "source_text": "full text",
+      "label": "Dahl 2018",
+      "year": 2018,
+      "characteristics": {
+        "design": "cross-sectional",
+        "population": "undergraduates"
+      },
+      "n_total": 520,
+      "effect": {
+        "value": 0.08,
+        "n": 520
+      },
+      "sources": {
+        "effect.value": {
+          "page": 2,
+          "quote": "positively correlated with GPA (r = .08, p < .01)"
+        },
+        "effect.n": {
+          "page": 1,
+          "quote": "The final sample comprised 520 students"
+        },
+        "n_total": {
+          "page": 1,
+          "quote": "The final sample comprised 520 students"
+        }
+      },
+      "risk_of_bias": {
+        "domains": {
+          "sample": "some concerns",
+          "measurement": "low",
+          "confounding": "high"
+        },
+        "overall": "high",
+        "support": "convenience sample (p. 1); no adjustment (p. 2)"
+      }
+    },
+    {
+      "id": "W105",
+      "decision": "include",
+      "source_text": "full text",
+      "label": "Ekstr\u00f6m 2019",
+      "year": 2019,
+      "characteristics": {
+        "design": "cross-sectional",
+        "population": "undergraduates"
+      },
+      "n_total": 95,
+      "effect": {
+        "value": 0.4,
+        "n": 95
+      },
+      "sources": {
+        "effect.value": {
+          "page": 2,
+          "quote": "positively correlated with GPA (r = .40, p < .01)"
+        },
+        "effect.n": {
+          "page": 1,
+          "quote": "The final sample comprised 95 students"
+        },
+        "n_total": {
+          "page": 1,
+          "quote": "The final sample comprised 95 students"
+        }
+      },
+      "risk_of_bias": {
+        "domains": {
+          "sample": "some concerns",
+          "measurement": "low",
+          "confounding": "high"
+        },
+        "overall": "high",
+        "support": "convenience sample (p. 1); no adjustment (p. 2)"
+      }
+    },
+    {
+      "id": "W106",
+      "decision": "include",
+      "source_text": "full text",
+      "label": "Fischer 2020",
+      "year": 2020,
+      "characteristics": {
+        "design": "cross-sectional",
+        "population": "undergraduates"
+      },
+      "n_total": 310,
+      "effect": {
+        "value": 0.22,
+        "n": 310
+      },
+      "sources": {
+        "effect.value": {
+          "page": 2,
+          "quote": "positively correlated with GPA (r = .22, p < .01)"
+        },
+        "effect.n": {
+          "page": 1,
+          "quote": "The final sample comprised 310 students"
+        },
+        "n_total": {
+          "page": 1,
+          "quote": "The final sample comprised 310 students"
+        }
+      },
+      "risk_of_bias": {
+        "domains": {
+          "sample": "some concerns",
+          "measurement": "low",
+          "confounding": "high"
+        },
+        "overall": "high",
+        "support": "convenience sample (p. 1); no adjustment (p. 2)"
+      }
+    },
+    {
+      "id": "W107",
+      "decision": "include",
+      "source_text": "full text",
+      "label": "Garcia 2021",
+      "year": 2021,
+      "characteristics": {
+        "design": "cross-sectional",
+        "population": "undergraduates"
+      },
+      "n_total": 640,
+      "effect": {
+        "value": 0.12,
+        "n": 640
+      },
+      "sources": {
+        "effect.value": {
+          "page": 2,
+          "quote": "positively correlated with GPA (r = .12, p < .01)"
+        },
+        "effect.n": {
+          "page": 1,
+          "quote": "The final sample comprised 640 students"
+        },
+        "n_total": {
+          "page": 1,
+          "quote": "The final sample comprised 640 students"
+        }
+      },
+      "risk_of_bias": {
+        "domains": {
+          "sample": "some concerns",
+          "measurement": "low",
+          "confounding": "high"
+        },
+        "overall": "high",
+        "support": "convenience sample (p. 1); no adjustment (p. 2)"
+      }
+    },
+    {
+      "id": "W108",
+      "decision": "include",
+      "source_text": "abstract",
+      "label": "Huang 2022",
+      "year": 2022,
+      "characteristics": {
+        "design": "cross-sectional",
+        "population": "undergraduates"
+      },
+      "n_total": 120,
+      "effect": {
+        "value": 0.35,
+        "n": 120
+      },
+      "sources": {
+        "effect.value": {
+          "page": "abstract",
+          "quote": "Grit was associated with GPA (r = .35, n = 120)"
+        },
+        "effect.n": {
+          "page": "abstract",
+          "quote": "Grit was associated with GPA (r = .35, n = 120)"
+        },
+        "n_total": {
+          "page": "abstract",
+          "quote": "Grit was associated with GPA (r = .35, n = 120)"
+        }
+      },
+      "risk_of_bias": {
+        "domains": {
+          "sample": "some concerns",
+          "measurement": "low",
+          "confounding": "high"
+        },
+        "overall": "high",
+        "support": "convenience sample (p. 1); no adjustment (p. 2)"
+      }
+    },
+    {
+      "id": "W111",
+      "decision": "exclude",
+      "source_text": "full text",
+      "criteria": [
+        "I3"
+      ],
+      "reason": "reports a logistic regression on persistence; the correlation with GPA is not reported"
+    }
+  ]
+}

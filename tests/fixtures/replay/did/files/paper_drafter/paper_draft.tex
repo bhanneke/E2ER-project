@@ -1,0 +1,48 @@
+\documentclass[11pt]{article}
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage{threeparttable}
+\usepackage{graphicx}
+\usepackage[margin=1in]{geometry}
+
+\title{Did Adopting the Policy Lower the Outcome? A Staggered Difference-in-Differences Evaluation of a Synthetic Panel}
+\author{Anonymous}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{center}
+\small \textit{Test fixture of e2er's replay level: the panel is synthetic and its units are no real countries.}
+\end{center}
+
+\section{Introduction}
+
+Did the units that adopted the policy see their outcome fall, compared with units that did not adopt it? Six units adopted in 2006, six in 2010 and twelve never within the panel, which runs from 2000 to 2015.
+
+\section{Data and design}
+
+The panel is balanced: 24 units observed in each of 16 years, 384 observations. Because adoption is staggered, a two-way fixed-effects regression would average comparisons that use earlier adopters as controls. The study instead estimates group-time effects against the year before adoption, with the never-adopters as the comparison group, and aggregates them by cohort size. Standard errors come from a bootstrap over units (999 draws, 24 clusters).
+
+\section{Results}
+
+The overall effect of adoption on the adopters is $-2.7616$ (standard error 0.2857; 95\% confidence interval $-3.3215$ to $-2.2016$). Table~\ref{tab:event_study} and Figure~\ref{fig:event_study} give the effect by year relative to adoption. Before adoption the effects are small and the joint Wald test does not reject that they are zero ($p = 0.9276$); a test that does not reject is not proof of parallel trends.
+
+\input{tables/event_study.tex}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.8\textwidth]{fig_event_study.pdf}
+\caption{Effect of adoption by year relative to adoption, with pointwise 95\% confidence intervals (synthetic panel).}
+\label{fig:event_study}
+\end{figure}
+
+Moving adoption three years earlier on pre-adoption years gives a placebo effect of 0.0897 ($p = 0.7048$). Table~\ref{tab:checks} reports the not-yet-adopted comparison group ($-2.7814$) and a conservative relative-magnitudes bound on the effect in the adoption year, whose interval ($-3.9706$ to $-2.0218$) excludes zero.
+
+\input{tables/checks.tex}
+
+\section{Conclusion}
+
+In this synthetic panel the adopters' outcome fell after adoption relative to the never-adopters, by about 2.8 units on average, and the pre-adoption effects, the placebo and the sensitivity analyses do not contradict the design. The panel is synthetic; the result shows the method, not a policy's effect.
+
+\end{document}

@@ -658,6 +658,27 @@ async def gmd_check(_settings) -> Check:
     return Check("data.gmd.versions", PASS, f"newest release {env['latest']} ({env['row_count']} releases)")
 
 
+async def source_checks(settings) -> list[Check]:
+    """The reachability check of every connector-kit source that has no check of its own above.
+
+    Each is one cheap request declared in the source's definition (``Source.doctor``).
+    """
+    from .modules.data.sources import all_sources
+    from .modules.data.sources.runtime import doctor_check
+
+    out: list[Check] = []
+    for source in all_sources():
+        if source.doctor is None or source.doctor.run is not None:
+            continue  # yfinance, FRED and the GMD have their own checks above
+        try:
+            check = await doctor_check(source, settings)
+        except Exception as e:  # noqa: BLE001 — reported as the check's result
+            check = Check(source.doctor.check, FAIL, repr(e)[:200])
+        if check is not None:
+            out.append(check)
+    return out
+
+
 async def allium_check(settings) -> Check:
     if not settings.allium_api_key:
         return Check("data.allium.list_tables", SKIP, "ALLIUM_API_KEY not set")
@@ -739,6 +760,7 @@ async def run_provider_checks(settings) -> list[Check]:
         fred_key_check(settings),
         await fred_check(settings),
         await gmd_check(settings),
+        *await source_checks(settings),
         await allium_check(settings),
         await openalex_check(settings),
         await read_reference_check(settings),

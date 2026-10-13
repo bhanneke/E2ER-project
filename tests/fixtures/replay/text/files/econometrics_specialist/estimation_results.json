@@ -1,0 +1,986 @@
+{
+  "result_kind": "text",
+  "corpus": {
+    "n_documents": 6,
+    "n_tokens": 69870,
+    "n_types": 8691,
+    "preprocessing": {
+      "token_pattern": "[a-z]+(?:['’][a-z]+)?",
+      "lowercase": true,
+      "stopwords": {
+        "file": "stopwords.txt",
+        "source": "scikit-learn ENGLISH_STOP_WORDS (318 words), written by build_data.py"
+      },
+      "lemmatisation": "none",
+      "ngrams": [
+        1,
+        2
+      ],
+      "front_matter": "Project Gutenberg's header, footer and licence removed by the connector; titles and the table of contents of Jekyll and Hyde kept (a few hundred tokens)"
+    },
+    "documents_by_group": {
+      "early": 3,
+      "late": 3
+    }
+  },
+  "term_frequencies": {
+    "all": {
+      "n_tokens": 69870,
+      "terms": [
+        {
+          "term": "fear",
+          "count": 18,
+          "per_10k": 2.5762,
+          "documents": 4
+        },
+        {
+          "term": "terror",
+          "count": 24,
+          "per_10k": 3.435,
+          "documents": 4
+        },
+        {
+          "term": "horror",
+          "count": 19,
+          "per_10k": 2.7193,
+          "documents": 4
+        },
+        {
+          "term": "dread",
+          "count": 4,
+          "per_10k": 0.5725,
+          "documents": 3
+        },
+        {
+          "term": "afraid",
+          "count": 6,
+          "per_10k": 0.8587,
+          "documents": 2
+        },
+        {
+          "term": "door",
+          "count": 94,
+          "per_10k": 13.4536,
+          "documents": 5
+        },
+        {
+          "term": "house",
+          "count": 69,
+          "per_10k": 9.8755,
+          "documents": 5
+        },
+        {
+          "term": "night",
+          "count": 69,
+          "per_10k": 9.8755,
+          "documents": 6
+        }
+      ]
+    },
+    "early": {
+      "n_tokens": 34128,
+      "terms": [
+        {
+          "term": "fear",
+          "count": 4,
+          "per_10k": 1.1721,
+          "documents": 3
+        },
+        {
+          "term": "terror",
+          "count": 10,
+          "per_10k": 2.9301,
+          "documents": 2
+        },
+        {
+          "term": "horror",
+          "count": 5,
+          "per_10k": 1.4651,
+          "documents": 2
+        },
+        {
+          "term": "dread",
+          "count": 3,
+          "per_10k": 0.879,
+          "documents": 2
+        },
+        {
+          "term": "afraid",
+          "count": 0,
+          "per_10k": 0.0,
+          "documents": 0
+        },
+        {
+          "term": "door",
+          "count": 34,
+          "per_10k": 9.9625,
+          "documents": 3
+        },
+        {
+          "term": "house",
+          "count": 22,
+          "per_10k": 6.4463,
+          "documents": 3
+        },
+        {
+          "term": "night",
+          "count": 23,
+          "per_10k": 6.7393,
+          "documents": 3
+        }
+      ]
+    },
+    "late": {
+      "n_tokens": 35742,
+      "terms": [
+        {
+          "term": "fear",
+          "count": 14,
+          "per_10k": 3.917,
+          "documents": 1
+        },
+        {
+          "term": "terror",
+          "count": 14,
+          "per_10k": 3.917,
+          "documents": 2
+        },
+        {
+          "term": "horror",
+          "count": 14,
+          "per_10k": 3.917,
+          "documents": 2
+        },
+        {
+          "term": "dread",
+          "count": 1,
+          "per_10k": 0.2798,
+          "documents": 1
+        },
+        {
+          "term": "afraid",
+          "count": 6,
+          "per_10k": 1.6787,
+          "documents": 2
+        },
+        {
+          "term": "door",
+          "count": 60,
+          "per_10k": 16.787,
+          "documents": 2
+        },
+        {
+          "term": "house",
+          "count": 47,
+          "per_10k": 13.1498,
+          "documents": 2
+        },
+        {
+          "term": "night",
+          "count": 46,
+          "per_10k": 12.87,
+          "documents": 3
+        }
+      ]
+    }
+  },
+  "models": {
+    "keyness_late": {
+      "method": "keyness",
+      "target": "late",
+      "reference": "early",
+      "min_count": 10,
+      "min_documents": 2,
+      "threshold": "G2 > 15.13 (p < 0.0001), for the many terms tested",
+      "outputs": {
+        "terms": [
+          {
+            "term": "henry",
+            "count_target": 32,
+            "count_reference": 0,
+            "g2": 42.9,
+            "log_ratio": 5.933,
+            "p_value": 5.762e-11,
+            "more_in": "late",
+            "documents_target": 2
+          },
+          {
+            "term": "john",
+            "count_target": 44,
+            "count_reference": 3,
+            "g2": 40.973,
+            "log_ratio": 3.808,
+            "p_value": 1.544e-10,
+            "more_in": "late",
+            "documents_target": 2
+          },
+          {
+            "term": "don’t",
+            "count_target": 38,
+            "count_reference": 2,
+            "g2": 37.928,
+            "log_ratio": 4.181,
+            "p_value": 7.339e-10,
+            "more_in": "late",
+            "documents_target": 2
+          },
+          {
+            "term": "said",
+            "count_target": 162,
+            "count_reference": 72,
+            "g2": 31.49,
+            "log_ratio": 1.103,
+            "p_value": 2.005e-08,
+            "more_in": "late",
+            "documents_target": 3
+          },
+          {
+            "term": "doctor",
+            "count_target": 26,
+            "count_reference": 1,
+            "g2": 27.735,
+            "log_ratio": 4.634,
+            "p_value": 1.391e-07,
+            "more_in": "late",
+            "documents_target": 2
+          },
+          {
+            "term": "pattern",
+            "count_target": 26,
+            "count_reference": 1,
+            "g2": 27.735,
+            "log_ratio": 4.634,
+            "p_value": 1.391e-07,
+            "more_in": "late",
+            "documents_target": 2
+          },
+          {
+            "term": "god",
+            "count_target": 24,
+            "count_reference": 1,
+            "g2": 25.211,
+            "log_ratio": 4.518,
+            "p_value": 5.14e-07,
+            "more_in": "late",
+            "documents_target": 2
+          },
+          {
+            "term": "dear",
+            "count_target": 18,
+            "count_reference": 0,
+            "g2": 24.131,
+            "log_ratio": 5.103,
+            "p_value": 8.999e-07,
+            "more_in": "late",
+            "documents_target": 3
+          },
+          {
+            "term": "know",
+            "count_target": 60,
+            "count_reference": 17,
+            "g2": 23.503,
+            "log_ratio": 1.753,
+            "p_value": 1.247e-06,
+            "more_in": "late",
+            "documents_target": 3
+          },
+          {
+            "term": "used",
+            "count_target": 20,
+            "count_reference": 2,
+            "g2": 16.274,
+            "log_ratio": 3.255,
+            "p_value": 5.48e-05,
+            "more_in": "late",
+            "documents_target": 2
+          },
+          {
+            "term": "garden",
+            "count_target": 12,
+            "count_reference": 0,
+            "g2": 16.087,
+            "log_ratio": 4.518,
+            "p_value": 6.048e-05,
+            "more_in": "late",
+            "documents_target": 3
+          },
+          {
+            "term": "asked",
+            "count_target": 25,
+            "count_reference": 4,
+            "g2": 15.979,
+            "log_ratio": 2.577,
+            "p_value": 6.406e-05,
+            "more_in": "late",
+            "documents_target": 3
+          },
+          {
+            "term": "come",
+            "count_target": 35,
+            "count_reference": 9,
+            "g2": 15.235,
+            "log_ratio": 1.893,
+            "p_value": 9.494e-05,
+            "more_in": "late",
+            "documents_target": 3
+          },
+          {
+            "term": "paper",
+            "count_target": 33,
+            "count_reference": 8,
+            "g2": 15.232,
+            "log_ratio": 1.978,
+            "p_value": 9.506e-05,
+            "more_in": "late",
+            "documents_target": 2
+          },
+          {
+            "term": "really",
+            "count_target": 21,
+            "count_reference": 3,
+            "g2": 14.367,
+            "log_ratio": 2.741,
+            "p_value": 0.0001504,
+            "more_in": "late",
+            "documents_target": 2
+          }
+        ],
+        "n_terms_more_in_target": 232
+      }
+    },
+    "pairs": {
+      "method": "collocation",
+      "group": "all",
+      "window": 1,
+      "measure": "pmi",
+      "min_count": 5,
+      "outputs": {
+        "pairs": [
+          {
+            "w1": "galloping",
+            "w2": "hessian",
+            "count": 5,
+            "pmi": 13.285
+          },
+          {
+            "w1": "lady",
+            "w2": "madeline",
+            "count": 5,
+            "pmi": 12.507
+          },
+          {
+            "w1": "brom",
+            "w2": "bones",
+            "count": 9,
+            "pmi": 11.648
+          },
+          {
+            "w1": "hans",
+            "w2": "van",
+            "count": 8,
+            "pmi": 11.449
+          },
+          {
+            "w1": "van",
+            "w2": "ripper",
+            "count": 8,
+            "pmi": 11.449
+          },
+          {
+            "w1": "van",
+            "w2": "tassel",
+            "count": 10,
+            "pmi": 11.449
+          },
+          {
+            "w1": "ginger",
+            "w2": "nut",
+            "count": 11,
+            "pmi": 11.392
+          },
+          {
+            "w1": "sleepy",
+            "w2": "hollow",
+            "count": 15,
+            "pmi": 11.244
+          },
+          {
+            "w1": "ginger",
+            "w2": "nuts",
+            "count": 6,
+            "pmi": 11.218
+          },
+          {
+            "w1": "ichabod",
+            "w2": "crane",
+            "count": 7,
+            "pmi": 10.408
+          }
+        ]
+      }
+    },
+    "fear_words": {
+      "method": "dictionary",
+      "analysis": "fear_words",
+      "dictionary": {
+        "name": "fear vocabulary",
+        "terms": [
+          "fear",
+          "fears",
+          "feared",
+          "fearful",
+          "afraid",
+          "terror*",
+          "terrif*",
+          "horror*",
+          "horrib*",
+          "dread*",
+          "fright*",
+          "dismay*",
+          "panic*",
+          "alarm*",
+          "aghast",
+          "appal*",
+          "shudder*",
+          "trembl*"
+        ],
+        "source": "written for this test fixture: words for fear and its expression, not a published dictionary"
+      },
+      "outputs": {
+        "by_group": [
+          {
+            "group": "all",
+            "hits": 180,
+            "n_tokens": 69870,
+            "per_10k": 25.7621
+          },
+          {
+            "group": "early",
+            "hits": 76,
+            "n_tokens": 34128,
+            "per_10k": 22.2691
+          },
+          {
+            "group": "late",
+            "hits": 104,
+            "n_tokens": 35742,
+            "per_10k": 29.0974
+          },
+          {
+            "group": "y1820",
+            "hits": 34,
+            "n_tokens": 12343,
+            "per_10k": 27.546,
+            "year": 1820
+          },
+          {
+            "group": "y1839",
+            "hits": 28,
+            "n_tokens": 7208,
+            "per_10k": 38.8457,
+            "year": 1839
+          },
+          {
+            "group": "y1853",
+            "hits": 14,
+            "n_tokens": 14577,
+            "per_10k": 9.6042,
+            "year": 1853
+          },
+          {
+            "group": "y1886",
+            "hits": 88,
+            "n_tokens": 25787,
+            "per_10k": 34.1257,
+            "year": 1886
+          },
+          {
+            "group": "y1890",
+            "hits": 7,
+            "n_tokens": 3782,
+            "per_10k": 18.5087,
+            "year": 1890
+          },
+          {
+            "group": "y1892",
+            "hits": 9,
+            "n_tokens": 6173,
+            "per_10k": 14.5796,
+            "year": 1892
+          }
+        ],
+        "n_hits_total": 180
+      },
+      "validation": {
+        "file": "text_validation.json",
+        "sample": "validation_sample.json",
+        "seed": 20261011,
+        "n_items": 20
+      }
+    },
+    "fear_over_time": {
+      "method": "diachronic",
+      "outputs": {
+        "series": [
+          {
+            "group": "y1820",
+            "year": 1820,
+            "term": "fear",
+            "count": 2,
+            "per_10k": 1.6204
+          },
+          {
+            "group": "y1820",
+            "year": 1820,
+            "term": "terror",
+            "count": 4,
+            "per_10k": 3.2407
+          },
+          {
+            "group": "y1820",
+            "year": 1820,
+            "term": "horror",
+            "count": 2,
+            "per_10k": 1.6204
+          },
+          {
+            "group": "y1820",
+            "year": 1820,
+            "term": "dread",
+            "count": 1,
+            "per_10k": 0.8102
+          },
+          {
+            "group": "y1839",
+            "year": 1839,
+            "term": "fear",
+            "count": 1,
+            "per_10k": 1.3873
+          },
+          {
+            "group": "y1839",
+            "year": 1839,
+            "term": "terror",
+            "count": 6,
+            "per_10k": 8.3241
+          },
+          {
+            "group": "y1839",
+            "year": 1839,
+            "term": "horror",
+            "count": 3,
+            "per_10k": 4.162
+          },
+          {
+            "group": "y1839",
+            "year": 1839,
+            "term": "dread",
+            "count": 2,
+            "per_10k": 2.7747
+          },
+          {
+            "group": "y1853",
+            "year": 1853,
+            "term": "fear",
+            "count": 1,
+            "per_10k": 0.686
+          },
+          {
+            "group": "y1853",
+            "year": 1853,
+            "term": "terror",
+            "count": 0,
+            "per_10k": 0.0
+          },
+          {
+            "group": "y1853",
+            "year": 1853,
+            "term": "horror",
+            "count": 0,
+            "per_10k": 0.0
+          },
+          {
+            "group": "y1853",
+            "year": 1853,
+            "term": "dread",
+            "count": 0,
+            "per_10k": 0.0
+          },
+          {
+            "group": "y1886",
+            "year": 1886,
+            "term": "fear",
+            "count": 14,
+            "per_10k": 5.4291
+          },
+          {
+            "group": "y1886",
+            "year": 1886,
+            "term": "terror",
+            "count": 13,
+            "per_10k": 5.0413
+          },
+          {
+            "group": "y1886",
+            "year": 1886,
+            "term": "horror",
+            "count": 12,
+            "per_10k": 4.6535
+          },
+          {
+            "group": "y1886",
+            "year": 1886,
+            "term": "dread",
+            "count": 0,
+            "per_10k": 0.0
+          },
+          {
+            "group": "y1890",
+            "year": 1890,
+            "term": "fear",
+            "count": 0,
+            "per_10k": 0.0
+          },
+          {
+            "group": "y1890",
+            "year": 1890,
+            "term": "terror",
+            "count": 0,
+            "per_10k": 0.0
+          },
+          {
+            "group": "y1890",
+            "year": 1890,
+            "term": "horror",
+            "count": 0,
+            "per_10k": 0.0
+          },
+          {
+            "group": "y1890",
+            "year": 1890,
+            "term": "dread",
+            "count": 1,
+            "per_10k": 2.6441
+          },
+          {
+            "group": "y1892",
+            "year": 1892,
+            "term": "fear",
+            "count": 0,
+            "per_10k": 0.0
+          },
+          {
+            "group": "y1892",
+            "year": 1892,
+            "term": "terror",
+            "count": 1,
+            "per_10k": 1.62
+          },
+          {
+            "group": "y1892",
+            "year": 1892,
+            "term": "horror",
+            "count": 2,
+            "per_10k": 3.2399
+          },
+          {
+            "group": "y1892",
+            "year": 1892,
+            "term": "dread",
+            "count": 0,
+            "per_10k": 0.0
+          }
+        ]
+      }
+    },
+    "topics": {
+      "method": "topic_model",
+      "algorithm": "nmf",
+      "k": 3,
+      "seed": 1,
+      "segment_tokens": 1000,
+      "n_segments": 73,
+      "features": "TF-IDF of tokens without stop words, in at least 2 segments",
+      "k_selection": [
+        {
+          "k": 3,
+          "metric": "mean best-match Jaccard of the top 10 terms across seeds 1-3",
+          "value": 1.0,
+          "reconstruction_error_seed_1": 7.6496
+        },
+        {
+          "k": 4,
+          "metric": "mean best-match Jaccard of the top 10 terms across seeds 1-3",
+          "value": 1.0,
+          "reconstruction_error_seed_1": 7.4891
+        },
+        {
+          "k": 5,
+          "metric": "mean best-match Jaccard of the top 10 terms across seeds 1-3",
+          "value": 1.0,
+          "reconstruction_error_seed_1": 7.3612
+        }
+      ],
+      "stability": {
+        "top_n": 10,
+        "runs": [
+          {
+            "seed": 1,
+            "topics": [
+              [
+                "utterson",
+                "mr",
+                "said",
+                "lawyer",
+                "hyde",
+                "poole",
+                "jekyll",
+                "sir",
+                "dr",
+                "man"
+              ],
+              [
+                "john",
+                "ichabod",
+                "bridge",
+                "country",
+                "little",
+                "van",
+                "like",
+                "hollow",
+                "pattern",
+                "don’t"
+              ],
+              [
+                "bartleby",
+                "prefer",
+                "turkey",
+                "office",
+                "nippers",
+                "said",
+                "screen",
+                "ginger",
+                "man",
+                "business"
+              ]
+            ]
+          },
+          {
+            "seed": 2,
+            "topics": [
+              [
+                "utterson",
+                "mr",
+                "said",
+                "lawyer",
+                "hyde",
+                "poole",
+                "jekyll",
+                "sir",
+                "dr",
+                "man"
+              ],
+              [
+                "bartleby",
+                "prefer",
+                "turkey",
+                "office",
+                "nippers",
+                "said",
+                "screen",
+                "ginger",
+                "man",
+                "business"
+              ],
+              [
+                "john",
+                "ichabod",
+                "bridge",
+                "country",
+                "little",
+                "van",
+                "like",
+                "hollow",
+                "pattern",
+                "don’t"
+              ]
+            ]
+          },
+          {
+            "seed": 3,
+            "topics": [
+              [
+                "utterson",
+                "mr",
+                "said",
+                "lawyer",
+                "hyde",
+                "poole",
+                "jekyll",
+                "sir",
+                "dr",
+                "man"
+              ],
+              [
+                "john",
+                "ichabod",
+                "bridge",
+                "country",
+                "little",
+                "van",
+                "like",
+                "hollow",
+                "pattern",
+                "don’t"
+              ],
+              [
+                "bartleby",
+                "prefer",
+                "turkey",
+                "office",
+                "nippers",
+                "said",
+                "screen",
+                "ginger",
+                "man",
+                "business"
+              ]
+            ]
+          }
+        ],
+        "mean_best_match_jaccard": 1.0
+      },
+      "outputs": {
+        "topics": [
+          {
+            "id": 0,
+            "top_terms": [
+              "utterson",
+              "mr",
+              "said",
+              "lawyer",
+              "hyde",
+              "poole",
+              "jekyll",
+              "sir",
+              "dr",
+              "man"
+            ],
+            "example_documents": [
+              {
+                "doc_id": "pg43",
+                "segment": 4,
+                "weight": 0.1428
+              },
+              {
+                "doc_id": "pg43",
+                "segment": 11,
+                "weight": 0.1376
+              }
+            ]
+          },
+          {
+            "id": 1,
+            "top_terms": [
+              "john",
+              "ichabod",
+              "bridge",
+              "country",
+              "little",
+              "van",
+              "like",
+              "hollow",
+              "pattern",
+              "don’t"
+            ],
+            "example_documents": [
+              {
+                "doc_id": "pg41",
+                "segment": 8,
+                "weight": 0.1137
+              },
+              {
+                "doc_id": "pg41",
+                "segment": 11,
+                "weight": 0.1083
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "top_terms": [
+              "bartleby",
+              "prefer",
+              "turkey",
+              "office",
+              "nippers",
+              "said",
+              "screen",
+              "ginger",
+              "man",
+              "business"
+            ],
+            "example_documents": [
+              {
+                "doc_id": "pg11231",
+                "segment": 5,
+                "weight": 0.1813
+              },
+              {
+                "doc_id": "pg11231",
+                "segment": 3,
+                "weight": 0.1623
+              }
+            ]
+          }
+        ],
+        "prevalence": [
+          {
+            "group": "early",
+            "topic": 0,
+            "label": "early T0",
+            "share": 0.027
+          },
+          {
+            "group": "early",
+            "topic": 1,
+            "label": "early T1",
+            "share": 0.5715
+          },
+          {
+            "group": "early",
+            "topic": 2,
+            "label": "early T2",
+            "share": 0.4015
+          },
+          {
+            "group": "late",
+            "topic": 0,
+            "label": "late T0",
+            "share": 0.5472
+          },
+          {
+            "group": "late",
+            "topic": 1,
+            "label": "late T1",
+            "share": 0.4053
+          },
+          {
+            "group": "late",
+            "topic": 2,
+            "label": "late T2",
+            "share": 0.0475
+          }
+        ]
+      }
+    }
+  },
+  "figures": [
+    "fig_fear_by_year.pdf",
+    "fig_keyness.pdf",
+    "fig_topics.pdf"
+  ],
+  "limits": {
+    "sampling_bias": "Six canonical works chosen by hand, three per period, all out of U.S. copyright and digitised by Project Gutenberg; American authors dominate the early period. The corpus describes these six works, not the fiction of either period."
+  }
+}

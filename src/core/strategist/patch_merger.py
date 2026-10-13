@@ -56,6 +56,13 @@ class Edit:
     find_must_be_unique: bool = True
     source_finding: str = ""  # provenance: "verify_numbers#0", "review:technical#0"
     edit_id: str = ""
+    #: For ``edit_type == "keep"``: why the passage in ``find`` stays as it is (no edit is applied).
+    reason: str = ""
+
+
+#: The edit type that changes nothing: the revisor records a passage a finding names that it leaves
+#: as it is, with its reason (``find`` = the passage, ``reason`` = why).
+KEEP = "keep"
 
 
 @dataclass
@@ -77,6 +84,11 @@ class MergeResult:
     applied: list[EditResult] = field(default_factory=list)
     failed: list[EditResult] = field(default_factory=list)
     diff: str = ""
+    #: The passages the revisor left as they are, each with its reason (``edit_type: keep``).
+    kept: list[Edit] = field(default_factory=list)
+    #: What the coverage check still found after the last attempt: a finding's passage neither
+    #: corrected nor kept with a reason, or a corrected passage that occurs again unchanged.
+    uncovered: list[str] = field(default_factory=list)
 
     @property
     def fully_applied(self) -> bool:
@@ -122,6 +134,7 @@ def parse_patch_file(path: Path) -> list[Edit]:
                 find_must_be_unique=bool(item.get("find_must_be_unique", True)),
                 source_finding=str(item.get("source_finding", "")),
                 edit_id=str(item.get("id", f"e{i}")),
+                reason=str(item.get("reason", "")),
             )
         )
     return edits
@@ -497,9 +510,12 @@ def merge_patch_file(
         raise FileNotFoundError(f"patch file not found at {patch_path}")
 
     text = draft_path.read_text(encoding="utf-8")
-    edits = parse_patch_file(patch_path)
+    parsed = parse_patch_file(patch_path)
+    kept = [e for e in parsed if e.edit_type == KEEP]
+    edits = [e for e in parsed if e.edit_type != KEEP]
     in_scope, out_of_scope = validate_targets(edits, findings)
     result = apply_patch(text, in_scope)
+    result.kept = kept
 
     # Roll out-of-scope edits into the failure list so the runner sees
     # both kinds of failure in one place.
@@ -510,3 +526,89 @@ def merge_patch_file(
         diff_path.write_text(result.diff, encoding="utf-8")
 
     return result
+
+
+# ---------------------------------------------------------------------------
+# Coverage: every passage a finding names is corrected, or kept with a reason
+# ---------------------------------------------------------------------------
+
+#: A location shorter than this (in words) is too short to find reliably and is not checked.
+_MIN_LOCATION_WORDS = 4
+#: A corrected passage is looked for elsewhere only when it is prose of at least this many words.
+_MIN_PASSAGE_WORDS = 6
+
+
+def _norm(text: str) -> str:
+    return " ".join(text.split())
+
+
+def _left(patched: str, passage: str, applied: list[EditResult]) -> int:
+    """Occurrences of ``passage`` in the patched draft that no applied edit wrote (whitespace-insensitive)."""
+    p = _norm(passage)
+    if not p:
+        return 0
+    written = 0
+    for r in applied:
+        times = 1 if r.edit.find_must_be_unique else max(1, r.matches)
+        written += _norm(r.edit.replace).count(p) * times
+    return max(0, _norm(patched).count(p) - written)
+
+
+def _kept(passage: str, kept: list[Edit]) -> Edit | None:
+    p = _norm(passage)
+    for k in kept:
+        f = _norm(k.find)
+        if f and (p in f or f in p):
+            return k
+    return None
+
+
+def coverage_problems(findings: list[Finding], result: MergeResult) -> list[str]:
+    """What the targeted corrections left open: one sentence each, for the revisor's next attempt.
+
+    A finding names an issue; the live run of 2026-10-11 fixed one of several
+    passages that treated calculated exoplanet radii as measured. So:
+
+    - every location a finding lists (a passage quoted from the draft) is
+      corrected by an applied edit, or recorded as kept with its reason
+      (``edit_type: keep``); a location the draft does not contain is not
+      checked;
+    - a passage the revisor corrected that occurs again elsewhere, unchanged,
+      is corrected there too or kept with its reason;
+    - a kept passage states its reason.
+    """
+    problems: list[str] = []
+    original, patched = result.original_text, result.patched_text
+    for k in result.kept:
+        if not k.reason.strip():
+            problems.append(f"the kept passage {_short(k.find)!r} has no reason: say why it stays as it is")
+    for i, f in enumerate(findings, 1):
+        for loc in getattr(f, "locations", ()) or ():
+            if len(loc.split()) < _MIN_LOCATION_WORDS or _norm(loc) not in _norm(original):
+                continue
+            left = _left(patched, loc, result.applied)
+            if left and _kept(loc, result.kept) is None:
+                problems.append(
+                    f"finding F{i} ({_short(f.problem, 90)}) names the passage {_short(loc)!r}, which "
+                    f"{'is' if left == 1 else f'occurs {left} times'} still unchanged in the draft: correct it, or "
+                    'record it with "edit_type": "keep", the passage in "find" and the reason in "reason"'
+                )
+    seen: set[str] = set()
+    for r in result.applied:
+        find = r.edit.find
+        if len(find.split()) < _MIN_PASSAGE_WORDS or "&" in find or "\\\\" in find or _norm(find) in seen:
+            continue
+        seen.add(_norm(find))
+        left = _left(patched, find, result.applied)
+        if left and _kept(find, result.kept) is None:
+            problems.append(
+                f"the passage {_short(find)!r} you corrected in {r.edit.target} occurs {left} more time(s) "
+                "elsewhere in the draft, unchanged: correct every occurrence (one edit each, or "
+                '"find_must_be_unique": false with "target": "paper:full"), or keep it with its reason'
+            )
+    return problems
+
+
+def _short(text: str, n: int = 120) -> str:
+    t = _norm(text)
+    return t if len(t) <= n else t[: n - 3] + "..."

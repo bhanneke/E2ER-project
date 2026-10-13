@@ -1,0 +1,12 @@
+{
+  "outcome": {"table": "panel", "column": "outcome", "label": "Outcome (synthetic)"},
+  "panel": {"table": "panel", "unit": "iso3", "time": "year"},
+  "treatment": {"table": "adoption", "unit": "iso3", "first_treated": "first_year",
+                "description": "first year the policy was in force", "source": "the researcher's file data/adoption.csv (synthetic)"},
+  "comparison_group": "never_treated",
+  "estimator": "callaway_santanna",
+  "anticipation": 0,
+  "event_window": [-5, 5],
+  "reference_period": -1,
+  "cluster": "iso3"
+}

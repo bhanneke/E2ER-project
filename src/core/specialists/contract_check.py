@@ -42,6 +42,7 @@ Coverage:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from dataclasses import dataclass, replace
@@ -88,7 +89,7 @@ _REGRESSION_REQUIRED: dict[str, str] = {"econometrics_specialist": "estimation_r
 # model wrote itself. 53 of 110 values traced to nothing. The gate that
 # checks numbers ran afterwards and could only report the damage.
 _NO_INLINE_TABLES: frozenset[str] = frozenset(
-    {"paper_drafter", "section_writer", "latex_formatter", "revisor", "field_review_writer"}
+    {"paper_drafter", "section_writer", "latex_formatter", "revisor", "field_review_writer", "meta_review_writer"}
 )
 
 _TABULAR_RE = re.compile(r"\\begin\{tabular\}")
@@ -339,6 +340,39 @@ def check_matches_declared_spec(workspace: Path, results_relative: str) -> Contr
 # ── p-values follow from t; every pre-registered hypothesis has a result ────
 
 
+def check_result_contract(workspace: Path, results_relative: str, kind: str) -> ContractCheck:
+    """The results file follows the contract of its template's kind of results (not regression).
+
+    Structure (the blocks the kind requires) and consistency (the relations its
+    numbers must satisfy); see src/core/pipeline/result_kinds.py and the kind's
+    schema skill. A verification check, like the regression contract: the file
+    exists and parses (reliability is satisfied); this asks whether what it
+    holds supports the paper.
+    """
+    from ..pipeline.result_kinds import check_results, get
+
+    try:
+        data = json.loads((workspace / results_relative).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        # Parse/read problems are owned by check_artifact_nonempty.
+        return ContractCheck(results_relative, True, "", kind=KIND_VERIFICATION)
+    problems = check_results(kind, data, workspace)
+    if not problems:
+        return ContractCheck(results_relative, True, "", kind=KIND_VERIFICATION)
+    more = f"; and {len(problems) - 8} more" if len(problems) > 8 else ""
+    k = get(kind)
+    return ContractCheck(
+        results_relative,
+        False,
+        f"{kind} results contract: "
+        + "; ".join(problems[:8])
+        + more
+        + f". This study reports {k.label}; write {results_relative} as the {k.schema_skill} skill specifies "
+        "(from the script that computes it, never by hand).",
+        kind=KIND_VERIFICATION,
+    )
+
+
 def check_statistics_consistent(workspace: Path, results_relative: str) -> ContractCheck:
     """t = estimate / se and p follows from t, for every coefficient (src/core/pipeline/statistics.py).
 
@@ -529,7 +563,7 @@ def check_draft_includes_declared_tables(workspace: Path, relative: str = "paper
 
 
 #: Writers of the paper's draft whose draft must cite the study's references.
-_MUST_CITE: frozenset[str] = frozenset({"paper_drafter", "field_review_writer"})
+_MUST_CITE: frozenset[str] = frozenset({"paper_drafter", "field_review_writer", "meta_review_writer"})
 
 
 def check_draft_cites(workspace: Path, relative: str = "paper_draft.tex") -> ContractCheck:
@@ -559,6 +593,110 @@ def check_draft_cites(workspace: Path, relative: str = "paper_draft.tex") -> Con
     )
 
 
+#: Writers of the paper's prose, and the file each writes: their prose passes the phrase check.
+_PHRASE_CHECKED: frozenset[str] = frozenset(
+    {"paper_drafter", "section_writer", "abstract_writer", "field_review_writer", "meta_review_writer"}
+)
+
+
+def check_draft_phrases(workspace: Path, relative: str) -> ContractCheck:
+    """The prose has none of the constructions the researcher rejects (``writing_check``).
+
+    A live run kept "Against this background" although the researcher had
+    asked the writer not to use it. The feedback names each sentence, so the
+    next attempt rewrites exactly those.
+    """
+    from ..writing_check import feedback, find_in_file
+
+    target = workspace / relative
+    if not target.is_file():
+        return ContractCheck(relative, True, "", kind=KIND_VERIFICATION)
+    # With the claims the study's own checks refuse (writing_check.refused_claims).
+    hits = find_in_file(target, workspace)
+    if not hits:
+        return ContractCheck(relative, True, "", kind=KIND_VERIFICATION)
+    return ContractCheck(relative, False, feedback(hits), kind=KIND_VERIFICATION)
+
+
+def check_patch_phrases(workspace: Path, relative: str = "paper_draft.tex.edits.json") -> ContractCheck:
+    """The replacement text of the targeted corrections has none of the constructions the researcher rejects.
+
+    The revisor writes edits, not the draft, so its new sentences are checked
+    here before the merger puts them into the paper.
+    """
+    from ..writing_check import feedback, find, refused_claims
+
+    target = workspace / relative
+    if not target.is_file():
+        return ContractCheck(relative, True, "", kind=KIND_VERIFICATION)
+    try:
+        data = json.loads(target.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return ContractCheck(relative, True, "", kind=KIND_VERIFICATION)
+    edits = data.get("edits", []) if isinstance(data, dict) else data
+    hits = []
+    for edit in edits if isinstance(edits, list) else []:
+        if isinstance(edit, dict) and edit.get("edit_type", "replace_text") != "keep":
+            text = edit.get("replace")
+            if isinstance(text, str) and text.strip():
+                hits.extend(find(text))
+                hits.extend(refused_claims(workspace, text))
+    if not hits:
+        return ContractCheck(relative, True, "", kind=KIND_VERIFICATION)
+    return ContractCheck(relative, False, feedback(hits), kind=KIND_VERIFICATION)
+
+
+#: The findings the targeted corrections work on, written by the runner before it dispatches them.
+REVISION_FINDINGS_FILE = ".revision_findings.json"
+
+
+def check_patch_coverage(workspace: Path, relative: str = "paper_draft.tex.edits.json") -> ContractCheck:
+    """Every finding of the targeted corrections is corrected at all its passages, or the revisor says why not.
+
+    The patch is applied to a copy (nothing is written) and compared with the
+    findings in ``.revision_findings.json`` (``patch_merger.coverage_problems``).
+    A run whose revisor fixed one of several passages with the same problem
+    (calculated exoplanet radii presented as measured) passed before.
+    """
+    from ..strategist.findings import Finding
+    from ..strategist.patch_merger import coverage_problems, merge_patch_file
+
+    record = workspace / REVISION_FINDINGS_FILE
+    if not record.is_file() or not (workspace / "paper_draft.tex").is_file() or not (workspace / relative).is_file():
+        return ContractCheck(relative, True, "", kind=KIND_VERIFICATION)
+    try:
+        data = json.loads(record.read_text(encoding="utf-8"))
+        draft_sha = hashlib.sha256((workspace / "paper_draft.tex").read_bytes()).hexdigest()
+        if data.get("draft_sha256") != draft_sha:
+            return ContractCheck(relative, True, "", kind=KIND_VERIFICATION)  # findings about another draft
+        raw = data.get("findings") or []
+        findings = [
+            Finding(
+                source=f["source"],
+                source_detail=str(f.get("source_detail", "")),
+                target=f["target"],
+                severity=int(f["severity"]),
+                problem=str(f.get("problem", "")),
+                suggested_fix=str(f.get("suggested_fix", "")),
+                locations=tuple(str(x) for x in f.get("locations") or ()),
+            )
+            for f in raw
+        ]
+        merged = merge_patch_file(workspace, findings, persist=False)
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        # An unreadable patch file is the non-empty check's to report; the findings record is ours.
+        return ContractCheck(relative, True, "", kind=KIND_VERIFICATION)
+    problems = coverage_problems(findings, merged)
+    if not problems:
+        return ContractCheck(relative, True, "", kind=KIND_VERIFICATION)
+    return ContractCheck(
+        relative,
+        False,
+        f"{len(problems)} passage(s) left open: " + "; ".join(problems[:12]),
+        kind=KIND_VERIFICATION,
+    )
+
+
 def _plan_problems(workspace: Path) -> list[str]:
     from ..pipeline.replication import check_plan
 
@@ -577,6 +715,34 @@ def _lanes_problems(workspace: Path) -> list[str]:
     return lanes_problems(workspace)
 
 
+def _protocol_problems(workspace: Path) -> list[str]:
+    from ...modules.metaanalysis.protocol import ProtocolError, load_protocol
+
+    try:
+        load_protocol(workspace)
+    except ProtocolError as e:
+        return str(e).split("; ")
+    return []
+
+
+def _screening_problems(workspace: Path) -> list[str]:
+    from ...modules.metaanalysis.screening import screening_problems
+
+    return screening_problems(workspace)
+
+
+def _extraction_problems(workspace: Path) -> list[str]:
+    from ...modules.metaanalysis.extraction import structure_problems
+
+    return structure_problems(workspace)
+
+
+def _meta_draft_problems(workspace: Path) -> list[str]:
+    from ...modules.metaanalysis.workflow import draft_problems
+
+    return draft_problems(workspace)
+
+
 def _report_problems(workspace: Path) -> list[str]:
     from ..pipeline.reproduction import check_report
 
@@ -589,6 +755,10 @@ _STRUCTURAL_CHECKS: dict[str, tuple[str, Any]] = {
     "reproduction_comparer": ("reproduction_report.json", _report_problems),
     "field_boundary_designer": ("field_boundary.json", _boundary_problems),
     "field_lane_mapper": ("field_lanes.json", _lanes_problems),
+    "protocol_designer": ("review_protocol.json", _protocol_problems),
+    "study_screener": ("screening.json", _screening_problems),
+    "study_extractor": ("extraction.json", _extraction_problems),
+    "meta_review_writer": ("paper_draft.tex", _meta_draft_problems),
 }
 
 DATA_DICTIONARY_FILE = "data_dictionary.json"
@@ -795,6 +965,8 @@ def check_specialist_artifacts(workspace: Path, specialist: str) -> list[Contrac
     """
     # Imported lazily so this module stays dependency-light and can
     # be unit-tested without the registry side effects.
+    from ..pipeline.components import optional_sidecars
+    from ..pipeline.result_kinds import active_causal, active_kind
     from .registry import (
         SPECIALIST_ARTIFACTS,
         SPECIALIST_OPTIONAL_SIDECARS,
@@ -806,19 +978,30 @@ def check_specialist_artifacts(workspace: Path, specialist: str) -> list[Contrac
     if primary:
         checks.append(check_artifact_nonempty(workspace, primary))
     # Best-effort sidecars are prompted + verify_numbers-checked when
-    # present, but not hard-gated here (no deterministic producer).
-    optional = SPECIALIST_OPTIONAL_SIDECARS.get(specialist, frozenset())
+    # present, but not hard-gated here (no deterministic producer). In a
+    # template without a causal claim the identification specification is one.
+    optional = SPECIALIST_OPTIONAL_SIDECARS.get(specialist, frozenset()) | optional_sidecars(specialist)
     for sidecar in SPECIALIST_SIDECAR_ARTIFACTS.get(specialist, []):
         if sidecar in optional:
             continue
         checks.append(check_artifact_nonempty(workspace, sidecar))
 
-    # Deterministic "an actual regression was run" gate. Only applied once the
-    # basic non-empty check for that file passed, so we don't pile a second
-    # failure on top of an already-flagged empty/invalid file.
+    # The results contract the template declares (`results` in the template,
+    # src/core/pipeline/result_kinds.py). Regression is the contract below;
+    # every other kind has its own structure and consistency checks.
     regression_file = _REGRESSION_REQUIRED.get(specialist)
-    if regression_file:
-        base_failed = any(c.artifact == regression_file and not c.ok for c in checks)
+    kind = active_kind(workspace) if regression_file else "regression"
+    base_failed = bool(regression_file) and any(c.artifact == regression_file and not c.ok for c in checks)
+    if regression_file and kind != "regression":
+        if not base_failed:
+            checks.append(check_result_contract(workspace, regression_file, kind))
+            prereg = check_preregistered_results(workspace, regression_file)
+            if prereg is not None:
+                checks.append(prereg)
+    elif regression_file:
+        # Deterministic "an actual regression was run" gate. Only applied once the
+        # basic non-empty check for that file passed, so we don't pile a second
+        # failure on top of an already-flagged empty/invalid file.
         if not base_failed:
             # These two are VERIFICATION, not reliability: the file exists and
             # parses (reliability is satisfied), and we are now asking whether
@@ -831,7 +1014,12 @@ def check_specialist_artifacts(workspace: Path, specialist: str) -> list[Contrac
             # DECLARED thing"), and layering both failures would muddy the
             # retry feedback.
             if regression_check.ok:
-                checks.append(replace(check_matches_declared_spec(workspace, regression_file), kind=KIND_VERIFICATION))
+                # The identified-spec contract binds a template that makes a causal claim
+                # (every regression template unless it says `causal = false`).
+                if active_causal():
+                    checks.append(
+                        replace(check_matches_declared_spec(workspace, regression_file), kind=KIND_VERIFICATION)
+                    )
                 checks.append(check_statistics_consistent(workspace, regression_file))
                 prereg = check_preregistered_results(workspace, regression_file)
                 if prereg is not None:
@@ -854,6 +1042,17 @@ def check_specialist_artifacts(workspace: Path, specialist: str) -> list[Contrac
         if not any(c.artifact == filename and not c.ok for c in checks):
             problems = check(workspace)
             checks.append(ContractCheck(filename, not problems, "; ".join(problems[:8])))
+
+    # The extractor's numbers, each read back from the page and quote it cites
+    # (src/modules/metaanalysis/extraction.py). Verification: a regime may shadow it.
+    if specialist == "study_extractor" and not any(c.artifact == "extraction.json" and not c.ok for c in checks):
+        from ...modules.metaanalysis.extraction import trace, trace_problems
+
+        try:
+            problems = trace_problems(trace(workspace))
+        except (OSError, ValueError, KeyError) as e:
+            problems = [f"the extracted numbers could not be traced: {e}"]
+        checks.append(ContractCheck("extraction.json", not problems, "; ".join(problems), kind=KIND_VERIFICATION))
 
     # The data analyst loads what the data dictionary declares, into data.db,
     # and reports the real row counts (docs: skills/files/data/data-tables.md).
@@ -885,4 +1084,13 @@ def check_specialist_artifacts(workspace: Path, specialist: str) -> list[Contrac
     # A draft for a study with references cites them.
     if specialist in _MUST_CITE and draft_written:
         checks.append(check_draft_cites(workspace, draft))
+    # The targeted corrections fix every passage a finding names, or say why one stays.
+    if specialist == "patch_revisor" and not any(c.artifact == primary and not c.ok for c in checks):
+        checks.append(check_patch_coverage(workspace, primary or "paper_draft.tex.edits.json"))
+    # The prose has none of the constructions the researcher rejects (the abstract writer's too).
+    if specialist in _PHRASE_CHECKED and draft_written:
+        checks.append(check_draft_phrases(workspace, draft))
+    # The revisor's replacement sentences pass the same phrase check.
+    if specialist == "patch_revisor":
+        checks.append(check_patch_phrases(workspace, primary or "paper_draft.tex.edits.json"))
     return checks

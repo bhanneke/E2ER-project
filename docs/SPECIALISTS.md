@@ -6,10 +6,10 @@ Every specialist the strategist can dispatch, the skill files it is given, and
 the artifacts it must produce. A specialist that does not write its declared
 artifact fails its contract and is retried with the violation fed back.
 
-- **31** specialists
-- **64** skill files on disk
-- **53** referenced by at least one specialist
-- **11** never referenced
+- **39** specialists
+- **90** skill files on disk
+- **71** referenced by at least one specialist
+- **19** never referenced
 
 ## Shipped but never loaded
 
@@ -21,9 +21,17 @@ methodology guidance exists, and no specialist is given it.
 - `causal-inference/shift-share`
 - `causal-inference/weak-instruments`
 - `data/byod`
+- `data/descriptive-results-schema`
+- `data/metaanalysis-results-schema`
+- `data/spatial-results-schema`
+- `data/spatial-statistics`
+- `data/text-results-schema`
+- `data/timeseries-results-schema`
 - `data/visualization`
+- `econometrics/did-practice`
 - `econometrics/rdd`
 - `econometrics/time-series`
+- `methods/descriptive-analysis`
 - `review/constructive-feedback`
 - `review/reference-check`
 - `synthesis/deliverables`
@@ -41,12 +49,12 @@ methodology guidance exists, and no specialist is given it.
 
 - **Writes:** `data_summary.md`
 - **Sidecars:** `summary_statistics.json`, `figure_spec.json` _(optional)_
-- **Skills (11):** `data/data-tables`, `data/query-data`, `data/cleaning`, `data/figure-spec`, `econometrics/panel-data`, `data/allium-cli`, `data/allium-developer-api`, `data/yfinance`, `data/fred`, `data/gmd`, `data/summary-statistics-schema`
+- **Skills (24):** `data/data-tables`, `data/query-data`, `data/cleaning`, `data/figure-spec`, `econometrics/panel-data`, `data/allium-cli`, `data/allium-developer-api`, `data/yfinance`, `data/fred`, `data/gmd`, `data/summary-statistics-schema`, `data/usgs`, `data/exoplanets`, `data/gaia`, `data/nasa_power`, `data/noaa`, `data/worldbank`, `data/eurostat`, `data/owid`, `data/who_gho`, `data/gutenberg`, `data/github`, `data/gisco`, `data/naturalearth`
 
 ### `data_architect`
 
 - **Writes:** `data_dictionary.json`
-- **Skills (10):** `data/data-tables`, `data/query-data`, `data/blockchain`, `data/crypto-defi`, `base/economist`, `data/allium-cli`, `data/allium-developer-api`, `data/yfinance`, `data/fred`, `data/gmd`
+- **Skills (23):** `data/data-tables`, `data/query-data`, `data/blockchain`, `data/crypto-defi`, `base/economist`, `data/allium-cli`, `data/allium-developer-api`, `data/yfinance`, `data/fred`, `data/gmd`, `data/usgs`, `data/exoplanets`, `data/gaia`, `data/nasa_power`, `data/noaa`, `data/worldbank`, `data/eurostat`, `data/owid`, `data/who_gho`, `data/gutenberg`, `data/github`, `data/gisco`, `data/naturalearth`
 
 ### `data_reviewer`
 
@@ -75,6 +83,12 @@ methodology guidance exists, and no specialist is given it.
 
 - **Writes:** `paper_draft.tex`
 - **Skills (4):** `synthesis/main-path-analysis`, `writing/personal-style`, `writing/cite-numbers-by-source`, `reasoning/anti-slop`
+
+### `forecast_designer`
+
+- **Writes:** `forecast_design.md`
+- **Sidecars:** `forecast_design.json`
+- **Skills (4):** `base/researcher`, `methods/time-series-forecasting`, `data/data-tables`, `data/query-data`
 
 ### `idea_developer`
 
@@ -112,6 +126,16 @@ methodology guidance exists, and no specialist is given it.
 - **Writes:** `review_mechanism.md`
 - **Skills (2):** `review/referee-simulation`, `modeling/market-microstructure`
 
+### `meta_review_writer`
+
+- **Writes:** `paper_draft.tex`
+- **Skills (4):** `methods/meta-analysis`, `writing/personal-style`, `writing/cite-numbers-by-source`, `reasoning/anti-slop`
+
+### `methods_reviewer`
+
+- **Writes:** `review_methods.md`
+- **Skills (2):** `review/methods-review`, `review/consistency-check`
+
 ### `paper_drafter`
 
 - **Writes:** `paper_draft.tex`
@@ -122,6 +146,11 @@ methodology guidance exists, and no specialist is given it.
 
 - **Writes:** `paper_draft.tex.edits.json`
 - **Skills (4):** `writing/scoped-revision`, `writing/cite-numbers-by-source`, `writing/personal-style`, `reasoning/anti-slop`
+
+### `plausibility_reviewer`
+
+- **Writes:** `review_plausibility.md`
+- **Skills (2):** `review/domain-plausibility`, `review/consistency-check`
 
 ### `polish_bibliography`
 
@@ -147,6 +176,12 @@ methodology guidance exists, and no specialist is given it.
 
 - **Writes:** `polish_numerics.md`
 - **Skills (2):** `data/cleaning`, `review/consistency-check`
+
+### `protocol_designer`
+
+- **Writes:** `review_protocol.md`
+- **Sidecars:** `review_protocol.json`
+- **Skills (2):** `methods/meta-analysis`, `base/researcher`
 
 ### `replication_packager`
 
@@ -180,10 +215,28 @@ methodology guidance exists, and no specialist is given it.
 - **Writes:** `self_attack_report.json`
 - **Skills (3):** `review/referee-simulation`, `reasoning/argument-audit`, `causal-inference/sensitivity`
 
+### `study_extractor`
+
+- **Writes:** `extraction.md`
+- **Sidecars:** `extraction.json`
+- **Skills (1):** `methods/meta-analysis`
+
+### `study_screener`
+
+- **Writes:** `screening.md`
+- **Sidecars:** `screening.json`
+- **Skills (1):** `methods/meta-analysis`
+
 ### `technical_reviewer`
 
 - **Writes:** `review_technical.md`
 - **Skills (2):** `review/technical-review`, `review/consistency-check`
+
+### `text_validator`
+
+- **Writes:** `text_validation.md`
+- **Sidecars:** `text_validation.json`
+- **Skills (2):** `base/researcher`, `methods/text-analysis`
 
 ### `theory_specialist`
 
@@ -202,7 +255,7 @@ The reverse index: who is affected if you edit a skill file.
 | Skill | Loaded by |
 |---|---|
 | `base/economist` | `data_architect`, `idea_developer`, `polish_institutions`, `theory_specialist` |
-| `base/researcher` | `field_boundary_designer`, `idea_developer`, `literature_scanner`, `paper_drafter`, `replication_packager` |
+| `base/researcher` | `field_boundary_designer`, `forecast_designer`, `idea_developer`, `literature_scanner`, `paper_drafter`, `protocol_designer`, `replication_packager`, `text_validator` |
 | `causal-inference/identification-spec-schema` | `identification_strategist` |
 | `causal-inference/judge-designs` | `identification_strategist` |
 | `causal-inference/natural-experiments` | `identification_strategist` |
@@ -212,13 +265,26 @@ The reverse index: who is affected if you edit a skill file.
 | `data/blockchain` | `data_architect` |
 | `data/cleaning` | `data_analyst`, `data_reviewer`, `polish_numerics`, `replication_packager` |
 | `data/crypto-defi` | `data_architect`, `polish_institutions` |
-| `data/data-tables` | `data_analyst`, `data_architect`, `identification_strategist` |
+| `data/data-tables` | `data_analyst`, `data_architect`, `forecast_designer`, `identification_strategist` |
+| `data/eurostat` | `data_analyst`, `data_architect` |
+| `data/exoplanets` | `data_analyst`, `data_architect` |
 | `data/figure-spec` | `data_analyst` |
 | `data/fred` | `data_analyst`, `data_architect` |
+| `data/gaia` | `data_analyst`, `data_architect` |
+| `data/gisco` | `data_analyst`, `data_architect` |
+| `data/github` | `data_analyst`, `data_architect` |
 | `data/gmd` | `data_analyst`, `data_architect` |
-| `data/query-data` | `data_analyst`, `data_architect`, `econometrics_specialist` |
+| `data/gutenberg` | `data_analyst`, `data_architect` |
+| `data/nasa_power` | `data_analyst`, `data_architect` |
+| `data/naturalearth` | `data_analyst`, `data_architect` |
+| `data/noaa` | `data_analyst`, `data_architect` |
+| `data/owid` | `data_analyst`, `data_architect` |
+| `data/query-data` | `data_analyst`, `data_architect`, `econometrics_specialist`, `forecast_designer` |
 | `data/summary-statistics-schema` | `data_analyst` |
 | `data/table-spec` | `paper_drafter`, `section_writer` |
+| `data/usgs` | `data_analyst`, `data_architect` |
+| `data/who_gho` | `data_analyst`, `data_architect` |
+| `data/worldbank` | `data_analyst`, `data_architect` |
 | `data/yfinance` | `data_analyst`, `data_architect` |
 | `econometrics/did` | `econometrics_specialist` |
 | `econometrics/estimation-results-schema` | `econometrics_specialist` |
@@ -230,10 +296,13 @@ The reverse index: who is affected if you edit a skill file.
 | `latex/tables` | `latex_formatter` |
 | `math/optimization-verification` | `polish_formula` |
 | `math/proof-strategies` | `polish_equilibria`, `theory_specialist` |
+| `methods/meta-analysis` | `meta_review_writer`, `protocol_designer`, `study_extractor`, `study_screener` |
+| `methods/text-analysis` | `text_validator` |
+| `methods/time-series-forecasting` | `forecast_designer` |
 | `modeling/asset-pricing` | `theory_specialist` |
 | `modeling/game-theory` | `polish_equilibria`, `theory_specialist` |
 | `modeling/market-microstructure` | `mechanism_reviewer` |
-| `reasoning/anti-slop` | `abstract_writer`, `field_lane_mapper`, `field_review_writer`, `patch_revisor`, `revisor`, `section_writer`, `writing_reviewer` |
+| `reasoning/anti-slop` | `abstract_writer`, `field_lane_mapper`, `field_review_writer`, `meta_review_writer`, `patch_revisor`, `revisor`, `section_writer`, `writing_reviewer` |
 | `reasoning/argument-audit` | `self_attacker` |
 | `reasoning/creative-ideation` | `idea_developer` |
 | `reasoning/identification` | `identification_strategist`, `theory_specialist` |
@@ -241,8 +310,10 @@ The reverse index: who is affected if you edit a skill file.
 | `replication/replication-plan` | `replication_planner` |
 | `replication/reproduction-protocol` | `replication_planner`, `reproduction_comparer` |
 | `replication/reproduction-report` | `reproduction_comparer` |
-| `review/consistency-check` | `polish_numerics`, `technical_reviewer` |
+| `review/consistency-check` | `methods_reviewer`, `plausibility_reviewer`, `polish_numerics`, `technical_reviewer` |
 | `review/data-quality` | `data_reviewer` |
+| `review/domain-plausibility` | `plausibility_reviewer` |
+| `review/methods-review` | `methods_reviewer` |
 | `review/referee-simulation` | `literature_reviewer`, `mechanism_reviewer`, `self_attacker` |
 | `review/technical-review` | `identification_reviewer`, `technical_reviewer` |
 | `review/writing-quality` | `writing_reviewer` |
@@ -250,7 +321,7 @@ The reverse index: who is affected if you edit a skill file.
 | `synthesis/main-path-analysis` | `field_boundary_designer`, `field_lane_mapper`, `field_review_writer` |
 | `synthesis/replication-package` | `replication_packager` |
 | `writing/abstract` | `abstract_writer` |
-| `writing/cite-numbers-by-source` | `abstract_writer`, `field_review_writer`, `paper_drafter`, `patch_revisor`, `revisor`, `section_writer` |
+| `writing/cite-numbers-by-source` | `abstract_writer`, `field_review_writer`, `meta_review_writer`, `paper_drafter`, `patch_revisor`, `revisor`, `section_writer` |
 | `writing/paper-structure` | `paper_drafter`, `revisor`, `section_writer` |
-| `writing/personal-style` | `field_review_writer`, `paper_drafter`, `patch_revisor`, `revisor`, `section_writer` |
+| `writing/personal-style` | `field_review_writer`, `meta_review_writer`, `paper_drafter`, `patch_revisor`, `revisor`, `section_writer` |
 | `writing/scoped-revision` | `patch_revisor` |

@@ -1,0 +1,40 @@
+{
+  "tables": [
+    {
+      "filename": "summary.tex",
+      "label": "tab:summary",
+      "caption": "Summary statistics of the planet sample",
+      "layout": "records",
+      "source": "estimation_results.json",
+      "path": "statistics",
+      "rows": ["radius_earth", "period_days"],
+      "row_labels": {"radius_earth": "Radius (Earth radii)", "period_days": "Orbital period (days)"},
+      "row_header": "Variable",
+      "columns": [
+        {"field": "n", "header": "$N$", "decimals": 0},
+        {"field": "mean", "header": "Mean", "decimals": 3},
+        {"field": "sd", "header": "SD", "decimals": 3},
+        {"field": "p25", "header": "P25", "decimals": 3},
+        {"field": "median", "header": "Median", "decimals": 3},
+        {"field": "p75", "header": "P75", "decimals": 3},
+        {"field": "max", "header": "Max", "decimals": 3}
+      ],
+      "notes": "Synthetic test sample. Quantiles interpolate linearly between order statistics."
+    },
+    {
+      "filename": "radius_bins.tex",
+      "label": "tab:radius_bins",
+      "caption": "Planets per radius bin",
+      "layout": "records",
+      "source": "estimation_results.json",
+      "path": "distributions.radius.bins",
+      "key_field": "lower",
+      "row_header": "From (Earth radii)",
+      "columns": [
+        {"field": "upper", "header": "To (Earth radii)", "decimals": 1},
+        {"field": "count", "header": "Planets", "decimals": 0}
+      ],
+      "notes": "Bins include their lower edge and exclude their upper edge."
+    }
+  ]
+}

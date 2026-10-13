@@ -95,9 +95,9 @@ def failure_record(wo: WorkOrder, c: Contribution) -> dict[str, Any]:
 
 
 def _tolerant() -> set[str]:
-    from .registry import POLISH_SPECIALISTS, REVIEWER_SPECIALISTS
+    from .registry import ALL_REVIEWERS, POLISH_SPECIALISTS
 
-    return set(REVIEWER_SPECIALISTS) | set(POLISH_SPECIALISTS)
+    return set(ALL_REVIEWERS) | set(POLISH_SPECIALISTS)
 
 
 def order_by_dependencies(work_orders: list[WorkOrder]) -> tuple[list[WorkOrder], list[str]]:
@@ -177,12 +177,12 @@ def _inject_context(work_order: WorkOrder, workspace: Path) -> WorkOrder:
         build_tier1_context,
         build_tier2_context,
     )
-    from .registry import REVIEWER_SPECIALISTS, SPECIALIST_ARTIFACTS
+    from .registry import ALL_REVIEWERS, SPECIALIST_ARTIFACTS
 
     updates: dict[str, object] = {}
 
     if not work_order.context:
-        if work_order.specialist in REVIEWER_SPECIALISTS:
+        if work_order.specialist in ALL_REVIEWERS:
             # Reviewers are pure-text: pre-load full draft + supporting docs.
             updates["context"] = build_review_context(workspace, work_order.paper_id)
         else:
@@ -489,9 +489,9 @@ def find_missing_artifacts(contributions: list[Contribution], workspace: Path) -
     Reviewers and polish specialists are tolerant of partial failure (the
     aggregator handles gaps); everyone else writes a required upstream artifact.
     """
-    from .registry import POLISH_SPECIALISTS, REVIEWER_SPECIALISTS, SPECIALIST_ARTIFACTS
+    from .registry import ALL_REVIEWERS, POLISH_SPECIALISTS, SPECIALIST_ARTIFACTS
 
-    tolerant = set(REVIEWER_SPECIALISTS) | set(POLISH_SPECIALISTS)
+    tolerant = set(ALL_REVIEWERS) | set(POLISH_SPECIALISTS)
     missing: list[tuple[str, str, str]] = []
     for c in contributions:
         if c.specialist in tolerant:

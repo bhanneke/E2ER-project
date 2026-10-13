@@ -1,0 +1,26 @@
+{
+ "$comment": "Recorded live by the e2er connector kit (use_cassette); replayed in tests with no network.",
+ "interactions": [
+  {
+   "method": "GET",
+   "url": "https://earthquake.usgs.gov/fdsnws/event/1/version",
+   "status": 200,
+   "content_type": "text/plain;charset=UTF-8",
+   "text": "2.8.1"
+  },
+  {
+   "method": "GET",
+   "url": "https://earthquake.usgs.gov/fdsnws/event/1/count?endtime=2024-01-02T00%3A00%3A00&format=geojson&minmagnitude=5.0&starttime=2024-01-01T00%3A00%3A00",
+   "status": 200,
+   "content_type": "application/json",
+   "text": "{\"count\":13,\"maxAllowed\":20000}"
+  },
+  {
+   "method": "GET",
+   "url": "https://earthquake.usgs.gov/fdsnws/event/1/query?endtime=2024-01-02T00%3A00%3A00&format=csv&minmagnitude=5.0&orderby=time-asc&starttime=2024-01-01T00%3A00%3A00",
+   "status": 200,
+   "content_type": "text/csv; charset=utf-8",
+   "text": "time,latitude,longitude,depth,mag,magType,nst,gap,dmin,rms,net,id,updated,place,type,horizontalError,depthError,magError,magNst,status,locationSource,magSource\n2024-01-01T07:06:05.477Z,37.4933,137.2491,10,5.8,mb,279,53,0.968,0.47,us,us6000m0xj,2024-03-09T21:38:16.040Z,\"42 km NE of Anamizu, Japan\",earthquake,2.05,1.792,0.021,784,reviewed,us,us\n2024-01-01T07:10:09.476Z,37.4874,137.271,10,7.5,mww,282,36,0.957,0.55,us,us6000m0xl,2026-10-10T06:13:09.213Z,\"2024 Noto Peninsula, Japan Earthquake\",earthquake,4.03,1.807,0.034,82,reviewed,us,us\n2024-01-01T07:18:41.584Z,37.1895,136.8272,10,6.2,mb,185,32,1.278,0.4,us,us6000m0xm,2025-01-04T22:53:01.431Z,\"8 km SW of Anamizu, Japan\",earthquake,1.95,1.794,0.024,672,reviewed,us,us\n2024-01-01T07:39:49.268Z,37.4861,137.4519,10,5.2,mb,151,92,0.844,0.48,us,us6000m0xn,2024-03-09T21:38:17.040Z,\"56 km ENE of Anamizu, Japan\",earthquake,5.87,1.821,0.038,230,reviewed,us,us\n2024-01-01T07:52:43.251Z,-0.1092,123.6177,81.212,5.3,mb,52,42,1.254,0.78,us,us6000m0xq,2024-03-09T21:38:18.040Z,\"94 km SE of Gorontalo, Indonesia\",earthquake,6.07,6.013,0.07,69,reviewed,us,us\n2024-01-01T07:56:47.661Z,37.2997,136.8875,10,5.6,mww,148,67,1.296,0.52,us,us6000m0xt,2024-03-09T21:38:18.040Z,\"7 km N of Anamizu, Japan\",earthquake,6.64,1.795,0.098,10,reviewed,us,us\n2024-01-01T08:02:44.840Z,37.5444,137.401,10,5,mb,104,92,0.84,0.49,us,us6000m0xu,2024-03-09T21:38:18.040Z,\"56 km NE of Anamizu, Japan\",earthquake,5.42,1.817,0.046,151,reviewed,us,us\n2024-01-01T08:07:10.627Z,37.1718,136.6149,10,5.1,mb,133,59,1.419,0.51,us,us6000m0xw,2024-03-09T21:38:19.040Z,\"26 km WSW of Anamizu, Japan\",earthquake,5.42,1.793,0.035,261,reviewed,us,us\n2024-01-01T09:03:48.859Z,37.5339,137.4185,10,5.5,mb,130,43,0.835,0.73,us,us6000m0y9,2024-03-09T21:38:22.040Z,\"56 km NE of Anamizu, Japan\",earthquake,5.08,1.722,0.023,662,reviewed,us,us\n2024-01-01T09:08:17.603Z,37.5146,137.4029,10,5.6,mb,146,50,0.856,0.71,us,us6000m0ya,2024-03-09T21:38:22.040Z,\"54 km NE of Anamizu, Japan\",earthquake,4.11,1.793,0.021,781,reviewed,us,us\n2024-01-01T09:30:21.401Z,37.4998,137.3585,10,5.2,mb,123,86,0.893,0.69,us,us6000m0ye,2024-03-09T21:38:23.040Z,\"50 km NE of Anamizu, Japan\",earthquake,4.38,1.811,0.025,539,reviewed,us,us\n2024-01-01T09:39:59.811Z,37.1479,136.6562,10,5,mb,100,60,1.379,0.71,us,us6000m0yf,2024-03-09T21:38:23.040Z,\"23 km WSW of Anamizu, Japan\",earthquake,2.99,1.788,0.029,394,reviewed,us,us\n2024-01-01T09:45:26.217Z,37.8107,137.5664,10,5.1,mb,65,90,0.592,1.19,us,us6000m0yg,2024-03-09T21:38:23.040Z,\"73 km WSW of Sado, Japan\",earthquake,5.23,1.835,0.085,45,reviewed,us,us\n"
+  }
+ ]
+}

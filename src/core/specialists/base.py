@@ -448,6 +448,12 @@ def _build_system_prompt(
     from ..specialists.registry import SPECIALIST_ARTIFACTS
 
     name = specialist.replace("_", " ").title()
+    if specialist == "econometrics_specialist":
+        from ..pipeline.result_kinds import active_kind as _kind_now
+
+        if _kind_now() != "regression":
+            # The template's results are not regressions (results = "descriptive", ...).
+            name = "Analysis"
     # Early-write deadline: aim to have a first version of the canonical
     # artifact written by the half-way point. For data-heavy specialists
     # this leaves headroom to append findings as paginated queries come in.
@@ -597,7 +603,35 @@ def _build_system_prompt(
                 "",
             ]
         )
-    if specialist == "econometrics_specialist":
+    from ..pipeline.result_kinds import RESULTS_FILE, active_causal, active_kind
+    from ..pipeline.result_kinds import get as _result_kind
+
+    kind = active_kind() if specialist == "econometrics_specialist" else "regression"
+    if specialist == "econometrics_specialist" and kind != "regression":
+        k = _result_kind(kind)
+        lines.extend(
+            [
+                f"## This study reports {k.label} (the template's results contract)",
+                f"You are this study's analysis specialist. Its results are {k.label}, not regression "
+                f"estimates: write them to {RESULTS_FILE} exactly as your {k.schema_skill} skill specifies, "
+                f'starting with "result_kind": "{kind}". A deterministic check reads the file and fails the step '
+                "on a missing block or numbers that contradict each other.",
+                "- Compute every number in your script from the data; never type a result by hand.",
+                "- Do not estimate a regression or claim a causal effect the design does not support.",
+                "",
+            ]
+        )
+    elif specialist == "econometrics_specialist" and not active_causal():
+        lines.extend(
+            [
+                "## This study makes no causal claim",
+                "Report the regression estimates the analysis plan names in estimation_results.json (see your "
+                "estimation-results-schema skill). There is no identification_spec.json to implement; describe "
+                "associations as associations.",
+                "",
+            ]
+        )
+    elif specialist == "econometrics_specialist":
         lines.extend(
             [
                 "## Headline estimate MUST be the IDENTIFIED specification (not a raw gap)",
@@ -653,7 +687,7 @@ _BIB_SPECIALISTS = frozenset(
 
 
 def _build_user_prompt(work_order: WorkOrder) -> str:
-    from ..specialists.registry import REVIEWER_SPECIALISTS
+    from ..specialists.registry import ALL_REVIEWERS
 
     parts = [f"## Work Order\n{work_order.focus}"]
     if work_order.context:
@@ -670,7 +704,7 @@ def _build_user_prompt(work_order: WorkOrder) -> str:
     # Reviewers get the full draft + supporting docs pre-loaded above.
     # Stop them from re-reading via read_file (each tool result re-enters
     # the conversation history on every subsequent turn — quadratic blow-up).
-    if work_order.specialist in REVIEWER_SPECIALISTS:
+    if work_order.specialist in ALL_REVIEWERS:
         parts.append(
             "\n## Reviewing Instructions\n"
             "The full paper draft and all supporting documents are already "
@@ -850,7 +884,7 @@ def _list_local_pdfs_for_prompt(specialist: str, paper_id: str) -> str:
 _BIB_ENTRY_RE = re.compile(r"^@\w+\s*\{\s*([^,\s]+)", re.MULTILINE)
 _BIB_FIELD_RE = re.compile(r"^\s*(title|year|e2er_source)\s*=\s*[{\"]?(.*?)[}\"]?,?\s*$", re.MULTILINE | re.IGNORECASE)
 #: How the citable list marks where an entry came from (the e2er_source field).
-_SOURCE_MARK = {"researcher": "  [researcher's paper]", "web": "  [found on the web]"}
+_SOURCE_MARK = {"researcher": "  [researcher's paper]", "web": "  [found on the web]", "template": "  [method source]"}
 
 
 def _workspace_bib_for_prompt(specialist: str, paper_id: str, limit: int = 40) -> str:
@@ -891,6 +925,8 @@ def _workspace_bib_for_prompt(specialist: str, paper_id: str, limit: int = 40) -
     if not entries:
         return ""
 
+    # The template's method sources first, so a long list never cuts them off.
+    entries.sort(key=lambda e: e[3] != "template")
     shown = entries[:limit]
     lines = [f"- \\cite{{{k}}}  {y or '????'}  {t[:110]}{_SOURCE_MARK.get(src, '')}" for k, y, t, src in shown]
     more = f"\n  ... and {len(entries) - limit} more in literature.bib." if len(entries) > limit else ""
@@ -901,7 +937,16 @@ def _workspace_bib_for_prompt(specialist: str, paper_id: str, limit: int = 40) -
         "reference and the citation gate reports it as missing_in_bib. Do not cite "
         "from memory.\n"
         'If you need a work that is not here, run `e2er-lit search "<query>"` first; '
-        "that records it and makes its key citable.\n" + "\n".join(lines) + more
+        "that records it and makes its key citable.\n"
+        + (
+            "Entries marked [method source] are the methods literature of this study's template: where the "
+            "paper describes a method the study used (in the methods or data section), cite its source from "
+            "these. Cite only the methods the study used; leave the others out.\n"
+            if any(e[3] == "template" for e in entries)
+            else ""
+        )
+        + "\n".join(lines)
+        + more
     )
 
 

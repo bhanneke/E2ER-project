@@ -1,0 +1,16 @@
+{
+  "https://api.openalex.org/works?filter=title_and_abstract.search:grit+AND+%22course+grades%22,publication_year:2010-2024,type:article,is_paratext:false&per-page=1&select=id&mailto=research%40e2er.app": "b67ddb06a38dec13.json",
+  "https://api.openalex.org/works?filter=title_and_abstract.search:grit+AND+%22course+grades%22,publication_year:2010-2024,type:article,is_paratext:false&per-page=100&cursor=*&select=id,doi,title,publication_year,publication_date,type,primary_location,authorships,abstract_inverted_index,open_access,best_oa_location,biblio,language&mailto=research%40e2er.app": "6c3e3a2a642f3f2b.json",
+  "https://api.openalex.org/works?filter=title_and_abstract.search:grit+AND+%28GPA+OR+%22grade+point+average%22%29,publication_year:2010-2024,type:article,is_paratext:false&per-page=1&select=id&mailto=research%40e2er.app": "ea5bb3207d938147.json",
+  "https://api.openalex.org/works?filter=title_and_abstract.search:grit+AND+%28GPA+OR+%22grade+point+average%22%29,publication_year:2010-2024,type:article,is_paratext:false&per-page=100&cursor=*&select=id,doi,title,publication_year,publication_date,type,primary_location,authorships,abstract_inverted_index,open_access,best_oa_location,biblio,language&mailto=research%40e2er.app": "ddc0513713906765.json",
+  "https://api.openalex.org/works?filter=title_and_abstract.search:grit+AND+%28GPA+OR+%22grade+point+average%22%29,publication_year:2010-2024,type:article,is_paratext:false&per-page=100&cursor=4&select=id,doi,title,publication_year,publication_date,type,primary_location,authorships,abstract_inverted_index,open_access,best_oa_location,biblio,language&mailto=research%40e2er.app": "896f9c0c1102940a.json",
+  "https://api.openalex.org/works?filter=title_and_abstract.search:grit+AND+%28GPA+OR+%22grade+point+average%22%29,publication_year:2010-2024,type:article,is_paratext:false&per-page=100&cursor=8&select=id,doi,title,publication_year,publication_date,type,primary_location,authorships,abstract_inverted_index,open_access,best_oa_location,biblio,language&mailto=research%40e2er.app": "9b94155d809a87a7.json",
+  "https://oa.example.org/W101.pdf": "W101.pdf",
+  "https://oa.example.org/W102.pdf": "W102.pdf",
+  "https://oa.example.org/W103.pdf": "W103.pdf",
+  "https://oa.example.org/W104.pdf": "W104.pdf",
+  "https://oa.example.org/W105.pdf": "W105.pdf",
+  "https://oa.example.org/W106.pdf": "W106.pdf",
+  "https://oa.example.org/W107.pdf": "W107.pdf",
+  "https://oa.example.org/W111.pdf": "W111.pdf"
+}

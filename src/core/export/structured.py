@@ -57,6 +57,8 @@ EXPORT_MAP: dict[str, list[tuple[str, str | None]]] = {
         ("data_dictionary.json", None),
         # what e2er-data recorded per external-source load (release, URLs, SHA-256)
         ("data_sources.json", None),
+        # A text study's corpus: one entry per document (source, licence, SHA-256, tokens).
+        ("corpus_manifest.json", None),
     ],
     "results": [
         ("estimation_results.json", None),
@@ -76,6 +78,37 @@ EXPORT_MAP: dict[str, list[tuple[str, str | None]]] = {
         ("robustness.md", None),
         ("field_boundary_counts.json", None),
         ("reading_list.json", None),
+        # The descriptive and time-series templates' checks (data_quality.py, forecast_checks.py).
+        ("data_quality.json", None),
+        ("data_quality.md", None),
+        ("figure_check.json", None),
+        ("forecast_check.json", None),
+        # What the method checks of the policy-evaluation and spatial-analysis templates found.
+        ("did_design_check.json", None),
+        ("did_check.json", None),
+        ("spatial_design_check.json", None),
+        ("spatial_check.json", None),
+        # The systematic-review template: the records found, the search as run, the screening
+        # counts, where each full text came from, every extracted number with its source and
+        # trace, the flow counts and the cite keys (full texts themselves are not exported).
+        ("records.json", None),
+        ("search_log.json", None),
+        ("search_counts.md", None),
+        ("screening_check.json", None),
+        ("screening_sample.md", None),
+        ("fulltext_log.json", None),
+        ("extraction_check.json", None),
+        ("extraction_check.md", None),
+        ("prisma_counts.json", None),
+        ("meta_references.json", None),
+        # What the text-analysis template's checks found (text_checks.py), the sample the
+        # analysis drew of each dictionary measure, and the text validator's judgements.
+        ("corpus_check.json", None),
+        ("text_check.json", None),
+        ("validation_sample.json", None),
+        ("text_validation.json", None),
+        ("text_validation.md", None),
+        ("text_validation_check.json", None),
         ("*.csv", None),  # model-generated intermediate outputs at workspace root
     ],
     "design": [
@@ -89,6 +122,11 @@ EXPORT_MAP: dict[str, list[tuple[str, str | None]]] = {
         # An event study's design is a pre-registered plan file too: the lock
         # fingerprints it, so `e2er verify` looks for it here.
         ("event_design.json", None),
+        # The designs the policy-evaluation and spatial-analysis templates check.
+        ("did_design.json", None),
+        ("spatial_design.json", None),
+        # The text-analysis template's corpus design (corpus, preprocessing, analyses).
+        ("corpus_design.json", None),
         ("econometric_spec.md", None),
         ("model_spec.md", None),
         # The frozen pre-registration and its fingerprints (researcher step),
@@ -101,6 +139,17 @@ EXPORT_MAP: dict[str, list[tuple[str, str | None]]] = {
         ("field_boundary.md", None),
         ("field_lanes.json", None),
         ("field_lanes.md", None),
+        # The time-series template's forecast setup and the freeze of its hold-out.
+        ("forecast_design.json", None),
+        ("forecast_design.md", None),
+        ("holdout_freeze.json", None),
+        # The systematic-review template's judgement files: protocol, screening, extraction.
+        ("review_protocol.json", None),
+        ("review_protocol.md", None),
+        ("screening.json", None),
+        ("screening.md", None),
+        ("extraction.json", None),
+        ("extraction.md", None),
     ],
     # Loose exploration scripts + logs the model writes (analysis.py, explore.py,
     # q.py, run_estimation.log, …). The broad globs run last so canonical files

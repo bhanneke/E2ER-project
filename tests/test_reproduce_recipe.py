@@ -422,3 +422,74 @@ def test_a_script_changed_after_its_last_run_is_named(tmp_path: Path):
     ws = _ordered_workspace(tmp_path)
     (ws / "aa_patch.py").write_text(ORDERED_SCRIPTS["aa_patch.py"] + "# edited\n", encoding="utf-8")
     assert any("aa_patch.py changed after the run last ran it" in n for n in rr.chain_of(ws).notes)
+
+
+QUERY_SCRIPT = """\
+import csv, json, subprocess
+out = subprocess.run(["e2er-data", "query", "sql", "SELECT v FROM t"], capture_output=True, text=True).stdout
+spec = json.load(open("figure_spec.json"))
+spec["figures"].append({"filename": "fig_map.pdf", "figure_type": "map"})
+with open("figure_spec.json", "w") as f:
+    json.dump(spec, f)
+with open("spatial_weights.csv", "w", newline="") as f:
+    csv.writer(f).writerow(["from", "to", "weight"])
+json.dump({"result_kind": "spatial"}, open("estimation_results.json", "w"))
+"""
+
+
+def test_a_script_that_queries_data_db_and_updates_files_in_place_gets_the_right_inputs(tmp_path: Path):
+    """The spatial live run of 2026-10-11: its script read data.db only through `e2er-data query sql`,
+    updated figure_spec.json in place and wrote its weights; the recipe left data.db out (so the rerun
+    had no data) and would have compared the weights as an input."""
+    ws = tmp_path / "workspaces" / "2026-10-11-spatial"
+    ws.mkdir(parents=True)
+    (ws / "manifest.json").write_text(json.dumps({"paper_id": "p-sp", "title": "Spatial"}), encoding="utf-8")
+    con = sqlite3.connect(ws / "data.db")
+    con.execute("CREATE TABLE t (v REAL)")
+    con.commit()
+    con.close()
+    (ws / "figure_spec.json").write_text(json.dumps({"figures": []}), encoding="utf-8")
+    (ws / "spatial_weights.csv").write_text("from,to,weight\n", encoding="utf-8")
+    (ws / "run_estimation.py").write_text(QUERY_SCRIPT, encoding="utf-8")
+    (ws / "estimation_results.json").write_text(json.dumps({"result_kind": "spatial"}), encoding="utf-8")
+    assert rr.written_files([ws / "run_estimation.py"]) >= {"figure_spec.json", "estimation_results.json"}
+    out = export_paper(ws, tmp_path / "exports", date_str="20261011")
+    recipe = json.loads((out / "reproduce.json").read_text(encoding="utf-8"))
+    inputs = {i["path"] for i in recipe["inputs"]}
+    assert inputs == {"data.db"}
+    assert recipe["files"]["figure_spec.json"] == "results/figure_spec.json"  # read first, laid out as left
+
+
+def test_e2er_bookkeeping_files_and_a_bare_wildcard_are_not_inputs(tmp_path: Path):
+    """The live text run's analysis tested dictionary entries with `entry.endswith("*")`: the bare "*" was globbed
+    and every file of the study, the run's script log among them, became an input the rerun reported missing."""
+    ws = _fomc_workspace(tmp_path)
+    (ws / ".pipeline_state.json").write_text("{}", encoding="utf-8")
+    (ws / ".lit_budget.json").write_text("{}", encoding="utf-8")
+    script = ws / "run_estimation.py"
+    script.write_text(
+        script.read_text(encoding="utf-8")
+        + '\n_STATE = ".pipeline_state.json"\n_PREFIX = [e for e in ["fear*"] if e.endswith("*")]\n',
+        encoding="utf-8",
+    )
+    out = export_paper(ws, tmp_path / "exports", date_str="20261011")
+    recipe = json.loads((out / "reproduce.json").read_text(encoding="utf-8"))
+    assert [i["path"] for i in recipe["inputs"]] == ["data.db"]
+    assert not any("which a script reads" in n for n in recipe.get("notes") or []), recipe.get("notes")
+
+
+def test_a_script_that_only_reads_the_results_is_not_a_step_of_the_rerun(tmp_path: Path):
+    """The live text run's analysis checked its own output with _validate_figs.py, which only reads
+    estimation_results.json; as a step of the rerun it failed and the study did not reproduce."""
+    ws = _fomc_workspace(tmp_path)
+    check = ws / "_validate_figs.py"
+    check.write_text(
+        'import json\nr = json.load(open("estimation_results.json", encoding="utf-8"))\nassert r["figures"]\n',
+        encoding="utf-8",
+    )
+    stamp = (ws / "run_estimation.py").stat().st_mtime + 1  # written between the estimation and the results
+    os.utime(check, (stamp, stamp))
+    out = export_paper(ws, tmp_path / "exports", date_str="20261011")
+    recipe = json.loads((out / "reproduce.json").read_text(encoding="utf-8"))
+    assert ["python", "_validate_figs.py"] not in [s["run"] for s in recipe["steps"]]
+    assert ["python", "compute_h2_v2.py"] in [s["run"] for s in recipe["steps"]]

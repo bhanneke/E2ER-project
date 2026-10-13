@@ -1,0 +1,301 @@
+# Systematic review and meta-analysis: a question in, the studies that answer it found, screened,
+# extracted and pooled, and a review whose every number e2er checks.
+#
+# The workflow follows the PRISMA 2020 statement (Page et al. 2021): a protocol
+# fixed before the search, a recorded and repeatable search, screening with a
+# reason for every exclusion, eligibility on the full text, extraction with
+# risk of bias, a synthesis that reports heterogeneity, and a flow diagram of
+# the records. What e2er adds: every extracted number is read back from the
+# page and quote the extractor cites, and the meta-analysis is e2er's own code
+# (src/modules/metaanalysis/stats.py, checked against metafor's published
+# results), written into the study as run_estimation.py so `e2er reproduce`
+# reruns it.
+#
+# Judgement where judgement is needed, code for everything that is counted:
+#
+#   design_protocol     the protocol designer writes review_protocol.json: the
+#                       question (PICO, PECO or another form), eligibility
+#                       criteria with ids, databases, searches, outcome, effect
+#                       measure, synthesis settings, risk-of-bias tool
+#   search              code runs every search on OpenAlex (and Crossref when
+#                       named), records the queries, counts and dates, and
+#                       removes duplicates (records.json); runs at every start,
+#                       so an edited protocol is searched again
+#   review_protocol     the researcher approves or edits the protocol, seeing
+#                       the counts
+#   preregister         OPTIONAL: the protocol frozen with its fingerprint
+#   screen              the study screener decides every record on its title
+#                       and abstract (include, exclude with criterion and
+#                       reason, unsure)
+#   screening_check     code: every record decided, every exclusion with a
+#                       criterion of the protocol and a reason; the sample for
+#                       the researcher (screening_sample.md)
+#   review_screening    the researcher reads the unsure records and a sample of
+#                       exclusions, and corrects decisions
+#   fulltext            code: open-access full texts of the included and
+#                       unsure records, page by page, or the reason there is none
+#   extract             the study extractor decides eligibility on the full
+#                       text and extracts effects, characteristics and risk of
+#                       bias, every number with its page and quote
+#   extraction_check    code: every extracted number read back from its source
+#   review_extraction   OPTIONAL: the researcher reads the extraction table
+#   synthesis           code: random-effects meta-analysis (REML or DL), tau^2,
+#                       I^2, Q, prediction interval, Egger's test, trim and fill,
+#                       leave-one-out; narrative synthesis below min_studies;
+#                       forest, funnel and PRISMA flow figures; tables
+#   write_draft         the review writer drafts the review from the results
+#   review_draft        the researcher reads the draft
+#   review              number check, citation check, then the panel
+#
+# Maintained by the e2er contributors.
+
+name = "systematic-review"
+title = "Systematic review and meta-analysis"
+description = "A systematic review with a random-effects meta-analysis, following PRISMA 2020: a protocol fixed before the search, a recorded OpenAlex search, screening with a reason for every exclusion, open-access full texts, extraction in which every number is traced to its page and quote, a meta-analysis by e2er's own code (tau^2, I^2, prediction interval, Egger's test, trim and fill, leave-one-out) or a plain narrative synthesis when too few studies can be pooled, and a PRISMA flow diagram."
+methodologies = ["systematic review", "meta-analysis"]
+
+results     = "metaanalysis"
+causal      = false
+base_skill  = "base/researcher"
+data_skills = []
+review_weights = { methods_reviewer = 1.5, data_reviewer = 1.25, technical_reviewer = 1.0, plausibility_reviewer = 1.0, writing_reviewer = 0.75 }
+
+finalize = ["compile", "audit_export", "github_push", "structured_export"]
+
+[skills]
+methods_reviewer      = ["methods/meta-analysis"]
+data_reviewer         = ["methods/meta-analysis"]
+technical_reviewer    = ["methods/meta-analysis"]
+plausibility_reviewer = ["methods/meta-analysis"]
+revisor               = ["methods/meta-analysis"]
+patch_revisor         = ["methods/meta-analysis"]
+
+[[credit]]
+creator   = "Matthew J. Page, Joanne E. McKenzie, Patrick M. Bossuyt, Isabelle Boutron, Tammy C. Hoffmann, Cynthia D. Mulrow and others"
+role      = "method"
+relation  = "based_on"
+kind      = "article"
+title     = "The PRISMA 2020 statement: an updated guideline for reporting systematic reviews"
+publisher = "BMJ 372, n71"
+published = "2021-03-29"
+url       = "https://doi.org/10.1136/bmj.n71"
+accessed  = "2026-10-11"
+found_via = "Crossref record checked 2026-10-11"
+note      = "The steps (protocol, search, screening, eligibility, extraction, risk of bias, synthesis) and the flow diagram."
+cite_key  = "page2021prisma"
+
+[[credit]]
+creator   = "Rebecca DerSimonian and Nan Laird"
+role      = "method"
+relation  = "cites"
+kind      = "article"
+title     = "Meta-analysis in clinical trials"
+publisher = "Controlled Clinical Trials 7(3), 177-188"
+published = "1986-09"
+url       = "https://doi.org/10.1016/0197-2456(86)90046-2"
+accessed  = "2026-10-11"
+found_via = "Crossref record checked 2026-10-11"
+note      = "The random-effects model and the method-of-moments estimate of tau^2 (DL)."
+cite_key  = "dersimonian1986meta"
+
+[[credit]]
+creator   = "Wolfgang Viechtbauer"
+role      = "method"
+relation  = "cites"
+kind      = "article"
+title     = "Bias and Efficiency of Meta-Analytic Variance Estimators in the Random-Effects Model"
+publisher = "Journal of Educational and Behavioral Statistics 30(3), 261-293"
+published = "2005-09"
+url       = "https://doi.org/10.3102/10769986030003261"
+accessed  = "2026-10-11"
+found_via = "Crossref record checked 2026-10-11"
+note      = "The REML estimate of tau^2 (the default) and its Fisher scoring."
+cite_key  = "viechtbauer2005bias"
+
+[[credit]]
+creator   = "Julian P. T. Higgins and Simon G. Thompson"
+role      = "method"
+relation  = "cites"
+kind      = "article"
+title     = "Quantifying heterogeneity in a meta-analysis"
+publisher = "Statistics in Medicine 21(11), 1539-1558"
+published = "2002-06-15"
+url       = "https://doi.org/10.1002/sim.1186"
+accessed  = "2026-10-11"
+found_via = "Crossref record checked 2026-10-11"
+note      = "I^2 and H^2."
+cite_key  = "higgins2002quantifying"
+
+[[credit]]
+creator   = "Richard D. Riley, Julian P. T. Higgins and Jonathan J. Deeks"
+role      = "method"
+relation  = "cites"
+kind      = "article"
+title     = "Interpretation of random effects meta-analyses"
+publisher = "BMJ 342, d549"
+published = "2011-02-10"
+url       = "https://doi.org/10.1136/bmj.d549"
+accessed  = "2026-10-11"
+found_via = "Crossref record checked 2026-10-11"
+note      = "The prediction interval (t on k - 2 degrees of freedom)."
+cite_key  = "riley2011interpretation"
+
+[[credit]]
+creator   = "Matthias Egger, George Davey Smith, Martin Schneider and Christoph Minder"
+role      = "method"
+relation  = "cites"
+kind      = "article"
+title     = "Bias in meta-analysis detected by a simple, graphical test"
+publisher = "BMJ 315(7109), 629-634"
+published = "1997-09-13"
+url       = "https://doi.org/10.1136/bmj.315.7109.629"
+accessed  = "2026-10-11"
+found_via = "Crossref record checked 2026-10-11"
+note      = "Egger's regression test for funnel-plot asymmetry."
+cite_key  = "egger1997bias"
+
+[[credit]]
+creator   = "Sue Duval and Richard Tweedie"
+role      = "method"
+relation  = "cites"
+kind      = "article"
+title     = "Trim and Fill: A Simple Funnel-Plot-Based Method of Testing and Adjusting for Publication Bias in Meta-Analysis"
+publisher = "Biometrics 56(2), 455-463"
+published = "2000-06"
+url       = "https://doi.org/10.1111/j.0006-341X.2000.00455.x"
+accessed  = "2026-10-11"
+found_via = "Crossref record checked 2026-10-11"
+note      = "Trim and fill, estimator L0."
+cite_key  = "duval2000trim"
+
+[[credit]]
+creator   = "Wolfgang Viechtbauer"
+role      = "method"
+relation  = "cites"
+kind      = "article"
+title     = "Conducting Meta-Analyses in R with the metafor Package"
+publisher = "Journal of Statistical Software 36(3)"
+published = "2010"
+url       = "https://doi.org/10.18637/jss.v036.i03"
+accessed  = "2026-10-11"
+found_via = "Crossref record checked 2026-10-11"
+note      = "The reference implementation e2er's estimates were checked against (the BCG vaccine trials: REML and DL estimates, tau^2, I^2, Q, trim and fill)."
+cite_key  = "viechtbauer2010conducting"
+
+[[steps]]
+kind = "specialists"
+name = "design_protocol"
+run  = ["protocol_designer"]
+
+[[steps]]
+kind      = "gate"
+name      = "search"
+check     = "meta_search"
+# Runs at every start: a protocol the researcher edited is searched again;
+# unchanged searches are read from the cache without a request.
+resumable = false
+
+[steps.settings]
+max_records  = 600
+max_requests = 40
+max_crossref = 100
+
+[[steps]]
+kind  = "researcher"
+name  = "review_protocol"
+files = ["review_protocol.json", "review_protocol.md", "search_counts.md", "records.csv"]
+
+[[steps]]
+kind     = "preregister"
+name     = "preregister"
+optional = true
+files    = ["review_protocol.md", "review_protocol.json", "search_counts.md"]
+
+[[steps]]
+kind = "specialists"
+name = "screen"
+run  = ["study_screener"]
+
+[[steps]]
+kind      = "gate"
+name      = "screening_check"
+check     = "meta_screening"
+# Runs again after the researcher edits screening.json.
+resumable = false
+
+[steps.settings]
+sample_size = 20
+
+[[steps]]
+kind  = "researcher"
+name  = "review_screening"
+files = ["screening.json", "screening_sample.md", "screening.md", "records.csv"]
+
+[[steps]]
+kind      = "gate"
+name      = "fulltext"
+check     = "meta_fulltext"
+# Runs at every start: a PDF the researcher saves in data/fulltext/ is read then.
+resumable = false
+
+[steps.settings]
+max_downloads = 150
+
+[[steps]]
+kind = "specialists"
+name = "extract"
+run  = ["study_extractor"]
+
+[[steps]]
+kind      = "gate"
+name      = "extraction_check"
+check     = "meta_extraction"
+resumable = false
+before    = ["meta_review_writer"]
+
+[[steps]]
+kind     = "researcher"
+name     = "review_extraction"
+optional = true
+files    = ["extraction.json", "extraction_check.md", "extraction.md", "risk_of_bias.csv"]
+
+[[steps]]
+kind      = "gate"
+name      = "synthesis"
+check     = "meta_synthesis"
+resumable = false
+before    = ["meta_review_writer"]
+
+[[steps]]
+kind = "specialists"
+name = "write_draft"
+run  = ["meta_review_writer"]
+
+[[steps]]
+kind  = "researcher"
+name  = "review_draft"
+files = ["paper_draft.tex", "estimation_results.json"]
+
+[[steps]]
+kind     = "specialists"
+name     = "polish"
+modes    = ["iterative"]
+parallel = true
+run      = ["polish_numerics", "polish_bibliography"]
+
+[[steps]]
+kind     = "aggregate"
+name     = "review"
+parallel = true
+run = [
+    "methods_reviewer",
+    "data_reviewer",
+    "plausibility_reviewer",
+    "writing_reviewer",
+    "technical_reviewer",
+]
+
+[[steps]]
+kind = "specialists"
+name = "revision"
+run  = ["revisor", "patch_revisor"]

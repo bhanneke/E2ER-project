@@ -98,7 +98,8 @@
           },
           "published": {
             "type": "string",
-            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+            "pattern": "^\\d{4}(-\\d{2}(-\\d{2})?)?$",
+            "description": "As precise as the publisher gives it: YYYY-MM-DD, YYYY-MM (a journal issue) or YYYY (a book)."
           },
           "url": {
             "type": "string",
@@ -132,6 +133,42 @@
         },
         "additionalProperties": false
       }
+    },
+    "results": {
+      "enum": [
+        "regression",
+        "descriptive",
+        "timeseries",
+        "spatial",
+        "text",
+        "metaanalysis"
+      ],
+      "default": "regression",
+      "description": "The kind of results the study reports. Decides the contract the estimation check holds estimation_results.json to (src/core/pipeline/result_kinds.py), the files the number check traces the paper's numbers to, and the schema skill the analysis specialist reads (data/<kind>-results-schema). Default regression: e2er's contract before 0.16.0."
+    },
+    "causal": {
+      "type": "boolean",
+      "description": "Whether the study makes a causal claim. When true, the identification strategist's identification_spec.json is required and the headline regression must implement it. Default: true for regression results, false for every other kind."
+    },
+    "base_skill": {
+      "type": "string",
+      "default": "base/economist",
+      "description": "The persona skill specialists read in place of base/economist, e.g. base/researcher outside economics."
+    },
+    "data_skills": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "The domain data skills of the data architect and data analyst. When given, they replace the blockchain, DeFi and Allium skills (the general connector skills stay); [] keeps none. Absent: the registry's, as before."
+    },
+    "review_weights": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "number",
+        "exclusiveMinimum": 0
+      },
+      "description": "Weight of each reviewer of the template's panel (its aggregate step) in the combined score, in place of the default weight. Only reviewers of the panel."
     }
   },
   "$defs": {
@@ -191,9 +228,26 @@
             "field_network",
             "field_main_path",
             "field_robustness",
-            "field_map"
+            "field_map",
+            "data_quality",
+            "figure_data",
+            "forecast_design",
+            "forecast_evaluation",
+            "did_design",
+            "did_results",
+            "spatial_design",
+            "spatial_results",
+            "meta_search",
+            "meta_screening",
+            "meta_fulltext",
+            "meta_extraction",
+            "meta_synthesis",
+            "corpus_design",
+            "corpus",
+            "text_results",
+            "text_validation"
           ],
-          "description": "Which deterministic check to run. Required for `gate`. event_window verifies an event study's design (event_design.json) before estimation: estimation window length and gap, overlapping events, event dates in the data calendar. package_integrity, sandbox and reproduction run as steps of their own in the replication template (no `after`): package_integrity downloads the Zenodo record the question names and verifies every file against Zenodo's checksum (SHA-256 recorded); sandbox runs the plan's entry points in Docker (pinned image, --network none, read-only package, limits); reproduction re-reads every number of reproduction_report.json from the run's output files. package_integrity and sandbox block in every governance regime. field_retrieve, field_network, field_main_path, field_robustness and field_map run as steps of their own in the field-map template: retrieval of the boundaries from OpenAlex, the citation network with its completeness check, SPC main paths and key routes, the same on every alternative boundary, and the map with its exports. field_network can be shadowed by a governance regime; the other four block in every regime. numbers and citations may also run as steps of their own (the field-map template has no review step to run them in)."
+          "description": "Which deterministic check to run. Required for `gate`. event_window verifies an event study's design (event_design.json) before estimation: estimation window length and gap, overlapping events, event dates in the data calendar. package_integrity, sandbox and reproduction run as steps of their own in the replication template (no `after`): package_integrity downloads the Zenodo record the question names and verifies every file against Zenodo's checksum (SHA-256 recorded); sandbox runs the plan's entry points in Docker (pinned image, --network none, read-only package, limits); reproduction re-reads every number of reproduction_report.json from the run's output files. package_integrity and sandbox block in every governance regime. field_retrieve, field_network, field_main_path, field_robustness and field_map run as steps of their own in the field-map template: retrieval of the boundaries from OpenAlex, the citation network with its completeness check, SPC main paths and key routes, the same on every alternative boundary, and the map with its exports. field_network can be shadowed by a governance regime; the other four block in every regime. numbers and citations may also run as steps of their own (the field-map template has no review step to run them in). data_quality (with `after`, in the descriptive template) reads every table data_dictionary.json declares from data.db and fails on numeric columns without a unit, duplicate rows (on the declared key), columns missing more than max_missing_share of their values without a stated reason, and coverage the data do not span; it writes data_quality.md. figure_data (a step of its own) re-reads every figure of figure_spec.json from the data.db table or results path its `source` names. forecast_design (with `after`, in the time-series template) checks forecast_design.json against the series (hold-out = the last periods, baselines, candidates, stationarity and trend diagnostics, interval level) and freezes it with its hold-out in holdout_freeze.json before any model is fitted. forecast_evaluation (a step of its own) holds the results to the frozen setup: diagnostics and models on training periods only, every model evaluated on exactly the hold-out with its predictions, RMSE and MAE recomputed from data.db, forecasts beyond the data with intervals. did_design and did_results sit inside the dispatch of the policy-evaluation template (with `after`): the difference-in-differences design (did_design.json) against the panel before estimation (outcome, comparison group, staggered timing and a robust estimator, pre-treatment periods), and the results after it (event-study path, pre-trends test, placebo or sensitivity, the declared estimator; the event-study plot is drawn from the results). spatial_design and spatial_results do the same in the spatial-analysis template: the boundaries' source, CRS, units without geometry and the weights (spatial_design.json) before the analysis, and the weights file, Moran's I with permutation inference recomputed from the units and weights, and the maps after it (src/core/pipeline/did_checks.py, spatial_checks.py). meta_search, meta_screening, meta_fulltext, meta_extraction and meta_synthesis run as steps of their own in the systematic-review template (src/core/pipeline/meta_checks.py): the protocol's searches on OpenAlex (recorded, deduplicated), every record decided with a criterion and a reason for each exclusion, open-access full texts page by page, every extracted number read back from the page and quote it cites, and the random-effects meta-analysis by e2er's own run_estimation.py with its figures and tables (narrative synthesis below the protocol's min_studies). meta_search and meta_fulltext block in every regime. corpus_design, corpus, text_results and text_validation sit inside the dispatch of the text-analysis template (with `after`): the corpus design (corpus_design.json: question, corpus and sampling, metadata with sources, preprocessing, groups, analyses, sampling bias), the corpus as built (every document with source, licence and SHA-256; tokens and corpus statistics recomputed with the recorded preprocessing; word lists frozen), the results recounted from the corpus (term counts, keyness G2 and log ratio, collocations, dictionary hits, topic models with seeds, k-selection evidence and stability across seeds, a figure of every diachronic, keyness and topic model), and the hand-checked sample of every dictionary or sentiment measure (quotes found in their documents, every item judged, precision recomputed) (src/core/pipeline/text_checks.py)."
         },
         "on_fail": {
           "enum": [
@@ -239,9 +293,21 @@
           },
           "description": "researcher, preregister and gate steps: act inside the strategist's dispatch, right after these specialists have written their output, instead of at this position in the list. A gate with `after` also runs before any group that contains the econometrics specialist, so the estimation cannot pass it by."
         },
+        "before": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "gate steps: specialists (the draft writers, e.g. paper_drafter) that are not dispatched until this check has passed. Inside the dispatch (with `after`) the runner sends out the specialists of `after` that the plan left out, runs the check, and only then dispatches these. A check that runs as a step of its own must come before every step that runs them."
+        },
+        "optional": {
+          "type": "boolean",
+          "default": false,
+          "description": "researcher and preregister steps: the step runs only when the researcher chooses it for the run (New study's stop choices, `e2er run --review-at <name>`), e.g. the time-series template's pre-registration."
+        },
         "settings": {
           "type": "object",
-          "description": "gate steps: parameters of the check. event_window takes min_estimation_days (default 120), min_gap_days (default 10) and max_overlap_share (0 to 1, default 0). package_integrity takes max_mb (default 1000). sandbox takes cpus (default 2), memory_gb (default 4), timeout_minutes per entry point (default 60) install_timeout_minutes (default 45) and snapshot (package-date, latest or YYYY-MM-DD; default package-date). reproduction takes minor_rel_tolerance (0 to 1, default 0.10). field_retrieve takes max_papers (default 5000; a boundary above it is refused before its pages are read) and max_requests (default 300). field_network takes max_isolated_share (0 to 1, default 0.5), max_missing_refs_share (0 to 1, default 0.4) and min_papers (default 100). field_main_path takes key_routes (default 10).",
+          "description": "gate steps: parameters of the check. event_window takes min_estimation_days (default 120), min_gap_days (default 10) and max_overlap_share (0 to 1, default 0). package_integrity takes max_mb (default 1000). sandbox takes cpus (default 2), memory_gb (default 4), timeout_minutes per entry point (default 60) install_timeout_minutes (default 45) and snapshot (package-date, latest or YYYY-MM-DD; default package-date). reproduction takes minor_rel_tolerance (0 to 1, default 0.10). field_retrieve takes max_papers (default 5000; a boundary above it is refused before its pages are read) and max_requests (default 300). field_network takes max_isolated_share (0 to 1, default 0.5), max_missing_refs_share (0 to 1, default 0.4) and min_papers (default 100). field_main_path takes key_routes (default 10). data_quality takes max_missing_share (0 to 1, default 0.05). forecast_design takes min_train_periods (default 24). forecast_evaluation takes error_tolerance (0 to 1, default 0.005: the relative difference allowed between a stated and a recomputed error). did_design takes min_pre_periods (default 2). did_results takes min_pre_periods (default 2) and pretrend_alpha (default 0.05). spatial_design takes max_unmatched_share (0 to 1, default 0.2). spatial_results takes min_permutations (default 99). meta_search takes max_records (default 600; a search above it is refused before its pages are read), max_requests (default 40) and max_crossref (default 100). meta_screening takes sample_size (default 20: the exclusions the researcher reads). meta_fulltext takes max_downloads (default 150). corpus_design takes min_seeds (default 3). text_results takes min_seeds (default 3) and min_examples (default 2: example documents per topic). text_validation takes min_validation_items (default 20). corpus takes none.",
           "properties": {
             "min_estimation_days": {
               "type": "integer",
@@ -308,6 +374,36 @@
               "minimum": 0
             },
             "key_routes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "max_missing_share": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "min_train_periods": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "error_tolerance": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "max_records": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "max_crossref": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "sample_size": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "max_downloads": {
               "type": "integer",
               "minimum": 0
             }

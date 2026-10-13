@@ -1,0 +1,22 @@
+{
+  "name": "text-design-first",
+  "base": "text",
+  "source": "The text replay (base) in the iterative mode with the plan of the live run on 2026-10-11: the initial phase ends with the corpus design; the corpus, the analysis, its validation and the draft come in the first round. The checks of the results wait for the analysis instead of sending it out at the end of the initial phase.",
+  "initial_groups": [
+    ["idea_developer", "literature_scanner"],
+    ["data_architect"]
+  ],
+  "iterations": [
+    {
+      "work_orders": [
+        {"specialist": "econometrics_specialist", "parallel_group": 0, "context_tier": 2, "focus": "Run the analysis the corpus design declares."},
+        {"specialist": "text_validator", "parallel_group": 1, "context_tier": 2, "focus": "Judge every item of validation_sample.json."},
+        {"specialist": "paper_drafter", "parallel_group": 2, "context_tier": 2, "focus": "Draft the paper from the results."},
+        {"specialist": "abstract_writer", "parallel_group": 3, "context_tier": 2, "focus": "Write the abstract."}
+      ],
+      "rationale": "The corpus is built; analyse, validate and draft."
+    }
+  ],
+  "ceiling_checks": [{"verdict": "proceed_to_review", "reason": "The draft reports the checked results.", "suggested_pivots": []}],
+  "self_attack": {"findings": []}
+}

@@ -485,6 +485,36 @@ def _reconstruct_workspace(bundle: Path, ws: Path) -> None:
     spec = bundle / "design" / "identification_spec.json"
     if spec.is_file():
         shutil.copy2(spec, ws / "identification_spec.json")
+    # The method checks of the policy-evaluation and spatial-analysis templates read
+    # their design file and the files the analysis wrote (units, weights).
+    for name in ("did_design.json", "spatial_design.json", "review_protocol.json", "extraction.json"):
+        if (bundle / "design" / name).is_file():
+            shutil.copy2(bundle / "design" / name, ws / name)
+    if resdir.is_dir():
+        for f in resdir.glob("*.csv"):
+            shutil.copy2(f, ws / f.name)
+    # A text study's checks recount the corpus: its design, the corpus (data.db) and
+    # the word lists the design names (stop words, lemmas, dictionaries, lexicons).
+    if (bundle / "design" / "corpus_design.json").is_file():
+        _reconstruct_text_workspace(bundle, ws)
+
+
+def _reconstruct_text_workspace(bundle: Path, ws: Path) -> None:
+    from .core.pipeline.text_checks import DESIGN_FILE, MANIFEST_FILE, referenced_files
+
+    shutil.copy2(bundle / "design" / DESIGN_FILE, ws / DESIGN_FILE)
+    for name in ("data.db", MANIFEST_FILE):
+        if (bundle / "data" / name).is_file():
+            shutil.copy2(bundle / "data" / name, ws / name)
+    design = _load_json(ws / DESIGN_FILE)
+    for rel in referenced_files(design if isinstance(design, dict) else {}):
+        target = ws / rel
+        if target.is_file() or not target.resolve().is_relative_to(ws.resolve()):
+            continue
+        found = sorted(p for p in bundle.rglob(Path(rel).name) if p.is_file())
+        if found:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(found[0], target)
 
 
 # ── check 2: numbers ─────────────────────────────────────────────────────────
@@ -725,6 +755,83 @@ def _check_spec(ws: Path) -> Check:
     return Check("spec", FAIL, c.reason)
 
 
+# ── check 4b: the results contract of a study that is not a regression ───────
+
+
+def _check_results_contract(ws: Path) -> Check | None:
+    """The results file against the contract of the kind it names (``result_kind``).
+
+    None for a regression study (the file names no kind): its contract is the
+    spec and numbers checks above, and its verify output stays as it was.
+    """
+    from .core.pipeline.result_kinds import RESULTS_FILE, check_results, file_kind, get
+
+    kind = file_kind(ws)
+    if kind is None or kind == "regression":
+        return None
+    problems = check_results(kind, _load_json(ws / RESULTS_FILE), ws)
+    if problems:
+        more = f"; and {len(problems) - 3} more" if len(problems) > 3 else ""
+        return Check("results contract", FAIL, f"{kind}: " + "; ".join(problems[:3]) + more)
+    return Check("results contract", PASS, f"{kind} results ({get(kind).label}) are complete and consistent")
+
+
+# ── check 4c: the template's method checks on the exported files ─────────────
+
+
+def _check_method(ws: Path) -> Check | None:
+    """The checks of a DiD, spatial or meta-analysis study's results, again on the exported files.
+
+    None when the bundle carries neither design file. The design-side checks
+    need the study's data (data.db), which a bundle may not ship (boundaries
+    under terms of their own), so only the results side
+    runs here: for DiD the event-study path, the pre-trends test, the placebo or
+    sensitivity analysis and the declared estimator; for a spatial study the
+    weights file and Moran's I recomputed from the units and weights.
+    """
+    from .core.pipeline.did_checks import DESIGN_FILE as DID_DESIGN
+    from .core.pipeline.did_checks import check_did_results
+    from .core.pipeline.spatial_checks import DESIGN_FILE as SPATIAL_DESIGN
+    from .core.pipeline.spatial_checks import check_spatial_results
+
+    if (ws / DID_DESIGN).is_file():
+        what, verdict = "difference-in-differences", check_did_results(ws)
+    elif (ws / SPATIAL_DESIGN).is_file():
+        what, verdict = "spatial", check_spatial_results(ws)
+    elif (ws / "review_protocol.json").is_file() and (ws / "extraction.json").is_file():
+        # A meta-analysis: the extracted numbers against their quotes, and the effects
+        # against the extraction (src/modules/metaanalysis/workflow.py, export_check).
+        from .modules.metaanalysis.workflow import export_check
+
+        what, verdict = "meta-analysis", export_check(ws)  # type: ignore[assignment]
+    elif (ws / "corpus_design.json").is_file():
+        return _check_text_method(ws)
+    else:
+        return None
+    if verdict.passed:
+        found = ", ".join(f"{k}={v}" for k, v in verdict.stats.items())
+        return Check("method checks", PASS, f"{what}: {found}")
+    more = f"; and {len(verdict.reasons) - 3} more" if len(verdict.reasons) > 3 else ""
+    return Check("method checks", FAIL, f"{what}: " + "; ".join(verdict.reasons[:3]) + more)
+
+
+def _check_text_method(ws: Path) -> Check:
+    """A text study's results and hand-checked samples, recounted from the exported corpus."""
+    from .core.pipeline.text_checks import check_text_results, check_text_validation
+
+    if not (ws / "data.db").is_file():
+        return Check(
+            "method checks", SKIP, "text: the corpus (data/data.db) is not in the folder, so nothing is recounted"
+        )
+    results, validation = check_text_results(ws), check_text_validation(ws)
+    reasons = [*results.reasons, *validation.reasons]
+    if reasons:
+        more = f"; and {len(reasons) - 3} more" if len(reasons) > 3 else ""
+        return Check("method checks", FAIL, "text: " + "; ".join(reasons[:3]) + more)
+    found = ", ".join(f"{k}={v}" for k, v in {**results.stats, **validation.stats}.items())
+    return Check("method checks", PASS, f"text: recounted from the corpus: {found}")
+
+
 # ── check 4: citations (offline) ─────────────────────────────────────────────
 
 
@@ -764,10 +871,14 @@ def _check_citations_offline(bundle: Path) -> Check:
     if missing:
         return Check("citations", FAIL, f"{len(missing)} cited key(s) not in refs.bib: {', '.join(missing[:5])}")
     if not keys and not parse_bibitem_keys(text):
-        if bib:
+        # The template's method sources are citable, never required: they do not count here.
+        literature = [k for k, f in bib.items() if f.get("e2er_source") != "template"]
+        if literature:
             # The paper ignores the bibliography it ships: nothing it says is
             # tied to a source (the 2026-10-10 Haiku paper, 21 entries, 0 cites).
-            return Check("citations", FAIL, f"paper.tex cites none of the {len(bib)} work(s) in refs.bib{snapshot}")
+            return Check(
+                "citations", FAIL, f"paper.tex cites none of the {len(literature)} work(s) in refs.bib{snapshot}"
+            )
         return Check(
             "citations",
             SKIP,
@@ -982,6 +1093,12 @@ def _run_checks(bundle: Path, online: bool) -> list[Check]:
         checks.append(_check_numbers(bundle, ws))
         checks.append(_check_tables(bundle, ws))
         checks.append(_check_spec(ws))
+        contract = _check_results_contract(ws)
+        if contract is not None:
+            checks.append(contract)
+        method = _check_method(ws)
+        if method is not None:
+            checks.append(method)
         checks.append(_check_citations_offline(bundle))
     required = _required_checks(bundle)
     prereg = _check_preregistration(bundle, required.get("preregistration"))
@@ -998,7 +1115,9 @@ def _run_checks(bundle: Path, online: bool) -> list[Check]:
 # The checks that actually verify CONTENT. Integrity (hashing files against
 # provenance.json) proves only that the bundle is unchanged since export — a
 # bundle can be perfectly self-consistent and still have had nothing checked.
-_CONTENT_CHECKS = frozenset({"numbers", "tables", "spec", "citations", "preregistration", "reproduction"})
+_CONTENT_CHECKS = frozenset(
+    {"numbers", "tables", "spec", "results contract", "method checks", "citations", "preregistration", "reproduction"}
+)
 
 
 def _verdict(checks: list[Check]) -> tuple[str, int]:
@@ -1093,6 +1212,7 @@ def verify(
         av_line = describe(av) if av is not None else None
     except (AttributeError, KeyError, TypeError):
         av_line = "stated in e2er.json, but not readable (see the anchor check)"
+    writing = _writing_notes(bundle_path)
     if json_output:
         from dataclasses import asdict
 
@@ -1111,6 +1231,7 @@ def verify(
                     "e2er_version": __version__,
                     "content_id": _content_id(bundle_path),
                     "availability": av if isinstance(av, dict) else None,
+                    "writing_notes": writing,
                 },
                 indent=2,
             )
@@ -1119,7 +1240,30 @@ def verify(
         print(_render(checks, bundle_path))
         if av_line is not None:
             print(f"   availability: {av_line}")
+        if writing:
+            # A note on the prose, not a check: it changes neither the verdict nor the exit code.
+            print(f"   note: {len(writing)} sentence(s) use a construction the writing guidance rejects:")
+            for line in writing[:20]:
+                print(f"     - {line}")
+            if len(writing) > 20:
+                print(f"     ... and {len(writing) - 20} more")
     return code
+
+
+def _writing_notes(bundle: Path) -> list[str]:
+    """Constructions the researcher rejects, in the paper's prose: a note, never a failed check.
+
+    The same phrase check the draft writers' output contract applies
+    (``core.writing_check``), on ``paper/paper.tex`` and ``paper/abstract.tex``.
+    """
+    from .core.writing_check import find_in_file
+
+    notes: list[str] = []
+    for rel in ("paper/paper.tex", "paper/abstract.tex"):
+        path = bundle / rel
+        if path.is_file():
+            notes += [f"{rel}: {h.line()}" for h in find_in_file(path, bundle / "results")]
+    return notes
 
 
 def _availability(bundle: Path) -> Any:
