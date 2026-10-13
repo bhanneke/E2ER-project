@@ -110,14 +110,27 @@ def _api_reachable(timeout: float = 1.5) -> bool:
         return False
 
 
+#: Port -> (token, pid) of a server this command started; its session file is
+#: written once the server answers (a file written before binding could replace
+#: the session file of a server already on the port).
+_pending_session: dict[int, tuple[str, int]] = {}
+
+
 def _start_uvicorn_in_background() -> int:
     """Spawn `uvicorn src.api.app:app` on the configured port, detached.
 
     Returns the PID. The caller waits up to ~10s for /api/papers to come up,
     then proceeds.
     """
+    from .api import local_session as ls
+
     log_path = Path.home() / ".e2er" / "uvicorn.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
+    # The server needs the session token that this and later `e2er` commands
+    # send (X-E2ER-Token); without it the server made a random one of its own
+    # and refused every POST with 403.
+    token = os.environ.get(ls.ENV_TOKEN) or ls.stable_token()
+    env = {**os.environ, ls.ENV_TOKEN: token}
     cmd = [
         sys.executable,
         "-m",
@@ -136,8 +149,25 @@ def _start_uvicorn_in_background() -> int:
             stdout=log_f,
             stderr=log_f,
             start_new_session=True,  # detach from terminal — survives ^C
+            env=env,
         )
+    _pending_session[_api_port()] = (token, proc.pid)
     return proc.pid
+
+
+def _write_pending_session_file() -> None:
+    """Write ``~/.e2er/session-<port>.json`` for the server this command started."""
+    from .api import local_session as ls
+
+    port = _api_port()
+    pending = _pending_session.pop(port, None)
+    if pending is None:
+        return
+    token, pid = pending
+    try:
+        ls.write_session_file(port, token, pid=pid)
+    except OSError:
+        pass  # api_headers falls back to the token in this process's environment
 
 
 def _ensure_api_up(deadline_seconds: float = 12.0) -> tuple[bool, str | None]:
@@ -152,6 +182,7 @@ def _ensure_api_up(deadline_seconds: float = 12.0) -> tuple[bool, str | None]:
     deadline = time.monotonic() + deadline_seconds
     while time.monotonic() < deadline:
         if _api_reachable():
+            _write_pending_session_file()
             print(f"  ✓ uvicorn ready (PID {pid}). Logs: ~/.e2er/uvicorn.log", file=sys.stderr)
             return True, None
         time.sleep(0.5)

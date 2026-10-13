@@ -66,13 +66,17 @@ def main() -> None:
         help="Start the dashboard without opening a browser.",
     )
     parser.add_argument(
-        "--port", dest="top_port", type=int, default=None, help="Port for the dashboard (default 8280)."
+        "--port",
+        dest="top_port",
+        type=int,
+        default=None,
+        help="Port for the dashboard (default: PORT from .env, else 8280).",
     )
     subparsers = parser.add_subparsers(dest="command")
 
     serve = subparsers.add_parser("serve", help="Start the API server (default command)")
     serve.add_argument("--host", default="127.0.0.1", help="Bind host (default: 127.0.0.1)")
-    serve.add_argument("--port", type=int, default=8280, help="Port (default: 8280)")
+    serve.add_argument("--port", type=int, default=None, help="Port (default: PORT from .env, else 8280)")
     serve.add_argument("--reload", action="store_true", help="Auto-reload on code changes (dev mode)")
     serve.add_argument(
         "--no-browser",
@@ -1060,7 +1064,7 @@ def main() -> None:
         sys.exit(
             _serve(
                 host=getattr(args, "host", "127.0.0.1"),
-                port=getattr(args, "port", None) or args.top_port or 8280,
+                port=getattr(args, "port", None) or args.top_port or _settings_port(),
                 reload=getattr(args, "reload", False),
                 no_browser=getattr(args, "no_browser", False) or args.top_no_browser,
             )
@@ -1209,6 +1213,13 @@ def _serve(*, host: str, port: int, reload: bool, no_browser: bool) -> int:
         stop.set()
         ls.remove_session_file(port)
     return 0
+
+
+def _settings_port() -> int:
+    """The dashboard's port from settings (PORT in .env), the same one `e2er run` talks to."""
+    from .cli_run import _api_port
+
+    return _api_port()
 
 
 def _write_session_file_when_up(host: str, port: int, token: str) -> Any:
