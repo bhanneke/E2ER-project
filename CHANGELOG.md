@@ -67,6 +67,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   note that the full texts are in data.db). Ten Project Gutenberg novels in one reply passed
   OpenRouter's 8 MB request limit and failed the data analyst of the text-analysis demo (the row
   limit of 50 does not help when each row is a novel).
+- **Send back offers the specialists the study ran.** Several specialists write `paper_draft.tex`,
+  so "its output exists" offered a descriptive study's researcher the field-map and
+  systematic-review writers at the draft review. The list now keeps the specialists the run's log
+  shows starting (every specialist with output when there is no log).
 
 ## [0.16.0] — 2026-10-13
 

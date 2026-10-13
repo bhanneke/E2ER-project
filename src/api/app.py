@@ -1194,8 +1194,27 @@ def _step_outputs(workspace: Path, step: str, events: list[dict[str, Any]], spec
     return list(dict.fromkeys(out))
 
 
-def _sendable(workspace: Path, state: Any, pending: Any, spec: Any) -> list[str]:
-    """What a researcher can send back from here: earlier template steps and specialists with output."""
+async def _specialists_that_ran(paper_id: str) -> set[str] | None:
+    """The specialists this study ran (its specialist_start events); None when the log cannot say."""
+    from ..db.events import fetch_events
+
+    try:
+        events = await fetch_events(paper_id)
+    except Exception:  # noqa: BLE001 — without the log every specialist with output stays a choice
+        return None
+    ran = {
+        str(e.get("specialist")) for e in events if e.get("event_type") == "specialist_start" and e.get("specialist")
+    }
+    return ran or None
+
+
+def _sendable(workspace: Path, state: Any, pending: Any, spec: Any, ran: set[str] | None = None) -> list[str]:
+    """What a researcher can send back from here: earlier template steps and specialists with output.
+
+    ``ran``: the specialists the study ran. Several specialists write paper_draft.tex (the field
+    review writer, the meta-review writer, the revisor, ...), so "its output exists" offered a
+    descriptive study's researcher the field-map and systematic-review writers (2026-10-13 demo).
+    """
     from ..core.specialists.registry import SPECIALIST_ARTIFACTS
 
     steps: list[str] = []
@@ -1207,7 +1226,9 @@ def _sendable(workspace: Path, state: Any, pending: Any, spec: Any) -> list[str]
                 break
             if s.kind not in ("researcher", "preregister") and s.name in state.completed_stages:
                 steps.append(s.name)
-    specialists = sorted(sp for sp, out in SPECIALIST_ARTIFACTS.items() if (workspace / out).is_file())
+    specialists = sorted(
+        sp for sp, out in SPECIALIST_ARTIFACTS.items() if (workspace / out).is_file() and (ran is None or sp in ran)
+    )
     if pending.kind == "contract":
         # The specialists whose output failed can always be sent back, written or not.
         failed = [f.get("specialist") for f in (state.metadata.get("contract_pause") or {}).get("failed") or []]
@@ -1278,7 +1299,7 @@ async def get_review(paper_id: str = Depends(_validate_uuid)) -> dict[str, Any]:
             **extra,
         },
         "files": files,
-        "sendable": _sendable(workspace, state, pending, spec),
+        "sendable": _sendable(workspace, state, pending, spec, await _specialists_that_ran(paper_id)),
         "actions": past,
     }
 
@@ -1300,7 +1321,9 @@ async def post_review(req: ReviewAction, paper_id: str = Depends(_validate_uuid)
             workspace,
             state,
             req.model_dump(exclude={"resume"}),
-            sendable=_sendable(workspace, state, pending, spec) if req.action == "send_back" else None,
+            sendable=_sendable(workspace, state, pending, spec, await _specialists_that_ran(paper_id))
+            if req.action == "send_back"
+            else None,
         )
     except ResearcherActionError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
