@@ -76,12 +76,47 @@ DATA_DISCOVERY_TOOLS: list[dict[str, Any]] = [
 PREVIEW_ROWS = 50
 
 
+#: Characters of one text field that go back to the model. A Project Gutenberg load returns whole
+#: novels: ten of them in one reply passed OpenRouter's 8 MB request limit (2026-10-13 demo).
+PREVIEW_CHARS = 2000
+
+
+def _shorten(item: Any) -> tuple[Any, int]:
+    """An item with every text field cut to PREVIEW_CHARS, and how many fields were cut."""
+    if not isinstance(item, dict):
+        return item, 0
+    out, cut = {}, 0
+    for k, v in item.items():
+        if isinstance(v, str) and len(v) > PREVIEW_CHARS:
+            out[k] = v[:PREVIEW_CHARS] + f"… [{len(v) - PREVIEW_CHARS} more characters]"
+            cut += 1
+        else:
+            out[k] = v
+    return out, cut
+
+
 def _preview(envelope: Any, materialized: str | None) -> Any:
-    """The envelope with at most PREVIEW_ROWS of its items, and the total, for the conversation."""
+    """The envelope with at most PREVIEW_ROWS of its items, each text field cut to PREVIEW_CHARS, and the total."""
     if not isinstance(envelope, dict):
         return envelope
     items = envelope.get("items")
-    if not isinstance(items, list) or len(items) <= PREVIEW_ROWS:
+    if not isinstance(items, list):
+        return envelope
+    shortened = [_shorten(i) for i in items[:PREVIEW_ROWS]]
+    cut = sum(n for _, n in shortened)
+    if cut:
+        where = (
+            f"the full texts are in data.db table {materialized}; read them with query_data or a script"
+            if materialized
+            else "set materialize=true to keep the full texts in data.db"
+        )
+        envelope = {
+            **envelope,
+            "items": [i for i, _ in shortened] + items[PREVIEW_ROWS:],
+            "note_texts": f"{cut} text field(s) are cut to {PREVIEW_CHARS} characters here; {where}.",
+        }
+        items = envelope["items"]
+    if len(items) <= PREVIEW_ROWS:
         return envelope
     where = (
         f"all {len(items)} rows are in data.db table {materialized}; use query_data for them"

@@ -63,6 +63,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   198 of the WHO indicator code `RS\_198` (and then its tail 98) as a value and reported it as
   differing from the sample of 195 countries. Digits after a letter, an underscore or another digit
   are no longer taken as the start of a number.
+- **`fetch_data` cuts long texts in its reply to the model** (2,000 characters per text field, with a
+  note that the full texts are in data.db). Ten Project Gutenberg novels in one reply passed
+  OpenRouter's 8 MB request limit and failed the data analyst of the text-analysis demo (the row
+  limit of 50 does not help when each row is a novel).
 
 ## [0.16.0] — 2026-10-13
 

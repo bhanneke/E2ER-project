@@ -255,3 +255,19 @@ async def test_fetch_data_small_load_is_returned_whole():
     with patch(_SETTINGS, return_value=_settings(fred_api_key="k")), patch(_REG, return_value=[fake]):
         out = json.loads(await handler.handle("fetch_data", {"provider": "fred", "method": "series", "params": {}}))
     assert out["items"] == list(range(10)) and "items_total" not in out
+
+
+async def test_fetch_data_cuts_long_texts_in_the_reply():
+    """Ten Gutenberg novels in one reply passed OpenRouter's 8 MB request limit (2026-10-13 demo)."""
+    from src.modules.data.discovery_tools import PREVIEW_CHARS
+
+    handler = SeriesDataToolHandler()
+    rows = [{"id": i, "title": f"Novel {i}", "text": "rain " * 200_000} for i in range(10)]
+    fake = _fake_fetcher("gutenberg", {"source": "gutenberg", "items": rows, "error": None})
+    with patch(_SETTINGS, return_value=_settings()), patch(_REG, return_value=[fake]):
+        reply = await handler.handle("fetch_data", {"provider": "gutenberg", "method": "text", "params": {}})
+    out = json.loads(reply)
+    assert len(reply) < 50_000
+    assert out["items"][0]["title"] == "Novel 0"
+    assert out["items"][0]["text"].startswith("rain rain") and len(out["items"][0]["text"]) < PREVIEW_CHARS + 60
+    assert "10 text field(s) are cut" in out["note_texts"]
