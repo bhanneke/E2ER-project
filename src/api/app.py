@@ -694,7 +694,10 @@ async def _graceful_shutdown_runners() -> None:
             await execute(
                 "UPDATE papers SET status = 'paused', "
                 "last_error = 'Server shutdown while in-flight; POST /resume to continue.' "
-                "WHERE id = %(id)s AND status NOT IN ('completed','cancelled')",
+                # Not "NOT IN ('completed','cancelled')": the runner's CancelledError handler has just
+                # set 'cancelled' for every task cancelled above, so that guard skipped every paper and
+                # left it "cancelled by user", which resume refuses (2026-10-14 demo).
+                "WHERE id = %(id)s AND status <> 'completed'",
                 {"id": paper_id},
             )
             from ..core import run_owner

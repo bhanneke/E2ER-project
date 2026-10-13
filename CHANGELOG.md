@@ -72,6 +72,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so "its output exists" offered a descriptive study's researcher the field-map and
   systematic-review writers at the draft review. The list now keeps the specialists the run's log
   shows starting (every specialist with output when there is no log).
+- **Stopping the server pauses a running study again, as intended.** The shutdown hook cancels each
+  running study and then marks it paused, but its update skipped studies already marked
+  `cancelled`, and the runner marks every cancelled task `cancelled` first. So a server restart left
+  running studies "cancelled by user", and `e2er resume` refused them.
 
 ## [0.16.0] — 2026-10-13
 
