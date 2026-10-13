@@ -16,7 +16,12 @@ _NS = {"atom": "http://www.w3.org/2005/Atom", "arxiv": "http://arxiv.org/schemas
 
 
 async def search_papers(query: str, limit: int = 20) -> SearchResult:
-    """Search arXiv using the Atom feed API."""
+    """Search arXiv using the Atom feed API.
+
+    Parentheses group terms in arXiv's query syntax, and an unbalanced one ("(staggere...")
+    is refused with 400 Bad Request, so they are dropped from the free-text query.
+    """
+    query = " ".join(query.replace("(", " ").replace(")", " ").split())
     params = urllib.parse.urlencode(
         {
             "search_query": f"all:{query}",

@@ -160,3 +160,35 @@ def test_a_supplied_table_matches_a_file_of_its_name(tmp_path: Path):
     _dictionary(tmp_path, [{"name": "other_dates", "source": "researcher-supplied"}])
     [bad] = check_declared_sources(tmp_path, _settings())
     assert "among the study's data files (fomc_dates.csv)" in bad.reason
+
+
+async def test_the_planning_specialists_see_the_sources_too(tmp_path: Path, monkeypatch):
+    """The identification strategist and the idea developer plan with the sources available (2026-10-13:
+    a strategist without the list wrote that World Bank data had no connector)."""
+    from src.core.specialists import base
+    from src.core.specialists.contracts import WorkOrder
+    from src.modules.llm.base import TokenUsage, ToolLoopResult
+
+    seen: dict[str, str] = {}
+
+    class _Backend:
+        def __init__(self, spec: str):
+            self.spec = spec
+
+        async def tool_loop(self, *, system, messages, tools, tool_handler, max_turns, **kw):
+            seen[self.spec] = messages[0]["content"]
+            return ToolLoopResult(output="", success=False, error="x", usage=TokenUsage(), tool_calls_made=0)
+
+    async def _noop(*a, **k):
+        return None
+
+    monkeypatch.setattr(base, "save_usage", _noop)
+    for spec in ("identification_strategist", "idea_developer", "data_architect", "paper_drafter"):
+        order = WorkOrder(paper_id="p", specialist=spec, focus="x", output_file="x.md")
+        await base.run_specialist(order, _Backend(spec), tmp_path, "m", backend_name="claude_code")
+    for spec in ("identification_strategist", "idea_developer"):
+        assert "## Data sources available to this study" in seen[spec]
+        assert "Plan with data from these sources only" in seen[spec]
+        assert "- `worldbank` (no key needed)" in seen[spec]
+    assert "Declare tables only from these sources" in seen["data_architect"]
+    assert "## Data sources available to this study" not in seen["paper_drafter"]

@@ -11,6 +11,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`e2er run` works when it has to start the server.** It started uvicorn without the session token it then sends, so the server made its own and refused the new study with 403 ("This browser tab is not signed in to e2er"). The server it starts now gets the computer's session token, and `~/.e2er/session-<port>.json` is written once it answers, so later `e2er review`/`resume` commands are accepted too.
 - **`e2er serve` (and `e2er` alone) bind `PORT` from `.env`**, the port `e2er run` and the other commands talk to; before, they bound 8280 unless `--port` was given.
 
+### From the demo studies 5–8 (2026-10-13)
+- **`e2er status`, `review`, `resume`, `cancel` and `rerun` take the first characters of the id**,
+  as `export` and `archive` already did (4 or more characters; an ambiguous prefix is refused and
+  names the number of matches). Before, `e2er status 9ff31cc0` answered "not found".
+- **The web literature search no longer searches a cut-off title.** A long question's title is cut
+  at 80 characters with "..."; that cut title was the second search query, and its half word and
+  unclosed parenthesis made arXiv answer 400 Bad Request (the school-fee demo got no web literature).
+  The question's first sentence is searched in full instead, and arXiv queries drop parentheses.
+- **The idea developer and the identification strategist see the sources the study can use**, the
+  list the data architect already got. Without it a strategist planned as if only Yahoo Finance and
+  the GMD were keyless, and wrote that World Bank data had no connector.
+
 ## [0.16.0] — 2026-10-13
 
 ### From the text-analysis live run (2026-10-11): checks before the draft, method sources

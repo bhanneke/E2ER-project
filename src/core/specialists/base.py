@@ -16,6 +16,9 @@ from ..specialists.contracts import Contribution, WorkOrder
 
 logger = get_logger(__name__)
 
+#: The specialists who plan the study before the data architect: they see the sources available too.
+PLANNING_SPECIALISTS = frozenset({"idea_developer", "identification_strategist"})
+
 _MAX_TURNS = 80  # Bumped from 40 after May 2026 hack-event run: data_analyst hit the
 # 40-cap while paginating the new Allium developer endpoints (each get-transfers /
 # get-wallet-tx page = ~2 turns; 10 events × 3 endpoints × 3 pages = ~180 turns
@@ -91,6 +94,11 @@ async def run_specialist(
         from .data_sources import sources_block
 
         user_prompt += "\n\n" + sources_block(workspace)
+    elif specialist in PLANNING_SPECIALISTS:
+        # The specialists who plan before the architect see the same list, so the plan names real sources.
+        from .data_sources import sources_block
+
+        user_prompt += "\n\n" + sources_block(workspace, planning=True)
 
     # Cross-attempt half of the self-correction loop: if a PRIOR attempt's
     # script crashed when the runner executed it, feed the captured traceback

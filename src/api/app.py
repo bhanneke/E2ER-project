@@ -478,7 +478,26 @@ async def _prepare_papers(paper_id: str, workspace: Path, settings, research_que
     """
     from ..core.study_inputs import prepare_papers
 
-    await prepare_papers(workspace, paper_id, settings, [research_question, title])
+    await prepare_papers(workspace, paper_id, settings, literature_queries(research_question, title))
+
+
+def literature_queries(research_question: str, title: str) -> list[str]:
+    """The web search's queries: the question and the title, the title in full.
+
+    A long question's title is cut at 80 characters with "..." (`derive_title`), and the cut
+    title is a poor query: a word cut in half, an unclosed parenthesis that arXiv refuses with
+    400 Bad Request (the 2026-10-13 school-fee demo got no web literature that way). A cut
+    title is replaced by the question's first sentence in full; a title equal to the question
+    is not searched twice.
+    """
+    from ..cli_run import derive_title
+
+    if title.endswith("...") and research_question.strip().startswith(title[:-3].strip()):
+        title = derive_title(research_question, limit=10_000)
+    queries = [research_question]
+    if title.strip() and title.strip() != research_question.strip():
+        queries.append(title)
+    return queries
 
 
 async def _tuple_is_proven(model: str, methodology: str, mode: str) -> bool:

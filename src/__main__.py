@@ -297,7 +297,10 @@ def main() -> None:
         "status",
         help="Show the status of a run (paper id), or of a study folder published with `e2er publish --to`.",
     )
-    status_p.add_argument("paper_id", help="The paper UUID returned by `e2er run`, or a published study folder.")
+    status_p.add_argument(
+        "paper_id",
+        help="The paper UUID returned by `e2er run` (its first characters suffice), or a published study folder.",
+    )
     status_p.add_argument(
         "--url", default=None, help="For a study folder: platform address (default: its .e2er/link.json)."
     )
@@ -341,7 +344,7 @@ def main() -> None:
         "cancel",
         help="Cancel a running or paused paper. Workspace + completed phases are preserved.",
     )
-    cancel_p.add_argument("paper_id", help="The paper UUID returned by `e2er run`.")
+    cancel_p.add_argument("paper_id", help="The paper UUID returned by `e2er run` (its first characters suffice).")
     cancel_p.add_argument(
         "--yes",
         "-y",
@@ -356,7 +359,7 @@ def main() -> None:
             "already produced their canonical artifact, so completed work isn't repeated."
         ),
     )
-    resume_p.add_argument("paper_id", help="The paper UUID returned by `e2er run`.")
+    resume_p.add_argument("paper_id", help="The paper UUID returned by `e2er run` (its first characters suffice).")
     resume_p.add_argument(
         "--max-cost",
         type=float,
@@ -379,7 +382,7 @@ def main() -> None:
         "review",
         help="Act at a researcher step: approve, edit a file, give an instruction, or send a step back.",
     )
-    review_p.add_argument("paper_id", help="The paper UUID returned by `e2er run`.")
+    review_p.add_argument("paper_id", help="The paper UUID returned by `e2er run` (its first characters suffice).")
     review_p.add_argument("--approve", action="store_true", help="Approve the step and continue the run.")
     review_p.add_argument("--instruction", default=None, help="An instruction every following step receives.")
     review_p.add_argument("--edit", default=None, metavar="FILE", help="Edit one of the step's files in $EDITOR.")
@@ -391,7 +394,7 @@ def main() -> None:
         help="Send a study (finished, failed or stopped) back to one of its steps: it and every later step run "
         "again with your remark.",
     )
-    rerun_p.add_argument("paper_id", help="The paper UUID.")
+    rerun_p.add_argument("paper_id", help="The paper UUID (its first characters suffice).")
     rerun_p.add_argument("--from", dest="from_step", required=True, metavar="STEP", help="The template step to rerun.")
     rerun_p.add_argument("--remark", required=True, help="What should change; recorded for the dossier.")
 
@@ -940,6 +943,18 @@ def main() -> None:
                 strict=args.strict,
             )
         )
+
+    if args.command in {"status", "cancel", "resume", "review", "rerun"} and not (
+        args.command == "status" and Path(args.paper_id).expanduser().is_dir()
+    ):
+        # The first characters of the id suffice, as for `export` and `archive`.
+        from .cli_export import ExportLookupError, expand_paper_id
+
+        try:
+            args.paper_id = expand_paper_id(args.paper_id)
+        except ExportLookupError as e:
+            print(f"e2er {args.command}: {e}", file=sys.stderr)
+            sys.exit(1)
 
     if args.command == "install-skills":
         from .cli_install_skills import install_skills as _install
