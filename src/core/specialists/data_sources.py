@@ -220,4 +220,8 @@ def sources_block(workspace: Path, settings: Any = None, *, planning: bool = Fal
         "their data are among the study's data files. If the question needs data that no available source has, "
         "say so in data_dictionary.json (`unavailable`) instead of declaring the table."
     )
+    lines.append(
+        "Facts no source above holds (a policy's adoption year, a book's first publication) need a published "
+        'source: find it with `e2er-lit search "<query>"` and cite it; never fill them in from memory.'
+    )
     return "\n".join(line for line in lines if line)

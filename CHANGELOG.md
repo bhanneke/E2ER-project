@@ -22,6 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The idea developer and the identification strategist see the sources the study can use**, the
   list the data architect already got. Without it a strategist planned as if only Yahoo Finance and
   the GMD were keyless, and wrote that World Bank data had no connector.
+- **The idea developer, identification strategist and data architect may search the literature**
+  (`e2er-lit` on Claude Code), and the sources list tells them to find a published source for facts
+  no data source holds (a policy's adoption year, a book's first publication) instead of filling them
+  in from memory. In the school-fee demo the architect was asked to source each abolition year and
+  every search was refused; the dates stayed "recalled".
 
 ## [0.16.0] — 2026-10-13
 
