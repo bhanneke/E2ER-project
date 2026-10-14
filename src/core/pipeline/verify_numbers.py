@@ -354,12 +354,23 @@ def _normalize_cell(cell: str) -> str:
 def _flatten_json(obj: Any, prefix: str = "") -> dict[str, float]:
     """Recursively extract all numeric values from a JSON object.
 
-    Returns a dict mapping dotted key paths to float values.
+    Returns a dict mapping dotted key paths to float values. A key that is itself
+    a number (a sensitivity grid keyed "-0.3" … "+0.3", years keyed "2010") is a
+    source value too, recorded under "<path>#key": a table whose row labels are
+    those keys shows numbers the results hold (demo 3, 2026-10-14: verify failed
+    the Mc-shift table on its labels -0.3, -0.2, -0.1).
     """
     result: dict[str, float] = {}
     if isinstance(obj, dict):
         for k, v in obj.items():
             key = f"{prefix}.{k}" if prefix else k
+            try:
+                as_number = float(str(k).strip())
+            except ValueError:
+                pass
+            else:
+                if not (math.isnan(as_number) or math.isinf(as_number)):
+                    result[f"{key}#key"] = as_number
             result.update(_flatten_json(v, key))
     elif isinstance(obj, list):
         for i, v in enumerate(obj):

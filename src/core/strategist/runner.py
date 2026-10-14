@@ -807,15 +807,17 @@ class PipelineRunner:
             specialist_done.reset(token)
             self._in_initial = False
 
-    async def _draft_if_left_out(self) -> None:
-        """The initial phase ended without a draft: send the paper drafter out (after its checks).
+    async def _draft_if_left_out(self, *, after_rounds: bool = False) -> None:
+        """The initial phase (or, iterative, its rounds) ended without a draft: send the paper drafter out.
 
         Every template with a strategist step reports in ``paper_draft.tex``, and the strategist
         plans who writes it. The 2026-10-13 school-fee demo (policy evaluation): its plan left the
         drafter out, the run went on to the review with no draft, the five reviewers judged the
         plan (4.3 of 10), and the study "completed" without a paper.
         """
-        if getattr(self, "_mode", "single_pass") != "single_pass" or (self._workspace / "paper_draft.tex").is_file():
+        if (self._workspace / "paper_draft.tex").is_file():
+            return
+        if getattr(self, "_mode", "single_pass") != "single_pass" and not after_rounds:
             return  # in the iterative mode the rounds may write the draft (and often do)
         spec = getattr(self, "_spec", None)
         if spec is None or not any(st.kind == "aggregate" for st in spec.steps):
@@ -828,8 +830,9 @@ class PipelineRunner:
             "results and files in the workspace."
         )
         order = WorkOrder(paper_id=self._paper_id, specialist="paper_drafter", focus=focus)
+        phase = "iterative" if after_rounds else "initial"
         await log_event(
-            self._paper_id, "drafter_sent_out", stage="initial", payload={"reason": "no draft after the initial phase"}
+            self._paper_id, "drafter_sent_out", stage=phase, payload={"reason": f"no draft after the {phase} phase"}
         )
         self._contributions.extend(await self._execute_orders([order]))
 
@@ -932,6 +935,12 @@ class PipelineRunner:
         self._contributions.extend(contributions)
 
     async def _run_iterative_phase(self) -> PaperStatus:
+        """The improvement rounds, then the drafter if no round wrote a draft (see _draft_if_left_out)."""
+        status = await self._run_rounds()
+        await self._draft_if_left_out(after_rounds=True)
+        return status
+
+    async def _run_rounds(self) -> PaperStatus:
         """Iterative improvement loop with ceiling detection.
 
         Each round, its ceiling check and a change of approach (pivot) are
@@ -3432,7 +3441,21 @@ class PipelineRunner:
         # phase even though `paper_drafter` was correctly skipped.
         # v0.6.0's guard only filtered `paper_drafter`; v0.6.1 closes
         # the same drift door for `revisor`.
-        if self._iteration >= 2 or pivot:
+        # With no draft yet there is nothing to drift from: section writers cannot
+        # write a paper from nothing in parallel pieces, so one paper drafter writes
+        # it (and the guard below does not drop it). See _draft_from_section_orders.
+        has_draft = (self._workspace / "paper_draft.tex").is_file()
+        orders = _draft_from_section_orders(decision.work_orders, has_draft=has_draft)
+        if orders != decision.work_orders:
+            logger.warning(
+                "No paper_draft.tex yet: the section_writer order(s) became one paper_drafter order for paper %s",
+                self._paper_id,
+            )
+        orders = _one_draft_writer_at_a_time(orders)
+        if orders != decision.work_orders:
+            decision = decision.model_copy(update={"work_orders": orders})
+
+        if (self._iteration >= 2 or pivot) and has_draft:
             kept, dropped = _split_full_rewrites(decision.work_orders)
             if dropped:
                 logger.warning(
@@ -3892,6 +3915,54 @@ FULL_REWRITE_REFUSED = (
     "refused: it would rewrite the whole draft after the first round; a change to one section "
     "(Sections and table layout) or the targeted corrections can do it"
 )
+
+
+def _draft_from_section_orders(orders: list[Any], *, has_draft: bool) -> list[Any]:
+    """With no draft yet, the section_writer orders become one paper_drafter order.
+
+    A section writer changes a section of an existing draft. The 2026-10-14 GDP demo
+    (spatial analysis, iterative): no round had dispatched the drafter, the third
+    round sent three section writers at once, each wrote paper_draft.tex from
+    nothing, the last one's file (introduction and literature only) stood, and the
+    study completed and was reviewed without data, results or maps.
+    """
+    if has_draft or not any(o.specialist == "section_writer" for o in orders):
+        return orders
+    sections = [o for o in orders if o.specialist == "section_writer"]
+    rest = [o for o in orders if o.specialist != "section_writer"]
+    if any(o.specialist == "paper_drafter" for o in rest):
+        return rest  # the drafter writes the whole paper, these sections included
+    focus = "The study has no draft yet: write the whole paper from the results and files in the workspace. " + (
+        " ".join(f"Section notes: {o.focus}" for o in sections if o.focus)
+    )
+    first = sections[0]
+    drafter = first.model_copy(update={"specialist": "paper_drafter", "focus": focus.strip()})
+    return [*rest, drafter]
+
+
+def _one_draft_writer_at_a_time(orders: list[Any]) -> list[Any]:
+    """Section writers of one parallel group run one after another: each edits the same paper_draft.tex.
+
+    In parallel, the last writer's file replaces the others' (2026-10-14 GDP demo). Every
+    later group moves back by the groups this inserts, so the order among groups stays.
+    """
+    by_group: dict[int, list[Any]] = {}
+    for o in orders:
+        by_group.setdefault(o.parallel_group, []).append(o)
+    if all(sum(o.specialist == "section_writer" for o in g) <= 1 for g in by_group.values()):
+        return orders
+    out: list[Any] = []
+    next_group = 0
+    for group in sorted(by_group):
+        writers = 0
+        for o in by_group[group]:
+            if o.specialist == "section_writer":
+                out.append(o.model_copy(update={"parallel_group": next_group + writers}))
+                writers += 1
+            else:
+                out.append(o.model_copy(update={"parallel_group": next_group}))
+        next_group += max(writers, 1)
+    return out
 
 
 def _split_full_rewrites(orders: list[Any]) -> tuple[list[Any], list[tuple[str, str]]]:

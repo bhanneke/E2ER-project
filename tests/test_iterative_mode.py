@@ -58,6 +58,7 @@ async def test_each_round_its_ceiling_check_and_the_one_pivot_are_recorded(tmp_p
         logged.append((event_type, payload or {}))
 
     monkeypatch.setattr(events, "log_event", log_event)
+    (tmp_path / "paper_draft.tex").write_text("\\section{Results}", encoding="utf-8")  # the rounds edit a draft
     runner = PipelineRunner("p-1", tmp_path, _Answer(""), "m", mode="iterative", backend_name="mock", max_cost_usd=10)
     runner._strategist.decide = AsyncMock(  # type: ignore[method-assign]
         return_value=StrategistDecision(action="dispatch_parallel", work_orders=[], rationale="why")
@@ -132,6 +133,7 @@ def _runner(tmp_path: Path, monkeypatch) -> tuple[Any, list[tuple[str, dict[str,
         logged.append((event_type, payload or {}))
 
     monkeypatch.setattr(events, "log_event", log_event)
+    (tmp_path / "paper_draft.tex").write_text("\\section{Results}", encoding="utf-8")  # the rounds edit a draft
     runner = PipelineRunner("p-1", tmp_path, _Answer(""), "m", mode="iterative", backend_name="mock", max_cost_usd=10)
     return runner, logged
 
