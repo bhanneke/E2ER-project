@@ -520,7 +520,12 @@ def main() -> None:
         "against its list, and the packages are installed from its pinned list (from its wheels, when they are "
         "for this computer).",
     )
-    reproduce_p.add_argument("--keep", action="store_true", help="Keep the run folder also when everything matches.")
+    reproduce_p.add_argument(
+        "--keep",
+        action="store_true",
+        help="Keep the run folder (and an unpacked package) and say where; without it both are removed when the "
+        "command ends, also after a failure.",
+    )
     reproduce_p.add_argument(
         "--allow-network",
         action="store_true",

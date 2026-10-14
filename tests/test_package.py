@@ -641,3 +641,48 @@ def test_the_finish_page_offers_the_package_for_download(live_db, session, offli
     r = c.get(d["download"])
     assert r.status_code == 200 and r.content[:2] == b"PK"
     assert f'filename="{bundle.name}.e2er"' in r.headers["content-disposition"]
+
+
+# ── no temporary folders left behind ────────────────────────────────────────
+
+
+def _leftovers(tmp: Path) -> list[str]:
+    return sorted(p.name for p in tmp.iterdir() if p.name.startswith(("e2er-reproduce-", "e2er-package-")))
+
+
+@pytest.mark.parametrize("tamper", [False, True])
+def test_reproduce_removes_its_temporary_folders_also_after_a_failure(
+    tmp_path, offline_lock, rerun_here, capsys, tamper
+):
+    """Each kept run folder held a whole environment (up to ~140 MB); failing runs piled up until the disk was full."""
+    import tempfile
+
+    folder = _export(tmp_path)
+    packed = pkg.build(folder)
+    if tamper:  # the rerun differs from the published results: a failure
+        res = folder / "results" / "estimation_results.json"
+        doc = json.loads(res.read_text(encoding="utf-8"))
+        doc["main"]["mean"] += 1
+        res.write_text(json.dumps(doc), encoding="utf-8")
+    tmp = Path(tempfile.gettempdir())
+    assert reproduce(str(packed.path)) == 0
+    assert reproduce(str(folder)) == (1 if tamper else 0)
+    out = capsys.readouterr().out
+    assert _leftovers(tmp) == [], out
+    assert "is kept" not in out and "--keep keeps it" in out
+    bad = _rewrite(packed.path, tmp_path / "bad.e2er", replace={"README.md": b"# other\n"})
+    assert reproduce(str(bad)) == 2
+    assert _leftovers(tmp) == []
+
+
+def test_keep_keeps_both_folders_and_says_where(tmp_path, offline_lock, rerun_here, capsys):
+    import tempfile
+
+    folder = _export(tmp_path)
+    packed = pkg.build(folder)
+    assert reproduce(str(packed.path), keep=True) == 0
+    out = capsys.readouterr().out
+    left = _leftovers(Path(tempfile.gettempdir()))
+    assert len(left) == 2 and "The run folder is kept:" in out and "The unpacked package is kept:" in out
+    for name in left:
+        shutil.rmtree(Path(tempfile.gettempdir()) / name)

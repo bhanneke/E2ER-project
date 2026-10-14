@@ -255,7 +255,7 @@ def test_reproduce_says_which_package_the_recipe_left_out(tmp_path: Path, this_p
     sentence = "The recipe does not pin e2er_no_such_backend, which pandas needs."
     assert sentence in report
     assert f"Could not reproduce: the step `python run_estimation.py` failed. {sentence}" in report
-    assert "full output: " in report and "step-1.log" in report
+    assert "full output: step-1.log, removed with the run folder (--keep keeps it)" in report
 
 
 def test_the_recipe_names_the_python_the_run_recorded_not_the_exporting_one(tmp_path: Path, monkeypatch):

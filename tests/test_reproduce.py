@@ -133,7 +133,7 @@ def test_reproduce_reports_differences_and_exits_1(tmp_path: Path, capsys) -> No
     text = capsys.readouterr().out
     assert "main/estimate: published 2.4, rerun 2.333333" in text
     assert "Not reproduced exactly: 1 value(s) show small differences." in text
-    assert "The run folder is kept:" in text
+    assert "The run folder is kept:" not in text, "removed after a failure too, unless --keep"
 
 
 def test_a_failing_step_exits_2_with_its_output(tmp_path: Path, capsys) -> None:
