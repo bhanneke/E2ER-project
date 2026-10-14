@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.1] — 2026-10-14
+
 ### Wording for people (2026-10-14)
 - **Members, authors and sources.** The templates read "Maintained by the e2er authors" (they said contributors). A `based_on` credit is cited on the part's page as "Based on" with a link to the work; the people who wrote it are cited as the source, get no page on e2er.org, and the credit does not say its authors endorse the part (`credits.json`, `docs/templates.md`, the `credit` description in `docs/schemas/pipeline.schema.json`). `e2er publish` speaks of authors: `--github` is "Your GitHub login (author identity)", and a manifest without one asks to "name at least one author". Field names (`creator`, `contributors`, Zenodo's `creators`) are unchanged.
 
