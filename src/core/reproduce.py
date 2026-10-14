@@ -17,6 +17,12 @@ how the study's code is run again:
       "notes": ["…"]
     }
 
+A .e2er package (``e2er pack``) is unpacked first; its run installs from the
+package's ``e2er-package/requirements.lock.txt`` (every package with its
+hashes) and, when the package carries wheels for this computer, from those
+without the internet (``recipe["wheelhouse"]``, set by e2er, never read from
+reproduce.json).
+
 The code runs in a run folder of its own (``files`` lays out the folder the
 code was written for; without it the whole study folder is copied), inside a
 new virtual environment with the pinned requirements. The study folder itself
@@ -490,10 +496,14 @@ def make_environment(run_dir: Path, recipe: dict[str, Any], folder: Path, logs: 
     requirements = (folder / recipe["requirements"]).resolve()
     wanted = str(recipe.get("python") or "").strip()
     uv = shutil.which("uv")
+    # A .e2er package with wheels for this computer (``e2er pack --offline``): installed without the internet.
+    wheelhouse = recipe.get("wheelhouse")
+    offline = ["--no-index", "--find-links", str((folder / str(wheelhouse)).resolve())] if wheelhouse else []
     if uv:
         base = getattr(sys, "_base_executable", None) or sys.executable  # the interpreter, not e2er's own venv
         create = [uv, "venv", "--quiet", "--python", wanted or base, str(venv)]
-        install = [uv, "pip", "install", "--quiet", "--python", str(_venv_python(venv)), "-r", str(requirements)]
+        install = [uv, "pip", "install", "--quiet", "--python", str(_venv_python(venv)), *offline,
+                   "-r", str(requirements)]  # fmt: skip
     else:
         if wanted and not f"{sys.version_info.major}.{sys.version_info.minor}".startswith(wanted):
             raise RecipeError(
@@ -501,7 +511,7 @@ def make_environment(run_dir: Path, recipe: dict[str, Any], folder: Path, logs: 
                 "fetch another Python) is not installed: install uv, or run e2er on Python " + wanted
             )
         create = [sys.executable, "-m", "venv", str(venv)]
-        install = [str(_venv_python(venv)), "-m", "pip", "install", "--quiet", "-r", str(requirements)]
+        install = [str(_venv_python(venv)), "-m", "pip", "install", "--quiet", *offline, "-r", str(requirements)]
     code, tail = _run(create, cwd=run_dir, env=minimal_env(), timeout=600, log=logs / "environment-create.log")
     if code != 0:
         raise RecipeError(f"could not create the environment: {tail}")
@@ -521,7 +531,7 @@ def make_environment(run_dir: Path, recipe: dict[str, Any], folder: Path, logs: 
         info = json.loads(out.stdout)
     except ValueError:
         info = {"python": "unknown", "packages": {}}
-    info["installer"] = "uv" if uv else "pip"
+    info["installer"] = ("uv" if uv else "pip") + (", offline from the package's wheels" if wheelhouse else "")
     try:
         info["network_guard"] = install_network_guard(py)
     except (OSError, subprocess.SubprocessError):

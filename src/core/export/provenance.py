@@ -62,13 +62,13 @@ def inventory(bundle: Path) -> dict[str, dict[str, Any]]:
     e2er.json and .e2er/ written by publish) and operating-system clutter; see
     bundle_files.py. Symbolic links are never followed (export writes none).
     """
-    from .bundle_files import NOT_EVIDENCE, walk
+    from .bundle_files import not_evidence, walk
 
     listing = walk(bundle)
     return {
         rel: {"sha256": _sha256(p), "bytes": p.stat().st_size}
         for rel, p in sorted(listing.files.items())
-        if rel not in NOT_EVIDENCE
+        if not not_evidence(rel)
     }
 
 

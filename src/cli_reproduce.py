@@ -138,15 +138,55 @@ def _inputs_only(recipe: dict[str, Any], inputs: list[dict[str, Any]]) -> str:
 
 
 def reproduce(folder: str, *, keep: bool = False, json_out: str | None = None, allow_network: bool = False) -> int:
-    root = Path(folder).expanduser().resolve()
+    from .core.export import package as pkg
+
+    path = Path(folder).expanduser().resolve()
+    if pkg.is_package(path):
+        # A .e2er package: unpacked into a folder of its own, every file checked against the manifest first.
+        unpacked = Path(tempfile.mkdtemp(prefix="e2er-package-"))
+        try:
+            opened = pkg.open_package(path, unpacked / "study")
+        except pkg.PackageError as e:
+            shutil.rmtree(unpacked, ignore_errors=True)
+            print(f"error: the package is not intact: {e}")
+            return 2
+        print(
+            f"Unpacked {path.name} into {opened.root}: {opened.files} file(s) match {pkg.MANIFEST} "
+            f"(fingerprint {opened.manifest.get('fingerprint')}).",
+            flush=True,
+        )
+        code = _reproduce_folder(opened.root, keep=keep, json_out=json_out, allow_network=allow_network, package=True)
+        if code == 0 and not keep:
+            shutil.rmtree(unpacked, ignore_errors=True)
+        else:
+            print(f"The unpacked package is kept: {opened.root}")
+        return code
+    return _reproduce_folder(path, keep=keep, json_out=json_out, allow_network=allow_network)
+
+
+def _reproduce_folder(
+    root: Path, *, keep: bool, json_out: str | None, allow_network: bool, package: bool = False
+) -> int:
+    from .core.export import package as pkg
+
     if not root.is_dir():
-        print(f"error: {folder} is not a folder")
+        print(f"error: {root} is not a folder or a .e2er package")
         return 2
     try:
         recipe = rp.load_recipe(root)
     except rp.RecipeError as e:
         print(f"error: {e}")
         return 2
+    # Never from reproduce.json itself: only e2er sets where the wheels are, for an unpacked package.
+    recipe.pop("wheelhouse", None)
+    if package or pkg.package_manifest(root) is not None:
+        source = pkg.install_source(root, recipe)
+        if source.get("requirements"):
+            recipe["requirements"] = source["requirements"]
+        if source.get("wheelhouse"):
+            recipe["wheelhouse"] = source["wheelhouse"]
+        if source.get("wheelhouse_skipped"):
+            print(f"Note: {source['wheelhouse_skipped']}.")
 
     run_dir = Path(tempfile.mkdtemp(prefix="e2er-reproduce-"))
     logs = run_dir / ".e2er-logs"
