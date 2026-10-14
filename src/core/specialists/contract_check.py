@@ -599,6 +599,14 @@ _PHRASE_CHECKED: frozenset[str] = frozenset(
 )
 
 
+def _jel_hits(tex: str) -> list[Any]:
+    """JEL lines, when the running template is not an economics study (``writing_check.jel_lines``)."""
+    from ..pipeline.result_kinds import active_economics
+    from ..writing_check import jel_lines
+
+    return [] if active_economics() else jel_lines(tex)
+
+
 def check_draft_phrases(workspace: Path, relative: str) -> ContractCheck:
     """The prose has none of the constructions the researcher rejects (``writing_check``).
 
@@ -612,7 +620,7 @@ def check_draft_phrases(workspace: Path, relative: str) -> ContractCheck:
     if not target.is_file():
         return ContractCheck(relative, True, "", kind=KIND_VERIFICATION)
     # With the claims the study's own checks refuse (writing_check.refused_claims).
-    hits = find_in_file(target, workspace)
+    hits = find_in_file(target, workspace) + _jel_hits(target.read_text(encoding="utf-8", errors="replace"))
     if not hits:
         return ContractCheck(relative, True, "", kind=KIND_VERIFICATION)
     return ContractCheck(relative, False, feedback(hits), kind=KIND_VERIFICATION)
@@ -641,6 +649,7 @@ def check_patch_phrases(workspace: Path, relative: str = "paper_draft.tex.edits.
             if isinstance(text, str) and text.strip():
                 hits.extend(find(text))
                 hits.extend(refused_claims(workspace, text))
+                hits.extend(_jel_hits(text))
     if not hits:
         return ContractCheck(relative, True, "", kind=KIND_VERIFICATION)
     return ContractCheck(relative, False, feedback(hits), kind=KIND_VERIFICATION)
