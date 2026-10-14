@@ -188,11 +188,15 @@ async def test_tool_loop_handles_100kb_tool_result(monkeypatch):
     assert create_mock.call_count == 2
     second_call_msgs = create_mock.call_args_list[1].kwargs["messages"]
     tool_msg = next(m for m in second_call_msgs if m.get("role") == "tool")
-    # Verbatim equality, not just length — tool result must be passed back
-    # to the model unchanged. Any truncation here silently breaks specialists.
-    assert tool_msg["content"] == huge_result, (
-        f"tool result corrupted in transit: sent {len(huge_result)} chars, received {len(tool_msg['content'])} chars"
-    )
+    # Since 2026-10-14 a result this long is cut when it enters the conversation
+    # (each later turn resends it); the cut is never silent: the start is kept
+    # verbatim and a note says how much was left out and how to see the rest.
+    from src.modules.llm.history import RESULT_CAP_CHARS
+
+    content = tool_msg["content"]
+    assert len(content) <= RESULT_CAP_CHARS + 400
+    assert huge_result.startswith(content.split("\n\n[cut to save space")[0])
+    assert "[cut to save space:" in content and "100,000 characters" in content
 
 
 # ---------------------------------------------------------------------------

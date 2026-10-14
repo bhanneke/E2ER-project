@@ -13,6 +13,7 @@ from openai import AsyncOpenAI, AsyncStream
 from ...config import get_settings
 from ...logging_config import get_logger
 from .base import LLMBackend, TokenUsage, ToolHandler, ToolLoopResult
+from .history import cap_tool_result, compact_history, for_request
 
 logger = get_logger(__name__)
 
@@ -22,6 +23,41 @@ _loop_keys = itertools.count(1)
 #: What each running loop has used so far, by loop key (recorded if the run is stopped mid-loop).
 _spent: dict[int, TokenUsage] = {}
 _EMPTY_BACKOFF_SECONDS = 5.0
+
+#: Models whose providers cache only at explicit ``cache_control`` breakpoints
+#: (OpenRouter's prompt-caching guide, read 2026-10-14). Anthropic takes one
+#: top-level ``cache_control`` ("automatic" mode: the breakpoint moves to the end
+#: of the conversation); Alibaba's Qwen models take breakpoints on content
+#: blocks. DeepSeek, OpenAI, Grok, Moonshot, Groq and Z.AI models cache
+#: automatically, and Gemini 2.5+ implicitly, so nothing is added for them.
+_EXPLICIT_BLOCK_CACHE = frozenset(
+    {
+        "deepseek/deepseek-v3.2",
+        "qwen/qwen3-max",
+        "qwen/qwen-plus",
+        "qwen/qwen3.6-plus",
+        "qwen/qwen3-coder-plus",
+        "qwen/qwen3-coder-flash",
+    }
+)
+
+
+def cache_mode(model: str) -> str:
+    """How a call to ``model`` asks for prompt caching: ``top_level``, ``system_block`` or ``automatic``."""
+    m = model.lower()
+    if m.startswith("anthropic/"):
+        return "top_level"
+    if m in _EXPLICIT_BLOCK_CACHE:
+        return "system_block"
+    return "automatic"
+
+
+def _with_system_breakpoint(msgs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The system message as one text block with a ``cache_control`` breakpoint."""
+    if not msgs or msgs[0].get("role") != "system" or not isinstance(msgs[0].get("content"), str):
+        return msgs
+    block = {"type": "text", "text": msgs[0]["content"], "cache_control": {"type": "ephemeral"}}
+    return [{**msgs[0], "content": [block]}, *msgs[1:]]
 
 
 #: A streamed call that sends nothing for this long has stalled (first chunk: the
@@ -127,7 +163,9 @@ class OpenRouterBackend(LLMBackend):
     """OpenRouter backend using the OpenAI-compatible API.
 
     Supports any model available on OpenRouter (Claude, GPT-4, Gemini, etc.).
-    Token usage mapped from OpenAI format; no cache fields available.
+    Token usage mapped from OpenAI format, with cache reads and writes split
+    out. The conversation is kept small (``llm/history.py``) and each attempt
+    stops at ``openrouter_attempt_token_budget`` input tokens.
     """
 
     def __init__(self, model: str | None = None) -> None:
@@ -231,7 +269,14 @@ class OpenRouterBackend(LLMBackend):
         completion = _int(getattr(u, "completion_tokens", 0))
         details = getattr(u, "prompt_tokens_details", None)
         cached = min(_int(getattr(details, "cached_tokens", 0)) if details is not None else 0, prompt)
-        part = TokenUsage(input_tokens=prompt - cached, output_tokens=completion, cache_read_tokens=cached)
+        # Tokens written to the cache (Anthropic, Qwen, GPT-5.6+): part of prompt_tokens, priced higher.
+        written = min(_int(getattr(details, "cache_write_tokens", 0)) if details is not None else 0, prompt - cached)
+        part = TokenUsage(
+            input_tokens=prompt - cached - written,
+            output_tokens=completion,
+            cache_read_tokens=cached,
+            cache_write_tokens=written,
+        )
         cost = getattr(u, "cost", None)
         if cost is None:
             cost = (getattr(u, "model_extra", None) or {}).get("cost")
@@ -302,6 +347,30 @@ class OpenRouterBackend(LLMBackend):
         start = time.monotonic()
         usage = TokenUsage()
         tool_calls_made = 0
+        turns = 0
+        peak_prompt = 0
+        summarised = 0
+        settings = get_settings()
+        token_budget = max(0, int(getattr(settings, "openrouter_attempt_token_budget", 0) or 0))
+        caching = bool(getattr(settings, "enable_prompt_caching", True))
+        mode = cache_mode(self._model) if caching else "automatic"
+        # One session per attempt: OpenRouter keeps the attempt's calls on the
+        # provider that holds its cache (unless a provider order is set).
+        session_id = f"e2er-{paper_id or 'call'}-{loop_key}-{int(time.time())}"[:256]
+
+        def _result(success: bool, output: str, error: str | None, stop_reason: str) -> ToolLoopResult:
+            return ToolLoopResult(
+                success=success,
+                output=output,
+                error=error,
+                tool_calls_made=tool_calls_made,
+                usage=usage,
+                duration_seconds=time.monotonic() - start,
+                stop_reason=stop_reason,
+                turns=turns,
+                peak_prompt_tokens=peak_prompt,
+                summarised_exchanges=summarised,
+            )
 
         oai_tools = self._convert_tools(tools)
         msgs: list[dict[str, Any]] = [{"role": "system", "content": system}, *messages]
@@ -312,31 +381,50 @@ class OpenRouterBackend(LLMBackend):
                 logger.warning(
                     "OpenRouter turn %d: spending limit reached ($%.2f of $%.2f); stopping", turn, spent, cap
                 )
-                return ToolLoopResult(
-                    success=False,
-                    output="",
-                    error=f"spending limit reached: ${spent:.2f} of ${cap:.2f}",
-                    tool_calls_made=tool_calls_made,
-                    usage=usage,
-                    duration_seconds=time.monotonic() - start,
-                    stop_reason="budget",
+                return _result(False, "", f"spending limit reached: ${spent:.2f} of ${cap:.2f}", "budget")
+            sent = usage.input_tokens + usage.cache_read_tokens + usage.cache_write_tokens
+            if token_budget and sent >= token_budget:
+                logger.warning(
+                    "OpenRouter turn %d: attempt token budget used (%d of %d); stopping", turn, sent, token_budget
                 )
+                return _result(
+                    False,
+                    "",
+                    (
+                        f"this attempt sent {sent:,} input tokens over {turns} calls, past its budget of "
+                        f"{token_budget:,}; it was stopped so it does not cost more. Work in smaller steps "
+                        "(write intermediate results to files), or raise OPENROUTER_ATTEMPT_TOKEN_BUDGET."
+                    ),
+                    "token_budget",
+                )
+            msgs, n_summarised = compact_history(msgs)
+            if n_summarised:
+                summarised += n_summarised
+                logger.info("OpenRouter turn %d: summarised %d older tool exchanges", turn, n_summarised)
             t_call = time.monotonic()
             logger.info("OpenRouter turn %d: calling %s (msgs=%d)", turn, self._model, len(msgs))
             try:
                 # OpenAI SDK requires omitting `tools` entirely when there are
                 # none — passing an empty list, None, or NOT_GIVEN can error
                 # depending on SDK version. Build kwargs conditionally.
+                request_msgs = for_request(msgs)
+                if mode == "system_block":
+                    request_msgs = _with_system_breakpoint(request_msgs)
                 create_kwargs: dict[str, Any] = {
                     "model": self._model,
-                    "messages": msgs,
+                    "messages": request_msgs,
                     "max_tokens": self._max_tokens,
                 }
                 if oai_tools:
                     create_kwargs["tools"] = oai_tools
+                extra: dict[str, Any] = {"session_id": session_id}
                 provider = self._provider_preference()
                 if provider:
-                    create_kwargs["extra_body"] = {"provider": provider}
+                    extra["provider"] = provider
+                if mode == "top_level":
+                    extra["cache_control"] = {"type": "ephemeral"}
+                create_kwargs["extra_body"] = extra
+                turns += 1
                 response = await self._create(create_kwargs, turn)
                 logger.info(
                     "OpenRouter turn %d: response in %.1fs (finish=%s)",
@@ -346,17 +434,20 @@ class OpenRouterBackend(LLMBackend):
                 )
             except Exception as e:
                 logger.error("OpenRouter error on turn %d: %s", turn, e)
-                return ToolLoopResult(
-                    success=False,
-                    output="",
-                    error=str(e),
-                    tool_calls_made=tool_calls_made,
-                    usage=usage,
-                    duration_seconds=time.monotonic() - start,
-                )
+                return _result(False, "", str(e), "end_turn")
 
-            usage = usage + self._usage_of(response)
+            part = self._usage_of(response)
+            usage = usage + part
             _spent[loop_key] = usage
+            peak_prompt = max(peak_prompt, part.input_tokens + part.cache_read_tokens + part.cache_write_tokens)
+            logger.info(
+                "OpenRouter turn %d: %d fresh + %d cached + %d cache-write input, %d output tokens",
+                turn,
+                part.input_tokens,
+                part.cache_read_tokens,
+                part.cache_write_tokens,
+                part.output_tokens,
+            )
 
             choice = response.choices[0]
             finish_reason = choice.finish_reason
@@ -372,28 +463,18 @@ class OpenRouterBackend(LLMBackend):
                     turn,
                     self._max_tokens,
                 )
-                return ToolLoopResult(
-                    success=False,
-                    output=msg.content or "",
-                    error=(
+                return _result(
+                    False,
+                    msg.content or "",
+                    (
                         f"max_tokens={self._max_tokens} too low — model output truncated. "
                         "Increase max_tokens_per_call in settings."
                     ),
-                    tool_calls_made=tool_calls_made,
-                    usage=usage,
-                    duration_seconds=time.monotonic() - start,
-                    stop_reason="length",
+                    "length",
                 )
 
             if finish_reason == "stop" or (finish_reason != "tool_calls" and not msg.tool_calls):
-                return ToolLoopResult(
-                    success=True,
-                    output=msg.content or "",
-                    tool_calls_made=tool_calls_made,
-                    usage=usage,
-                    duration_seconds=time.monotonic() - start,
-                    stop_reason="end_turn",
-                )
+                return _result(True, msg.content or "", None, "end_turn")
 
             # Execute tool calls
             msgs.append(
@@ -431,6 +512,7 @@ class OpenRouterBackend(LLMBackend):
                     )
                 else:
                     result_text = await tool_handler.handle(tc.function.name, tool_input)
+                    result_text = cap_tool_result(result_text, tc.function.name, tool_input)
                 msgs.append(
                     {
                         "role": "tool",
@@ -439,12 +521,4 @@ class OpenRouterBackend(LLMBackend):
                     }
                 )
 
-        return ToolLoopResult(
-            success=False,
-            output="",
-            error=f"Reached max_turns={max_turns}",
-            tool_calls_made=tool_calls_made,
-            usage=usage,
-            duration_seconds=time.monotonic() - start,
-            stop_reason="max_turns",
-        )
+        return _result(False, "", f"Reached max_turns={max_turns}", "max_turns")

@@ -44,6 +44,12 @@ class ToolLoopResult:
     usage: TokenUsage = field(default_factory=TokenUsage)
     duration_seconds: float = 0.0
     stop_reason: str = "end_turn"
+    #: Model calls made (in-process loops only; 0 when the backend does not count them).
+    turns: int = 0
+    #: The largest single call's input tokens (fresh plus cached): how big the conversation got.
+    peak_prompt_tokens: int = 0
+    #: Older tool exchanges summarised to keep the conversation small (see ``llm/history.py``).
+    summarised_exchanges: int = 0
 
 
 class ToolHandler(ABC):

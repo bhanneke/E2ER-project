@@ -48,6 +48,11 @@ class Settings(BaseSettings):
     #: OpenRouter's balancing and its own sort=price billed ~5-8x the cheapest provider.
     openrouter_provider_sort: Literal["price", "throughput", "latency", ""] = "price"
     enable_prompt_caching: bool = True
+    #: Input tokens one OpenRouter tool-loop attempt may send in total (fresh plus
+    #: cached, summed over its turns) before it stops with a plain message. Each
+    #: turn resends the conversation; one data-analyst attempt (2026-10-13) sent
+    #: 9.4 million and cost $1.44. 0 turns the limit off.
+    openrouter_attempt_token_budget: int = 3_000_000
 
     # ── Governance regime (the experiment's treatment variable) ───────────────
     # Which verification institutions BLOCK a run:
