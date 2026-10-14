@@ -85,7 +85,8 @@ jobs:
     name: Run tests before building
     needs: version-check
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # The suite (about 4,000 tests, -v) takes 9–12 min on a hosted runner; 10 cancelled 0.16.1's first run.
+    timeout-minutes: 25
 
     steps:
       - uses: actions/checkout@v4
