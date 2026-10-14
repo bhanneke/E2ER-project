@@ -933,3 +933,66 @@ def test_a_number_inside_an_identifier_is_a_name(tmp_path: Path):
     report = verify(tmp_path / "paper_draft.tex", ws)
     assert report.prose_mismatched == 0
     assert report.prose_matched == 1
+
+
+# ---------------------------------------------------------------------------
+# Prose: rounding, percentages and constants (2026-10-13 demo runs).
+# The climate, Gaia and NUTS-2 demos flagged "95 percent" prediction intervals,
+# the 1000 of 1000/ϖ, a "500 pc" cut, 7.25 shown as 7.3 and "39 percent" for a
+# share of 0.39 as prose mismatches.
+# ---------------------------------------------------------------------------
+
+
+def test_prose_rounded_to_its_shown_precision_matches(tmp_path: Path):
+    est = {"by_region": {"median_ratio": 7.25}}
+    ws = _ws_with_est(tmp_path, est, "The median ratio is 7.3 across regions.\n")
+    report = verify(tmp_path / "paper_draft.tex", ws)
+    assert report.prose_mismatched == 0
+    assert report.prose_matched == 1
+    # One decimal off at the shown precision is still caught.
+    ws2 = _ws_with_est(tmp_path, est, "The median ratio is 7.4 across regions.\n")
+    assert verify(tmp_path / "paper_draft.tex", ws2).prose_mismatched == 1
+
+
+@pytest.mark.parametrize("text", ["39 percent", "39 per cent", "39\\%", "39.0 percent"])
+def test_prose_percent_matches_a_share(tmp_path: Path, text: str):
+    est = {"sample": {"urban_share": 0.39}}
+    ws = _ws_with_est(tmp_path, est, f"The urban share is {text} of the sample.\n")
+    report = verify(tmp_path / "paper_draft.tex", ws)
+    assert report.prose_mismatched == 0
+    assert report.prose_matched == 1
+
+
+def test_prose_percent_that_disagrees_with_its_share_is_flagged(tmp_path: Path):
+    est = {"sample": {"urban_share": 0.39}}
+    ws = _ws_with_est(tmp_path, est, "The urban share is 45 percent of the sample.\n")
+    report = verify(tmp_path / "paper_draft.tex", ws)
+    assert report.prose_mismatched == 1
+
+
+@pytest.mark.parametrize(
+    "sentence",
+    [
+        "The forecast's 95 percent prediction interval covers the hold-out.",
+        "We report 95\\% confidence intervals for the interval coverage.",
+        "Distances follow as $d = 1000/\\varpi$ for each star in the cluster.",
+        "Distances follow as $d = \\frac{1000}{\\varpi}$ for each star in the cluster.",
+        "We keep stars with distance $< 500$ pc from the cluster centre.",
+        "We keep events with magnitude $M \\geq 4.5$ in the catalogue.",
+        "The threshold of 500 pc keeps the cluster members.",
+    ],
+)
+def test_prose_constants_are_not_checked(tmp_path: Path, sentence: str):
+    est = {"cluster": {"distance_pc": 136.2, "interval_coverage": 0.91, "magnitude_mean": 5.1}, "n_stars": 512}
+    ws = _ws_with_est(tmp_path, est, sentence + "\n")
+    report = verify(tmp_path / "paper_draft.tex", ws)
+    assert report.prose_mismatched == 0
+    assert report.prose_excluded >= 1
+
+
+def test_prose_a_percent_result_next_to_confidence_words_is_still_checked(tmp_path: Path):
+    """Only the conventional levels are skipped; an 87 percent coverage is a result."""
+    est = {"forecast": {"coverage_rate": 0.91}}
+    ws = _ws_with_est(tmp_path, est, "The coverage rate is 87 percent in the hold-out.\n")
+    report = verify(tmp_path / "paper_draft.tex", ws)
+    assert report.prose_mismatched == 1

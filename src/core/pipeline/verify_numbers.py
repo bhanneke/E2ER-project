@@ -662,6 +662,36 @@ _SYMBOL_ASSIGN_RES: tuple[re.Pattern[str], ...] = (
 )
 
 
+# "39 percent", "39 per cent", "2.5 percentage points": a percentage written out.
+_PERCENT_WORD_RE = re.compile(r"^\s*(?:\\[,;:! ]|~)?\s*(?:per\s?cent|percentage\s+points?)\b", re.IGNORECASE)
+
+# Numbers that are conventions or formula constants, not results (2026-10-13
+# demos: "95 percent" prediction intervals, the 1000 of a distance 1000/ϖ, a
+# "500 pc" sample cut were all flagged as prose mismatches).
+_CONFIDENCE_LEVELS = frozenset({80.0, 90.0, 95.0, 99.0, 99.9})
+_CONFIDENCE_WORDS = frozenset({"confidence", "credible", "prediction", "interval", "significance", "nominal"})
+#: Unit factors (powers of ten, time conversions) when they stand next to an arithmetic operator.
+_UNIT_FACTORS = frozenset({10.0, 100.0, 1000.0, 10000.0, 1e6, 1e9, 12.0, 24.0, 52.0, 60.0, 365.0, 365.25, 3600.0})
+_OPERATOR_BEFORE_RE = re.compile(r"(?:/|\*|×|\\times|\\cdot|\\frac\s*\{)\s*[\$\{(]*\s*$")
+_OPERATOR_AFTER_RE = re.compile(r"^\s*[\$\})]*\s*(?:/|\*|×|\\times|\\cdot|\}\s*\{)")
+#: A sample cut or design threshold: "parallax $> 2$", "$M \geq 4.5$", "a cutoff of 500 pc".
+_THRESHOLD_BEFORE_RE = re.compile(
+    r"(?:[<>≤≥]|\\[gl]eq?|\\[gl]t|\\geqslant|\\leqslant|threshold(?:\s+of)?|cut-?off(?:\s+of)?|cut\s+at)\s*[\$\{(]*\s*$",
+    re.IGNORECASE,
+)
+
+
+def _is_constant(value: float, is_percent: bool, words: frozenset[str], before: str, after: str) -> bool:
+    """A confidence level, a unit factor in a formula, or a design threshold: not a result to trace."""
+    v = abs(value)
+    if (is_percent and v in _CONFIDENCE_LEVELS) or v in {0.9, 0.95, 0.99}:
+        if words & _CONFIDENCE_WORDS:
+            return True
+    if v in _UNIT_FACTORS and (_OPERATOR_BEFORE_RE.search(before) or _OPERATOR_AFTER_RE.match(after)):
+        return True
+    return bool(_THRESHOLD_BEFORE_RE.search(before))
+
+
 def _significant_digits(num_str: str) -> int:
     """Count significant digits in a number as the draft displays it.
 
@@ -714,6 +744,7 @@ class _ProseNumber:
     is_percent: bool
     unit: str | None = None  # "years", "billion", currency…
     symbol: str | None = None  # LaTeX symbol it is assigned to
+    constant: bool = False  # a confidence level, a unit factor or a design threshold
 
 
 def _unit_after(prose: str, end: int) -> str | None:
@@ -747,17 +778,22 @@ def _extract_prose_numbers(tex_content: str) -> list[_ProseNumber]:
         ws = max(0, m.start() - _ASSOC_WINDOW)
         we = min(len(prose), m.end() + _ASSOC_WINDOW)
         before = prose[ws : m.start()]
-        unit = _unit_after(prose, m.end())
+        is_percent = m.group(0).rstrip().endswith("%") or bool(_PERCENT_WORD_RE.match(prose[m.end() : m.end() + 30]))
+        unit = None if is_percent else _unit_after(prose, m.end())
         if unit is None and _CURRENCY_BEFORE_RE.search(before):
             unit = "currency"
+        words = _window_words(" ".join(prose[ws:we].split()).lower())
         results.append(
             _ProseNumber(
                 num_str=num_str,
                 context=f"prose: …{ctx}…",
-                words=_window_words(" ".join(prose[ws:we].split()).lower()),
-                is_percent=m.group(0).rstrip().endswith("%"),
+                words=words,
+                is_percent=is_percent,
                 unit=unit,
                 symbol=_symbol_before(before),
+                constant=_is_constant(
+                    parsed, is_percent, words, prose[ws : m.start(1)], prose[m.end(1) : m.end(1) + 20]
+                ),
             )
         )
     return results
@@ -773,6 +809,15 @@ def _is_checkable_prose(num_str: str) -> bool:
     if _YEAR_RE.fullmatch(num_str.strip()):
         return False
     return _significant_digits(num_str) >= 2
+
+
+def _prose_matches(pn: _ProseNumber, draft_val: float, source_val: float, tolerance: float) -> bool:
+    """The prose number is the source value: within tolerance, or the value rounded to
+    the decimals the prose shows ("7.3" for 7.25); a percentage also matches a share
+    ("39 percent" for 0.39, "38.6\\%" for 0.3862)."""
+    if _values_match(draft_val, source_val, tolerance) or _matches_rounded(pn.num_str, source_val):
+        return True
+    return pn.is_percent and abs(source_val) <= 1 and _matches_rounded(pn.num_str, source_val * 100)
 
 
 def _check_prose(
@@ -801,12 +846,12 @@ def _check_prose(
         draft_val = _parse_number(pn.num_str)
         if draft_val is None:
             continue
-        if not _is_checkable_prose(pn.num_str):
+        if not _is_checkable_prose(pn.num_str) or pn.constant:
             report.prose_excluded += 1
             continue
         report.prose_total += 1
 
-        if any(_values_match(draft_val, sv, tolerance) for sv in all_source_values.values()):
+        if any(_prose_matches(pn, draft_val, sv, tolerance) for sv in all_source_values.values()):
             report.prose_matched += 1
             continue
 
@@ -822,7 +867,8 @@ def _check_prose(
                 continue
             if pn.symbol and pn.symbol not in tokens:
                 continue
-            dist = abs(draft_val - sv)
+            # A percentage is compared with a share on the percent scale.
+            dist = abs(draft_val - (sv * 100 if pn.is_percent and abs(sv) <= 1 else sv))
             if dist < closest_dist:
                 closest_dist, closest_key = dist, key
 

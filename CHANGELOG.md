@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Small fixes from the demo runs (2026-10-13)
+- **The text number check reads rounding, percentages and constants.** A number in the text matches a source value rounded to the decimals it shows (7.3 for 7.25); "39 percent", "39 per cent" and "39\\%" match a share of 0.39; and conventions are not checked as results: conventional confidence levels next to "confidence", "prediction" or "interval" ("95 percent"), unit factors in a formula (the 1000 of 1000/ϖ) and sample cuts after a comparison or "threshold"/"cutoff" ("$< 500$ pc", "$M \\geq 4.5$"). They are counted as excluded. The check stays non-gating.
+
 ### OpenRouter attempts cost a fraction (demo 8, 2026-10-13)
 - **The conversation of an OpenRouter tool loop stays small.** Each turn resends the whole conversation; one data-analyst attempt on DeepSeek V4 Pro sent 785k fresh and 8.6M cached input tokens and cost $1.44. A tool result longer than 40,000 characters is now cut at a line break when it enters the conversation, with a note saying how much was shown and how to see the rest (`read_file` takes a new `start_line`). The last six tool exchanges stay in full; once twelve are in full, the oldest are summarised in one step (a long result becomes a note with its first lines, a long `write_file` body its length), so the start of the conversation stays the same between steps and still hits the provider's cache. On a mocked 60-turn attempt that reads 30,000-character previews, the input sent falls to about a quarter.
 - **Each attempt stops at 3 million input tokens** (fresh plus cached, `OPENROUTER_ATTEMPT_TOKEN_BUDGET`, 0 for no limit), with a plain message saying what it sent and how to go on.
