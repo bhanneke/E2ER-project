@@ -80,6 +80,9 @@
     {% else %}
       <p class="muted">Being prepared.</p>
     {% endif %}
+    {% for n in v.web_notices or [] %}
+      <p class="small">{{ n }}.</p>
+    {% endfor %}
     {% if v.web_search and v.web_left_out %}
       <p class="small muted">{{ v.web_left_out }} further search result(s) left out: they share too few words with the research question.</p>
     {% endif %}
