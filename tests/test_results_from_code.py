@@ -281,3 +281,51 @@ def test_a_study_from_before_output_records_is_not_judged_even_without_a_script(
     line = {"script": "old_script.py", "sha256": "x", "started_at": "t", "exit_code": 0, "by": "e2er-run"}
     (ws / SCRIPT_RUNS).write_text(json.dumps(line) + "\n", encoding="utf-8")
     assert all(c.ok for c in check_results_from_code(ws, "econometrics_specialist"))
+
+
+# ── a rerun on another platform: the last digits of a float differ ──────────
+
+FLOAT_SCRIPT = """
+import json
+x = 0.1 + 0.2
+out = {"main": {"estimate": -0.7108317348501935 * x / 0.30000000000000004, "se": x / 3}}
+with open("estimation_results.json", "w") as f:
+    json.dump(out, f)
+"""
+
+
+def test_a_rerun_that_differs_only_in_the_last_float_digits_keeps_the_shipped_file(tmp_path):
+    """CI on Linux (2026-10-14): the rerun's file replaced the specialist's, last digits and all."""
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    (ws / "run_estimation.py").write_text(FLOAT_SCRIPT, encoding="utf-8")
+    import subprocess
+
+    subprocess.run([sys.executable, "run_estimation.py"], cwd=ws, check=True)
+    data = json.loads((ws / "estimation_results.json").read_text())
+    data["main"]["estimate"] = -0.7108317348501937  # as another platform's libraries wrote it
+    shipped = json.dumps(data).encode()
+    (ws / "estimation_results.json").write_bytes(shipped)
+
+    record = confirm_results_from_code(ws, "econometrics_specialist")
+    assert record["estimation_results.json"]["same"] is True and record["estimation_results.json"]["differ"] == 0
+    assert (ws / "estimation_results.json").read_bytes() == shipped  # the study's own bytes stay
+    assert results_from_code(ws, "estimation_results.json")[0] == FROM_CODE
+    (row,) = read_script_runs(ws)
+    assert "estimation_results.json" in row["confirmed"]
+    assert all(c.ok for c in check_results_from_code(ws, "econometrics_specialist"))
+
+
+def test_a_value_changed_beyond_float_noise_still_fails(tmp_path):
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    (ws / "run_estimation.py").write_text(FLOAT_SCRIPT, encoding="utf-8")
+    import subprocess
+
+    subprocess.run([sys.executable, "run_estimation.py"], cwd=ws, check=True)
+    data = json.loads((ws / "estimation_results.json").read_text())
+    data["main"]["se"] = data["main"]["se"] * (1 + 1e-6)  # changed by hand: beyond float noise
+    (ws / "estimation_results.json").write_text(json.dumps(data))
+    record = confirm_results_from_code(ws, "econometrics_specialist")
+    assert record["estimation_results.json"]["same"] is False
+    assert any(not c.ok for c in check_results_from_code(ws, "econometrics_specialist"))

@@ -222,6 +222,31 @@ def read_script_runs(workspace: Path) -> list[dict]:
     return out
 
 
+def confirm_output(workspace: Path, rel: str, sha: str) -> None:
+    """The last run that wrote ``rel`` wrote the same values as the file with SHA-256 ``sha``: record that file.
+
+    A rerun on another platform writes the last digits of some floats differently; the study keeps its own
+    file, and the run's line says which bytes the rerun wrote (``confirmed``). Never raises.
+    """
+    path = Path(workspace) / SCRIPT_RUNS
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+        for i in range(len(lines) - 1, -1, -1):
+            try:
+                row = json.loads(lines[i])
+            except ValueError:
+                continue
+            outputs = row.get("outputs") if isinstance(row, dict) else None
+            if isinstance(outputs, dict) and rel in outputs:
+                row.setdefault("confirmed", {})[rel] = {"same_values_as": sha, "rerun_wrote": outputs[rel]}
+                outputs[rel] = sha
+                lines[i] = json.dumps(row)
+                path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+                return
+    except OSError as e:
+        logger.warning("script log: %s not confirmed: %s", rel, e)
+
+
 def _file_sha(path: Path) -> str | None:
     try:
         return hashlib.sha256(path.read_bytes()).hexdigest()

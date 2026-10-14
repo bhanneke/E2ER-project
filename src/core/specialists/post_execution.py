@@ -62,6 +62,7 @@ import sys
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from ...logging_config import get_logger
 
@@ -136,6 +137,7 @@ EXECUTION_CONVENTIONS: dict[str, ExecutionConvention] = {
 # The script log (one implementation for e2er-run and the runner): src/core/script_log.py.
 from ..script_log import (  # noqa: E402,F401
     SCRIPT_RUNS,
+    confirm_output,
     output_snapshot,
     read_script_runs,
     record_script_run,
@@ -602,12 +604,17 @@ def confirm_results_from_code(workspace: Path, specialist: str) -> dict[str, dic
                     fc = compare_json(tmp, new, n, n)
                 finally:
                     tmp.unlink(missing_ok=True)
+                differ = _values_that_differ(fc)
                 entry["values"] = fc.total
-                entry["differ"] = fc.total - sum(fc.counts[k] for k in ("identical", "same_at_precision"))
-                if fc.problem is None and fc.matches:
+                entry["differ"] = differ
+                if fc.problem is None and differ == 0:
+                    # The script writes these values (a platform's last float digits aside): the file stays
+                    # as the specialist's run left it, and the log records that the rerun confirmed it.
+                    new.write_bytes(originals[n])
+                    confirm_output(workspace, n, _sha_bytes(originals[n]))
                     entry["same"] = True
                     record[n] = entry
-                    continue  # the script writes it: the rerun's file stays
+                    continue
             elif rc == 0:
                 entry["not_written"] = True
             entry["same"] = False
@@ -617,6 +624,22 @@ def confirm_results_from_code(workspace: Path, specialist: str) -> dict[str, dic
     except Exception as e:  # noqa: BLE001 — a check that cannot run must not break the step
         logger.warning("results check: could not run the script again: %s", e)
     return record
+
+
+#: Two values agree when their relative difference is at most this: the last digits of a float differ between
+#: platforms' numerical libraries (CI on Linux and macOS), never a value someone wrote by hand.
+FLOAT_NOISE = 1e-9
+
+
+def _values_that_differ(fc: Any) -> int:
+    """Values of a rerun comparison that do not agree: identical, the same at the file's precision, or within
+    float noise of each other agree; a missing, new, changed or text value does not."""
+    from ..reproduce import MATCHING, MINOR
+
+    noise = sum(1 for rel, *_rest in fc.differences if rel is not None and rel <= FLOAT_NOISE)
+    bad = sum(n for label, n in fc.counts.items() if label not in MATCHING and label != MINOR)
+    minor = fc.counts.get(MINOR, 0)
+    return bad + max(minor - noise, 0)
 
 
 def _sha_bytes(data: bytes) -> str:
