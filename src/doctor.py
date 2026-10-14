@@ -527,6 +527,8 @@ async def byod_literature_check(settings) -> Check:
             return Check("byod.literature", FAIL, f"LITERATURE_BIBTEX_FILE={bib} not found")
 
     dirs = settings.resolved_literature_dirs()
+    explicit = bool(getattr(settings, "literature_dir", None))
+    empty: list[str] = []
     if dirs:
         for raw in (d.strip() for d in dirs.split(",") if d.strip()):
             root = Path(raw).expanduser()
@@ -547,7 +549,12 @@ async def byod_literature_check(settings) -> Check:
                 # otherwise see their data folder reported as a miss on a passing check.
                 if parts:
                     modes.append(f"{root}: {', '.join(parts)}")
+                elif explicit:
+                    # LITERATURE_DIR itself is set: say so, rather than "not set".
+                    empty.append(f"LITERATURE_DIR {root}: set, empty (no PDFs or .bib files yet)")
 
+    if not modes and empty:
+        return Check("byod.literature", SKIP, "; ".join(empty) + " — OpenAlex-only until it has some")
     if not modes:
         return Check(
             "byod.literature",
