@@ -254,6 +254,30 @@ class SeriesDataToolHandler(ToolHandler):
         entry = {**entry, "table": table, "rows": len(items)}
         if try_record(self._workspace, entry) is None:
             envelope["recorded_in"] = ["data_sources.json"]
+            source = getattr(fetcher, "source", None)
+            if load and source is not None:
+                self._record_kit_source(source, load, table, envelope)
+
+    def _record_kit_source(
+        self, source: Any, load: dict[str, Any], table: str | None, envelope: dict[str, Any]
+    ) -> None:
+        """What `e2er-data` does after a connector-kit load: the dictionary entry and the citation.
+
+        fetch_data (the API backends) recorded only data_sources.json, so a study on
+        OpenRouter cited no catalogue for its USGS data (0.16.0 demo, 2026-10-13).
+        """
+        from .sources.runtime import RecordError, add_citation, record_in_dictionary
+
+        assert self._workspace is not None
+        try:
+            if table:
+                record_in_dictionary(self._workspace, table, source, load)
+                envelope["recorded_in"].append("data_dictionary.json")
+            if source.bibtex:
+                envelope["citation_added"] = add_citation(self._workspace, source)
+                envelope["cite_key"] = source.cite_key
+        except (RecordError, OSError) as e:
+            envelope["record_error"] = f"{type(e).__name__}: {e}"
 
     async def _materialize(
         self,

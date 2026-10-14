@@ -212,7 +212,10 @@ async def test_fetch_data_records_the_same_load(ws: Path) -> None:
                 },
             )
         )
-    assert out["error"] is None and out["items"] and out["recorded_in"] == ["data_sources.json"]
+    # The same records as e2er-data: the load, the table's dictionary entry and the citation.
+    assert out["error"] is None and out["items"]
+    assert out["recorded_in"] == ["data_sources.json", "data_dictionary.json"]
+    assert out["cite_key"] in (ws / "literature.bib").read_text()
     [load] = json.loads((ws / "data_sources.json").read_text())["loads"]
     assert load["connector"] == "exoplanets" and load["table"] == "imaged" and load["files"]
 
