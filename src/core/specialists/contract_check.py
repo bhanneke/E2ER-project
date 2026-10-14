@@ -425,6 +425,61 @@ def check_preregistered_results(workspace: Path, results_relative: str) -> Contr
     )
 
 
+def check_results_from_code(workspace: Path, specialist: str) -> list[ContractCheck]:
+    """Each results file is what the study's script writes: the output of the last run of the script as shipped.
+
+    The script log records the SHA-256 of every file a run wrote
+    (``script_log.results_from_code``); the runner runs the script again when a
+    file is not traced to it (``post_execution.confirm_results_from_code``). A
+    file that the script as shipped does not write is a broken run, whatever
+    the governance regime: the paper's numbers would not come from its code.
+    """
+    from ..script_log import FROM_CODE, NOT_RECORDED, results_from_code
+    from .post_execution import RERUN_RECORD, rerun_chain, results_files, results_script
+
+    rerun: dict[str, Any] = {}
+    try:
+        loaded = json.loads((workspace / RERUN_RECORD).read_text(encoding="utf-8"))
+        rerun = loaded if isinstance(loaded, dict) else {}
+    except (OSError, ValueError):
+        pass
+    checks: list[ContractCheck] = []
+    for name in results_files(workspace, specialist):
+        outcome, why, writer = results_from_code(workspace, name)
+        if outcome in (FROM_CODE, NOT_RECORDED):
+            checks.append(ContractCheck(name, True, ""))
+            continue
+        if writer is None and not rerun_chain(workspace, specialist, [name]):
+            # No script in the study at all: there is no code to hold the file to (the standalone check
+            # and the reproduce recipe say so on their own terms).
+            checks.append(ContractCheck(name, True, ""))
+            continue
+        script = results_script(workspace, specialist, name) or "your estimation script"
+        current = hashlib.sha256((workspace / name).read_bytes()).hexdigest()
+        found = rerun.get(name) if isinstance(rerun.get(name), dict) else None
+        if found and found.get("sha256") == current:
+            if found.get("differ"):
+                why += (
+                    f"; run again, {found.get('script')} writes {found['differ']} of {found.get('values')} "
+                    "values differently"
+                )
+            elif found.get("not_written"):
+                why += f"; run again, {found.get('script')} does not write it"
+            elif found.get("exit_code") not in (0, None):
+                why += f"; run again, {found.get('script')} fails (exit {found.get('exit_code')})"
+            elif found.get("exit_code") is None:
+                why += f"; run again, {found.get('script')} did not finish"
+        checks.append(
+            ContractCheck(
+                name,
+                False,
+                f"{name} was not written by {script} as shipped ({why}); change the script and run it. "
+                f"{name} must be exactly what the script writes: never edit it by hand.",
+            )
+        )
+    return checks
+
+
 # ── Contract-violation feedback (self-correction across attempts) ───────────
 #
 # A contract violation flips the specialist result to failure, but before
@@ -659,25 +714,28 @@ def check_patch_phrases(workspace: Path, relative: str = "paper_draft.tex.edits.
 REVISION_FINDINGS_FILE = ".revision_findings.json"
 
 
-def check_patch_coverage(workspace: Path, relative: str = "paper_draft.tex.edits.json") -> ContractCheck:
-    """Every finding of the targeted corrections is corrected at all its passages, or the revisor says why not.
+def _revision_record(workspace: Path) -> dict[str, Any]:
+    try:
+        data = json.loads((workspace / REVISION_FINDINGS_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
 
-    The patch is applied to a copy (nothing is written) and compared with the
-    findings in ``.revision_findings.json`` (``patch_merger.coverage_problems``).
-    A run whose revisor fixed one of several passages with the same problem
-    (calculated exoplanet radii presented as measured) passed before.
-    """
+
+def _revision_merge(workspace: Path, relative: str) -> tuple[list[Any], Any] | None:
+    """(findings, the patch applied to a copy of the draft) for the findings recorded about this draft; None
+    when there is no such record, draft or patch file (or one cannot be read)."""
     from ..strategist.findings import Finding
-    from ..strategist.patch_merger import coverage_problems, merge_patch_file
+    from ..strategist.patch_merger import merge_patch_file
 
     record = workspace / REVISION_FINDINGS_FILE
     if not record.is_file() or not (workspace / "paper_draft.tex").is_file() or not (workspace / relative).is_file():
-        return ContractCheck(relative, True, "", kind=KIND_VERIFICATION)
+        return None
     try:
         data = json.loads(record.read_text(encoding="utf-8"))
         draft_sha = hashlib.sha256((workspace / "paper_draft.tex").read_bytes()).hexdigest()
         if data.get("draft_sha256") != draft_sha:
-            return ContractCheck(relative, True, "", kind=KIND_VERIFICATION)  # findings about another draft
+            return None  # findings about another draft
         raw = data.get("findings") or []
         findings = [
             Finding(
@@ -691,10 +749,60 @@ def check_patch_coverage(workspace: Path, relative: str = "paper_draft.tex.edits
             )
             for f in raw
         ]
-        merged = merge_patch_file(workspace, findings, persist=False)
+        return findings, merge_patch_file(workspace, findings, persist=False)
     except (OSError, ValueError, KeyError, TypeError, AttributeError):
         # An unreadable patch file is the non-empty check's to report; the findings record is ours.
+        return None
+
+
+def check_patch_applies(workspace: Path, relative: str = "paper_draft.tex.edits.json") -> ContractCheck:
+    """A patch for the revision round's findings changes the draft: an edit applies, or the revisor keeps passages.
+
+    Demo 1 (2026-10-13): every edit targeted ``paper:full`` while the findings
+    named a section, the merger rejected all five, nothing sent the revisor
+    back, and the paper shipped as the reviewers had scored it. A patch that
+    applies no edit and keeps nothing (``"edit_type": "keep"`` with a reason)
+    while findings exist is a failed revision; the feedback names why each
+    edit was rejected.
+    """
+    if not _revision_record(workspace).get("require_change"):
+        # The number check's correction: its `[]` is an answer, and the check stops for the researcher anyway.
+        return ContractCheck(relative, True, "")
+    found = _revision_merge(workspace, relative)
+    if found is None:
+        return ContractCheck(relative, True, "")
+    findings, merged = found
+    if not findings or merged.n_applied > 0 or (merged.kept and not merged.failed):
+        return ContractCheck(relative, True, "")
+    if merged.failed:
+        reasons = "; ".join(f"edit {r.edit.edit_id} ({r.edit.target}): {r.error}" for r in merged.failed[:8])
+        more = f"; and {len(merged.failed) - 8} more" if len(merged.failed) > 8 else ""
+        why = f"none of the {len(merged.failed)} edit(s) could be applied: {reasons}{more}"
+    else:
+        why = "the patch has no edit"
+    return ContractCheck(
+        relative,
+        False,
+        f"the revision changes nothing although {len(findings)} finding(s) are open ({why}). Correct each "
+        "passage with an edit whose `find` is copied exactly from paper_draft.tex (target `paper:full` searches "
+        'the whole draft), or keep a passage with "edit_type": "keep" and the reason.',
+    )
+
+
+def check_patch_coverage(workspace: Path, relative: str = "paper_draft.tex.edits.json") -> ContractCheck:
+    """Every finding of the targeted corrections is corrected at all its passages, or the revisor says why not.
+
+    The patch is applied to a copy (nothing is written) and compared with the
+    findings in ``.revision_findings.json`` (``patch_merger.coverage_problems``).
+    A run whose revisor fixed one of several passages with the same problem
+    (calculated exoplanet radii presented as measured) passed before.
+    """
+    from ..strategist.patch_merger import coverage_problems
+
+    found = _revision_merge(workspace, relative)
+    if found is None:
         return ContractCheck(relative, True, "", kind=KIND_VERIFICATION)
+    findings, merged = found
     problems = coverage_problems(findings, merged)
     if not problems:
         return ContractCheck(relative, True, "", kind=KIND_VERIFICATION)
@@ -1041,6 +1149,8 @@ def check_specialist_artifacts(workspace: Path, specialist: str) -> list[Contrac
         from .standalone_check import check_estimation_standalone
 
         checks.append(check_estimation_standalone(workspace, regression_file))
+        # The results are what the shipped script writes, not a file edited afterwards (reliability).
+        checks.extend(check_results_from_code(workspace, specialist))
 
     # The replication template's JSON files are contracts other code executes
     # (the plan) or verifies (the report): a file that parses but breaks its
@@ -1095,6 +1205,8 @@ def check_specialist_artifacts(workspace: Path, specialist: str) -> list[Contrac
         checks.append(check_draft_cites(workspace, draft))
     # The targeted corrections fix every passage a finding names, or say why one stays.
     if specialist == "patch_revisor" and not any(c.artifact == primary and not c.ok for c in checks):
+        # A revision that applies nothing while findings are open is a failed step (reliability).
+        checks.append(check_patch_applies(workspace, primary or "paper_draft.tex.edits.json"))
         checks.append(check_patch_coverage(workspace, primary or "paper_draft.tex.edits.json"))
     # The prose has none of the constructions the researcher rejects (the abstract writer's too).
     if specialist in _PHRASE_CHECKED and draft_written:

@@ -16,9 +16,11 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 #: The workspace's record of every script run (by `e2er-run` and by the runner), one JSON line each:
-#: ``{script, sha256, started_at, exit_code, by, python, packages}``. Export reads it to rerun the scripts in
-#: the order the run ran them (reproduce.json) and to pin the packages they loaded. A dotfile:
-#: internal, never exported.
+#: ``{script, sha256, started_at, exit_code, by, python, packages, outputs}``; ``outputs`` maps every
+#: result-type file the run wrote (:data:`OUTPUT_SUFFIXES`) to its SHA-256 after the run, so a results
+#: file can be traced to the run of the script that wrote it (:func:`results_writer`). Export reads it
+#: to rerun the scripts in the order the run ran them (reproduce.json) and to pin the packages they
+#: loaded. A dotfile: internal, never exported.
 SCRIPT_RUNS = ".e2er-script-runs.jsonl"
 
 #: Where the bootstrap writes the packages the script loaded (a file outside the workspace).
@@ -102,6 +104,69 @@ def script_record(path: Path) -> dict[str, object] | None:
     return out
 
 
+#: Files a script run may write that the log fingerprints (results, tables of numbers).
+OUTPUT_SUFFIXES = frozenset({".json", ".csv", ".tsv"})
+#: Folders never searched for outputs (environments, caches, e2er's own run folders).
+_SKIP_DIRS = frozenset({".git", ".venv", "venv", "__pycache__", "node_modules", "sandbox", "literature"})
+#: A file larger than this is not fingerprinted (a data export, not a results file).
+_MAX_OUTPUT_BYTES = 64 * 1024 * 1024
+
+#: (modification time in ns, size) of each candidate output, by workspace-relative path.
+Snapshot = dict[str, tuple[int, int]]
+
+
+def _candidates(workspace: Path) -> list[Path]:
+    """Result-type files in the workspace and one folder down (dotfiles and environments left out)."""
+    out: list[Path] = []
+    try:
+        top = list(Path(workspace).iterdir())
+    except OSError:
+        return out
+    for p in top:
+        if p.name.startswith("."):
+            continue
+        if p.is_dir():
+            if p.name in _SKIP_DIRS:
+                continue
+            try:
+                out.extend(c for c in p.iterdir() if not c.name.startswith(".") and c.suffix.lower() in OUTPUT_SUFFIXES)
+            except OSError:
+                continue
+        elif p.suffix.lower() in OUTPUT_SUFFIXES:
+            out.append(p)
+    return out
+
+
+def output_snapshot(workspace: Path) -> Snapshot:
+    """The candidate outputs as they are before a script runs (pass it to :func:`record_script_run`)."""
+    snap: Snapshot = {}
+    for p in _candidates(workspace):
+        try:
+            st = p.stat()
+        except OSError:
+            continue
+        if p.is_file():
+            snap[p.relative_to(workspace).as_posix()] = (st.st_mtime_ns, st.st_size)
+    return snap
+
+
+def written_outputs(workspace: Path, before: Snapshot) -> dict[str, str]:
+    """{path: SHA-256} of the candidate outputs created or rewritten since ``before``."""
+    out: dict[str, str] = {}
+    for p in _candidates(workspace):
+        try:
+            st = p.stat()
+            if not p.is_file() or st.st_size > _MAX_OUTPUT_BYTES:
+                continue
+            rel = p.relative_to(workspace).as_posix()
+            if before.get(rel) == (st.st_mtime_ns, st.st_size):
+                continue
+            out[rel] = hashlib.sha256(p.read_bytes()).hexdigest()
+        except OSError:
+            continue
+    return dict(sorted(out.items()))
+
+
 def record_script_run(
     workspace: Path,
     rel: str,
@@ -110,8 +175,13 @@ def record_script_run(
     *,
     by: str,
     record: dict[str, object] | None = None,
+    before: Snapshot | None = None,
 ) -> None:
-    """Append one run to the workspace's script log; never raises."""
+    """Append one run to the workspace's script log; never raises.
+
+    With ``before`` (:func:`output_snapshot` taken before the script ran) the line
+    also records the files the run wrote, each with its SHA-256 (``outputs``).
+    """
     try:
         sha = hashlib.sha256((Path(workspace) / rel).read_bytes()).hexdigest()
         line: dict[str, object] = {
@@ -121,6 +191,8 @@ def record_script_run(
             "exit_code": exit_code,
             "by": by,
         }
+        if before is not None:
+            line["outputs"] = written_outputs(Path(workspace), before)
         if record:  # the interpreter's Python version and the packages the script loaded
             if isinstance(record.get("python"), str):
                 line["python"] = record["python"]
@@ -148,3 +220,71 @@ def read_script_runs(workspace: Path) -> list[dict]:
         if isinstance(row, dict) and isinstance(row.get("script"), str):
             out.append(row)
     return out
+
+
+def _file_sha(path: Path) -> str | None:
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
+def records_outputs(runs: list[dict]) -> bool:
+    """Whether the log records the files its runs wrote (after e2er 0.16.0); older logs do not."""
+    return any(isinstance(r.get("outputs"), dict) for r in runs)
+
+
+def results_writer(workspace: Path, rel: str, runs: list[dict] | None = None) -> dict | None:
+    """The last recorded run that wrote ``rel`` (any exit code), or None."""
+    runs = read_script_runs(workspace) if runs is None else runs
+    for row in reversed(runs):
+        outputs = row.get("outputs")
+        if isinstance(outputs, dict) and rel in outputs:
+            return row
+    return None
+
+
+#: Outcomes of :func:`results_from_code`.
+FROM_CODE = "from_code"
+NOT_FROM_CODE = "not_from_code"
+NOT_RECORDED = "not_recorded"
+
+
+def results_from_code(workspace: Path, rel: str) -> tuple[str, str, dict | None]:
+    """Was ``rel`` written, as it is now, by the last run of a script the study ships unchanged?
+
+    (outcome, plain reason, the writing run): :data:`FROM_CODE` when the file's
+    SHA-256 is the one the last run that wrote it recorded, that run succeeded
+    and its script is still the one that ran; :data:`NOT_RECORDED` when the log
+    records no run at all, or no run with an output record wrote it but the log
+    has runs from before e2er recorded outputs (nothing can be said); else
+    :data:`NOT_FROM_CODE` with the reason.
+    """
+    workspace = Path(workspace)
+    runs = read_script_runs(workspace)
+    current = _file_sha(workspace / rel)
+    if current is None:
+        return NOT_FROM_CODE, f"{rel} is missing", None
+    if not runs:
+        # Nothing ran through the log yet (a CLI that ran `python script.py` itself, or files written
+        # outside a run): the runner's rerun after the specialist (post_execution) makes the record.
+        return NOT_RECORDED, f"the script log ({SCRIPT_RUNS}) records no run", None
+    writer = results_writer(workspace, rel, runs)
+    if writer is None:
+        if any(not isinstance(r.get("outputs"), dict) for r in runs):
+            # Runs from before e2er recorded output files (a study resumed after an update): one of them may
+            # have written it, and nothing can be said.
+            return NOT_RECORDED, f"the script log ({SCRIPT_RUNS}) has runs that record no output files", None
+        return NOT_FROM_CODE, f"no recorded run of the study's scripts wrote {rel}", None
+    script = str(writer.get("script"))
+    if writer["outputs"].get(rel) != current:
+        return NOT_FROM_CODE, f"{rel} changed after {script} last wrote it", writer
+    if writer.get("exit_code") != 0:
+        return (
+            NOT_FROM_CODE,
+            f"{rel} was written by a run of {script} that failed (exit {writer.get('exit_code')})",
+            writer,
+        )
+    if _file_sha(workspace / script) != writer.get("sha256"):
+        return NOT_FROM_CODE, f"{script} changed after the run that wrote {rel}", writer
+    return FROM_CODE, f"written by {script} (run {writer.get('started_at', '?')})", writer

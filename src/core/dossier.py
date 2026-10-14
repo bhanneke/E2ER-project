@@ -391,6 +391,7 @@ _RUN_EVENTS = {
     "circuit_breaker_tripped",
     "paused_budget",
     "paused_plan_limit",
+    "paused_billing_limit",
     "estimation_set_aside",
     "preregistration",
 }

@@ -151,7 +151,13 @@ def validate_targets(edits: list[Edit], findings: list[Finding]) -> tuple[list[E
     An edit is in-scope if any of:
       - its `target` is in the set of finding targets, OR
       - any finding has `target == "paper:full"` (whole-paper scope
-        widens to everything).
+        widens to everything), OR
+      - the edit's own target is `paper:full`: a text edit anywhere in
+        paper_draft.tex. A finding names an issue, and its passages can sit
+        in any section (the coverage check itself tells the revisor to use
+        `paper:full` for a passage that occurs more than once). Demo 1
+        (2026-10-13) had all five such edits rejected against
+        `section:literature` findings and shipped the unrevised draft.
 
     Out-of-scope edits are returned as pre-failed `EditResult`s so
     the merger can report exactly which edits were rejected and why.
@@ -165,7 +171,7 @@ def validate_targets(edits: list[Edit], findings: list[Finding]) -> tuple[list[E
     in_scope: list[Edit] = []
     out_of_scope: list[EditResult] = []
     for edit in edits:
-        if has_paper_full or edit.target in finding_targets:
+        if has_paper_full or edit.target in finding_targets or edit.target == "paper:full":
             in_scope.append(edit)
         else:
             out_of_scope.append(

@@ -240,9 +240,10 @@ def _trace_md(report: dict[str, Any]) -> str:
 
 
 def run_script(ws: Path, *, timeout: int = 300) -> tuple[int, str]:
-    from ...core.script_log import record_script_run, script_command, script_record
+    from ...core.script_log import output_snapshot, record_script_run, script_command, script_record
 
     started = _now()
+    before = output_snapshot(ws)
     argv, extra, packages_file = script_command(sys.executable, ws / SCRIPT)
     try:
         proc = subprocess.run(
@@ -256,7 +257,7 @@ def run_script(ws: Path, *, timeout: int = 300) -> tuple[int, str]:
         )
     finally:
         record = script_record(packages_file)
-    record_script_run(ws, SCRIPT, started, proc.returncode, by="e2er", record=record)
+    record_script_run(ws, SCRIPT, started, proc.returncode, by="e2er", record=record, before=before)
     return proc.returncode, (proc.stderr or proc.stdout)[-1500:]
 
 

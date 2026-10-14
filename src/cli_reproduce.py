@@ -58,6 +58,10 @@ def render(
         lines.append("")
     lines.append("Steps:")
     for i, s in enumerate(steps, 1):
+        if s.skipped:
+            about = f" ({s.about})" if s.about else ""
+            lines.append(f"  {i}. {s.command}{about}: not run, {s.skipped}")
+            continue
         state = "done" if s.exit_code == 0 else f"FAILED (exit {s.exit_code})"
         about = f" ({s.about})" if s.about else ""
         lines.append(f"  {i}. {s.command}{about}: {state} in {s.seconds:.0f} s")
@@ -81,12 +85,22 @@ def render(
     elif not inputs:
         lines.append(f"  not compared: the run stopped before the inputs were laid out ({len(declared)} listed)")
     else:
-        same = [i for i in inputs if i["status"] == "identical"]
-        differ = [i["path"] for i in inputs if i["status"] == "differs"]
+        same = [i for i in inputs if i["status"] in ("identical", rp.SAME_ROWS)]
+        reordered = [i["path"] for i in inputs if i["status"] == rp.SAME_ROWS]
+        differ = [i for i in inputs if i["status"] == "differs"]
         missing = [i["path"] for i in inputs if i["status"] == "missing"]
         lines.append(f"  {len(same)} of {len(inputs)} identical")
+        if reordered:
+            lines.append(
+                f"  {len(reordered)} with the same rows in a different order (identical content): "
+                + ", ".join(reordered)
+            )
         if differ:
-            lines.append(f"  {len(differ)} differ: {', '.join(differ)}")
+            named = [
+                i["path"] + (f" (tables {', '.join(i['tables_differ'])})" if i.get("tables_differ") else "")
+                for i in differ
+            ]
+            lines.append(f"  {len(differ)} differ: {', '.join(named)}")
         if missing:
             lines.append(f"  {len(missing)} missing: {', '.join(missing)}")
     if files:

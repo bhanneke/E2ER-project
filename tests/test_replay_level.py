@@ -340,7 +340,9 @@ def test_the_fomc_event_study_replays_to_the_end_through_the_server(tmp_path: Pa
         ]
         p, stops = _approve_to_the_end(api, pid)
         assert p["status"] == "completed", p
-        assert stops == ["review_design", "preregister", "review_draft"]
+        # The recorded targeted corrections wrote `[]` against the panel's findings: a revision that changes
+        # nothing stops for the researcher (output_contract); approved, the run completes.
+        assert stops == ["review_design", "preregister", "review_draft", "output_contract"]
         ws = Path(p["workspace"])  # named after the date and title since 0.14.0
         assert ws.parent == (study / "workspaces").resolve() and ws.name != pid
         assert json.loads((ws / "estimation_results.json").read_text(encoding="utf-8")) == json.loads(
@@ -511,7 +513,8 @@ def test_the_iterative_mode_replays_to_the_end_through_the_server(tmp_path: Path
         ]
         p, stops = _approve_to_the_end(api, pid)
         assert p["status"] == "completed", (p.get("last_error"), stops)
-        assert stops == ["review_design", "preregister", "review_draft"]
+        # As above: the recorded revision patch is empty against open findings (output_contract, approved).
+        assert stops == ["review_design", "preregister", "review_draft", "output_contract"]
         ws = Path(p["workspace"])
 
         db = tmp_path / "home" / ".e2er" / "papers.db"

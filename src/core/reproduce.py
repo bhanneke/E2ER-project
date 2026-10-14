@@ -9,6 +9,8 @@ how the study's code is run again:
       "requirements": "code/requirements.txt",   # pinned packages, installed in a new environment
       "files": {"run_estimation.py": "code/run_estimation.py"},   # run folder <- study folder
       "steps": [{"run": ["python", "run_estimation.py"], "about": "estimate the models"}],
+                                                 # + "when_missing": ["data.db"]: run only when the folder
+                                                 # lacked it (data preparation after get_data.py)
       "inputs": [{"path": "data/x.csv", "sha256": "…", "source": "…"}],   # + "reload": "get_data.py" when a
                                                  # step loads it again if the folder does not ship it
       "compare": [{"published": "results/estimation_results.json", "produced": "estimation_results.json"}],
@@ -25,7 +27,9 @@ Afterwards every compared JSON file is read value by value. A value is
 published number at the decimals the study printed), shows *small differences*
 (within the replication path's minor tolerance and without a change of sign),
 or *differs*. Inputs listed with a SHA-256 are compared with the study's own
-files. When the study ships rendered tables and their spec, the tables are
+files; a table input whose bytes differ but whose rows are the study's (a CSV, or
+every table of a SQLite database, order of rows aside) has the same content.
+When the study ships rendered tables and their spec, the tables are
 rendered again from the rerun's results and compared with the paper's.
 
 The study's code runs on its own: it gets no API key and no e2er setting, but it
@@ -305,16 +309,119 @@ def sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
+# ── comparing inputs by content ──────────────────────────────────────────────
+#
+# A source reloaded by get_data.py can return the same rows in another order (an
+# ADQL query without ORDER BY: the Gaia demo of 2026-10-13 got 14,066 identical
+# rows back, and its CSV differed by SHA-256). Inputs that are tables (a CSV, a
+# table of data.db) are therefore also fingerprinted by content: a hash of the
+# multiset of their rows, which ignores the order of the rows.
+
+#: The status of an input whose bytes differ but whose rows are the same (in another order).
+SAME_ROWS = "same_rows"
+#: Table files fingerprinted by content.
+_TABLE_SUFFIXES = frozenset({".csv", ".tsv"})
+_DB_SUFFIXES = frozenset({".db", ".sqlite", ".sqlite3"})
+_MOD = 1 << 256
+
+
+def _row_digest(row: list[Any]) -> int:
+    def norm(v: Any) -> Any:
+        if isinstance(v, bytes):
+            return {"bytes": v.hex()}
+        if isinstance(v, float):
+            return repr(v)
+        return v
+
+    text = json.dumps([norm(v) for v in row], ensure_ascii=False, separators=(",", ":"))
+    return int(hashlib.sha256(text.encode("utf-8")).hexdigest(), 16)
+
+
+def _rows_fingerprint(header: list[Any], rows: Any) -> dict[str, Any]:
+    """{"rows": n, "content_sha256": …}: the header and the multiset of rows (any order gives the same hash)."""
+    acc, n = 0, 0
+    for row in rows:
+        acc = (acc + _row_digest(list(row))) % _MOD
+        n += 1
+    h = hashlib.sha256()
+    h.update(json.dumps([str(c) for c in header], ensure_ascii=False).encode("utf-8"))
+    h.update(acc.to_bytes(32, "big"))
+    h.update(str(n).encode())
+    return {"rows": n, "content_sha256": h.hexdigest()}
+
+
+def content_fingerprint(path: Path) -> dict[str, Any] | None:
+    """A table file's content, order of rows aside: ``{"rows", "content_sha256"}`` for a CSV/TSV,
+    ``{"tables": {name: {"rows", "content_sha256"}}}`` for a SQLite database; None for other files
+    or one that cannot be read."""
+    import csv
+    import sqlite3
+
+    suffix = path.suffix.lower()
+    try:
+        if suffix in _TABLE_SUFFIXES:
+            with path.open(newline="", encoding="utf-8", errors="replace") as f:
+                reader = csv.reader(f, delimiter="\t" if suffix == ".tsv" else ",")
+                header = next(reader, [])
+                return _rows_fingerprint(header, reader)
+        if suffix in _DB_SUFFIXES:
+            con = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+            try:
+                names = [
+                    str(r[0])
+                    for r in con.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+                    if not str(r[0]).startswith("sqlite_")
+                ]
+                tables = {}
+                for name in names:
+                    cur = con.execute('SELECT * FROM "' + name.replace('"', '""') + '"')
+                    tables[name] = _rows_fingerprint([d[0] for d in cur.description or ()], cur)
+            finally:
+                con.close()
+            return {"tables": tables}
+    except (OSError, UnicodeError, sqlite3.Error, csv.Error):
+        return None
+    return None
+
+
+def _same_content(item: dict[str, Any], path: Path) -> tuple[bool, list[str]]:
+    """(the rows are the study's, the tables that differ) for an input with a recorded content fingerprint."""
+    found = content_fingerprint(path)
+    if found is None:
+        return False, []
+    if isinstance(item.get("tables"), dict):
+        have = found.get("tables") or {}
+        differ = [
+            t
+            for t, want in sorted(item["tables"].items())
+            if not isinstance(want, dict) or (have.get(t) or {}).get("content_sha256") != want.get("content_sha256")
+        ]
+        return not differ, differ
+    if isinstance(item.get("content_sha256"), str):
+        return found.get("content_sha256") == item["content_sha256"], []
+    return False, []
+
+
 def compare_inputs(run_dir: Path, inputs: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Each declared input as the rerun has it: identical to the study's file, different, or missing."""
+    """Each declared input as the rerun has it: identical to the study's file, the same rows in another order
+    (``same_rows``, when the recipe recorded its content), different, or missing."""
     out = []
     for item in inputs:
         path = run_dir / item["path"]
+        entry: dict[str, Any] = {"path": item["path"], "source": item.get("source")}
         if not path.is_file():
             status = "missing"
+        elif sha256_file(path) == item["sha256"]:
+            status = "identical"
+        elif "tables" in item or "content_sha256" in item:
+            same, differ = _same_content(item, path)
+            status = SAME_ROWS if same else "differs"
+            if differ:
+                entry["tables_differ"] = differ
         else:
-            status = "identical" if sha256_file(path) == item["sha256"] else "differs"
-        out.append({"path": item["path"], "source": item.get("source"), "status": status})
+            status = "differs"
+        entry["status"] = status
+        out.append(entry)
     return out
 
 
@@ -544,6 +651,8 @@ class StepResult:
     network: list[dict[str, Any]] = field(default_factory=list)
     #: A failed step's missing package, in a sentence ("The recipe does not pin openpyxl, ..."); empty otherwise.
     missing: str = ""
+    #: Not run: the step rebuilds what the folder already had (``"when_missing"`` in the recipe).
+    skipped: str = ""
 
     @property
     def blocked(self) -> list[dict[str, Any]]:
@@ -661,7 +770,24 @@ def run_steps(
     connections are recorded).
     """
     results = []
+    # What the folder did not ship (before any step loads it again): a step marked "when_missing" (the data
+    # preparation after get_data.py) runs only when one of its inputs had to be loaded again.
+    absent = {p for p in reloaded_inputs(recipe) if not (run_dir / p).exists()}
     for i, step in enumerate(recipe["steps"], 1):
+        when = step.get("when_missing")
+        if isinstance(when, list) and when and not absent.intersection(map(str, when)):
+            results.append(
+                StepResult(
+                    command=shlex.join(step_argv(step)),
+                    about=str(step.get("about") or ""),
+                    exit_code=0,
+                    seconds=0.0,
+                    tail="",
+                    log="",
+                    skipped=f"the folder has {', '.join(map(str, when))}",
+                )
+            )
+            continue
         argv = step_argv(step)
         if argv and argv[0] in ("python", "python3"):
             argv = [str(python), *argv[1:]]

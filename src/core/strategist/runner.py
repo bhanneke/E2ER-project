@@ -23,6 +23,7 @@ from ..specialists.contracts import Contribution, WorkOrder
 from ..specialists.dispatcher import (
     MAX_SPECIALIST_ATTEMPTS,
     ContractFailureError,
+    contract_failed,
     execute_parallel,
     execute_with_dependencies,
 )
@@ -613,13 +614,15 @@ class PipelineRunner:
             # spending limit, the run pauses with its state saved; no step is
             # marked failed and the interrupted specialist's attempt is not
             # counted. Resume picks up at the first step that has not finished
-            # and runs the interrupted specialist again.
+            # and runs the interrupted specialist again. A paid API's refusal for
+            # money (no credits, the key's limit: BillingLimitReachedError) pauses
+            # the same way, with its own sentence.
             state.save(self._workspace)
-            text = plan_limit_status(pl.backend, pl.resets)
+            text = getattr(pl, "status", None) or plan_limit_status(pl.backend, pl.resets)
             logger.warning("Pipeline paused (plan limit) for paper %s: %s", self._paper_id, pl.message[:300])
             await log_event(
                 self._paper_id,
-                "paused_plan_limit",
+                getattr(pl, "event", "paused_plan_limit"),
                 payload={
                     "backend": pl.backend,
                     "resets": pl.resets,
@@ -631,7 +634,7 @@ class PipelineRunner:
             await self._update_status(PaperStatus.PAUSED, error=text)
             return {
                 "status": "paused",
-                "reason": "plan_limit",
+                "reason": "billing_limit" if getattr(pl, "event", "") == "paused_billing_limit" else "plan_limit",
                 "backend": pl.backend,
                 "resets": pl.resets,
                 "specialist": pl.specialist,
@@ -1495,7 +1498,7 @@ class PipelineRunner:
         reruns = state.metadata.pop("rerun", [])
         if not reruns:
             return
-        state.metadata.pop("sent_back", None)
+        sent_back = state.metadata.pop("sent_back", None)
         # Checks that run at every start (a sequence gate with resumable=false,
         # e.g. the replication template's fetch, which also picks up a paper the
         # researcher supplied) run before a specialist is sent back to work, so
@@ -1521,7 +1524,7 @@ class PipelineRunner:
         step_names = [s.name for s in self._spec.steps]
         rerun_steps = False
         sent_specialists: set[str] = set()
-        for r in reruns:
+        for i, r in enumerate(reruns):
             target, remark = r["target"], r["remark"]
             await log_event(self._paper_id, "researcher_rerun", stage=target, payload={"remark": remark})
             if target in step_names:
@@ -1547,7 +1550,14 @@ class PipelineRunner:
                     extra["keep_files"] = sorted(protected)
                 order = WorkOrder(paper_id=self._paper_id, specialist=target, focus=focus, extra=extra)
                 before = {f: (self._workspace / f).read_bytes() for f in protected}
-                contributions = await self._execute_orders([order])
+                try:
+                    contributions = await self._execute_orders([order])
+                except PlanLimitReachedError:
+                    # The plan's limit or the API's credits ran out during the send-back: the run
+                    # pauses, and Resume sends this specialist (and the ones after it) back again.
+                    await self._restore_researcher_edits(before, target)
+                    self._keep_send_backs(state, reruns[i:], sent_back)
+                    raise
                 self._contributions.extend(contributions)
                 await self._restore_researcher_edits(before, target)
         if sent_specialists and not rerun_steps:
@@ -1579,6 +1589,18 @@ class PipelineRunner:
                 state.save(self._workspace)
                 return
             raise HumanReviewRequestedError(pending)
+
+    def _keep_send_backs(self, state: Any, left: list[dict[str, Any]], sent_back: Any) -> None:
+        """Put the send-backs that have not run back into the state, so Resume runs them (a pause interrupted them).
+
+        Before, a send-back whose specialist hit OpenRouter's 402 at the draft
+        review (2026-10-14) returned to the same stop with no error shown, and
+        the researcher's remark was gone.
+        """
+        state.metadata["rerun"] = list(left)
+        if sent_back is not None:
+            state.metadata["sent_back"] = sent_back
+        state.save(self._workspace)
 
     async def _stop_for_contract(self, cf: ContractFailureError, state: Any) -> dict[str, Any]:
         """Stop the run for the researcher: output kept failing its contract after the last attempt.
@@ -1646,7 +1668,7 @@ class PipelineRunner:
         pause = state.metadata.get("contract_pause") or {}
         approved = state.is_approved(CONTRACT_STEP)
         reruns = state.metadata.pop("rerun", [])
-        state.metadata.pop("sent_back", None)
+        sent_back = state.metadata.pop("sent_back", None)
         if CONTRACT_STEP in state.approved_stages:
             state.approved_stages.remove(CONTRACT_STEP)
         failed = [f for f in pause.get("failed", []) if isinstance(f, dict)]
@@ -1675,7 +1697,7 @@ class PipelineRunner:
         else:
             step_names = [s.name for s in self._spec.steps]
             sent: set[str] = set()
-            for r in reruns:
+            for i, r in enumerate(reruns):
                 target, remark = r["target"], r["remark"]
                 await log_event(self._paper_id, "researcher_rerun", stage=target, payload={"remark": remark})
                 if target in step_names:
@@ -1688,7 +1710,11 @@ class PipelineRunner:
                 if order is not None:
                     focus = f"{order.get('focus', '')}\n\n{focus}".strip()
                 wo = WorkOrder(paper_id=self._paper_id, specialist=target, focus=focus)
-                contributions = await self._execute_orders([wo])  # stops again if it fails its contract
+                try:
+                    contributions = await self._execute_orders([wo])  # stops again if it fails its contract
+                except PlanLimitReachedError:
+                    self._keep_send_backs(state, reruns[i:], sent_back)  # Resume sends them back again
+                    raise
                 self._contributions.extend(contributions)
                 if order is not None and all(c.success for c in contributions):
                     mark_done(order, target)
@@ -2915,7 +2941,7 @@ class PipelineRunner:
             )
         return new_report
 
-    async def _dispatch_patch_revisor(self, findings: list) -> Any:
+    async def _dispatch_patch_revisor(self, findings: list, *, contract_stop: bool = False) -> Any:
         """Dispatch patch_revisor with a findings list, then apply the merger.
 
         Shared helper used by both `_run_patch_revision` (MAJOR_REVISION
@@ -2932,11 +2958,19 @@ class PipelineRunner:
             `MergeResult` describing applied + failed edits and the
             unified diff side artifact.
 
+        With ``contract_stop`` (the revision round after the review panel), a
+        patch that still applies no edit after the last attempt while findings
+        are open stops the run for the researcher (ContractFailureError), like
+        any output that fails its contract. On resume the step does not run the
+        revisor again when the researcher approved its output or the stop's
+        own rerun already ran it; the patch on disk is applied.
+
         Raises:
             FileNotFoundError: when patch_revisor's LLM call completed
                 but no `paper_draft.tex.edits.json` was written to the
                 workspace (caller decides whether this is REJECTED or
                 logged-and-continue).
+            ContractFailureError: with ``contract_stop``, see above.
         """
         import json
 
@@ -2965,6 +2999,9 @@ class PipelineRunner:
             draft = self._workspace / "paper_draft.tex"
             record = {
                 "findings": serialised,
+                # The revision round: a patch that changes nothing fails the revisor's contract
+                # (contract_check.check_patch_applies). The number check's correction may answer `[]`.
+                "require_change": contract_stop,
                 # The draft the findings are about: a later patch for another draft is not checked against them.
                 "draft_sha256": hashlib.sha256(draft.read_bytes()).hexdigest() if draft.is_file() else "",
             }
@@ -2992,22 +3029,30 @@ class PipelineRunner:
             focus=focus,
             context_tier=2,
         )
-        # A patch file that fails its contract (not written, not JSON) gets the
-        # dispatcher's attempts with the violation fed back; a crash does not.
-        # After the last attempt the caller decides (the number check stops for
-        # the researcher; the revision step fails) — no separate contract stop.
-        contribution = await run_with_attempts(
-            revision_order,
-            self._backend,
-            self._workspace,
-            self._model,
-            self._extra_tools,
-            self._extra_handlers,
-            self._backend_name,
-            self._governance,
-            retry_crashes=False,
-        )
-        self._contributions.append(contribution)
+        if not (contract_stop and self._revisor_settled(revision_order)):
+            # A patch file that fails its contract (not written, not JSON, no
+            # edit applies) gets the dispatcher's attempts with the violation fed
+            # back; a crash does not. After the last attempt the caller decides
+            # (the number check stops for the researcher; the revision step fails),
+            # and the revision round stops for the researcher when nothing applies.
+            contribution = await run_with_attempts(
+                revision_order,
+                self._backend,
+                self._workspace,
+                self._model,
+                self._extra_tools,
+                self._extra_handlers,
+                self._backend_name,
+                self._governance,
+                retry_crashes=False,
+            )
+            self._contributions.append(contribution)
+            if contract_stop and contract_failed(contribution):
+                preview = merge_patch_file(self._workspace, findings, persist=False)
+                if preview.n_applied == 0:
+                    from ..specialists.dispatcher import raise_contract_failure
+
+                    raise_contract_failure([revision_order], [contribution])
 
         merged = merge_patch_file(self._workspace, findings)
         # After the last attempt: what the patch still leaves open is recorded, not hidden.
@@ -3022,6 +3067,29 @@ class PipelineRunner:
                 payload={"open": merged.uncovered[:20], "findings": len(findings)},
             )
         return merged
+
+    def _revisor_settled(self, order: WorkOrder) -> bool:
+        """After a contract stop in this step: the patch on disk stands (approved, or the stop's rerun wrote it).
+
+        Each is used once: an approval (``contract_accepted_skip``) or the
+        stop's rerun of the revisor (``step_done`` of this step).
+        """
+        _orders, kept = self._take_accepted_outputs([order])
+        meta = self._state_metadata()
+        phase = getattr(self, "_current_step", None)
+        done = (meta.get("step_done") or {}).get(phase) if phase else None
+        rerun = isinstance(done, list) and "patch_revisor" in done
+        if rerun and isinstance(done, list):
+            done.remove("patch_revisor")
+            if not done:
+                meta["step_done"].pop(phase, None)
+            state = getattr(self, "_state", None)
+            if state is not None and hasattr(state, "save"):
+                state.save(self._workspace)
+        if kept or rerun:
+            logger.info("Paper %s: the revision applies the patch settled at the contract stop", self._paper_id)
+            return True
+        return False
 
     async def _resolve_table_spec(self) -> None:
         """Render results tables and close the loop on cross-specialist key
@@ -3283,7 +3351,7 @@ class PipelineRunner:
             return PaperStatus.COMPLETED
 
         try:
-            merge_result = await self._dispatch_patch_revisor(findings)
+            merge_result = await self._dispatch_patch_revisor(findings, contract_stop=True)
         except FileNotFoundError as e:
             # The revision step did not produce its output: a failed step, not
             # a score. FAILED is resumable.

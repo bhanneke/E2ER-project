@@ -346,7 +346,7 @@ async def test_failed_edits_complete_the_run_and_record_why(tmp_path, mock_llm, 
 @pytest.mark.asyncio
 async def test_partial_application_with_out_of_scope_edit_completes(tmp_path, mock_llm):
     """patch_revisor emits an in-scope edit that applies PLUS an over-reaching
-    out-of-scope `paper:full` edit. The merger drops the out-of-scope one
+    out-of-scope table edit. The merger drops the out-of-scope one
     (scope enforcement), but the in-scope edit revised the draft — so the
     paper COMPLETES, not REJECTED. Rejecting over one dropped edit threw away
     a near-complete paper (M5 run 0495a50d)."""
@@ -375,7 +375,7 @@ async def test_partial_application_with_out_of_scope_edit_completes(tmp_path, mo
                             "replace": "parallel-trends assumption is tested",
                         },
                         {
-                            "target": "paper:full",  # out-of-scope over-reach → dropped
+                            "target": "table:tab:main",  # out-of-scope over-reach → dropped
                             "edit_type": "replace_text",
                             "find": "0.80",
                             "replace": "0.50",
@@ -402,7 +402,7 @@ async def test_partial_application_with_out_of_scope_edit_completes(tmp_path, mo
     # The in-scope edit landed; the out-of-scope one was dropped (draft unchanged there).
     draft = (ws / "paper_draft.tex").read_text()
     assert "parallel-trends assumption is tested" in draft
-    assert "0.80" in draft  # the paper:full edit was NOT applied
+    assert "0.80" in draft  # the out-of-scope table edit was NOT applied
     assert not [s for s, _e in seen if s == "rejected"]
 
 

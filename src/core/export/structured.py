@@ -582,11 +582,16 @@ def export_paper(
     # The shareable view, rendered from the provenance about to be written, so
     # that provenance.json (written LAST, after every other file exists)
     # fingerprints it like every other file: an edited report.html fails verify.
-    from .provenance import build_provenance, write_provenance
+    from .provenance import build_provenance, results_code_record, write_provenance
     from .report import write_report
 
-    write_report(out, manifest, build_provenance(out, manifest, exported_at=date_str))
-    write_provenance(out, manifest, exported_at=date_str)
+    try:
+        code_record = results_code_record(workspace, out)
+    except Exception as e:  # noqa: BLE001 — best-effort, like the rest of the export
+        logger.warning("export: the results' script runs were not recorded: %s", e)
+        code_record = None
+    write_report(out, manifest, build_provenance(out, manifest, exported_at=date_str, results_from_code=code_record))
+    write_provenance(out, manifest, exported_at=date_str, results_from_code=code_record)
 
     logger.info("Exported paper %s → %s", workspace.name, out)
     return out

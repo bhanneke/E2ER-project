@@ -210,6 +210,11 @@ async def run_specialist(
                 attempt.populated_sidecar,
                 attempt.reason,
             )
+        # The results files are the output of the script as shipped: one the script log does not trace
+        # to its last run is run again here (the contract check below fails it when the rerun differs).
+        from .post_execution import confirm_results_from_code
+
+        confirm_results_from_code(workspace, specialist)
 
     # v0.9 M4.3: output-contract enforcement. A specialist that
     # returns success=True while its declared artifact is empty

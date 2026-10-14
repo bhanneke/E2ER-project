@@ -16,6 +16,9 @@ network at all:
   5. spec        — re-check the estimation implements the declared identification
   6. citations   — every \\cite resolves in refs.bib (registry status is read
                    from the bundled snapshot; ``--online`` re-queries live)
+  7. results from code — each results file is the output the last run of the
+                   study's script wrote, with the script as the folder ships it
+                   (the run's script log, recorded in provenance.json)
 
 The numbers check also recomputes, for every coefficient in the result files,
 t from estimate / se and the p-value from t (``pipeline/statistics.py``).
@@ -1054,6 +1057,63 @@ def _check_reproduction(bundle: Path, required: str | None = None) -> Check | No
 _REPRODUCTION_FILES = ("replication_plan.json", "sandbox_log.json", "reproduction_check.json", "reproduction_report.md")
 
 
+def _check_results_from_code(bundle: Path) -> Check | None:
+    """Each results file is the file the last run of the study's script wrote (provenance.json records which).
+
+    The run's script log records the SHA-256 of every file each script run
+    wrote; export puts the run that wrote each results file into
+    ``run.results_from_code``. The bundle's results file must have that run's
+    output hash, the run must have succeeded with the script as the study ships
+    it, and the folder must carry the script. None for an export without the
+    record (e2er up to 0.16.0, or a study without a results file).
+    """
+    prov = _load_json(bundle / "provenance.json")
+    run = prov.get("run") if isinstance(prov, dict) else None
+    record = run.get("results_from_code") if isinstance(run, dict) else None
+    if not isinstance(record, dict) or not record:
+        return None
+    problems: list[str] = []
+    traced: list[str] = []
+    for rel, entry in sorted(record.items()):
+        name = str(rel).rsplit("/", 1)[-1]
+        if not isinstance(entry, dict):
+            problems.append(f"{name}: the record is unreadable")
+            continue
+        if entry.get("outcome") == "not_recorded":
+            continue
+        path = bundle / str(rel)
+        if not path.is_file():
+            problems.append(f"{name} is not in the folder")
+            continue
+        script = entry.get("script")
+        if not script:
+            problems.append(f"{name} was not written by any recorded run of the study's scripts")
+            continue
+        if entry.get("output_sha256") != _sha256(path):
+            problems.append(f"{name} is not the file {script} wrote (run {entry.get('ran_at') or '?'})")
+            continue
+        if entry.get("exit_code") not in (0, None):
+            problems.append(f"{name} was written by a run of {script} that failed")
+            continue
+        if entry.get("outcome") != "from_code":
+            # The script changed after the run that wrote the file: the folder ships other code.
+            problems.append(f"{name} was not written by {script} as shipped ({entry.get('reason') or 'changed'})")
+            continue
+        shipped = entry.get("script_in_folder")
+        if not shipped or not (bundle / str(shipped)).is_file():
+            problems.append(f"{script}, which wrote {name}, is not in the folder")
+            continue
+        if entry.get("script_in_folder_sha256") != _sha256(bundle / str(shipped)):
+            problems.append(f"{shipped} is not the script that wrote {name}")
+            continue
+        traced.append(f"{name} ← {script}")
+    if problems:
+        return Check("results from code", FAIL, "; ".join(problems))
+    if not traced:
+        return Check("results from code", SKIP, "the run recorded no script outputs for its results files")
+    return Check("results from code", PASS, "written by the last run of the shipped script: " + ", ".join(traced))
+
+
 def _required_checks(bundle: Path) -> dict[str, str]:
     """The checks the study's own record says it must have, with the reason.
 
@@ -1100,6 +1160,9 @@ def _run_checks(bundle: Path, online: bool) -> list[Check]:
         if method is not None:
             checks.append(method)
         checks.append(_check_citations_offline(bundle))
+    from_code = _check_results_from_code(bundle)
+    if from_code is not None:
+        checks.append(from_code)
     required = _required_checks(bundle)
     prereg = _check_preregistration(bundle, required.get("preregistration"))
     if prereg is not None:
@@ -1116,7 +1179,17 @@ def _run_checks(bundle: Path, online: bool) -> list[Check]:
 # provenance.json) proves only that the bundle is unchanged since export — a
 # bundle can be perfectly self-consistent and still have had nothing checked.
 _CONTENT_CHECKS = frozenset(
-    {"numbers", "tables", "spec", "results contract", "method checks", "citations", "preregistration", "reproduction"}
+    {
+        "numbers",
+        "tables",
+        "spec",
+        "results contract",
+        "method checks",
+        "citations",
+        "results from code",
+        "preregistration",
+        "reproduction",
+    }
 )
 
 

@@ -179,7 +179,61 @@ def _preregistration(bundle: Path) -> dict[str, Any] | None:
     }
 
 
-def build_provenance(bundle: Path, manifest: dict[str, Any], *, exported_at: str) -> dict[str, Any]:
+#: The result files whose writing run is recorded (``run.results_from_code``), by their bundle path.
+RESULTS_FROM_CODE = ("results/estimation_results.json", "results/robustness_results.json")
+
+
+def _bundle_script(bundle: Path, name: str) -> str | None:
+    """The bundle path of the study's script ``name`` (code/, then anywhere), or None."""
+    for rel in (f"code/{name}", f"code/scratch/{name}"):
+        if (bundle / rel).is_file():
+            return rel
+    found = sorted(p for p in bundle.rglob(name) if p.is_file())
+    return found[0].relative_to(bundle).as_posix() if found else None
+
+
+def results_code_record(workspace: Path, bundle: Path) -> dict[str, Any] | None:
+    """Which recorded script run wrote each results file of the bundle (the script log's output hashes).
+
+    {bundle path: {"outcome", "reason", "script", "script_sha256", "output_sha256", "ran_at",
+    "script_in_folder", "script_in_folder_sha256"}}; ``e2er verify`` checks the
+    bundle against it ("results come from the code"). None when the bundle has
+    no results file or the run's log has no output records at all (e2er up to 0.16.0).
+    """
+    from ..script_log import NOT_RECORDED, read_script_runs, records_outputs, results_from_code
+
+    if not records_outputs(read_script_runs(workspace)):
+        return None
+    out: dict[str, Any] = {}
+    for rel in RESULTS_FROM_CODE:
+        name = rel.split("/", 1)[1]
+        if not (bundle / rel).is_file() or not (workspace / name).is_file():
+            continue
+        outcome, why, writer = results_from_code(workspace, name)
+        entry: dict[str, Any] = {"outcome": outcome, "reason": why}
+        if writer is not None and outcome != NOT_RECORDED:
+            script = str(writer.get("script"))
+            entry.update(
+                {
+                    "script": script,
+                    "script_sha256": writer.get("sha256"),
+                    "output_sha256": (writer.get("outputs") or {}).get(name),
+                    "ran_at": writer.get("started_at"),
+                    "exit_code": writer.get("exit_code"),
+                }
+            )
+            shipped = _bundle_script(bundle, script)
+            if shipped is not None:
+                # The folder's copy can differ from the run's: export replaces the run folder's full path in it.
+                entry["script_in_folder"] = shipped
+                entry["script_in_folder_sha256"] = _sha256(bundle / shipped)
+        out[rel] = entry
+    return out or None
+
+
+def build_provenance(
+    bundle: Path, manifest: dict[str, Any], *, exported_at: str, results_from_code: dict[str, Any] | None = None
+) -> dict[str, Any]:
     run: dict[str, Any] = {
         "paper_id": manifest.get("paper_id"),
         "backend": manifest.get("backend"),
@@ -197,6 +251,9 @@ def build_provenance(bundle: Path, manifest: dict[str, Any], *, exported_at: str
     prereg = _preregistration(bundle)
     if prereg is not None:
         run["preregistration"] = prereg
+    if results_from_code:
+        # Which run of which script wrote each results file (`e2er verify`: results come from the code).
+        run["results_from_code"] = results_from_code
     return {
         "schema": SCHEMA_ID,
         "run": run,
@@ -210,11 +267,14 @@ def dump(prov: dict[str, Any]) -> str:
     return json.dumps(prov, indent=2, ensure_ascii=False) + "\n"
 
 
-def write_provenance(bundle: Path, manifest: dict[str, Any], *, exported_at: str) -> Path:
+def write_provenance(
+    bundle: Path, manifest: dict[str, Any], *, exported_at: str, results_from_code: dict[str, Any] | None = None
+) -> Path:
     """Write ``<bundle>/provenance.json`` and return its path. Call AFTER every
     other bundle file exists (README and report.html included) so the inventory is complete."""
     out = bundle / PROVENANCE_FILE
-    out.write_text(dump(build_provenance(bundle, manifest, exported_at=exported_at)), encoding="utf-8")
+    prov = build_provenance(bundle, manifest, exported_at=exported_at, results_from_code=results_from_code)
+    out.write_text(dump(prov), encoding="utf-8")
     return out
 
 
