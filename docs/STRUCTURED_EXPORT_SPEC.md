@@ -112,12 +112,26 @@ package's own files under `e2er-package/`:
 **Data.** A data file (under `data/`, with a data ending: `.db`, `.csv`, `.parquet`, …)
 from a source whose terms do not allow passing the data on (`data_terms.uses`: the GMD,
 Yahoo Finance, the WHO GHO, Gaia, …) is left out; `--no-data` leaves out every data file
-and every input the recipe lists. The records of the data (`data_sources.json`,
+and every input the recipe lists. **Data built from such data are restricted too**
+(`src/core/derived_data.py`): a data file a script writes after reading a restricted file or
+table (directly or through module-level constants, `os.path.join`, `Path / "x"`; and, in a
+workspace, every file its script-log runs recorded as `outputs`) inherits the restriction,
+transitively. Export records them in `provenance.json` (`run.derived_data`: path, the
+connectors, the scripts that write them), so the record holds also when a script is not
+shipped; pack, publish and verify read that record and the folder's scripts. Such a file is
+left out with the reason "built from ESA Gaia Data Release 3 (Gaia) data, whose terms do not
+allow passing it on"; `e2er publish` treats it like the source's own data (the same
+confirmation for public data) and warns when no recorded step builds it again. The records of the data (`data_sources.json`,
 `data_dictionary.json`, `data_summary.md`) stay. A left-out file that the recipe lists as
 an input with `"reload"` is rebuilt by `e2er reproduce`: `code/get_data.py` loads it again
 and the data-preparation steps (`"when_missing"`) build the study's own tables. One that
 the recipe cannot reload is named in the manifest's notes ("a rerun of the package cannot
-rebuild it"); one the code does not read at all is left out without a note.
+rebuild it"); one the code does not read at all is left out without a note. A left-out
+derived input is built again by the script that wrote it, when every restricted file or table
+that script reads is loaded again by the recipe: export writes that step into the recipe
+(`"rebuild": "clean_gaia.py"` on the input, a step with `"when_missing"` after `get_data.py`);
+for a recipe written before, the package carries it in the manifest's `rebuild` list and
+`e2er reproduce` adds it to the recipe it runs.
 
 **`e2er-package.json`.**
 
@@ -134,6 +148,7 @@ rebuild it"); one the code does not read at all is left out without a note.
   "left_out": [{"path": "data/data.db", "reason": "the terms of the Global Macro Database (GMD) do not allow passing the data on",
                 "source": "gmd", "rebuilt_by": {"by": "code/get_data.py", "source": "…"},
                 "needed": true}],               // needed: the recipe lists it as an input (the code reads it)
+  "rebuild": [{"path": "data/gaia_clean.csv", "script": "clean_gaia.py", "from": "code/scratch/clean_gaia.py"}],
   "recipe": {"present": true, "python": "3.12", "requirements": "code/requirements.txt",
              "steps": [{"run": ["python", "get_data.py"], "about": "…"}, …],
              "inputs": [{"path": "data.db", "source": "…", "reload": "get_data.py"}],
@@ -168,7 +183,10 @@ folder is removed. `e2er-package.json` is written into the folder last.
 (every file matches the manifest), then verifies the unpacked folder as any folder:
 `e2er-package.json` and `e2er-package/` are not part of the study's evidence
 (`bundle_files.not_evidence`), and a data file the manifest declares left out is reported
-in the integrity check instead of failing it (data files only). `e2er reproduce` installs
+in the integrity check instead of failing it (data files only). In a plain folder (an
+unpacked package, or any folder with an `e2er-package.json` in it) the file is only a file:
+a declaration counts only for a data file the folder's own records say a source's terms keep
+out (`data_terms.restricted_paths`); any other missing file fails the check. `e2er reproduce` installs
 from `e2er-package/requirements.lock.txt` (the installers check every hash) and, when the
 package carries wheels for this computer's platform and the recipe's Python, from those
 with `--no-index --find-links` (no internet); wheels for another computer are not used, and

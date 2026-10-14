@@ -278,3 +278,45 @@ def test_dashboard_shows_running_elsewhere_and_refuses_resume_and_cancel(db: Pat
     time.sleep(0.05)
     live = TestClient(app).get(f"/htmx/papers/{running}/live").text
     assert "This run is working in another e2er window" not in live
+
+
+async def test_a_run_that_stops_at_once_does_not_keep_its_owner(monkeypatch):
+    """The claim is written before the release can run (the text replay test on 3.13 CI, 2026-10-14).
+
+    A replayed study paused at its first review within a second, while _track_run was still writing the
+    claim: the release ran first, found nothing to clear, and the claim landed after it, so the paused
+    paper kept this process as its owner and the test's wait for "no owner" timed out.
+    """
+    import asyncio
+
+    from src.api import app as app_mod
+    from src.core import run_owner
+
+    owner: dict[str, str | None] = {"p": None}
+    order: list[str] = []
+
+    async def claim(paper_id, port=None):
+        await asyncio.sleep(0.05)  # the database write takes a moment; the run finishes meanwhile
+        owner[paper_id] = "me"
+        order.append("claim")
+
+    async def release(paper_id):
+        owner[paper_id] = None
+        order.append("release")
+
+    monkeypatch.setattr(run_owner, "claim", claim)
+    monkeypatch.setattr(run_owner, "release", release)
+    monkeypatch.setattr(app_mod, "_HEARTBEAT", [])
+
+    async def run():
+        return None  # stops at once
+
+    task = asyncio.get_running_loop().create_task(run())
+    await app_mod._track_run("p", task)
+    await task
+    for _ in range(5):
+        await asyncio.sleep(0)
+    assert order == ["claim", "release"]
+    assert owner["p"] is None
+    for t in app_mod._HEARTBEAT:
+        t.cancel()

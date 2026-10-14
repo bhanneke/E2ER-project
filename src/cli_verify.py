@@ -103,7 +103,7 @@ def _load_provenance(bundle: Path) -> tuple[dict[str, Any] | None, str | None]:
     return prov, None
 
 
-def _check_integrity(bundle: Path) -> Check:
+def _check_integrity(bundle: Path, package_left_out: dict[str, dict[str, Any]] | None = None) -> Check:
     """Every file against provenance.json: listed, same bytes, same size; nothing else; no links.
 
     The folder is walked without following links (bundle_files.walk); only the
@@ -120,8 +120,16 @@ def _check_integrity(bundle: Path) -> Check:
     files: dict[str, dict[str, Any]] = prov["files"]
     listing = walk(bundle)
     on_disk = {rel: p for rel, p in listing.files.items() if not not_evidence(rel)}
-    # A folder unpacked from a .e2er package: data files the package left out (a source's terms, --no-data).
-    declared = declared_left_out(bundle)
+    # Data files a .e2er package left out (a source's terms, --no-data). From a package that verify opened, its
+    # manifest is checked against the archive and counts. In a folder, an e2er-package.json is only a file: a
+    # declaration counts only for a file the folder's own records say a source's terms keep out.
+    if package_left_out is not None:
+        declared = package_left_out
+    else:
+        from .core.data_terms import restricted_paths
+
+        restricted = restricted_paths(bundle)
+        declared = {p: item for p, item in declared_left_out(bundle).items() if p in restricted}
     missing: list[str] = []
     mismatched: list[str] = []
     resized: list[str] = []
@@ -1171,8 +1179,8 @@ def _required_checks(bundle: Path) -> dict[str, str]:
     return out
 
 
-def _run_checks(bundle: Path, online: bool) -> list[Check]:
-    checks = [_check_integrity(bundle), _check_anchor(bundle)]
+def _run_checks(bundle: Path, online: bool, package_left_out: dict[str, dict[str, Any]] | None = None) -> list[Check]:
+    checks = [_check_integrity(bundle, package_left_out), _check_anchor(bundle)]
     with tempfile.TemporaryDirectory() as td:
         ws = Path(td)
         _reconstruct_workspace(bundle, ws)
@@ -1293,6 +1301,7 @@ def verify(
     bundle_path = Path(bundle)
     with contextlib.ExitStack() as stack:
         pre: list[Check] = []
+        left_out: dict[str, dict[str, Any]] | None = None
         if pkg.is_package(bundle_path):
             # A .e2er package: unpacked into a temporary folder, every file checked against its manifest first.
             tmp = Path(stack.enter_context(tempfile.TemporaryDirectory(prefix="e2er-verify-")))
@@ -1321,10 +1330,11 @@ def verify(
                 )
             )
             bundle_path = opened.root
+            left_out = pkg.declared_left_out(bundle_path)
         elif not bundle_path.is_dir():
             print(f"e2er verify: {bundle} is not a folder or a .e2er package", file=sys.stderr)
             return 2
-        return _verify_folder(bundle_path, pre, online, json_output, against, against_file)
+        return _verify_folder(bundle_path, pre, online, json_output, against, against_file, left_out)
     return 2  # not reached
 
 
@@ -1335,8 +1345,9 @@ def _verify_folder(
     json_output: bool,
     against: str | None,
     against_file: str | None,
+    package_left_out: dict[str, dict[str, Any]] | None = None,
 ) -> int:
-    checks = pre + _run_checks(bundle_path, online)
+    checks = pre + _run_checks(bundle_path, online, package_left_out)
     if against or against_file:
         try:
             if against:

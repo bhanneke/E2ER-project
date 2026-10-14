@@ -190,16 +190,39 @@ def _recipe(folder: Path) -> tuple[dict[str, Any] | None, str]:
         return None, str(e)
 
 
-def _rebuilt(recipe: dict[str, Any] | None, rel: str) -> dict[str, Any] | None:
-    """How a rerun gets ``rel`` back when the package leaves it out: the recipe input that reloads it."""
+def _run_paths(recipe: dict[str, Any], rel: str) -> set[str]:
+    files = recipe.get("files") or {}
+    return {dst for dst, src in files.items() if src == rel} or {rel}
+
+
+def _rebuilt(recipe: dict[str, Any] | None, rel: str, plan: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """How a rerun gets ``rel`` back when the package leaves it out: loaded again, or built again by a script."""
     if not recipe:
         return None
     files = recipe.get("files") or {}
-    run_paths = {dst for dst, src in files.items() if src == rel} or {rel}
+    run_paths = _run_paths(recipe, rel)
     for item in recipe.get("inputs") or []:
-        if isinstance(item, dict) and item.get("path") in run_paths and isinstance(item.get("reload"), str):
+        if not (isinstance(item, dict) and item.get("path") in run_paths):
+            continue
+        if isinstance(item.get("reload"), str):
             return {"by": f"code/{Path(item['reload']).name}", "source": str(item.get("source") or "")}
+        if isinstance(item.get("rebuild"), str):
+            return {"by": str(files.get(item["rebuild"], item["rebuild"])), "source": "", "kind": "rebuild"}
+    for p in plan:
+        if p["path"] in run_paths:
+            return {"by": p["from"], "source": "", "kind": "rebuild"}
     return None
+
+
+def rebuild_for(folder: Path, recipe: dict[str, Any] | None, left_out: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The steps a rerun of the package needs to build left-out derived inputs again (derived_data.rebuild_plan)."""
+    if not recipe:
+        return []
+    from ..derived_data import derived, rebuild_plan
+
+    paths = {i["path"] for i in left_out}
+    found = [d for d in derived(folder) if d.path in paths]
+    return rebuild_plan(folder, recipe, found) if found else []
 
 
 def left_out_data(
@@ -212,19 +235,16 @@ def left_out_data(
     for use in data_terms.uses(folder):
         for rel in use.files:
             if rel in files and _is_data(rel):
-                out[rel] = {
-                    "path": rel,
-                    "reason": f"the terms of {use.the_name} do not allow passing the data on",
-                    "source": use.terms.connector,
-                }
+                out[rel] = {"path": rel, "reason": use.reason(rel), "source": use.terms.connector}
     if no_data:
         inputs = _input_files(recipe)
         for rel in files:
             if (_is_data(rel) or (rel in inputs and _data_suffix(rel))) and rel not in out:
                 out[rel] = {"path": rel, "reason": "packed with --no-data"}
     inputs = _input_files(recipe)
+    plan = rebuild_for(folder, recipe, list(out.values()))
     for rel, item in out.items():
-        item["rebuilt_by"] = _rebuilt(recipe, rel)
+        item["rebuilt_by"] = _rebuilt(recipe, rel, plan)
         # Whether the study's code reads it: a file no step reads is not needed for a rerun.
         item["needed"] = rel in inputs
     return [out[k] for k in sorted(out)]
@@ -233,6 +253,8 @@ def left_out_data(
 def rerun_words(item: dict[str, Any]) -> str:
     """What a rerun of the package does about a left-out file, in plain words."""
     how = item.get("rebuilt_by")
+    if isinstance(how, dict) and how.get("kind") == "rebuild":
+        return f"`e2er reproduce` builds it again with {how['by']} from the data it loads again"
     if isinstance(how, dict):
         return f"`e2er reproduce` loads it again with {how['by']}" + (
             f" from {how['source']}" if how.get("source") else ""
@@ -476,6 +498,7 @@ def build(
     left_out = left_out_data(folder, files, recipe, no_data=no_data)
     for item in left_out:
         files.pop(item["path"], None)
+    rebuild = rebuild_for(folder, recipe, left_out)
     notes: list[str] = []
     for item in left_out:
         if item["rebuilt_by"] is None and item["needed"]:
@@ -567,6 +590,8 @@ def build(
             "contents": contents,
             "fingerprint": fingerprint(contents),
             "left_out": left_out,
+            # Steps a rerun adds to the study's reproduce.json to build left-out derived inputs again.
+            "rebuild": rebuild,
             "recipe": _recipe_summary(recipe, why),
             "environment": environment,
             "wheels": wheels,
@@ -774,6 +799,12 @@ def declared_left_out(folder: Path) -> dict[str, dict[str, Any]]:
         if isinstance(item, dict) and isinstance(item.get("path"), str) and _data_suffix(item["path"]):
             out[item["path"]] = item
     return out
+
+
+def rebuild_steps(folder: Path) -> list[dict[str, Any]]:
+    """The manifest's ``rebuild`` steps of an unpacked package (none in an ordinary folder)."""
+    items = (package_manifest(folder) or {}).get("rebuild")
+    return [i for i in items if isinstance(i, dict)] if isinstance(items, list) else []
 
 
 def install_source(folder: Path, recipe: dict[str, Any]) -> dict[str, Any]:

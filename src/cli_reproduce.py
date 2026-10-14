@@ -173,7 +173,7 @@ def _reproduce_folder(
         print(f"error: {root} is not a folder or a .e2er package")
         return 2
     try:
-        recipe = rp.load_recipe(root)
+        recipe = rp.load_recipe(root, rebuild=pkg.rebuild_steps(root))
     except rp.RecipeError as e:
         print(f"error: {e}")
         return 2

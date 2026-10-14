@@ -364,8 +364,13 @@ async def _track_run(paper_id: str, task: asyncio.Task) -> None:
         except RuntimeError:  # loop already closed at shutdown
             pass
 
-    task.add_done_callback(_done)
+    # The claim is written before the release can be scheduled. A run that stops at once (a replayed
+    # study pauses at its first review within a second) used to finish while the claim was still being
+    # written: the release ran first and found nothing to clear, then the claim landed, and the paused
+    # paper kept this process as its owner for good (the text replay test on CI, 2026-10-14). A task
+    # that is already done when the callback is added gets it called on the next loop iteration.
     await run_owner.claim(paper_id)
+    task.add_done_callback(_done)
     if not _HEARTBEAT or _HEARTBEAT[0].done():
         _HEARTBEAT[:] = [asyncio.get_running_loop().create_task(run_owner.heartbeat_loop(_RUNNING))]
 

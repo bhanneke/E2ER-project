@@ -234,7 +234,12 @@ def results_code_record(workspace: Path, bundle: Path) -> dict[str, Any] | None:
 
 
 def build_provenance(
-    bundle: Path, manifest: dict[str, Any], *, exported_at: str, results_from_code: dict[str, Any] | None = None
+    bundle: Path,
+    manifest: dict[str, Any],
+    *,
+    exported_at: str,
+    results_from_code: dict[str, Any] | None = None,
+    derived_data: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     run: dict[str, Any] = {
         "paper_id": manifest.get("paper_id"),
@@ -256,6 +261,9 @@ def build_provenance(
     if results_from_code:
         # Which run of which script wrote each results file (`e2er verify`: results come from the code).
         run["results_from_code"] = results_from_code
+    if derived_data:
+        # Data files the run built from a source's data whose terms keep it out (derived_data.py): restricted too.
+        run["derived_data"] = derived_data
     return {
         "schema": SCHEMA_ID,
         "run": run,
@@ -270,12 +278,19 @@ def dump(prov: dict[str, Any]) -> str:
 
 
 def write_provenance(
-    bundle: Path, manifest: dict[str, Any], *, exported_at: str, results_from_code: dict[str, Any] | None = None
+    bundle: Path,
+    manifest: dict[str, Any],
+    *,
+    exported_at: str,
+    results_from_code: dict[str, Any] | None = None,
+    derived_data: list[dict[str, Any]] | None = None,
 ) -> Path:
     """Write ``<bundle>/provenance.json`` and return its path. Call AFTER every
     other bundle file exists (README and report.html included) so the inventory is complete."""
     out = bundle / PROVENANCE_FILE
-    prov = build_provenance(bundle, manifest, exported_at=exported_at, results_from_code=results_from_code)
+    prov = build_provenance(
+        bundle, manifest, exported_at=exported_at, results_from_code=results_from_code, derived_data=derived_data
+    )
     out.write_text(dump(prov), encoding="utf-8")
     return out
 
