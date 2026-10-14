@@ -383,7 +383,11 @@ def main() -> None:
         help="Act at a researcher step: approve, edit a file, give an instruction, or send a step back.",
     )
     review_p.add_argument("paper_id", help="The paper UUID returned by `e2er run` (its first characters suffice).")
-    review_p.add_argument("--approve", action="store_true", help="Approve the step and continue the run.")
+    review_p.add_argument(
+        "--approve",
+        action="store_true",
+        help="Approve the step and continue the run (after the --edit or --instruction given with it).",
+    )
     review_p.add_argument("--instruction", default=None, help="An instruction every following step receives.")
     review_p.add_argument("--edit", default=None, metavar="FILE", help="Edit one of the step's files in $EDITOR.")
     review_p.add_argument("--send-back", default=None, metavar="STEP", help="Send a template step or specialist back.")
@@ -395,7 +399,13 @@ def main() -> None:
         "again with your remark.",
     )
     rerun_p.add_argument("paper_id", help="The paper UUID (its first characters suffice).")
-    rerun_p.add_argument("--from", dest="from_step", required=True, metavar="STEP", help="The template step to rerun.")
+    rerun_p.add_argument(
+        "--from",
+        dest="from_step",
+        required=True,
+        metavar="STEP",
+        help="The template step to rerun, or a specialist (its step reruns).",
+    )
     rerun_p.add_argument("--remark", required=True, help="What should change; recorded for the dossier.")
 
     prereg_p = subparsers.add_parser("preregister", help="Pre-registration commands (`e2er preregister deposit`).")

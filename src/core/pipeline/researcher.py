@@ -385,6 +385,9 @@ def apply_rerun(workspace: Path, state: PipelineState, spec: Any, step: str, rem
     remark = str(remark or "").strip()
     if not step or not remark:
         raise ResearcherActionError("a rerun needs the step to start from and a remark")
+    asked = step
+    step = step_for_rerun(spec, state.mode, step)
+    specialist = asked if asked != step else None
     names = [s.name for s in spec.steps]
     if step not in names:
         raise ResearcherActionError(f"{step!r} is not a step of the template {spec.name} (one of {', '.join(names)})")
@@ -434,8 +437,9 @@ def apply_rerun(workspace: Path, state: PipelineState, spec: Any, step: str, rem
     at = _now()
     p = workspace / INSTRUCTIONS_FILE
     prior = p.read_text(encoding="utf-8") if p.is_file() else ""
+    for_whom = f"{specialist} in step {step}" if specialist else step
     p.write_text(
-        prior + ("\n\n" if prior else "") + f"(for {step}, rerun of the study, {at}) {remark}\n",
+        prior + ("\n\n" if prior else "") + f"(for {for_whom}, rerun of the study, {at}) {remark}\n",
         encoding="utf-8",
     )
     reruns = [n for n in names[start:] if spec.step(n).applies_to(state.mode) and not spec.step(n).after]
@@ -449,4 +453,40 @@ def apply_rerun(workspace: Path, state: PipelineState, spec: Any, step: str, rem
     }
     if replaces:
         payload["replaces"] = replaces
+    if specialist:
+        payload["specialist"] = specialist
     return payload
+
+
+def step_for_rerun(spec: Any, mode: str, name: str) -> str:
+    """The template step a rerun starts from, for a step name or a specialist's name.
+
+    A send-back offers specialists; ``e2er rerun --from`` takes steps. A
+    specialist named in a step's ``run`` maps to that step; one the strategist
+    dispatches (data analyst, paper drafter, ...) maps to the strategist step.
+    A name that fits more than one step is refused with the steps to choose
+    from; a name that fits none is returned as is (and refused as a step).
+    """
+    names = [s.name for s in spec.steps]
+    if name in names:
+        return name
+    in_run = [s for s in spec.steps if name in s.run]
+    if in_run:
+        here = [s.name for s in in_run if s.applies_to(mode) and not s.after]
+        candidates = here or [in_run[0].name]  # not in this mode: the step check says so
+    else:
+        from ..specialists.registry import SPECIALIST_ARTIFACTS
+
+        if name not in SPECIALIST_ARTIFACTS:
+            return name
+        candidates = [s.name for s in spec.steps if s.kind == "strategist" and s.applies_to(mode)]
+        if not candidates:
+            raise ResearcherActionError(
+                f"{name!r} does not run in the template {spec.name}; name a step ({', '.join(names)})"
+            )
+    if len(candidates) > 1:
+        raise ResearcherActionError(
+            f"{name} runs in more than one step ({', '.join(candidates)}); "
+            f"say which with --from {candidates[0]} or --from {candidates[-1]}"
+        )
+    return candidates[0]
