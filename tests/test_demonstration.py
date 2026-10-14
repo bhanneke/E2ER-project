@@ -22,6 +22,11 @@ SHOWCASE = ROOT / "tests" / "fixtures" / "showcase_export"
 DID = "sha256:" + "ab" * 32
 
 
+def _predates(check) -> bool:
+    """The showcase was exported before e2er recorded script outputs: verify says it did not check that."""
+    return check.name == "results from code" and check.detail == "not checked: the run predates output records"
+
+
 @pytest.fixture(autouse=True)
 def _no_purpose(monkeypatch, tmp_path: Path):
     """No E2ER_PURPOSE from the caller's environment, and a working directory without .env."""
@@ -127,7 +132,7 @@ def test_publish_demonstration_writes_manifest_dossier_and_paper(bundle: Path, t
     assert disclaimer() in (bundle / "paper" / "paper.tex").read_text()
     entry = json.loads((tmp_path / "entry" / "registry" / "objects" / "bhanneke" / "demo.json").read_text())
     assert entry["purpose"] == "demonstration"
-    assert all(c.status == "PASS" for c in _run_checks(bundle, online=False))
+    assert all(c.status == "PASS" or _predates(c) for c in _run_checks(bundle, online=False))
 
 
 def test_env_in_the_study_folder_makes_it_the_default(bundle: Path, tmp_path: Path, _no_purpose: Path):

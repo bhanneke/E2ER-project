@@ -1064,22 +1064,29 @@ def _check_results_from_code(bundle: Path) -> Check | None:
     wrote; export puts the run that wrote each results file into
     ``run.results_from_code``. The bundle's results file must have that run's
     output hash, the run must have succeeded with the script as the study ships
-    it, and the folder must carry the script. None for an export without the
-    record (e2er up to 0.16.0, or a study without a results file).
+    it, and the folder must carry the script. A results file no recorded run
+    wrote fails ("the results have no script that computes them"). SKIP for a
+    run that predates output records (e2er up to 0.16.0); None for a bundle
+    without a results file.
     """
     prov = _load_json(bundle / "provenance.json")
     run = prov.get("run") if isinstance(prov, dict) else None
     record = run.get("results_from_code") if isinstance(run, dict) else None
     if not isinstance(record, dict) or not record:
+        if (bundle / "results" / "estimation_results.json").is_file():
+            # Exported by e2er up to 0.16.0: the run recorded no script outputs.
+            return Check("results from code", SKIP, "not checked: the run predates output records")
         return None
     problems: list[str] = []
     traced: list[str] = []
+    skipped: list[str] = []
     for rel, entry in sorted(record.items()):
         name = str(rel).rsplit("/", 1)[-1]
         if not isinstance(entry, dict):
             problems.append(f"{name}: the record is unreadable")
             continue
         if entry.get("outcome") == "not_recorded":
+            skipped.append(name)
             continue
         path = bundle / str(rel)
         if not path.is_file():
@@ -1087,7 +1094,7 @@ def _check_results_from_code(bundle: Path) -> Check | None:
             continue
         script = entry.get("script")
         if not script:
-            problems.append(f"{name} was not written by any recorded run of the study's scripts")
+            problems.append(f"{name}: the results have no script that computes them")
             continue
         if entry.get("output_sha256") != _sha256(path):
             problems.append(f"{name} is not the file {script} wrote (run {entry.get('ran_at') or '?'})")
@@ -1110,8 +1117,11 @@ def _check_results_from_code(bundle: Path) -> Check | None:
     if problems:
         return Check("results from code", FAIL, "; ".join(problems))
     if not traced:
-        return Check("results from code", SKIP, "the run recorded no script outputs for its results files")
-    return Check("results from code", PASS, "written by the last run of the shipped script: " + ", ".join(traced))
+        return Check("results from code", SKIP, "not checked: the run predates output records")
+    detail = "written by the last run of the shipped script: " + ", ".join(traced)
+    if skipped:
+        detail += f"; not checked (the run predates output records): {', '.join(skipped)}"
+    return Check("results from code", PASS, detail)
 
 
 def _required_checks(bundle: Path) -> dict[str, str]:

@@ -24,6 +24,11 @@ URL = "https://platform.test"
 ARGS = dict(owner="ada-lab", project="showcase", github="ada-lab", name="Ada Lovelace", commit="abc1234")
 
 
+def _predates(check) -> bool:
+    """The showcase was exported before e2er recorded script outputs: verify says it did not check that."""
+    return check.name == "results from code" and check.detail == "not checked: the run predates output records"
+
+
 @pytest.fixture
 def bundle(tmp_path: Path) -> Path:
     dst = tmp_path / "showcase"
@@ -189,7 +194,7 @@ def test_publish_to_the_platform_links_the_folder_and_it_still_verifies(
     assert sent["dossier"]["id"] == dossier_id(sent["dossier"]["doc"])
     link = json.loads((bundle / ".e2er" / "link.json").read_text())
     assert link["owner_project"] == "ada-lab/showcase" and link["platform_url"] == URL
-    assert all(c.status == "PASS" for c in _run_checks(bundle, online=False))  # .e2er/ is not evidence
+    assert all(c.status == "PASS" or _predates(c) for c in _run_checks(bundle, online=False))  # .e2er/ is not evidence
     assert cli_platform.status(str(bundle)) == 0
     assert "this folder is the published version" in capsys.readouterr().out
 
@@ -247,7 +252,7 @@ def test_publish_offline_writes_e2er_json_and_sends_nothing(bundle, tmp_path, mo
     assert not (tmp_path / "e2er-registry-entry").exists()
     out = capsys.readouterr().out
     assert "Nothing was sent" in out and "/publish" in out
-    assert all(c.status == "PASS" for c in _run_checks(bundle, online=False))
+    assert all(c.status == "PASS" or _predates(c) for c in _run_checks(bundle, online=False))
 
 
 def test_publish_offline_refuses_to_send(bundle):

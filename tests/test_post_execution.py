@@ -506,6 +506,14 @@ async def test_run_specialist_injects_prior_crash_into_prompt(tmp_workspace: Pat
                 "write_file",
                 {"path": "econometric_spec.md", "content": "# Spec\n\n" + ("Real content. " * 20)},
             )
+            results = {"dp": {"coefficients": {"dp": {"estimate": 0.01}}, "oos_r2": 0.01}}
+            await tool_handler.handle(
+                "write_file",
+                {
+                    "path": "run_estimation.py",
+                    "content": f"import json\njson.dump({results!r}, open('estimation_results.json', 'w'))\n",
+                },
+            )
             # The "fixed" script writes a populated sidecar directly.
             await tool_handler.handle(
                 "write_file",

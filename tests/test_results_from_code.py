@@ -214,9 +214,70 @@ def test_verify_fails_a_results_file_swapped_in_the_folder(tmp_path):
     assert check is not None and check.status == FAIL
 
 
-def test_verify_without_a_record_has_no_such_check(tmp_path):
-    from src.cli_verify import _check_results_from_code
+def test_verify_fails_results_that_no_run_wrote(tmp_path):
+    """Exported from a run whose log records no run that wrote the results: no code computed them."""
+    from src.cli_verify import FAIL, _check_results_from_code
 
     ws = _ws(tmp_path)
-    (ws / "estimation_results.json").write_text('{"main": {"n": 4}}', encoding="utf-8")  # no script log at all
-    assert _check_results_from_code(_bundle(tmp_path, ws)) is None
+    (ws / "estimation_results.json").write_text('{"main": {"n": 4}}', encoding="utf-8")  # no script run at all
+    check = _check_results_from_code(_bundle(tmp_path, ws))
+    assert check is not None and check.status == FAIL
+    assert "the results have no script that computes them" in check.detail
+
+
+def test_verify_does_not_judge_a_run_from_before_output_records(tmp_path):
+    from src.cli_verify import SKIP, _check_results_from_code
+
+    ws = _ws(tmp_path)
+    (ws / "estimation_results.json").write_text('{"main": {"n": 4}}', encoding="utf-8")
+    line = {"script": "run_estimation.py", "sha256": "x", "started_at": "t", "exit_code": 0, "by": "e2er-run"}
+    (ws / SCRIPT_RUNS).write_text(json.dumps(line) + "\n", encoding="utf-8")
+    check = _check_results_from_code(_bundle(tmp_path, ws))
+    assert check is not None and check.status == SKIP
+    assert check.detail == "not checked: the run predates output records"
+
+
+def test_verify_of_an_export_without_the_record_says_it_was_not_checked(tmp_path):
+    from src.cli_verify import SKIP, _check_results_from_code
+
+    bundle = tmp_path / "old-export"
+    (bundle / "results").mkdir(parents=True)
+    (bundle / "results" / "estimation_results.json").write_text('{"main": {"n": 4}}', encoding="utf-8")
+    (bundle / "provenance.json").write_text(json.dumps({"run": {}}), encoding="utf-8")
+    check = _check_results_from_code(bundle)
+    assert check is not None and check.status == SKIP and "predates output records" in check.detail
+
+
+# ── results with no code behind them ─────────────────────────────────────────
+
+
+NO_SCRIPT = (
+    "The results have no script that computes them; write run_estimation.py that produces "
+    "estimation_results.json and run it."
+)
+
+
+def test_results_without_any_script_fail_the_estimation_contract(tmp_path):
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    (ws / "estimation_results.json").write_text('{"main": {"n": 4, "b_value": 0.87}}', encoding="utf-8")
+    assert confirm_results_from_code(ws, "econometrics_specialist") == {}  # nothing to run
+    (failed,) = [c for c in check_results_from_code(ws, "econometrics_specialist") if not c.ok]
+    assert failed.reason == NO_SCRIPT and failed.kind == "reliability"
+
+
+def test_robustness_results_without_a_script_fail_too(tmp_path):
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    (ws / "robustness_results.json").write_text('{"alt": {"b": 1}}', encoding="utf-8")
+    (failed,) = [c for c in check_results_from_code(ws, "econometrics_specialist") if not c.ok]
+    assert failed.artifact == "robustness_results.json" and "no script that computes them" in failed.reason
+
+
+def test_a_study_from_before_output_records_is_not_judged_even_without_a_script(tmp_path):
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    (ws / "estimation_results.json").write_text('{"main": {"n": 4}}', encoding="utf-8")
+    line = {"script": "old_script.py", "sha256": "x", "started_at": "t", "exit_code": 0, "by": "e2er-run"}
+    (ws / SCRIPT_RUNS).write_text(json.dumps(line) + "\n", encoding="utf-8")
+    assert all(c.ok for c in check_results_from_code(ws, "econometrics_specialist"))

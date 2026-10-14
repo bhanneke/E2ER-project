@@ -647,6 +647,9 @@ def test_the_finish_page_verifies_the_export(live_db, session, monkeypatch):
     (ws / "identification_spec.json").write_text(
         json.dumps({"primary": {"estimator": "ols", "outcome": "y", "treatment": "treat"}})
     )
+    from tests.results_script import write_results_script
+
+    write_results_script(ws)
     bundle = export_paper(ws, live_db / "exports", date_str="20260929")
 
     import asyncio

@@ -49,6 +49,9 @@ def _write_clean_econometrics(ws: Path) -> None:
         ),
         encoding="utf-8",
     )
+    from tests.results_script import write_results_script
+
+    write_results_script(ws, run=False)  # the script that computes it (run by the runner after the specialist)
 
 
 def _contribution(success: bool) -> Contribution:

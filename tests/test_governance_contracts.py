@@ -127,11 +127,20 @@ class _DescriptiveOnlyBackend(LLMBackend):
             "write_file",
             {"path": "econometric_spec.md", "content": "# Spec\n\n" + ("Substantive content. " * 30)},
         )
+        results = {"raw_gap": 0.42, "n": 1677, "_note": "descriptives only, no regression"}
+        # The script that computes it (results with no code behind them fail reliability).
+        await tool_handler.handle(
+            "write_file",
+            {
+                "path": "run_estimation.py",
+                "content": f"import json\njson.dump({results!r}, open('estimation_results.json', 'w'))\n",
+            },
+        )
         await tool_handler.handle(
             "write_file",
             {
                 "path": "estimation_results.json",
-                "content": json.dumps({"raw_gap": 0.42, "n": 1677, "_note": "descriptives only, no regression"}),
+                "content": json.dumps(results),
             },
         )
         return ToolLoopResult(

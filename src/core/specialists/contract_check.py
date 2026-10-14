@@ -434,7 +434,7 @@ def check_results_from_code(workspace: Path, specialist: str) -> list[ContractCh
     file that the script as shipped does not write is a broken run, whatever
     the governance regime: the paper's numbers would not come from its code.
     """
-    from ..script_log import FROM_CODE, NOT_RECORDED, results_from_code
+    from ..script_log import FROM_CODE, NOT_RECORDED, PREDATES, results_from_code
     from .post_execution import RERUN_RECORD, rerun_chain, results_files, results_script
 
     rerun: dict[str, Any] = {}
@@ -446,12 +446,22 @@ def check_results_from_code(workspace: Path, specialist: str) -> list[ContractCh
     checks: list[ContractCheck] = []
     for name in results_files(workspace, specialist):
         outcome, why, writer = results_from_code(workspace, name)
-        if outcome in (FROM_CODE, NOT_RECORDED):
+        if outcome == FROM_CODE or (outcome == NOT_RECORDED and why == PREDATES):
             checks.append(ContractCheck(name, True, ""))
             continue
         if writer is None and not rerun_chain(workspace, specialist, [name]):
-            # No script in the study at all: there is no code to hold the file to (the standalone check
-            # and the reproduce recipe say so on their own terms).
+            # Results with no code behind them at all: numbers typed into the file.
+            checks.append(
+                ContractCheck(
+                    name,
+                    False,
+                    f"The results have no script that computes them; write run_estimation.py that produces "
+                    f"{name} and run it.",
+                )
+            )
+            continue
+        if outcome == NOT_RECORDED:
+            # A script exists but no run is recorded yet: the runner's rerun after the specialist makes the record.
             checks.append(ContractCheck(name, True, ""))
             continue
         script = results_script(workspace, specialist, name) or "your estimation script"

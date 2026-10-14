@@ -197,19 +197,21 @@ def results_code_record(workspace: Path, bundle: Path) -> dict[str, Any] | None:
 
     {bundle path: {"outcome", "reason", "script", "script_sha256", "output_sha256", "ran_at",
     "script_in_folder", "script_in_folder_sha256"}}; ``e2er verify`` checks the
-    bundle against it ("results come from the code"). None when the bundle has
-    no results file or the run's log has no output records at all (e2er up to 0.16.0).
+    bundle against it ("results come from the code"). A run whose log predates
+    output records (e2er up to 0.16.0) is ``not_recorded``; a results file no
+    recorded run wrote is ``not_from_code``. None when the bundle has no results file.
     """
-    from ..script_log import NOT_RECORDED, read_script_runs, records_outputs, results_from_code
+    from ..script_log import NOT_FROM_CODE, NOT_RECORDED, PREDATES, results_from_code
 
-    if not records_outputs(read_script_runs(workspace)):
-        return None
     out: dict[str, Any] = {}
     for rel in RESULTS_FROM_CODE:
         name = rel.split("/", 1)[1]
         if not (bundle / rel).is_file() or not (workspace / name).is_file():
             continue
         outcome, why, writer = results_from_code(workspace, name)
+        if outcome == NOT_RECORDED and why != PREDATES:
+            # No script run recorded at all by the end of the run: no code computed the file.
+            outcome, why = NOT_FROM_CODE, "The results have no script that computes them"
         entry: dict[str, Any] = {"outcome": outcome, "reason": why}
         if writer is not None and outcome != NOT_RECORDED:
             script = str(writer.get("script"))

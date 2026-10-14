@@ -341,6 +341,17 @@ class MockLLMBackend(LLMBackend):
                         "write_file",
                         {"path": sidecar, "content": _MOCK_SIDECAR_CONTENTS.get(sidecar, "{}")},
                     )
+                if "estimation_results.json" in SPECIALIST_SIDECAR_ARTIFACTS.get(specialist, []):
+                    # The script that computes the results: e2er holds the results file to it.
+                    results = _MOCK_SIDECAR_CONTENTS["estimation_results.json"]
+                    await tool_handler.handle(
+                        "write_file",
+                        {
+                            "path": "run_estimation.py",
+                            "content": f"import json\njson.dump(json.loads({results!r}), "
+                            "open('estimation_results.json', 'w'))\n",
+                        },
+                    )
             except Exception:
                 pass  # handler may reject; that's still a valid test signal
 

@@ -244,6 +244,9 @@ def results_writer(workspace: Path, rel: str, runs: list[dict] | None = None) ->
     return None
 
 
+#: The reason :func:`results_from_code` gives for a log from before output records (e2er up to 0.16.0).
+PREDATES = "the run predates output records"
+
 #: Outcomes of :func:`results_from_code`.
 FROM_CODE = "from_code"
 NOT_FROM_CODE = "not_from_code"
@@ -274,7 +277,7 @@ def results_from_code(workspace: Path, rel: str) -> tuple[str, str, dict | None]
         if any(not isinstance(r.get("outputs"), dict) for r in runs):
             # Runs from before e2er recorded output files (a study resumed after an update): one of them may
             # have written it, and nothing can be said.
-            return NOT_RECORDED, f"the script log ({SCRIPT_RUNS}) has runs that record no output files", None
+            return NOT_RECORDED, PREDATES, None
         return NOT_FROM_CODE, f"no recorded run of the study's scripts wrote {rel}", None
     script = str(writer.get("script"))
     if writer["outputs"].get(rel) != current:
