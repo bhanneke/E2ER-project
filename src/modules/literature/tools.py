@@ -248,6 +248,7 @@ class LiteratureToolHandler(ToolHandler):
         # source's (empty) result; if every source raised, return an error.
         last_result: SearchResult | None = None
         last_error: Exception | None = None
+        notices: list[str] = []
         for source in search_sources(get_settings()):
             try:
                 result = await source.search(query, limit)
@@ -256,18 +257,23 @@ class LiteratureToolHandler(ToolHandler):
                 logger.info("%s search failed (%s) — trying next source", source.name, e)
                 continue
             last_result = result
+            if result.notice and result.notice not in notices:
+                notices.append(result.notice)
             if result.papers:
                 break
 
         if last_result is not None:
-            return json.dumps(
-                {
-                    "source": last_result.source,
-                    "query": query,
-                    "count": len(last_result.papers),
-                    "papers": [_to_dict(p) for p in last_result.papers],
-                }
-            )
+            from .discovery import search_notice
+
+            body: dict[str, Any] = {
+                "source": last_result.source,
+                "query": query,
+                "count": len(last_result.papers),
+                "papers": [_to_dict(p) for p in last_result.papers],
+            }
+            if notices:
+                body["notice"] = "; ".join(search_notice(n, len(last_result.papers)) for n in notices)
+            return json.dumps(body)
         return json.dumps({"error": f"all search backends failed: {last_error}"})
 
     async def _resolve_doi(self, doi: str) -> tuple[str, PaperMetadata] | None:

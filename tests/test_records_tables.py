@@ -166,3 +166,17 @@ def test_e2er_verify_adds_a_results_contract_check_only_for_a_kind_other_than_re
     (tmp_path / "estimation_results.json").write_text(json.dumps(RESULTS))
     c = _check_results_contract(tmp_path)
     assert c is not None and c.status == "FAIL" and c.detail.startswith("timeseries: ")
+
+
+def test_a_scatter_axis_can_be_reversed(tmp_path: Path, monkeypatch):
+    """A colour-magnitude diagram needs magnitudes growing downwards (Gaia demo, 2026-10-13)."""
+    import matplotlib.axes
+
+    calls: list[str] = []
+    monkeypatch.setattr(matplotlib.axes.Axes, "invert_yaxis", lambda self: calls.append("y"))
+    monkeypatch.setattr(matplotlib.axes.Axes, "invert_xaxis", lambda self: calls.append("x"))
+    base = {"figure_type": "scatter", "x": [0.5, 1.5], "y": [8.0, 14.0]}
+    spec = {"figures": [{"filename": "fig_cmd.pdf", **base, "invert_y": True}, {"filename": "fig_p.pdf", **base}]}
+    (tmp_path / "figure_spec.json").write_text(json.dumps(spec))
+    assert render_figures(tmp_path).rendered == ["fig_cmd.pdf", "fig_p.pdf"]
+    assert calls == ["y"]

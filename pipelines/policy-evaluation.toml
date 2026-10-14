@@ -29,7 +29,7 @@
 #                     results. A failed check sends the econometrics specialist
 #                     back once, then stops the run.
 #
-# Maintained by the e2er contributors.
+# Maintained by the e2er authors.
 
 name = "policy-evaluation"
 title = "Policy evaluation (difference-in-differences)"

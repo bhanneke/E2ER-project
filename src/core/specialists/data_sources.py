@@ -181,13 +181,24 @@ def sources_line(sources: Sources) -> str:
     return f"Available now: {', '.join(usable)}{files}."
 
 
-def sources_block(workspace: Path, settings: Any = None) -> str:
-    """The prompt section for the data architect: exactly the sources available, and which need a key."""
+def sources_block(workspace: Path, settings: Any = None, *, planning: bool = False) -> str:
+    """The prompt section for the data architect: exactly the sources available, and which need a key.
+
+    ``planning`` words it for the specialists who plan the study before the architect (the idea
+    developer and the identification strategist). Without the list they knew only the connector
+    skills in their prompt: on 2026-10-13 a strategist wrote that "neither the World Bank enrolment
+    series nor the abolition dates are in a keyless connector" while `worldbank` was available.
+    """
     s = available_sources(workspace, settings)
     lines = [
         "## Data sources available to this study",
-        "Declare tables only from these sources (the `source` of each table in data_dictionary.json). "
-        "A table from any other source is rejected by the contract check.",
+        (
+            "Plan with data from these sources only; the data architect loads the study's tables from them "
+            "and is held to this list."
+            if planning
+            else "Declare tables only from these sources (the `source` of each table in data_dictionary.json). "
+            "A table from any other source is rejected by the contract check."
+        ),
     ]
     for name, key in _connectors().items():
         if s.connectors[name]:
@@ -208,5 +219,9 @@ def sources_block(workspace: Path, settings: Any = None) -> str:
         "Sources such as CRSP, Compustat, WRDS, call reports or Fama-French factors are not available unless "
         "their data are among the study's data files. If the question needs data that no available source has, "
         "say so in data_dictionary.json (`unavailable`) instead of declaring the table."
+    )
+    lines.append(
+        "Facts no source above holds (a policy's adoption year, a book's first publication) need a published "
+        'source: find it with `e2er-lit search "<query>"` and cite it; never fill them in from memory.'
     )
     return "\n".join(line for line in lines if line)

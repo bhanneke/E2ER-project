@@ -281,7 +281,7 @@ async def setup_page(request: Request, saved: int = 0) -> Any:
 async def setup_checks(request: Request) -> Any:
     from .app import _preflight, templates
 
-    return templates.TemplateResponse(request, "_setup_checks.html", await _preflight())
+    return templates.TemplateResponse(request, "_setup_checks.html", await _preflight(fresh=True))
 
 
 class SaveSetup(BaseModel):
@@ -407,6 +407,9 @@ async def save_setup(req: SaveSetup) -> dict[str, Any]:
     path = root / ".env"
     write_env_file(path, body)
     get_settings.cache_clear()
+    from .app import forget_preflight
+
+    forget_preflight()  # new settings: Preflight checks again
     logger.info("setup page wrote %s", path)
     return {"ok": True, "path": str(path), "notes": ([folder_note] if folder_note else []) + notes}
 

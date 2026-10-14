@@ -26,6 +26,17 @@
   ``*** START OF``/``*** END OF`` lines and drops any remaining line that names
   Project Gutenberg, and records what it removed and the SHA-256 of the file as
   downloaded. Books Gutendex marks as still under copyright are not loaded.
+- Slow catalogue: Gutendex took 78 s per page in a 2026-10-13 demo (each
+  100-320-row search about ten minutes). A search is kept for the day under
+  the cache (``queries/``), and Gutendex gets ``GUTENDEX_TIMEOUT`` seconds; when
+  it does not answer in time, the search reads Project Gutenberg's own
+  catalogue file instead, ``pg_catalog.csv.gz`` from the feeds directory
+  (``/cache/epub/feeds/``) of the mirror. Project Gutenberg's offline-catalogue
+  page asks tools to "use one of these files as input to a database or other
+  tools you may be developing" instead of crawling the website, and its robot
+  policy says "The catalog data are granted to the public domain." The file
+  (updated weekly by Project Gutenberg) is downloaded at most once a day; for
+  an hour after a timeout, searches go to it directly.
 - Citation: the format of https://www.gutenberg.org/policy/permission.html
   ("Carroll, Lewis. (2006). Alice's Adventures in Wonderland. Urbana,
   Illinois: Project Gutenberg. Retrieved …, from www.gutenberg.org/ebooks/19033.").
@@ -35,6 +46,7 @@ from __future__ import annotations
 
 import re
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from .base import Arg, Context, Doctor, Fetched, FetchError, Operation, Polite, Source
@@ -42,6 +54,12 @@ from .base import Arg, Context, Doctor, Fetched, FetchError, Operation, Polite, 
 GUTENDEX = "https://gutendex.com/books/"
 MIRROR = "https://gutenberg.pglaf.org"
 MAX_PAGES = 10
+#: Seconds Gutendex gets to answer a search (all its pages) before the catalogue file is read instead.
+GUTENDEX_TIMEOUT = 45.0
+#: Project Gutenberg's catalogue file on its mirror (the feeds directory; https://www.gutenberg.org/ebooks/offline_catalogs.html).
+CATALOGUE_CSV = "https://gutenberg.pglaf.org/cache/epub/feeds/pg_catalog.csv.gz"
+#: After a Gutendex timeout, searches use the catalogue file for this long.
+_SLOW_SECONDS = 3600
 MAX_BOOKS = 20
 TERMS_URL = "https://www.gutenberg.org/policy/license.html"
 _START = re.compile(r"^\*\*\*\s*START OF (THE|THIS) PROJECT GUTENBERG EBOOK.*$", re.I | re.M)
@@ -86,8 +104,56 @@ def _query(params: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in q.items() if v not in (None, "")}
 
 
-async def fetch_books(ctx: Context, params: dict[str, Any]) -> Fetched:
+def _query_cache(q: dict[str, Any], limit: int) -> Path:
+    import hashlib
+    import json
+
+    from .adapters import cache_dir
+
+    key = hashlib.sha256(json.dumps({"q": q, "limit": limit}, sort_keys=True).encode()).hexdigest()[:24]
+    return cache_dir("gutenberg") / "queries" / datetime.now(UTC).strftime("%Y-%m-%d") / f"{key}.json"
+
+
+def _slow_marker() -> Path:
+    from .adapters import cache_dir
+
+    return cache_dir("gutenberg") / "gutendex-slow"
+
+
+def _gutendex_recently_slow() -> bool:
+    import time
+
+    try:
+        return time.time() - _slow_marker().stat().st_mtime < _SLOW_SECONDS
+    except OSError:
+        return False
+
+
+async def _from_gutendex(ctx: Context, q: dict[str, Any], limit: int) -> tuple[list[dict[str, Any]], list[str]]:
+    import asyncio
+
     from .adapters import rest_json_pages
+
+    try:
+        books, urls = await asyncio.wait_for(
+            rest_json_pages(ctx.http, GUTENDEX, q, items="results", paging="next", max_items=limit),
+            timeout=GUTENDEX_TIMEOUT,
+        )
+    except TimeoutError:
+        raise _GutendexSlowError(f"Gutendex did not answer within {GUTENDEX_TIMEOUT:.0f} s") from None
+    except FetchError as e:
+        if "timeout" in str(e).lower():
+            raise _GutendexSlowError(str(e)) from None
+        raise
+    return [_book_row(b) for b in books], urls
+
+
+class _GutendexSlowError(Exception):
+    """Gutendex did not answer in time."""
+
+
+async def fetch_books(ctx: Context, params: dict[str, Any]) -> Fetched:
+    import json
 
     q = _query(params)
     if not q:
@@ -95,19 +161,154 @@ async def fetch_books(ctx: Context, params: dict[str, Any]) -> Fetched:
     limit = int(params.get("limit") or 100)
     if not 1 <= limit <= 32 * MAX_PAGES:
         raise FetchError(f"--limit {limit}: between 1 and {32 * MAX_PAGES}")
-    books, urls = await rest_json_pages(ctx.http, GUTENDEX, q, items="results", paging="next", max_items=limit)
-    rows = [_book_row(b) for b in books]
     what = ", ".join(f"{k}={v}" for k, v in q.items())
+    cached = _query_cache(q, limit)
+    if cached.is_file():
+        try:
+            kept = json.loads(cached.read_text(encoding="utf-8"))
+            return _books_fetched(
+                kept["rows"], what, kept["query"], kept["record"] | {"from_cache": True}, kept["note"]
+            )
+        except (OSError, ValueError, KeyError):
+            pass
+    note = "One row per book (catalogue data only). Load the texts with: text --ids <id,id,...>."
+    rows: list[dict[str, Any]] | None = None
+    record: dict[str, Any] = {}
+    query = ""
+    slow = ""
+    if _gutendex_recently_slow():
+        slow = "Gutendex did not answer in time within the last hour"
+    else:
+        try:
+            rows, urls = await _from_gutendex(ctx, q, limit)
+            record = {"catalogue": "Gutendex", "pages": len(urls)}
+            query = urls[0]
+        except _GutendexSlowError as e:
+            slow = str(e)
+            try:
+                _slow_marker().parent.mkdir(parents=True, exist_ok=True)
+                _slow_marker().touch()
+            except OSError:
+                pass
+    if rows is None:
+        rows, file_meta = await _from_catalogue_file(ctx, q, limit, slow)
+        query = f"{CATALOGUE_CSV} (filtered: {what})"
+        record = {"catalogue": "Project Gutenberg catalogue file", "file": file_meta, "why": slow}
+        note = (
+            f"{slow}, so the rows come from Project Gutenberg's own catalogue file (pg_catalog.csv, updated weekly). "
+            "It has no download counts and no copyright status: rows are ordered by book number, `download_count` "
+            "and `copyright` are empty, and `text` checks the copyright before loading a book. " + note
+        )
+    try:
+        cached.parent.mkdir(parents=True, exist_ok=True)
+        cached.write_text(json.dumps({"rows": rows, "query": query, "record": record, "note": note}), encoding="utf-8")
+    except OSError:
+        pass
+    return _books_fetched(rows, what, query, record, note)
+
+
+def _books_fetched(rows: list[dict[str, Any]], what: str, query: str, record: dict[str, Any], note: str) -> Fetched:
     return Fetched(
         rows=rows,
         series=f"Project Gutenberg books ({what})",
-        query=urls[0],
+        query=query,
         files=[],
         link="https://www.gutenberg.org/ebooks/",
         citation=COLLECTION_CITATION.format(date=_today_long()),
-        record={"catalogue": "Gutendex", "pages": len(urls)},
-        note="One row per book (catalogue data only). Load the texts with: text --ids <id,id,...>.",
+        record=record,
+        note=note,
     )
+
+
+_YEARS = re.compile(r",\s*(?:(\d{1,4})\??\s*(BCE)?)?\s*-\s*(?:(\d{1,4})\??\s*(BCE)?)?\s*$")
+
+
+def _author(raw: str) -> tuple[str, int | None, int | None]:
+    """'Austen, Jane, 1775-1817' -> ('Austen, Jane', 1775, 1817); years missing or BCE are negative/None."""
+    raw = re.sub(r"\s*\[[^\]]*\]\s*$", "", raw.strip())  # "[Editor]", "[Translator]"
+    m = _YEARS.search(raw)
+    if not m:
+        return raw, None, None
+
+    def year(v: str | None, bce: str | None) -> int | None:
+        return None if not v else (-int(v) if bce else int(v))
+
+    return raw[: m.start()].strip(), year(m.group(1), m.group(2)), year(m.group(3), m.group(4))
+
+
+def catalogue_rows(lines: Any, q: dict[str, Any], limit: int) -> list[dict[str, Any]]:
+    """The books of Project Gutenberg's catalogue CSV that match a Gutendex-style query, as ``_book_row`` rows.
+
+    ``search``: every word in the title or an author's name; ``topic``: a
+    phrase in the subjects or bookshelves; ``languages``: any of them;
+    ``author_year_start``/``end``: an author alive at or after / at or before
+    the year; ``ids``: those books. Sorted by book number (``descending`` reverses).
+    """
+    import csv
+
+    words = [w.lower() for w in str(q.get("search") or "").split()]
+    topic = str(q.get("topic") or "").lower()
+    langs = {x.strip() for x in str(q.get("languages") or "").split(",") if x.strip()}
+    ids = {x.strip() for x in str(q.get("ids") or "").split(",") if x.strip()}
+    start = q.get("author_year_start")
+    end = q.get("author_year_end")
+    out: list[dict[str, Any]] = []
+    for rec in csv.DictReader(lines):
+        num = (rec.get("Text#") or "").strip()
+        if ids and num not in ids:
+            continue
+        authors = [_author(a) for a in (rec.get("Authors") or "").split(";") if a.strip()]
+        names = "; ".join(a[0] for a in authors)
+        if words and not all(w in f"{rec.get('Title') or ''} {names}".lower() for w in words):
+            continue
+        if topic and topic not in f"{rec.get('Subjects') or ''} {rec.get('Bookshelves') or ''}".lower():
+            continue
+        book_langs = {x.strip() for x in (rec.get("Language") or "").replace(",", ";").split(";") if x.strip()}
+        if langs and not (book_langs & langs):
+            continue
+        if start is not None and not any(d is not None and d >= int(start) for _n, _b, d in authors):
+            continue
+        if end is not None and not any(b is not None and b <= int(end) for _n, b, _d in authors):
+            continue
+        first = authors[0] if authors else (None, None, None)
+        out.append(
+            {
+                "id": int(num) if num.isdigit() else num,
+                "title": rec.get("Title"),
+                "authors": names or None,
+                "author_birth_year": first[1],
+                "author_death_year": first[2],
+                "languages": ",".join(sorted(book_langs)) or None,
+                "subjects": rec.get("Subjects") or None,
+                "bookshelves": rec.get("Bookshelves") or None,
+                "copyright": None,
+                "media_type": rec.get("Type"),
+                "download_count": None,
+                "has_plain_text": rec.get("Type") == "Text",
+            }
+        )
+    out.sort(key=lambda r: r["id"] if isinstance(r["id"], int) else 0, reverse=q.get("sort") == "descending")
+    return out[:limit]
+
+
+async def _from_catalogue_file(
+    ctx: Context, q: dict[str, Any], limit: int, why: str
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    import gzip
+    import io
+
+    from .adapters import download_file
+
+    today = datetime.now(UTC).strftime("%Y-%m-%d")
+    try:
+        path, meta = await download_file(ctx.http, CATALOGUE_CSV, "gutenberg", version=f"catalogue-{today}")
+    except FetchError as e:
+        raise FetchError(
+            f"{why}, and Project Gutenberg's catalogue file could not be read either ({e}). Try again later."
+        ) from None
+    with gzip.open(path, "rt", encoding="utf-8", newline="") as fh:
+        rows = catalogue_rows(io.StringIO(fh.read()), q, limit)
+    return rows, {"url": meta["url"], "sha256": meta["sha256"], "retrieved_at": meta["retrieved_at"]}
 
 
 def _today_long() -> str:
@@ -141,7 +342,18 @@ async def fetch_text(ctx: Context, params: dict[str, Any]) -> Fetched:
         raise FetchError("--ids: give Project Gutenberg book numbers, e.g. 1342,84")
     if len(ids) > MAX_BOOKS:
         raise FetchError(f"{len(ids)} books: load at most {MAX_BOOKS} at a time (Project Gutenberg asks for restraint)")
-    books, urls = await rest_json_pages(ctx.http, GUTENDEX, {"ids": ",".join(ids)}, items="results", paging="next")
+    import asyncio
+
+    try:
+        books, urls = await asyncio.wait_for(
+            rest_json_pages(ctx.http, GUTENDEX, {"ids": ",".join(ids)}, items="results", paging="next"),
+            timeout=GUTENDEX_TIMEOUT,
+        )
+    except TimeoutError:
+        raise FetchError(
+            f"Gutendex, the catalogue e2er checks each book's copyright status with, did not answer within "
+            f"{GUTENDEX_TIMEOUT:.0f} s. No text was loaded; try again later."
+        ) from None
     by_id = {str(b.get("id")): b for b in books}
     missing = [i for i in ids if i not in by_id]
     if missing:

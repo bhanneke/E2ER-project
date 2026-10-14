@@ -11,6 +11,7 @@ from src.core.specialists.contract_check import (
     check_has_regression,
     check_specialist_artifacts,
 )
+from tests.results_script import write_results_script
 
 # ── JSON checks (the M4 failure mode) ────────────────────────────────────────
 
@@ -142,6 +143,7 @@ def test_all_required_artifacts_present_passes(tmp_path: Path):
     (tmp_path / "estimation_results.json").write_text(
         json.dumps({"main": {"coefficients": {"treat": {"estimate": 0.04, "se": 0.01}}}}), encoding="utf-8"
     )
+    write_results_script(tmp_path)
     failed = [c for c in check_specialist_artifacts(tmp_path, "econometrics_specialist") if not c.ok]
     assert failed == []
 
@@ -289,6 +291,7 @@ def test_econometrics_gate_passes_with_real_regression(tmp_path: Path):
     (tmp_path / "estimation_results.json").write_text(
         json.dumps({"main": {"coefficients": {"treat": {"estimate": -0.01}}, "diagnostics": {"n": 100}}})
     )
+    write_results_script(tmp_path)
     assert all(c.ok for c in check_specialist_artifacts(tmp_path, "econometrics_specialist"))
 
 

@@ -121,6 +121,12 @@ _LITERATURE_SPECIALISTS = frozenset(
         "field_review_writer",
         "protocol_designer",
         "meta_review_writer",
+        # The planners source what the data cannot give: a policy's adoption dates, a corpus's
+        # publication years. The 2026-10-13 school-fee demo: the researcher asked the data architect
+        # to find a source for each abolition year, and every `e2er-lit search` was refused.
+        "idea_developer",
+        "identification_strategist",
+        "data_architect",
     }
 )
 _LIT_TOOL = "Bash(e2er-lit:*)"

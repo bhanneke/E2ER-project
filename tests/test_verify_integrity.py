@@ -411,7 +411,7 @@ def test_the_banner_names_exactly_the_checks_that_passed(tmp_path: Path, capsys)
     assert verify(str(b)) == 0
     out = capsys.readouterr().out
     banner = next(line for line in out.splitlines() if line.startswith("✅"))
-    assert "(numbers, spec, citations)" in banner and "1 skipped (tables)" in banner
+    assert "(numbers, spec, citations, results from code)" in banner and "1 skipped (tables)" in banner
     assert "tables, numbers, spec, and citations are internally consistent" not in out
 
 

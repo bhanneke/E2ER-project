@@ -731,7 +731,7 @@ def test_the_template_loads_in_the_order_of_a_reproduction():
     assert spec.step("sandbox_run").settings["memory_gb"] == 6
     kinds = {s.kind for s in spec.steps}
     assert "strategist" not in kinds and "aggregate" not in kinds  # no drafting, no review panel
-    assert "e2er contributors" in TEMPLATE.read_text()
+    assert "e2er authors" in TEMPLATE.read_text()
 
 
 @pytest.mark.parametrize(

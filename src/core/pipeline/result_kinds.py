@@ -601,6 +601,19 @@ def active_kind(workspace: Path | None = None) -> str:
     return DEFAULT_KIND
 
 
+def active_economics() -> bool:
+    """Whether the running template is an economics study (the economist persona; True without a template).
+
+    Only economics papers carry JEL codes; the other templates (the researcher
+    persona: descriptive, spatial, time-series, text, systematic review) never do.
+    """
+    from .components import active
+    from .spec import DEFAULT_BASE_SKILL
+
+    spec = active()
+    return True if spec is None else spec.base_skill == DEFAULT_BASE_SKILL
+
+
 def active_causal() -> bool:
     """Whether the running template asks for an identification strategy (True without a template)."""
     from .components import active

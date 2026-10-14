@@ -114,8 +114,8 @@ def test_openrouter_model_priced_from_the_list_not_the_guess(listed):
 
 def test_deepseek_has_a_table_price_offline():
     usage = TokenUsage(input_tokens=1_000_000, output_tokens=1_000_000)
-    # Not the $3/$15 guess ($18).
-    assert estimate_cost("deepseek/deepseek-v4-pro", usage) < Decimal("1")
+    # Not the $3/$15 guess ($18): OpenRouter's listed $0.96/$1.91 (2026-10-14).
+    assert estimate_cost("deepseek/deepseek-v4-pro", usage) < Decimal("3")
 
 
 def test_token_usage_sums_reported_cost():
@@ -295,7 +295,7 @@ async def test_calls_ask_for_the_cheapest_provider(backend, monkeypatch):
     create = AsyncMock(return_value=_resp("stop", content="x", usage=_usage(1, 1, cost=0.0001)))
     monkeypatch.setattr(backend._client.chat.completions, "create", create)
     await backend.tool_loop("s", [{"role": "user", "content": "u"}], [], None)
-    assert create.call_args.kwargs["extra_body"] == {"provider": {"sort": "price"}}
+    assert create.call_args.kwargs["extra_body"]["provider"] == {"sort": "price"}
 
 
 async def test_provider_sort_can_be_left_to_openrouter(monkeypatch):
@@ -311,7 +311,7 @@ async def test_provider_sort_can_be_left_to_openrouter(monkeypatch):
     create = AsyncMock(return_value=_resp("stop", content="x", usage=_usage(1, 1, cost=0.0001)))
     monkeypatch.setattr(b._client.chat.completions, "create", create)
     await b.tool_loop("s", [{"role": "user", "content": "u"}], [], None)
-    assert "extra_body" not in create.call_args.kwargs
+    assert "provider" not in create.call_args.kwargs.get("extra_body", {})
     get_settings.cache_clear()
 
 
@@ -436,7 +436,7 @@ async def test_calls_name_the_cheapest_providers_in_order(backend, monkeypatch):
     create = AsyncMock(return_value=_resp("stop", content="x", usage=_usage(1, 1, cost=0.0001)))
     monkeypatch.setattr(backend._client.chat.completions, "create", create)
     await backend.tool_loop("s", [{"role": "user", "content": "u"}], [], None)
-    assert create.call_args.kwargs["extra_body"] == {
+    assert {"provider": create.call_args.kwargs["extra_body"]["provider"]} == {
         "provider": {"order": ["baidu/fp8", "relace/fp4", "azure/us"], "allow_fallbacks": True}
     }
     # Kept for the day: a second backend does not fetch again.

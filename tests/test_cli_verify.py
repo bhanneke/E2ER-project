@@ -39,6 +39,9 @@ def _clean_bundle(tmp_path: Path) -> Path:
     (ws / "identification_spec.json").write_text(
         json.dumps({"primary": {"estimator": "ols", "outcome": "y", "treatment": "treat"}})
     )
+    from tests.results_script import write_results_script
+
+    write_results_script(ws)  # the results come from the study's script (verify: "results from code")
     return export_paper(ws, tmp_path / "out", date_str="20260627")
 
 

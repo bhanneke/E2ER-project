@@ -62,6 +62,7 @@ import sys
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from ...logging_config import get_logger
 
@@ -134,7 +135,15 @@ EXECUTION_CONVENTIONS: dict[str, ExecutionConvention] = {
 
 
 # The script log (one implementation for e2er-run and the runner): src/core/script_log.py.
-from ..script_log import SCRIPT_RUNS, read_script_runs, record_script_run  # noqa: E402,F401
+from ..script_log import (  # noqa: E402,F401
+    SCRIPT_RUNS,
+    confirm_output,
+    output_snapshot,
+    read_script_runs,
+    record_script_run,
+    script_command,
+    script_record,
+)
 
 
 @dataclass(frozen=True)
@@ -301,12 +310,15 @@ def maybe_execute_specialist_script(workspace: Path, specialist: str) -> Executi
         convention.timeout_seconds,
     )
     started = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    # Through the script log's bootstrap, which records the packages the script loaded (reproduce.json pins them).
+    argv, extra, packages_file = script_command(sys.executable, script_path)
+    before = output_snapshot(workspace)  # the script log records what the run wrote
     try:
         completed = subprocess.run(
-            [sys.executable, str(script_path)],
+            argv,
             cwd=str(workspace),
             # Plain tracebacks for the model that reads them (Python 3.13+ colours them under FORCE_COLOR).
-            env={**os.environ, "PYTHON_COLORS": "0"},
+            env={**os.environ, "PYTHON_COLORS": "0", **extra},
             capture_output=True,
             text=True,
             timeout=convention.timeout_seconds,
@@ -326,6 +338,7 @@ def maybe_execute_specialist_script(workspace: Path, specialist: str) -> Executi
         stderr = stderr + f"\n[TIMEOUT after {convention.timeout_seconds}s]"
         logger.warning("post-specialist exec: %s timed out after %ds", rel_script, convention.timeout_seconds)
     except Exception as e:  # noqa: BLE001 — defensive, log + record
+        script_record(packages_file)
         logger.warning("post-specialist exec: %s failed: %s", rel_script, e)
         return ExecutionAttempt(
             specialist=specialist,
@@ -337,11 +350,19 @@ def maybe_execute_specialist_script(workspace: Path, specialist: str) -> Executi
             discovered=discovered,
         )
 
-    record_script_run(workspace, rel_script, started, -1 if rc is None else rc, by="runner")
-
     # If the script wrote a populated alternate output but not the canonical
     # sidecar, copy it across so M4.3 (which keys on the canonical name) sees it.
     normalized_from = _normalize_output(workspace, convention)
+    # Recorded after the copy: the sidecar it made is an output of this run.
+    record_script_run(
+        workspace,
+        rel_script,
+        started,
+        -1 if rc is None else rc,
+        by="runner",
+        record=script_record(packages_file),
+        before=before,
+    )
 
     # Always write the audit log, even on non-zero exit. The next reviewer
     # (or the M4.3 error message) points here.
@@ -457,3 +478,204 @@ def read_execution_error(workspace: Path, specialist: str) -> str | None:
         f"`{convention.sidecar}`. Do not write `{{}}` — fix the code.\n\n"
         f"```\n{tail}\n```"
     )
+
+
+# ── results come from the code ───────────────────────────────────────────────
+#
+# A specialist that can edit files can edit its results file after its script
+# wrote it. A DeepSeek run on OpenRouter (2026-10-14, the earthquake demo) did:
+# `estimation_results.json` was written at 02:01, the script last changed at
+# 01:18, and a rerun of the shipped script gave 289 different values. Nothing
+# noticed before `e2er reproduce`. The script log records the SHA-256 of every
+# file each run wrote (script_log.results_from_code); a results file that is
+# not the output of the last run of the script as shipped is run again here,
+# and the contract check (contract_check.check_results_from_code) fails the
+# specialist when the rerun does not write it.
+
+#: Result files whose content must come from the study's own code, per specialist.
+RESULTS_FROM_CODE: dict[str, tuple[str, ...]] = {
+    "econometrics_specialist": ("estimation_results.json", "robustness_results.json"),
+}
+
+#: What the last confirming rerun found, read by the contract check for its feedback (internal).
+RERUN_RECORD = ".e2er-results-rerun.json"
+
+
+def results_files(workspace: Path, specialist: str) -> list[str]:
+    """The specialist's result files that exist in the workspace."""
+    return [n for n in RESULTS_FROM_CODE.get(specialist, ()) if (Path(workspace) / n).is_file()]
+
+
+def _sha(path: Path) -> str | None:
+    import hashlib
+
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
+def results_script(workspace: Path, specialist: str, rel: str) -> str | None:
+    """The script that should write ``rel``: its last recorded writer if the study still has it, else the
+    specialist's estimation script by its conventional name."""
+    from ..script_log import results_writer
+
+    workspace = Path(workspace)
+    writer = results_writer(workspace, rel)
+    if writer is not None and (workspace / str(writer.get("script"))).is_file():
+        return str(writer["script"])
+    convention = EXECUTION_CONVENTIONS.get(specialist)
+    if convention is None:
+        return None
+    path, _ = _discover_script(workspace, convention)
+    return path.name if path is not None else None
+
+
+def rerun_chain(workspace: Path, specialist: str, pending: list[str]) -> list[str]:
+    """The scripts to run again for the pending results files, in order.
+
+    For the estimation results the chain `e2er reproduce` runs (the order the
+    script log recorded, else file times: the estimation script and the later
+    scripts that write the results again); a further results file's recorded
+    writer is added when the chain does not have it.
+    """
+    from ..export.reproduce_recipe import RESULTS, chain_of
+
+    workspace = Path(workspace)
+    names: list[str] = []
+    if RESULTS in pending or not pending:
+        names = [p.name for p in chain_of(workspace).scripts]
+    for n in pending:
+        script = results_script(workspace, specialist, n)
+        if script and script not in names:
+            names.append(script)
+    return names
+
+
+def confirm_results_from_code(workspace: Path, specialist: str) -> dict[str, dict]:
+    """Run the shipped script again when a results file is not the recorded output of its last run.
+
+    A file that the rerun writes with the same values (identical, or the same at
+    the precision the file holds) is from the code: the rerun's output stays and
+    is recorded. Otherwise the file is put back as the specialist left it and
+    what the rerun found is kept in :data:`RERUN_RECORD`, for the contract
+    check's feedback. Returns that record ({file: {...}}); empty when nothing
+    needed a rerun. Never raises.
+    """
+    from ..script_log import FROM_CODE, results_from_code
+
+    workspace = Path(workspace).resolve()
+    record: dict[str, dict] = {}
+    try:
+        pending = [n for n in results_files(workspace, specialist) if results_from_code(workspace, n)[0] != FROM_CODE]
+        if not pending:
+            return record
+        scripts = rerun_chain(workspace, specialist, pending)
+        if not scripts:
+            return record  # no script at all: the contract check says so
+        script = " then ".join(scripts)
+        originals = {n: (workspace / n).read_bytes() for n in pending}
+        logger.info(
+            "results check: %s %s not traced to the last run of the study's code — running %s again",
+            ", ".join(pending),
+            "are" if len(pending) > 1 else "is",
+            script,
+        )
+        convention = EXECUTION_CONVENTIONS.get(specialist)
+        timeout = convention.timeout_seconds if convention else 600
+        n_runs = len(read_script_runs(workspace))
+        rc: int | None = 0
+        for name in scripts:  # in the order the run ran them; stop at the first that fails
+            rc = _run_recorded(workspace, workspace / name, timeout, by="runner (results check)")
+            if rc != 0:
+                break
+        from ..reproduce import compare_json
+
+        wrote: set[str] = set()
+        for row in read_script_runs(workspace)[n_runs:]:
+            wrote.update((row.get("outputs") or {}).keys())
+        for n in pending:
+            new = workspace / n
+            entry: dict = {"script": script, "exit_code": rc, "sha256": _sha_bytes(originals[n])}
+            if rc == 0 and n in wrote and new.is_file():
+                tmp = workspace / f".e2er-results-before-{n}"
+                tmp.write_bytes(originals[n])
+                try:
+                    fc = compare_json(tmp, new, n, n)
+                finally:
+                    tmp.unlink(missing_ok=True)
+                differ = _values_that_differ(fc)
+                entry["values"] = fc.total
+                entry["differ"] = differ
+                if fc.problem is None and differ == 0:
+                    # The script writes these values (a platform's last float digits aside): the file stays
+                    # as the specialist's run left it, and the log records that the rerun confirmed it.
+                    new.write_bytes(originals[n])
+                    confirm_output(workspace, n, _sha_bytes(originals[n]))
+                    entry["same"] = True
+                    record[n] = entry
+                    continue
+            elif rc == 0:
+                entry["not_written"] = True
+            entry["same"] = False
+            new.write_bytes(originals[n])  # as the specialist left it; the contract check reports it
+            record[n] = entry
+        (workspace / RERUN_RECORD).write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+    except Exception as e:  # noqa: BLE001 — a check that cannot run must not break the step
+        logger.warning("results check: could not run the script again: %s", e)
+    return record
+
+
+#: Two values agree when their relative difference is at most this: the last digits of a float differ between
+#: platforms' numerical libraries (CI on Linux and macOS), never a value someone wrote by hand.
+FLOAT_NOISE = 1e-9
+
+
+def _values_that_differ(fc: Any) -> int:
+    """Values of a rerun comparison that do not agree: identical, the same at the file's precision, or within
+    float noise of each other agree; a missing, new, changed or text value does not."""
+    from ..reproduce import MATCHING, MINOR
+
+    noise = sum(1 for rel, *_rest in fc.differences if rel is not None and rel <= FLOAT_NOISE)
+    bad = sum(n for label, n in fc.counts.items() if label not in MATCHING and label != MINOR)
+    minor = fc.counts.get(MINOR, 0)
+    return bad + max(minor - noise, 0)
+
+
+def _sha_bytes(data: bytes) -> str:
+    import hashlib
+
+    return hashlib.sha256(data).hexdigest()
+
+
+def _run_recorded(workspace: Path, script_path: Path, timeout: int, *, by: str) -> int | None:
+    """Run a workspace script through the script log (packages and outputs recorded); its exit code."""
+    started = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    argv, extra, packages_file = script_command(sys.executable, script_path)
+    before = output_snapshot(workspace)
+    try:
+        rc: int | None = subprocess.run(
+            argv,
+            cwd=str(workspace),
+            env={**os.environ, "PYTHON_COLORS": "0", **extra},
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        ).returncode
+    except subprocess.TimeoutExpired:
+        rc = None
+    except OSError as e:
+        script_record(packages_file)
+        logger.warning("results check: %s could not start: %s", script_path.name, e)
+        return None
+    record_script_run(
+        workspace,
+        script_path.relative_to(workspace).as_posix(),
+        started,
+        -1 if rc is None else rc,
+        by=by,
+        record=script_record(packages_file),
+        before=before,
+    )
+    return rc

@@ -53,9 +53,17 @@ applied. A listed location that no edit corrects and no `keep` entry
 explains, a corrected passage that occurs again elsewhere unchanged, or a
 `keep` without a reason sends you back with each passage named.
 
-**You may only edit the targets named in this list.** The merger
-refuses any edit whose target isn't in the findings. Trying to "while
-I'm here, also fix..." is wasted output.
+**You may only edit the targets named in this list, or `paper:full`.**
+The merger refuses any other edit whose target isn't in the findings.
+An edit with `"target": "paper:full"` searches the whole draft, so use
+it for a passage that sits outside the section a finding names. Trying
+to "while I'm here, also fix..." is wasted output.
+
+**A revision that changes nothing is sent back.** In the revision round
+after the review panel, when findings are open and no edit of your patch applies (every `find` missed, or the patch is
+`[]`) and no passage is kept with a reason, a check sends you back with
+the reason each edit was rejected; after the last attempt the run stops
+for the researcher.
 
 ## The patch file shape
 
@@ -149,11 +157,12 @@ merger's region-extraction is permissive for `paper:full`.
    The figure has to be produced by a different specialist; you
    can edit the prose that references it.
 6. **Stay within scope.** Don't emit edits for targets that aren't
-   in the findings list. The merger drops them silently from the
-   work product, so the LLM spend is wasted.
-7. **Empty patch file is valid.** If the findings are all minor
-   polish or you genuinely have nothing to patch, emit `[]`. The
-   merger applies zero edits and the runner moves on.
+   in the findings list (or `paper:full`). The merger rejects them,
+   so the LLM spend is wasted.
+7. **Every finding gets an edit or a `keep`.** A passage you leave
+   as it is gets a `keep` entry with the reason. In the revision
+   round after the review panel, `[]` against open findings is a
+   revision that changes nothing, and the check sends you back.
 
 ## What a `verify_numbers`-driven edit looks like
 

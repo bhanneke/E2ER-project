@@ -79,6 +79,13 @@ def review(
     send_back: str | None = None,
     remark: str | None = None,
 ) -> int:
+    if send_back and approve:
+        print(
+            "e2er review: --send-back and --approve contradict each other: send back to have the work "
+            "redone, or approve to go on. Nothing was recorded.",
+            file=sys.stderr,
+        )
+        return 1
     http = _client()
     r = http.get(f"/api/papers/{paper_id}/review")
     if r.status_code >= 400:
@@ -91,24 +98,33 @@ def review(
         return 1
     files = {f["name"]: f for f in data.get("files", [])}
 
-    if edit:
-        if edit not in files:
-            print(f"e2er review: {edit} is not one of this step's files: {', '.join(files)}", file=sys.stderr)
+    if send_back and not remark:
+        print("e2er review: --send-back needs --remark", file=sys.stderr)
+        return 1
+    if edit and edit not in files:
+        print(f"e2er review: {edit} is not one of this step's files: {', '.join(files)}", file=sys.stderr)
+        return 1
+    # Options given together run in this order: the edit, the instruction, then
+    # the send-back or the approval, which continue the run. The run continues
+    # only when everything before was recorded.
+    if edit or instruction or send_back or approve:
+        if edit:
+            new = _edit_in_editor(files[edit]["content"], edit)
+            if new == files[edit]["content"]:
+                print("No change.")
+                if not (instruction or send_back or approve):
+                    return 0
+            elif _post(http, paper_id, {"action": "edit", "file": edit, "content": new}):
+                return 1
+        if instruction and _post(http, paper_id, {"action": "instruction", "text": instruction}):
+            if send_back or approve:
+                print("e2er review: the instruction was not recorded, so the run was not continued.", file=sys.stderr)
             return 1
-        new = _edit_in_editor(files[edit]["content"], edit)
-        if new == files[edit]["content"]:
-            print("No change.")
-            return 0
-        return _post(http, paper_id, {"action": "edit", "file": edit, "content": new})
-    if instruction:
-        return _post(http, paper_id, {"action": "instruction", "text": instruction})
-    if send_back:
-        if not remark:
-            print("e2er review: --send-back needs --remark", file=sys.stderr)
-            return 1
-        return _post(http, paper_id, {"action": "send_back", "step": send_back, "remark": remark})
-    if approve:
-        return _post(http, paper_id, {"action": "approve"})
+        if send_back:
+            return _post(http, paper_id, {"action": "send_back", "step": send_back, "remark": remark})
+        if approve:
+            return _post(http, paper_id, {"action": "approve"})
+        return 0
 
     # Interactive.
     print(format_pending(data))
@@ -246,6 +262,8 @@ def rerun(paper_id: str, *, step: str, remark: str) -> int:
         print(f"e2er rerun: {detail}", file=sys.stderr)
         return 1
     rec = r.json().get("recorded", {})
+    if rec.get("specialist"):
+        print(f"✓ {rec['specialist']} runs in the step {rec.get('step')}; the whole step runs again")
     print(f"✓ rerun from {rec.get('step')}: {', '.join(rec.get('reruns') or [])} (recorded for the dossier)")
     if rec.get("replaces"):
         print(f"✓ in place of the stop at {rec['replaces']}")

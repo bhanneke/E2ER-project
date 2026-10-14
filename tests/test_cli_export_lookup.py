@@ -83,3 +83,56 @@ def test_staging_copies_when_links_are_not_allowed(tmp_path, monkeypatch, capsys
     assert local_corpus.link_or_copy(src_file, tmp_path / "b.csv") == "copied"
     assert (tmp_path / "b.csv").read_text() == "x\n1\n"
     assert "Developer Mode" in capsys.readouterr().err
+
+
+def test_status_review_and_resume_take_a_prefix(monkeypatch):
+    from src.cli_export import expand_paper_id
+
+    rows = [{"id": PID, "workspace": ""}, {"id": "abcd1111", "workspace": ""}, {"id": "abcd2222", "workspace": ""}]
+    monkeypatch.setattr(cli_export, "_paper_rows", lambda: rows)
+    assert expand_paper_id("e432cf3f") == PID
+    assert expand_paper_id(PID) == PID
+    assert expand_paper_id("e43") == "e43"  # too short: passed on as is
+    assert expand_paper_id("0000") == "0000"  # unknown: the command says it is not found
+    with pytest.raises(ExportLookupError, match="matches 2 papers"):
+        expand_paper_id("abcd")
+
+
+def test_the_cli_expands_the_prefix_before_asking_the_server(monkeypatch):
+    import sys
+
+    from src import __main__ as cli
+    from src import cli_status
+
+    monkeypatch.setattr(cli_export, "_paper_rows", lambda: [{"id": PID, "workspace": ""}])
+    seen: dict[str, str] = {}
+
+    def fake_status(paper_id, tail=False, monitor_seconds=0):
+        seen["id"] = paper_id
+        return 0
+
+    monkeypatch.setattr(cli_status, "status", fake_status)
+    monkeypatch.setattr(sys, "argv", ["e2er", "status", "e432cf3f"])
+    with pytest.raises(SystemExit) as e:
+        cli.main()
+    assert e.value.code == 0
+    assert seen["id"] == PID
+
+
+def test_json_reports_keep_log_lines_off_stdout(capsys):
+    import logging
+    import sys
+
+    from src.logging_config import _STREAM, get_logger, logs_to_stderr
+
+    before = _STREAM["to"]
+    try:
+        log = get_logger("src.test_json_stdout_probe")
+        logs_to_stderr()
+        get_logger("src.test_json_stdout_probe_new").info("new logger")
+        log.info("old logger")
+        out, err = capsys.readouterr()
+        assert "logger" not in out
+        assert all(h.stream is not sys.stdout for h in logging.getLogger("src.test_json_stdout_probe").handlers)
+    finally:
+        _STREAM["to"] = before

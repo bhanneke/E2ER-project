@@ -9,9 +9,8 @@ Two scenarios are written:
 
     did/            parallel trends hold: the run passes every check;
     did-pretrend/   the adopters' outcome drifts upwards before adoption, so the
-                    pre-trends test rejects; its results carry no Rambachan-Roth
-                    bound (removed after the script ran), so the did_results
-                    check stops the run.
+                    pre-trends test rejects; its own analysis script reports no
+                    Rambachan-Roth bound, so the did_results check stops the run.
 
 Into each, from the generator and the recorded analysis script:
 
@@ -156,15 +155,34 @@ def build(root: Path, drift: float, inputs: bool, drop_sensitivity: tuple[str, .
     script = HERE / "files" / "econometrics_specialist" / "run_estimation.py"
     econ = root / "files" / "econometrics_specialist"
     econ.mkdir(parents=True, exist_ok=True)
+    if drop_sensitivity:
+        # The scenario's own analysis script leaves the analyses out: e2er checks that the results file is
+        # what the shipped script writes, so the results cannot be edited after the script ran.
+        script = pretrend_script(script, drop_sensitivity, econ / "run_estimation.py")
     with tempfile.TemporaryDirectory() as tmp:
         shutil.copy(db, Path(tmp) / "data.db")
         shutil.copy(script, Path(tmp) / "run_estimation.py")
         subprocess.run([sys.executable, "run_estimation.py"], cwd=tmp, check=True)
         results = json.loads((Path(tmp) / "estimation_results.json").read_text(encoding="utf-8"))
-    for key in drop_sensitivity:
-        results["sensitivity"].pop(key, None)
     (econ / "estimation_results.json").write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")
     print(root.name, "ATT", results["main"]["coefficients"]["att"], "pre-trends p", results["pre_trends"]["p_value"])
+
+
+#: Where the variant script drops the analyses (right before it writes the results).
+_WRITE = '    with open("estimation_results.json", "w", encoding="utf-8") as f:'
+
+
+def pretrend_script(script: Path, drop: tuple[str, ...], out: Path) -> Path:
+    """The recorded analysis script, changed to report no Rambachan-Roth bound (written to ``out``)."""
+    text = script.read_text(encoding="utf-8")
+    assert _WRITE in text, "run_estimation.py no longer writes its results where the variant expects"
+    dropped = (
+        "    # This analysis reports no bound on violations of parallel trends.\n"
+        f"    for key in {drop!r}:\n"
+        '        results["sensitivity"].pop(key, None)\n'
+    )
+    out.write_text(text.replace(_WRITE, dropped + _WRITE, 1), encoding="utf-8")
+    return out
 
 
 def main() -> None:

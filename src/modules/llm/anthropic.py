@@ -52,10 +52,14 @@ class AnthropicBackend(LLMBackend):
         specialist: str | None = None,
     ) -> ToolLoopResult:
         from ..tracking.usage import loop_finished, record_cancelled_loop
+        from .plan_limit import raise_if_billing
 
         loop_key = next(_loop_keys)
         try:
-            return await self._tool_loop(system, messages, tools, tool_handler, max_turns, paper_id, loop_key)
+            result = await self._tool_loop(system, messages, tools, tool_handler, max_turns, paper_id, loop_key)
+            # No credits, or the key's spending limit: the run pauses (like a plan's limit) instead of failing.
+            await raise_if_billing("anthropic", self._model, result, paper_id, specialist)
+            return result
         except asyncio.CancelledError:
             # A stopped run: the runner never records this loop's usage, but it was billed.
             await record_cancelled_loop(paper_id, specialist, "anthropic", self._model, _spent.pop(loop_key, None))

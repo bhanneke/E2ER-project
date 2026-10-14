@@ -192,6 +192,7 @@ EVENTS: dict[str, str] = {
     "awaiting_review": "Stopped for you",
     "paper_paused": "Paused",
     "paused_plan_limit": "Paused: the plan's usage limit was reached",
+    "paused_billing_limit": "Paused: the AI provider's credits or spending limit ran out",
     "preregistration": "Pre-registration frozen",
     "preregistration_check": "Pre-registration compared with the plan",
     "run_identity": "e2er version recorded",
@@ -212,6 +213,7 @@ EVENTS: dict[str, str] = {
     "polish_applied": "Polish notes considered",
     "method_sources": "The template's method sources added to the bibliography",
     "sent_out_before": "Specialists sent out before the draft",
+    "drafter_sent_out": "Paper drafter sent out: the plan left the draft out",
 }
 
 #: What the ceiling check after a round of improvement decided (its ``verdict``).

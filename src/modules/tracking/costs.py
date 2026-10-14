@@ -33,11 +33,19 @@ _PRICING: dict[str, tuple[Decimal, Decimal]] = {
     "openai/gpt-4o": (Decimal("5"), Decimal("15")),
     "openai/gpt-4o-mini": (Decimal("0.15"), Decimal("0.60")),
     "google/gemini-pro-1.5": (Decimal("1.25"), Decimal("5")),
-    # Open models on OpenRouter (cheapest listed provider, 2026-10). The live
-    # list (``llm/openrouter_models.py``) is preferred; these cover offline runs.
-    "deepseek/deepseek-v4-pro": (Decimal("0.23"), Decimal("0.46")),
-    "deepseek/deepseek-v4-flash": (Decimal("0.03"), Decimal("1.28")),
+    # Open models on OpenRouter: the price in OpenRouter's public model list
+    # (https://openrouter.ai/api/v1/models, read 2026-10-14). The live list
+    # (``llm/openrouter_models.py``) is preferred; these cover offline runs.
+    "deepseek/deepseek-v4-pro": (Decimal("0.95526"), Decimal("1.91052")),
+    "deepseek/deepseek-v4-flash": (Decimal("0.091"), Decimal("0.182")),
     "deepseek/deepseek-v4.1-flash": (Decimal("0.30"), Decimal("1.20")),
+}
+
+#: Cache-read price per million tokens where the list gives one (same source and date).
+_CACHE_READ_PRICING: dict[str, Decimal] = {
+    "deepseek/deepseek-v4-pro": Decimal("0.079605"),
+    "deepseek/deepseek-v4-flash": Decimal("0.0182"),
+    "deepseek/deepseek-v4.1-flash": Decimal("0.006"),
 }
 
 _MILLION = Decimal("1_000_000")
@@ -90,7 +98,7 @@ def model_rates(model: str) -> tuple[Decimal, Decimal, Decimal | None]:
             return live
     if model_key in _PRICING:
         inp, out = _PRICING[model_key]
-        return inp, out, None
+        return inp, out, _CACHE_READ_PRICING.get(model_key)
     return _DEFAULT_INPUT, _DEFAULT_OUTPUT, None
 
 

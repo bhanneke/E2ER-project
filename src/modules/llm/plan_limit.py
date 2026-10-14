@@ -17,6 +17,11 @@ The wording recognised here is the CLIs' own, as seen live:
   "Weekly limit reached ∙ resets Oct 14, 9am", "Opus weekly limit reached".
 * Gemini CLI: "You have exhausted your daily quota …", "Quota exceeded for
   quota metric '… per day …'". A per-minute rate limit is not one of them.
+
+The paid APIs (OpenRouter, Anthropic) refuse calls for money the same way: no
+credits left, or the key's spending limit used up. :func:`detect_billing`
+recognises them and the run pauses the same way (``paused_billing_limit``),
+with a sentence that says what to do.
 """
 
 from __future__ import annotations
@@ -68,12 +73,38 @@ class PlanLimitReachedError(Exception):
     dispatcher to the specialist whose call hit the limit.
     """
 
+    #: The event the runner records for the pause.
+    event = "paused_plan_limit"
+
     def __init__(self, backend: str, message: str, resets: str | None = None, specialist: str | None = None) -> None:
         self.backend = backend
         self.message = message
         self.resets = resets
         self.specialist = specialist
-        super().__init__(status_text(backend, resets))
+        #: The sentence the dashboard and `e2er status` show.
+        self.status = status_text(backend, resets)
+        super().__init__(self.status)
+
+
+class BillingLimitReachedError(PlanLimitReachedError):
+    """A paid API refuses calls for money: the account has no credits, or the key's spending limit is used up.
+
+    Live, 2026-10-14 (the earthquake demo on OpenRouter): "Error code: 402 -
+    This request requires more credits, or fewer max_tokens. You requested up
+    to 32768 tokens, but can only afford 14986. ... adjust the key's total
+    limit", during a send-back at the draft review; the run went back to the
+    same stop with no error shown. Like a plan's limit nothing is broken and
+    every call fails the same way until the researcher acts: the run pauses
+    (``paused_billing_limit``), no attempt is counted, and Resume runs the
+    interrupted specialist again. ``status`` says what to do.
+    """
+
+    event = "paused_billing_limit"
+
+    def __init__(self, backend: str, message: str, status: str, specialist: str | None = None) -> None:
+        super().__init__(backend, message, None, specialist)
+        self.status = status
+        self.args = (status,)
 
 
 def _norm(text: str) -> str:
@@ -125,6 +156,76 @@ def status_text(backend: str, resets: str | None = None) -> str:
     return f"{what} is reached{f' (resets {resets})' if resets else ''}. {PAUSE_TAIL}"
 
 
+#: The end of every billing-limit status sentence (see :func:`detect_billing`).
+BILLING_TAIL = "or choose another AI provider, then press Resume."
+
+_OPENROUTER_KEY_LIMIT = (
+    "The OpenRouter key's spending limit is reached. Raise it at openrouter.ai or choose another AI provider, "
+    "then press Resume."
+)
+_OPENROUTER_CREDITS = (
+    "The OpenRouter account has no credits left. Add credits at openrouter.ai or choose another AI provider, "
+    "then press Resume."
+)
+_ANTHROPIC_CREDITS = (
+    "The Anthropic API account's credit balance is too low. Add credits at console.anthropic.com or choose "
+    "another AI provider, then press Resume."
+)
+_ANTHROPIC_LIMIT = (
+    "The Anthropic API key's usage limit is reached. Raise it at console.anthropic.com or choose another AI "
+    "provider, then press Resume."
+)
+
+#: (marker, status) per paid API, the first marker that matches wins. The wording is the APIs' own:
+#: OpenRouter answers 402 ("Insufficient credits", "This request requires more credits ... can only afford
+#: ...", with ``limit_source: openrouter_key_limit`` when the key's own limit is the cause, "Key limit
+#: exceeded"); Anthropic answers 400 "Your credit balance is too low to access the Anthropic API" and "You
+#: have reached your specified API usage limits".
+_BILLING: dict[str, tuple[tuple[re.Pattern[str], str], ...]] = {
+    "openrouter": (
+        (re.compile(r"openrouter_key_limit|key limit exceeded|key's (?:total )?limit|key's spending limit"),
+         _OPENROUTER_KEY_LIMIT),
+        (re.compile(r"insufficient credits|requires more credits|can only afford|error code: 402\b|\b402 payment"),
+         _OPENROUTER_CREDITS),
+    ),
+    "anthropic": (
+        (re.compile(r"credit balance is too low"), _ANTHROPIC_CREDITS),
+        (re.compile(r"reached your specified api usage limits?"), _ANTHROPIC_LIMIT),
+    ),
+}  # fmt: skip
+
+
+def detect_billing(backend: str, text: str) -> BillingLimitReachedError | None:
+    """A paid API's refusal for money in an error text (no credits, the key's limit), or None."""
+    if not text:
+        return None
+    low = _norm(text)
+    for pattern, status in _BILLING.get(backend, ()):
+        if pattern.search(low):
+            return BillingLimitReachedError(backend, text.strip()[:2000], status)
+    return None
+
+
+async def raise_if_billing(
+    backend: str, model: str, result: object, paper_id: str | None, specialist: str | None
+) -> None:
+    """Raise :class:`BillingLimitReachedError` when a failed tool loop's error is a refusal for money.
+
+    What the loop used before the refusal was billed: it is recorded first,
+    because the runner records a loop's usage only when the loop returns.
+    """
+    if getattr(result, "success", True):
+        return
+    limit = detect_billing(backend, str(getattr(result, "error", "") or ""))
+    if limit is None:
+        return
+    from ..tracking.usage import record_cancelled_loop
+
+    await record_cancelled_loop(paper_id, specialist, backend, model, getattr(result, "usage", None))
+    limit.specialist = specialist
+    raise limit
+
+
 def is_plan_limit_status(text: str | None) -> bool:
-    """Whether a stored status text (a paper's ``last_error``) is a plan-limit pause."""
-    return bool(text) and PAUSE_TAIL in str(text)
+    """Whether a stored status text (a paper's ``last_error``) is a plan-limit or billing-limit pause."""
+    return bool(text) and (PAUSE_TAIL in str(text) or BILLING_TAIL in str(text))

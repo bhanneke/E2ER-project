@@ -21,7 +21,10 @@ without running anything:
   loads them again with ``e2er-data``, with the series and dates the run
   recorded, when the folder does not have them.
 - **Environment.** ``code/requirements.txt`` pins the packages the scripts
-  import, at the versions installed in the Python environment e2er runs in.
+  import, at the versions installed in the Python environment e2er runs in;
+  the optional backends their pandas calls need (openpyxl for ``read_excel``);
+  and every package the scripts loaded when the run ran them, at the run's
+  versions (the script log records them, e2er after 0.16.0).
 - **Compared.** ``results/estimation_results.json`` (and
   ``results/robustness_results.json`` when a script writes it); the tables are
   rendered again from the rerun's results when the study ships them.
@@ -419,6 +422,105 @@ def _reload_args(entry: dict[str, Any]) -> tuple[list[str], str] | None:
     return reload_args(source, entry) if source is not None else None
 
 
+def _any_reload_args(entry: dict[str, Any]) -> tuple[list[str], str] | None:
+    """The e2er-data command that repeats a load of any source e2er knows (with or without terms)."""
+    from ...modules.data.sources import get
+    from ...modules.data.sources.runtime import reload_args
+
+    source = get(str(entry.get("connector")))
+    return reload_args(source, entry) if source is not None else None
+
+
+def _restricted_db(loads: list[dict[str, Any]]) -> bool:
+    """Whether a source with terms loaded a table into data.db (the folder may then come without data.db)."""
+    restricted = _restricted()
+    return any(e.get("connector") in restricted and isinstance(e.get("table"), str) and e["table"] for e in loads)
+
+
+def _load_tables(loads: list[dict[str, Any]]) -> set[str]:
+    return {t for e in loads for t in [e.get("table"), *(e.get("tables") or [])] if isinstance(t, str) and t}
+
+
+#: A script that writes a table of data.db.
+_DB_WRITE = re.compile(
+    r"to_sql\(|CREATE\s+(?:TEMP(?:ORARY)?\s+)?TABLE|INSERT\s+(?:OR\s+\w+\s+)?INTO|REPLACE\s+INTO", re.I
+)
+
+
+def _names(source: str, table: str) -> bool:
+    return re.search(rf"(?<![\w]){re.escape(table)}(?![\w])", source) is not None
+
+
+def _writes_table(source: str, table: str) -> bool:
+    """Whether a script writes ``table`` (``df.to_sql("t", …)``, ``CREATE TABLE t``, ``INSERT INTO t``)."""
+    t = re.escape(table)
+    q = r"""\\?[\"'`\[]?"""
+    return (
+        re.search(rf"""to_sql\(\s*(?:name\s*=\s*)?f?["']{t}["']""", source) is not None
+        or re.search(
+            rf"(?:CREATE\s+(?:TEMP(?:ORARY)?\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?|INSERT\s+(?:OR\s+\w+\s+)?INTO\s+"
+            rf"|REPLACE\s+INTO\s+){q}{t}(?![\w])",
+            source,
+            re.I,
+        )
+        is not None
+    )
+
+
+def preparation_scripts(
+    workspace: Path, chain: list[Path], loads: list[dict[str, Any]]
+) -> tuple[list[Path], list[str]]:
+    """The data preparation: the scripts that build the tables of data.db the estimation reads, in run order.
+
+    (scripts, the tables they build). A table no load wrote (``who_rs198_2021_clean``, cleaned by the data
+    analyst's script) is rebuilt by the scripts that name it and write a table, and so on for the tables those
+    read. The scripts and their order come from the script log (the last successful run of each); a run
+    without one falls back to file times.
+    """
+    from ..script_log import read_script_runs
+
+    db = workspace / "data.db"
+    if not db.is_file():
+        return [], []
+    loaded = _load_tables(loads)
+    derived = [t for t in _db_tables(db) if t not in loaded]
+    if not derived:
+        return [], []
+    chain_names = {p.name for p in chain}
+    runs = read_script_runs(workspace)
+    last_ok: dict[str, int] = {}
+    for i, r in enumerate(runs):
+        if r.get("exit_code") == 0:
+            last_ok[str(r["script"])] = i
+    candidates = [
+        p
+        for p in sorted(workspace.glob("*.py"))
+        if p.is_file() and p.name not in chain_names and (not runs or p.name in last_ok)
+    ]
+    sources = {p: _read(p) for p in candidates}
+    builders = {p: src for p, src in sources.items() if _DB_WRITE.search(src) and not _writes_results(src)}
+    chain_source = "\n".join(_read(p) for p in chain)
+    todo = [t for t in derived if _names(chain_source, t)]
+    seen: set[str] = set(todo)
+    chosen: list[Path] = []
+    while todo:
+        table = todo.pop(0)
+        for p, src in builders.items():
+            if p in chosen or not _writes_table(src, table):
+                continue
+            chosen.append(p)
+            for other in derived:
+                if other not in seen and _names(src, other):
+                    seen.add(other)
+                    todo.append(other)
+    if runs:
+        chosen.sort(key=lambda p: last_ok.get(p.name, -1))
+    else:
+        chosen.sort(key=lambda p: (p.stat().st_mtime_ns, p.name))
+    built = sorted(t for t in derived if any(_writes_table(builders[p], t) for p in chosen))
+    return chosen, built
+
+
 def _reloads(workspace: Path, loads: list[dict[str, Any]], inputs: list[str]) -> tuple[list[dict[str, Any]], bool]:
     """The loads get_data.py repeats: loads of sources with terms (Yahoo, the GMD, …) that went into an input.
 
@@ -428,8 +530,17 @@ def _reloads(workspace: Path, loads: list[dict[str, Any]], inputs: list[str]) ->
     undated = False
     uses_db = "data.db" in inputs
     restricted = _restricted()
+    # data.db holds a table a published study may leave out, so the folder can come without data.db: then every
+    # table a source loaded into it is loaded again, the sources without terms too (WHO with Natural Earth's
+    # country names, demo 7 of 2026-10-13), and the data preparation builds the rest (_preparation).
+    whole_db = uses_db and _restricted_db(loads)
     for e in loads:
         if e.get("connector") not in restricted:
+            table = e.get("table") if isinstance(e.get("table"), str) else None
+            made = _any_reload_args(e) if whole_db and table else None
+            if made is not None:
+                args, note = made
+                out.append({"table": table, "args": [*args, "--table", table], "what": _describe(e)})
             continue
         made = _reload_args(e)
         if made is None:
@@ -553,26 +664,213 @@ def _imports(source: str) -> set[str]:
     return out
 
 
-def pinned_requirements(scripts: list[Path], local: set[str]) -> tuple[list[str], list[str]]:
+#: Packages pandas loads only when a call needs them (its "optional dependencies"): the scripts
+#: import pandas, never these, so pinning the imports alone leaves them out (the live Codex study of
+#: 2026-10-14 read an Excel file and its rerun failed: "Missing optional dependency 'openpyxl'").
+#: Method or function name → ((distribution, what pandas needs it for), ...).
+_PANDAS_BACKENDS: dict[str, tuple[tuple[str, str], ...]] = {
+    **dict.fromkeys(("read_excel", "ExcelFile"), (("openpyxl", "to read Excel files (.xlsx)"),)),
+    **dict.fromkeys(("to_excel", "ExcelWriter"), (("openpyxl", "to write Excel files (.xlsx)"),)),
+    **dict.fromkeys(
+        ("read_parquet", "to_parquet", "read_feather", "to_feather", "read_orc", "to_orc"),
+        (("pyarrow", "to read and write Parquet, Feather and ORC files"),),
+    ),
+    **dict.fromkeys(("read_xml", "to_xml"), (("lxml", "to read and write XML"),)),
+    "read_html": (
+        ("lxml", "to read HTML tables"),
+        ("beautifulsoup4", "to read HTML tables"),
+        ("html5lib", "to read HTML tables"),
+    ),
+    "to_markdown": (("tabulate", "to write Markdown tables"),),
+    **dict.fromkeys(("to_latex", "style"), (("jinja2", "to write LaTeX and styled tables"),)),
+    "read_spss": (("pyreadstat", "to read SPSS files"),),
+    **dict.fromkeys(("read_hdf", "to_hdf", "HDFStore"), (("tables", "to read and write HDF5 files"),)),
+}
+#: The engine a call names (``engine="xlrd"``) → (distribution, what for).
+_PANDAS_ENGINES: dict[str, tuple[str, str]] = {
+    "openpyxl": ("openpyxl", "to read and write Excel files (.xlsx)"),
+    "xlrd": ("xlrd", "to read old Excel files (.xls)"),
+    "xlsxwriter": ("XlsxWriter", "to write Excel files (.xlsx)"),
+    "odf": ("odfpy", "to read and write OpenDocument spreadsheets (.ods)"),
+    "pyxlsb": ("pyxlsb", "to read binary Excel files (.xlsb)"),
+    "calamine": ("python-calamine", "to read Excel files"),
+    "pyarrow": ("pyarrow", "to read and write Parquet, Feather and ORC files"),
+    "fastparquet": ("fastparquet", "to read and write Parquet files"),
+    "lxml": ("lxml", "to read and write XML"),
+    "bs4": ("beautifulsoup4", "to read HTML tables"),
+    "html5lib": ("html5lib", "to read HTML tables"),
+}
+_SQL_CALLS = frozenset({"read_sql", "read_sql_query", "read_sql_table", "to_sql"})
+_DB_URL = re.compile(r"^[a-z][a-z0-9]*(\+[a-z0-9_]+)?://", re.I)
+
+
+def optional_backends(source: str) -> dict[str, str]:
+    """{distribution: what pandas needs it for}, from the pandas calls in one script (no pandas import: none).
+
+    Matplotlib's backends are not needed: the rerun draws without a screen (Agg).
+    """
+    try:
+        tree = ast.parse(source)
+    except (SyntaxError, ValueError):
+        return {}
+    if "pandas" not in _imports(source):
+        return {}
+    found: dict[str, str] = {}
+    literals = [n.value for n in ast.walk(tree) if isinstance(n, ast.Constant) and isinstance(n.value, str)]
+    for node in ast.walk(tree):
+        name = None
+        if isinstance(node, ast.Attribute):
+            name = node.attr
+        elif isinstance(node, ast.Name):
+            name = node.id
+        if name in _PANDAS_BACKENDS:
+            for dist, why in _PANDAS_BACKENDS[name]:
+                found.setdefault(dist, why)
+        if name in _SQL_CALLS and any(_DB_URL.match(v.strip()) for v in literals):
+            found.setdefault("SQLAlchemy", "to read and write databases named by a URL")
+        if isinstance(node, ast.Call):
+            for kw in node.keywords:
+                if kw.arg in ("engine", "flavor") and isinstance(kw.value, ast.Constant):
+                    engine = _PANDAS_ENGINES.get(str(kw.value.value))
+                    if engine:
+                        found.setdefault(*engine)
+    if "openpyxl" in found and any(re.search(r"\.xls$", v.strip(), re.I) for v in literals):
+        found.setdefault("xlrd", "to read old Excel files (.xls)")
+    return found
+
+
+def recorded_packages(workspace: Path, scripts: list[Path]) -> dict[str, str]:
+    """{distribution: version} the scripts loaded when the run last ran them successfully (the script log).
+
+    Only runs of the version the study ships (same SHA-256) count; e2er up to 0.16.0 recorded none.
+    """
+    from ..script_log import read_script_runs
+
+    wanted = {s.name: _sha256(s) for s in scripts if s.is_file()}
+    latest: dict[str, dict[str, str]] = {}
+    for row in read_script_runs(workspace):
+        name = row.get("script")
+        packages = row.get("packages")
+        if (
+            name in wanted
+            and row.get("exit_code") == 0
+            and row.get("sha256") == wanted[name]
+            and isinstance(packages, dict)
+        ):
+            latest[name] = {str(k): str(v) for k, v in packages.items()}
+    out: dict[str, str] = {}
+    for script in scripts:
+        out.update(latest.get(script.name, {}))
+    return out
+
+
+def recorded_python(workspace: Path, scripts: list[Path]) -> str | None:
+    """The Python version (``3.12.12``) the run's interpreter ran the scripts with, from the script log.
+
+    The last successful run of the version the study ships of the estimation script (the first of
+    ``scripts``), else of any later script; None when the run recorded none (e2er up to 0.16.0).
+    The script log is the source because the study's scripts may run on another interpreter than
+    e2er's server (``E2ER_PYTHON``), and export may run on yet another.
+    """
+    from ..script_log import read_script_runs
+
+    wanted = {s.name: _sha256(s) for s in scripts if s.is_file()}
+    latest: dict[str, str] = {}
+    for row in read_script_runs(workspace):
+        name = row.get("script")
+        version = row.get("python")
+        if (
+            name in wanted
+            and row.get("exit_code") == 0
+            and row.get("sha256") == wanted[name]
+            and isinstance(version, str)
+            and re.fullmatch(r"\d+\.\d+(\.\d+)?\S*", version)
+        ):
+            latest[name] = version
+    return next((latest[s.name] for s in scripts if s.name in latest), None)
+
+
+@dataclass
+class Requirements:
+    #: ``name==version`` (or a bare name) lines, each with its reason as a comment when it has one.
+    lines: list[str]
+    #: Modules the scripts import that this environment does not have.
+    missing: list[str]
+    #: Optional backends not installed where e2er runs: written unpinned (the latest compatible release).
+    unpinned: list[str] = field(default_factory=list)
+    #: How many distributions came from the script log's record of what the scripts loaded.
+    recorded: int = 0
+
+
+def pinned_requirements(
+    scripts: list[Path], local: set[str], workspace: Path | None = None
+) -> tuple[list[str], list[str]]:
     """(``name==version`` lines, modules the scripts import that this environment does not have)."""
+    req = requirements_for(scripts, local, workspace)
+    return req.lines, req.missing
+
+
+def requirements_for(scripts: list[Path], local: set[str], workspace: Path | None = None) -> Requirements:
+    """The pins of ``code/requirements.txt``.
+
+    Three sources, the first that knows a package wins: what the scripts loaded when the run ran them
+    (the script log, versions of the run's own interpreter); the packages they import, at the versions
+    installed where e2er runs; and the optional backends their pandas calls need (openpyxl for
+    ``read_excel``), at the installed version or, when not installed, unpinned.
+    """
     import importlib.metadata as md
 
-    modules = set().union(*(_imports(_read(s)) for s in scripts)) if scripts else set()
+    sources = [_read(s) for s in scripts]
+    modules = set().union(*(_imports(src) for src in sources)) if sources else set()
     modules -= set(sys.stdlib_module_names) | local | {"__future__"}
     dists = md.packages_distributions()
+    recorded = recorded_packages(workspace, scripts) if workspace is not None else {}
     pins: dict[str, str] = {}
+    why: dict[str, str] = {}
     missing: list[str] = []
     for mod in sorted(modules):
         names = dists.get(mod) or []
         if not names:
-            missing.append(mod)
+            if not any(_canon(n) == _canon(mod) for n in recorded):
+                missing.append(mod)
             continue
         for name in names:
             try:
                 pins[name] = md.version(name)
             except md.PackageNotFoundError:
                 missing.append(mod)
-    return [f"{n}=={v}" for n, v in sorted(pins.items(), key=lambda kv: kv[0].lower())], missing
+    backends: dict[str, str] = {}
+    for src in sources:
+        for dist, reason in optional_backends(src).items():
+            backends.setdefault(dist, reason)
+    unpinned: list[str] = []
+    for dist, reason in backends.items():
+        why[dist] = f"pandas needs it {reason}"
+        if any(_canon(n) == _canon(dist) for n in [*pins, *recorded]):
+            continue
+        try:
+            pins[dist] = md.version(dist)
+        except md.PackageNotFoundError:
+            pins[dist] = ""
+            unpinned.append(dist)
+    # The run's own record wins over this environment's versions (same distribution, other spelling too).
+    for name, version in recorded.items():
+        for other in [n for n in pins if _canon(n) == _canon(name)]:
+            del pins[other]
+        pins[name] = version
+    canon_why = {_canon(k): v for k, v in why.items()}
+    lines = []
+    for name, version in sorted(pins.items(), key=lambda kv: kv[0].lower()):
+        line = f"{name}=={version}" if version else name
+        comment = canon_why.get(_canon(name), "")
+        if comment and not version:
+            comment += "; not installed where e2er ran the study, so the rerun installs the latest compatible release"
+        lines.append(f"{line}  # {comment}" if comment else line)
+    return Requirements(lines, missing, unpinned, len(recorded))
+
+
+def _canon(name: str) -> str:
+    return re.sub(r"[-_.]+", "-", name).lower()
 
 
 # ── the writer ───────────────────────────────────────────────────────────────
@@ -602,6 +900,32 @@ def _rewrite_workspace_paths(path: Path, workspace: Path) -> bool:
     return True
 
 
+#: A table file larger than this is compared by SHA-256 only (reading every row at export takes too long).
+MAX_CONTENT_BYTES = 512 * 1024 * 1024
+
+
+def _content(path: Path) -> dict[str, Any]:
+    """The content fingerprint of a table input (rows, order aside), or nothing."""
+    from ..reproduce import content_fingerprint
+
+    try:
+        if path.stat().st_size > MAX_CONTENT_BYTES:
+            return {}
+    except OSError:
+        return {}
+    return content_fingerprint(path) or {}
+
+
+def _chain_tables(workspace: Path, chain: list[Path]) -> set[str]:
+    """Tables of data.db the estimation scripts write themselves (the rerun builds them again)."""
+    tables = _db_tables(workspace / "data.db")
+    out: set[str] = set()
+    for p in chain:
+        src = _read(p)
+        out.update(t for t in tables if _writes_table(src, t))
+    return out
+
+
 def _iso(date_str: str) -> str:
     if re.fullmatch(r"\d{8}", date_str or ""):
         return f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:]}"
@@ -625,6 +949,17 @@ def write_recipe(workspace: Path, out: Path, *, date_str: str = "") -> Outcome:
     notes: list[str] = list(ordered.notes)
     files: dict[str, str] = {}
     rewritten: list[str] = []
+    # A folder without data.db (a source's terms) needs the tables the data analyst built from the loads.
+    prep, prep_tables = preparation_scripts(workspace, chain, loads) if _restricted_db(loads) else ([], [])
+    for script in prep:
+        copy = _exported_copy(out, script.name, _sha256(script))
+        if copy is None:
+            notes.append(f"the data preparation script {script.name} is not in the folder")
+            continue
+        files[script.name] = copy
+        if _rewrite_workspace_paths(out / copy, workspace):
+            rewritten.append(copy)
+    prep = [p for p in prep if p.name in files]
     for script in chain:
         copy = _exported_copy(out, script.name, _sha256(script))
         if copy is None:
@@ -644,8 +979,8 @@ def write_recipe(workspace: Path, out: Path, *, date_str: str = "") -> Outcome:
         for f in e.get("files") or []
         if isinstance(f, dict)
     }
-    outputs = written_files(chain)
-    for rel in referenced_files(workspace, chain):
+    outputs = written_files(chain + prep)
+    for rel in referenced_files(workspace, prep + chain):
         if rel in (RESULTS, *OTHER_RESULTS):
             continue
         if Path(rel).name.startswith(".e2er") or Path(rel).name.startswith(".pipeline_state"):
@@ -683,7 +1018,10 @@ def write_recipe(workspace: Path, out: Path, *, date_str: str = "") -> Outcome:
             else:
                 entry = _load_of(loads, rel)
                 source = _describe(entry) if entry else "a file the study's code reads"
-            inputs.append({"path": rel, "sha256": sha, "source": source})
+            item: dict[str, Any] = {"path": rel, "sha256": sha, "source": source}
+            # Its rows, order aside: a reloaded source may return the same rows in another order (e2er reproduce).
+            item.update(_content(src))
+            inputs.append(item)
         elif copy is None:
             notes.append(f"{rel}, which a script reads, is not in the folder")
 
@@ -697,11 +1035,14 @@ def write_recipe(workspace: Path, out: Path, *, date_str: str = "") -> Outcome:
         from ..data_terms import known
 
         sources = known()
-        used = sorted({a["args"][0] for a in reloads})
+        used = sorted({a["args"][0] for a in reloads if a["args"][0] in sources})  # the sources with terms
         names = {c: sources[c].article + sources[c].name for c in used}
         reloaded_tables = {r["table"] for r in reloads if r.get("table")}
+        rebuilt = set(prep_tables) | _chain_tables(workspace, chain)
         other_tables = (
-            [t for t in _db_tables(workspace / "data.db") if t not in reloaded_tables] if reloaded_tables else []
+            [t for t in _db_tables(workspace / "data.db") if t not in reloaded_tables and t not in rebuilt]
+            if reloaded_tables
+            else []
         )
         terms = " ".join(
             f"{names[c][:1].upper() + names[c][1:]}'s terms {sources[c].reason}, so a published study may leave "
@@ -720,6 +1061,22 @@ def write_recipe(workspace: Path, out: Path, *, date_str: str = "") -> Outcome:
         )
         files["get_data.py"] = "code/get_data.py"
         steps.append({"run": ["python", "get_data.py"], "about": "load the inputs the folder does not ship (if any)"})
+        if reloaded_tables and prep:
+            # The tables the estimation reads that no source loaded: built again from the loaded ones, only
+            # when data.db was not in the folder (a folder with it keeps the study's own tables).
+            for script in prep:
+                steps.append(
+                    {
+                        "run": ["python", script.name],
+                        "about": "data preparation: builds the study's tables from the loaded ones",
+                        "when_missing": ["data.db"],
+                    }
+                )
+            notes.append(
+                f"When data.db is not in the folder, {', '.join(p.name for p in prep)} "
+                f"{'builds' if len(prep) == 1 else 'build'} the tables the estimation reads "
+                f"({', '.join(prep_tables)}) again from the tables get_data.py loads, as the run did."
+            )
         revised = (
             " Yahoo Finance revises its history (prices adjusted for dividends change with every new dividend), "
             "so reloaded prices can differ slightly from the study's."
@@ -736,22 +1093,44 @@ def write_recipe(workspace: Path, out: Path, *, date_str: str = "") -> Outcome:
         about = "the estimation script" if i == 0 else f"a later script of the run that writes {RESULTS} again"
         steps.append({"run": ["python", script.name], "about": about})
 
+    # The Python the run ran the scripts with (its script log), not the one this export runs on.
+    py = recorded_python(workspace, prep + chain)
+    py_words = f"Python {py}"
+    if py is None:
+        py = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+        notes.append(
+            f"The run recorded no Python version for its scripts (e2er up to 0.16.0), so the recipe names the "
+            f"Python e2er exported the study with ({py}); the study may have run on another."
+        )
+        py_words = f"Python {py} at export; the run recorded none"
+    python_minor = ".".join(py.split(".")[:2])
+
     if (out / "code" / "requirements.txt").is_file():
         requirements_note = "code/requirements.txt is the run's own."
     else:
         local = {p.stem for p in workspace.glob("*.py")}
-        pins, missing = pinned_requirements(chain, local)
-        py = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+        req = requirements_for(prep + chain, local, workspace)
+        pins, missing = req.lines, req.missing
         lines = [
             "# The packages the study's scripts import, at the versions of the Python environment",
-            f"# e2er ran the study in (Python {py}), written by e2er at export. `e2er reproduce` installs",
+            f"# e2er ran the study in ({py_words}), written by e2er at export. `e2er reproduce` installs",
             "# them in a new environment.",
         ]
         if missing:
             lines.append(f"# Imported but not installed when the study ran: {', '.join(missing)}")
         (out / "code").mkdir(parents=True, exist_ok=True)
+        if req.recorded:
+            lines.append(
+                "# Also every package the scripts loaded when the run ran them (recorded by e2er), at the run's"
+                " versions."
+            )
         (out / "code" / "requirements.txt").write_text("\n".join([*lines, *pins]) + "\n", encoding="utf-8")
         requirements_note = f"code/requirements.txt pins {len(pins)} package(s) at the versions the run used."
+        if req.unpinned:
+            notes.append(
+                f"The scripts' pandas calls need {', '.join(req.unpinned)}, which was not installed where e2er ran "
+                "the study; requirements.txt lists it unpinned, so the rerun installs the latest compatible release."
+            )
         if missing:
             notes.append(
                 f"The scripts import {', '.join(missing)}, which was not installed when the study ran, so "
@@ -780,7 +1159,7 @@ def write_recipe(workspace: Path, out: Path, *, date_str: str = "") -> Outcome:
             f"recorded: the scripts that wrote {RESULTS}, from the estimation script on, {order_words}; the files "
             f"they read; and the packages they import. {requirements_note}"
         ),
-        "python": f"{sys.version_info.major}.{sys.version_info.minor}",
+        "python": python_minor,
         "requirements": "code/requirements.txt",
         "files": files,
         "steps": steps,

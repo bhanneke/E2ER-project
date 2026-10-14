@@ -80,7 +80,7 @@ Word count: 127. This abstract contains all five elements, includes quantitative
 
 **Overclaiming.** Do not claim your paper "proves" a causal relationship if your design has important limitations. Do not claim policy implications that go far beyond your evidence. Referees notice.
 
-**JEL codes and keywords.** Many journals require JEL classification codes and keywords below the abstract. Choose 2--3 JEL codes that match your paper's primary fields. Keywords should be specific enough to aid search but broad enough to reach the right audience. Include the key method or setting as a keyword.
+**JEL codes (economics papers only) and keywords.** Economics journals require JEL classification codes and keywords below the abstract; choose 2--3 JEL codes that match the paper's primary fields. A paper in any other field (astronomy, climate, earth science, linguistics, public health, ...) has no JEL line: give keywords only. Keywords should be specific enough to aid search but broad enough to reach the right audience. Include the key method or setting as a keyword.
 
 ---
 
@@ -110,4 +110,4 @@ Always check the journal's submission guidelines for specific requirements.
 - [ ] No jargon that a general economist would not understand
 - [ ] No citations in the abstract (rare exceptions exist, but avoid)
 - [ ] Abstract can stand alone -- a reader learns the full contribution without reading the paper
-- [ ] JEL codes and keywords are appropriate and included (if required)
+- [ ] Keywords are included; JEL codes only in an economics paper

@@ -180,6 +180,7 @@ def inputs_view(workspace: Path) -> dict[str, Any]:
         "web_cited": web_cited,
         "web_other": web_other,
         "web_left_out": int(search.get("left_out_count") or 0) if isinstance(search, dict) else 0,
+        "web_notices": [str(n) for n in search.get("notices") or []] if isinstance(search, dict) else [],
         "missing": [str(m) for m in papers.get("missing") or []],
         "cited": cited,
         "references": references,

@@ -176,7 +176,7 @@ def build_manifest(
     if not _PROJECT.match(project):
         raise PublishError(f"project {project!r} must be lower case: letters, digits, '.', '_' or '-'")
     if not contributors:
-        raise PublishError("name at least one contributor (--github and/or --orcid)")
+        raise PublishError("name at least one author (--github and/or --orcid)")
 
     run = prov.get("run", {})
     question, title = _question_and_title(bundle)

@@ -198,6 +198,11 @@ def test_a_recipe_without_inputs_says_so(tmp_path: Path) -> None:
         ("import subprocess\nsubprocess.run(['e2er-data', 'yfinance', 'history'])\n", "runs `e2er-data yfinance"),
         ("import subprocess, os\nsubprocess.run([os.environ['E2ER_DATA'], 'fred', 'series'])\n", "e2er-data fred"),
         ("import subprocess\nsubprocess.run('e2er-run other.py', shell=True)\n", "runs `e2er-run other.py`"),
+        (
+            "import json\nfrom pathlib import Path\n"
+            "assert 'gate' in json.loads(Path('.pipeline_state.json').read_text())['completed_stages']\n",
+            "reads .pipeline_state.json, e2er's record of the run",
+        ),
     ],
 )
 def test_the_scan_names_web_access_and_e2er_loaders(source: str, found: str) -> None:

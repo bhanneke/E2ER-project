@@ -188,7 +188,7 @@ def client(fx, monkeypatch) -> TestClient:
     _client._backend = ""
     _client._sqlite_bootstrapped = False
 
-    async def _checks():  # the doctor's network checks are not this test's business
+    async def _checks(fresh: bool = False):  # the doctor's network checks are not this test's business
         return {
             "checks": [
                 # `e2er doctor`'s own text, as the terminal prints it: the page says it plainly.
@@ -249,7 +249,8 @@ def _app():
 
 
 def _pages(fx: Fixture) -> list[str]:
-    pages = ["/", "/?archived=1", "/papers/new", "/setup", "/preflight", "/library", "/skills", "/workflow"]
+    pages = ["/", "/?archived=1", "/papers/new", "/setup", "/preflight", "/htmx/preflight-checks"]
+    pages += ["/library", "/skills", "/workflow"]
     pages += [f"/studies/{k}" for k in dict.fromkeys(fx.keys.values()) if k]
     for name, pid in fx.ids.items():
         pages += [f"/papers/{pid}", f"/htmx/papers/{pid}/live", f"/papers/{pid}/review", f"/htmx/papers/{pid}/inputs"]

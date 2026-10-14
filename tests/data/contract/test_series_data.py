@@ -208,3 +208,66 @@ def test_can_handle():
     h = SeriesDataToolHandler()
     assert h.can_handle("list_data_sources") and h.can_handle("fetch_data")
     assert not h.can_handle("query_allium")
+
+
+async def test_fetch_data_returns_a_preview_of_a_large_load():
+    """A 277,935-row USGS load sent in full broke OpenRouter's 8 MB request limit (2026-10-13)."""
+    from src.modules.data.discovery_tools import PREVIEW_ROWS
+
+    handler = SeriesDataToolHandler()
+    rows = [{"id": i, "mag": 5.0} for i in range(PREVIEW_ROWS + 500)]
+    fake = _fake_fetcher("usgs", {"source": "usgs", "items": rows, "error": None})
+    with patch(_SETTINGS, return_value=_settings()), patch(_REG, return_value=[fake]):
+        out = json.loads(await handler.handle("fetch_data", {"provider": "usgs", "method": "events", "params": {}}))
+    assert len(out["items"]) == PREVIEW_ROWS and out["items"][0] == {"id": 0, "mag": 5.0}
+    assert out["items_total"] == PREVIEW_ROWS + 500
+    assert "materialize=true" in out["note"]
+
+
+async def test_fetch_data_materializes_every_row_and_previews_the_reply():
+    from src.modules.data.discovery_tools import PREVIEW_ROWS
+
+    handler = SeriesDataToolHandler()
+    rows = [{"id": i} for i in range(PREVIEW_ROWS * 3)]
+    fake = _fake_fetcher("usgs", {"source": "usgs", "items": rows, "error": None})
+    seen = {}
+
+    async def fake_materialize(provider, method, params, table, envelope):
+        seen["n"] = len(envelope["items"])
+        return "earthquakes"
+
+    handler._materialize = fake_materialize
+    with patch(_SETTINGS, return_value=_settings()), patch(_REG, return_value=[fake]):
+        out = json.loads(
+            await handler.handle(
+                "fetch_data",
+                {"provider": "usgs", "method": "events", "params": {}, "materialize": True, "table": "earthquakes"},
+            )
+        )
+    assert seen["n"] == PREVIEW_ROWS * 3
+    assert len(out["items"]) == PREVIEW_ROWS and out["items_total"] == PREVIEW_ROWS * 3
+    assert out["materialized_table"] == "earthquakes" and "data.db table earthquakes" in out["note"]
+
+
+async def test_fetch_data_small_load_is_returned_whole():
+    handler = SeriesDataToolHandler()
+    fake = _fake_fetcher("fred", {"source": "fred", "items": list(range(10))})
+    with patch(_SETTINGS, return_value=_settings(fred_api_key="k")), patch(_REG, return_value=[fake]):
+        out = json.loads(await handler.handle("fetch_data", {"provider": "fred", "method": "series", "params": {}}))
+    assert out["items"] == list(range(10)) and "items_total" not in out
+
+
+async def test_fetch_data_cuts_long_texts_in_the_reply():
+    """Ten Gutenberg novels in one reply passed OpenRouter's 8 MB request limit (2026-10-13 demo)."""
+    from src.modules.data.discovery_tools import PREVIEW_CHARS
+
+    handler = SeriesDataToolHandler()
+    rows = [{"id": i, "title": f"Novel {i}", "text": "rain " * 200_000} for i in range(10)]
+    fake = _fake_fetcher("gutenberg", {"source": "gutenberg", "items": rows, "error": None})
+    with patch(_SETTINGS, return_value=_settings()), patch(_REG, return_value=[fake]):
+        reply = await handler.handle("fetch_data", {"provider": "gutenberg", "method": "text", "params": {}})
+    out = json.loads(reply)
+    assert len(reply) < 50_000
+    assert out["items"][0]["title"] == "Novel 0"
+    assert out["items"][0]["text"].startswith("rain rain") and len(out["items"][0]["text"]) < PREVIEW_CHARS + 60
+    assert "10 text field(s) are cut" in out["note_texts"]

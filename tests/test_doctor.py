@@ -400,3 +400,19 @@ async def test_backend_gemini_with_key_passes_and_says_not_tested(monkeypatch):
         c = await backend_check(s)
     assert c.status == PASS
     assert "subscription" not in c.detail and "Claude Code and Codex" in c.detail
+
+
+async def test_byod_literature_dir_set_but_empty_says_so(tmp_path):
+    """2026-10-13 demo: doctor said "no ... LITERATURE_DIR" for a folder that was set and empty."""
+    lit = tmp_path / "literature"
+    lit.mkdir()
+    c = await byod_literature_check(_byod_settings(literature_dir=str(lit)))
+    assert c.status == SKIP
+    assert f"LITERATURE_DIR {lit}: set, empty" in c.detail
+    assert "no LITERATURE_BIBTEX_FILE" not in c.detail
+
+
+async def test_byod_literature_empty_fallback_data_dir_is_not_called_set(tmp_path):
+    """Only LITERATURE_DIR itself is reported as set; the LOCAL_DATA_DIR fallback is not."""
+    c = await byod_literature_check(_byod_settings(local_data_dir=str(tmp_path)))
+    assert c.status == SKIP and "set, empty" not in c.detail

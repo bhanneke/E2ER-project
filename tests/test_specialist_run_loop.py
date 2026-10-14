@@ -52,6 +52,11 @@ def test_literature_specialists_get_the_literature_bridge():
         assert "Bash(e2er-lit:*)" in allowed_tools_for(specialist)
 
 
+def test_the_planners_can_look_up_sources_for_dates_and_metadata():
+    for specialist in ("idea_developer", "identification_strategist", "data_architect"):
+        assert "Bash(e2er-lit:*)" in allowed_tools_for(specialist)
+
+
 def test_specialists_that_neither_find_nor_cite_literature_do_not_get_it():
     for specialist in ("econometrics_specialist", "data_analyst", "referee_1", None):
         assert "Bash(e2er-lit:*)" not in allowed_tools_for(specialist)
@@ -63,7 +68,7 @@ def test_the_two_grants_do_not_displace_each_other():
     assert "Bash(e2er-run:*)" not in allowed_tools_for("paper_drafter")
 
 
-@pytest.mark.parametrize("specialist", ["referee_1", "abstract_writer", "identification_strategist", None])
+@pytest.mark.parametrize("specialist", ["referee_1", "abstract_writer", "polish_formula", None])
 def test_everyone_else_gets_the_default_set(specialist):
     assert allowed_tools_for(specialist) == _DEFAULT_ALLOWED_TOOLS
 

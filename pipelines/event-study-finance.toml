@@ -28,7 +28,7 @@
 # (`e2er review --edit`) or send the identification strategist back, and the
 # check runs again when the run resumes.
 #
-# Maintained by the e2er contributors.
+# Maintained by the e2er authors.
 
 name = "event-study-finance"
 title = "Event study in finance"

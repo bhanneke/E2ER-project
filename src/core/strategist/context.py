@@ -100,6 +100,13 @@ def template_context() -> str:
             )
             + held
         )
+    from ..pipeline.spec import DEFAULT_BASE_SKILL
+
+    if spec.base_skill != DEFAULT_BASE_SKILL:
+        lines.append(
+            "- Not an economics paper: no JEL codes and no JEL line anywhere (abstract, title page, keywords); "
+            "give keywords only."
+        )
     panel = spec.panel()
     lines.append(f"- Review panel: {', '.join(panel)}.")
     return "\n".join(lines)

@@ -26,7 +26,7 @@
 #                         data.db; rendered by src/core/renderer/maps.py). A failed
 #                         check sends the econometrics specialist back once.
 #
-# Maintained by the e2er contributors.
+# Maintained by the e2er authors.
 
 name = "spatial-analysis"
 title = "Spatial analysis"

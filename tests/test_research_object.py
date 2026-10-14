@@ -20,6 +20,11 @@ SHOWCASE = ROOT / "tests" / "fixtures" / "showcase_export"
 PAPER_ID = json.loads((SHOWCASE / "provenance.json").read_text())["run"]["paper_id"]
 
 
+def _predates(check) -> bool:
+    """The showcase was exported before e2er recorded script outputs: verify says it did not check that."""
+    return check.name == "results from code" and check.detail == "not checked: the run predates output records"
+
+
 @pytest.fixture
 def bundle(tmp_path: Path) -> Path:
     dst = tmp_path / "showcase"
@@ -90,7 +95,7 @@ def test_publish_writes_a_manifest_that_does_not_break_verify(bundle: Path, work
     assert code == 0
     assert (bundle / "e2er.json").is_file()
     assert (tmp_path / "entry" / "registry" / "objects" / "bhanneke" / "demo.json").is_file()
-    assert all(c.status == "PASS" for c in _run_checks(bundle, online=False))
+    assert all(c.status == "PASS" or _predates(c) for c in _run_checks(bundle, online=False))
 
 
 def test_invalid_owner_and_missing_provenance_are_rejected(bundle: Path, tmp_path: Path):
@@ -212,7 +217,7 @@ def test_publish_stamps_the_paper_and_the_bundle_still_verifies(
     assert m["dossier"]["id"] == dossier_id(m["dossier"]["doc"])
     assert m["dossier"]["url"] in (bundle / "paper" / "paper.tex").read_text()
     assert m["dossier"]["doc"]["workflow"]
-    assert all(c.status == "PASS" for c in _run_checks(bundle, online=False))
+    assert all(c.status == "PASS" or _predates(c) for c in _run_checks(bundle, online=False))
 
 
 # ── bibliography: the paper must compile from the bundle ────────────────────

@@ -39,7 +39,9 @@ DATA_DISCOVERY_TOOLS: list[dict[str, Any]] = [
             "list_data_sources. For blockchain/on-chain data use query_allium instead — "
             "fetch_data does not handle Allium. Set materialize=true to also store the "
             "fetched rows as a table in this paper's data.db, so you can join/aggregate it "
-            "later with query_data alongside the researcher's own data."
+            "later with query_data alongside the researcher's own data. At most "
+            "50 rows come back in the reply (with the total); a larger load is complete "
+            "only in data.db, so materialize it."
         ),
         "input_schema": {
             "type": "object",
@@ -66,6 +68,68 @@ DATA_DISCOVERY_TOOLS: list[dict[str, Any]] = [
         },
     },
 ]
+
+
+#: Rows of a fetch that go back to the model. The rest stay in data.db (materialize=true):
+#: a USGS load of 277,935 events sent in full exceeded OpenRouter's 8 MB request limit and
+#: failed the specialist (0.16.0 demo run, 2026-10-13).
+PREVIEW_ROWS = 50
+
+
+#: Characters of one text field that go back to the model. A Project Gutenberg load returns whole
+#: novels: ten of them in one reply passed OpenRouter's 8 MB request limit (2026-10-13 demo).
+PREVIEW_CHARS = 2000
+
+
+def _shorten(item: Any) -> tuple[Any, int]:
+    """An item with every text field cut to PREVIEW_CHARS, and how many fields were cut."""
+    if not isinstance(item, dict):
+        return item, 0
+    out, cut = {}, 0
+    for k, v in item.items():
+        if isinstance(v, str) and len(v) > PREVIEW_CHARS:
+            out[k] = v[:PREVIEW_CHARS] + f"… [{len(v) - PREVIEW_CHARS} more characters]"
+            cut += 1
+        else:
+            out[k] = v
+    return out, cut
+
+
+def _preview(envelope: Any, materialized: str | None) -> Any:
+    """The envelope with at most PREVIEW_ROWS of its items, each text field cut to PREVIEW_CHARS, and the total."""
+    if not isinstance(envelope, dict):
+        return envelope
+    items = envelope.get("items")
+    if not isinstance(items, list):
+        return envelope
+    shortened = [_shorten(i) for i in items[:PREVIEW_ROWS]]
+    cut = sum(n for _, n in shortened)
+    if cut:
+        where = (
+            f"the full texts are in data.db table {materialized}; read them with query_data or a script"
+            if materialized
+            else "set materialize=true to keep the full texts in data.db"
+        )
+        envelope = {
+            **envelope,
+            "items": [i for i, _ in shortened] + items[PREVIEW_ROWS:],
+            "note_texts": f"{cut} text field(s) are cut to {PREVIEW_CHARS} characters here; {where}.",
+        }
+        items = envelope["items"]
+    if len(items) <= PREVIEW_ROWS:
+        return envelope
+    where = (
+        f"all {len(items)} rows are in data.db table {materialized}; use query_data for them"
+        if materialized
+        else "set materialize=true to keep all rows in data.db and query them with query_data"
+    )
+    return {
+        **envelope,
+        "items": items[:PREVIEW_ROWS],
+        "items_total": len(items),
+        "items_returned": PREVIEW_ROWS,
+        "note": f"Only the first {PREVIEW_ROWS} of {len(items)} rows are shown here; {where}.",
+    }
 
 
 class SeriesDataToolHandler(ToolHandler):
@@ -143,7 +207,7 @@ class SeriesDataToolHandler(ToolHandler):
             if materialized:
                 envelope = {**envelope, "materialized_table": materialized}
         await self._record(fetcher, provider, method, params, envelope, load, materialized)
-        return json.dumps(envelope, default=str)
+        return json.dumps(_preview(envelope, materialized), default=str)
 
     async def _record(
         self,
@@ -190,6 +254,30 @@ class SeriesDataToolHandler(ToolHandler):
         entry = {**entry, "table": table, "rows": len(items)}
         if try_record(self._workspace, entry) is None:
             envelope["recorded_in"] = ["data_sources.json"]
+            source = getattr(fetcher, "source", None)
+            if load and source is not None:
+                self._record_kit_source(source, load, table, envelope)
+
+    def _record_kit_source(
+        self, source: Any, load: dict[str, Any], table: str | None, envelope: dict[str, Any]
+    ) -> None:
+        """What `e2er-data` does after a connector-kit load: the dictionary entry and the citation.
+
+        fetch_data (the API backends) recorded only data_sources.json, so a study on
+        OpenRouter cited no catalogue for its USGS data (0.16.0 demo, 2026-10-13).
+        """
+        from .sources.runtime import RecordError, add_citation, record_in_dictionary
+
+        assert self._workspace is not None
+        try:
+            if table:
+                record_in_dictionary(self._workspace, table, source, load)
+                envelope["recorded_in"].append("data_dictionary.json")
+            if source.bibtex:
+                envelope["citation_added"] = add_citation(self._workspace, source)
+                envelope["cite_key"] = source.cite_key
+        except (RecordError, OSError) as e:
+            envelope["record_error"] = f"{type(e).__name__}: {e}"
 
     async def _materialize(
         self,

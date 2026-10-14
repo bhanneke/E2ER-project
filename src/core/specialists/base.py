@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 
 from ...logging_config import get_logger
-from ...modules.llm.base import CompositeToolHandler, LLMBackend, ToolHandler
+from ...modules.llm.base import CompositeToolHandler, LLMBackend, ToolHandler, ToolLoopResult
 from ...modules.llm.tools import FILE_TOOLS, FileToolHandler
 from ...modules.tracking.costs import compute_cost
 from ...modules.tracking.usage import save_usage
@@ -15,6 +15,9 @@ from ..governance import DEFAULT_REGIME, enforces_check
 from ..specialists.contracts import Contribution, WorkOrder
 
 logger = get_logger(__name__)
+
+#: The specialists who plan the study before the data architect: they see the sources available too.
+PLANNING_SPECIALISTS = frozenset({"idea_developer", "identification_strategist"})
 
 _MAX_TURNS = 80  # Bumped from 40 after May 2026 hack-event run: data_analyst hit the
 # 40-cap while paginating the new Allium developer endpoints (each get-transfers /
@@ -91,6 +94,11 @@ async def run_specialist(
         from .data_sources import sources_block
 
         user_prompt += "\n\n" + sources_block(workspace)
+    elif specialist in PLANNING_SPECIALISTS:
+        # The specialists who plan before the architect see the same list, so the plan names real sources.
+        from .data_sources import sources_block
+
+        user_prompt += "\n\n" + sources_block(workspace, planning=True)
 
     # Cross-attempt half of the self-correction loop: if a PRIOR attempt's
     # script crashed when the runner executed it, feed the captured traceback
@@ -202,6 +210,11 @@ async def run_specialist(
                 attempt.populated_sidecar,
                 attempt.reason,
             )
+        # The results files are the output of the script as shipped: one the script log does not trace
+        # to its last run is run again here (the contract check below fails it when the rerun differs).
+        from .post_execution import confirm_results_from_code
+
+        confirm_results_from_code(workspace, specialist)
 
     # v0.9 M4.3: output-contract enforcement. A specialist that
     # returns success=True while its declared artifact is empty
@@ -264,6 +277,7 @@ async def run_specialist(
         )
     except Exception as e:
         logger.warning("Could not save usage: %s", e)
+    await record_attempt_usage(paper_id, specialist, backend_name, model, result, cost)
 
     output_file = _find_output_file(workspace, specialist, work_order.output_file)
 
@@ -338,6 +352,40 @@ def set_aside_previous_outputs(workspace: Path, work_order: WorkOrder) -> list[t
 
 #: Where earlier versions of rewritten outputs go (hidden: never exported or listed).
 HISTORY_DIR = ".history"
+
+
+async def record_attempt_usage(
+    paper_id: str, specialist: str, backend_name: str, model: str, result: ToolLoopResult, cost: object
+) -> None:
+    """One ``attempt_usage`` event per specialist attempt: its tokens, calls and cost.
+
+    ``llm_usage`` holds the totals; this keeps what one attempt sent (fresh,
+    cached and cache-write input, output), how many calls it made, how large
+    the conversation got and how many older exchanges were summarised, so a
+    costly attempt can be read back from the run's events.
+    """
+    u = result.usage
+    payload = {
+        "backend": backend_name,
+        "model": model,
+        "success": bool(result.success),
+        "stop_reason": result.stop_reason,
+        "turns": int(getattr(result, "turns", 0) or 0),
+        "tool_calls": int(result.tool_calls_made or 0),
+        "input_tokens": u.input_tokens,
+        "cache_read_tokens": u.cache_read_tokens,
+        "cache_write_tokens": u.cache_write_tokens,
+        "output_tokens": u.output_tokens,
+        "peak_prompt_tokens": int(getattr(result, "peak_prompt_tokens", 0) or 0),
+        "summarised_exchanges": int(getattr(result, "summarised_exchanges", 0) or 0),
+        "cost_usd": str(cost),
+    }
+    try:
+        from ...db.events import log_event
+
+        await log_event(paper_id, "attempt_usage", specialist=specialist, payload=payload)
+    except Exception as e:  # noqa: BLE001 — bookkeeping must not fail the specialist
+        logger.debug("could not record attempt usage: %s", e)
 
 
 async def _log_contract_gate(

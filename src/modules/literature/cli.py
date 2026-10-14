@@ -162,6 +162,8 @@ async def _cmd_search(args, workspace: Path, specialist: str) -> int:
 
     papers = payload.get("papers") or []
     print(f"{len(papers)} result(s) from {payload.get('source', 'unknown')} for: {args.query}")
+    if payload.get("notice"):
+        print(f"Note: {payload['notice']}.")
     if args.save and items:
         print("Recorded in literature.bib. Cite these with the key shown — no other key exists.\n")
     # Index rather than zip: a provider that returns a different number of

@@ -270,3 +270,41 @@ def test_the_dossier_keeps_what_a_study_page_shows(tmp_path: Path) -> None:
         "files": [],
     }
     assert folder["files"] == [{"path": "data/a.csv", "sha256": "c" * 64}]
+
+
+async def test_fetch_data_of_a_kit_source_adds_its_citation_and_dictionary_entry(tmp_path: Path) -> None:
+    """A USGS load through fetch_data (OpenRouter run, 2026-10-13) left the catalogue out of literature.bib."""
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock, patch
+
+    from src.modules.data.discovery_tools import SeriesDataToolHandler
+    from src.modules.data.sources import all_sources
+
+    usgs = next(s for s in all_sources() if s.name == "usgs")
+    load = {"connector": "usgs", "series": "earthquakes", "citation": usgs.citation, "cite_key": usgs.cite_key}
+    envelope = {"source": "usgs", "items": [{"id": "a", "mag": 5.1}], "error": None, "_load_record": load}
+    fetcher = SimpleNamespace(name="usgs", source=usgs, fetch=AsyncMock(return_value=envelope))
+    h = SeriesDataToolHandler(tmp_path)
+
+    async def materialize(*a, **k):
+        return "quakes"
+
+    h._materialize = materialize
+    settings = SimpleNamespace(fred_api_key=None, allium_api_key=None)
+    with (
+        patch("src.config.get_settings", return_value=settings),
+        patch("src.modules.data.registry.series_fetchers", return_value=[fetcher]),
+    ):
+        out = json.loads(
+            await h.handle(
+                "fetch_data",
+                {"provider": "usgs", "method": "events", "params": {}, "materialize": True, "table": "quakes"},
+            )
+        )
+    assert out["recorded_in"] == ["data_sources.json", "data_dictionary.json"]
+    assert out["cite_key"] == usgs.cite_key and out["citation_added"] is True
+    assert (
+        "@" in (tmp_path / "literature.bib").read_text() and usgs.cite_key in (tmp_path / "literature.bib").read_text()
+    )
+    [entry] = json.loads((tmp_path / "data_dictionary.json").read_text())["tables"]
+    assert entry["name"] == "quakes" and entry["source"] == "usgs" and entry["cite_key"] == usgs.cite_key

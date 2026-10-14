@@ -38,6 +38,25 @@ def _paper_rows() -> list[dict]:
         return []
 
 
+def expand_paper_id(ref: str) -> str:
+    """The full paper id for a unique prefix of it (4+ characters); else ``ref`` unchanged.
+
+    `e2er status`, `review`, `resume`, `cancel` and `rerun` take the id the way
+    `export` and `archive` do: the first characters suffice. A prefix that matches
+    several papers raises ExportLookupError.
+    """
+    ref = ref.strip()
+    if len(ref) < 4:
+        return ref
+    ids = [str(r.get("id", "")) for r in _paper_rows()]
+    if ref in ids:
+        return ref
+    hits = [i for i in ids if i.startswith(ref.casefold())]
+    if len(hits) > 1:
+        raise ExportLookupError(f"{ref!r} matches {len(hits)} papers; give more of the id.")
+    return hits[0] if hits else ref
+
+
 def resolve_workspace(ref: str, settings) -> tuple[str, Path]:
     """(paper id, workspace folder) for a full paper id or a unique prefix (4+ characters).
 

@@ -81,6 +81,8 @@ async def test_shutdown_cancels_running_tasks_and_marks_paused(tmp_path, monkeyp
         f"shutdown hook must UPDATE papers SET status='paused' for in-flight paper, "
         f"got SQL: {[s for s, _ in executed_sql]}"
     )
+    # The runner marks a cancelled task 'cancelled' first; the update must not skip that status.
+    assert all("cancelled" not in sql for sql, _ in paused_updates)
 
 
 @pytest.mark.asyncio

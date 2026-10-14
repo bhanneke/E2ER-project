@@ -167,12 +167,13 @@ def set_session_cookies(response: Any, request: Request, token: str) -> None:
         response.set_cookie(name, token, httponly=True, samesite="strict", path="/", max_age=COOKIE_MAX_AGE)
 
 
-def write_session_file(port: int, token: str) -> Path:
+def write_session_file(port: int, token: str, *, pid: int | None = None) -> Path:
+    """Record the token of the server on ``port``; ``pid`` is the server's process (default: this one)."""
     p = session_file(port)
     p.parent.mkdir(parents=True, exist_ok=True)
     fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as fh:
-        json.dump({"token": token, "pid": os.getpid(), "port": port}, fh)
+        json.dump({"token": token, "pid": pid if pid is not None else os.getpid(), "port": port}, fh)
     os.chmod(p, 0o600)
     return p
 

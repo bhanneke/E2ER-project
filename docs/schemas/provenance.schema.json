@@ -24,7 +24,26 @@
           "description": "Regime the run executed under. Under contracts/off the deterministic gates ran in shadow (did not block), so numbers/citations may not have been enforced."
         },
         "e2er_version": { "type": "string" },
-        "exported_at": { "type": "string" }
+        "exported_at": { "type": "string" },
+        "results_from_code": {
+          "type": "object",
+          "description": "Which recorded script run wrote each results file (results/estimation_results.json, results/robustness_results.json), from the run's script log; `e2er verify` checks the bundle against it (\"results from code\"). Absent when the run recorded no script outputs (e2er up to 0.16.0).",
+          "additionalProperties": {
+            "type": "object",
+            "required": ["outcome", "reason"],
+            "properties": {
+              "outcome": { "type": "string", "enum": ["from_code", "not_from_code", "not_recorded"] },
+              "reason": { "type": "string" },
+              "script": { "type": "string" },
+              "script_sha256": { "type": ["string", "null"] },
+              "output_sha256": { "type": ["string", "null"] },
+              "ran_at": { "type": ["string", "null"] },
+              "exit_code": { "type": ["integer", "null"] },
+              "script_in_folder": { "type": "string" },
+              "script_in_folder_sha256": { "type": "string" }
+            }
+          }
+        }
       }
     },
     "files": {

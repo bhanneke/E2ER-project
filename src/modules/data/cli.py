@@ -881,10 +881,10 @@ async def _run_query_tables(args: argparse.Namespace) -> str:
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="e2er-allium-query",
+        prog="e2er-data",
         description=(
-            "Gatekeeper for Allium queries from the Claude Code CLI backend. "
-            "Same 5 guardrails, same audit log, same approval flow as the in-process tool."
+            "Load data for a study from the command line: e2er-data <source> <command> [options]. "
+            "The same guardrails, audit log and approval flow as the in-process data tools."
         ),
     )
 

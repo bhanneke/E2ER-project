@@ -68,6 +68,19 @@ The scripts' copies in `code/` name the run folder instead of the workspace's
 full path. A study without estimation results or without such a script gets no
 recipe, and README.md says why; so does `e2er reproduce` on the folder.
 
+When a source with terms loaded a table into `data.db` (the folder may then come
+without it), `get_data.py` loads every table a source loaded, and the recipe runs
+the data preparation after it: the scripts of the script log that build the
+tables the estimation reads (a cleaned table of the data analyst). Those steps
+carry `"when_missing": ["data.db"]` and run only when the folder lacks data.db.
+Table inputs (CSV/TSV, and each table of a SQLite database) also carry their
+content (`rows`, `content_sha256`, or `tables`), order of rows aside: a reload
+with the same rows in another order is the study's input.
+
+`provenance.json` records under `run.results_from_code` which run of which
+script wrote each results file (the script log's output hashes); `e2er verify`
+checks the folder against it ("results from code").
+
 ### Artifact → folder mapping (driven by `SPECIALIST_ARTIFACTS`, registry.py)
 
 | Source artifact(s) | → destination |

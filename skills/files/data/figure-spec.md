@@ -117,7 +117,9 @@ twelve labels on the axis.
 }
 ```
 `groups` (optional, one label per point) colours the points; `log_x` /
-`log_y` put an axis on a log scale.
+`log_y` put an axis on a log scale; `invert_x` / `invert_y` reverse an axis
+(a colour-magnitude diagram sets `"invert_y": true`, so that bright stars,
+with small magnitudes, are at the top).
 
 ### histogram — Counts in bins the analysis computed
 ```json

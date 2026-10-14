@@ -284,6 +284,29 @@ def refused_claims(checks_dir: Path | None, tex: str) -> list[Hit]:
     return hits
 
 
+_JEL_RE = re.compile(r"\bJEL\b")
+
+
+def jel_lines(tex: str) -> list[Hit]:
+    """JEL codes in the prose of a paper that is not an economics paper (one hit per sentence).
+
+    The climate and earthquake demos (2026-10-13) carried "JEL: C22, C53, Q54"
+    lines from economics habits. Called only for non-economics templates.
+    """
+    source = _strip_comments(tex)
+    text = prose(tex)
+    hits: list[Hit] = []
+    seen: set[str] = set()
+    for m in _JEL_RE.finditer(text):
+        sentence = _sentence(source, m.start(), m.end())
+        if sentence not in seen:
+            seen.add(sentence)
+            hits.append(
+                Hit("JEL codes", sentence, "this is not an economics paper: remove the JEL line, keep the keywords")
+            )
+    return hits
+
+
 def feedback(hits: list[Hit], limit: int = 12) -> str:
     """The hits as one line for the writer: each sentence to rewrite and how."""
     shown = "; ".join(h.line() for h in hits[:limit])

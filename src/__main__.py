@@ -66,13 +66,17 @@ def main() -> None:
         help="Start the dashboard without opening a browser.",
     )
     parser.add_argument(
-        "--port", dest="top_port", type=int, default=None, help="Port for the dashboard (default 8280)."
+        "--port",
+        dest="top_port",
+        type=int,
+        default=None,
+        help="Port for the dashboard (default: PORT from .env, else 8280).",
     )
     subparsers = parser.add_subparsers(dest="command")
 
     serve = subparsers.add_parser("serve", help="Start the API server (default command)")
     serve.add_argument("--host", default="127.0.0.1", help="Bind host (default: 127.0.0.1)")
-    serve.add_argument("--port", type=int, default=8280, help="Port (default: 8280)")
+    serve.add_argument("--port", type=int, default=None, help="Port (default: PORT from .env, else 8280)")
     serve.add_argument("--reload", action="store_true", help="Auto-reload on code changes (dev mode)")
     serve.add_argument(
         "--no-browser",
@@ -293,7 +297,10 @@ def main() -> None:
         "status",
         help="Show the status of a run (paper id), or of a study folder published with `e2er publish --to`.",
     )
-    status_p.add_argument("paper_id", help="The paper UUID returned by `e2er run`, or a published study folder.")
+    status_p.add_argument(
+        "paper_id",
+        help="The paper UUID returned by `e2er run` (its first characters suffice), or a published study folder.",
+    )
     status_p.add_argument(
         "--url", default=None, help="For a study folder: platform address (default: its .e2er/link.json)."
     )
@@ -337,7 +344,7 @@ def main() -> None:
         "cancel",
         help="Cancel a running or paused paper. Workspace + completed phases are preserved.",
     )
-    cancel_p.add_argument("paper_id", help="The paper UUID returned by `e2er run`.")
+    cancel_p.add_argument("paper_id", help="The paper UUID returned by `e2er run` (its first characters suffice).")
     cancel_p.add_argument(
         "--yes",
         "-y",
@@ -352,7 +359,7 @@ def main() -> None:
             "already produced their canonical artifact, so completed work isn't repeated."
         ),
     )
-    resume_p.add_argument("paper_id", help="The paper UUID returned by `e2er run`.")
+    resume_p.add_argument("paper_id", help="The paper UUID returned by `e2er run` (its first characters suffice).")
     resume_p.add_argument(
         "--max-cost",
         type=float,
@@ -375,8 +382,12 @@ def main() -> None:
         "review",
         help="Act at a researcher step: approve, edit a file, give an instruction, or send a step back.",
     )
-    review_p.add_argument("paper_id", help="The paper UUID returned by `e2er run`.")
-    review_p.add_argument("--approve", action="store_true", help="Approve the step and continue the run.")
+    review_p.add_argument("paper_id", help="The paper UUID returned by `e2er run` (its first characters suffice).")
+    review_p.add_argument(
+        "--approve",
+        action="store_true",
+        help="Approve the step and continue the run (after the --edit or --instruction given with it).",
+    )
     review_p.add_argument("--instruction", default=None, help="An instruction every following step receives.")
     review_p.add_argument("--edit", default=None, metavar="FILE", help="Edit one of the step's files in $EDITOR.")
     review_p.add_argument("--send-back", default=None, metavar="STEP", help="Send a template step or specialist back.")
@@ -387,8 +398,14 @@ def main() -> None:
         help="Send a study (finished, failed or stopped) back to one of its steps: it and every later step run "
         "again with your remark.",
     )
-    rerun_p.add_argument("paper_id", help="The paper UUID.")
-    rerun_p.add_argument("--from", dest="from_step", required=True, metavar="STEP", help="The template step to rerun.")
+    rerun_p.add_argument("paper_id", help="The paper UUID (its first characters suffice).")
+    rerun_p.add_argument(
+        "--from",
+        dest="from_step",
+        required=True,
+        metavar="STEP",
+        help="The template step to rerun, or a specialist (its step reruns).",
+    )
     rerun_p.add_argument("--remark", required=True, help="What should change; recorded for the dossier.")
 
     prereg_p = subparsers.add_parser("preregister", help="Pre-registration commands (`e2er preregister deposit`).")
@@ -541,7 +558,7 @@ def main() -> None:
     publish_p.add_argument("bundle", help="Path to an exported bundle directory (from `e2er export`).")
     publish_p.add_argument("--owner", required=True, help="Registry namespace: your GitHub login, lower case.")
     publish_p.add_argument("--project", required=True, help="Project name within your namespace, e.g. etf-comovement.")
-    publish_p.add_argument("--github", default=None, help="Your GitHub login (contributor identity).")
+    publish_p.add_argument("--github", default=None, help="Your GitHub login (author identity).")
     publish_p.add_argument("--orcid", default=None, help="Your ORCID iD, e.g. 0000-0002-1825-0097.")
     publish_p.add_argument("--name", default=None, help="Your name as it should appear in citations.")
     publish_p.add_argument("--role", action="append", default=None, dest="roles", help="CRediT role (repeatable).")
@@ -754,6 +771,11 @@ def main() -> None:
     )
 
     args = parser.parse_args()
+    if getattr(args, "json", None) is True:
+        # The command prints its report as JSON on stdout: log lines go to stderr.
+        from .logging_config import logs_to_stderr
+
+        logs_to_stderr()
     _clean_path_args(args)
 
     if args.command == "publish":
@@ -937,6 +959,18 @@ def main() -> None:
             )
         )
 
+    if args.command in {"status", "cancel", "resume", "review", "rerun"} and not (
+        args.command == "status" and Path(args.paper_id).expanduser().is_dir()
+    ):
+        # The first characters of the id suffice, as for `export` and `archive`.
+        from .cli_export import ExportLookupError, expand_paper_id
+
+        try:
+            args.paper_id = expand_paper_id(args.paper_id)
+        except ExportLookupError as e:
+            print(f"e2er {args.command}: {e}", file=sys.stderr)
+            sys.exit(1)
+
     if args.command == "install-skills":
         from .cli_install_skills import install_skills as _install
 
@@ -1060,7 +1094,7 @@ def main() -> None:
         sys.exit(
             _serve(
                 host=getattr(args, "host", "127.0.0.1"),
-                port=getattr(args, "port", None) or args.top_port or 8280,
+                port=getattr(args, "port", None) or args.top_port or _settings_port(),
                 reload=getattr(args, "reload", False),
                 no_browser=getattr(args, "no_browser", False) or args.top_no_browser,
             )
@@ -1209,6 +1243,13 @@ def _serve(*, host: str, port: int, reload: bool, no_browser: bool) -> int:
         stop.set()
         ls.remove_session_file(port)
     return 0
+
+
+def _settings_port() -> int:
+    """The dashboard's port from settings (PORT in .env), the same one `e2er run` talks to."""
+    from .cli_run import _api_port
+
+    return _api_port()
 
 
 def _write_session_file_when_up(host: str, port: int, token: str) -> Any:

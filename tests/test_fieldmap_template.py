@@ -262,7 +262,7 @@ def test_the_template_loads_in_the_order_of_a_field_map():
     assert [s.name for s in spec.steps if s.kind == "researcher"] == ["review_boundary", "review_lanes", "review_draft"]
     assert spec.step("retrieve_boundary").resumable is False
     assert spec.step("main_path").settings == {"key_routes": 10}
-    assert "e2er contributors" in TEMPLATE.read_text()
+    assert "e2er authors" in TEMPLATE.read_text()
 
 
 def test_the_template_validates_against_the_published_schema():

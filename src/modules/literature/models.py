@@ -108,3 +108,5 @@ class SearchResult:
     source: str
     query: str
     total_found: int = 0
+    #: Why the search found nothing although the question may have hits (a spent OpenAlex budget); "" otherwise.
+    notice: str = ""

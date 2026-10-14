@@ -17,7 +17,9 @@ rerun's ``data.db``). Flagged:
   urllib.request, yfinance, pandas_datareader, fredapi, …);
 - reading a URL with pandas (``pd.read_csv("https://…")``);
 - running ``curl``/``wget`` or an e2er tool other than ``e2er-data query`` in a
-  subprocess (``subprocess.run``, ``os.system``, …).
+  subprocess (``subprocess.run``, ``os.system``, …);
+- naming one of e2er's records of the run (``.pipeline_state.json``, …), which the
+  export does not ship.
 
 Deterministic and cheap: the econometrics specialist gets it as an output-contract
 failure with a plain message and fixes it within its attempts.
@@ -85,6 +87,13 @@ _RUNNERS = frozenset(
 _RUNNER_NAMES = frozenset(n.rsplit(".", 1)[1] for n in _RUNNERS)
 _WEB_PROGRAMS = frozenset({"curl", "wget", "aria2c", "httpie", "http", "gsutil", "aws", "rclone", "scp", "rsync"})
 _E2ER_TOOL = re.compile(r"^e2er(-[a-z-]+)?$")
+
+#: e2er's own records of the run in the workspace. The export does not ship them, so a script that
+#: reads one fails in `e2er reproduce` (2026-10-13: a Codex spatial analysis asserted on the
+#: completed stages in .pipeline_state.json; all 29,146 results reproduced once that line was stubbed).
+RUN_FILES = frozenset(
+    {".pipeline_state.json", ".pipeline_state.json.bak", ".study_inputs.json", ".e2er-script-runs.jsonl"}
+)
 
 MESSAGE = (
     "The estimation script must read its data from data.db or files in data/; load web data in the data step. "
@@ -207,6 +216,11 @@ def scan_source(source: str, name: str = "<script>") -> list[str]:
         elif isinstance(node, ast.Attribute) and _dotted(node) in ("urllib.request.urlopen", "urllib.request"):
             if not isinstance(getattr(node, "ctx", None), ast.Store):
                 problems.append(f"{name}:{line}: uses urllib.request, which loads data over the network")
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str) and Path(node.value).name in RUN_FILES:
+            problems.append(
+                f"{name}:{line}: reads {Path(node.value).name}, e2er's record of the run, which a rerun "
+                "(`e2er reproduce`) does not have; check the design from the design files instead"
+            )
         elif isinstance(node, ast.Call):
             called = _dotted(node.func)
             last = called.rsplit(".", 1)[-1]

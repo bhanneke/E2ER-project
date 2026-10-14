@@ -16,6 +16,10 @@ FILE_TOOLS: list[dict[str, Any]] = [
             "type": "object",
             "properties": {
                 "path": {"type": "string", "description": "File path relative to workspace"},
+                "start_line": {
+                    "type": "integer",
+                    "description": "First line to return (1-based; default 1). Use it to read on in a long file.",
+                },
             },
             "required": ["path"],
         },
@@ -87,7 +91,14 @@ class FileToolHandler(ToolHandler):
                 p = self._resolve(tool_input["path"])
                 if not p.exists():
                     return f"Error: file not found: {tool_input['path']}"
-                return p.read_text(encoding="utf-8")
+                text = p.read_text(encoding="utf-8")
+                start = tool_input.get("start_line")
+                if isinstance(start, int) and not isinstance(start, bool) and start > 1:
+                    lines = text.splitlines(keepends=True)
+                    if start > len(lines):
+                        return f"(the file has {len(lines)} lines; nothing from line {start} on)"
+                    return "".join(lines[start - 1 :])
+                return text
 
             elif tool_name == "write_file":
                 p = self._resolve(tool_input["path"])

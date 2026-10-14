@@ -289,7 +289,26 @@ def is_relevant(paper: PaperMetadata, question: frozenset[str]) -> bool:
     return len(title) >= need
 
 
-def _record_web_search(workspace: Path, question: frozenset[str], kept: int, left_out: list[str]) -> None:
+def search_notice(refusal: str, kept: int) -> str:
+    """What the run says about a refused search source, given how many web hits the search kept."""
+    from .openalex import BUDGET_SPENT
+
+    if refusal == BUDGET_SPENT:
+        if kept:
+            return (
+                f"{BUDGET_SPENT}; the literature search used the other sources only today "
+                "(the budget resets at midnight UTC; a free OPENALEX_API_KEY has its own)"
+            )
+        return (
+            f"{BUDGET_SPENT}; the literature search found nothing today "
+            "(the budget resets at midnight UTC; a free OPENALEX_API_KEY has its own)"
+        )
+    return refusal
+
+
+def _record_web_search(
+    workspace: Path, question: frozenset[str], kept: int, left_out: list[str], notices: list[str] | None = None
+) -> None:
     import json
 
     path = Path(workspace) / "literature" / WEB_SEARCH_FILE
@@ -304,6 +323,7 @@ def _record_web_search(workspace: Path, question: frozenset[str], kept: int, lef
                     "kept": kept,
                     "left_out_count": len(left_out),
                     "left_out": left_out[:100],
+                    **({"notices": notices} if notices else {}),
                 },
                 indent=2,
                 ensure_ascii=False,
@@ -429,6 +449,7 @@ async def acquire_literature(
     found: dict[str, PaperMetadata] = {p.bibtex_key: p for p in evidence.as_metadata() if p.title}
     question = question_terms(" ".join(wanted))
     left_out: list[str] = []
+    refusals: list[str] = []
     for query in wanted:
         for source in sources:
             try:
@@ -436,6 +457,8 @@ async def acquire_literature(
             except Exception as e:  # noqa: BLE001 — try the next source
                 logger.info("%s search failed (%s) — trying next source", source.name, e)
                 continue
+            if result.notice and result.notice not in refusals:
+                refusals.append(result.notice)
             if result.papers:
                 for paper in result.papers:
                     if not paper.title or paper.bibtex_key in found:
@@ -445,8 +468,19 @@ async def acquire_literature(
                     elif paper.title not in left_out:
                         left_out.append(paper.title)
                 break
+    notices: list[str] = []
     if sources:
-        _record_web_search(workspace, question, sum(1 for p in found.values() if p.origin == "web"), left_out)
+        kept = sum(1 for p in found.values() if p.origin == "web")
+        notices = [search_notice(r, kept) for r in refusals]
+        _record_web_search(workspace, question, kept, left_out, notices)
+    for notice in notices:
+        logger.warning("literature search for %s: %s", paper_id, notice)
+        try:
+            from ...db.events import log_event
+
+            await log_event(paper_id, "literature_search_notice", payload={"notice": notice})
+        except Exception:  # noqa: BLE001 — the notice is in web_search.json either way
+            pass
 
     # The researcher's own papers are already in the file: a hit for one of them is not a second entry.
     marks = _bib_marks(workspace) if existing else set()

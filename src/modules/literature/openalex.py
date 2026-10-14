@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import urllib.parse
+from datetime import UTC, datetime
 
 from ...logging_config import get_logger
 from ..fetch.http import fetch_text
@@ -22,6 +23,46 @@ _EMAIL = "research@e2er.app"  # polite pool
 _REJECTED_CHARS = str.maketrans({"?": " ", "*": " "})
 
 
+#: What a run says when OpenAlex refuses for its daily budget (2026-10-13: the weather-words demo got
+#: 429 "Insufficient budget" and its literature search silently found nothing).
+BUDGET_SPENT = "OpenAlex's free daily budget for this network is used up"
+#: The UTC day on which OpenAlex refused for its budget: later searches that day do not ask again.
+_budget_spent_on: str | None = None
+
+
+def _today() -> str:
+    return datetime.now(UTC).strftime("%Y-%m-%d")
+
+
+def budget_spent_today() -> bool:
+    return _budget_spent_on == _today()
+
+
+def is_budget_refusal(status: int, body: str) -> bool:
+    """OpenAlex's answer when the keyless daily budget is spent: 429 with "Insufficient budget".
+
+    A burst limit is a 429 too, but says nothing of the budget (and its retryAfter is seconds).
+    """
+    low = (body or "").lower()
+    return status == 429 and ("insufficient budget" in low or "dailyremainingusd" in low)
+
+
+def _headers() -> dict[str, str]:
+    try:
+        from ...config import get_settings
+
+        key = get_settings().openalex_api_key
+    except Exception:  # noqa: BLE001 — no settings: keyless
+        key = None
+    return {"Authorization": f"Bearer {key}"} if key else {}
+
+
+async def _get(url: str) -> str:
+    """The response text, with the key as a bearer token when one is set."""
+    headers = _headers()
+    return await fetch_text(url, headers=headers) if headers else await fetch_text(url)
+
+
 def _sanitize(query: str) -> str:
     return " ".join(query.translate(_REJECTED_CHARS).split())
 
@@ -36,10 +77,22 @@ async def search_papers(query: str, limit: int = 20) -> SearchResult:
         }
     )
     url = f"{_BASE}/works?{params}"
+    global _budget_spent_on
+    if budget_spent_today():
+        return SearchResult(papers=[], source="openalex", query=query, notice=BUDGET_SPENT)
     try:
         import json
 
-        text = await fetch_text(url)
+        import httpx
+
+        try:
+            text = await _get(url)
+        except httpx.HTTPStatusError as e:
+            if is_budget_refusal(e.response.status_code, e.response.text):
+                _budget_spent_on = _today()
+                logger.warning("%s (429 Insufficient budget; it resets at midnight UTC)", BUDGET_SPENT)
+                return SearchResult(papers=[], source="openalex", query=query, notice=BUDGET_SPENT)
+            raise
         data = json.loads(text)
         papers = [_parse(w) for w in data.get("results", [])]
         return SearchResult(
@@ -57,10 +110,12 @@ async def fetch_by_doi(doi: str) -> PaperMetadata | None:
     """Fetch paper metadata by DOI from OpenAlex."""
     encoded = urllib.parse.quote(doi, safe="")
     url = f"{_BASE}/works/https://doi.org/{encoded}?mailto={_EMAIL}"
+    if budget_spent_today():
+        return None
     try:
         import json
 
-        text = await fetch_text(url)
+        text = await _get(url)
         data = json.loads(text)
         return _parse(data)
     except Exception as e:

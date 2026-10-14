@@ -478,7 +478,26 @@ async def _prepare_papers(paper_id: str, workspace: Path, settings, research_que
     """
     from ..core.study_inputs import prepare_papers
 
-    await prepare_papers(workspace, paper_id, settings, [research_question, title])
+    await prepare_papers(workspace, paper_id, settings, literature_queries(research_question, title))
+
+
+def literature_queries(research_question: str, title: str) -> list[str]:
+    """The web search's queries: the question and the title, the title in full.
+
+    A long question's title is cut at 80 characters with "..." (`derive_title`), and the cut
+    title is a poor query: a word cut in half, an unclosed parenthesis that arXiv refuses with
+    400 Bad Request (the 2026-10-13 school-fee demo got no web literature that way). A cut
+    title is replaced by the question's first sentence in full; a title equal to the question
+    is not searched twice.
+    """
+    from ..cli_run import derive_title
+
+    if title.endswith("...") and research_question.strip().startswith(title[:-3].strip()):
+        title = derive_title(research_question, limit=10_000)
+    queries = [research_question]
+    if title.strip() and title.strip() != research_question.strip():
+        queries.append(title)
+    return queries
 
 
 async def _tuple_is_proven(model: str, methodology: str, mode: str) -> bool:
@@ -675,7 +694,10 @@ async def _graceful_shutdown_runners() -> None:
             await execute(
                 "UPDATE papers SET status = 'paused', "
                 "last_error = 'Server shutdown while in-flight; POST /resume to continue.' "
-                "WHERE id = %(id)s AND status NOT IN ('completed','cancelled')",
+                # Not "NOT IN ('completed','cancelled')": the runner's CancelledError handler has just
+                # set 'cancelled' for every task cancelled above, so that guard skipped every paper and
+                # left it "cancelled by user", which resume refuses (2026-10-14 demo).
+                "WHERE id = %(id)s AND status <> 'completed'",
                 {"id": paper_id},
             )
             from ..core import run_owner
@@ -1175,8 +1197,27 @@ def _step_outputs(workspace: Path, step: str, events: list[dict[str, Any]], spec
     return list(dict.fromkeys(out))
 
 
-def _sendable(workspace: Path, state: Any, pending: Any, spec: Any) -> list[str]:
-    """What a researcher can send back from here: earlier template steps and specialists with output."""
+async def _specialists_that_ran(paper_id: str) -> set[str] | None:
+    """The specialists this study ran (its specialist_start events); None when the log cannot say."""
+    from ..db.events import fetch_events
+
+    try:
+        events = await fetch_events(paper_id)
+    except Exception:  # noqa: BLE001 — without the log every specialist with output stays a choice
+        return None
+    ran = {
+        str(e.get("specialist")) for e in events if e.get("event_type") == "specialist_start" and e.get("specialist")
+    }
+    return ran or None
+
+
+def _sendable(workspace: Path, state: Any, pending: Any, spec: Any, ran: set[str] | None = None) -> list[str]:
+    """What a researcher can send back from here: earlier template steps and specialists with output.
+
+    ``ran``: the specialists the study ran. Several specialists write paper_draft.tex (the field
+    review writer, the meta-review writer, the revisor, ...), so "its output exists" offered a
+    descriptive study's researcher the field-map and systematic-review writers (2026-10-13 demo).
+    """
     from ..core.specialists.registry import SPECIALIST_ARTIFACTS
 
     steps: list[str] = []
@@ -1188,7 +1229,9 @@ def _sendable(workspace: Path, state: Any, pending: Any, spec: Any) -> list[str]
                 break
             if s.kind not in ("researcher", "preregister") and s.name in state.completed_stages:
                 steps.append(s.name)
-    specialists = sorted(sp for sp, out in SPECIALIST_ARTIFACTS.items() if (workspace / out).is_file())
+    specialists = sorted(
+        sp for sp, out in SPECIALIST_ARTIFACTS.items() if (workspace / out).is_file() and (ran is None or sp in ran)
+    )
     if pending.kind == "contract":
         # The specialists whose output failed can always be sent back, written or not.
         failed = [f.get("specialist") for f in (state.metadata.get("contract_pause") or {}).get("failed") or []]
@@ -1259,7 +1302,7 @@ async def get_review(paper_id: str = Depends(_validate_uuid)) -> dict[str, Any]:
             **extra,
         },
         "files": files,
-        "sendable": _sendable(workspace, state, pending, spec),
+        "sendable": _sendable(workspace, state, pending, spec, await _specialists_that_ran(paper_id)),
         "actions": past,
     }
 
@@ -1281,7 +1324,9 @@ async def post_review(req: ReviewAction, paper_id: str = Depends(_validate_uuid)
             workspace,
             state,
             req.model_dump(exclude={"resume"}),
-            sendable=_sendable(workspace, state, pending, spec) if req.action == "send_back" else None,
+            sendable=_sendable(workspace, state, pending, spec, await _specialists_that_ran(paper_id))
+            if req.action == "send_back"
+            else None,
         )
     except ResearcherActionError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
@@ -1923,8 +1968,43 @@ def _workflow_inventory() -> dict[str, Any]:
     }
 
 
-async def _preflight() -> dict[str, Any]:
-    """Run the same checks `e2er doctor` runs."""
+#: Seconds a Preflight result is shown again without asking the services again: opening Preflight,
+#: then New study (its banner), then Preflight once more costs one round of checks, not three.
+PREFLIGHT_TTL = 180.0
+#: The last result: when it was made (monotonic seconds), for which settings, and the view.
+_preflight_cache: dict[str, Any] = {"at": None, "key": None, "view": None}
+#: The round of checks under way, so a page and its banner opened together wait for the same one.
+_preflight_running: dict[str, Any] = {"key": None, "task": None}
+
+
+def _preflight_key() -> str:
+    """The settings the checks ran with: a result made for other settings is never shown."""
+    import hashlib
+
+    try:
+        dump = get_settings().model_dump_json()
+    except Exception:  # noqa: BLE001 — settings that cannot be read: the checks themselves say so
+        dump = ""
+    return hashlib.sha256(dump.encode()).hexdigest()
+
+
+def _preflight_cached() -> dict[str, Any] | None:
+    """The last result, while it is fresh and was made for the settings in use; else None."""
+    import time
+
+    at, key, view = _preflight_cache["at"], _preflight_cache["key"], _preflight_cache["view"]
+    if view is None or at is None or time.monotonic() - at > PREFLIGHT_TTL or key != _preflight_key():
+        return None
+    return dict(view, age=int(time.monotonic() - at))
+
+
+def forget_preflight() -> None:
+    """Drop the kept result (the settings were saved, so the next look checks again)."""
+    _preflight_cache.update(at=None, key=None, view=None)
+
+
+async def _run_preflight() -> dict[str, Any]:
+    """Run the same checks `e2er doctor` runs, as the view the templates show."""
     from ..doctor import _BLOCKERS_PREFIXES, FAIL, PASS, SKIP, run_doctor
 
     try:
@@ -1946,10 +2026,44 @@ async def _preflight() -> dict[str, Any]:
     }
 
 
+async def _preflight(fresh: bool = False) -> dict[str, Any]:
+    """The Preflight view: the kept result while it is fresh, else a new round of checks.
+
+    ``fresh`` always checks again ("Check again", and Setup after saving). Requests that arrive
+    while a round is under way wait for that round instead of starting their own.
+    """
+    import time
+
+    if not fresh and (cached := _preflight_cached()) is not None:
+        return cached
+    key = _preflight_key()
+    task = _preflight_running["task"]
+    reusable = (
+        task is not None
+        and not task.done()
+        and _preflight_running["key"] == key
+        and task.get_loop() is asyncio.get_running_loop()
+    )
+    if not reusable:
+        task = asyncio.ensure_future(_run_preflight())
+        _preflight_running.update(key=key, task=task)
+    view = await asyncio.shield(task)
+    if not view.get("error"):
+        _preflight_cache.update(at=time.monotonic(), key=key, view=view)
+    return dict(view, age=0)
+
+
 @app.get("/preflight", response_class=HTMLResponse)
 async def dashboard_preflight(request: Request) -> Any:
-    """Is this machine able to run a paper?"""
-    return templates.TemplateResponse(request, "preflight.html", await _preflight())
+    """Is this machine able to run a paper? Opens at once; the checks fill in when they are done."""
+    cached = _preflight_cached()
+    return templates.TemplateResponse(request, "preflight.html", cached or {"pending": True})
+
+
+@app.get("/htmx/preflight-checks", response_class=HTMLResponse)
+async def preflight_checks(request: Request, fresh: int = 0) -> Any:
+    """The checks, for the Preflight page (``fresh=1``: "Check again")."""
+    return templates.TemplateResponse(request, "_preflight_checks.html", await _preflight(fresh=bool(fresh)))
 
 
 @app.get("/htmx/preflight-banner", response_class=HTMLResponse)
