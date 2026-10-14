@@ -9,6 +9,14 @@ Gutenberg's own mirror (gutenberg.pglaf.org). Project Gutenberg's website
 itself allows no automated access, so e2er never reads from it. No key is
 needed.
 
+Gutendex can be slow (78 s per page on 2026-10-13). A search is kept for the
+day, and when Gutendex does not answer within 45 s the search reads Project
+Gutenberg's own catalogue file (pg_catalog.csv from the mirror's feeds
+directory) instead; the result's note says so. That file has no download
+counts and no copyright status, so its rows are ordered by book number; the
+`text` load still checks copyright. Ask for the books you need in one search:
+each small search waits for Gutendex again.
+
 Use it for text-as-data: stylometry, word frequencies and sentiment over
 time, topic models of a genre, readability, the vocabulary of an author or a
 period. `books` gives the corpus's metadata (authors' years, subjects,
