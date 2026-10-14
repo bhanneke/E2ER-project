@@ -57,6 +57,12 @@ def _headers() -> dict[str, str]:
     return {"Authorization": f"Bearer {key}"} if key else {}
 
 
+async def _get(url: str) -> str:
+    """The response text, with the key as a bearer token when one is set."""
+    headers = _headers()
+    return await fetch_text(url, headers=headers) if headers else await fetch_text(url)
+
+
 def _sanitize(query: str) -> str:
     return " ".join(query.translate(_REJECTED_CHARS).split())
 
@@ -80,7 +86,7 @@ async def search_papers(query: str, limit: int = 20) -> SearchResult:
         import httpx
 
         try:
-            text = await fetch_text(url, headers=_headers())
+            text = await _get(url)
         except httpx.HTTPStatusError as e:
             if is_budget_refusal(e.response.status_code, e.response.text):
                 _budget_spent_on = _today()
@@ -109,7 +115,7 @@ async def fetch_by_doi(doi: str) -> PaperMetadata | None:
     try:
         import json
 
-        text = await fetch_text(url, headers=_headers())
+        text = await _get(url)
         data = json.loads(text)
         return _parse(data)
     except Exception as e:
