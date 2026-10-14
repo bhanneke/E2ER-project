@@ -86,6 +86,21 @@ def hypothesis_parent(hid: str) -> str:
     return m.group(0) if m else _norm_hypothesis(hid)
 
 
+#: A bold label after the id: "**H1 — average effect:** Abolition raises …".
+_BOLD_LABEL = re.compile(r"^(?:\*\*|__)?\s*([^*_:]{1,80}?)\s*:?\s*(?:\*\*|__)\s*:?\s*(.*)$")
+
+
+def _label_and_text(paren: str | None, rest: str) -> tuple[str, str]:
+    """A hypothesis line's label (in parentheses or bold) and its statement, markup removed."""
+    label = (paren or "").strip()
+    text = rest.strip()
+    if not label:
+        m = _BOLD_LABEL.match(text)
+        if m and m.group(2).strip():
+            label, text = m.group(1).strip(), m.group(2).strip()
+    return label.strip("*_ "), text.strip("*_ ")
+
+
 def extract_hypotheses(text: str) -> list[dict[str, Any]]:
     """The hypotheses a plan declares, in order: [{"id": "H1", "statement": …, "parts": ["H1a", …]}].
 
@@ -99,16 +114,24 @@ def extract_hypotheses(text: str) -> list[dict[str, Any]]:
         if not m:
             continue
         hid = _norm_hypothesis(m.group(1))
-        statement = " ".join(x for x in (m.group(2) or "", m.group(3).strip().strip("*_ ")) if x).strip()
+        label, text = _label_and_text(m.group(2), m.group(3))
+        # "**H1 (average effect)**: Abolition raises …" keeps its label apart from the claim
+        # (2026-10-13 demo: they were joined into "average effect Abolition raises …").
+        statement = f"{label}: {text}" if label and text else (label or text)
         parent = hypothesis_parent(hid)
         entry = found.setdefault(parent, {"id": parent, "statement": "", "parts": []})
         if hid == parent:
-            entry["statement"] = entry["statement"] or statement
+            if not entry["statement"]:
+                entry["statement"] = statement
+                if label and text:
+                    entry["label"] = label
         elif hid not in entry["parts"]:
             entry["parts"].append(hid)
     out = []
     for h in found.values():
         item: dict[str, Any] = {"id": h["id"], "statement": h["statement"]}
+        if h.get("label"):
+            item["label"] = h["label"]
         if h["parts"]:
             item["parts"] = h["parts"]
         out.append(item)
