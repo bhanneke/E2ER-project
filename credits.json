@@ -1,5 +1,5 @@
 {
-  "$comment": "Work e2er's parts are based on, draw from or cite: the creator, the role, the relation, the work's title and address, when it was published and read, and where it was found. This is the credit data for e2er.org's catalogue: a `based_on` entry is meant to show on the part's page as \"Based on\" with its link, its creator as an external creator (not an e2er account). Templates carry the same entries in their own [[credit]] tables; tests/test_fieldmap_template.py keeps the two equal. A credit says where an idea came from; it does not say the creator endorses the part.",
+  "$comment": "Work e2er's parts are based on, draw from or cite: the creator, the role, the relation, the work's title and address, when it was published and read, and where it was found. This is the credit data for e2er.org's catalogue: a `based_on` entry is cited on the part's page as \"Based on\" with a link to the work; its authors are cited as the source and get no page of their own on e2er.org. Templates carry the same entries in their own [[credit]] tables; tests/test_fieldmap_template.py keeps the two equal. A credit says where an idea came from; it does not say its authors endorse the part.",
   "parts": {
     "template:field-map": [
       {

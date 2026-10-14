@@ -59,7 +59,7 @@
     },
     "credit": {
       "type": "array",
-      "description": "Work this template is based on, draws from or cites: the creator, their role (e.g. conceptualization, method, related work), the relation (based_on, related_work, cites), the work's title and address, when it was published and read, and where it was found. e2er.org shows a `based_on` entry as \"Based on\" with the link; the creator is an external creator, not an e2er account. A credit says where an idea came from; it does not say the creator endorses the template.",
+      "description": "Work this template is based on, draws from or cites: the creator, their role (e.g. conceptualization, method, related work), the relation (based_on, related_work, cites), the work's title and address, when it was published and read, and where it was found. e2er.org cites a `based_on` entry on the template's page as \"Based on\" with a link to the work; its authors are cited as the source and get no page of their own on e2er.org. A credit says where an idea came from; it does not say its authors endorse the template.",
       "items": {
         "type": "object",
         "required": [

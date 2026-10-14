@@ -67,7 +67,7 @@ def test_the_template_loads_and_checks_the_design_before_estimation():
 
 def test_the_template_credits_no_invented_person():
     text = TEMPLATE.read_text(encoding="utf-8")
-    assert "e2er contributors" in text and "Okafor" not in text
+    assert "e2er authors" in text and "Okafor" not in text
 
 
 def _spec(steps: list[dict[str, Any]], **top: Any):

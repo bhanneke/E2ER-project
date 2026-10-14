@@ -46,7 +46,7 @@
 # No estimation, no estimation gate, no econometrics: nothing here is
 # estimated. No review panel: the draft is a description of computed results.
 #
-# Maintained by the e2er contributors.
+# Maintained by the e2er authors.
 
 name = "field-map"
 title = "Map a research field"

@@ -558,7 +558,7 @@ def main() -> None:
     publish_p.add_argument("bundle", help="Path to an exported bundle directory (from `e2er export`).")
     publish_p.add_argument("--owner", required=True, help="Registry namespace: your GitHub login, lower case.")
     publish_p.add_argument("--project", required=True, help="Project name within your namespace, e.g. etf-comovement.")
-    publish_p.add_argument("--github", default=None, help="Your GitHub login (contributor identity).")
+    publish_p.add_argument("--github", default=None, help="Your GitHub login (author identity).")
     publish_p.add_argument("--orcid", default=None, help="Your ORCID iD, e.g. 0000-0002-1825-0097.")
     publish_p.add_argument("--name", default=None, help="Your name as it should appear in citations.")
     publish_p.add_argument("--role", action="append", default=None, dest="roles", help="CRediT role (repeatable).")

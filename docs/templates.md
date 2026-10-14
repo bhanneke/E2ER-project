@@ -116,12 +116,14 @@ optional this way.
 ## Credit
 
 A template names the work it is based on, draws from or cites in `[[credit]]`
-tables: the creator, the role (`conceptualization`, `method`, `related work`),
+tables: the authors (field `creator`), the role (`conceptualization`, `method`, `related work`),
 the relation (`based_on`, `related_work`, `cites`), the title, the address, the
 dates it was published and read, and where it was found. `based_on` says where
-the idea came from; it does not say its creator endorses the template. e2er's
-own parts also list their credit in `credits.json` at the repository root, for
-the catalogue of e2er.org.
+the idea came from; it does not say its authors endorse the template. e2er.org
+cites a `based_on` entry on the template's page as "Based on" with a link to
+the work; the people who wrote it are cited as the source and get no page of
+their own. e2er's own parts also list their credit in `credits.json` at the
+repository root, for the catalogue of e2er.org.
 
 A run records its template's credit in the `template_components` event, and
 the dossier of a published run carries it as `credit`: the template's name and

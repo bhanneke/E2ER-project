@@ -263,7 +263,7 @@ _GITHUB_LOGIN = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$")
 
 
 def parse_coauthor(spec: str) -> dict[str, Any]:
-    """`--coauthor "Name|github=login|orcid=0000-…|role=…"` as a contributor of e2er.json.
+    """`--coauthor "Name|github=login|orcid=0000-…|role=…"` as an author in e2er.json.
 
     The name comes first; then ``key=value`` parts in any order. ``role`` may repeat or list
     roles separated by commas. A co-author needs a GitHub login or an ORCID iD, so that

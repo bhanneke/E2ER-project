@@ -32,7 +32,7 @@
 # (other data, other specifications) are a separate study, per the protocol in
 # skills/files/replication/reproduction-protocol.md.
 #
-# Maintained by the e2er contributors.
+# Maintained by the e2er authors.
 
 name = "replication"
 title = "Replication of a published study"

@@ -47,7 +47,7 @@
 #   review_draft        the researcher reads the draft
 #   review              number check, citation check, then the panel
 #
-# Maintained by the e2er contributors.
+# Maintained by the e2er authors.
 
 name = "systematic-review"
 title = "Systematic review and meta-analysis"
