@@ -293,12 +293,24 @@ def check_data_quality(workspace: Path, *, max_missing_share: float = DEFAULT_MA
     return CheckResult(not reasons, tuple(reasons), tuple(notes), stats)
 
 
+_ISO_DAY = re.compile(r"^\d{4}-\d{2}-\d{2}")
+
+
 def _before(a: Any, b: Any) -> bool:
-    """a < b, numerically when both are numbers, else as text (ISO dates and periods sort as text)."""
+    """a < b, numerically when both are numbers, else as text (ISO dates and periods sort as text).
+
+    Two ISO dates or timestamps compare by their day: an event catalogue declared
+    "from 1976-01-01" whose first event is at 1976-01-01T00:04:05Z covers that day
+    (as text the timestamp sorts after the date, and the check failed every event
+    table, demo 3 on 2026-10-14).
+    """
     try:
         return float(a) < float(b)
     except (TypeError, ValueError):
-        return str(a) < str(b)
+        sa, sb = str(a), str(b)
+        if _ISO_DAY.match(sa) and _ISO_DAY.match(sb):
+            return sa[:10] < sb[:10]
+        return sa < sb
 
 
 def _write_report(ws: Path, report: dict[str, Any], reasons: list[str], notes: list[str]) -> None:

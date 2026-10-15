@@ -50,6 +50,7 @@ STATUS_WORDS = {
     "paused": "paused",
     "stopped": "stopped by a check",
     "in_progress": "in progress",
+    "finishing": "finishing (writing the export)",
     "data_approval": "waiting for data approval",
 }
 

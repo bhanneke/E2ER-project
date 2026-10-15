@@ -1167,5 +1167,37 @@ def write_recipe(workspace: Path, out: Path, *, date_str: str = "") -> Outcome:
         "compare": compare,
         "notes": notes,
     }
+    # Data files the study built from a source's data hold that data too (data/gaia_clean.csv from the Gaia
+    # rows): a published folder or a package may leave them out, so the recipe says which script builds each
+    # again from the data get_data.py loads (derived_data.py).
+    from .. import reproduce as rp
+    from ..derived_data import Derived, derived, export_record, rebuild_plan
+
+    found = [d for d in derived(out, known=set()) if (out / d.path).is_file()]
+    have = {d.path for d in found}
+    for entry in export_record(workspace, out):  # from the run's scripts and script log, mapped into the folder
+        if entry["path"] not in have:
+            found.append(Derived(entry["path"], entry["connectors"], entry["writers"], entry["named"]))
+    plan = rebuild_plan(out, recipe, found) if found else []
+    if plan:
+        rp.apply_rebuild(recipe, plan)
+        notes.append(
+            "Built from data whose terms keep them out of a published study: "
+            + ", ".join(f"{p['path']} ({p['from']})" for p in plan)
+            + ". When the folder lacks one, the script in brackets builds it again from the data get_data.py loads."
+        )
+    stuck = [
+        d.path
+        for d in found
+        if d.path in {files.get(i["path"]) for i in inputs}
+        and d.path not in {files.get(p["path"]) for p in plan}
+        and not any(i.get("reload") for i in inputs if files.get(i["path"]) == d.path)
+    ]
+    if stuck:
+        notes.append(
+            f"{', '.join(stuck)} {'is' if len(stuck) == 1 else 'are'} built from data whose terms keep them out of a "
+            "published study, and no recorded step builds them again from data the rerun can load: a folder "
+            "without them cannot be run again."
+        )
     (out / "reproduce.json").write_text(json.dumps(recipe, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return Outcome(recipe=recipe, notes=notes)

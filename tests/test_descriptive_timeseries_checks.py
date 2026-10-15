@@ -105,6 +105,50 @@ def test_coverage_the_data_do_not_span_stops_the_run(exo: Path):
     assert any("starts at 2009" in x for x in r.reasons) and any("ends at 2024" in x for x in r.reasons)
 
 
+def _event_table(ws: Path, first: str, last: str, cov: dict) -> None:
+    con = sqlite3.connect(ws / "data.db")
+    con.execute("CREATE TABLE quakes (id TEXT, time TEXT, mag REAL)")
+    con.executemany("INSERT INTO quakes VALUES (?, ?, ?)", [("a", first, 5.1), ("b", last, 6.0)])
+    con.commit()
+    con.close()
+    d = _dictionary(ws)
+    d["tables"].append(
+        {
+            "name": "quakes",
+            "key": ["id"],
+            "coverage": {"column": "time", **cov},
+            "columns": [
+                {"name": "id", "type": "TEXT", "unit": "none"},
+                {"name": "time", "type": "TEXT", "unit": "UTC"},
+                {"name": "mag", "type": "REAL", "unit": "magnitude"},
+            ],
+        }
+    )
+    _write(ws / "data_dictionary.json", d)
+
+
+def test_event_timestamps_cover_the_declared_days(exo: Path):
+    # An event catalogue never starts at midnight: the first event of the declared
+    # first day covers that day (demo 3, 2026-10-14: every ComCat table failed).
+    _event_table(
+        exo, "1976-01-01T00:04:05.400Z", "1985-12-31T22:56:33.100Z", {"from": "1976-01-01", "to": "1985-12-31"}
+    )
+    r = check_data_quality(exo)
+    assert not any("quakes" in x for x in r.reasons), r.reasons
+
+
+def test_event_timestamps_a_day_short_still_stop_the_run(exo: Path):
+    _event_table(
+        exo,
+        "1976-01-02T08:00:00Z",
+        "1985-12-30T22:00:00Z",
+        {"from": "1976-01-01T00:00:00Z", "to": "1985-12-31T23:59:59Z"},
+    )
+    r = check_data_quality(exo)
+    assert any("quakes: time starts at 1976-01-02" in x for x in r.reasons)
+    assert any("quakes: time ends at 1985-12-30" in x for x in r.reasons)
+
+
 def test_a_declared_table_that_was_not_loaded_stops_the_run(exo: Path):
     d = _dictionary(exo)
     d["tables"].append({"name": "hosts", "source": "file", "columns": []})

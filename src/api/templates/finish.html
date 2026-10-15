@@ -61,6 +61,11 @@
   </div>
   <p class="found" id="export-msg"></p>
   <p class="small muted" id="export-current" {% if not export %}hidden{% endif %}>This is the current folder: verifying and publishing use it.</p>
+  <p class="small" id="package-box" {% if not export %}hidden{% endif %}>
+    <button type="button" class="btn btn-small" id="do-package" {% if not session_ok %}disabled{% endif %}>Download package (.e2er)</button>
+    <span class="muted">The whole study in one file: paper, code, data, results and the exact package versions. Anyone with e2er can check it (<code>e2er verify</code>) and run it again (<code>e2er reproduce</code>).</span>
+  </p>
+  <p class="found" id="package-msg"></p>
   <p class="small" id="older-box" {% if not older_copies %}hidden{% endif %}>
     <span id="older-text">{{ older_copies }} older cop{{ "y" if older_copies == 1 else "ies" }} of this folder, from earlier stops or exports.</span>
     <button type="button" class="btn btn-small" id="do-remove-older" {% if not session_ok %}disabled{% endif %}>Remove older copies</button>
@@ -218,6 +223,7 @@
       m.textContent = 'Ready.'; card('card-folder', 'ok', 'Ready');
       document.getElementById('export-current').hidden = false;
       document.getElementById('export-current').textContent = d.note + ' Verifying and publishing use it.';
+      document.getElementById('package-box').hidden = false;
       showFolders(d);
     }
     catch (e) { m.textContent = e.message; card('card-folder', 'bad', 'Could not prepare'); }
@@ -242,6 +248,14 @@
     btn.textContent = p && !currentPublished ? 'Publish a new version' : 'Publish';
     if (currentPublished) btn.disabled = true;
   }
+  document.getElementById('do-package').addEventListener('click', async () => {
+    const m = document.getElementById('package-msg'); m.textContent = 'Writing the package… (pinning the package versions can take a minute)';
+    try {
+      const d = await call('POST', '/api/papers/' + pid + '/package');
+      m.textContent = d.name + ', ' + d.size + '. ' + (d.notes || []).join(' ');
+      window.location.href = d.download;
+    } catch (e) { m.textContent = e.message; }
+  });
   document.getElementById('do-remove-older').addEventListener('click', async () => {
     const m = document.getElementById('export-msg');
     try { const d = await call('POST', '/api/papers/' + pid + '/exports/remove-older'); m.textContent = d.note; showFolders(d); }

@@ -354,12 +354,23 @@ def _normalize_cell(cell: str) -> str:
 def _flatten_json(obj: Any, prefix: str = "") -> dict[str, float]:
     """Recursively extract all numeric values from a JSON object.
 
-    Returns a dict mapping dotted key paths to float values.
+    Returns a dict mapping dotted key paths to float values. A key that is itself
+    a number (a sensitivity grid keyed "-0.3" … "+0.3", years keyed "2010") is a
+    source value too, recorded under "<path>#key": a table whose row labels are
+    those keys shows numbers the results hold (demo 3, 2026-10-14: verify failed
+    the Mc-shift table on its labels -0.3, -0.2, -0.1).
     """
     result: dict[str, float] = {}
     if isinstance(obj, dict):
         for k, v in obj.items():
             key = f"{prefix}.{k}" if prefix else k
+            try:
+                as_number = float(str(k).strip())
+            except ValueError:
+                pass
+            else:
+                if not (math.isnan(as_number) or math.isinf(as_number)):
+                    result[f"{key}#key"] = as_number
             result.update(_flatten_json(v, key))
     elif isinstance(obj, list):
         for i, v in enumerate(obj):
@@ -681,15 +692,109 @@ _THRESHOLD_BEFORE_RE = re.compile(
 )
 
 
+#: A threshold named after the number: "a 30,000-token threshold", "the 500 pc cut-off" (2026-10-14 demo).
+_THRESHOLD_AFTER_RE = re.compile(
+    r"^[\$\})]*(?:[\s~-]*[A-Za-z]+){0,2}?[\s~-]*(?:threshold|cut-?off|cap|floor|ceiling)s?\b", re.IGNORECASE
+)
+#: The denominator of a rate: "per 10,000 words", "per 100{,}000 inhabitants" (2026-10-14 demo).
+_PER_BEFORE_RE = re.compile(r"\bper(?:\s|~|\\[,;: ])*[\$\{(]*\s*$", re.IGNORECASE)
+_RATE_BASES = frozenset({10.0, 100.0, 1000.0, 10000.0, 100000.0, 1e6})
+#: Words before a year that make it a date or a cohort label: "born 1799", "in 1850", "since 1900".
+_YEAR_WORD_BEFORE_RE = re.compile(
+    r"\b(?:in|since|from|until|till|to|by|before|after|around|circa|c\.|born|between|and|during|year|years|"
+    r"cohorts?|published|founded|died|census|wave|edition|decade|century)(?:\s|~)*[\$\{(]*\s*$",
+    re.IGNORECASE,
+)
+_YEAR_DASH_BEFORE_RE = re.compile(r"(?<![\d.,])\d{4}\s*(?:-{1,3}|–|—|\\text(?:en|em)dash(?:\{\})?|to)\s*$")
+_YEAR_DASH_AFTER_RE = re.compile(r"^\s*(?:-{1,3}|–|—|\\text(?:en|em)dash(?:\{\})?|to)\s*\d{4}(?![\d.,])")
+
+
+def _is_year_label(num_str: str, value: float, before: str, after: str) -> bool:
+    """A year as a date or a cohort label ("authors born 1770--1799", "in 1850"), not a quantity.
+
+    Years 1900-2099 never count (``_YEAR_RE``); this takes the earlier ones too, when the
+    text says they are dates: next to another year in a span, or after a word of time.
+    "1,799 novels" (a count, with its thousands separator) is checked as a number.
+    """
+    if "," in num_str or "." in num_str or not 1000 <= value <= 2100:
+        return False
+    return bool(
+        _YEAR_DASH_BEFORE_RE.search(before) or _YEAR_DASH_AFTER_RE.match(after) or _YEAR_WORD_BEFORE_RE.search(before)
+    )
+
+
 def _is_constant(value: float, is_percent: bool, words: frozenset[str], before: str, after: str) -> bool:
-    """A confidence level, a unit factor in a formula, or a design threshold: not a result to trace."""
+    """A confidence level, a unit factor in a formula, the denominator of a rate, or a design
+    threshold: not a result to trace."""
     v = abs(value)
     if (is_percent and v in _CONFIDENCE_LEVELS) or v in {0.9, 0.95, 0.99}:
         if words & _CONFIDENCE_WORDS:
             return True
     if v in _UNIT_FACTORS and (_OPERATOR_BEFORE_RE.search(before) or _OPERATOR_AFTER_RE.match(after)):
         return True
-    return bool(_THRESHOLD_BEFORE_RE.search(before))
+    if v in _RATE_BASES and _PER_BEFORE_RE.search(before):
+        return True
+    return bool(_THRESHOLD_BEFORE_RE.search(before) or _THRESHOLD_AFTER_RE.match(after))
+
+
+#: Design files whose numbers are settings of the study, not its results: a number the paper
+#: repeats from them ("cohorts of authors born 1770-1799", "texts of at least 30,000 tokens")
+#: is not looked for in the results.
+_DESIGN_FILES = ("data_dictionary.json", "identification_spec.json")
+_DESIGN_GLOBS = ("*_design.json", "*preregistration*.md", "design/*preregistration*.md")
+#: Keys of a design file that hold facts about the data rather than settings: their numbers
+#: are results the paper reports, and stay checked.
+_DATA_FACT_KEYS = frozenset(
+    {"rows", "row_count", "n_rows", "n", "count", "observations", "n_obs", "mean", "median", "sd", "std", "min", "max"}
+)
+
+
+def _design_numbers(obj: Any, out: set[float]) -> None:
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            if str(k).lower() in _DATA_FACT_KEYS:
+                continue
+            _design_numbers(v, out)
+    elif isinstance(obj, list):
+        for v in obj:
+            _design_numbers(v, out)
+    elif isinstance(obj, bool):
+        return
+    elif isinstance(obj, int | float):
+        out.add(float(obj))
+    elif isinstance(obj, str):
+        for m in _NUMBER_RE.finditer(obj):
+            parsed = _parse_number(m.group(1))
+            if parsed is not None:
+                out.add(abs(parsed))
+
+
+def design_constants(workspace: Path) -> set[float]:
+    """The numbers of the study's design: its data dictionary, design files, pre-registration and
+    the settings of its template's checks."""
+    out: set[float] = set()
+    paths = [workspace / n for n in _DESIGN_FILES]
+    for pattern in _DESIGN_GLOBS:
+        paths.extend(sorted(workspace.glob(pattern)))
+    for path in paths:
+        if not path.is_file():
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+            _design_numbers(json.loads(text) if path.suffix == ".json" else text, out)
+        except (OSError, ValueError):
+            continue
+    try:
+        manifest = json.loads((workspace / "manifest.json").read_text(encoding="utf-8"))
+        from .spec import find_spec
+
+        spec = find_spec(str(manifest.get("pipeline") or "empirical"))
+        for step in spec.steps:
+            _design_numbers(dict(step.settings), out)
+    except Exception:  # noqa: BLE001 — no manifest, an unknown template: the files above stand
+        pass
+    out.discard(0.0)
+    return out
 
 
 def _significant_digits(num_str: str) -> int:
@@ -792,8 +897,9 @@ def _extract_prose_numbers(tex_content: str) -> list[_ProseNumber]:
                 unit=unit,
                 symbol=_symbol_before(before),
                 constant=_is_constant(
-                    parsed, is_percent, words, prose[ws : m.start(1)], prose[m.end(1) : m.end(1) + 20]
-                ),
+                    parsed, is_percent, words, prose[ws : m.start(1)], prose[m.end(1) : m.end(1) + 40]
+                )
+                or _is_year_label(num_str, parsed, prose[ws : m.start(1)], prose[m.end(1) : m.end(1) + 20]),
             )
         )
     return results
@@ -825,6 +931,7 @@ def _check_prose(
     tex_content: str,
     all_source_values: dict[str, float],
     tolerance: float,
+    design: set[float] | frozenset[float] = frozenset(),
 ) -> None:
     """Non-gating prose check ("text = table number").
 
@@ -853,6 +960,12 @@ def _check_prose(
 
         if any(_prose_matches(pn, draft_val, sv, tolerance) for sv in all_source_values.values()):
             report.prose_matched += 1
+            continue
+        if abs(draft_val) in design:
+            # A setting of the study's design (its template, pre-registration or data dictionary)
+            # that the paper repeats: not a result, so not looked for in the results.
+            report.prose_total -= 1
+            report.prose_excluded += 1
             continue
 
         # Only source values whose key is named nearby are candidates.
@@ -1154,7 +1267,7 @@ def verify(
 
     # PR-2: prose-number check (non-gating; never critical). The key-resolution
     # feedback was already surfaced near the top (independent of numeric content).
-    _check_prose(report, tex_content, all_source_values, tolerance)
+    _check_prose(report, tex_content, all_source_values, tolerance, design_constants(workspace))
 
     if not report.conclusive:
         report.skipped_reason = _NOTHING_VERIFIED

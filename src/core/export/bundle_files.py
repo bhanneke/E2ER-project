@@ -39,7 +39,17 @@ JUNK_NAMES = frozenset({".DS_Store", "Thumbs.db", "desktop.ini", "Desktop.ini"})
 #: .e2er/zenodo.json records the Zenodo deposits publish reserved, so a retry
 #: reuses them. Exempt by exact path: a file with one of these names anywhere
 #: else in the bundle is an ordinary file and must be listed.
-NOT_EVIDENCE = ("provenance.json", "e2er.json", ".e2er/link.json", ".e2er/zenodo.json")
+#: e2er-package.json and everything under e2er-package/ are a .e2er package's own files (its manifest, the
+#: pinned environment and the wheels), present in a folder unpacked from a package; verify checks them against
+#: the manifest when it opens the package.
+NOT_EVIDENCE = ("provenance.json", "e2er.json", ".e2er/link.json", ".e2er/zenodo.json", "e2er-package.json")
+PACKAGE_PREFIX = "e2er-package/"
+
+
+def not_evidence(rel: str) -> bool:
+    """A root-level record or a package's own file: never listed in provenance.json, never compared with it."""
+    return rel in NOT_EVIDENCE or rel.startswith(PACKAGE_PREFIX)
+
 
 #: Names a bundle never carries (keys and credentials), on top of every dotfile.
 _SECRET_NAME = re.compile(r"(?i)^(?:id_(?:rsa|dsa|ecdsa|ed25519)(?:\.pub)?|.*\.(?:pem|key|p12|pfx|keystore|jks))$")
@@ -208,6 +218,7 @@ __all__ = [
     "load_json_strict",
     "never_exported",
     "nfc",
+    "not_evidence",
     "provenance_problems",
     "walk",
 ]

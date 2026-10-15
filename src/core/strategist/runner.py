@@ -16,6 +16,7 @@ from ...modules.llm.plan_limit import status_text as plan_limit_status
 from .. import labels as _labels
 from ..governance import DEFAULT_REGIME, KIND_RELIABILITY
 from ..governance import enforces as governance_enforces
+from ..pipeline.components import enter_step
 from ..pipeline.fieldmap_checks import FILES as _FIELDMAP_FILES
 from ..pipeline.meta_checks import FILES as _META_FILES
 from ..pipeline.spec import RESEARCHER_KINDS, SEQUENCE_CHECKS, find_spec
@@ -181,6 +182,25 @@ _DESIGN_CHECK_FOCUS: dict[str, str] = {
 }
 
 
+#: The status line of a run paused because the disk ran full.
+DISK_FULL_STATUS = "The disk is full; free space and press Resume."
+
+
+def disk_full(error: BaseException | None) -> bool:
+    """Whether an error (or one it was raised from) means no space was left on the disk."""
+    import errno
+
+    seen: set[int] = set()
+    while error is not None and id(error) not in seen:
+        seen.add(id(error))
+        if isinstance(error, OSError) and error.errno in (errno.ENOSPC, getattr(errno, "EDQUOT", -1)):
+            return True
+        if "database or disk is full" in str(error) or "No space left on device" in str(error):
+            return True
+        error = error.__cause__ or error.__context__
+    return False
+
+
 @dataclass(frozen=True)
 class _StepEffects:
     """What a phase persists, beyond running.
@@ -319,6 +339,7 @@ class PipelineRunner:
         """
         name = step.name
         self._current_step = name
+        enter_step(name)  # its timeout_minutes applies to what it dispatches
         if step.kind in RESEARCHER_KINDS:
             if state.is_approved(name):
                 if step.kind == "preregister":
@@ -412,7 +433,55 @@ class PipelineRunner:
         return out
 
     async def run(self) -> dict[str, Any]:
-        """Run the full pipeline from idea to completion, with checkpoint/resume support."""
+        """Run the full pipeline from idea to completion, with checkpoint/resume support.
+
+        Nothing escapes with the status left as it was. Before, a full disk
+        (ENOSPC writing ``.pipeline_state.json``, 2026-10-14 text-analysis demo)
+        raised again inside the failure handler's own save; the run's task
+        died and the study stayed "designing" with nothing running. A full
+        disk pauses the run with a plain reason (it is resumable from the last
+        saved state); anything else that escapes fails it with its error.
+        """
+        try:
+            result = await self._run()
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:  # noqa: BLE001 — a handler failed: the status must still say so
+            if disk_full(e):
+                return await self._pause_disk_full(e)
+            error = f"{type(e).__name__}: {e}"
+            logger.error("Pipeline failed for paper %s outside its handlers: %s", self._paper_id, error)
+            await self._log_quietly("failed", {"error": error})
+            await self._update_status(PaperStatus.FAILED, error=error)
+            return {"status": "failed", "error": error}
+        if getattr(self, "_completed_deferred", False):
+            # Every step ran and the final export is written (the finally of _run): now it is complete.
+            self._finishing_done = True
+            await self._update_status(PaperStatus.COMPLETED)
+        return result
+
+    async def _log_quietly(self, kind: str, payload: dict[str, Any]) -> None:
+        from ...db.events import log_event
+
+        try:
+            await log_event(self._paper_id, kind, payload=payload)
+        except Exception as e:  # noqa: BLE001 — the database may sit on the same full disk
+            logger.warning("Event %s for paper %s not recorded: %s", kind, self._paper_id, e)
+
+    async def _pause_disk_full(self, error: BaseException) -> dict[str, Any]:
+        """The disk ran full: pause with a plain reason; Resume continues from the last saved state."""
+        logger.error("Pipeline paused (disk full) for paper %s: %s", self._paper_id, error)
+        state = getattr(self, "_state", None)
+        if state is not None and hasattr(state, "save"):
+            try:
+                state.save(self._workspace)
+            except OSError:
+                pass  # still full: the state file from the last successful save stands (it is written atomically)
+        await self._log_quietly("paused_disk_full", {"error": f"{type(error).__name__}: {error}"[:2000]})
+        await self._update_status(PaperStatus.PAUSED, error=DISK_FULL_STATUS)
+        return {"status": "paused", "reason": "disk_full"}
+
+    async def _run(self) -> dict[str, Any]:
         from ...db.events import log_event
         from ...modules.tracking.usage import check_budget
         from ..pipeline.state import PipelineState
@@ -634,7 +703,9 @@ class PipelineRunner:
             await self._update_status(PaperStatus.PAUSED, error=text)
             return {
                 "status": "paused",
-                "reason": "billing_limit" if getattr(pl, "event", "") == "paused_billing_limit" else "plan_limit",
+                "reason": {"paused_billing_limit": "billing_limit", "paused_timeout": "timeout"}.get(
+                    getattr(pl, "event", ""), "plan_limit"
+                ),
                 "backend": pl.backend,
                 "resets": pl.resets,
                 "specialist": pl.specialist,
@@ -700,6 +771,8 @@ class PipelineRunner:
             )
             return {"status": "paused", "reason": "awaiting_review", "stage": hr.stage}
         except Exception as e:
+            if disk_full(e):
+                return await self._pause_disk_full(e)
             state.save(self._workspace)  # preserve progress on failure
             logger.error("Pipeline failed for paper %s: %s", self._paper_id, e)
             error_msg = f"{type(e).__name__}: {e}"
@@ -807,15 +880,17 @@ class PipelineRunner:
             specialist_done.reset(token)
             self._in_initial = False
 
-    async def _draft_if_left_out(self) -> None:
-        """The initial phase ended without a draft: send the paper drafter out (after its checks).
+    async def _draft_if_left_out(self, *, after_rounds: bool = False) -> None:
+        """The initial phase (or, iterative, its rounds) ended without a draft: send the paper drafter out.
 
         Every template with a strategist step reports in ``paper_draft.tex``, and the strategist
         plans who writes it. The 2026-10-13 school-fee demo (policy evaluation): its plan left the
         drafter out, the run went on to the review with no draft, the five reviewers judged the
         plan (4.3 of 10), and the study "completed" without a paper.
         """
-        if getattr(self, "_mode", "single_pass") != "single_pass" or (self._workspace / "paper_draft.tex").is_file():
+        if (self._workspace / "paper_draft.tex").is_file():
+            return
+        if getattr(self, "_mode", "single_pass") != "single_pass" and not after_rounds:
             return  # in the iterative mode the rounds may write the draft (and often do)
         spec = getattr(self, "_spec", None)
         if spec is None or not any(st.kind == "aggregate" for st in spec.steps):
@@ -828,8 +903,9 @@ class PipelineRunner:
             "results and files in the workspace."
         )
         order = WorkOrder(paper_id=self._paper_id, specialist="paper_drafter", focus=focus)
+        phase = "iterative" if after_rounds else "initial"
         await log_event(
-            self._paper_id, "drafter_sent_out", stage="initial", payload={"reason": "no draft after the initial phase"}
+            self._paper_id, "drafter_sent_out", stage=phase, payload={"reason": f"no draft after the {phase} phase"}
         )
         self._contributions.extend(await self._execute_orders([order]))
 
@@ -925,13 +1001,24 @@ class PipelineRunner:
                 "Strategist returned no work orders for the initial phase — cannot "
                 "proceed without specialist assignments."
             )
-        self._save_initial_orders(self._to_contract_orders(decision.work_orders))
+        planned = self._to_contract_orders(decision.work_orders)
+        if state is not None and isinstance(getattr(state, "metadata", None), dict):
+            # The whole plan, kept after the phase: a rerun from one of its specialists
+            # replays it from there (researcher.apply_rerun), the earlier work kept.
+            state.metadata["initial_plan"] = [wo.model_dump() for wo in planned]
+        self._save_initial_orders(planned)
         contributions = await self._dispatch(decision)
         if not contributions:
             raise RuntimeError("Initial phase produced no contributions.")
         self._contributions.extend(contributions)
 
     async def _run_iterative_phase(self) -> PaperStatus:
+        """The improvement rounds, then the drafter if no round wrote a draft (see _draft_if_left_out)."""
+        status = await self._run_rounds()
+        await self._draft_if_left_out(after_rounds=True)
+        return status
+
+    async def _run_rounds(self) -> PaperStatus:
         """Iterative improvement loop with ceiling detection.
 
         Each round, its ceiling check and a change of approach (pivot) are
@@ -3432,7 +3519,21 @@ class PipelineRunner:
         # phase even though `paper_drafter` was correctly skipped.
         # v0.6.0's guard only filtered `paper_drafter`; v0.6.1 closes
         # the same drift door for `revisor`.
-        if self._iteration >= 2 or pivot:
+        # With no draft yet there is nothing to drift from: section writers cannot
+        # write a paper from nothing in parallel pieces, so one paper drafter writes
+        # it (and the guard below does not drop it). See _draft_from_section_orders.
+        has_draft = (self._workspace / "paper_draft.tex").is_file()
+        orders = _draft_from_section_orders(decision.work_orders, has_draft=has_draft)
+        if orders != decision.work_orders:
+            logger.warning(
+                "No paper_draft.tex yet: the section_writer order(s) became one paper_drafter order for paper %s",
+                self._paper_id,
+            )
+        orders = _one_draft_writer_at_a_time(orders)
+        if orders != decision.work_orders:
+            decision = decision.model_copy(update={"work_orders": orders})
+
+        if (self._iteration >= 2 or pivot) and has_draft:
             kept, dropped = _split_full_rewrites(decision.work_orders)
             if dropped:
                 logger.warning(
@@ -3749,6 +3850,14 @@ class PipelineRunner:
             logger.warning("GitHub push failed: %s", e)
 
     async def _update_status(self, status: PaperStatus, error: str | None = None) -> None:
+        if status == PaperStatus.COMPLETED and not getattr(self, "_finishing_done", False):
+            # The steps are done, the replication package and the final export may not be: the study
+            # reads "finishing (writing the export)" until run() has written them. Before, the status
+            # said "completed" during the replication step, and a folder exported then was overwritten.
+            self._completed_deferred = True
+            status = PaperStatus.FINISHING
+        elif status != PaperStatus.FINISHING:
+            self._completed_deferred = False  # a later pause, failure or cancel stands
         if status in (PaperStatus.FAILED, PaperStatus.REJECTED) and not (error or "").strip():
             # A run that ends must say why (tests/test_number_check.py pins it):
             # never a failed run with an empty last_error.
@@ -3892,6 +4001,54 @@ FULL_REWRITE_REFUSED = (
     "refused: it would rewrite the whole draft after the first round; a change to one section "
     "(Sections and table layout) or the targeted corrections can do it"
 )
+
+
+def _draft_from_section_orders(orders: list[Any], *, has_draft: bool) -> list[Any]:
+    """With no draft yet, the section_writer orders become one paper_drafter order.
+
+    A section writer changes a section of an existing draft. The 2026-10-14 GDP demo
+    (spatial analysis, iterative): no round had dispatched the drafter, the third
+    round sent three section writers at once, each wrote paper_draft.tex from
+    nothing, the last one's file (introduction and literature only) stood, and the
+    study completed and was reviewed without data, results or maps.
+    """
+    if has_draft or not any(o.specialist == "section_writer" for o in orders):
+        return orders
+    sections = [o for o in orders if o.specialist == "section_writer"]
+    rest = [o for o in orders if o.specialist != "section_writer"]
+    if any(o.specialist == "paper_drafter" for o in rest):
+        return rest  # the drafter writes the whole paper, these sections included
+    focus = "The study has no draft yet: write the whole paper from the results and files in the workspace. " + (
+        " ".join(f"Section notes: {o.focus}" for o in sections if o.focus)
+    )
+    first = sections[0]
+    drafter = first.model_copy(update={"specialist": "paper_drafter", "focus": focus.strip()})
+    return [*rest, drafter]
+
+
+def _one_draft_writer_at_a_time(orders: list[Any]) -> list[Any]:
+    """Section writers of one parallel group run one after another: each edits the same paper_draft.tex.
+
+    In parallel, the last writer's file replaces the others' (2026-10-14 GDP demo). Every
+    later group moves back by the groups this inserts, so the order among groups stays.
+    """
+    by_group: dict[int, list[Any]] = {}
+    for o in orders:
+        by_group.setdefault(o.parallel_group, []).append(o)
+    if all(sum(o.specialist == "section_writer" for o in g) <= 1 for g in by_group.values()):
+        return orders
+    out: list[Any] = []
+    next_group = 0
+    for group in sorted(by_group):
+        writers = 0
+        for o in by_group[group]:
+            if o.specialist == "section_writer":
+                out.append(o.model_copy(update={"parallel_group": next_group + writers}))
+                writers += 1
+            else:
+                out.append(o.model_copy(update={"parallel_group": next_group}))
+        next_group += max(writers, 1)
+    return out
 
 
 def _split_full_rewrites(orders: list[Any]) -> tuple[list[Any], list[tuple[str, str]]]:

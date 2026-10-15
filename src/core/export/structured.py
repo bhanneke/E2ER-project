@@ -590,8 +590,21 @@ def export_paper(
     except Exception as e:  # noqa: BLE001 — best-effort, like the rest of the export
         logger.warning("export: the results' script runs were not recorded: %s", e)
         code_record = None
-    write_report(out, manifest, build_provenance(out, manifest, exported_at=date_str, results_from_code=code_record))
-    write_provenance(out, manifest, exported_at=date_str, results_from_code=code_record)
+    try:
+        from ..derived_data import export_record
+
+        derived_record = export_record(workspace, out)
+    except Exception as e:  # noqa: BLE001 — best-effort; publish and pack still read the folder's scripts
+        logger.warning("export: the data built from restricted sources were not recorded: %s", e)
+        derived_record = []
+    write_report(
+        out,
+        manifest,
+        build_provenance(
+            out, manifest, exported_at=date_str, results_from_code=code_record, derived_data=derived_record
+        ),
+    )
+    write_provenance(out, manifest, exported_at=date_str, results_from_code=code_record, derived_data=derived_record)
 
     logger.info("Exported paper %s → %s", workspace.name, out)
     return out

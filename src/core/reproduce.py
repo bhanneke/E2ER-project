@@ -12,10 +12,18 @@ how the study's code is run again:
                                                  # + "when_missing": ["data.db"]: run only when the folder
                                                  # lacked it (data preparation after get_data.py)
       "inputs": [{"path": "data/x.csv", "sha256": "…", "source": "…"}],   # + "reload": "get_data.py" when a
-                                                 # step loads it again if the folder does not ship it
+                                                 # step loads it again if the folder does not ship it;
+                                                 # + "rebuild": "clean.py" when a step builds it again
+                                                 # from such data (a derived file the folder may lack)
       "compare": [{"published": "results/estimation_results.json", "produced": "estimation_results.json"}],
       "notes": ["…"]
     }
+
+A .e2er package (``e2er pack``) is unpacked first; its run installs from the
+package's ``e2er-package/requirements.lock.txt`` (every package with its
+hashes) and, when the package carries wheels for this computer, from those
+without the internet (``recipe["wheelhouse"]``, set by e2er, never read from
+reproduce.json).
 
 The code runs in a run folder of its own (``files`` lays out the folder the
 code was written for; without it the whole study folder is copied), inside a
@@ -103,8 +111,12 @@ def _safe_rel(path: Any) -> bool:
     return not p.is_absolute() and ".." not in p.parts and not path.startswith(("/", "\\"))
 
 
-def load_recipe(folder: Path) -> dict[str, Any]:
-    """reproduce.json, checked; RecipeError says what is wrong in plain words."""
+def load_recipe(folder: Path, rebuild: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    """reproduce.json, checked; RecipeError says what is wrong in plain words.
+
+    ``rebuild`` (from a .e2er package's manifest) adds the steps that build left-out derived inputs again
+    (:func:`apply_rebuild`) before the recipe is checked.
+    """
     path = folder / RECIPE_FILE
     if not path.is_file():
         from .export.reproduce_recipe import folder_reason
@@ -120,6 +132,8 @@ def load_recipe(folder: Path) -> dict[str, Any]:
         raise RecipeError(f"{RECIPE_FILE} cannot be read: {e}") from e
     if not isinstance(recipe, dict):
         raise RecipeError(f"{RECIPE_FILE} must hold a JSON object")
+    if rebuild:
+        apply_rebuild(recipe, rebuild)
     problems: list[str] = []
     if recipe.get("schema") != SCHEMA:
         problems.append(f'"schema" must be "{SCHEMA}"')
@@ -133,7 +147,7 @@ def load_recipe(folder: Path) -> dict[str, Any]:
         if not isinstance(files, dict) or not files:
             problems.append('"files" must map run-folder paths to files in the study folder')
         else:
-            reloaded = reloaded_inputs(recipe)
+            reloaded = optional_inputs(recipe)
             for dst, src in files.items():
                 if not (_safe_rel(dst) and _safe_rel(src)):
                     problems.append(f'"files": {dst!r} -> {src!r} is not a relative path inside the folder')
@@ -173,6 +187,54 @@ def reloaded_inputs(recipe: dict[str, Any]) -> set[str]:
         for i in recipe.get("inputs") or []
         if isinstance(i, dict) and isinstance(i.get("path"), str) and i.get("reload")
     }
+
+
+def optional_inputs(recipe: dict[str, Any]) -> set[str]:
+    """Inputs the folder may lack: loaded again (``"reload"``) or built again from those (``"rebuild"``)."""
+    return reloaded_inputs(recipe) | {
+        str(i["path"])
+        for i in recipe.get("inputs") or []
+        if isinstance(i, dict) and isinstance(i.get("path"), str) and i.get("rebuild")
+    }
+
+
+def apply_rebuild(recipe: dict[str, Any], plan: list[dict[str, Any]]) -> None:
+    """Add the steps that build derived inputs again (data built from data a source's terms keep out).
+
+    Each item ``{"path": run-folder path, "script": run name, "from": folder path}`` marks the input with
+    ``"rebuild"``, lays the script out and runs it after the steps that load inputs again, only when the
+    folder lacked the input (``"when_missing"``). Items for inputs the recipe does not list are ignored.
+    """
+    inputs = {str(i.get("path")): i for i in recipe.get("inputs") or [] if isinstance(i, dict)}
+    files = recipe.setdefault("files", {}) if isinstance(recipe.get("files"), dict) else None
+    steps = recipe.get("steps") if isinstance(recipe.get("steps"), list) else None
+    if steps is None:
+        return
+    for item in plan:
+        if not isinstance(item, dict):
+            continue
+        path, script, src = str(item.get("path")), str(item.get("script")), str(item.get("from"))
+        target = inputs.get(path)
+        if (
+            target is None
+            or target.get("reload")
+            or target.get("rebuild")
+            or not (_safe_rel(script) and _safe_rel(src))
+        ):
+            continue
+        target["rebuild"] = script
+        if files is not None:
+            files.setdefault(script, src)
+        reload_at = [i for i, st in enumerate(steps) if isinstance(st, dict) and is_reload_step(st, recipe)]
+        at = (reload_at[-1] + 1) if reload_at else 0
+        steps.insert(
+            at,
+            {
+                "run": ["python", script],
+                "about": f"data preparation: builds {path} again from the data loaded again",
+                "when_missing": [path],
+            },
+        )
 
 
 def step_argv(step: dict[str, Any]) -> list[str]:
@@ -490,10 +552,14 @@ def make_environment(run_dir: Path, recipe: dict[str, Any], folder: Path, logs: 
     requirements = (folder / recipe["requirements"]).resolve()
     wanted = str(recipe.get("python") or "").strip()
     uv = shutil.which("uv")
+    # A .e2er package with wheels for this computer (``e2er pack --offline``): installed without the internet.
+    wheelhouse = recipe.get("wheelhouse")
+    offline = ["--no-index", "--find-links", str((folder / str(wheelhouse)).resolve())] if wheelhouse else []
     if uv:
         base = getattr(sys, "_base_executable", None) or sys.executable  # the interpreter, not e2er's own venv
         create = [uv, "venv", "--quiet", "--python", wanted or base, str(venv)]
-        install = [uv, "pip", "install", "--quiet", "--python", str(_venv_python(venv)), "-r", str(requirements)]
+        install = [uv, "pip", "install", "--quiet", "--python", str(_venv_python(venv)), *offline,
+                   "-r", str(requirements)]  # fmt: skip
     else:
         if wanted and not f"{sys.version_info.major}.{sys.version_info.minor}".startswith(wanted):
             raise RecipeError(
@@ -501,7 +567,7 @@ def make_environment(run_dir: Path, recipe: dict[str, Any], folder: Path, logs: 
                 "fetch another Python) is not installed: install uv, or run e2er on Python " + wanted
             )
         create = [sys.executable, "-m", "venv", str(venv)]
-        install = [str(_venv_python(venv)), "-m", "pip", "install", "--quiet", "-r", str(requirements)]
+        install = [str(_venv_python(venv)), "-m", "pip", "install", "--quiet", *offline, "-r", str(requirements)]
     code, tail = _run(create, cwd=run_dir, env=minimal_env(), timeout=600, log=logs / "environment-create.log")
     if code != 0:
         raise RecipeError(f"could not create the environment: {tail}")
@@ -521,7 +587,7 @@ def make_environment(run_dir: Path, recipe: dict[str, Any], folder: Path, logs: 
         info = json.loads(out.stdout)
     except ValueError:
         info = {"python": "unknown", "packages": {}}
-    info["installer"] = "uv" if uv else "pip"
+    info["installer"] = ("uv" if uv else "pip") + (", offline from the package's wheels" if wheelhouse else "")
     try:
         info["network_guard"] = install_network_guard(py)
     except (OSError, subprocess.SubprocessError):
@@ -772,7 +838,7 @@ def run_steps(
     results = []
     # What the folder did not ship (before any step loads it again): a step marked "when_missing" (the data
     # preparation after get_data.py) runs only when one of its inputs had to be loaded again.
-    absent = {p for p in reloaded_inputs(recipe) if not (run_dir / p).exists()}
+    absent = {p for p in optional_inputs(recipe) if not (run_dir / p).exists()}
     for i, step in enumerate(recipe["steps"], 1):
         when = step.get("when_missing")
         if isinstance(when, list) and when and not absent.intersection(map(str, when)):

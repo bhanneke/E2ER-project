@@ -31,6 +31,8 @@ if TYPE_CHECKING:
     from .spec import PipelineSpec
 
 _ACTIVE: ContextVar[PipelineSpec | None] = ContextVar("e2er_active_template", default=None)
+#: The step of the active template that is running (the runner sets it as each step starts).
+_STEP: ContextVar[str | None] = ContextVar("e2er_active_step", default=None)
 
 
 def activate(spec: PipelineSpec | None) -> Token:
@@ -129,3 +131,34 @@ def optional_sidecars(specialist: str, spec: PipelineSpec | None = None) -> froz
     if spec is not None and not spec.causal:
         optional = optional | _CAUSAL_SIDECARS
     return optional
+
+
+#: Minutes a call of these specialists gets at least, unless the template or step says otherwise:
+#: they load data, and a load of texts or a slow catalogue takes long (the 2026-10-14 text-analysis
+#: demo: the data analyst's third attempt ran into the 1,800 s limit while loading Gutenberg texts).
+DEFAULT_TIMEOUT_MINUTES: dict[str, int] = {"data_analyst": 60}
+
+
+def enter_step(name: str | None) -> None:
+    """The runner starts the step ``name`` (its ``timeout_minutes`` applies to what it dispatches)."""
+    _STEP.set(name)
+
+
+def timeout_for(specialist: str, spec: PipelineSpec | None = None) -> tuple[int, bool] | None:
+    """The time limit of one call of ``specialist``, as ``(seconds, at_least)`` (see cli_support.call_timeout).
+
+    The template's ``[timeouts]`` entry for the specialist, else the running step's
+    ``timeout_minutes``, else the built-in minimum for data-loading specialists (the
+    backend's own setting wins when longer), else None (the backend's setting).
+    """
+    spec = spec if spec is not None else active()
+    if spec is not None:
+        if specialist in spec.timeouts:
+            return spec.timeouts[specialist] * 60, False
+        name = _STEP.get()
+        step = spec.step(name) if name else None
+        if step is not None and step.timeout_minutes:
+            return step.timeout_minutes * 60, False
+    if specialist in DEFAULT_TIMEOUT_MINUTES:
+        return DEFAULT_TIMEOUT_MINUTES[specialist] * 60, True
+    return None

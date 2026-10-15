@@ -21,7 +21,7 @@ load in ``data/data_sources.json`` and, for a table, in
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -85,6 +85,15 @@ class Use:
     terms: SourceTerms
     versions: list[str]
     files: list[str]
+    #: Files among ``files`` that no load wrote: built by the study's scripts from the source's data
+    #: (derived_data.py), with the scripts that write them.
+    derived: dict[str, list[str]] = field(default_factory=dict)
+
+    def reason(self, rel: str) -> str:
+        """Why ``rel`` may not be passed on, in plain words."""
+        if rel in self.derived:
+            return f"built from {self.the_name} data, whose terms do not allow passing it on"
+        return f"the terms of {self.the_name} do not allow passing the data on"
 
     @property
     def label(self) -> str:
@@ -142,6 +151,19 @@ def uses(bundle: Path) -> list[Use]:
     for t in tables if isinstance(tables, list) else []:
         if isinstance(t, dict):
             add(t.get("source"), t.get("version"), "data/data.db")
+    # Files the study built from a source's data hold that data too (data/gaia_clean.csv from the Gaia rows).
+    from .derived_data import derived
+
+    for d in derived(bundle, set(terms)):
+        if not (bundle / d.path).is_file():
+            continue
+        for connector in d.connectors:
+            use = found.get(connector)
+            if use is None:
+                continue
+            if d.path not in use.files:
+                use.files.append(d.path)
+            use.derived[d.path] = d.writers
     for use in found.values():
         # The record of the loads names the source too, when no data file could be matched.
         if not use.files:
@@ -264,3 +286,41 @@ def zenodo_refusal(refused: list[Use]) -> str:
         "give --data-url and leave out --zenodo."
     )
     return "\n".join(lines)
+
+
+def restricted_paths(bundle: Path) -> dict[str, str]:
+    """Every data file of the bundle a source's terms keep out, by path, with the reason; also files not on disk.
+
+    From the bundle's own records (data_sources.json, data_dictionary.json, its scripts), not from what is
+    present: `e2er verify` uses it to accept a data file that a package left out.
+    """
+    bundle = Path(bundle)
+    terms = known()
+    out: dict[str, str] = {}
+
+    def why(connector: str, built: bool = False) -> str:
+        t = terms[connector]
+        name = t.article + (t.name if t.name == t.short else f"{t.name} ({t.short})")
+        if built:
+            return f"built from {name} data, whose terms do not allow passing it on"
+        return f"the terms of {name} do not allow passing the data on"
+
+    sources = _read(bundle / "data" / "data_sources.json")
+    loads = sources.get("loads") if isinstance(sources, dict) else None
+    for load in loads if isinstance(loads, list) else []:
+        if not isinstance(load, dict) or load.get("connector") not in terms:
+            continue
+        if load.get("table"):
+            out.setdefault("data/data.db", why(load["connector"]))
+        elif isinstance(load.get("saved_to"), str):
+            out.setdefault(load["saved_to"], why(load["connector"]))
+    dictionary = _read(bundle / "data" / "data_dictionary.json")
+    tables = dictionary.get("tables") if isinstance(dictionary, dict) else None
+    for t in tables if isinstance(tables, list) else []:
+        if isinstance(t, dict) and t.get("source") in terms:
+            out.setdefault("data/data.db", why(t["source"]))
+    from .derived_data import derived
+
+    for d in derived(bundle, set(terms)):
+        out.setdefault(d.path, why(d.connectors[0], built=True))
+    return out

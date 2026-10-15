@@ -476,7 +476,11 @@ def main() -> None:
         help="Offline, keyless check that an exported bundle is internally consistent + untampered "
         "(hashes, numbers, spec, citations).",
     )
-    verify_p.add_argument("bundle", help="Path to an exported bundle directory (from `e2er export`).")
+    verify_p.add_argument(
+        "bundle",
+        help="An exported study folder (from `e2er export`) or a .e2er package (from `e2er pack`); a package is "
+        "unpacked into a temporary folder and every file is checked against its list first.",
+    )
     verify_p.add_argument(
         "--online",
         action="store_true",
@@ -510,8 +514,18 @@ def main() -> None:
         "published one and renders the paper's tables again. The study folder is not changed. Exit code 0: "
         "reproduced; 1: values or tables differ; 2: the code could not be run.",
     )
-    reproduce_p.add_argument("folder", help="The study folder (with reproduce.json).")
-    reproduce_p.add_argument("--keep", action="store_true", help="Keep the run folder also when everything matches.")
+    reproduce_p.add_argument(
+        "folder",
+        help="The study folder (with reproduce.json), or a .e2er package: it is unpacked, every file is checked "
+        "against its list, and the packages are installed from its pinned list (from its wheels, when they are "
+        "for this computer).",
+    )
+    reproduce_p.add_argument(
+        "--keep",
+        action="store_true",
+        help="Keep the run folder (and an unpacked package) and say where; without it both are removed when the "
+        "command ends, also after a failure.",
+    )
     reproduce_p.add_argument(
         "--allow-network",
         action="store_true",
@@ -753,6 +767,53 @@ def main() -> None:
         default=None,
         help="Destination root for the exported folder (default: OUTPUT_DIR, else exports/ in the studies folder).",
     )
+    export_p.add_argument(
+        "--package",
+        action="store_true",
+        help="Also write the study as one .e2er file next to the folder (as `e2er pack` does).",
+    )
+
+    pack_p = subparsers.add_parser(
+        "pack",
+        help="Write a study into one .e2er file: paper, code, data, results and the pinned environment.",
+        description="Writes an exported study folder (or a study, exported first) into one .e2er file: a zip "
+        "with e2er-package.json at its root, which lists every file with its SHA-256. The packages the code needs "
+        "are pinned with their hashes. Data whose source's terms do not allow passing them on are left out; "
+        "`e2er reproduce` on the package loads them again. The same folder always gives the same file and "
+        "fingerprint.",
+    )
+    pack_p.add_argument("target", help="An exported study folder, or a study id (the study is exported first).")
+    pack_p.add_argument(
+        "-o", "--out", default=None, metavar="PATH", help="Where to write the file (default: next to the folder)."
+    )
+    pack_p.add_argument(
+        "--offline",
+        action="store_true",
+        help="Also put in the wheels of every package for this computer, so a rerun here needs no internet "
+        "(adds tens to hundreds of MB).",
+    )
+    pack_p.add_argument(
+        "--no-data", action="store_true", help="Leave every data file out; `e2er reproduce` loads them again."
+    )
+
+    unpack_p = subparsers.add_parser(
+        "unpack",
+        help="Unpack a .e2er file into a folder, checking every file against its list (nothing is run).",
+        description="Unpacks a .e2er file into a new folder. Every name is checked (no absolute path, no `..`, no "
+        "link), sizes are capped, and every file is checked against the package's list (SHA-256) as it is written; "
+        "a file that does not match stops the unpacking and names the file. Nothing is run.",
+    )
+    unpack_p.add_argument("package", help="The .e2er file.")
+    unpack_p.add_argument("dest", nargs="?", default=None, help="A new folder (default: the file's name, here).")
+
+    inspect_p = subparsers.add_parser(
+        "inspect",
+        help="Show what a .e2er file holds: title, authors, data, size and fingerprint.",
+        description="Prints what a .e2er file holds, from its list of files: title, authors, the e2er version, "
+        "which data are included and which are left out (and how a rerun loads them again), the Python version and "
+        "pinned packages, the size and the fingerprint. Nothing is unpacked; `e2er verify` checks every file.",
+    )
+    inspect_p.add_argument("package", help="The .e2er file.")
 
     # Declared so it appears in `e2er --help`; never parsed here. `corpus` owns
     # a subcommand tree of its own and is intercepted before parse_args below —
@@ -859,7 +920,22 @@ def main() -> None:
     if args.command == "export":
         from .cli_export import export as _export
 
-        sys.exit(_export(paper_id=args.paper_id, to=args.to))
+        sys.exit(_export(paper_id=args.paper_id, to=args.to, package=args.package))
+
+    if args.command == "pack":
+        from .cli_package import pack as _pack
+
+        sys.exit(_pack(args.target, args.out, offline=args.offline, no_data=args.no_data))
+
+    if args.command == "unpack":
+        from .cli_package import unpack as _unpack
+
+        sys.exit(_unpack(args.package, args.dest))
+
+    if args.command == "inspect":
+        from .cli_package import inspect as _inspect
+
+        sys.exit(_inspect(args.package))
 
     if args.command == "reproduce":
         from .cli_reproduce import reproduce as _reproduce
@@ -1113,6 +1189,9 @@ _PATH_ARGS: dict[str, tuple[str, ...]] = {
     "verify-citations": ("draft", "bib"),
     "publish": ("bundle", "out", "db"),
     "export": ("to",),
+    "pack": ("target", "out"),
+    "unpack": ("package", "dest"),
+    "inspect": ("package",),
     "compare": ("paths", "out"),
     "question": ("out",),
     "rq": ("out",),

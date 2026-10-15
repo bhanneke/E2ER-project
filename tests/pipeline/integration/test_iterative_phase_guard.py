@@ -49,6 +49,8 @@ def _make_workspace(tmp_path: Path, paper_id: str) -> Path:
             }
         )
     )
+    # Rounds 2+ edit a draft: the guard applies once there is one to drift from.
+    (ws / "paper_draft.tex").write_text("\\section{Introduction}\n", encoding="utf-8")
     return ws
 
 
@@ -451,3 +453,38 @@ def test_strategist_prompt_mentions_revisor_in_iter_rule():
     # And the patch_revisor escape valve is mentioned as the
     # legitimate way to do scoped revisions
     assert "patch_revisor" in rule_section
+
+
+@pytest.mark.asyncio
+async def test_with_no_draft_yet_section_writers_become_the_drafter(tmp_path, mock_llm):
+    """2026-10-14 GDP demo: round 3 sent three section writers with no draft; the last file stood."""
+    runner = _runner(tmp_path, mock_llm)
+    (runner._workspace / "paper_draft.tex").unlink()
+    runner._iteration = 3
+    decision = StrategistDecision(
+        action="dispatch_parallel",
+        work_orders=[
+            WorkOrder(specialist="section_writer", focus="intro", parallel_group=0),
+            WorkOrder(specialist="section_writer", focus="results", parallel_group=0),
+            WorkOrder(specialist="abstract_writer", focus="abstract", parallel_group=1),
+        ],
+        rationale="test",
+    )
+    dispatched: list[str] = []
+
+    async def _capture(work_order, *args, **kwargs):
+        dispatched.append(work_order.specialist)
+        _write_artifact(runner, work_order.specialist)
+        return _successful_contribution(runner._paper_id, work_order.specialist)
+
+    async def _capture_parallel(orders, *args, **kwargs):
+        dispatched.extend(o.specialist for o in orders)
+        return [_successful_contribution(runner._paper_id, o.specialist) for o in orders]
+
+    with (
+        patch("src.core.specialists.dispatcher.execute_work_order", side_effect=_capture),
+        patch("src.core.strategist.runner.execute_with_dependencies", side_effect=_capture_parallel),
+    ):
+        await runner._dispatch(decision)
+
+    assert sorted(dispatched) == ["abstract_writer", "paper_drafter"]

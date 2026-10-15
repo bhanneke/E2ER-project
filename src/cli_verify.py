@@ -103,7 +103,7 @@ def _load_provenance(bundle: Path) -> tuple[dict[str, Any] | None, str | None]:
     return prov, None
 
 
-def _check_integrity(bundle: Path) -> Check:
+def _check_integrity(bundle: Path, package_left_out: dict[str, dict[str, Any]] | None = None) -> Check:
     """Every file against provenance.json: listed, same bytes, same size; nothing else; no links.
 
     The folder is walked without following links (bundle_files.walk); only the
@@ -111,19 +111,33 @@ def _check_integrity(bundle: Path) -> Check:
     path (the anchor check compares them with provenance.json). Operating-
     system clutter (.DS_Store, Thumbs.db, ._*) is ignored and named.
     """
-    from .core.export.bundle_files import NOT_EVIDENCE, walk
+    from .core.export.bundle_files import not_evidence, walk
+    from .core.export.package import declared_left_out
 
     prov, why = _load_provenance(bundle)
     if prov is None:
         return Check("integrity", FAIL, why or "no valid provenance.json in bundle")
     files: dict[str, dict[str, Any]] = prov["files"]
     listing = walk(bundle)
-    on_disk = {rel: p for rel, p in listing.files.items() if rel not in NOT_EVIDENCE}
-    missing, mismatched, resized = [], [], []
+    on_disk = {rel: p for rel, p in listing.files.items() if not not_evidence(rel)}
+    # Data files a .e2er package left out (a source's terms, --no-data). From a package that verify opened, its
+    # manifest is checked against the archive and counts. In a folder, an e2er-package.json is only a file: a
+    # declaration counts only for a file the folder's own records say a source's terms keep out.
+    if package_left_out is not None:
+        declared = package_left_out
+    else:
+        from .core.data_terms import restricted_paths
+
+        restricted = restricted_paths(bundle)
+        declared = {p: item for p, item in declared_left_out(bundle).items() if p in restricted}
+    missing: list[str] = []
+    mismatched: list[str] = []
+    resized: list[str] = []
+    left_out: list[str] = []
     for rel, meta in files.items():
         p = on_disk.get(rel)
         if p is None:
-            missing.append(rel)
+            (left_out if rel in declared else missing).append(rel)
             continue
         if p.stat().st_size != meta["bytes"]:
             resized.append(rel)
@@ -159,7 +173,12 @@ def _check_integrity(bundle: Path) -> Check:
         from .core.dossier import canonical
         from .core.export.provenance import _edges
 
-        if canonical(prov.get("edges", [])) != canonical(_edges(bundle)):
+        recorded = [
+            e
+            for e in prov.get("edges", [])
+            if not (isinstance(e, dict) and e.get("type") == "data" and e.get("output") in left_out)
+        ]
+        if canonical(recorded) != canonical(_edges(bundle)):
             bits.append(
                 "the derivation edges in provenance.json are not the ones the bundle's own reports give "
                 "(table cells, citations, figures, estimation, data): provenance.json was edited"
@@ -179,6 +198,11 @@ def _check_integrity(bundle: Path) -> Check:
             "edges while the paper ships rendered tables — the derivation graph is empty",
         )
     notes = ""
+    if left_out:
+        notes += (
+            f"; {len(left_out)} data file(s) left out of the package ({', '.join(sorted(left_out)[:3])}): "
+            f"{declared[sorted(left_out)[0]].get('reason')}"
+        )
     amendments = prov.get("amendments") or []
     if amendments:
         paths = sorted({a["path"] for a in amendments})
@@ -191,7 +215,7 @@ def _check_integrity(bundle: Path) -> Check:
     return Check(
         "integrity",
         PASS,
-        f"{len(files)} files hash-verified against provenance.json; "
+        f"{len(files) - len(left_out)} files hash-verified against provenance.json; "
         f"{_table_cell_edges(prov)} table cell(s) traced in the derivation graph{notes}",
     )
 
@@ -496,6 +520,16 @@ def _reconstruct_workspace(bundle: Path, ws: Path) -> None:
     if resdir.is_dir():
         for f in resdir.glob("*.csv"):
             shutil.copy2(f, ws / f.name)
+    # The study's design settings, which the number check does not look for in the results
+    # (verify_numbers.design_constants): design files, pre-registration, data dictionary, template.
+    for src in [*sorted((bundle / "design").glob("*_design.json")), bundle / "design" / "preregistration.md"]:
+        if src.is_file() and not (ws / src.name).exists():
+            shutil.copy2(src, ws / src.name)
+    if (bundle / "data" / "data_dictionary.json").is_file():
+        shutil.copy2(bundle / "data" / "data_dictionary.json", ws / "data_dictionary.json")
+    template = ((_load_json(bundle / "provenance.json") or {}).get("run") or {}).get("template")
+    if template and not (ws / "manifest.json").exists():
+        (ws / "manifest.json").write_text(json.dumps({"pipeline": template}), encoding="utf-8")
     # A text study's checks recount the corpus: its design, the corpus (data.db) and
     # the word lists the design names (stop words, lemmas, dictionaries, lexicons).
     if (bundle / "design" / "corpus_design.json").is_file():
@@ -1155,8 +1189,8 @@ def _required_checks(bundle: Path) -> dict[str, str]:
     return out
 
 
-def _run_checks(bundle: Path, online: bool) -> list[Check]:
-    checks = [_check_integrity(bundle), _check_anchor(bundle)]
+def _run_checks(bundle: Path, online: bool, package_left_out: dict[str, dict[str, Any]] | None = None) -> list[Check]:
+    checks = [_check_integrity(bundle, package_left_out), _check_anchor(bundle)]
     with tempfile.TemporaryDirectory() as td:
         ws = Path(td)
         _reconstruct_workspace(bundle, ws)
@@ -1270,11 +1304,60 @@ def verify(
     ``against_file`` (a saved copy of one) compares the folder with what was
     published: the only anchor outside the folder.
     """
+    import contextlib
+
+    from .core.export import package as pkg
+
     bundle_path = Path(bundle)
-    if not bundle_path.is_dir():
-        print(f"e2er verify: {bundle} is not a directory", file=sys.stderr)
-        return 2
-    checks = _run_checks(bundle_path, online)
+    with contextlib.ExitStack() as stack:
+        pre: list[Check] = []
+        left_out: dict[str, dict[str, Any]] | None = None
+        if pkg.is_package(bundle_path):
+            # A .e2er package: unpacked into a temporary folder, every file checked against its manifest first.
+            tmp = Path(stack.enter_context(tempfile.TemporaryDirectory(prefix="e2er-verify-")))
+            try:
+                opened = pkg.open_package(bundle_path, tmp / "study")
+            except pkg.PackageError as e:
+                if json_output:
+                    print(
+                        json.dumps(
+                            {
+                                "checks": [{"name": "package", "status": FAIL, "detail": str(e)}],
+                                "verdict": f"The package is not intact: {e}",
+                                "verified": False,
+                            },
+                            indent=2,
+                        )
+                    )
+                else:
+                    print(f"e2er verify: the package is not intact: {e}", file=sys.stderr)
+                return 1
+            pre.append(
+                Check(
+                    "package",
+                    PASS,
+                    f"{opened.files} file(s) match {pkg.MANIFEST}; fingerprint {opened.manifest.get('fingerprint')}",
+                )
+            )
+            bundle_path = opened.root
+            left_out = pkg.declared_left_out(bundle_path)
+        elif not bundle_path.is_dir():
+            print(f"e2er verify: {bundle} is not a folder or a .e2er package", file=sys.stderr)
+            return 2
+        return _verify_folder(bundle_path, pre, online, json_output, against, against_file, left_out)
+    return 2  # not reached
+
+
+def _verify_folder(
+    bundle_path: Path,
+    pre: list[Check],
+    online: bool,
+    json_output: bool,
+    against: str | None,
+    against_file: str | None,
+    package_left_out: dict[str, dict[str, Any]] | None = None,
+) -> int:
+    checks = pre + _run_checks(bundle_path, online, package_left_out)
     if against or against_file:
         try:
             if against:

@@ -104,7 +104,7 @@ def resolve_workspace(ref: str, settings) -> tuple[str, Path]:
     )
 
 
-def export(paper_id: str, to: str | None = None) -> int:
+def export(paper_id: str, to: str | None = None, *, package: bool = False) -> int:
     from .config import get_settings
     from .core.export.structured import export_paper
 
@@ -123,4 +123,8 @@ def export(paper_id: str, to: str | None = None) -> int:
         print(f"error: export failed: {e}")
         return 1
     print(f"Exported → {out}")
+    if package:
+        from .cli_package import pack_folder
+
+        return pack_folder(out, None, offline=False, no_data=False)
     return 0

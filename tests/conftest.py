@@ -465,6 +465,22 @@ def mock_db():
 
 
 @pytest.fixture(autouse=True)
+def _temporary_files_stay_in_the_test(monkeypatch, tmp_path_factory):
+    """Every temporary folder a test makes (`e2er reproduce`'s run folder, an unpacked package, a subprocess's
+    TMPDIR) lands under pytest's own base folder, which pytest prunes, never in the machine's $TMPDIR.
+
+    On 2026-10-14 the suite filled a disk: each failing reproduce test kept its run folder (up to ~140 MB with
+    its environment) in $TMPDIR, run after run.
+    """
+    import tempfile
+
+    tmp = tmp_path_factory.mktemp("tmp")
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp))
+    monkeypatch.setenv("TMPDIR", str(tmp))
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _isolate_the_cli_installs(monkeypatch, tmp_path_factory):
     """Never let the suite see this machine's AI CLIs outside PATH or Codex's model list.
 

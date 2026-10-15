@@ -61,13 +61,34 @@ CATALOGUE_CSV = "https://gutenberg.pglaf.org/cache/epub/feeds/pg_catalog.csv.gz"
 #: After a Gutendex timeout, searches use the catalogue file for this long.
 _SLOW_SECONDS = 3600
 MAX_BOOKS = 20
+#: Texts are downloaded in batches of this many; each batch is written into the table at once
+#: (``Context.sink``), so a call that is stopped keeps the books it loaded.
+TEXT_BATCH = 5
+#: A text load starts no new batch after this many seconds: it returns the books it has and says
+#: which are left. A specialist's whole call has 30 to 60 minutes (2026-10-14: one Gutenberg load
+#: per call ran into the 1,800 s limit of Claude Code and failed the study).
+CALL_SECONDS = 600
 TERMS_URL = "https://www.gutenberg.org/policy/license.html"
 _START = re.compile(r"^\*\*\*\s*START OF (THE|THIS) PROJECT GUTENBERG EBOOK.*$", re.I | re.M)
 _END = re.compile(r"^\*\*\*\s*END OF (THE|THIS) PROJECT GUTENBERG EBOOK.*$", re.I | re.M)
 _PG = re.compile(r"project\s+gutenberg|gutenberg\.org|gutenberg-tm|pglaf", re.I)
 
 
+def _person(name: str | None, birth: Any, death: Any) -> str:
+    """'Austen, Jane (1775-1817)'; the years left out when neither is known."""
+    if birth is None and death is None:
+        return name or ""
+    return f"{name or ''} ({'' if birth is None else birth}-{'' if death is None else death})"
+
+
+def _people(people: list[dict[str, Any]]) -> str | None:
+    return "; ".join(_person(p.get("name"), p.get("birth_year"), p.get("death_year")) for p in people) or None
+
+
 def _book_row(b: dict[str, Any]) -> dict[str, Any]:
+    """One catalogue row. ``translators`` (names with their years) is what tells a translation from a
+    book written in its language: the weather-words demo (2026-10-14) kept ten translated novels
+    (Dumas, Verne, Flaubert, ...) because the table had no such column."""
     authors = b.get("authors") or []
     return {
         "id": b.get("id"),
@@ -75,6 +96,8 @@ def _book_row(b: dict[str, Any]) -> dict[str, Any]:
         "authors": "; ".join(a.get("name", "") for a in authors) or None,
         "author_birth_year": authors[0].get("birth_year") if authors else None,
         "author_death_year": authors[0].get("death_year") if authors else None,
+        "authors_years": _people(authors),
+        "translators": _people(b.get("translators") or []),
         "languages": ",".join(b.get("languages") or []) or None,
         "subjects": "; ".join(b.get("subjects") or []) or None,
         "bookshelves": "; ".join(b.get("bookshelves") or []) or None,
@@ -223,9 +246,18 @@ def _books_fetched(rows: list[dict[str, Any]], what: str, query: str, record: di
 _YEARS = re.compile(r",\s*(?:(\d{1,4})\??\s*(BCE)?)?\s*-\s*(?:(\d{1,4})\??\s*(BCE)?)?\s*$")
 
 
+_ROLE = re.compile(r"\s*\[([^\]]*)\]\s*$")
+
+
+def _role(raw: str) -> str:
+    """The role a catalogue file gives a person after the name ('[Translator]', '[Editor]'), lower case."""
+    m = _ROLE.search(raw.strip())
+    return m.group(1).strip().lower() if m else ""
+
+
 def _author(raw: str) -> tuple[str, int | None, int | None]:
     """'Austen, Jane, 1775-1817' -> ('Austen, Jane', 1775, 1817); years missing or BCE are negative/None."""
-    raw = re.sub(r"\s*\[[^\]]*\]\s*$", "", raw.strip())  # "[Editor]", "[Translator]"
+    raw = _ROLE.sub("", raw.strip())  # "[Editor]", "[Translator]"
     m = _YEARS.search(raw)
     if not m:
         return raw, None, None
@@ -257,7 +289,10 @@ def catalogue_rows(lines: Any, q: dict[str, Any], limit: int) -> list[dict[str, 
         num = (rec.get("Text#") or "").strip()
         if ids and num not in ids:
             continue
-        authors = [_author(a) for a in (rec.get("Authors") or "").split(";") if a.strip()]
+        people = [a for a in (rec.get("Authors") or "").split(";") if a.strip()]
+        # A translator is not an author: the file lists both, the translator marked "[Translator]".
+        translators = [_author(a) for a in people if _role(a) == "translator"]
+        authors = [_author(a) for a in people if _role(a) != "translator"]
         names = "; ".join(a[0] for a in authors)
         if words and not all(w in f"{rec.get('Title') or ''} {names}".lower() for w in words):
             continue
@@ -278,6 +313,8 @@ def catalogue_rows(lines: Any, q: dict[str, Any], limit: int) -> list[dict[str, 
                 "authors": names or None,
                 "author_birth_year": first[1],
                 "author_death_year": first[2],
+                "authors_years": "; ".join(_person(*a) for a in authors) or None,
+                "translators": "; ".join(_person(*t) for t in translators) or None,
                 "languages": ",".join(sorted(book_langs)) or None,
                 "subjects": rec.get("Subjects") or None,
                 "bookshelves": rec.get("Bookshelves") or None,
@@ -343,17 +380,30 @@ async def fetch_text(ctx: Context, params: dict[str, Any]) -> Fetched:
     if len(ids) > MAX_BOOKS:
         raise FetchError(f"{len(ids)} books: load at most {MAX_BOOKS} at a time (Project Gutenberg asks for restraint)")
     import asyncio
+    import json
+    import time
 
+    started = time.monotonic()
+    looked_up = _query_cache({"ids": ",".join(ids), "for": "text"}, 0)
     try:
-        books, urls = await asyncio.wait_for(
-            rest_json_pages(ctx.http, GUTENDEX, {"ids": ",".join(ids)}, items="results", paging="next"),
-            timeout=GUTENDEX_TIMEOUT,
-        )
-    except TimeoutError:
-        raise FetchError(
-            f"Gutendex, the catalogue e2er checks each book's copyright status with, did not answer within "
-            f"{GUTENDEX_TIMEOUT:.0f} s. No text was loaded; try again later."
-        ) from None
+        kept = json.loads(looked_up.read_text(encoding="utf-8"))
+        books, urls = kept["books"], kept["urls"]
+    except (OSError, ValueError, KeyError):
+        try:
+            books, urls = await asyncio.wait_for(
+                rest_json_pages(ctx.http, GUTENDEX, {"ids": ",".join(ids)}, items="results", paging="next"),
+                timeout=GUTENDEX_TIMEOUT,
+            )
+        except TimeoutError:
+            raise FetchError(
+                f"Gutendex, the catalogue e2er checks each book's copyright status with, did not answer within "
+                f"{GUTENDEX_TIMEOUT:.0f} s. No text was loaded; try again later."
+            ) from None
+        try:  # the same books asked for again today (a call that stopped at its time limit) skip Gutendex
+            looked_up.parent.mkdir(parents=True, exist_ok=True)
+            looked_up.write_text(json.dumps({"books": books, "urls": urls}), encoding="utf-8")
+        except OSError:
+            pass
     by_id = {str(b.get("id")): b for b in books}
     missing = [i for i in ids if i not in by_id]
     if missing:
@@ -365,8 +415,18 @@ async def fetch_text(ctx: Context, params: dict[str, Any]) -> Fetched:
             'a copyrighted ebook you found on PG, you have to contact the author"); e2er does not load it'
         )
     today = datetime.now(UTC).strftime("%Y-%m-%d")
-    rows, files, removed, citations = [], [], {}, []
-    for i in ids:
+    rows: list[dict[str, Any]] = []
+    files: list[dict[str, Any]] = []
+    removed: dict[str, Any] = {}
+    citations: list[str] = []
+    left: list[str] = []
+    for n, i in enumerate(ids):
+        if n and n % TEXT_BATCH == 0:
+            if ctx.sink is not None:
+                ctx.sink(rows)  # this batch is in the table now, whatever happens to the call
+            if time.monotonic() - started > CALL_SECONDS:
+                left = ids[n:]
+                break
         url = f"{MIRROR}/cache/epub/{i}/pg{i}.txt"
         path, meta = await download_file(ctx.http, url, "gutenberg", version=today, name=f"pg{i}.txt")
         raw = path.read_bytes().decode("utf-8", errors="replace")
@@ -384,9 +444,22 @@ async def fetch_text(ctx: Context, params: dict[str, Any]) -> Fetched:
         row.update({"text": text, "characters": len(text), "words": len(text.split())})
         rows.append(row)
         citations.append(_cite(by_id[i]))
+    if ctx.sink is not None:
+        ctx.sink(rows)
+    loaded = ids[: len(rows)]
+    record: dict[str, Any] = {}
+    note = ""
+    if left:
+        record["incomplete"] = {"loaded": loaded, "not_loaded": left}
+        note = (
+            f"INCOMPLETE: {len(loaded)} of {len(ids)} books loaded; one call stops after "
+            f"{CALL_SECONDS // 60} minutes so that it never runs as long as a specialist's whole call. The "
+            f"{len(loaded)} are in the table. Run the same command again: the books downloaded today are read "
+            f"from the cache, and the rest ({', '.join(left)}) are loaded. "
+        )
     return Fetched(
         rows=rows,
-        series=f"Project Gutenberg texts {', '.join(ids)} (header, footer and licence removed)",
+        series=f"Project Gutenberg texts {', '.join(loaded)} (header, footer and licence removed)",
         query=f"{MIRROR}/cache/epub/<id>/pg<id>.txt for {', '.join(ids)}; catalogue {urls[0]}",
         version=today,
         files=files,
@@ -397,8 +470,10 @@ async def fetch_text(ctx: Context, params: dict[str, Any]) -> Fetched:
             "stripped": removed,
             "stripping": "Header and footer cut at the *** START OF / *** END OF lines; any other line naming "
             "Project Gutenberg dropped (licence: strip the license and all references).",
+            **record,
         },
-        note=(
+        note=note
+        + (
             "One row per book: catalogue fields and `text`, the book text without Project Gutenberg's header, footer "
             "and licence (what was cut is in the load record). Files are the plain-text edition as of the load; "
             "Project Gutenberg corrects books and rebuilds these files, so a later load can differ."
@@ -486,9 +561,9 @@ SOURCE = Source(
                 Arg("limit", f"Most books (default 100, at most {32 * MAX_PAGES}).", type=int),
             ),
             fetch=fetch_books,
-            card="Books in the catalogue → one row per book (id, title, authors and years, languages, subjects, "
-            "downloads). Params: search, topic, languages (list), author_year_start, author_year_end, ids (list), "
-            "sort, limit.",
+            card="Books in the catalogue → one row per book (id, title, authors and years, translators, languages, "
+            "subjects, bookshelves, downloads). Params: search, topic, languages (list), author_year_start, "
+            "author_year_end, ids (list), sort, limit.",
         ),
         Operation(
             "text",

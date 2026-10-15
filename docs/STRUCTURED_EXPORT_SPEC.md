@@ -81,6 +81,121 @@ with the same rows in another order is the study's input.
 script wrote each results file (the script log's output hashes); `e2er verify`
 checks the folder against it ("results from code").
 
+### The .e2er package (format `e2er-package/1`)
+
+`e2er pack <study id | exported folder> [-o PATH] [--offline] [--no-data]` writes an
+exported folder into one file, `<slug>.e2er` (next to the folder unless `-o` says
+otherwise); `e2er export --package` does the same after an export, and the finish page
+offers it as "Download package (.e2er)". `e2er verify`, `e2er reproduce`, `e2er unpack
+<file> [folder]` and `e2er inspect <file>` read it. Code: `src/core/export/package.py`.
+
+**Container.** A zip archive, every entry compressed with deflate (level 6). The first
+entry is `e2er-package.json`; every other entry follows in sorted order of its path.
+Every entry carries the timestamp 1980-01-01 00:00:00 and the permissions `0644` of a
+regular file; there are no directory entries, links or other kinds of entry. The same
+folder therefore packs to the same bytes, wherever it lies and whatever its file times.
+
+**Paths.** Relative, POSIX, NFC, inside the package: no absolute path or drive letter,
+no `..` or `.` segment, no empty segment, no backslash, no control character
+(`bundle_files.key_problem`), and no two paths that differ only in case.
+
+**Contents.** The exported folder as `e2er verify` reads it (`bundle_files.walk`), without
+dotfiles, operating-system clutter and `.e2er/` (local publishing records), plus the
+package's own files under `e2er-package/`:
+
+| Path | What |
+|---|---|
+| everything of the export | paper, code, results, design, reviews, `README.md`, `provenance.json`, `reproduce.json`, `report.html`, `e2er.json` when published, and the data (see below) |
+| `e2er-package/requirements.lock.txt` | every package the code needs (the study's pins and what they need), one version each, with the SHA-256 of every file an installer may use (`uv pip compile --generate-hashes --universal`), resolved for the recipe's Python with releases up to the day after the export (`--exclude-newer`), so packing again later gives the same lock |
+| `e2er-package/wheels/<platform>/*.whl` | `--offline` only: the wheels of the locked set for this computer (`pip download --only-binary=:all:`); `<platform>` is `<sys.platform>-<machine>-py<X.Y>`, e.g. `darwin-arm64-py3.14` |
+
+**Data.** A data file (under `data/`, with a data ending: `.db`, `.csv`, `.parquet`, …)
+from a source whose terms do not allow passing the data on (`data_terms.uses`: the GMD,
+Yahoo Finance, the WHO GHO, Gaia, …) is left out; `--no-data` leaves out every data file
+and every input the recipe lists. **Data built from such data are restricted too**
+(`src/core/derived_data.py`): a data file a script writes after reading a restricted file or
+table (directly or through module-level constants, `os.path.join`, `Path / "x"`; and, in a
+workspace, every file its script-log runs recorded as `outputs`) inherits the restriction,
+transitively. Export records them in `provenance.json` (`run.derived_data`: path, the
+connectors, the scripts that write them), so the record holds also when a script is not
+shipped; pack, publish and verify read that record and the folder's scripts. Such a file is
+left out with the reason "built from ESA Gaia Data Release 3 (Gaia) data, whose terms do not
+allow passing it on"; `e2er publish` treats it like the source's own data (the same
+confirmation for public data) and warns when no recorded step builds it again. The records of the data (`data_sources.json`,
+`data_dictionary.json`, `data_summary.md`) stay. A left-out file that the recipe lists as
+an input with `"reload"` is rebuilt by `e2er reproduce`: `code/get_data.py` loads it again
+and the data-preparation steps (`"when_missing"`) build the study's own tables. One that
+the recipe cannot reload is named in the manifest's notes ("a rerun of the package cannot
+rebuild it"); one the code does not read at all is left out without a note. A left-out
+derived input is built again by the script that wrote it, when every restricted file or table
+that script reads is loaded again by the recipe: export writes that step into the recipe
+(`"rebuild": "clean_gaia.py"` on the input, a step with `"when_missing"` after `get_data.py`);
+for a recipe written before, the package carries it in the manifest's `rebuild` list and
+`e2er reproduce` adds it to the recipe it runs.
+
+**`e2er-package.json`.**
+
+```json
+{
+  "format": "e2er-package/1",
+  "e2er_version": "0.16.1",                 // the e2er that packed it
+  "created": "20261014",                    // the export's date (provenance.json run.exported_at), not the packing time
+  "study": {"id": "…", "title": "…", "question": "…", "authors": ["…"], "folder": "<slug>",
+            "template": "…", "exported_at": "20261014", "e2er_version": "0.16.0", "purpose": "…"},
+  "contents": [{"path": "code/run_estimation.py", "sha256": "…", "bytes": 27761, "part": "study"},
+               {"path": "e2er-package/requirements.lock.txt", "sha256": "…", "bytes": 9120, "part": "package"}],
+  "fingerprint": "sha256:…",                // SHA-256 of the canonical JSON of [{path, sha256, bytes}], sorted by path
+  "left_out": [{"path": "data/data.db", "reason": "the terms of the Global Macro Database (GMD) do not allow passing the data on",
+                "source": "gmd", "rebuilt_by": {"by": "code/get_data.py", "source": "…"},
+                "needed": true}],               // needed: the recipe lists it as an input (the code reads it)
+  "rebuild": [{"path": "data/gaia_clean.csv", "script": "clean_gaia.py", "from": "code/scratch/clean_gaia.py"}],
+  "recipe": {"present": true, "python": "3.12", "requirements": "code/requirements.txt",
+             "steps": [{"run": ["python", "get_data.py"], "about": "…"}, …],
+             "inputs": [{"path": "data.db", "source": "…", "reload": "get_data.py"}],
+             "compare": ["results/estimation_results.json"]},
+  "environment": {"python": "3.12", "lock": "e2er-package/requirements.lock.txt", "hashes": true,
+                  "resolved_as_of": "2026-10-15", "note": "…"},
+  "wheels": {"platform": "darwin-arm64-py3.12", "python": "3.12", "folder": "e2er-package/wheels/darwin-arm64-py3.12",
+             "files": 15, "bytes": 50331648},   // null without --offline
+  "notes": ["…"]
+}
+```
+
+The manifest is not listed in `contents`; the fingerprint covers every other file. The
+canonical JSON is `json.dumps(rows, sort_keys=True, separators=(",", ":"), ensure_ascii=False)`
+in UTF-8. Without the internet the lock cannot be resolved: `environment.lock` is `null`,
+`environment.note` says so, and a rerun installs from the recipe's own pins (without hashes).
+
+**Opening a package** (`verify`, `reproduce`, `unpack`; `inspect` reads the manifest only).
+Nothing in the package is run. In order: the manifest must be present, at most 32 MB,
+valid JSON without duplicate keys, in format `e2er-package/1`, and its fingerprint must
+match its own contents list. Then, before anything is written: every entry name is checked
+(see Paths), a link entry is refused, every entry must be listed in the manifest with its
+size and every listed file must be present, a file that unpacks to more than 1000 times
+its packed size (and more than 1 MB) is refused, and so are more than 200,000 entries or
+more than 64 GB in all (`E2ER_PACKAGE_MAX_BYTES`). Files are then written one by one into
+a new or empty folder (never executable, never following a link), hashed as they are
+written; a file larger than listed or with another SHA-256 stops the unpacking with its
+name ("README.md does not match e2er-package.json: it was changed after packing") and the
+folder is removed. `e2er-package.json` is written into the folder last.
+
+**Verify and reproduce on a package.** `e2er verify` adds a first check, "package"
+(every file matches the manifest), then verifies the unpacked folder as any folder:
+`e2er-package.json` and `e2er-package/` are not part of the study's evidence
+(`bundle_files.not_evidence`), and a data file the manifest declares left out is reported
+in the integrity check instead of failing it (data files only). In a plain folder (an
+unpacked package, or any folder with an `e2er-package.json` in it) the file is only a file:
+a declaration counts only for a data file the folder's own records say a source's terms keep
+out (`data_terms.restricted_paths`); any other missing file fails the check. `e2er reproduce` installs
+from `e2er-package/requirements.lock.txt` (the installers check every hash) and, when the
+package carries wheels for this computer's platform and the recipe's Python, from those
+with `--no-index --find-links` (no internet); wheels for another computer are not used, and
+the report says the packages are downloaded. The location of the wheels is set by e2er,
+never read from `reproduce.json`.
+
+**Versions.** A reader refuses a package whose `format` it does not know and says to update
+e2er. A later `e2er-package/2` may add fields; `e2er-package/1` readers ignore unknown fields.
+
 ### Artifact → folder mapping (driven by `SPECIALIST_ARTIFACTS`, registry.py)
 
 | Source artifact(s) | → destination |

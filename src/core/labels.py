@@ -245,6 +245,7 @@ CHECKS: dict[str, str] = {
 
 #: The checks of `e2er verify` (the finish page).
 VERIFY_CHECKS: dict[str, str] = {
+    "package": "Every file of the package matches its list",
     "integrity": "Every file matches its fingerprint",
     "anchor": "The record on e2er.org matches the folder",
     "numbers": "Every table number traces to its source",
@@ -278,6 +279,7 @@ _RUNNING_STATUSES = {
     "review",
     "revision",
     "replication",
+    "finishing",
 }
 
 

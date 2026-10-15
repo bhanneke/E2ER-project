@@ -217,6 +217,45 @@ async def export_study(paper_id: str) -> dict[str, Any]:
     }
 
 
+@router.post("/api/papers/{paper_id}/package", dependencies=[Depends(require_local_session)])
+async def package_study(paper_id: str) -> dict[str, Any]:
+    """`e2er pack` on the study's current folder: one .e2er file next to it, for "Download package (.e2er)"."""
+    from ..core.export import package as pkg
+
+    await _paper(paper_id)
+    bundle = _bundle(paper_id)
+    try:
+        packed = await asyncio.to_thread(pkg.build, bundle)
+    except pkg.PackageError as e:
+        raise HTTPException(status_code=422, detail=f"The package could not be written: {e}") from e
+    left = [
+        f"{i['path']} is left out ({i['reason']}): {pkg.rerun_words(i).replace('`', '')}."
+        for i in packed.manifest.get("left_out") or []
+    ]
+    return {
+        "path": str(packed.path),
+        "name": packed.path.name,
+        "size": pkg.human_size(packed.size),
+        "fingerprint": packed.manifest["fingerprint"],
+        "notes": left + list(packed.notes),
+        "download": f"/api/papers/{paper_id}/package",
+    }
+
+
+@router.get("/api/papers/{paper_id}/package", dependencies=[Depends(require_local_session)])
+async def download_package(paper_id: str) -> Any:
+    """The .e2er file written for the study's current folder (by the button above, or `e2er pack`)."""
+    from fastapi.responses import FileResponse
+
+    from ..core.export import package as pkg
+
+    await _paper(paper_id)
+    file = pkg.default_path(_bundle(paper_id))
+    if not file.is_file():
+        raise HTTPException(status_code=404, detail="The package is not written yet. Use the button first.")
+    return FileResponse(file, media_type="application/zip", filename=file.name)
+
+
 #: What "Prepare the folder" did, in one sentence (export/current.py).
 _EXPORT_NOTES = {
     "unchanged": "Nothing changed since the folder was prepared: it is still the current one.",

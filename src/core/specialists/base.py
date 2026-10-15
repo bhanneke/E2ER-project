@@ -164,18 +164,26 @@ async def run_specialist(
     )
     t_loop = time.time()
 
-    result = await backend.tool_loop(
-        system=system,
-        messages=messages,
-        tools=tools,
-        tool_handler=handler,
-        max_turns=_MAX_TURNS,
-        # Forwarded so the CLI backend can wire E2ER_PAPER_ID / E2ER_SPECIALIST
-        # into the subprocess env. SDK backends ignore them — the in-process
-        # tool handler already carries this state.
-        paper_id=paper_id,
-        specialist=specialist,
-    )
+    # The time limit of this call, as the template or its step sets it (CLI backends).
+    from ...modules.llm.cli_support import call_timeout
+    from ..pipeline.components import timeout_for
+
+    limit_token = call_timeout.set(timeout_for(specialist))
+    try:
+        result = await backend.tool_loop(
+            system=system,
+            messages=messages,
+            tools=tools,
+            tool_handler=handler,
+            max_turns=_MAX_TURNS,
+            # Forwarded so the CLI backend can wire E2ER_PAPER_ID / E2ER_SPECIALIST
+            # into the subprocess env. SDK backends ignore them — the in-process
+            # tool handler already carries this state.
+            paper_id=paper_id,
+            specialist=specialist,
+        )
+    finally:
+        call_timeout.reset(limit_token)
 
     duration = time.time() - t0
     logger.info(
@@ -306,6 +314,10 @@ async def run_specialist(
         )
     except Exception as e:
         logger.debug("Contribution log skipped (no DB?): %s", e)
+
+    if not result.success and getattr(result, "stop_reason", "") == "timeout":
+        # The call ran out of time: the run pauses (dispatcher/runner), Resume gives a fresh attempt.
+        raise _timed_out(specialist, backend_name, result.error or "", duration)
 
     return Contribution(
         paper_id=paper_id,
@@ -1069,3 +1081,22 @@ def _find_output_file(workspace: Path, specialist: str, expected: str) -> str:
     canonical.parent.mkdir(parents=True, exist_ok=True)
     found.rename(canonical)
     return str(canonical)
+
+
+def _timed_out(specialist: str, backend_name: str, error: str, seconds: float) -> Exception:
+    """The pause for a call that ran into its time limit, with the sentence the researcher reads."""
+    import re as _re
+
+    from ...modules.llm.plan_limit import CallTimedOutError
+    from .. import labels
+
+    m = _re.search(r"limit (\d+)s", error)
+    limit = int(m.group(1)) if m else int(seconds)
+    minutes = max(1, round(limit / 60))
+    who = labels.specialist(specialist)
+    status = (
+        f"Paused: one call ran into its time limit ({minutes} minutes, {limit:,} s) and was stopped ({who}). "
+        "The files it wrote are kept. Press Resume to give it a new attempt; to allow more time, set "
+        f"[timeouts] {specialist} = <minutes> in the template (or CLAUDE_CODE_TIMEOUT / CODEX_TIMEOUT in .env)."
+    )
+    return CallTimedOutError(backend_name, error, status, specialist=specialist)

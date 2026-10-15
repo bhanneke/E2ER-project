@@ -115,6 +115,14 @@ class TestFlattenJson:
         flat = _flatten_json({"a": 1.0}, prefix="src")
         assert flat == {"src.a": 1.0}
 
+    def test_numeric_keys_are_source_values(self):
+        # A sensitivity grid keyed by its shifts (demo 3, 2026-10-14): the keys are values.
+        flat = _flatten_json({"shift": {"-0.3": {"b": 0.912}, "+0.2": {"b": 1.191}, "nan": 1, "1976-1985": 2}})
+        assert flat["shift.-0.3#key"] == -0.3
+        assert flat["shift.+0.2#key"] == 0.2
+        assert flat["shift.-0.3.b"] == 0.912
+        assert not any(k.endswith("nan#key") or k.endswith("1976-1985#key") for k in flat)
+
 
 # ---------------------------------------------------------------------------
 # _extract_table_numbers
@@ -996,3 +1004,21 @@ def test_prose_a_percent_result_next_to_confidence_words_is_still_checked(tmp_pa
     ws = _ws_with_est(tmp_path, est, "The coverage rate is 87 percent in the hold-out.\n")
     report = verify(tmp_path / "paper_draft.tex", ws)
     assert report.prose_mismatched == 1
+
+
+def test_table_row_labels_that_are_result_keys_trace(tmp_path: Path):
+    """verify's rounding rule on a table whose row labels are the keys of a results grid."""
+    est = {
+        "result_kind": "descriptive",
+        "mc_sensitivity_shift": {"-0.3": {"b": 0.912}, "+0.0": {"b": 1.123}, "+0.3": {"b": 1.175}},
+    }
+    rows = "$-0.3$ & 0.912 \\\\\n$0.0$ & 1.123 \\\\\n$+0.3$ & 1.175 \\\\\n"
+    draft = "\\begin{tabular}{lc}\n\\toprule\nShift & $b$ \\\\\n\\midrule\n" + rows + "\\bottomrule\n\\end{tabular}\n"
+    ws = _ws_with_est(tmp_path, est, draft)
+    report = verify(tmp_path / "paper_draft.tex", ws, rounding=True)
+    assert report.total_values_in_tables == 6
+    assert not report.mismatches, [(m.draft_value, m.source_key) for m in report.mismatches]
+    # A label no key or value holds still fails.
+    ws = _ws_with_est(tmp_path, est, draft.replace("$-0.3$", "$-0.4$"))
+    report = verify(tmp_path / "paper_draft.tex", ws, rounding=True)
+    assert [m.draft_value for m in report.mismatches] == ["-0.4"]

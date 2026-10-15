@@ -56,6 +56,7 @@ from .cli_support import (
     cli_version,
     clip,
     db_path,
+    effective_timeout,
     flatten_prompt,
     kill_process_group,
     run_env,
@@ -283,7 +284,7 @@ class CodexBackend(LLMBackend):
             try:
                 stdout_bytes, stderr_bytes = await asyncio.wait_for(
                     proc.communicate(input=prompt.encode("utf-8")),
-                    timeout=self._timeout,
+                    timeout=effective_timeout(self._timeout),
                 )
             except asyncio.CancelledError:
                 await stop_on_cancel(proc)
@@ -295,7 +296,7 @@ class CodexBackend(LLMBackend):
                 return ToolLoopResult(
                     success=False,
                     output="",
-                    error=f"Codex timed out after {elapsed:.0f}s (limit {self._timeout}s)",
+                    error=f"Codex timed out after {elapsed:.0f}s (limit {effective_timeout(self._timeout)}s)",
                     duration_seconds=elapsed,
                     stop_reason="timeout",
                 )

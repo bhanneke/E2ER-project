@@ -424,6 +424,16 @@ def _describe(
         shared = "published with the study" if availability["data"]["access"] == "public" else "kept private"
         what = "terms and citation" if use.terms.citation else "terms"
         print(f"note: the study uses {use.label} data ({shared}); the description states its {what}")
+        for rel in sorted(use.derived):
+            print(f"note: {rel} is {use.reason(rel)}; it is treated like the source's own data")
+    if licensed:
+        from .core.derived_data import cannot_rebuild
+
+        for d in cannot_rebuild(b):
+            print(
+                f"warning: {d.path} is built from data whose terms keep it out of a published study, and no "
+                "recorded step builds it again: a reader without it cannot run the study's code again"
+            )
     if (zenodo or zenodo_plan_only) and availability["data"]["access"] == "public":
         # Data whose terms no Zenodo licence fits (Yahoo Finance) are never deposited.
         refused_terms = data_terms.no_zenodo(licensed)

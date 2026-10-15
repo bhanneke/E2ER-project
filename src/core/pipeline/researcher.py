@@ -355,8 +355,7 @@ def _withdraw_check_approvals(state: PipelineState, spec: Any, later: list[str])
         meta.pop("numbers_accepted", None)
         meta.pop("numbers_patch_tried", None)
         meta.pop("number_check", None)
-    if "initial" in later:
-        meta.pop("contract_accepted_orders", None)
+    # (Outputs kept at a contract stop in the initial phase: _reset_initial_phase.)
     skips = [p for p in meta.get("contract_accepted_skip") or [] if p.get("phase") not in later]
     if skips:
         meta["contract_accepted_skip"] = skips
@@ -421,15 +420,34 @@ def apply_rerun(workspace: Path, state: PipelineState, spec: Any, step: str, rem
     if any(spec.step(n).kind == "strategist" for n in later):
         # The analysis runs again: so do the checks of its results that sit inside the dispatch
         # (a gate with `after` naming the analysis, e.g. text_results, spatial_results).
+        again: set[str] | None = {"econometrics_specialist"}
+        if "initial" in later:
+            again = _reset_initial_phase(state, specialist)
         for s in spec.steps:
-            if s.kind == "gate" and s.after and "econometrics_specialist" in s.after:
-                if s.name in state.completed_stages:
-                    state.completed_stages.remove(s.name)
-                state.metadata.pop(f"retried_{s.name}", None)
+            if not s.after or (again is not None and not set(s.after) & again):
+                continue
+            # A check or stop inside the dispatch that reads work done again: it runs (stops) again.
+            if s.name in state.completed_stages:
+                state.completed_stages.remove(s.name)
+            if s.kind != "gate" and s.name in state.approved_stages:
+                state.approved_stages.remove(s.name)
+            state.metadata.pop(f"retried_{s.name}", None)
     step_done = state.metadata.get("step_done")
+    before = list(step_done.get(step, [])) if isinstance(step_done, dict) else []
     if isinstance(step_done, dict):
         for name in later:  # a step run again runs all of its specialists
             step_done.pop(name, None)
+    if specialist and target.kind == "specialists" and specialist in target.run:
+        # From a specialist of a fixed step: it and the ones after it run again, the earlier ones
+        # (that ran) keep their output. In a parallel step none runs after another.
+        earlier = (
+            [n for n in target.run if n != specialist]
+            if target.parallel
+            else target.run[: target.run.index(specialist)]
+        )
+        kept = [n for n in earlier if step in state.completed_stages or n in before]
+        if kept:
+            state.metadata.setdefault("step_done", {})[step] = kept
     state.metadata.setdefault("rerun", []).append({"target": step, "remark": remark})
     state.metadata.pop("sent_back", None)
     state.metadata.pop("review", None)
@@ -456,6 +474,54 @@ def apply_rerun(workspace: Path, state: PipelineState, spec: Any, step: str, rem
     if specialist:
         payload["specialist"] = specialist
     return payload
+
+
+def _reset_initial_phase(state: PipelineState, specialist: str | None) -> set[str] | None:
+    """The initial phase runs again: from ``specialist`` on, or (None) all of it, planned afresh.
+
+    The phase skips work orders recorded as done (``initial_done``) and checks whose
+    specialists have run (``done_specialists``). Before, a rerun cleared neither: on the
+    2026-10-14 text-analysis demo ``e2er rerun --from data_analyst`` resumed only the
+    unfinished text validator, and the data analyst never ran again. Now the named
+    specialist and every work order of the plan that runs after it (by the dispatch's
+    own order, see dispatcher.order_by_dependencies) lose their completion; earlier
+    ones keep it. Returns the specialists that run again, or None for all of them.
+    """
+    from ..specialists.contracts import WorkOrder
+    from ..specialists.dispatcher import order_by_dependencies
+
+    meta = state.metadata
+    meta.pop("pending_orders", None)  # a stop inside the phase is replaced by the rerun
+    raw = meta.get("initial_plan") or meta.get("initial_orders") or []
+    plan = [WorkOrder(**{**d, "paper_id": d.get("paper_id") or state.paper_id}) for d in raw if isinstance(d, dict)]
+    if not specialist or specialist not in {w.specialist for w in plan}:
+        # The whole step: the strategist plans it again, and nothing of it counts as done.
+        for name in ("initial_orders", "initial_done", "initial_plan", "done_specialists", "contract_accepted_orders"):
+            meta.pop(name, None)
+        return None
+
+    def key(w: WorkOrder) -> str:
+        return f"{w.specialist}\n{w.focus}"
+
+    ordered, _ = order_by_dependencies(plan)
+    first = min(w.parallel_group for w in ordered if w.specialist == specialist)
+    again = [w for w in ordered if w.specialist == specialist or w.parallel_group > first]
+    names = {w.specialist for w in again}
+    keys = {key(w) for w in again}
+    finished = "initial" in state.completed_stages
+    done_before = set(meta.get("initial_done") or [])
+    done_names = set(meta.get("done_specialists") or [])
+    meta["initial_orders"] = [w.model_dump() for w in plan]
+    meta["initial_done"] = [
+        key(w) for w in plan if key(w) not in keys and (finished or key(w) in done_before or w.specialist in done_names)
+    ]
+    meta["done_specialists"] = sorted(done_names - names)
+    accepted = [k for k in meta.get("contract_accepted_orders") or [] if k not in keys]
+    if accepted:
+        meta["contract_accepted_orders"] = accepted
+    else:
+        meta.pop("contract_accepted_orders", None)
+    return names
 
 
 def step_for_rerun(spec: Any, mode: str, name: str) -> str:

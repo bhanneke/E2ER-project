@@ -40,8 +40,9 @@ def render(
     files: list[rp.FileComparison],
     tables: dict[str, Any] | None,
     verdict: str,
+    kept: bool = True,
 ) -> str:
-    """The plain report. Pure, for tests."""
+    """The plain report. Pure, for tests. ``kept``: the run folder (with the steps' full output) stays."""
     lines = [f"e2er reproduce: {folder}", ""]
     if env_info:
         pins = ", ".join(
@@ -75,7 +76,10 @@ def render(
             if s.missing:
                 lines.append(f"       {s.missing}")
             lines += [f"       {t}" for t in s.tail.splitlines()]
-            lines.append(f"       full output: {s.log}")
+            if kept:
+                lines.append(f"       full output: {s.log}")
+            else:
+                lines.append(f"       full output: {Path(s.log).name}, removed with the run folder (--keep keeps it)")
     if len(steps) < len(recipe["steps"]):
         lines.append(f"  {len(recipe['steps']) - len(steps)} later step(s) not run.")
     lines += ["", "Inputs, compared with the study's own files (SHA-256):"]
@@ -138,20 +142,76 @@ def _inputs_only(recipe: dict[str, Any], inputs: list[dict[str, Any]]) -> str:
 
 
 def reproduce(folder: str, *, keep: bool = False, json_out: str | None = None, allow_network: bool = False) -> int:
-    root = Path(folder).expanduser().resolve()
+    """`e2er reproduce`. The run folder and an unpacked package are temporary: removed when the command ends,
+    also after a failure, unless ``keep`` (then the report says where they are)."""
+    from .core.export import package as pkg
+
+    path = Path(folder).expanduser().resolve()
+    if not pkg.is_package(path):
+        return _reproduce_folder(path, keep=keep, json_out=json_out, allow_network=allow_network)
+    # A .e2er package: unpacked into a folder of its own, every file checked against the manifest first.
+    unpacked = Path(tempfile.mkdtemp(prefix="e2er-package-"))
+    try:
+        try:
+            opened = pkg.open_package(path, unpacked / "study")
+        except pkg.PackageError as e:
+            print(f"error: the package is not intact: {e}")
+            return 2
+        print(
+            f"Unpacked {path.name} into {opened.root}: {opened.files} file(s) match {pkg.MANIFEST} "
+            f"(fingerprint {opened.manifest.get('fingerprint')}).",
+            flush=True,
+        )
+        code = _reproduce_folder(opened.root, keep=keep, json_out=json_out, allow_network=allow_network, package=True)
+        if keep:
+            print(f"The unpacked package is kept: {opened.root}")
+        return code
+    finally:
+        if not keep:
+            shutil.rmtree(unpacked, ignore_errors=True)
+
+
+def _reproduce_folder(
+    root: Path, *, keep: bool, json_out: str | None, allow_network: bool, package: bool = False
+) -> int:
+    from .core.export import package as pkg
+
     if not root.is_dir():
-        print(f"error: {folder} is not a folder")
+        print(f"error: {root} is not a folder or a .e2er package")
         return 2
     try:
-        recipe = rp.load_recipe(root)
+        recipe = rp.load_recipe(root, rebuild=pkg.rebuild_steps(root))
     except rp.RecipeError as e:
         print(f"error: {e}")
         return 2
+    # Never from reproduce.json itself: only e2er sets where the wheels are, for an unpacked package.
+    recipe.pop("wheelhouse", None)
+    if package or pkg.package_manifest(root) is not None:
+        source = pkg.install_source(root, recipe)
+        if source.get("requirements"):
+            recipe["requirements"] = source["requirements"]
+        if source.get("wheelhouse"):
+            recipe["wheelhouse"] = source["wheelhouse"]
+        if source.get("wheelhouse_skipped"):
+            print(f"Note: {source['wheelhouse_skipped']}.")
 
     run_dir = Path(tempfile.mkdtemp(prefix="e2er-reproduce-"))
+    try:
+        return _run_in(root, recipe, run_dir, keep=keep, json_out=json_out, allow_network=allow_network)
+    finally:
+        if keep:
+            print(f"The run folder is kept: {run_dir}")
+        else:
+            shutil.rmtree(run_dir, ignore_errors=True)
+
+
+def _run_in(
+    root: Path, recipe: dict[str, Any], run_dir: Path, *, keep: bool, json_out: str | None, allow_network: bool
+) -> int:
     logs = run_dir / ".e2er-logs"
     logs.mkdir()
-    print(f"Running the study's code in {run_dir} (the study folder is not changed) ...", flush=True)
+    where = str(run_dir) if keep else f"a temporary folder ({run_dir}, removed afterwards; --keep keeps it)"
+    print(f"Running the study's code in {where}; the study folder is not changed ...", flush=True)
     env_info: dict[str, Any] | None = None
     steps: list[rp.StepResult] = []
     inputs: list[dict[str, Any]] = []
@@ -165,7 +225,6 @@ def reproduce(folder: str, *, keep: bool = False, json_out: str | None = None, a
         print(f"error: {e}")
         inputs = rp.compare_inputs(run_dir, recipe.get("inputs") or [])
         print(_inputs_only(recipe, inputs), end="")
-        print(f"The run folder is kept: {run_dir}")
         return 2
     # The inputs are compared also when a step failed: the reader sees what the rerun had.
     inputs = rp.compare_inputs(run_dir, recipe.get("inputs") or [])
@@ -178,7 +237,7 @@ def reproduce(folder: str, *, keep: bool = False, json_out: str | None = None, a
         tables = rp.compare_tables(root, run_dir, recipe["compare"])
     verdict, code = rp.verdict(files, tables, steps, inputs)
     print()
-    print(render(root, recipe, env_info, steps, inputs, files, tables, verdict), end="")
+    print(render(root, recipe, env_info, steps, inputs, files, tables, verdict, kept=keep), end="")
     if json_out:
         doc = {
             "schema": "e2er-reproduce-report/1",
@@ -191,11 +250,8 @@ def reproduce(folder: str, *, keep: bool = False, json_out: str | None = None, a
             "tables": tables,
             "verdict": verdict,
             "exit_code": code,
+            "run_folder_kept": keep,
         }
         Path(json_out).expanduser().write_text(json.dumps(doc, indent=2, default=str) + "\n", encoding="utf-8")
         print(f"Report written to {json_out}")
-    if keep or code != 0:
-        print(f"The run folder is kept: {run_dir}")
-    else:
-        shutil.rmtree(run_dir, ignore_errors=True)
     return code

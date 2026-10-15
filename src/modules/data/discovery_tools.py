@@ -192,8 +192,16 @@ class SeriesDataToolHandler(ToolHandler):
             return json.dumps(
                 {"error": f"unknown or unavailable data source '{provider}'; call list_data_sources for the list"}
             )
+        from .sources.runtime import KitFetcher, table_sink
+
         try:
-            envelope = await fetcher.fetch(method, params)
+            if inp.get("materialize") and self._workspace is not None and isinstance(fetcher, KitFetcher):
+                # A load that works in batches (Project Gutenberg texts) writes each batch into the
+                # table, so a call that is stopped keeps what it loaded.
+                table = self._table_name(provider, method, params, inp.get("table"))
+                envelope = await fetcher.fetch(method, params, sink=table_sink(self._workspace, table))
+            else:
+                envelope = await fetcher.fetch(method, params)
         except KeyError as e:
             return json.dumps({"error": f"missing required parameter {e} for {provider}.{method}"})
         except Exception as e:
@@ -279,6 +287,15 @@ class SeriesDataToolHandler(ToolHandler):
         except (RecordError, OSError) as e:
             envelope["record_error"] = f"{type(e).__name__}: {e}"
 
+    @staticmethod
+    def _table_name(provider: str, method: str, params: dict[str, Any], table: str | None) -> str:
+        from ...db.paper_data_db import sanitize_table_name
+
+        if not table:
+            key = params.get("series_id") or params.get("symbol") or params.get("ticker") or ""
+            table = f"{provider}_{method}_{key}" if key else f"{provider}_{method}"
+        return sanitize_table_name(table)
+
     async def _materialize(
         self,
         provider: str,
@@ -296,12 +313,9 @@ class SeriesDataToolHandler(ToolHandler):
         items = envelope.get("items") or []
         if not items or not isinstance(items[0], dict):
             return None
-        from ...db.paper_data_db import materialize_rows, sanitize_table_name
+        from ...db.paper_data_db import materialize_rows
 
-        if not table:
-            key = params.get("series_id") or params.get("symbol") or params.get("ticker") or ""
-            table = f"{provider}_{method}_{key}" if key else f"{provider}_{method}"
-        table = sanitize_table_name(table)
+        table = self._table_name(provider, method, params, table)
         try:
             rows = await materialize_rows(self._workspace, table, items)
         except Exception as e:  # noqa: BLE001

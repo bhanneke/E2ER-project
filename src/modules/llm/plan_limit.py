@@ -107,6 +107,25 @@ class BillingLimitReachedError(PlanLimitReachedError):
         self.args = (status,)
 
 
+class CallTimedOutError(PlanLimitReachedError):
+    """A specialist's call ran into its time limit (the CLI backends' wall clock) and was stopped.
+
+    Live, 2026-10-14 (the text-analysis demo on Claude Code): the data analyst's
+    third attempt was stopped at 1,800 s while it loaded Gutenberg texts, and
+    the whole study failed. A call that runs out of time is not broken work: the
+    run pauses (``paused_timeout``) with ``status`` saying so, the stopped call is
+    recorded once (``specialist_failed``), no further attempt is counted against
+    it, and Resume gives the specialist a fresh attempt, like a plan's limit.
+    """
+
+    event = "paused_timeout"
+
+    def __init__(self, backend: str, message: str, status: str, specialist: str | None = None) -> None:
+        super().__init__(backend, message, None, specialist)
+        self.status = status
+        self.args = (status,)
+
+
 def _norm(text: str) -> str:
     return text.replace("’", "'").replace("‘", "'").lower()
 
