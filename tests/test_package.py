@@ -226,7 +226,8 @@ def test_a_study_with_restricted_data_packs_without_it_and_reproduces_by_rebuild
     capsys.readouterr()
     assert inspect(str(packed.path)) == 0
     shown = capsys.readouterr().out
-    assert "left out: data/data.db" in shown and "loads it again with code/get_data.py" in shown
+    assert "left out: data/data.db" in shown
+    assert "loads the tables " in shown and " again from the sources with code/get_data.py" in shown
 
     verify(str(packed.path))
     out = capsys.readouterr().out
@@ -243,7 +244,13 @@ def test_no_data_leaves_every_data_file_out_and_says_what_cannot_be_rebuilt(tmp_
     folder = _export(tmp_path)
     packed = pkg.build(folder, tmp_path / "out.e2er", no_data=True)
     [left] = packed.manifest["left_out"]
-    assert left == {"path": "data/data.db", "reason": "packed with --no-data", "rebuilt_by": None, "needed": True}
+    assert {k: v for k, v in left.items() if k != "content"} == {
+        "path": "data/data.db",
+        "reason": "packed with --no-data",
+        "rebuilt_by": None,
+        "needed": True,
+    }
+    assert left["content"]["tables"], "the package records the rows it left out, for the rerun's comparison"
     assert any("cannot rebuild it" in n for n in packed.notes)
     assert "data/data_sources.json" in {c["path"] for c in packed.manifest["contents"]}, "the records stay"
 

@@ -75,7 +75,14 @@ tables the estimation reads (a cleaned table of the data analyst). Those steps
 carry `"when_missing": ["data.db"]` and run only when the folder lacks data.db.
 Table inputs (CSV/TSV, and each table of a SQLite database) also carry their
 content (`rows`, `content_sha256`, or `tables`), order of rows aside: a reload
-with the same rows in another order is the study's input.
+with the same rows in another order is the study's input. `numeric_sha256` is the
+same fingerprint with every decimal number written with 12 significant digits: a
+file the study's own preparation step builds again whose numbers differ only in
+their last digits (pandas writing a parsed float back) is reported as "the same
+rows, every decimal number equal to 12 significant digits" and counts as the
+study's input; integers and text are compared exactly. A recipe written before
+this field gets it from the package's record of the left-out file (below), only
+where that record's `content_sha256` is the recipe's own.
 
 `provenance.json` records under `run.results_from_code` which run of which
 script wrote each results file (the script log's output hashes); `e2er verify`
@@ -147,7 +154,11 @@ for a recipe written before, the package carries it in the manifest's `rebuild` 
   "fingerprint": "sha256:…",                // SHA-256 of the canonical JSON of [{path, sha256, bytes}], sorted by path
   "left_out": [{"path": "data/data.db", "reason": "the terms of the Global Macro Database (GMD) do not allow passing the data on",
                 "source": "gmd", "rebuilt_by": {"by": "code/get_data.py", "source": "…"},
-                "needed": true}],               // needed: the recipe lists it as an input (the code reads it)
+                "needed": true,                 // needed: the recipe lists it as an input (the code reads it)
+                "loads": ["gmd_panel"],         // tables (or the file) get_data.py loads again from their sources
+                "builds": [{"by": "code/scratch/clean.py", "what": ["panel_clean"]}],  // the study's own steps
+                "not_built": [],                // tables no step loads or builds (a rerun cannot get them)
+                "content": {"tables": {"gmd_panel": {"rows": 120, "content_sha256": "…", "numeric_sha256": "…"}}}}],
   "rebuild": [{"path": "data/gaia_clean.csv", "script": "clean_gaia.py", "from": "code/scratch/clean_gaia.py"}],
   "recipe": {"present": true, "python": "3.12", "requirements": "code/requirements.txt",
              "steps": [{"run": ["python", "get_data.py"], "about": "…"}, …],

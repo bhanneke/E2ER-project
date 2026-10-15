@@ -247,12 +247,97 @@ def left_out_data(
         item["rebuilt_by"] = _rebuilt(recipe, rel, plan)
         # Whether the study's code reads it: a file no step reads is not needed for a rerun.
         item["needed"] = rel in inputs
+        item.update(_rerun_plan(folder, recipe, rel, item, plan))
+        # The file's rows, order and the last digits of its numbers aside: `e2er reproduce` compares the file
+        # a rerun loads or builds again with it (reproduce.content_fingerprint).
+        content = _content_of(folder / rel)
+        if content:
+            item["content"] = content
     return [out[k] for k in sorted(out)]
 
 
+def _content_of(path: Path) -> dict[str, Any]:
+    from .reproduce_recipe import _content
+
+    return _content(path) if path.is_file() else {}
+
+
+def _step_scripts(recipe: dict[str, Any], run_paths: set[str]) -> list[str]:
+    """The folder paths of the scripts of steps that run only when one of ``run_paths`` is missing."""
+    from .. import reproduce as rp
+
+    files = recipe.get("files") or {}
+    out: list[str] = []
+    for step in recipe.get("steps") or []:
+        when = step.get("when_missing") if isinstance(step, dict) else None
+        if not (isinstance(when, list) and run_paths.intersection(map(str, when))):
+            continue
+        scripts = [a for a in rp.step_argv(step) if str(a).endswith(".py")]
+        for sc in scripts:
+            path = str(files.get(sc, sc))
+            if path not in out:
+                out.append(path)
+    return out
+
+
+def _rerun_plan(
+    folder: Path, recipe: dict[str, Any] | None, rel: str, item: dict[str, Any], plan: list[dict[str, Any]]
+) -> dict[str, Any]:
+    """What a rerun loads again and builds again of a left-out file, in names (for the words a reader sees).
+
+    ``loads``: the tables of a database (or the file) that ``get_data.py`` loads from their sources;
+    ``builds``: ``[{"by": script, "what": [tables]}]``, the study's own preparation steps that build the
+    rest again; ``not_built``: tables of the database that no step loads or builds.
+    """
+    if not recipe or not isinstance(item.get("rebuilt_by"), dict):
+        return {}
+    how = item["rebuilt_by"]
+    if how.get("kind") == "rebuild":  # a file built from loaded data (derived_data)
+        return {"builds": [{"by": how["by"], "what": [rel]}]}
+    if Path(rel).suffix.lower() not in {".db", ".sqlite", ".sqlite3"}:
+        return {"loads": [rel]}
+    from .reproduce_recipe import _db_tables, _load_tables, _writes_table
+
+    loads_doc = _read_json(folder / "data" / "data_sources.json")
+    loads = loads_doc.get("loads") if isinstance(loads_doc, dict) else None
+    loaded = _load_tables([e for e in loads or [] if isinstance(e, dict)])
+    tables = _db_tables(folder / rel)
+    made = [t for t in tables if t not in loaded]
+    builds: list[dict[str, Any]] = []
+    left = list(made)
+    for script in _step_scripts(recipe, _run_paths(recipe, rel)):
+        try:
+            text = (folder / script).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        what = [t for t in left if _writes_table(text, t)]
+        if what:
+            builds.append({"by": script, "what": what})
+            left = [t for t in left if t not in what]
+    out: dict[str, Any] = {"loads": [t for t in tables if t in loaded], "builds": builds}
+    if left:
+        out["not_built"] = left
+    return out
+
+
 def rerun_words(item: dict[str, Any]) -> str:
-    """What a rerun of the package does about a left-out file, in plain words."""
+    """What a rerun of the package does about a left-out file, in plain words: what it loads again from the
+    sources, what the study's own steps build again, and what it cannot get."""
     how = item.get("rebuilt_by")
+    if isinstance(how, dict) and ("loads" in item or "builds" in item):
+        parts = []
+        if item.get("loads"):
+            names = ", ".join(item["loads"])
+            what = "it" if item["loads"] == [item["path"]] else f"the tables {names}"
+            parts.append(f"loads {what} again from the sources with {how['by']}")
+        for b in item.get("builds") or []:
+            what = "it" if b["what"] == [item["path"]] else f"the tables {', '.join(b['what'])}"
+            source = " from the data it loads again" if not item.get("loads") else ""
+            parts.append(f"builds {what} again with {b['by']}{source}")
+        if item.get("not_built"):
+            parts.append(f"cannot get the tables {', '.join(item['not_built'])} (no step builds them)")
+        if parts:
+            return "`e2er reproduce` " + "; ".join(parts)
     if isinstance(how, dict) and how.get("kind") == "rebuild":
         return f"`e2er reproduce` builds it again with {how['by']} from the data it loads again"
     if isinstance(how, dict):
@@ -789,6 +874,21 @@ def package_manifest(folder: Path) -> dict[str, Any] | None:
     """The e2er-package.json of an unpacked package (None in an ordinary export folder)."""
     doc = _read_json(Path(folder) / MANIFEST)
     return doc if isinstance(doc, dict) and str(doc.get("format") or "").startswith("e2er-package/") else None
+
+
+def left_out_content(folder: Path, *, trusted: bool = False) -> dict[str, dict[str, Any]]:
+    """The content fingerprints the package recorded for the files it left out, by path.
+
+    From a package `e2er reproduce` opened (``trusted``) all of them; in a folder (a clone of a repository
+    that holds an unpacked package) only for files the folder's own records say a source's terms keep out.
+    """
+    declared = declared_left_out(folder)
+    if not trusted:
+        from ..data_terms import restricted_paths
+
+        restricted = restricted_paths(folder)
+        declared = {p: i for p, i in declared.items() if p in restricted}
+    return {p: i["content"] for p, i in declared.items() if isinstance(i.get("content"), dict)}
 
 
 def declared_left_out(folder: Path) -> dict[str, dict[str, Any]]:

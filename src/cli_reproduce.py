@@ -91,6 +91,7 @@ def render(
     else:
         same = [i for i in inputs if i["status"] in ("identical", rp.SAME_ROWS)]
         reordered = [i["path"] for i in inputs if i["status"] == rp.SAME_ROWS]
+        close = [i["path"] for i in inputs if i["status"] == rp.SAME_NUMBERS]
         differ = [i for i in inputs if i["status"] == "differs"]
         missing = [i["path"] for i in inputs if i["status"] == "missing"]
         lines.append(f"  {len(same)} of {len(inputs)} identical")
@@ -98,6 +99,11 @@ def render(
             lines.append(
                 f"  {len(reordered)} with the same rows in a different order (identical content): "
                 + ", ".join(reordered)
+            )
+        if close:
+            lines.append(
+                f"  {len(close)} with the same rows, every decimal number equal to {rp.NUMERIC_DIGITS} significant "
+                f"digits (the last digits differ): " + ", ".join(close)
             )
         if differ:
             named = [
@@ -184,6 +190,8 @@ def _reproduce_folder(
     except rp.RecipeError as e:
         print(f"error: {e}")
         return 2
+    # Files a package left out carry the fingerprints pack recorded; an older recipe gets the numbers one.
+    rp.add_numeric_fingerprints(recipe, pkg.left_out_content(root, trusted=package))
     # Never from reproduce.json itself: only e2er sets where the wheels are, for an unpacked package.
     recipe.pop("wheelhouse", None)
     if package or pkg.package_manifest(root) is not None:
