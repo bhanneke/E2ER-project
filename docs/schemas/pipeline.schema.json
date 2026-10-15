@@ -57,6 +57,15 @@
       "$ref": "#/$defs/components",
       "description": "Machine-readable files this template asks a specialist to write next to its main output, as specialist = [\"file.json\", ...]. Merged after the specialist's own sidecars; a check of the template reads them (e.g. event_design.json for the event_window check)."
     },
+    "timeouts": {
+      "type": "object",
+      "description": "Minutes one call of a specialist may run on a CLI backend (Claude Code, Codex, Gemini), as specialist = minutes, e.g. data_analyst = 90. In place of the backend's setting (CLAUDE_CODE_TIMEOUT, CODEX_TIMEOUT, GEMINI_TIMEOUT); without an entry the data analyst gets at least 60 minutes. A call that runs out of time pauses the run; Resume gives the specialist a new attempt.",
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 1440
+      }
+    },
     "credit": {
       "type": "array",
       "description": "Work this template is based on, draws from or cites: the creator, their role (e.g. conceptualization, method, related work), the relation (based_on, related_work, cites), the work's title and address, when it was published and read, and where it was found. e2er.org cites a `based_on` entry on the template's page as \"Based on\" with a link to the work; its authors are cited as the source and get no page of their own on e2er.org. A credit says where an idea came from; it does not say its authors endorse the template.",
@@ -413,6 +422,12 @@
         "label": {
           "type": "string",
           "description": "The step's name on the dashboard, such as \"Design review\"."
+        },
+        "timeout_minutes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1440,
+          "description": "specialists, aggregate and strategist steps: minutes one call of a specialist this step dispatches may run on a CLI backend, in place of the backend's setting. A template's [timeouts] entry for the specialist comes first."
         }
       }
     }

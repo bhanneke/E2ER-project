@@ -16,6 +16,7 @@ from ...modules.llm.plan_limit import status_text as plan_limit_status
 from .. import labels as _labels
 from ..governance import DEFAULT_REGIME, KIND_RELIABILITY
 from ..governance import enforces as governance_enforces
+from ..pipeline.components import enter_step
 from ..pipeline.fieldmap_checks import FILES as _FIELDMAP_FILES
 from ..pipeline.meta_checks import FILES as _META_FILES
 from ..pipeline.spec import RESEARCHER_KINDS, SEQUENCE_CHECKS, find_spec
@@ -181,6 +182,25 @@ _DESIGN_CHECK_FOCUS: dict[str, str] = {
 }
 
 
+#: The status line of a run paused because the disk ran full.
+DISK_FULL_STATUS = "The disk is full; free space and press Resume."
+
+
+def disk_full(error: BaseException | None) -> bool:
+    """Whether an error (or one it was raised from) means no space was left on the disk."""
+    import errno
+
+    seen: set[int] = set()
+    while error is not None and id(error) not in seen:
+        seen.add(id(error))
+        if isinstance(error, OSError) and error.errno in (errno.ENOSPC, getattr(errno, "EDQUOT", -1)):
+            return True
+        if "database or disk is full" in str(error) or "No space left on device" in str(error):
+            return True
+        error = error.__cause__ or error.__context__
+    return False
+
+
 @dataclass(frozen=True)
 class _StepEffects:
     """What a phase persists, beyond running.
@@ -319,6 +339,7 @@ class PipelineRunner:
         """
         name = step.name
         self._current_step = name
+        enter_step(name)  # its timeout_minutes applies to what it dispatches
         if step.kind in RESEARCHER_KINDS:
             if state.is_approved(name):
                 if step.kind == "preregister":
@@ -412,7 +433,55 @@ class PipelineRunner:
         return out
 
     async def run(self) -> dict[str, Any]:
-        """Run the full pipeline from idea to completion, with checkpoint/resume support."""
+        """Run the full pipeline from idea to completion, with checkpoint/resume support.
+
+        Nothing escapes with the status left as it was. Before, a full disk
+        (ENOSPC writing ``.pipeline_state.json``, 2026-10-14 text-analysis demo)
+        raised again inside the failure handler's own save; the run's task
+        died and the study stayed "designing" with nothing running. A full
+        disk pauses the run with a plain reason (it is resumable from the last
+        saved state); anything else that escapes fails it with its error.
+        """
+        try:
+            result = await self._run()
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:  # noqa: BLE001 — a handler failed: the status must still say so
+            if disk_full(e):
+                return await self._pause_disk_full(e)
+            error = f"{type(e).__name__}: {e}"
+            logger.error("Pipeline failed for paper %s outside its handlers: %s", self._paper_id, error)
+            await self._log_quietly("failed", {"error": error})
+            await self._update_status(PaperStatus.FAILED, error=error)
+            return {"status": "failed", "error": error}
+        if getattr(self, "_completed_deferred", False):
+            # Every step ran and the final export is written (the finally of _run): now it is complete.
+            self._finishing_done = True
+            await self._update_status(PaperStatus.COMPLETED)
+        return result
+
+    async def _log_quietly(self, kind: str, payload: dict[str, Any]) -> None:
+        from ...db.events import log_event
+
+        try:
+            await log_event(self._paper_id, kind, payload=payload)
+        except Exception as e:  # noqa: BLE001 — the database may sit on the same full disk
+            logger.warning("Event %s for paper %s not recorded: %s", kind, self._paper_id, e)
+
+    async def _pause_disk_full(self, error: BaseException) -> dict[str, Any]:
+        """The disk ran full: pause with a plain reason; Resume continues from the last saved state."""
+        logger.error("Pipeline paused (disk full) for paper %s: %s", self._paper_id, error)
+        state = getattr(self, "_state", None)
+        if state is not None and hasattr(state, "save"):
+            try:
+                state.save(self._workspace)
+            except OSError:
+                pass  # still full: the state file from the last successful save stands (it is written atomically)
+        await self._log_quietly("paused_disk_full", {"error": f"{type(error).__name__}: {error}"[:2000]})
+        await self._update_status(PaperStatus.PAUSED, error=DISK_FULL_STATUS)
+        return {"status": "paused", "reason": "disk_full"}
+
+    async def _run(self) -> dict[str, Any]:
         from ...db.events import log_event
         from ...modules.tracking.usage import check_budget
         from ..pipeline.state import PipelineState
@@ -634,7 +703,9 @@ class PipelineRunner:
             await self._update_status(PaperStatus.PAUSED, error=text)
             return {
                 "status": "paused",
-                "reason": "billing_limit" if getattr(pl, "event", "") == "paused_billing_limit" else "plan_limit",
+                "reason": {"paused_billing_limit": "billing_limit", "paused_timeout": "timeout"}.get(
+                    getattr(pl, "event", ""), "plan_limit"
+                ),
                 "backend": pl.backend,
                 "resets": pl.resets,
                 "specialist": pl.specialist,
@@ -700,6 +771,8 @@ class PipelineRunner:
             )
             return {"status": "paused", "reason": "awaiting_review", "stage": hr.stage}
         except Exception as e:
+            if disk_full(e):
+                return await self._pause_disk_full(e)
             state.save(self._workspace)  # preserve progress on failure
             logger.error("Pipeline failed for paper %s: %s", self._paper_id, e)
             error_msg = f"{type(e).__name__}: {e}"
@@ -928,7 +1001,12 @@ class PipelineRunner:
                 "Strategist returned no work orders for the initial phase — cannot "
                 "proceed without specialist assignments."
             )
-        self._save_initial_orders(self._to_contract_orders(decision.work_orders))
+        planned = self._to_contract_orders(decision.work_orders)
+        if state is not None and isinstance(getattr(state, "metadata", None), dict):
+            # The whole plan, kept after the phase: a rerun from one of its specialists
+            # replays it from there (researcher.apply_rerun), the earlier work kept.
+            state.metadata["initial_plan"] = [wo.model_dump() for wo in planned]
+        self._save_initial_orders(planned)
         contributions = await self._dispatch(decision)
         if not contributions:
             raise RuntimeError("Initial phase produced no contributions.")
@@ -3772,6 +3850,14 @@ class PipelineRunner:
             logger.warning("GitHub push failed: %s", e)
 
     async def _update_status(self, status: PaperStatus, error: str | None = None) -> None:
+        if status == PaperStatus.COMPLETED and not getattr(self, "_finishing_done", False):
+            # The steps are done, the replication package and the final export may not be: the study
+            # reads "finishing (writing the export)" until run() has written them. Before, the status
+            # said "completed" during the replication step, and a folder exported then was overwritten.
+            self._completed_deferred = True
+            status = PaperStatus.FINISHING
+        elif status != PaperStatus.FINISHING:
+            self._completed_deferred = False  # a later pause, failure or cancel stands
         if status in (PaperStatus.FAILED, PaperStatus.REJECTED) and not (error or "").strip():
             # A run that ends must say why (tests/test_number_check.py pins it):
             # never a failed run with an empty last_error.

@@ -173,6 +173,9 @@ class StepSpec:
     #: researcher/preregister: the step runs only when the researcher chooses it for the run
     #: (New study's "also stop" choices, ``e2er run --review-at <name>``).
     optional: bool = False
+    #: Minutes one call of a specialist this step dispatches may run (CLI backends), in place of
+    #: the backend's setting; 0: the setting (or the template's ``[timeouts]``).
+    timeout_minutes: int = 0
 
     def applies_to(self, mode: str) -> bool:
         return not self.modes or mode in self.modes
@@ -200,6 +203,8 @@ class PipelineSpec:
     #: specialist -> skills / sidecar files this template adds (see components.py)
     skills: dict[str, tuple[str, ...]] = field(default_factory=dict, hash=False)
     sidecars: dict[str, tuple[str, ...]] = field(default_factory=dict, hash=False)
+    #: specialist -> minutes one call of it may run (``[timeouts]``; components.timeout_for).
+    timeouts: dict[str, int] = field(default_factory=dict, hash=False)
     #: Work this template is based on or draws from (``[[credit]]``), as written in the file.
     credit: tuple[dict[str, Any], ...] = field(default=(), hash=False)
     #: The kind of results the study reports (``result_kinds.py``): which contract the
@@ -308,6 +313,7 @@ def _step_from(raw: Any, source: Path | str, index: int) -> StepSpec:
         "settings",
         "label",
         "optional",
+        "timeout_minutes",
     }
     if unknown:
         # A typo is a mistake, not an extension point. Silently ignoring
@@ -433,6 +439,14 @@ def _step_from(raw: Any, source: Path | str, index: int) -> StepSpec:
     if optional and kind not in RESEARCHER_KINDS:
         _fail(source, f"{where} ({name}): only researcher and preregister steps can be optional")
 
+    timeout_minutes = raw.get("timeout_minutes", 0)
+    if not isinstance(timeout_minutes, int) or isinstance(timeout_minutes, bool) or not 0 <= timeout_minutes <= 1440:
+        _fail(
+            source, f"{where} ({name}): timeout_minutes must be whole minutes from 1 to 1440, not {timeout_minutes!r}"
+        )
+    if timeout_minutes and kind not in ("specialists", "aggregate", "strategist"):
+        _fail(source, f"{where} ({name}): timeout_minutes is for steps that dispatch specialists")
+
     on_fail = raw.get("on_fail", "halt")
     if on_fail not in ("halt", "retry", "shadow"):
         _fail(source, f"{where} ({name}) has unknown on_fail {on_fail!r}")
@@ -456,6 +470,7 @@ def _step_from(raw: Any, source: Path | str, index: int) -> StepSpec:
         settings=dict(settings),
         label=str(raw.get("label", "") or ""),
         optional=optional,
+        timeout_minutes=timeout_minutes,
     )
 
 
@@ -476,6 +491,7 @@ def spec_from_dict(data: dict[str, Any], *, source: Path | str = "<dict>") -> Pi
         "base_skill",
         "data_skills",
         "review_weights",
+        "timeouts",
     }
     if unknown:
         _fail(source, f"unknown top-level key(s): {', '.join(sorted(unknown))}")
@@ -517,6 +533,7 @@ def spec_from_dict(data: dict[str, Any], *, source: Path | str = "<dict>") -> Pi
         source=Path(source) if isinstance(source, Path) else None,
         skills=_components(data.get("skills"), "skills", source),
         sidecars=_components(data.get("sidecars"), "sidecars", source),
+        timeouts=_timeouts(data.get("timeouts"), source),
         credit=_credit(data.get("credit"), source),
         results=results,
         causal=causal,
@@ -680,6 +697,24 @@ def _components(raw: Any, table: str, source: Path | str) -> dict[str, tuple[str
             if table == "sidecars" and ("/" in item or item.startswith(".") or not item.endswith(".json")):
                 _fail(source, f"[sidecars] {specialist}: {item!r} must be a top-level .json file name")
         out[specialist] = tuple(dict.fromkeys(items))
+    return out
+
+
+def _timeouts(raw: Any, source: Path | str) -> dict[str, int]:
+    """`[timeouts]`: specialist = minutes one call of it may run (CLI backends), e.g. data_analyst = 90."""
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        _fail(source, "[timeouts] must be a table of specialist = minutes")
+    from ..specialists.registry import SPECIALIST_ARTIFACTS
+
+    out: dict[str, int] = {}
+    for specialist, minutes in raw.items():
+        if specialist not in SPECIALIST_ARTIFACTS:
+            _fail(source, f"[timeouts] names unknown specialist {specialist!r}")
+        if not isinstance(minutes, int) or isinstance(minutes, bool) or not 1 <= minutes <= 1440:
+            _fail(source, f"[timeouts] {specialist}: whole minutes from 1 to 1440, not {minutes!r}")
+        out[specialist] = minutes
     return out
 
 

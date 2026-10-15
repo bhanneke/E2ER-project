@@ -279,6 +279,7 @@ _RUNNING_STATUSES = {
     "review",
     "revision",
     "replication",
+    "finishing",
 }
 
 

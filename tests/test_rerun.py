@@ -323,3 +323,108 @@ def test_a_step_that_runs_at_every_start_is_not_where_a_rerun_picks_up(tmp_path:
     st.last_status = "failed"
     payload = apply_rerun(tmp_path, st, find_spec("empirical"), "review", REMARK)
     assert payload["reruns"] == ["review", "revision", "replication"]
+
+
+# ── a rerun from a specialist of the initial phase (2026-10-14 text-analysis demo) ──
+
+_PLAN = [
+    ("idea_developer", 0),
+    ("literature_scanner", 0),
+    ("data_architect", 0),
+    ("data_analyst", 1),
+    ("econometrics_specialist", 2),
+    ("text_validator", 3),
+    ("paper_drafter", 4),
+]
+
+
+def _key(name: str) -> str:
+    return f"{name}\nfocus of {name}"
+
+
+def _text_study(*, finished: bool) -> PipelineState:
+    """The weather-vocabulary study: the initial phase ran up to the text validator (failed) or to its end."""
+    st = PipelineState(paper_id=PID, mode="single_pass")
+    plan = [
+        {"paper_id": PID, "specialist": n, "focus": f"focus of {n}", "parallel_group": g, "context_tier": 1}
+        for n, g in _PLAN
+    ]
+    st.completed_stages = ["corpus_design_gate", "review_design", "corpus_gate", "text_results_gate"]
+    st.approved_stages = ["review_design"]
+    if finished:  # the phase ended: its orders are gone, the plan stays
+        st.completed_stages += ["text_validation_gate", "initial", "estimation_gate", "review_draft", "review"]
+        st.approved_stages += ["review_draft"]
+        st.metadata = {"initial_plan": plan, "done_specialists": [n for n, _ in _PLAN[:6]]}
+        st.last_status = "completed"
+    else:
+        st.metadata = {
+            "initial_plan": plan,
+            "initial_orders": plan,
+            "initial_done": [_key(n) for n, _ in _PLAN[:5]],
+            "done_specialists": [n for n, _ in _PLAN[:5]],
+            "contract_accepted_orders": [_key("literature_scanner"), _key("data_analyst")],
+        }
+        st.last_status = "failed"
+    return st
+
+
+@pytest.mark.parametrize("finished", [False, True])
+def test_a_rerun_from_a_specialist_runs_it_and_every_later_one_again(tmp_path: Path, finished: bool):
+    """`e2er rerun --from data_analyst` resumed only the unfinished text validator; the analyst never ran again."""
+    st = _text_study(finished=finished)
+    payload = apply_rerun(tmp_path, st, find_spec("text-analysis"), "data_analyst", REMARK)
+    assert payload["step"] == "initial" and payload["specialist"] == "data_analyst"
+    meta = st.metadata
+    # The earlier work stays done, the analyst and everything after it does not.
+    assert meta["initial_done"] == [_key("idea_developer"), _key("literature_scanner"), _key("data_architect")]
+    assert meta["done_specialists"] == ["data_architect", "idea_developer", "literature_scanner"]
+    assert [d["specialist"] for d in meta["initial_orders"]] == [n for n, _ in _PLAN]
+    # The checks of the analyst's and the analysis' work run again; the design review stands.
+    assert "corpus_gate" not in st.completed_stages and "text_results_gate" not in st.completed_stages
+    assert "corpus_design_gate" in st.completed_stages and st.is_approved("review_design")
+    if not finished:
+        assert meta["contract_accepted_orders"] == [_key("literature_scanner")]
+
+    # The resumed phase runs exactly those work orders again.
+    from types import SimpleNamespace
+
+    from src.core.strategist.runner import PipelineRunner
+
+    r = PipelineRunner.__new__(PipelineRunner)
+    r._workspace = tmp_path
+    with patch(
+        "src.core.specialists.contract_check.check_specialist_artifacts", lambda ws, sp: [SimpleNamespace(ok=True)]
+    ):
+        left = [w.specialist for w in r._initial_orders_left(st)]
+    assert left == ["data_analyst", "econometrics_specialist", "text_validator", "paper_drafter"]
+
+
+def test_a_rerun_of_the_whole_initial_step_plans_it_again(tmp_path: Path):
+    st = _text_study(finished=False)
+    st.metadata["pending_orders"] = st.metadata["initial_orders"][3:]
+    apply_rerun(tmp_path, st, find_spec("text-analysis"), "initial", REMARK)
+    for key in ("initial_orders", "initial_done", "initial_plan", "done_specialists", "pending_orders"):
+        assert key not in st.metadata
+    # Every check and stop inside the dispatch comes again.
+    assert not {"corpus_design_gate", "review_design", "corpus_gate", "text_results_gate"} & set(st.completed_stages)
+    assert st.approved_stages == []
+
+
+def test_a_rerun_from_a_specialist_of_a_fixed_step_keeps_the_earlier_ones(tmp_path: Path):
+    spec = spec_from_dict(
+        {
+            "name": "three-in-a-row",
+            "steps": [
+                {
+                    "kind": "specialists",
+                    "name": "work",
+                    "run": ["replication_planner", "sandbox_runner", "reproduction_comparer"],
+                },
+                {"kind": "researcher", "name": "look", "files": ["x.md"]},
+            ],
+        }
+    )
+    st = PipelineState(paper_id=PID, mode="single_pass")
+    st.completed_stages, st.approved_stages, st.last_status = ["work", "look"], ["look"], "completed"
+    apply_rerun(tmp_path, st, spec, "sandbox_runner", REMARK)
+    assert st.metadata["step_done"] == {"work": ["replication_planner"]}

@@ -33,7 +33,15 @@ from typing import Any
 from ...config import get_settings
 from ...logging_config import get_logger
 from .base import LLMBackend, TokenUsage, ToolHandler, ToolLoopResult
-from .cli_support import cli_name, cli_path_or_setting, cli_version, kill_process_group, run_env, stop_on_cancel
+from .cli_support import (
+    cli_name,
+    cli_path_or_setting,
+    cli_version,
+    effective_timeout,
+    kill_process_group,
+    run_env,
+    stop_on_cancel,
+)
 from .plan_limit import detect as detect_plan_limit
 
 logger = get_logger(__name__)
@@ -297,7 +305,7 @@ class ClaudeCodeBackend(LLMBackend):
                 cli_path=self._cli_path,
                 prompt=prompt,
                 allowed_tools=allowed_tools,
-                timeout=self._timeout,
+                timeout=effective_timeout(self._timeout),
                 cwd=cwd,
                 max_turns=max_turns or self._max_turns_default,
                 start=time.monotonic(),
@@ -462,6 +470,7 @@ async def _invoke_cli(
             output="",
             error=error,
             duration_seconds=elapsed,
+            stop_reason="timeout" if deadline_fired else "io_timeout",
         )
 
     duration = time.monotonic() - start

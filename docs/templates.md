@@ -38,6 +38,27 @@ specialist or file name stops the template from loading. The merged skills are
 listed in the study's description (`e2er.json`, `components.skills`) and pinned
 in its dossier; the run also logs them as a `template_components` event.
 
+## How long one call may run
+
+On the CLI backends (Claude Code, Codex, Gemini) each specialist call has a
+time limit, by default the backend's setting (`CLAUDE_CODE_TIMEOUT`,
+`CODEX_TIMEOUT`, `GEMINI_TIMEOUT`, 1,800 s). The data analyst, which loads the
+data, gets at least 60 minutes. A template can set the limit per specialist,
+or per step for everything the step dispatches:
+
+```toml
+[timeouts]
+data_analyst = 90          # minutes
+
+[[steps]]
+kind = "strategist"
+name = "initial"
+timeout_minutes = 45       # the step's specialists, unless [timeouts] names them
+```
+
+A call that runs out of time pauses the run with the reason; the files it wrote
+are kept, and Resume gives the specialist a new attempt.
+
 ## Results, causal claim, persona, data skills and panel (outside economics)
 
 e2er's defaults come from economics: the analysis must report a regression

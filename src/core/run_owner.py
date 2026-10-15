@@ -50,6 +50,7 @@ IN_FLIGHT = (
     "polish",
     "review",
     "revision",
+    "finishing",
 )
 
 #: This server process. A new id every time a process starts.

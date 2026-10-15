@@ -520,6 +520,16 @@ def _reconstruct_workspace(bundle: Path, ws: Path) -> None:
     if resdir.is_dir():
         for f in resdir.glob("*.csv"):
             shutil.copy2(f, ws / f.name)
+    # The study's design settings, which the number check does not look for in the results
+    # (verify_numbers.design_constants): design files, pre-registration, data dictionary, template.
+    for src in [*sorted((bundle / "design").glob("*_design.json")), bundle / "design" / "preregistration.md"]:
+        if src.is_file() and not (ws / src.name).exists():
+            shutil.copy2(src, ws / src.name)
+    if (bundle / "data" / "data_dictionary.json").is_file():
+        shutil.copy2(bundle / "data" / "data_dictionary.json", ws / "data_dictionary.json")
+    template = ((_load_json(bundle / "provenance.json") or {}).get("run") or {}).get("template")
+    if template and not (ws / "manifest.json").exists():
+        (ws / "manifest.json").write_text(json.dumps({"pipeline": template}), encoding="utf-8")
     # A text study's checks recount the corpus: its design, the corpus (data.db) and
     # the word lists the design names (stop words, lemmas, dictionaries, lexicons).
     if (bundle / "design" / "corpus_design.json").is_file():

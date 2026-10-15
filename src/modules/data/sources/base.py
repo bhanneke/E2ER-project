@@ -187,6 +187,10 @@ class Context:
     key: str | None
     #: ``~/.e2er/cache/<source>`` (created on first use by the adapters).
     cache_dir: Any
+    #: Where a long load writes the rows it has so far, batch by batch (the table of
+    #: ``--table`` or ``materialize``), so a call that is stopped keeps what it loaded.
+    #: None: the rows are written once, at the end, as for every other load.
+    sink: Callable[[list[dict[str, Any]]], None] | None = None
 
 
 FetchFn = Callable[[Context, dict[str, Any]], Awaitable[Fetched]]

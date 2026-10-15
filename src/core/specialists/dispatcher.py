@@ -10,7 +10,7 @@ from typing import Any
 
 from ...logging_config import get_logger
 from ...modules.llm.base import LLMBackend, ToolHandler
-from ...modules.llm.plan_limit import PlanLimitReachedError
+from ...modules.llm.plan_limit import CallTimedOutError, PlanLimitReachedError
 from ..governance import DEFAULT_REGIME
 from ..specialists.base import run_specialist
 from ..specialists.contracts import Contribution, WorkOrder
@@ -285,6 +285,27 @@ async def execute_work_order(
         return contribution
     except asyncio.CancelledError:
         # Cancellation must propagate, not be swallowed as a specialist failure.
+        raise
+    except CallTimedOutError as timed_out:
+        # The call ran into its time limit. Recorded once, here; then the run pauses and Resume
+        # gives the specialist a fresh attempt. A reviewer's or polisher's lost call is tolerated
+        # as before (the review goes on without it).
+        await log_event(
+            work_order.paper_id,
+            "specialist_failed",
+            specialist=work_order.specialist,
+            payload={"error": timed_out.message, "timed_out": True},
+        )
+        if work_order.specialist in _tolerant():
+            return Contribution(
+                paper_id=work_order.paper_id,
+                specialist=work_order.specialist,
+                output="",
+                success=False,
+                error=timed_out.message,
+            )
+        timed_out.specialist = timed_out.specialist or work_order.specialist
+        logger.warning("Specialist %s paused: %s", work_order.specialist, timed_out.message)
         raise
     except PlanLimitReachedError as limit:
         # The subscription plan's usage limit: not this specialist's failure. No

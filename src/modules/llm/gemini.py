@@ -35,6 +35,7 @@ from .cli_support import (
     cli_path_or_setting,
     cli_version,
     clip,
+    effective_timeout,
     flatten_prompt,
     kill_process_group,
     run_env,
@@ -168,7 +169,7 @@ class GeminiBackend(LLMBackend):
         try:
             stdout_bytes, stderr_bytes = await asyncio.wait_for(
                 proc.communicate(input=prompt.encode("utf-8")),
-                timeout=self._timeout,
+                timeout=effective_timeout(self._timeout),
             )
         except asyncio.CancelledError:
             await stop_on_cancel(proc)
@@ -180,7 +181,7 @@ class GeminiBackend(LLMBackend):
             return ToolLoopResult(
                 success=False,
                 output="",
-                error=f"Gemini timed out after {elapsed:.0f}s (limit {self._timeout}s)",
+                error=f"Gemini timed out after {elapsed:.0f}s (limit {effective_timeout(self._timeout)}s)",
                 duration_seconds=elapsed,
                 stop_reason="timeout",
             )

@@ -16,6 +16,10 @@ class PaperStatus(StrEnum):
     POLISH = "polish"
     REVIEW = "review"
     REVISION = "revision"
+    # Every step is done; the replication package and the final export are being
+    # written. COMPLETED only once they are (runner._update_status defers it), so a
+    # folder exported while the status said "completed" is never a half-written one.
+    FINISHING = "finishing"
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
@@ -144,6 +148,7 @@ _NON_TERMINAL = {
     PaperStatus.POLISH,
     PaperStatus.REVIEW,
     PaperStatus.REVISION,
+    PaperStatus.FINISHING,
 }
 
 VALID_TRANSITIONS: dict[PaperStatus, set[PaperStatus]] = {
@@ -190,6 +195,7 @@ VALID_TRANSITIONS: dict[PaperStatus, set[PaperStatus]] = {
     PaperStatus.POLISH: {PaperStatus.REVIEW, PaperStatus.FAILED, PaperStatus.CANCELLED},
     PaperStatus.REVIEW: {
         PaperStatus.REVISION,
+        PaperStatus.FINISHING,
         PaperStatus.COMPLETED,
         PaperStatus.FAILED,
         PaperStatus.REJECTED,
@@ -197,11 +203,13 @@ VALID_TRANSITIONS: dict[PaperStatus, set[PaperStatus]] = {
     },
     PaperStatus.REVISION: {
         PaperStatus.REVIEW,
+        PaperStatus.FINISHING,
         PaperStatus.COMPLETED,
         PaperStatus.FAILED,
         PaperStatus.REJECTED,
         PaperStatus.CANCELLED,
     },
+    PaperStatus.FINISHING: {PaperStatus.COMPLETED, PaperStatus.FAILED, PaperStatus.CANCELLED},
     PaperStatus.COMPLETED: set(),
     PaperStatus.FAILED: {PaperStatus.IDEA},
     PaperStatus.CANCELLED: {PaperStatus.IDEA},

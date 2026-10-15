@@ -15,9 +15,26 @@ import shutil
 import signal
 import subprocess
 import sysconfig
+from contextvars import ContextVar
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
+
+#: The time limit of the current specialist's call, as its template or step sets it
+#: (src/core/pipeline/components.py ``timeout_for``): ``(seconds, at_least)``. With
+#: ``at_least`` the backend's own setting wins when it is longer (a built-in default for
+#: slow specialists); without, the template's value is the limit. None: the setting.
+call_timeout: ContextVar[tuple[int, bool] | None] = ContextVar("e2er_call_timeout", default=None)
+
+
+def effective_timeout(configured: int) -> int:
+    """The time limit for this call in seconds: the template's or step's, else the backend setting."""
+    chosen = call_timeout.get()
+    if chosen is None:
+        return configured
+    seconds, at_least = chosen
+    return max(configured, seconds) if at_least else seconds
+
 
 #: `scripts/` holds the e2er-* wrappers in a source checkout. On an installed
 #: wheel it does not exist and the entry-point shims in the venv's bin/ apply.

@@ -58,19 +58,32 @@ the subjects or bookshelves), `--languages` (two-letter codes, e.g. `en,fr`),
 `--author-year-start` / `--author-year-end` (authors alive in that span),
 `--ids`, `--sort` (`popular`, the default, or `ascending`/`descending` by
 number), `--limit` (default 100, at most 320). One row per book: `id`,
-`title`, `authors`, `author_birth_year`, `author_death_year`, `languages`,
-`subjects`, `bookshelves`, `copyright`, `media_type`, `download_count`,
-`has_plain_text`.
+`title`, `authors`, `author_birth_year`, `author_death_year` (the first
+author's), `authors_years` (every author with birth and death years, e.g.
+`Austen, Jane (1775-1817)`), `translators` (each translator with years, empty
+for a book read in the language it was written in), `languages`, `subjects`,
+`bookshelves`, `copyright`, `media_type`, `download_count`, `has_plain_text`.
 
 `text` options: `--ids` (required, at most 20). One row per book with the
 catalogue fields and `text` (the book text without Project Gutenberg's
-header, footer and licence), `characters` and `words`.
+header, footer and licence), `characters` and `words`. The texts are loaded
+in batches of five, and each batch is written into the table at once. One
+call stops after ten minutes: its note then begins with `INCOMPLETE`, names
+the books not loaded, and the table holds the ones that were. Run the same
+command again; the books already downloaded that day are read from the cache.
+Load a large corpus in several calls of up to 20 books, one table each.
 
 ## Pitfalls
 
 - A search returns several editions of one work (different ids, translations,
   illustrated editions); deduplicate by title and author before counting
   works.
+- `translators` identifies translations: a book with a translator is a
+  translation into its language (Dumas, Verne or Flaubert in English), not a
+  text written in it. A corpus of works written in one language excludes the
+  rows whose `translators` is not empty; bookshelves such as "Category: French
+  Literature" and subjects ending in "Translations into English" catch the
+  few translations whose translator the catalogue does not name.
 - Publication years are not in the catalogue; the authors' birth and death
   years are. Do not treat the release on Project Gutenberg as the publication
   date.

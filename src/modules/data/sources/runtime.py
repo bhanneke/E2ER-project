@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import math
 import re
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -129,8 +130,18 @@ def load_record(source: Source, op: Operation, params: dict[str, Any], fetched: 
     return entry
 
 
-async def run_operation(source: Source, op: Operation, params: dict[str, Any], settings: Any = None) -> dict:
-    """Run one kit operation; the envelope with its rows, or with the error. Never raises."""
+async def run_operation(
+    source: Source,
+    op: Operation,
+    params: dict[str, Any],
+    settings: Any = None,
+    *,
+    sink: Callable[[list[dict[str, Any]]], None] | None = None,
+) -> dict:
+    """Run one kit operation; the envelope with its rows, or with the error. Never raises.
+
+    ``sink``: where a load that works in batches (Project Gutenberg texts) writes the rows it has so far.
+    """
     from ..load_record import now_utc
     from .adapters import cache_dir
     from .http import PoliteClient
@@ -146,7 +157,7 @@ async def run_operation(source: Source, op: Operation, params: dict[str, Any], s
         return _envelope(source, error=f"{source.key.env} not configured. {source.key.how_to_get}")
     try:
         async with PoliteClient(source.name, source.polite) as http:
-            ctx = Context(source=source, http=http, key=key, cache_dir=cache_dir(source.name))
+            ctx = Context(source=source, http=http, key=key, cache_dir=cache_dir(source.name), sink=sink)
             fetched = await op.fetch(ctx, params)
     except FetchError as e:
         return _envelope(source, error=str(e))
@@ -256,6 +267,27 @@ def add_arguments(parser: Any, op: Operation) -> None:
         parser.add_argument(flag, **kw)
 
 
+def table_sink(workspace: Path, table: str) -> Callable[[list[dict[str, Any]]], None]:
+    """Write the rows a load has so far into ``table`` of the study's data.db (replacing it), batch by batch.
+
+    The load writes the whole table again at its end as usual; until then the table holds what
+    is loaded, so a specialist's call that is stopped (its time limit) keeps those rows.
+    """
+
+    def write(rows: list[dict[str, Any]]) -> None:
+        import pandas as pd
+
+        from ....db.paper_data_db import _materialize_dataframe_sync, data_db_path, sanitize_table_name
+
+        items = to_items(rows)
+        if items:
+            _materialize_dataframe_sync(
+                data_db_path(workspace), sanitize_table_name(table), pd.DataFrame(items), if_exists="replace"
+            )
+
+    return write
+
+
 def cli_handler(source: Source, op: Operation) -> Any:
     """The ``e2er-data <source> <op>`` handler of a kit operation."""
 
@@ -275,7 +307,7 @@ def cli_handler(source: Source, op: Operation) -> Any:
                 cli._maybe_save_table(bad, args)
                 return json.dumps(bad, indent=2, default=str)
 
-        result = await run_operation(source, op, params)
+        result = await run_operation(source, op, params, sink=table_sink(workspace, table) if table else None)
         record = result.pop(LOAD_RECORD, None)
         if result.get("error") and not table:
             cli._TABLE_FAILURES.append(f"{source.label}: {result['error']}")
@@ -337,12 +369,14 @@ class KitFetcher(SeriesFetcher):
             "methods": {op.name: method_card(op) for op in s.operations},
         }
 
-    async def fetch(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
+    async def fetch(
+        self, method: str, params: dict[str, Any], *, sink: Callable[[list[dict[str, Any]]], None] | None = None
+    ) -> dict[str, Any]:
         op = self.source.operation(method)
         if op is None:
             known = ", ".join(o.name for o in self.source.operations)
             return {"source": self.name, "error": f"unknown method '{method}' for {self.name}; available: {known}"}
-        return await run_operation(self.source, op, coerce_params(op, params or {}), self._settings)
+        return await run_operation(self.source, op, coerce_params(op, params or {}), self._settings, sink=sink)
 
 
 # ── the doctor ───────────────────────────────────────────────────────────────
