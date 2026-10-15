@@ -572,7 +572,24 @@ def main() -> None:
     publish_p.add_argument("bundle", help="Path to an exported bundle directory (from `e2er export`).")
     publish_p.add_argument("--owner", required=True, help="Registry namespace: your GitHub login, lower case.")
     publish_p.add_argument("--project", required=True, help="Project name within your namespace, e.g. etf-comovement.")
-    publish_p.add_argument("--github", default=None, help="Your GitHub login (author identity).")
+    publish_p.add_argument(
+        "--github",
+        nargs="?",
+        const=True,
+        default=None,
+        metavar="OWNER/REPO",
+        help="Put the study's files (what `e2er pack` ships: no data a source's terms keep out) in a public GitHub "
+        "repository with your own gh login, and link them at the pushed commit. Alone: <your login>/<project>, "
+        "created when missing; with OWNER/REPO: that repository. A value without / is read as --github-login "
+        "(its earlier meaning).",
+    )
+    publish_p.add_argument(
+        "--github-path",
+        default=None,
+        metavar="FOLDER",
+        help="With --github: the study's folder in the repository, so several studies can share one repository.",
+    )
+    publish_p.add_argument("--github-login", default=None, help="Your GitHub login (author identity).")
     publish_p.add_argument("--orcid", default=None, help="Your ORCID iD, e.g. 0000-0002-1825-0097.")
     publish_p.add_argument("--name", default=None, help="Your name as it should appear in citations.")
     publish_p.add_argument("--role", action="append", default=None, dest="roles", help="CRediT role (repeatable).")
@@ -847,7 +864,9 @@ def main() -> None:
                 args.bundle,
                 owner=args.owner,
                 project=args.project,
-                github=args.github,
+                github=_github_login(args),
+                github_repo=_github_repo(args),
+                github_path=args.github_path,
                 orcid=args.orcid,
                 name=args.name,
                 roles=args.roles,
@@ -1210,6 +1229,29 @@ def _clean_path_args(args: argparse.Namespace) -> None:
             setattr(args, name, clean_path_input(value))
         elif isinstance(value, list):
             setattr(args, name, [clean_path_input(v) if isinstance(v, str) else v for v in value])
+
+
+def _github_login(args: argparse.Namespace) -> str | None:
+    """The author's GitHub login: --github-login, else a --github value without "/" (its earlier meaning)."""
+    if args.github_login:
+        return str(args.github_login)
+    value = args.github
+    if isinstance(value, str) and "/" not in value:
+        print(
+            f"note: --github {value} is read as your GitHub login (--github-login {value}); "
+            "--github OWNER/REPO, or --github alone, puts the study's files in a GitHub repository",
+            file=sys.stderr,
+        )
+        return value
+    return None
+
+
+def _github_repo(args: argparse.Namespace) -> str | bool | None:
+    """--github alone (True: <login>/<project>), --github OWNER/REPO, or None (no files on GitHub)."""
+    value = args.github
+    if value is True or (isinstance(value, str) and "/" in value):
+        return value
+    return None
 
 
 def _already_serving(host: str, port: int) -> bool:

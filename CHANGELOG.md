@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Study files on GitHub (`e2er publish --github`)
+- **`e2er publish --github [owner/repo] [--github-path <folder>]`** pushes the study's files to a public GitHub repository with your own login (`gh`, or `GH_TOKEN`) and records the repository, the folder and the commit with the study; e2er.org never receives a GitHub token. `--github` alone uses `<your login>/<project>`, `--github owner/repo` that repository; either is made (public) when missing. `--github-path` puts the study in a folder, so several studies can share one repository. No Zenodo deposit and no DOI on this path: the dossier id identifies the study. Without `gh`, or with `gh` not logged in, publish says what to run and changes nothing.
+- **What goes up is what `e2er pack` ships**, built and opened with pack's own code: paper, code, recipe, provenance, `e2er.json` with the dossier, `e2er-package.json`, and the data whose source's terms allow passing them on. Restricted data and files built from them stay out and are named in `e2er-package.json` and `repository.left_out`; a clone verifies (`e2er verify`) and `e2er reproduce` loads and rebuilds them. A last check before the commit refuses any such file in the folder, and a file with a key or token is refused. `--dry-run` lists every file that would go up and every file that stays out.
+- **README.md** of the study opens with the title, question, dossier link, demonstration label, e2er version, template and model, the data sources with terms and citation, the left-out files and how they are rebuilt, and the licence (or that none was set); the export's README follows. It is recorded as an amendment (`kind: "readme"`), which the dossier does not list, as with the paper's stamp.
+- **One ordinary commit, never forced**, on top of the default branch; only the study's folder changes. A folder with someone else's or another study's files, a folder inside another study's folder, a private or archived repository are refused. A new version is a new commit; the same files make none (the repository's `e2er.json` carries no commit, paper address or publishing time).
+- **Links at the commit**: `e2er.json`, `.e2er/github.json`, `.e2er/link.json` and the publish request carry `repository.url/path/commit` (`host: "github"`, `left_out`); the paper is public at `paper/paper.pdf` at the commit, the code public, the data public only when a data file went up. The dossier keeps naming the repository without the commit. The research-object schema documents `repository.host` and `repository.left_out`.
+- **`--github <login>`** (a value without `/`) still sets the author's GitHub login, with a note; the new name for it is `--github-login`.
+
 ## [0.17.0] — 2026-10-15
 
 ### Fixes from the weather-words demo (text analysis, 2026-10-14/15)

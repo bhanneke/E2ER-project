@@ -49,8 +49,21 @@ def _json(path: Path) -> Any:
         return None
 
 
+#: The summary `e2er publish --github` puts at the top of README.md (cli_publish.readme_block).
+README_BEGIN = "<!-- e2er:github begin -->"
+README_END = "<!-- e2er:github end -->"
+README_SUMMARY = re.compile(re.escape(README_BEGIN) + r".*?" + re.escape(README_END) + r"\n*(?:---\n+)?", re.S)
+
+
+def export_readme(text: str) -> str:
+    """README.md as the export wrote it: without the summary publish --github puts at its top."""
+    return README_SUMMARY.sub("", text, count=1).lstrip("\n")
+
+
 def _question_and_title(bundle: Path) -> tuple[str, str]:
+    # The export's own README: the GitHub summary above it must not change the study's title or question.
     readme = (bundle / "README.md").read_text(encoding="utf-8") if (bundle / "README.md").is_file() else ""
+    readme = export_readme(readme)
     q = re.search(r"\*\*Research question:\*\*\s*(.+)", readme)
     question = q.group(1).strip() if q else ""
     title = ""

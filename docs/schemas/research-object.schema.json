@@ -297,6 +297,7 @@
     },
     "repository": {
       "type": "object",
+      "description": "Where the study's files are: a repository at a fixed commit, and the study's folder in it. e2er.org reads the files there and checks them against provenance.json.",
       "properties": {
         "url": {
           "type": "string"
@@ -306,6 +307,31 @@
         },
         "path": {
           "type": "string"
+        },
+        "host": {
+          "enum": [
+            "github"
+          ],
+          "description": "github: e2er publish --github pushed the study's files (what e2er pack ships) to this public repository."
+        },
+        "left_out": {
+          "type": "array",
+          "description": "Data files of the study that are not in the repository because their source's terms keep them out; the study's recipe loads them again. e2er.org's check accepts them as left out, not missing, when the description names their source's terms.",
+          "items": {
+            "type": "object",
+            "required": [
+              "path",
+              "reason"
+            ],
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              }
+            }
+          }
         }
       }
     },

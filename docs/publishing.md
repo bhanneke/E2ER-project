@@ -1,6 +1,6 @@
 # Publishing a study
 
-`e2er publish <folder>` describes an exported study, writes its dossier and, with `--to https://e2er.org`, publishes the description. The files stay on your computer or in your repository; e2er.org receives the description, the dossier and a fingerprint (SHA-256) of every file. The dossier's address (in the paper's footnote, e2er.json and the output) is on the platform you publish to: `--to`, else `E2ER_URL`, else https://e2er.org. Prepare with `--offline` under the same `E2ER_URL` you publish to, or the footnote changes when you publish.
+`e2er publish <folder>` describes an exported study, writes its dossier and, with `--to https://e2er.org`, publishes the description. The files stay on your computer or in your repository; e2er.org receives the description, the dossier and a fingerprint (SHA-256) of every file. With `--github` the files go to a public GitHub repository of yours (see below). The dossier's address (in the paper's footnote, e2er.json and the output) is on the platform you publish to: `--to`, else `E2ER_URL`, else https://e2er.org. Prepare with `--offline` under the same `E2ER_URL` you publish to, or the footnote changes when you publish.
 
 ## The run's database
 
@@ -67,6 +67,26 @@ The data files are deposited one by one, the code (`code/` and `replication/`) a
 The DOIs are reserved first (drafts), everything that can still fail runs next (the dossier, the paper's stamp and recompile, the checks), and the deposits are published last. The reserved deposits are recorded in `.e2er/zenodo.json`; if publish stops on the way, or the platform refuses the request, the next publish reuses them, so a retry makes no new deposits and gives the same dossier.
 
 To try it first, use Zenodo's sandbox (`--zenodo-sandbox`, token in `ZENODO_SANDBOX_TOKEN`), or add `--dry-run` to see what would be deposited without depositing anything.
+
+## The files in a public GitHub repository
+
+`--github` puts the study's files in a public GitHub repository with your own GitHub login and links them from the study page and the dossier:
+
+```
+gh auth login                       # once; or set GH_TOKEN to a token of your own
+e2er publish ./my-study --owner you --project my-study --github --to https://e2er.org
+e2er publish ./my-study --owner you --project my-study --github you/studies --github-path my-study --to https://e2er.org
+```
+
+`--github` alone uses the repository `<your login>/<project>` and makes it (public) when it does not exist. `--github owner/name` uses that repository, making it when it does not exist; `--github-path <folder>` puts the study in a folder of it, so several studies can share one repository. The push uses the GitHub command line tool (`gh`) with your login, or `GH_TOKEN`; without `gh`, or when it is not logged in, publish says what to run and changes nothing. e2er.org never receives a GitHub token: it reads the public files at the commit, as for any study that names a repository. A private or archived repository is refused. There is no Zenodo deposit and no DOI on this path; the dossier id identifies the study, so `--github` does not go with `--zenodo`, `--repo`, `--commit`, `--path`, the `--…-url` options or `--data/--code/--paper private`.
+
+**What goes up** is what `e2er pack` ships: the paper (PDF and LaTeX), the code, the results, the design and reviews, `reproduce.json`, `provenance.json`, `e2er.json` with the dossier, the package's `e2er-package.json` and its pinned environment, and the data whose source's terms allow passing them on. Data a source's terms keep out (the GMD, Yahoo Finance, the WHO GHO, Gaia, GISCO, GitHub) stay out, and so do files the study built from them; `e2er-package.json` names each with the reason, and `e2er reproduce` on a clone loads them from the source again and builds the derived files with the study's own scripts. Right before the commit, publish checks once more that no such file is in the folder, and it refuses a file that holds a key or token. `--dry-run` lists every file that would go up and every file that stays out, and pushes nothing.
+
+**README.md** opens with what a visitor of the repository needs: the title, the question, the dossier link, the demonstration label of a demonstration study, the e2er version, template and model, each data source with its terms and citation, the files left out and how `e2er reproduce` rebuilds them, and the licence of the code and text (`--license`, or a sentence that none was set). The export's own README follows below. The change is an amendment of README.md (`kind: "readme"`); like the paper's stamp, it names the dossier, so the dossier does not list it.
+
+**How it is pushed.** One ordinary commit on top of the repository's default branch, never a force push; a repository that moved meanwhile is reported and nothing is overwritten. Only the study's folder changes: in the repository's root, or in `--github-path`. A folder that holds files of anyone else, or of another study, is refused, and so is a folder inside another study's folder. Publishing a new version adds a commit; publishing the same files again adds none.
+
+**What is recorded.** The repository, the folder and the commit go into `e2er.json` (`repository.url`, `path`, `commit`, with `host: "github"` and `left_out`), `.e2er/github.json` and the publish request. The study page shows "Files: github.com/<owner>/<repo>/tree/<commit>/<folder>"; the paper's address is `paper/paper.pdf` at the commit; public code and data link the `code/` and `data/` folders at the commit. The data are public only when at least one data file went up; otherwise they are private, and readers see the sources' links. The dossier names the repository and never the commit (see above), and the copy of `e2er.json` in the repository records neither the commit nor the paper's address nor the time of publishing: no commit can name itself. e2er.org checks every file at the commit against `provenance.json` and counts a data file the study declares as left out under its source's terms as left out, not missing.
 
 ## Demonstration studies
 
