@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.0] — 2026-10-15
+
 ### Fixes from the weather-words demo (text analysis, 2026-10-14/15)
 - **`e2er rerun --from <specialist>` runs that specialist again.** On a single-pass study, `--from data_analyst` maps to the step `initial`, but the step kept its record of finished work orders (`initial_done`) and of specialists that ran (`done_specialists`): the rerun resumed only the unfinished text validator, and the data analyst never ran again. Now the named specialist and every work order of the plan that runs after it (in the dispatch's own order) lose their completion, and so do the checks and stops inside the dispatch that read their work (`corpus_gate`, `text_results_gate`); the earlier work orders, and stops such as the design review whose specialists do not run again, stand. The plan is kept after the phase (`initial_plan`), so this also works on a completed study. `--from initial` (the whole step) plans the step afresh, and every check and stop inside it comes again. On a fixed `specialists` step, `--from <specialist>` keeps the specialists before it.
 - **A full disk pauses the run.** The run's task died on ENOSPC writing `.pipeline_state.json` (the failure handler's own save raised again) and the study stayed "designing" with nothing running. A full disk now pauses it: "The disk is full; free space and press Resume." (event `paused_disk_full`); the state from the last successful save stands, since it is written atomically. Anything else that escapes the run's handlers fails the run with its error instead of leaving the status as it was.
