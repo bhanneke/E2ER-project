@@ -507,3 +507,21 @@ def test_the_summary_at_the_top_of_readme_changes_neither_the_title_nor_the_ques
     clone = _clone(github / "ada" / "demos.git", tmp_path / "clone")
     assert not [c for c in _run_checks(clone / "p", online=False) if c.status == FAIL]
     assert not [c for c in _run_checks(gaia_study, online=False) if c.status == FAIL]
+
+
+# ── 2026-10-19: what the demos found ─────────────────────────────────────────
+
+
+def test_a_file_github_would_refuse_for_its_size_stops_publish_before_anything_is_pushed(
+    who_study: Path, github: Path, tmp_path: Path, monkeypatch, capsys
+):
+    """The weather-words demo: data/data.db is 145 MB, over GitHub's 100 MB limit; the dry run said it would go up."""
+    monkeypatch.setattr(gf, "GITHUB_FILE_LIMIT", 10)
+    rc = publish(str(who_study), **ID, github_repo="ada/demos", github_path="who", dry_run=True)
+    captured = capsys.readouterr()
+    assert rc != 0
+    assert "GitHub refuses files larger than 100 MB" in captured.out + captured.err
+    rc = publish(str(who_study), **ID, github_repo="ada/demos", github_path="who", out=str(tmp_path / "e"))
+    captured = capsys.readouterr()
+    assert rc != 0 and "GitHub refuses files larger than 100 MB" in captured.out + captured.err
+    assert not (github / "ada" / "demos.git").exists(), "no repository was made and nothing was pushed"

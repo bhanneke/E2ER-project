@@ -1459,6 +1459,12 @@ def _host_on_github(
                     "the study's files hold something that looks like a key or token; nothing was pushed:\n  "
                     + "\n  ".join(secrets[:10])
                 )
+            large = gf.too_large(staged)
+            if large:
+                raise gf.GitHubError(
+                    "GitHub refuses files larger than 100 MB, so the study cannot go up as it is; nothing was "
+                    "pushed:\n  " + "\n  ".join(large)
+                )
             if mode == "plan":
                 _print_github_plan(t, staged)
                 restore()

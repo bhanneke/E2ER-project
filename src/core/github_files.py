@@ -254,6 +254,20 @@ def secrets_in(staged: Staged) -> list[str]:
     return hits
 
 
+#: GitHub refuses a push with a file larger than this (100 MiB); there is no Git LFS on this path.
+GITHUB_FILE_LIMIT = 100 * 1024 * 1024
+
+
+def too_large(staged: Staged) -> list[str]:
+    """``path (size)`` for every staged file GitHub would refuse: larger than 100 MiB."""
+    out: list[str] = []
+    for rel in staged.files:
+        size = (staged.root / rel).stat().st_size
+        if size > GITHUB_FILE_LIMIT:
+            out.append(f"{rel} ({size / 1_000_000:.0f} MB)")
+    return out
+
+
 # ── the push: one ordinary commit, never forced ──────────────────────────────
 
 

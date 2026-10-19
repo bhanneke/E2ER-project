@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **`e2er publish --github` refuses a file larger than 100 MB before anything is pushed**, also in `--dry-run`. GitHub refuses such files, so the push failed after the dry run had listed the file as going up (the weather-words demo's 145 MB `data/data.db`, 2026-10-19).
+
 ## [0.17.1] — 2026-10-19
 
 ### Study files on GitHub (`e2er publish --github`)
