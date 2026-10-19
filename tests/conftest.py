@@ -16,6 +16,9 @@ from src.modules.llm.base import LLMBackend, TokenUsage, ToolHandler, ToolLoopRe
 # The dashboard sends a first-time user to /setup while no settings exist. Tests
 # of other pages run without a .env; tests of the setup page delete this.
 os.environ.setdefault("E2ER_SKIP_SETUP_REDIRECT", "1")
+# Tests run in pytest's temporary folders with nothing set up: e2er would otherwise use the
+# default studies folder (~/e2er-studies) instead of a temporary current folder (src/home.py).
+os.environ.setdefault("E2ER_TEMPORARY_FOLDER_OK", "1")
 
 # ---------------------------------------------------------------------------
 # Deterministic specialist outputs (filename, content)

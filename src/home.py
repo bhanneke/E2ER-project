@@ -15,7 +15,13 @@ it. The rules, in order:
    project folder keeps working as a project of its own, and an existing user
    sees no change until they choose to make it their studies folder.
 3. The remembered studies folder.
-4. Nothing set up yet: the current folder (Setup then offers the default).
+4. Nothing set up yet: the current folder (Setup then offers the default),
+   unless it is a temporary folder (``/tmp``, ``$TMPDIR``): then the default
+   studies folder, so a study never lands where the operating system deletes
+   files on its own (five demos' run databases went that way on 2026-10-19).
+
+A folder the researcher chose in a temporary folder is used, with a warning
+(:func:`storage_warnings`): the operating system may delete it.
 
 Studies made before 0.14.0 keep working from anywhere: the database records
 each study's folder as an absolute path.
@@ -26,11 +32,14 @@ from __future__ import annotations
 import json
 import os
 import re
+import tempfile
 import unicodedata
 from datetime import datetime
 from pathlib import Path
 
 ENV_PROJECT = "E2ER_PROJECT_DIR"
+#: Set (to anything) to keep using a temporary current folder when nothing is set up (the test suite does).
+ENV_TEMPORARY_OK = "E2ER_TEMPORARY_FOLDER_OK"
 
 
 def state_dir() -> Path:
@@ -44,6 +53,112 @@ def settings_file() -> Path:
 
 def default_studies_folder() -> Path:
     return Path.home() / "e2er-studies"
+
+
+# ── temporary folders, which the operating system empties ──────────────────
+
+#: Folders the operating system deletes files from on its own: macOS clears /tmp and the
+#: per-user temporary folder ($TMPDIR, under /var/folders) of files not used for a few days;
+#: Linux empties /tmp at boot and /var/tmp after some weeks.
+_TEMPORARY = (
+    "/tmp",
+    "/private/tmp",
+    "/var/tmp",
+    "/private/var/tmp",
+    "/var/folders",
+    "/private/var/folders",
+    "/dev/shm",
+)
+
+
+def _temporary_roots() -> list[Path]:
+    roots = [Path(r) for r in _TEMPORARY]
+    for raw in (os.environ.get("TMPDIR"), os.environ.get("TEMP"), os.environ.get("TMP"), tempfile.gettempdir()):
+        if raw and raw.strip():
+            roots.append(Path(raw.strip()).expanduser())
+    out: list[Path] = []
+    for r in roots:
+        for form in (r, _resolved(r)):
+            if form not in out:
+                out.append(form)
+    return out
+
+
+def _resolved(p: Path) -> Path:
+    try:
+        return p.expanduser().resolve()
+    except (OSError, RuntimeError):
+        return p.expanduser().absolute()
+
+
+def temporary_root(path: str | Path) -> Path | None:
+    """The temporary folder ``path`` is in (``/tmp``, ``$TMPDIR``, …), or None."""
+    p = Path(path).expanduser()
+    for form in (p.absolute(), _resolved(p)):
+        for root in _temporary_roots():
+            if form == root or root in form.parents:
+                return root
+    return None
+
+
+def temporary_notice(path: str | Path, what: str) -> str | None:
+    """Why ``path`` is a bad place for studies, when it is in a temporary folder; else None."""
+    root = temporary_root(path)
+    if root is None:
+        return None
+    return (
+        f"{what} {path} is in a temporary folder ({root}): the operating system may delete it on its own, and "
+        "with it your studies and their run database. Choose a folder in your home folder, such as ~/e2er-studies."
+    )
+
+
+def temporary_warning(path: str | Path, what: str) -> str | None:
+    """:func:`temporary_notice` as a warning line (``warning: …``)."""
+    notice = temporary_notice(path, what)
+    return f"warning: {notice}" if notice else None
+
+
+def storage_warnings(settings: object | None = None) -> list[str]:
+    """Warnings for the folders e2er keeps studies, runs and exports in that lie in a temporary folder."""
+    places: list[tuple[str, Path]] = [("the studies folder", project_dir())]
+    if settings is not None:
+        root = Path(str(getattr(settings, "workspace_root", "workspaces") or "workspaces")).expanduser()
+        places.append(("the studies' run folders (WORKSPACE_ROOT)", root if root.is_absolute() else Path.cwd() / root))
+        url = ""
+        try:
+            url = str(getattr(settings, "resolved_database_url", "") or "")
+        except Exception:  # noqa: BLE001 - a broken setting is the doctor's to report
+            url = ""
+        if not url or url.startswith("sqlite"):
+            from .db.client import _sqlite_path
+
+            try:
+                places.append(("the run database (DATABASE_URL)", Path(_sqlite_path(url))))
+            except ValueError:
+                pass
+        out_dir = getattr(settings, "output_dir", None)
+        if out_dir:
+            places.append(("the exports folder (OUTPUT_DIR)", Path(str(out_dir)).expanduser()))
+    out: list[str] = []
+    for what, place in places:
+        w = temporary_warning(place, what)
+        if w and w not in out:
+            out.append(w)
+    return out
+
+
+def print_storage_warnings() -> None:
+    """Print :func:`storage_warnings` for the settings in use (standard error); a broken setup prints nothing."""
+    import sys
+
+    try:
+        from .config import get_settings
+
+        found = storage_warnings(get_settings())
+    except Exception:  # noqa: BLE001 - settings errors are reported where they are used
+        found = storage_warnings()
+    for w in found:
+        print(w, file=sys.stderr)
 
 
 def _read() -> dict[str, object]:
@@ -86,6 +201,13 @@ def project_dir() -> Path:
     remembered = remembered_studies_folder()
     if remembered is not None and remembered.is_dir():
         return remembered
+    if (
+        not os.environ.get(ENV_TEMPORARY_OK)
+        and temporary_root(cwd) is not None
+        and temporary_root(default_studies_folder()) is None
+    ):
+        # Nothing set up, started in a temporary folder: the default, never a folder the OS empties.
+        return default_studies_folder()
     return cwd
 
 

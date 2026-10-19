@@ -452,4 +452,8 @@ def _choose_folder(req: SaveSetup) -> tuple[Path, str]:
     if os.environ.get(home.ENV_PROJECT):
         # This server was started for the folder it was in; from now on it uses the studies folder.
         os.environ[home.ENV_PROJECT] = str(target)
-    return target, f"Your studies folder is {target}. e2er uses it from any folder you start it in."
+    note = f"Your studies folder is {target}. e2er uses it from any folder you start it in."
+    notice = home.temporary_notice(target, "this folder,")
+    if notice:
+        note += f" Warning: {notice}"
+    return target, note

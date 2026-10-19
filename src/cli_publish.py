@@ -20,8 +20,10 @@ The dossier is built from the study's run database, which publish finds by
 itself: ``--db``, else the database the study folder's settings name (the
 first ``.env`` above the bundle, ``DATABASE_URL``, as the server reads it),
 else the one of the current folder, else ``~/.e2er/papers.db``. It must hold
-the run of the paper the folder was exported from; without one, publish
-refuses. ``--no-db`` publishes anyway, with a dossier that says its workflow
+the run of the paper the folder was exported from. Without one, a folder
+published before carries over the dossier of the version it published,
+checked against the platform (src/core/carry_over.py); any other folder is
+refused. ``--no-db`` publishes anyway, with a dossier that says its workflow
 is not recorded.
 
 ``--dry-run`` rehearses everything in a scratch copy of the bundle and prints
@@ -51,6 +53,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from .core import carry_over as co
 from .core import data_terms
 from .core import github_files as gf
 from .core import zenodo as zen
@@ -384,9 +387,11 @@ def _describe(
     prov = json.loads((b / "provenance.json").read_text(encoding="utf-8"))
     paper_id = (prov.get("run") or {}).get("paper_id")
 
-    # 2. The run's database: the dossier's workflow comes from it.
+    # 2. The run's database: the dossier's workflow comes from it. Without it, a folder published
+    # before carries over the dossier of the version it published (checked against e2er.org).
     run_db: Path | None = None
     run_record = None
+    previous: co.Previous | None = None
     if no_db:
         print(
             "WARNING: --no-db: publishing WITHOUT the run's database. The dossier will not list the steps of the "
@@ -394,9 +399,24 @@ def _describe(
         )
     else:
         run_db, why = find_run_db(b, db, paper_id)
-        if run_db is None:
+        if run_db is None and db is None and co.published_link(b) is not None:
+            try:
+                previous = co.fetch_previous(b, f"{owner}/{project}")
+            except co.CarryOverError as e:
+                print(f"error: {why}")
+                print(f"error: the dossier of the version published before cannot be carried over: {e}")
+                return 1, None
+            print(
+                f"WARNING: the run database is not available ({why.split(' (looked at')[0]}). This folder was "
+                f"published as version {previous.version}: its dossier {previous.platform_url}/d/"
+                f"{previous.dossier_id.removeprefix('sha256:')[:16]} (checked against {previous.platform_url}) is "
+                f"carried over with its {previous.steps} steps unchanged; the new dossier says so (an amendment "
+                "on e2er.json). No step is added or rebuilt."
+            )
+        elif run_db is None:
             print(f"error: {why}")
             return 1, None
+    if run_db is not None:
         assert paper_id is not None
         run_record = read_run(run_db, paper_id, files_at_export(prov), b)
         if not run_record.recorded:
@@ -576,6 +596,8 @@ def _describe(
             verification=verification,
             run_record=run_record,
         )
+        if previous is not None:
+            co.carried_manifest_parts(m, previous)
         _declare(m, purpose, kind)
         data_terms.annotate(m, licensed)
         return m
@@ -616,9 +638,31 @@ def _describe(
             return 1, None
 
     # 5. The dossier, from the final availability (a copy: nothing changes it afterwards).
-    manifest["amendments"] = _amendments_for_dossier(b)
-    doc = build_dossier(manifest, db=run_db, bundle=b, availability=copy.deepcopy(availability), run=run_record)
-    del manifest["amendments"]
+    if previous is not None:
+        # The earlier version's dossier: its steps unchanged, this version's availability and amendments.
+        differ = co.data_mismatch(previous, manifest["data"])
+        if differ:
+            print(
+                "error: the data of this folder are not the ones the earlier dossier fingerprints, so it cannot "
+                f"be carried over: {', '.join(differ[:5])}"
+            )
+            return 1, None
+        from . import __version__
+
+        doc = co.carried_dossier(
+            previous,
+            availability=availability,
+            amendments=_amendments_for_dossier(b),
+            purpose=purpose,
+            kind=kind,
+            github=github_target is not None,
+            at=_now(),
+            e2er_version=__version__,
+        )
+    else:
+        manifest["amendments"] = _amendments_for_dossier(b)
+        doc = build_dossier(manifest, db=run_db, bundle=b, availability=copy.deepcopy(availability), run=run_record)
+        del manifest["amendments"]
     leaks = find_local_paths(doc)
     if leaks:
         print("error: the dossier names a path on this machine; nothing was written:")
@@ -751,6 +795,11 @@ def _describe(
     steps = len(doc.get("workflow") or [])
     researcher = sum(1 for s in doc.get("workflow") or [] if s.get("type") == "researcher")
     print(f"✓ Dossier {did[:23]}…  {dossier_url(did, site_url)}  ({steps} steps, {researcher} researcher actions)")
+    if previous is not None:
+        print(
+            f"  dossier carried over from version {previous.version} ({previous.dossier_id[:23]}…): the run "
+            "database was not available; the dossier's amendment on e2er.json says so"
+        )
     print(f"  availability: {describe_availability(availability)}")
     if access:
         print(f"  paper: public ({access['pdf']})")

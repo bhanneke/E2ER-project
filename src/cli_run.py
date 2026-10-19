@@ -385,6 +385,10 @@ def run(
         names = ", ".join(sorted(available())) or "none"
         print(f"e2er run: {str(e).splitlines()[0]}. Available templates: {names}", file=sys.stderr)
         return 2
+    # Studies, runs and their database in a folder the operating system empties: said before the run starts.
+    from .home import print_storage_warnings
+
+    print_storage_warnings()
     # The chosen files are checked here, before anything is started: a typo costs a message.
     try:
         data_files, paper_ids = resolve_inputs(data, papers)

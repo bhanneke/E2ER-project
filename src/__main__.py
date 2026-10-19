@@ -617,7 +617,8 @@ def main() -> None:
         "--no-db",
         action="store_true",
         help="Publish without the run's database: the dossier then lists no steps, no commit and no researcher "
-        "actions, and says so. Only for a folder whose database is gone.",
+        "actions, and says so. Only for a folder whose database is gone. (Without --no-db, a folder published "
+        "before whose database is gone carries over the dossier of the version it published.)",
     )
     publish_p.add_argument(
         "--template",
@@ -1344,6 +1345,9 @@ def _serve(*, host: str, port: int, reload: bool, no_browser: bool) -> int:
     if open_it and not reload:
         _open_browser(url)
 
+    from .home import print_storage_warnings
+
+    print_storage_warnings()
     print(f"e2er is running at {url}")
     print("   (keep this window open while you work; ctrl-c stops e2er)")
     stop = _write_session_file_when_up(host, port, token)

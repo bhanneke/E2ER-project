@@ -461,6 +461,11 @@ def _init_defaults() -> int:
         literature_dir="./literature",
     )
     _write_env(root / ".env", content, force=True)
+    from .home import temporary_warning
+
+    tmp_warning = temporary_warning(root, "the folder you set up e2er in,")
+    if tmp_warning:
+        print(f"  {tmp_warning}")
     _copy_skills_for("claude_code", ask=False)
     print('  ✓ ready — verify with `e2er doctor`, then `e2er run "<your RQ>"`')
     return 0
@@ -581,6 +586,11 @@ def init(force: bool = False, defaults: bool = False) -> int:
         literature_dir=literature_dir,
     )
     _write_env(env_path, content, force=force)
+    from .home import temporary_warning
+
+    tmp_warning = temporary_warning(Path.cwd(), "the folder you set up e2er in,")
+    if tmp_warning:
+        print(f"  {tmp_warning}")
 
     # Skill files: only into the chosen CLI backend's folder, after asking.
     print()

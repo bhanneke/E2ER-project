@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **A new version of a published study whose run database is gone carries over the earlier dossier** (`e2er publish`). When the database is not found and the folder was published before (`.e2er/link.json`), publish fetches the dossier of the version it published from the platform and checks it: `.e2er/link.json` and `e2er.json` name it, the platform's latest version is that dossier and that content, the document hashes to its id, the data fingerprints are the folder's. The new dossier is that document with its steps unchanged, the new availability (the files on GitHub) and an amendment on `e2er.json` (`kind: "carried_over"`, `from_version`, `from_dossier`, `e2er_version`): "published again with files on GitHub; run database not available, dossier carried over from version N". e2er.json keeps the earlier version's description of the run (recorded agents and skills). Nothing is invented; anything that does not match is refused and the folder stays as it was. `--no-db` still publishes a dossier without steps when asked for. Five demos lost their run databases to macOS's /tmp cleanup on 2026-10-19; without this their new versions would have had no steps.
+
+### Changed
+- **Studies never default to a temporary folder.** e2er started in a temporary folder (`/tmp`, `$TMPDIR`, `/var/folders`, …) with nothing set up uses the default studies folder (`~/e2er-studies`) instead of the current folder. A temporary folder the researcher chose (a `.env` there, `WORKSPACE_ROOT`, a SQLite `DATABASE_URL`, `OUTPUT_DIR`, the studies folder in Setup, `e2er init` there) is used, with a warning that the operating system may delete it, at `e2er` start, `e2er run`, `e2er init` and in Setup. `E2ER_TEMPORARY_FOLDER_OK=1` keeps the current folder (the test suite sets it).
+
 ### Fixed
 - **`e2er publish --github` refuses a file larger than 100 MB before anything is pushed**, also in `--dry-run`. GitHub refuses such files, so the push failed after the dry run had listed the file as going up (the weather-words demo's 145 MB `data/data.db`, 2026-10-19).
 
