@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.1] — 2026-10-19
+
 ### Study files on GitHub (`e2er publish --github`)
 - **`e2er publish --github [owner/repo] [--github-path <folder>]`** pushes the study's files to a public GitHub repository with your own login (`gh`, or `GH_TOKEN`) and records the repository, the folder and the commit with the study; e2er.org never receives a GitHub token. `--github` alone uses `<your login>/<project>`, `--github owner/repo` that repository; either is made (public) when missing. `--github-path` puts the study in a folder, so several studies can share one repository. No Zenodo deposit and no DOI on this path: the dossier id identifies the study. Without `gh`, or with `gh` not logged in, publish says what to run and changes nothing.
 - **What goes up is what `e2er pack` ships**, built and opened with pack's own code: paper, code, recipe, provenance, `e2er.json` with the dossier, `e2er-package.json`, and the data whose source's terms allow passing them on. Restricted data and files built from them stay out and are named in `e2er-package.json` and `repository.left_out`; a clone verifies (`e2er verify`) and `e2er reproduce` loads and rebuilds them. A last check before the commit refuses any such file in the folder, and a file with a key or token is refused. `--dry-run` lists every file that would go up and every file that stays out.
