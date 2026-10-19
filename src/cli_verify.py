@@ -173,12 +173,8 @@ def _check_integrity(bundle: Path, package_left_out: dict[str, dict[str, Any]] |
         from .core.dossier import canonical
         from .core.export.provenance import _edges
 
-        recorded = [
-            e
-            for e in prov.get("edges", [])
-            if not (isinstance(e, dict) and e.get("type") == "data" and e.get("output") in left_out)
-        ]
-        if canonical(recorded) != canonical(_edges(bundle)):
+        recorded = prov.get("edges", [])
+        if canonical(recorded) != canonical(_edges(bundle, set(left_out))):
             bits.append(
                 "the derivation edges in provenance.json are not the ones the bundle's own reports give "
                 "(table cells, citations, figures, estimation, data): provenance.json was edited"
@@ -199,8 +195,9 @@ def _check_integrity(bundle: Path, package_left_out: dict[str, dict[str, Any]] |
         )
     notes = ""
     if left_out:
+        shown = ", ".join(sorted(left_out)[:3]) + (f" and {len(left_out) - 3} more" if len(left_out) > 3 else "")
         notes += (
-            f"; {len(left_out)} data file(s) left out of the package ({', '.join(sorted(left_out)[:3])}): "
+            f"; {len(left_out)} data file(s) left out of the package ({shown}): "
             f"{declared[sorted(left_out)[0]].get('reason')}"
         )
     amendments = prov.get("amendments") or []
@@ -1091,7 +1088,7 @@ def _check_reproduction(bundle: Path, required: str | None = None) -> Check | No
 _REPRODUCTION_FILES = ("replication_plan.json", "sandbox_log.json", "reproduction_check.json", "reproduction_report.md")
 
 
-def _check_results_from_code(bundle: Path) -> Check | None:
+def _check_results_from_code(bundle: Path, left_out: set[str] | None = None) -> Check | None:
     """Each results file is the file the last run of the study's script wrote (provenance.json records which).
 
     The run's script log records the SHA-256 of every file each script run
@@ -1114,6 +1111,7 @@ def _check_results_from_code(bundle: Path) -> Check | None:
     problems: list[str] = []
     traced: list[str] = []
     skipped: list[str] = []
+    left: list[str] = []
     for rel, entry in sorted(record.items()):
         name = str(rel).rsplit("/", 1)[-1]
         if not isinstance(entry, dict):
@@ -1123,6 +1121,9 @@ def _check_results_from_code(bundle: Path) -> Check | None:
             skipped.append(name)
             continue
         path = bundle / str(rel)
+        if not path.is_file() and str(rel) in (left_out or set()):
+            left.append(name)  # left out under a source's terms: nothing here to compare
+            continue
         if not path.is_file():
             problems.append(f"{name} is not in the folder")
             continue
@@ -1151,10 +1152,20 @@ def _check_results_from_code(bundle: Path) -> Check | None:
     if problems:
         return Check("results from code", FAIL, "; ".join(problems))
     if not traced:
+        if left:
+            return Check(
+                "results from code",
+                SKIP,
+                f"not checked: {', '.join(left)} left out under a source's terms; `e2er reproduce` writes "
+                + ("it" if len(left) == 1 else "them")
+                + " again",
+            )
         return Check("results from code", SKIP, "not checked: the run predates output records")
     detail = "written by the last run of the shipped script: " + ", ".join(traced)
     if skipped:
         detail += f"; not checked (the run predates output records): {', '.join(skipped)}"
+    if left:
+        detail += f"; not checked (left out under a source's terms): {', '.join(left)}"
     return Check("results from code", PASS, detail)
 
 
@@ -1189,22 +1200,113 @@ def _required_checks(bundle: Path) -> dict[str, str]:
     return out
 
 
+def _left_out_here(bundle: Path, package_left_out: dict[str, dict[str, Any]] | None) -> dict[str, dict[str, Any]]:
+    """Files a published copy left out under a source's terms and the folder does not have, by path.
+
+    From a package verify opened, its checked manifest; in a folder, only declarations the folder's own
+    records support (data_terms.restricted_paths), as the integrity check counts them.
+    """
+    from .core.export.package import declared_left_out
+
+    if package_left_out is not None:
+        declared = package_left_out
+    else:
+        declared = declared_left_out(bundle)
+        if declared:
+            from .core.data_terms import restricted_paths
+
+            restricted = restricted_paths(bundle)
+            declared = {p: i for p, i in declared.items() if p in restricted}
+    return {p: i for p, i in declared.items() if not (bundle / p).exists()}
+
+
+def _needs(name: str, left: dict[str, dict[str, Any]], paths: list[str]) -> Check:
+    """SKIP: the check needs files a published copy left out under a source's terms."""
+    from .core.data_terms import known
+
+    terms = known()
+    shown = sorted(paths)
+    sources = []
+    for p in shown:
+        c = left[p].get("source")
+        t = terms.get(str(c)) if c else None
+        label = t.short if t else str(c or "its source's")
+        if label not in sources:
+            sources.append(label)
+    rebuilt = all(left[p].get("rebuilt_by") for p in shown)
+    what = ", ".join(shown[:3]) + (f" and {len(shown) - 3} more" if len(shown) > 3 else "")
+    how = (
+        "run `e2er reproduce` to rebuild " + ("it" if len(shown) == 1 else "them")
+        if rebuilt
+        else "no recorded step rebuilds " + ("it" if len(shown) == 1 else "all of them")
+    )
+    return Check(name, SKIP, f"needs {what}, left out under {' and '.join(sources)} terms; {how}")
+
+
+def _referenced(ws: Path, left: dict[str, dict[str, Any]], names: tuple[str, ...] = ()) -> list[str]:
+    """Left-out files (folder paths) that the workspace's results or design files name, or that are ``names``."""
+    by_base: dict[str, list[str]] = {}
+    for p in left:
+        by_base.setdefault(p.rsplit("/", 1)[-1], []).append(p)
+    texts = ""
+    for f in sorted(ws.glob("*.json")):
+        try:
+            texts += f.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+    out = []
+    for base, paths in by_base.items():
+        if base in names or f'"{base}"' in texts:
+            out += [p for p in paths if p.startswith("results/")]
+    return sorted(out)
+
+
+def _mentions(check: Check, left: dict[str, dict[str, Any]]) -> Check:
+    """A failed check whose reason names a left-out file is skipped instead: the file is missing for a reason."""
+    if check.status != FAIL or not left:
+        return check
+    named = [p for p in left if re.search(rf"(?<![\w.]){re.escape(p.rsplit('/', 1)[-1])}(?![\w])", check.detail)]
+    return _needs(check.name, left, named) if named else check
+
+
 def _run_checks(bundle: Path, online: bool, package_left_out: dict[str, dict[str, Any]] | None = None) -> list[Check]:
     checks = [_check_integrity(bundle, package_left_out), _check_anchor(bundle)]
+    # Results files a published copy left out (they hold a restricted source's rows): a check that needs one
+    # is skipped and says which, instead of failing on a file that is missing for a reason.
+    left = {p: i for p, i in _left_out_here(bundle, package_left_out).items() if p.startswith("results/")}
+    left_json = sorted(p for p in left if p.endswith(".json") and p.count("/") == 1)
     with tempfile.TemporaryDirectory() as td:
         ws = Path(td)
         _reconstruct_workspace(bundle, ws)
-        checks.append(_check_numbers(bundle, ws))
-        checks.append(_check_tables(bundle, ws))
-        checks.append(_check_spec(ws))
-        contract = _check_results_contract(ws)
-        if contract is not None:
-            checks.append(contract)
+        numbers = _check_numbers(bundle, ws)
+        if left_json and numbers.status != PASS:
+            numbers = _needs("numbers", left, left_json)
+        checks.append(numbers)
+        tables = _check_tables(bundle, ws)
+        if "results/table_spec.json" in left or (left_json and tables.status == FAIL):
+            tables = _needs(
+                "tables", left, ["results/table_spec.json"] if "results/table_spec.json" in left else left_json
+            )
+        checks.append(tables)
+        if "results/estimation_results.json" in left:
+            checks.append(_needs("spec", left, ["results/estimation_results.json"]))
+        else:
+            checks.append(_mentions(_check_spec(ws), left))
+            contract = _check_results_contract(ws)
+            if contract is not None:
+                checks.append(_mentions(contract, left))
         method = _check_method(ws)
         if method is not None:
-            checks.append(method)
+            from .core.pipeline.spatial_checks import UNITS_FILE, WEIGHTS_FILE
+
+            needed = _referenced(ws, left, (UNITS_FILE, WEIGHTS_FILE) if "spatial" in method.detail else ())
+            if needed and method.status != PASS:
+                method = _needs("method checks", left, needed)
+            elif "results/estimation_results.json" in left:
+                method = _needs("method checks", left, ["results/estimation_results.json"])
+            checks.append(_mentions(method, left))
         checks.append(_check_citations_offline(bundle))
-    from_code = _check_results_from_code(bundle)
+    from_code = _check_results_from_code(bundle, set(left))
     if from_code is not None:
         checks.append(from_code)
     required = _required_checks(bundle)

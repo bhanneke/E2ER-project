@@ -112,8 +112,10 @@ def rerun_here(monkeypatch, tmp_path):
 
 def test_a_file_built_from_restricted_data_is_restricted_too(tmp_path):
     folder = export_paper(_gaia_workspace(tmp_path), tmp_path / "exports", date_str="20261014")
-    [d] = dd.derived(folder)
+    [d] = dd.kept_out(folder)
     assert d.path == "data/gaia_clean.csv" and d.connectors == ["gaia"]
+    # The estimates are built from the Gaia rows too, but are an aggregate of them (derived_rows.py).
+    assert {x.path for x in dd.derived(folder)} == {"data/gaia_clean.csv", "results/estimation_results.json"}
     assert d.writers == ["code/scratch/clean_gaia.py"]
     [use] = data_terms.uses(folder)
     assert use.files == ["data/gaia_clean.csv"]
@@ -200,7 +202,15 @@ def test_publish_treats_derived_data_like_the_sources_and_says_when_it_cannot_be
             "named": "data/gaia_clean.csv",
             "connectors": ["gaia"],
             "writers": ["code/scratch/clean_gaia.py"],
-        }
+            "holds_rows": True,
+        },
+        {
+            "path": "results/estimation_results.json",
+            "named": "estimation_results.json",
+            "connectors": ["gaia"],
+            "writers": ["code/run_estimation.py"],
+            "holds_rows": False,
+        },
     ]
     capsys.readouterr()
     assert publish(str(folder), **BASE, data="public", no_db=True, out=str(tmp_path / "e1")) == 1

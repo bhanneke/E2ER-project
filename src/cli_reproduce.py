@@ -82,8 +82,10 @@ def render(
                 lines.append(f"       full output: {Path(s.log).name}, removed with the run folder (--keep keeps it)")
     if len(steps) < len(recipe["steps"]):
         lines.append(f"  {len(recipe['steps']) - len(steps)} later step(s) not run.")
+    rebuilt = [i for i in inputs if i.get("output")]
+    inputs = [i for i in inputs if not i.get("output")]
     lines += ["", "Inputs, compared with the study's own files (SHA-256):"]
-    declared = recipe.get("inputs") or []
+    declared = [i for i in recipe.get("inputs") or [] if not (isinstance(i, dict) and i.get("output"))]
     if not declared:
         lines.append("  the study's reproduce.json lists no inputs")
     elif not inputs:
@@ -113,6 +115,17 @@ def render(
             lines.append(f"  {len(differ)} differ: {', '.join(named)}")
         if missing:
             lines.append(f"  {len(missing)} missing: {', '.join(missing)}")
+    if rebuilt:
+        lines += ["", "Files a published folder leaves out (they hold a source's rows), as the rerun wrote them:"]
+        words = {
+            "identical": "identical to the study's file",
+            rp.SAME_ROWS: "the study's rows, in another order",
+            rp.SAME_NUMBERS: f"the study's rows, decimal numbers equal to {rp.NUMERIC_DIGITS} significant digits",
+            "differs": "differs from the study's file",
+            "missing": "not built",
+        }
+        for entry in rebuilt:
+            lines.append(f"  {entry['path']}: {words.get(entry['status'], entry['status'])}")
     if files:
         lines += ["", "Results, value by value:"]
         for f in files:
@@ -185,11 +198,25 @@ def _reproduce_folder(
     if not root.is_dir():
         print(f"error: {root} is not a folder or a .e2er package")
         return 2
+    rebuild = pkg.rebuild_steps(root)
     try:
-        recipe = rp.load_recipe(root, rebuild=pkg.rebuild_steps(root))
+        recipe = rp.load_recipe(root, rebuild=rebuild)
     except rp.RecipeError as e:
         print(f"error: {e}")
         return 2
+    try:
+        own = json.loads((root / rp.RECIPE_FILE).read_text(encoding="utf-8")).get("steps") or []
+    except (OSError, ValueError, AttributeError):
+        own = []
+    ran = {Path(a).name for st in own if isinstance(st, dict) for a in rp.step_argv(st)}
+    built = sorted(
+        {str(r["from"]) for r in rebuild if not r.get("written") and r.get("from") and str(r.get("script")) not in ran}
+    )
+    if built:
+        # The recipe's own notes were written before the package left these files out.
+        recipe.setdefault("notes", []).append(
+            f"{pkg.MANIFEST} adds the steps that build the files it left out again: " + ", ".join(built) + "."
+        )
     # Files a package left out carry the fingerprints pack recorded; an older recipe gets the numbers one.
     rp.add_numeric_fingerprints(recipe, pkg.left_out_content(root, trusted=package))
     # Never from reproduce.json itself: only e2er sets where the wheels are, for an unpacked package.

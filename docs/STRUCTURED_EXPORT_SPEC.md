@@ -140,6 +140,42 @@ that script reads is loaded again by the recipe: export writes that step into th
 for a recipe written before, the package carries it in the manifest's `rebuild` list and
 `e2er reproduce` adds it to the recipe it runs.
 
+**Results built from restricted data** (`src/core/derived_rows.py`). Not only data files:
+any output a script writes after reading restricted data (a results table, a weights list,
+the data behind a figure, under `results/`, `misc/` or `paper/`; `.csv`, `.json`, `.txt`,
+`.npy`, …) is built from it, and so is `results/figure_spec.json` in a study that loaded
+restricted data, whoever wrote it. Such a file is left out like the source's data unless it
+is an **aggregate**: a format e2er reads here (CSV/TSV, `.txt`/`.dat` columns, JSON,
+JSONL, SQLite; Parquet, Excel, NumPy and pickle files count as row-level), at most
+`row_limit` rows (a tenth of the source's rows, at most 50), no JSON array of more than
+`point_limit` numbers or coordinate pairs (1% of the source's rows, at least 10, at most
+50, never above `row_limit`) or more than `row_limit` records, no JSON object that is a set
+of more than `row_limit` records, and no identifier of the source anywhere (a value of a
+column whose values are all distinct, such as Gaia's `source_id` or a region's name; values
+the study also loaded from a source without such terms, such as NUTS codes, are not the
+source's). Lists of labels (the region codes of a cluster) are not point arrays. Gaia's
+14,066 rows give 50 and 50, GISCO's 299 regions 29 rows and 10 points. A file under `data/`
+is left out whatever it holds; rendered output (PDF, PNG, LaTeX tables) is never classified
+and stays. The left-out reason says what holds the rows: "built from ESA Gaia Data
+Release 3 (Gaia) data and holds them row by row (an array of 9,863 values at
+figures[2].y); its terms do not allow passing them on". Export records for each derived
+file whether it held the source's rows (`run.derived_data[].holds_rows`), so a copy without
+the file can tell rows that were left out from an aggregate that must be there; for a
+folder exported before, a missing derived file counts as left out.
+
+A left-out output is rebuilt by `e2er reproduce` with the rest (the manifest's `rebuild`
+list, `"output": true`): a file a step of the recipe writes needs nothing (`"written":
+true`); a file a step reads (the units table the estimation reads) is built first by a
+script that writes it without reading it, after the data are loaded again; any other is
+built by its writer after the last step that writes a file it reads (`"after"`). Each such
+file becomes an input marked `"output"` with its SHA-256 and content fingerprint, so the
+report compares it with the study's file ("Files a published folder leaves out …, as the
+rerun wrote them"); it does not change the verdict. In a folder that lacks such a file,
+`e2er verify` counts it as left out (not missing) when the folder's own records say it
+holds restricted rows; a check that needs it is skipped and says so: "needs
+results/spatial_units.csv, left out under GISCO terms; run `e2er reproduce` to rebuild it"
+(or "no recorded step rebuilds it").
+
 **`e2er-package.json`.**
 
 ```json
@@ -154,12 +190,17 @@ for a recipe written before, the package carries it in the manifest's `rebuild` 
   "fingerprint": "sha256:…",                // SHA-256 of the canonical JSON of [{path, sha256, bytes}], sorted by path
   "left_out": [{"path": "data/data.db", "reason": "the terms of the Global Macro Database (GMD) do not allow passing the data on",
                 "source": "gmd", "rebuilt_by": {"by": "code/get_data.py", "source": "…"},
-                "needed": true,                 // needed: the recipe lists it as an input (the code reads it)
+                "needed": true,                 // needed: the recipe lists it as an input or lays it out (the code reads it)
                 "loads": ["gmd_panel"],         // tables (or the file) get_data.py loads again from their sources
                 "builds": [{"by": "code/scratch/clean.py", "what": ["panel_clean"]}],  // the study's own steps
                 "not_built": [],                // tables no step loads or builds (a rerun cannot get them)
                 "content": {"tables": {"gmd_panel": {"rows": 120, "content_sha256": "…", "numeric_sha256": "…"}}}}],
-  "rebuild": [{"path": "data/gaia_clean.csv", "script": "clean_gaia.py", "from": "code/scratch/clean_gaia.py"}],
+  "rebuild": [{"path": "data/gaia_clean.csv", "script": "clean_gaia.py", "from": "code/scratch/clean_gaia.py"},
+              {"path": "spatial_units.csv", "script": "build_data.py", "from": "code/scratch/build_data.py",
+               "output": true, "folder": "results/spatial_units.csv", "sha256": "…",
+               "content": {"rows": 236, "content_sha256": "…", "numeric_sha256": "…"}},
+              {"path": "spatial_weights_knn8.csv", "script": "run_estimation.py", "from": "code/run_estimation.py",
+               "output": true, "written": true, "folder": "results/spatial_weights_knn8.csv", "sha256": "…"}],
   "recipe": {"present": true, "python": "3.12", "requirements": "code/requirements.txt",
              "steps": [{"run": ["python", "get_data.py"], "about": "…"}, …],
              "inputs": [{"path": "data.db", "source": "…", "reload": "get_data.py"}],

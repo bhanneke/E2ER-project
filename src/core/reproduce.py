@@ -199,11 +199,15 @@ def optional_inputs(recipe: dict[str, Any]) -> set[str]:
 
 
 def apply_rebuild(recipe: dict[str, Any], plan: list[dict[str, Any]]) -> None:
-    """Add the steps that build derived inputs again (data built from data a source's terms keep out).
+    """Add the steps that build derived files again (files built from data a source's terms keep out).
 
     Each item ``{"path": run-folder path, "script": run name, "from": folder path}`` marks the input with
     ``"rebuild"``, lays the script out and runs it after the steps that load inputs again, only when the
-    folder lacked the input (``"when_missing"``). Items for inputs the recipe does not list are ignored.
+    folder lacked the input (``"when_missing"``). Items for inputs the recipe does not list are ignored,
+    except a left-out output (``"output": true``, derived_data.rebuild_plan): it becomes an input marked
+    ``"output"`` (compared with the study's file, apart from the verdict), and the script runs after the
+    step its ``"after"`` names, or not at all when a step of the recipe writes it (``"written"``). Items with
+    the same script share one step.
     """
     inputs = {str(i.get("path")): i for i in recipe.get("inputs") or [] if isinstance(i, dict)}
     files = recipe.setdefault("files", {}) if isinstance(recipe.get("files"), dict) else None
@@ -214,19 +218,61 @@ def apply_rebuild(recipe: dict[str, Any], plan: list[dict[str, Any]]) -> None:
         if not isinstance(item, dict):
             continue
         path, script, src = str(item.get("path")), str(item.get("script")), str(item.get("from"))
+        if not (_safe_rel(path) and _safe_rel(script) and _safe_rel(src)):
+            continue
         target = inputs.get(path)
-        if (
-            target is None
-            or target.get("reload")
-            or target.get("rebuild")
-            or not (_safe_rel(script) and _safe_rel(src))
-        ):
+        if target is None and item.get("output") and isinstance(item.get("sha256"), str):
+            target = {
+                "path": path,
+                "sha256": item["sha256"],
+                "source": f"{item.get('folder') or path}, built by the study's code from data a source's terms keep "
+                "out of a published folder",
+                "output": True,
+            }
+            content = item.get("content")
+            if isinstance(content, dict):
+                target.update(
+                    {k: v for k, v in content.items() if k in ("rows", "content_sha256", "numeric_sha256", "tables")}
+                )
+            recipe.setdefault("inputs", []).append(target)
+            inputs[path] = target
+        if target is None or target.get("reload") or target.get("rebuild"):
             continue
         target["rebuild"] = script
         if files is not None:
             files.setdefault(script, src)
+        if item.get("written"):
+            target["written"] = True  # a step of the recipe writes it: no step to add
+            continue
+        existing = next(
+            (
+                st
+                for st in steps
+                if isinstance(st, dict)
+                and isinstance(st.get("when_missing"), list)
+                and any(Path(a).name == script for a in step_argv(st))
+            ),
+            None,
+        )
+        if existing is not None:
+            existing["when_missing"].append(path)
+            existing["about"] = (
+                "data preparation: builds "
+                + ", ".join(map(str, existing["when_missing"]))
+                + (" again from the data loaded again")
+            )
+            continue
+        after = item.get("after")
+        named = [
+            i
+            for i, st in enumerate(steps)
+            if isinstance(st, dict) and after and any(Path(a).name == after for a in step_argv(st))
+        ]
         reload_at = [i for i, st in enumerate(steps) if isinstance(st, dict) and is_reload_step(st, recipe)]
-        at = (reload_at[-1] + 1) if reload_at else 0
+        if named:
+            at = named[-1] + 1
+        else:
+            at = (reload_at[-1] + 1) if reload_at else 0
         steps.insert(
             at,
             {
@@ -509,6 +555,8 @@ def compare_inputs(run_dir: Path, inputs: list[dict[str, Any]]) -> list[dict[str
     for item in inputs:
         path = run_dir / item["path"]
         entry: dict[str, Any] = {"path": item["path"], "source": item.get("source")}
+        if item.get("output"):
+            entry["output"] = True  # a left-out output the rerun built again: reported, not an input
         if not path.is_file():
             status = "missing"
         elif sha256_file(path) == item["sha256"]:
@@ -1021,8 +1069,11 @@ def verdict(
 
     bad_files = [f.published for f in files if f.problem]
     bad_tables = len((tables or {}).get("differ") or []) + len((tables or {}).get("not_shipped") or [])
-    other = [i for i in inputs or [] if i.get("status") == "differs"]
-    absent = [i for i in inputs or [] if i.get("status") == "missing"]
+    # Left-out outputs the rerun built again (a figure's data) are reported apart: they are not what the
+    # study's results are compared on.
+    inputs = [i for i in inputs or [] if not i.get("output")]
+    other = [i for i in inputs if i.get("status") == "differs"]
+    absent = [i for i in inputs if i.get("status") == "missing"]
     if (
         not any(count(k) for k in LABELS if k not in MATCHING)
         and not bad_files

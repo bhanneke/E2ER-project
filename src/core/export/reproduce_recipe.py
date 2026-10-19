@@ -1168,24 +1168,51 @@ def write_recipe(workspace: Path, out: Path, *, date_str: str = "") -> Outcome:
         "notes": notes,
     }
     # Data files the study built from a source's data hold that data too (data/gaia_clean.csv from the Gaia
-    # rows): a published folder or a package may leave them out, so the recipe says which script builds each
-    # again from the data get_data.py loads (derived_data.py).
+    # rows), and so do results that hold their rows (a units table of the regions): a published folder or a
+    # package may leave them out, so the recipe says which script builds each again from the data get_data.py
+    # loads (derived_data.py). Aggregates (a table of estimates) are not left out and need nothing.
     from .. import reproduce as rp
-    from ..derived_data import Derived, derived, export_record, rebuild_plan
+    from ..data_terms import known as known_terms
+    from ..derived_data import Derived, export_record, holds_rows, kept_out, rebuild_plan
 
-    found = [d for d in derived(out, known=set()) if (out / d.path).is_file()]
+    found = [d for d in kept_out(out, known=set()) if (out / d.path).is_file()]
     have = {d.path for d in found}
+    restricted_names = set(known_terms())
     for entry in export_record(workspace, out):  # from the run's scripts and script log, mapped into the folder
         if entry["path"] not in have:
-            found.append(Derived(entry["path"], entry["connectors"], entry["writers"], entry["named"]))
+            d = Derived(entry["path"], entry["connectors"], entry["writers"], entry["named"])
+            if holds_rows(out, d, restricted_names):
+                found.append(d)
     plan = rebuild_plan(out, recipe, found) if found else []
+    # A left-out output is rebuilt here only where the recipe lays it out for the code (the units table the
+    # estimation reads) or a step writes it; any other is the package's to rebuild (e2er-package.json).
+    plan = [p for p in plan if not p.get("output") or p.get("written") or p["path"] in files]
+    for p in plan:
+        kept = p.get("folder")
+        if p.get("output") and isinstance(kept, str) and (out / kept).is_file():
+            from ..reproduce import sha256_file
+
+            p["sha256"] = sha256_file(out / kept)
+            content = _content(out / kept)
+            if content:
+                p["content"] = content
     if plan:
         rp.apply_rebuild(recipe, plan)
-        notes.append(
-            "Built from data whose terms keep them out of a published study: "
-            + ", ".join(f"{p['path']} ({p['from']})" for p in plan)
-            + ". When the folder lacks one, the script in brackets builds it again from the data get_data.py loads."
-        )
+        built = [p for p in plan if not p.get("written")]
+        if built:
+            notes.append(
+                "Built from data whose terms keep them out of a published study: "
+                + ", ".join(f"{p.get('folder') or p['path']} ({p['from']})" for p in built)
+                + ". When the folder lacks one, the script in brackets builds it again from the data get_data.py "
+                "loads."
+            )
+        written = [p for p in plan if p.get("written")]
+        if written:
+            notes.append(
+                "Written by the steps from data whose terms keep them out of a published study: "
+                + ", ".join(f"{p['folder']} ({p['from']})" for p in written)
+                + ". The rerun writes them again and compares them with the study's files."
+            )
     stuck = [
         d.path
         for d in found

@@ -86,11 +86,19 @@ class Use:
     versions: list[str]
     files: list[str]
     #: Files among ``files`` that no load wrote: built by the study's scripts from the source's data
-    #: (derived_data.py), with the scripts that write them.
+    #: (derived_data.py), with the scripts that write them. A derived aggregate (a table of estimates,
+    #: derived_rows.py) holds no rows of the source and is not among them.
     derived: dict[str, list[str]] = field(default_factory=dict)
+    #: For derived files outside data/: what in them holds the source's rows ("an array of 9,863 values").
+    rows: dict[str, str] = field(default_factory=dict)
 
     def reason(self, rel: str) -> str:
         """Why ``rel`` may not be passed on, in plain words."""
+        if rel in self.rows:
+            return (
+                f"built from {self.the_name} data and holds them row by row ({self.rows[rel]}); "
+                "its terms do not allow passing them on"
+            )
         if rel in self.derived:
             return f"built from {self.the_name} data, whose terms do not allow passing it on"
         return f"the terms of {self.the_name} do not allow passing the data on"
@@ -151,10 +159,11 @@ def uses(bundle: Path) -> list[Use]:
     for t in tables if isinstance(tables, list) else []:
         if isinstance(t, dict):
             add(t.get("source"), t.get("version"), "data/data.db")
-    # Files the study built from a source's data hold that data too (data/gaia_clean.csv from the Gaia rows).
-    from .derived_data import derived
+    # Files the study built from a source's data hold that data too (data/gaia_clean.csv from the Gaia rows,
+    # results/figure_spec.json with the stars' proper motions); an aggregate of them does not (derived_rows.py).
+    from .derived_data import kept_out
 
-    for d in derived(bundle, set(terms)):
+    for d in kept_out(bundle, set(terms)):
         if not (bundle / d.path).is_file():
             continue
         for connector in d.connectors:
@@ -164,6 +173,8 @@ def uses(bundle: Path) -> list[Use]:
             if d.path not in use.files:
                 use.files.append(d.path)
             use.derived[d.path] = d.writers
+            if d.rows and not d.path.startswith("data/"):
+                use.rows[d.path] = d.rows
     for use in found.values():
         # The record of the loads names the source too, when no data file could be matched.
         if not use.files:
@@ -289,7 +300,11 @@ def zenodo_refusal(refused: list[Use]) -> str:
 
 
 def restricted_paths(bundle: Path) -> dict[str, str]:
-    """Every data file of the bundle a source's terms keep out, by path, with the reason; also files not on disk.
+    """Every file of the bundle a source's terms keep out, by path, with the reason; also files not on disk.
+
+    Data files and the files the study built from them that hold their rows (derived_data.kept_out): a
+    results table of 244 regions, a figure spec of 9,970 stars. A derived file not on disk counts, since
+    what it held cannot be read (a published copy that left it out).
 
     From the bundle's own records (data_sources.json, data_dictionary.json, its scripts), not from what is
     present: `e2er verify` uses it to accept a data file that a package left out.
@@ -298,9 +313,11 @@ def restricted_paths(bundle: Path) -> dict[str, str]:
     terms = known()
     out: dict[str, str] = {}
 
-    def why(connector: str, built: bool = False) -> str:
+    def why(connector: str, built: bool = False, rows: str = "") -> str:
         t = terms[connector]
         name = t.article + (t.name if t.name == t.short else f"{t.name} ({t.short})")
+        if built and rows:
+            return f"built from {name} data and holds them row by row ({rows}); its terms do not allow passing them on"
         if built:
             return f"built from {name} data, whose terms do not allow passing it on"
         return f"the terms of {name} do not allow passing the data on"
@@ -319,8 +336,9 @@ def restricted_paths(bundle: Path) -> dict[str, str]:
     for t in tables if isinstance(tables, list) else []:
         if isinstance(t, dict) and t.get("source") in terms:
             out.setdefault("data/data.db", why(t["source"]))
-    from .derived_data import derived
+    from .derived_data import kept_out
 
-    for d in derived(bundle, set(terms)):
-        out.setdefault(d.path, why(d.connectors[0], built=True))
+    for d in kept_out(bundle, set(terms)):
+        rows = d.rows if d.path.startswith(("results/", "misc/", "paper/")) and (bundle / d.path).is_file() else ""
+        out.setdefault(d.path, why(d.connectors[0], built=True, rows=rows))
     return out

@@ -148,6 +148,14 @@ def _is_data(rel: str) -> bool:
     return rel.startswith("data/") and _data_suffix(rel)
 
 
+def _may_be_left_out(rel: str) -> bool:
+    """A file a package may declare left out: a data file, or an output the study's code wrote with data in
+    it (results/, misc/, paper/: derived_data.is_output). Code, the paper and the records never are."""
+    from ..derived_data import is_output
+
+    return _data_suffix(rel) or is_output(rel)
+
+
 def _input_files(recipe: dict[str, Any] | None) -> set[str]:
     """The folder's files that the recipe lists as inputs (the data the code reads), wherever they are."""
     if not recipe:
@@ -207,9 +215,12 @@ def _rebuilt(recipe: dict[str, Any] | None, rel: str, plan: list[dict[str, Any]]
         if isinstance(item.get("reload"), str):
             return {"by": f"code/{Path(item['reload']).name}", "source": str(item.get("source") or "")}
         if isinstance(item.get("rebuild"), str):
-            return {"by": str(files.get(item["rebuild"], item["rebuild"])), "source": "", "kind": "rebuild"}
+            kind = "written" if item.get("written") else "rebuild"
+            return {"by": str(files.get(item["rebuild"], item["rebuild"])), "source": "", "kind": kind}
     for p in plan:
-        if p["path"] in run_paths:
+        if p.get("folder") == rel or (p["path"] in run_paths and not p.get("folder")):
+            if p.get("written"):
+                return {"by": p["from"], "source": "", "kind": "written"}
             return {"by": p["from"], "source": "", "kind": "rebuild"}
     return None
 
@@ -222,7 +233,20 @@ def rebuild_for(folder: Path, recipe: dict[str, Any] | None, left_out: list[dict
 
     paths = {i["path"] for i in left_out}
     found = [d for d in derived(folder) if d.path in paths]
-    return rebuild_plan(folder, recipe, found) if found else []
+    plan = rebuild_plan(folder, recipe, found) if found else []
+    # A left-out output is compared with the study's file when the rerun has built it: its fingerprints.
+    listed = (_read_json(folder / "provenance.json") or {}).get("files") or {}
+    for item in plan:
+        rel = item.get("folder")
+        if not item.get("output") or not isinstance(rel, str):
+            continue
+        meta = listed.get(rel)
+        if isinstance(meta, dict) and isinstance(meta.get("sha256"), str):
+            item["sha256"] = meta["sha256"]
+        content = _content_of(folder / rel)
+        if content:
+            item["content"] = content
+    return plan
 
 
 def left_out_data(
@@ -234,7 +258,9 @@ def left_out_data(
     out: dict[str, dict[str, Any]] = {}
     for use in data_terms.uses(folder):
         for rel in use.files:
-            if rel in files and _is_data(rel):
+            # A data file of the source's, or a file the study built from its data that holds its rows
+            # (a results table of the regions, a figure spec of the stars: derived_data.kept_out).
+            if rel in files and (_is_data(rel) or rel in use.derived):
                 out[rel] = {"path": rel, "reason": use.reason(rel), "source": use.terms.connector}
     if no_data:
         inputs = _input_files(recipe)
@@ -242,11 +268,13 @@ def left_out_data(
             if (_is_data(rel) or (rel in inputs and _data_suffix(rel))) and rel not in out:
                 out[rel] = {"path": rel, "reason": "packed with --no-data"}
     inputs = _input_files(recipe)
+    # The files the recipe lays out for the code: the study's code reads them (a units table, a figure spec).
+    laid_out = {str(v) for v in ((recipe or {}).get("files") or {}).values()}
     plan = rebuild_for(folder, recipe, list(out.values()))
     for rel, item in out.items():
         item["rebuilt_by"] = _rebuilt(recipe, rel, plan)
         # Whether the study's code reads it: a file no step reads is not needed for a rerun.
-        item["needed"] = rel in inputs
+        item["needed"] = rel in inputs or rel in laid_out
         item.update(_rerun_plan(folder, recipe, rel, item, plan))
         # The file's rows, order and the last digits of its numbers aside: `e2er reproduce` compares the file
         # a rerun loads or builds again with it (reproduce.content_fingerprint).
@@ -292,6 +320,8 @@ def _rerun_plan(
     if not recipe or not isinstance(item.get("rebuilt_by"), dict):
         return {}
     how = item["rebuilt_by"]
+    if how.get("kind") == "written":  # a step of the recipe writes it (rerun_words says so)
+        return {}
     if how.get("kind") == "rebuild":  # a file built from loaded data (derived_data)
         return {"builds": [{"by": how["by"], "what": [rel]}]}
     if Path(rel).suffix.lower() not in {".db", ".sqlite", ".sqlite3"}:
@@ -305,7 +335,11 @@ def _rerun_plan(
     made = [t for t in tables if t not in loaded]
     builds: list[dict[str, Any]] = []
     left = list(made)
-    for script in _step_scripts(recipe, _run_paths(recipe, rel)):
+    # The study's own preparation steps for the database, and the scripts a rerun runs to build left-out
+    # files again (they write tables too: build_data.py writes gdp_pps_sample with the units).
+    scripts = _step_scripts(recipe, _run_paths(recipe, rel))
+    scripts += [str(p["from"]) for p in plan if not p.get("written") and str(p["from"]) not in scripts]
+    for script in scripts:
         try:
             text = (folder / script).read_text(encoding="utf-8", errors="replace")
         except OSError:
@@ -338,6 +372,8 @@ def rerun_words(item: dict[str, Any]) -> str:
             parts.append(f"cannot get the tables {', '.join(item['not_built'])} (no step builds them)")
         if parts:
             return "`e2er reproduce` " + "; ".join(parts)
+    if isinstance(how, dict) and how.get("kind") == "written":
+        return f"`e2er reproduce` writes it again with {how['by']}, a step of the rerun"
     if isinstance(how, dict) and how.get("kind") == "rebuild":
         return f"`e2er reproduce` builds it again with {how['by']} from the data it loads again"
     if isinstance(how, dict):
@@ -345,6 +381,11 @@ def rerun_words(item: dict[str, Any]) -> str:
             f" from {how['source']}" if how.get("source") else ""
         )
     if item.get("needed") is False:
+        if not _is_data(str(item.get("path") or "")):
+            return (
+                "the study's code does not read it, so a rerun does not need it; no recorded step builds it again "
+                "from the data a rerun loads"
+            )
         return "the study's code does not read it, so a rerun does not need it"
     return "a rerun cannot rebuild it"
 
@@ -896,7 +937,7 @@ def declared_left_out(folder: Path) -> dict[str, dict[str, Any]]:
     doc = package_manifest(folder)
     out: dict[str, dict[str, Any]] = {}
     for item in (doc or {}).get("left_out") or []:
-        if isinstance(item, dict) and isinstance(item.get("path"), str) and _data_suffix(item["path"]):
+        if isinstance(item, dict) and isinstance(item.get("path"), str) and _may_be_left_out(item["path"]):
             out[item["path"]] = item
     return out
 
