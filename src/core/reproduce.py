@@ -381,14 +381,35 @@ def sha256_file(path: Path) -> str:
 
 #: The status of an input whose bytes differ but whose rows are the same (in another order).
 SAME_ROWS = "same_rows"
+#: The status of an input whose rows are the same once every decimal number is written with NUMERIC_DIGITS
+#: significant digits: a file the study's own preparation step builds again, whose numbers differ only in the
+#: last binary digits (the Gaia demo of 2026-10-13: pandas wrote -0.0005179820886653808 in the run and
+#: -0.0005179820886653 in the rerun, from the same text in the reloaded rows).
+SAME_NUMBERS = "same_numbers"
+NUMERIC_DIGITS = 12
+_DECIMAL = re.compile(r"^\s*[-+]?(?:\d+\.\d*|\.\d+|\d+(?:\.\d*)?[eE][-+]?\d+)\s*$")
 #: Table files fingerprinted by content.
 _TABLE_SUFFIXES = frozenset({".csv", ".tsv"})
 _DB_SUFFIXES = frozenset({".db", ".sqlite", ".sqlite3"})
 _MOD = 1 << 256
 
 
-def _row_digest(row: list[Any]) -> int:
+def _at_digits(v: Any) -> Any:
+    """A decimal number (a float, or text that is one) with NUMERIC_DIGITS significant digits; else as it is."""
+    if isinstance(v, float):
+        return format(v, f".{NUMERIC_DIGITS}g")
+    if isinstance(v, str) and _DECIMAL.match(v):
+        try:
+            return format(float(v), f".{NUMERIC_DIGITS}g")
+        except ValueError:
+            return v
+    return v
+
+
+def _row_digest(row: list[Any], rounded: bool = False) -> int:
     def norm(v: Any) -> Any:
+        if rounded:
+            v = _at_digits(v)
         if isinstance(v, bytes):
             return {"bytes": v.hex()}
         if isinstance(v, float):
@@ -400,16 +421,23 @@ def _row_digest(row: list[Any]) -> int:
 
 
 def _rows_fingerprint(header: list[Any], rows: Any) -> dict[str, Any]:
-    """{"rows": n, "content_sha256": …}: the header and the multiset of rows (any order gives the same hash)."""
-    acc, n = 0, 0
+    """{"rows": n, "content_sha256": …, "numeric_sha256": …}: the header and the multiset of rows (any order
+    gives the same hash); ``numeric_sha256`` the same with every decimal number at NUMERIC_DIGITS digits."""
+    acc, num, n = 0, 0, 0
     for row in rows:
-        acc = (acc + _row_digest(list(row))) % _MOD
+        cells = list(row)
+        acc = (acc + _row_digest(cells)) % _MOD
+        num = (num + _row_digest(cells, rounded=True)) % _MOD
         n += 1
-    h = hashlib.sha256()
-    h.update(json.dumps([str(c) for c in header], ensure_ascii=False).encode("utf-8"))
-    h.update(acc.to_bytes(32, "big"))
-    h.update(str(n).encode())
-    return {"rows": n, "content_sha256": h.hexdigest()}
+
+    def digest(total: int) -> str:
+        h = hashlib.sha256()
+        h.update(json.dumps([str(c) for c in header], ensure_ascii=False).encode("utf-8"))
+        h.update(total.to_bytes(32, "big"))
+        h.update(str(n).encode())
+        return h.hexdigest()
+
+    return {"rows": n, "content_sha256": digest(acc), "numeric_sha256": digest(num)}
 
 
 def content_fingerprint(path: Path) -> dict[str, Any] | None:
@@ -446,27 +474,37 @@ def content_fingerprint(path: Path) -> dict[str, Any] | None:
     return None
 
 
-def _same_content(item: dict[str, Any], path: Path) -> tuple[bool, list[str]]:
-    """(the rows are the study's, the tables that differ) for an input with a recorded content fingerprint."""
+def _match(want: Any, have: dict[str, Any]) -> str:
+    """ "rows" (the same rows), "numbers" (the same at NUMERIC_DIGITS digits) or "" for one recorded fingerprint."""
+    if not isinstance(want, dict) or not isinstance(want.get("content_sha256"), str):
+        return ""
+    if have.get("content_sha256") == want["content_sha256"]:
+        return "rows"
+    if isinstance(want.get("numeric_sha256"), str) and have.get("numeric_sha256") == want["numeric_sha256"]:
+        return "numbers"
+    return ""
+
+
+def _same_content(item: dict[str, Any], path: Path) -> tuple[str, list[str]]:
+    """(SAME_ROWS, SAME_NUMBERS or DIFFERS, the tables that differ) for an input with a recorded content fingerprint."""
     found = content_fingerprint(path)
     if found is None:
-        return False, []
+        return DIFFERS, []
     if isinstance(item.get("tables"), dict):
         have = found.get("tables") or {}
-        differ = [
-            t
-            for t, want in sorted(item["tables"].items())
-            if not isinstance(want, dict) or (have.get(t) or {}).get("content_sha256") != want.get("content_sha256")
-        ]
-        return not differ, differ
-    if isinstance(item.get("content_sha256"), str):
-        return found.get("content_sha256") == item["content_sha256"], []
-    return False, []
+        matches = {t: _match(want, have.get(t) or {}) for t, want in sorted(item["tables"].items())}
+        differ = [t for t, m in matches.items() if not m]
+        if differ:
+            return DIFFERS, differ
+        return (SAME_NUMBERS if "numbers" in matches.values() else SAME_ROWS), []
+    m = _match(item, found)
+    return {"rows": SAME_ROWS, "numbers": SAME_NUMBERS}.get(m, DIFFERS), []
 
 
 def compare_inputs(run_dir: Path, inputs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Each declared input as the rerun has it: identical to the study's file, the same rows in another order
-    (``same_rows``, when the recipe recorded its content), different, or missing."""
+    (``same_rows``, when the recipe recorded its content), the same rows with decimal numbers equal to
+    NUMERIC_DIGITS significant digits (``same_numbers``), different, or missing."""
     out = []
     for item in inputs:
         path = run_dir / item["path"]
@@ -476,14 +514,54 @@ def compare_inputs(run_dir: Path, inputs: list[dict[str, Any]]) -> list[dict[str
         elif sha256_file(path) == item["sha256"]:
             status = "identical"
         elif "tables" in item or "content_sha256" in item:
-            same, differ = _same_content(item, path)
-            status = SAME_ROWS if same else "differs"
+            status, differ = _same_content(item, path)
             if differ:
                 entry["tables_differ"] = differ
         else:
             status = "differs"
         entry["status"] = status
         out.append(entry)
+    return out
+
+
+def add_numeric_fingerprints(recipe: dict[str, Any], recorded: dict[str, dict[str, Any]]) -> list[str]:
+    """Give inputs of an older recipe the numbers fingerprint that a package recorded for them (left out).
+
+    ``recorded``: folder path -> the content fingerprint pack recorded for a file it left out. A fingerprint
+    is taken only where its exact content hash is the recipe's own (reproduce.json, which provenance.json
+    fixes), so it describes the same file. Returns the inputs that got one.
+    """
+    files = recipe.get("files") or {}
+    out = []
+    for item in recipe.get("inputs") or []:
+        if not isinstance(item, dict) or not isinstance(item.get("path"), str):
+            continue
+        rec = recorded.get(str(files.get(item["path"], item["path"])))
+        if not isinstance(rec, dict):
+            continue
+        added = False
+        if isinstance(item.get("tables"), dict) and isinstance(rec.get("tables"), dict):
+            for t, want in item["tables"].items():
+                got = rec["tables"].get(t)
+                if (
+                    isinstance(want, dict)
+                    and "numeric_sha256" not in want
+                    and isinstance(got, dict)
+                    and got.get("content_sha256") == want.get("content_sha256")
+                    and isinstance(got.get("numeric_sha256"), str)
+                ):
+                    want["numeric_sha256"] = got["numeric_sha256"]
+                    added = True
+        elif (
+            "numeric_sha256" not in item
+            and isinstance(item.get("content_sha256"), str)
+            and rec.get("content_sha256") == item["content_sha256"]
+            and isinstance(rec.get("numeric_sha256"), str)
+        ):
+            item["numeric_sha256"] = rec["numeric_sha256"]
+            added = True
+        if added:
+            out.append(item["path"])
     return out
 
 
@@ -952,6 +1030,12 @@ def verdict(
         and not (other or absent)
     ):
         tail = " and every table renders the same" if tables and tables.get("rendered") else ""
+        close = [i["path"] for i in inputs or [] if i.get("status") == SAME_NUMBERS]
+        if close:
+            tail += (
+                f"; {', '.join(close[:3])} {'has' if len(close) == 1 else 'have'} the study's rows with every decimal "
+                f"number equal to {NUMERIC_DIGITS} significant digits"
+            )
         web = sorted({h for s in steps if not s.reload for h in web_hosts(s)})
         if web:
             tail += (

@@ -239,3 +239,98 @@ def test_the_verdict_counts_the_same_rows_as_the_studys_input():
     fc.counts[rp.IDENTICAL] = 3
     text, code = rp.verdict([fc], None, [], inputs)
     assert code == 0 and text.startswith("Reproduced")
+
+
+# ── numbers equal to 12 significant digits (the Gaia demo's rebuilt gaia_clean.csv, 2026-10-15) ──────────────
+
+
+def test_a_rebuilt_csv_whose_numbers_differ_in_the_last_digits_has_the_same_numbers(tmp_path: Path):
+    """pandas wrote -0.0005179820886653808 in the run and -0.0005179820886653 in the rerun, from the same rows."""
+    rows = ["70198148077311360,55.48074268072565,-0.0005179820886653808", "63324452353258240,56.878,7.25"]
+    study = _csv(tmp_path / "study.csv", rows)
+    item = {"path": "data/gaia_clean.csv", "sha256": rp.sha256_file(study), **rp.content_fingerprint(study)}
+    assert set(item) >= {"rows", "content_sha256", "numeric_sha256"}
+    run = tmp_path / "run"
+    (run / "data").mkdir(parents=True)
+    _csv(run / "data" / "gaia_clean.csv", [rows[1], "70198148077311360,55.48074268072565,-0.0005179820886653"])
+    [close] = rp.compare_inputs(run, [item])
+    assert close["status"] == rp.SAME_NUMBERS
+    # A change a reader could see is a difference: the 7th significant digit.
+    _csv(run / "data" / "gaia_clean.csv", [rows[1], "70198148077311360,55.48074268072565,-0.0005179830886653"])
+    assert rp.compare_inputs(run, [item])[0]["status"] == "differs"
+    # Integers (a Gaia source_id) are never rounded: one digit off is a different row.
+    _csv(run / "data" / "gaia_clean.csv", [rows[1], "70198148077311361,55.48074268072565,-0.0005179820886653808"])
+    assert rp.compare_inputs(run, [item])[0]["status"] == "differs"
+    # A recipe without the numbers fingerprint compares rows exactly.
+    old = {k: v for k, v in item.items() if k != "numeric_sha256"}
+    _csv(run / "data" / "gaia_clean.csv", [rows[1], "70198148077311360,55.48074268072565,-0.0005179820886653"])
+    assert rp.compare_inputs(run, [old])[0]["status"] == "differs"
+
+
+def test_the_verdict_counts_numbers_equal_to_12_digits_and_says_so():
+    inputs = [{"path": "data/gaia_clean.csv", "status": rp.SAME_NUMBERS}]
+    fc = rp.FileComparison("results/estimation_results.json", "estimation_results.json")
+    fc.counts[rp.IDENTICAL] = 3
+    text, code = rp.verdict([fc], None, [], inputs)
+    assert code == 0 and text.startswith("Reproduced")
+    assert "data/gaia_clean.csv has the study's rows with every decimal number equal to 12 significant digits" in text
+
+
+def test_an_older_recipe_takes_the_numbers_fingerprint_only_from_a_record_of_the_same_file():
+    recipe = {
+        "files": {"data.db": "data/data.db"},
+        "inputs": [
+            {"path": "data/gaia_clean.csv", "sha256": "a" * 64, "content_sha256": "c1"},
+            {"path": "data.db", "sha256": "b" * 64, "tables": {"t": {"rows": 1, "content_sha256": "t1"}}},
+            {"path": "data/other.csv", "sha256": "d" * 64, "content_sha256": "o1"},
+        ],
+    }
+    recorded = {
+        "data/gaia_clean.csv": {"rows": 2, "content_sha256": "c1", "numeric_sha256": "n1"},
+        "data/data.db": {"tables": {"t": {"rows": 1, "content_sha256": "t1", "numeric_sha256": "tn"}}},
+        "data/other.csv": {"rows": 2, "content_sha256": "NOT THE RECIPE'S", "numeric_sha256": "planted"},
+    }
+    assert rp.add_numeric_fingerprints(recipe, recorded) == ["data/gaia_clean.csv", "data.db"]
+    gaia, db, other = recipe["inputs"]
+    assert gaia["numeric_sha256"] == "n1" and db["tables"]["t"]["numeric_sha256"] == "tn"
+    assert "numeric_sha256" not in other
+
+
+def test_the_package_names_what_a_rerun_loads_and_what_the_studys_steps_build(tmp_path: Path, monkeypatch):
+    from src.core.export import package as pkg
+
+    monkeypatch.setattr(pkg, "uv_lock", lambda r, p, a: (None, "offline in the tests"))
+    out = export_paper(_workspace(tmp_path), tmp_path / "exports", date_str="20261014")
+    packed = pkg.build(out, tmp_path / "who.e2er")
+    [item] = packed.manifest["left_out"]
+    assert item["path"] == "data/data.db"
+    assert item["loads"] == ["country_names", "rates_raw"]
+    assert [b["what"] for b in item["builds"]] == [["rates_clean"]]
+    words = pkg.rerun_words(item)
+    assert words.startswith("`e2er reproduce` loads the tables country_names, rates_raw again from the sources with ")
+    assert "code/get_data.py; builds the tables rates_clean again with code/" in words and "clean_rates.py" in words
+    assert "made by the study" not in words
+    assert set(item["content"]["tables"]) == {"rates_raw", "country_names", "rates_clean"}
+    # In an unpacked folder the record counts only for files the folder's own records restrict.
+    folder = pkg.open_package(packed.path, tmp_path / "clone").root
+    assert set(pkg.left_out_content(folder)) == {"data/data.db"}
+    doc = json.loads((folder / pkg.MANIFEST).read_text(encoding="utf-8"))
+    doc["left_out"].append({"path": "data/own.csv", "reason": "planted", "content": {"content_sha256": "x"}})
+    (folder / pkg.MANIFEST).write_text(json.dumps(doc), encoding="utf-8")
+    assert set(pkg.left_out_content(folder)) == {"data/data.db"}
+    assert "data/own.csv" in pkg.left_out_content(folder, trusted=True)
+
+
+def test_an_unpacked_package_without_its_restricted_data_reproduces(tmp_path: Path, rerun_here, monkeypatch, capsys):
+    """The folder a GitHub repository holds (e2er publish --github) is an unpacked package: it reproduces too."""
+    from src.core.export import package as pkg
+
+    monkeypatch.setattr(pkg, "uv_lock", lambda r, p, a: (None, "offline in the tests"))
+    out = export_paper(_workspace(tmp_path), tmp_path / "exports", date_str="20261014")
+    folder = pkg.open_package(pkg.build(out, tmp_path / "who.e2er").path, tmp_path / "clone").root
+    assert not (folder / "data" / "data.db").exists()
+    code = reproduce(str(folder))
+    report = capsys.readouterr().out
+    assert code == 0, report
+    assert "2. python clean_rates.py (data preparation" in report
+    assert "Reproduced: every compared value is identical" in report

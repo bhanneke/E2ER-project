@@ -46,11 +46,13 @@ import subprocess
 import sys
 import tempfile
 import zipfile
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from .core import data_terms
+from .core import github_files as gf
 from .core import zenodo as zen
 from .core.availability import describe as describe_availability
 from .core.availability import paper_access, reader_notes, resolve
@@ -58,7 +60,15 @@ from .core.bibliography import escape_bib, point_bibliography, unresolved_citati
 from .core.demonstration import PURPOSES, disclaimer, kind_for, mark_report, resolve_purpose
 from .core.dossier import build_dossier, dossier_id, dossier_url, read_run, stamp_paper
 from .core.export.provenance import files_at_export
-from .core.research_object import MANIFEST_NAME, PublishError, build_manifest, write_manifest
+from .core.research_object import (
+    MANIFEST_NAME,
+    README_BEGIN,
+    README_END,
+    PublishError,
+    build_manifest,
+    export_readme,
+    write_manifest,
+)
 from .core.secret_scan import find_local_paths, find_secrets, sanitize
 
 REGISTRY = "https://github.com/bhanneke/e2er-site"
@@ -220,10 +230,15 @@ def _rehash(bundle: Path, rels: list[str], reason: str = "changed by e2er publis
             _amend(bundle, rel, reason)
 
 
+#: Amendments that name the dossier (the paper's stamp, the README of a study hosted on GitHub): the dossier
+#: cannot list them, since its id would then depend on itself.
+DEPENDS_ON_DOSSIER = ("stamp", "readme")
+
+
 def _amendments_for_dossier(bundle: Path) -> list[dict[str, Any]]:
-    """The amendments the dossier carries: all but the paper's stamp, which depends on the dossier."""
+    """The amendments the dossier carries: all but those that depend on the dossier (stamp, readme)."""
     prov = json.loads((bundle / "provenance.json").read_text(encoding="utf-8"))
-    return [a for a in prov.get("amendments") or [] if a.get("kind") != "stamp"]
+    return [a for a in prov.get("amendments") or [] if a.get("kind") not in DEPENDS_ON_DOSSIER]
 
 
 def _checks_while_publishing(b: Path) -> list[Any]:
@@ -337,7 +352,15 @@ def _describe(
     paper: str | None = None,
     paper_url: str | None = None,
     coauthors: list[str] | None = None,
+    github_target: gf.Target | None = None,
+    github_mode: str = "",
+    github_user: dict[str, Any] | None = None,
 ) -> tuple[int, dict[str, Any] | None]:
+    """Describe, stamp and verify the bundle; write e2er.json.
+
+    ``github_target`` hosts the files in a public GitHub repository; ``github_mode`` is ``push`` (push them),
+    ``plan`` (list what would go up, push nothing: --dry-run) or ``rehearse`` (push nothing, list nothing).
+    """
     from .cli_verify import _verdict
 
     try:
@@ -390,13 +413,30 @@ def _describe(
 
     # Data and code: public or private (private unless stated). Private material
     # stays here; only its fingerprints are published, as for every file.
-    repository = {k: v for k, v in {"url": repo, "commit": commit, "path": path}.items() if v}
+    repository: dict[str, Any] = {k: v for k, v in {"url": repo, "commit": commit, "path": path}.items() if v}
+    hosted: _Hosted | None = None
+    if github_target is not None:
+        # The files go to GitHub as `e2er pack` ships them: code and paper public, the data that go up public.
+        try:
+            hosted = _hosting_plan(b)
+        except ValueError as e:
+            print(f"error: {e}")
+            return 1, None
+        repository = {"url": github_target.url, **({"path": github_target.path} if github_target.path else {})}
+        repository |= {
+            "host": "github",
+            "left_out": [{"path": i["path"], "reason": i["reason"]} for i in hosted.left_out],
+        }
+        code = "public"
+        data = "public" if hosted.data else "private"
+        data_url = github_target.url if hosted.data else None
     try:
         availability, notes = resolve(
             data=data, code=code, data_url=data_url, code_url_=code_url, repository=repository
         )
         # The paper: public with the address of its PDF, or private (readers can ask for it on e2er.org).
-        access, paper_notes = paper_access(paper, paper_url, repository)
+        # On GitHub its address names the commit, known once the files are pushed.
+        access, paper_notes = paper_access(paper, paper_url, repository) if hosted is None else (None, [])
     except ValueError as e:
         print(f"error: {e}")
         return 1, None
@@ -412,16 +452,18 @@ def _describe(
     licensed = data_terms.uses(b)
     # Data whose terms allow research use only with open-access publications (GitHub): the paper is public.
     open_needed = data_terms.needs_open_paper(licensed)
-    if open_needed and not access:
+    if open_needed and not access and hosted is None:
         print(data_terms.open_paper_refusal(open_needed))
         return 1, None
-    if availability["data"]["access"] == "public":
+    if availability["data"]["access"] == "public" and hosted is None:
         missing = data_terms.missing_confirmation(licensed, accept_data_terms)
         if missing:
             print(data_terms.refusal(missing))
             return 1, None
     for use in licensed:
         shared = "published with the study" if availability["data"]["access"] == "public" else "kept private"
+        if hosted is not None:
+            shared = "left out of the GitHub copy; the recipe loads them again"
         what = "terms and citation" if use.terms.citation else "terms"
         print(f"note: the study uses {use.label} data ({shared}); the description states its {what}")
         for rel in sorted(use.derived):
@@ -604,6 +646,17 @@ def _describe(
             print(f"✓ Stamped paper/paper.tex ({who}dossier footnote{extra}) and recorded it in provenance.json")
     elif not stamp:
         print("note: --no-stamp: the paper does not carry the dossier link")
+    # A study hosted on GitHub: README.md opens with what a visitor of the repository needs (an amendment).
+    if hosted is not None and _write_readme(
+        b, doc=doc, did=did, site=site_url, purpose=purpose, kind=kind, left_out=hosted.left_out, licence=license_id
+    ):
+        checks = _checks_while_publishing(b)
+        verdict, rc = _verdict(checks)
+        if rc != 0:
+            print(verdict)
+            print("error: the bundle no longer verifies after writing README.md")
+            return 1, None
+        print("✓ Wrote the study's summary at the top of README.md and recorded it in provenance.json")
     manifest = manifest_now([{"check": c.name, "status": c.status, "detail": c.detail} for c in checks])
     manifest["availability"] = copy.deepcopy(availability)
     if access:
@@ -617,6 +670,31 @@ def _describe(
         for p in leaks:
             print(f"  {p}")
         return 1, None
+
+    # The files on GitHub: pushed (or, rehearsing, a placeholder commit), then the paper's address at the commit.
+    if github_target is not None and hosted is not None:
+        try:
+            sha = _host_on_github(
+                b,
+                manifest,
+                github_target,
+                hosted,
+                mode=github_mode,
+                user=github_user or {},
+                owner=owner,
+                project=project,
+                site=site_url,
+            )
+        except gf.GitHubError as e:
+            print(f"error: {e}")
+            return 1, None
+        repository["commit"] = sha
+        manifest["repository"] = copy.deepcopy(repository)
+        if "paper/paper.pdf" in hosted.files:
+            access, _ = paper_access("public", None, repository)
+            manifest["access"] = copy.deepcopy(access)
+        else:
+            print("note: the folder has no paper/paper.pdf, so the paper has no public address")
 
     # 7. Zenodo, irreversible part: last, after everything that can fail.
     if deposits and z is not None:
@@ -686,6 +764,8 @@ def _describe(
         print(f"✓ Registry entry: {entry}")
     if not repository.get("commit"):
         print("  note: no --commit given; the registry can only verify an object pinned to a commit")
+    elif github_target is not None and github_mode == "push":
+        print(f"  files: {github_target.tree(repository['commit'])}")
     if not remote:
         print(
             f"\nTo publish, open a pull request against {REGISTRY} that adds\n  {REGISTRY_DIR}/{owner}/{project}.json"
@@ -767,6 +847,31 @@ def publish(bundle: str, *, dry_run: bool = False, to_url: str | None = None, of
     dossier and e2er.json, makes no network request and names the next step.
     """
     b = Path(bundle).expanduser().resolve()
+    # --github: the files go to a public GitHub repository with the researcher's own gh login.
+    gh_spec = kw.pop("github_repo", None)
+    gh_path = kw.pop("github_path", None)
+    if gh_path and gh_spec is None:
+        print("error: --github-path names a folder in the repository of --github; add --github")
+        return 2
+    if gh_spec is not None:
+        why = _github_conflicts(kw, offline=offline)
+        if why:
+            print(f"error: {why}")
+            return 2
+        spec = None if gh_spec is True else str(gh_spec)
+        user: dict[str, Any] = {}
+        if not (dry_run and spec):
+            try:
+                user = gf.gh_user()
+            except gf.GitHubError as e:
+                print(f"error: {e}")
+                return 1
+        try:
+            kw["github_target"] = gf.parse_target(spec, project=kw["project"], login=user.get("login"), path=gh_path)
+        except ValueError as e:
+            print(f"error: {e}")
+            return 2
+        kw["github_user"] = user
     # The run's database and the study folder belong to the real folder: found here, so the
     # rehearsal in a scratch copy (somewhere else on disk) uses the same ones.
     if (b / "provenance.json").is_file() and not kw.get("no_db"):
@@ -785,10 +890,10 @@ def publish(bundle: str, *, dry_run: bool = False, to_url: str | None = None, of
     interactive = kw.pop("interactive", None)
     if interactive is None:
         interactive = sys.stdin.isatty()
-    if kw.get("data") is None and kw.get("code") is None and interactive:
+    if kw.get("data") is None and kw.get("code") is None and interactive and gh_spec is None:
         kw["data"] = _ask("Are the study's data public or private?")
         kw["code"] = _ask("Is the study's code public or private?")
-    if kw.get("data") == "public" and interactive and (b / "provenance.json").is_file():
+    if kw.get("data") == "public" and interactive and (b / "provenance.json").is_file() and gh_spec is None:
         # Data loaded under a source's own terms: the researcher confirms them before they are published.
         accepted = list(kw.get("accept_data_terms") or [])
         for use in data_terms.missing_confirmation(data_terms.uses(b), accepted):
@@ -832,10 +937,12 @@ def publish(bundle: str, *, dry_run: bool = False, to_url: str | None = None, of
                 "out": str(Path(tmp) / "entry"),
                 "zenodo": False,
                 "zenodo_plan_only": bool(kw.get("zenodo")),
+                # A dry run lists what would go up to GitHub; the check before --to pushes nothing.
+                "github_mode": "plan" if dry_run else "rehearse",
             }
             with contextlib.redirect_stdout(log):
                 code, manifest = _describe(str(scratch), **rehearsal, remote=True)
-            plan = [ln for ln in log.getvalue().splitlines() if ln.startswith(("zenodo", "note: --zenodo"))]
+            plan = [ln for ln in log.getvalue().splitlines() if ln.startswith(("zenodo", "note: --zenodo", "github"))]
             if code or manifest is None:
                 print(log.getvalue().rstrip())
                 return code or 1
@@ -843,7 +950,7 @@ def publish(bundle: str, *, dry_run: bool = False, to_url: str | None = None, of
         found = problems(body)
         if dry_run:
             print(json.dumps(body, indent=2, ensure_ascii=False))
-            if kw.get("zenodo"):
+            if kw.get("zenodo") or kw.get("github_target"):
                 print("\n".join(plan), file=sys.stderr)
             for p in found:
                 print(f"refused: {p}", file=sys.stderr)
@@ -856,10 +963,34 @@ def publish(bundle: str, *, dry_run: bool = False, to_url: str | None = None, of
             for p in found:
                 print(f"  {p}")
             return 1
+    if kw.get("github_target") is not None:
+        kw["github_mode"] = "push"
     code, manifest = _describe(str(b), **kw, remote=bool(to_url))
     if code or manifest is None or not to_url:
         return code
     return _send(b, manifest, to_url)
+
+
+def _github_conflicts(kw: dict[str, Any], *, offline: bool) -> str | None:
+    """Why --github cannot go with the other options given, or None."""
+    if offline:
+        return "--github pushes the files to GitHub; leave out --offline"
+    if kw.get("zenodo"):
+        return "--github hosts the files on GitHub, with no DOI; leave out --zenodo"
+    for key, flag in (("repo", "--repo"), ("commit", "--commit"), ("path", "--path")):
+        if kw.get(key):
+            return f"--github sets the repository, the folder and the commit itself; leave out {flag}"
+    for key, flag in (("code_url", "--code-url"), ("data_url", "--data-url"), ("paper_url", "--paper-url")):
+        if kw.get(key):
+            return f"--github links the files in the repository at the pushed commit; leave out {flag}"
+    for item in ("code", "paper", "data"):
+        if kw.get(item) == "private":
+            more = " Data whose source's terms keep them out stay out without it." if item == "data" else ""
+            return (
+                f"--github publishes the study's files as `e2er pack` ships them, the {item} included, in a public "
+                f"repository; leave out --{item} private, or publish without --github.{more}"
+            )
+    return None
 
 
 def _send(b: Path, manifest: dict[str, Any], to_url: str) -> int:
@@ -900,13 +1031,27 @@ def _send(b: Path, manifest: dict[str, Any], to_url: str) -> int:
             "dossier_id": body["dossier"]["id"],
             "content_id": manifest.get("content_id"),
             "published_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            **(
+                {"files": _files_url(manifest["repository"])}
+                if (manifest.get("repository") or {}).get("host") == "github"
+                else {}
+            ),
         },
     )
     word = "already published as" if resp.get("existing") else "published as"
     print(f"✓ {word} {resp['owner_project']}, version {resp['version']}: {resp['study_url']}")
     print(f"  dossier {resp['dossier_url']}")
+    if (manifest.get("repository") or {}).get("host") == "github":
+        print(f"  files {_files_url(manifest['repository'])}")
     print(f"  link written to {link.relative_to(b)}")
     return 0
+
+
+def _files_url(repository: dict[str, Any]) -> str:
+    """github.com/<owner>/<repo>/tree/<commit>/<path>: the study's files at the commit."""
+    base = str(repository["url"]).rstrip("/")
+    sub = str(repository.get("path") or "").strip("/")
+    return f"{base}/tree/{repository['commit']}" + (f"/{sub}" if sub else "")
 
 
 #: Publishing offline before tectonic ever downloaded its LaTeX packages.
@@ -1114,6 +1259,258 @@ def _print_deposit_plan(
         if item == "data" and licensed:
             names = ", ".join(u.label for u in licensed)
             print(f"zenodo   the description states the terms and citation of the {names}")
+
+
+# ── the files in a public GitHub repository (--github) ───────────────────────
+
+
+@dataclass
+class _Hosted:
+    """What --github puts in the repository: the study's files as `e2er pack` ships them."""
+
+    files: list[str]
+    left_out: list[dict[str, Any]]
+    data: list[str]
+
+
+def _hosting_plan(b: Path) -> _Hosted:
+    """The files that go up and the data that stay out, by pack's own rules (package.left_out_data)."""
+    from .core.export import package as pkg
+
+    try:
+        files = pkg.study_files(b)
+    except pkg.PackageError as e:
+        raise ValueError(str(e)) from e
+    recipe, _why = pkg._recipe(b)
+    left = pkg.left_out_data(b, files, recipe, no_data=False)
+    out = {i["path"] for i in left}
+    shipped = sorted(r for r in files if r not in out)
+    return _Hosted(files=shipped, left_out=left, data=[r for r in shipped if pkg._is_data(r)])
+
+
+def readme_block(
+    b: Path,
+    *,
+    doc: dict[str, Any],
+    did: str,
+    site: str,
+    purpose: str | None,
+    kind: str | None,
+    left_out: list[dict[str, Any]],
+    licence: str | None,
+) -> str:
+    """The top of README.md for a study hosted on GitHub: what it is, where its record is, what is left out."""
+    from .core.export import package as pkg
+
+    prov = json.loads((b / "provenance.json").read_text(encoding="utf-8"))
+    study = pkg._study(b, prov)
+    lines = [README_BEGIN, f"# {study['title'] or doc.get('study', {}).get('title') or 'A study made with e2er'}", ""]
+    if purpose:
+        rest = disclaimer(kind).removeprefix("Demonstration.").strip()
+        lines += [f"> **Demonstration: published as is, not endorsed.** {rest}", ""]
+    if study.get("question"):
+        lines += [f"**Question:** {study['question']}", ""]
+    lines += [
+        f"**Dossier:** {dossier_url(did, site)} (every step of the run, the models, the data loads and the checks; "
+        f"id `{did}`)",
+        "",
+    ]
+    run = doc.get("run") or {}
+    models = [
+        f"{m.get('model')} ({m.get('backend')})"
+        for m in run.get("models") or []
+        if isinstance(m, dict) and m.get("model")
+    ]
+    made = [f"e2er {(doc.get('e2er') or {}).get('version') or study.get('e2er_version') or ''}".strip()]
+    if run.get("template") or study.get("template"):
+        made.append(f"template {run.get('template') or study.get('template')}")
+    if models:
+        made.append(f"model{'s' if len(models) > 1 else ''} {', '.join(models)}")
+    lines += [f"**Made with:** {'; '.join(made)}", ""]
+
+    lines += ["## Data", ""]
+    # One entry per source and release: a study that loaded the same source twice lists it once.
+    sources = list(
+        {
+            (d.get("dataset"), d.get("version"), d.get("licence"), d.get("terms"), d.get("citation")): d
+            for d in doc.get("data_sources") or []
+            if isinstance(d, dict)
+        }.values()
+    )
+    if not sources:
+        lines += ["The dossier records no data load from a connector.", ""]
+    for d in sources:
+        head = str(d.get("dataset") or d.get("connector") or "a data source")
+        if d.get("version"):
+            head += f", release {d['version']}"
+        lines.append(f"- **{head}**")
+        if d.get("licence"):
+            lines.append(f"  - Terms: {d['licence']}")
+        if d.get("terms"):
+            lines.append(f"  - Full terms: {d['terms']}")
+        if d.get("citation"):
+            lines.append(f"  - Cite: {d['citation']}")
+    if sources:
+        lines.append("")
+
+    lines += ["## Files left out", ""]
+    if left_out:
+        lines += ["These files of the study are not in this folder:", ""]
+        for item in left_out:
+            lines.append(f"- `{item['path']}`: {item['reason']}; {pkg.rerun_words(item)}.")
+        lines += [
+            "",
+            "`e2er reproduce .` runs the study's steps again in a copy of this folder, getting each of these "
+            "files as its line says, and compares the results with the published ones. `e2er-package.json` lists "
+            "every file here with its SHA-256 and what was left out.",
+            "",
+        ]
+    else:
+        lines += ["None: every file of the study is in this folder.", ""]
+
+    lines += ["## Licence", ""]
+    if licence:
+        lines.append(f"Code and text: {licence}. The data keep their sources' terms (above).")
+    else:
+        lines.append(
+            "No licence was set for the study's code and text when it was published. Without one, copyright "
+            "applies: you may read the files, but reusing them needs the authors' permission. The data keep their "
+            "sources' terms (above)."
+        )
+    lines += [
+        "",
+        "## Check it",
+        "",
+        "`e2er verify .` checks every file against `provenance.json`; `e2er reproduce .` runs the study's code "
+        "again (https://github.com/bhanneke/E2ER-project).",
+        README_END,
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def _write_readme(b: Path, **kw: Any) -> bool:
+    """Put the GitHub summary at the top of README.md (the export's own text stays below); an amendment."""
+    readme = b / "README.md"
+    old = readme.read_text(encoding="utf-8") if readme.is_file() else ""
+    rest = export_readme(old)
+    new = readme_block(b, **kw) + (f"\n---\n\n{rest}" if rest.strip() else "")
+    if new == old:
+        return False
+    readme.write_text(new, encoding="utf-8")
+    _amend(b, "README.md", "the study's summary for its GitHub repository, at the top", kind="readme")
+    return True
+
+
+#: The commit a rehearsal (--dry-run, the check before --to) names: nothing was pushed.
+NO_COMMIT = "0" * 40
+
+
+def _host_on_github(
+    b: Path,
+    manifest: dict[str, Any],
+    t: gf.Target,
+    hosted: _Hosted,
+    *,
+    mode: str,
+    user: dict[str, Any],
+    owner: str,
+    project: str,
+    site: str,
+) -> str:
+    """Push the study's files (what `e2er pack` ships) to ``t``; the commit that holds them.
+
+    e2er.json goes up as well, without the commit (no commit can name itself), without the paper's
+    address (which names the commit) and without the time of publishing. The local e2er.json, written
+    after this, has all three.
+    """
+    from .core.export import package as pkg
+
+    if mode == "rehearse":
+        return NO_COMMIT
+    pre = copy.deepcopy(manifest)
+    pre["repository"] = {k: v for k, v in (pre.get("repository") or {}).items() if k != "commit"}
+    pre.pop("access", None)
+    pre.pop("published", None)  # the time of this publish: the same study published again makes no new commit
+    e2er_json = b / MANIFEST_NAME
+    before = e2er_json.read_bytes() if e2er_json.is_file() else None
+
+    def restore() -> None:
+        if before is None:
+            e2er_json.unlink(missing_ok=True)
+        else:
+            e2er_json.write_bytes(before)
+
+    write_manifest(b, pre)
+    try:
+        with tempfile.TemporaryDirectory(prefix="e2er-github-") as td:
+            try:
+                staged = gf.stage(b, Path(td) / "study")
+            except pkg.PackageError as e:
+                raise gf.GitHubError(f"the study could not be packed for GitHub: {e}") from e
+            bad = gf.kept_out(b, staged)
+            if bad:
+                raise gf.GitHubError(
+                    f"{', '.join(bad)} would go up although the source's terms keep it out; nothing was pushed"
+                )
+            secrets = gf.secrets_in(staged)
+            if secrets:
+                raise gf.GitHubError(
+                    "the study's files hold something that looks like a key or token; nothing was pushed:\n  "
+                    + "\n  ".join(secrets[:10])
+                )
+            if mode == "plan":
+                _print_github_plan(t, staged)
+                restore()
+                return NO_COMMIT
+            state = gf.repo_state(t)
+            gf.check_repo(state, t)
+            if state is None:
+                gf.create_repo(t, f"Files of the study {manifest['id']} on e2er.org, published with e2er")
+                print(f"✓ Created the public repository github.com/{t.full}")
+            prov = json.loads((b / "provenance.json").read_text(encoding="utf-8"))
+            ids = {str(manifest.get("id") or ""), str((prov.get("run") or {}).get("paper_id") or "")} - {""}
+            restricted = set(data_terms.restricted_paths(b)) | {i["path"] for i in staged.left_out}
+            message = (
+                f"{manifest['id']}: {pkg._study(b, prov)['title'] or manifest['title']}\n\n"
+                f"Published with e2er publish --github. Dossier: {manifest['dossier']['url']}\n"
+            )
+            pushed = gf.push(
+                t, staged, study_ids=ids, message=message, user=user, restricted=restricted, exists=state is not None
+            )
+    except BaseException:
+        restore()
+        raise
+    word = "Pushed" if pushed.changed else "Already on GitHub:"
+    print(
+        f"✓ {word} {len(staged.files)} files to {t.where()} ({pushed.branch}), commit {pushed.commit[:7]}: "
+        f"{t.tree(pushed.commit)}"
+    )
+    for item in staged.left_out:
+        print(f"  left out: {item['path']} ({item['reason']}); {pkg.rerun_words(item)}")
+    for r in pushed.kept:
+        print(f"  note: {r} in the study's folder is not one of the study's files; it was left as it is")
+    gf.save_record(
+        b,
+        {
+            "repository": t.url,
+            "path": t.path,
+            "commit": pushed.commit,
+            "branch": pushed.branch,
+            "files": staged.files,
+            "left_out": [{"path": i["path"], "reason": i["reason"]} for i in staged.left_out],
+            "pushed_at": _now(),
+        },
+    )
+    return pushed.commit
+
+
+def _print_github_plan(t: gf.Target, staged: gf.Staged) -> None:
+    print(f"github: would push {len(staged.files)} files to {t.where()} (public); nothing was pushed")
+    for rel in staged.files:
+        print(f"github   + {rel}")
+    for item in staged.left_out:
+        print(f"github   left out: {item['path']} ({item['reason']})")
 
 
 __all__ = ["MANIFEST_NAME", "publish"]

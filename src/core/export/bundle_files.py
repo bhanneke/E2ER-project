@@ -42,7 +42,14 @@ JUNK_NAMES = frozenset({".DS_Store", "Thumbs.db", "desktop.ini", "Desktop.ini"})
 #: e2er-package.json and everything under e2er-package/ are a .e2er package's own files (its manifest, the
 #: pinned environment and the wheels), present in a folder unpacked from a package; verify checks them against
 #: the manifest when it opens the package.
-NOT_EVIDENCE = ("provenance.json", "e2er.json", ".e2er/link.json", ".e2er/zenodo.json", "e2er-package.json")
+NOT_EVIDENCE = (
+    "provenance.json",
+    "e2er.json",
+    ".e2er/link.json",
+    ".e2er/zenodo.json",
+    ".e2er/github.json",
+    "e2er-package.json",
+)
 PACKAGE_PREFIX = "e2er-package/"
 
 
