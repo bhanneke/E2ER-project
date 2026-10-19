@@ -161,6 +161,7 @@ def test_dry_run_shows_the_carry_over_and_changes_nothing(
     rc = publish(str(who_study), **ID, demonstration=True, github_repo="ada/demos", github_path="who", dry_run=True)
     got = capsys.readouterr()
     assert rc == 0, got.out + got.err
+    assert "WARNING: the run database is not available" in got.err and "carried over" in got.err
     body = json.loads(got.out)
     assert body["dossier"]["doc"]["workflow"] == first["workflow"]
     assert any(a.get("kind") == co.KIND for a in body["dossier"]["doc"]["amendments"])

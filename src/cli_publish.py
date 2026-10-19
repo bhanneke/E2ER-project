@@ -992,6 +992,8 @@ def publish(bundle: str, *, dry_run: bool = False, to_url: str | None = None, of
             with contextlib.redirect_stdout(log):
                 code, manifest = _describe(str(scratch), **rehearsal, remote=True)
             plan = [ln for ln in log.getvalue().splitlines() if ln.startswith(("zenodo", "note: --zenodo", "github"))]
+            # Said in a dry run too: the run's database is missing and the earlier dossier is carried over.
+            warnings = [ln for ln in log.getvalue().splitlines() if ln.startswith("WARNING:")]
             if code or manifest is None:
                 print(log.getvalue().rstrip())
                 return code or 1
@@ -999,6 +1001,8 @@ def publish(bundle: str, *, dry_run: bool = False, to_url: str | None = None, of
         found = problems(body)
         if dry_run:
             print(json.dumps(body, indent=2, ensure_ascii=False))
+            for w in warnings:
+                print(w, file=sys.stderr)
             if kw.get("zenodo") or kw.get("github_target"):
                 print("\n".join(plan), file=sys.stderr)
             for p in found:
