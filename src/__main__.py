@@ -565,6 +565,30 @@ def main() -> None:
         help="Emit comparison.json on stdout instead of the human-readable report.",
     )
 
+    redact_p = subparsers.add_parser(
+        "redact",
+        help="Remove personal data (an e-mail address, a phone number) from a study folder before publishing.",
+        description="Replaces every occurrence of the text in the folder's text files, changes nothing else, and "
+        'records an amendment per file in provenance.json (kind "redacted", the fingerprints before and after). '
+        "The next `e2er publish` shows the redactions in the dossier; `e2er verify` accepts a redacted "
+        "pre-registration as redacted, not changed. A PDF, a database or another binary file that holds the text "
+        "stops the redaction: nothing is changed.",
+    )
+    redact_p.add_argument("folder", help="The exported study folder.")
+    redact_p.add_argument(
+        "--text", action="append", required=True, dest="texts", help="The text to remove (repeatable)."
+    )
+    redact_p.add_argument(
+        "--replace", default="<redacted>", dest="replacement", help='What takes its place (default "<redacted>").'
+    )
+    redact_p.add_argument("--dry-run", action="store_true", help="Say what would change; change nothing.")
+    redact_p.add_argument(
+        "--check",
+        action="store_true",
+        help="Change nothing: with the removed text, rebuild each redacted file's earlier version and compare "
+        "its fingerprint with the one provenance.json recorded.",
+    )
+
     publish_p = subparsers.add_parser(
         "publish",
         help="Verify an exported bundle; write its research-object manifest (e2er.json) and registry entry.",
@@ -580,8 +604,9 @@ def main() -> None:
         metavar="OWNER/REPO",
         help="Put the study's files (what `e2er pack` ships: no data a source's terms keep out) in a public GitHub "
         "repository with your own gh login, and link them at the pushed commit. Alone: <your login>/<project>, "
-        "created when missing; with OWNER/REPO: that repository. A value without / is read as --github-login "
-        "(its earlier meaning).",
+        "created when missing; with OWNER/REPO: that repository. The files go up only as part of a publish on a "
+        "platform: without --to, the one .e2er/link.json records, else e2er.org (signed in with `e2er login`). "
+        "A value without / is read as --github-login (its earlier meaning).",
     )
     publish_p.add_argument(
         "--github-path",
@@ -856,6 +881,11 @@ def main() -> None:
 
         logs_to_stderr()
     _clean_path_args(args)
+
+    if args.command == "redact":
+        from .cli_redact import redact as _redact
+
+        sys.exit(_redact(args.folder, args.texts, replacement=args.replacement, dry_run=args.dry_run, check=args.check))
 
     if args.command == "publish":
         from .cli_publish import publish as _publish
@@ -1205,6 +1235,7 @@ _PATH_ARGS: dict[str, tuple[str, ...]] = {
     "run-matrix": ("rq_file", "out"),
     "status": ("paper_id",),
     "verify": ("bundle",),
+    "redact": ("folder",),
     "reproduce": ("folder", "json_out"),
     "verify-citations": ("draft", "bib"),
     "publish": ("bundle", "out", "db"),

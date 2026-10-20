@@ -1,0 +1,403 @@
+"""Redacting personal data from a study folder before it is published (``e2er redact``).
+
+A researcher may need to take a piece of personal data out of the exported
+files, an e-mail address in a plan the run wrote, for example. Editing the
+files by hand breaks the folder: their fingerprints no longer match
+provenance.json, and a pre-registration no longer matches its frozen
+fingerprint. ``redact`` does the edit the supported way:
+
+* every occurrence of the text in the folder's text files is replaced by the
+  replacement (``<redacted>`` by default), and nothing else in the file changes;
+* each changed file gets an amendment in provenance.json::
+
+      {"path", "kind": "redacted", "sha256_before", "sha256_after",
+       "reason": "personal contact details removed by the researcher", "at",
+       "redaction": {"replacement", "count", "offsets", "removed_bytes"}}
+
+  ``offsets`` are the byte offsets of the replacement in the new file and
+  ``removed_bytes`` the length of the text taken out: with the text, anyone can
+  rebuild the earlier file and check its fingerprint (``e2er redact --check``);
+  the record itself never holds the text, nor a hash of it;
+* before anything is written, the edit is proven: the new file, with the text
+  put back at the offsets, has exactly the fingerprint the file had.
+
+The amendments go into the dossier when the study is published. ``e2er verify``
+accepts a pre-registered plan file whose only change since the freeze is such a
+redaction ("redacted by the researcher after registration: contact details
+only"), after checking that the record matches the file: the replacement sits
+at every recorded offset.
+
+Text inside a binary file (a PDF, a database) cannot be replaced in place;
+``redact`` names such files and changes nothing.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import shutil
+import subprocess
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+
+KIND = "redacted"
+REASON = "personal contact details removed by the researcher"
+DEFAULT_REPLACEMENT = "<redacted>"
+#: What verify says about a pre-registered plan file whose only change is a redaction.
+PREREG_WORDS = "redacted by the researcher after registration: contact details only"
+#: Local records, never published: not searched and not changed.
+_LOCAL = (".e2er/",)
+
+
+class RedactError(Exception):
+    """The redaction cannot be made; the message says why. Nothing was changed."""
+
+
+def _sha(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def _now() -> str:
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+@dataclass
+class Plan:
+    """What a redaction changes (or, in a dry run, would change)."""
+
+    #: rel → (bytes now, bytes after, offsets of the replacement in the new bytes)
+    edits: dict[str, tuple[bytes, bytes, list[int]]] = field(default_factory=dict)
+    #: Binary files that hold the text (it cannot be replaced in place).
+    binary: list[str] = field(default_factory=list)
+    #: PDFs whose extracted text holds it (pdftotext), so the paper must be built again from its source.
+    pdfs: list[str] = field(default_factory=list)
+    #: Files that hold the text but are not listed in provenance.json (records of an earlier publish).
+    unlisted: list[str] = field(default_factory=list)
+    #: PDFs whose text could not be read (no pdftotext): the text may be in them, compressed.
+    pdfs_unread: list[str] = field(default_factory=list)
+
+
+def replace_with_offsets(data: bytes, old: bytes, new: bytes) -> tuple[bytes, list[int]]:
+    """``data`` with every ``old`` replaced by ``new``, and the offsets of ``new`` in the result."""
+    out = bytearray()
+    offsets: list[int] = []
+    i = 0
+    while True:
+        j = data.find(old, i)
+        if j < 0:
+            out += data[i:]
+            break
+        out += data[i:j]
+        offsets.append(len(out))
+        out += new
+        i = j + len(old)
+    return bytes(out), offsets
+
+
+def restore(after: bytes, offsets: list[int], replacement: bytes, text: bytes) -> bytes:
+    """The file before the redaction: ``text`` back in place of the replacement at each offset."""
+    out = bytearray()
+    i = 0
+    for off in offsets:
+        out += after[i:off] + text
+        i = off + len(replacement)
+    out += after[i:]
+    return bytes(out)
+
+
+def _is_text(data: bytes) -> bool:
+    if b"\x00" in data[:8192]:
+        return False
+    try:
+        data.decode("utf-8")
+    except UnicodeDecodeError:
+        return False
+    return True
+
+
+def _pdf_text(path: Path) -> str | None:
+    exe = shutil.which("pdftotext")
+    if exe is None:
+        return None
+    try:
+        proc = subprocess.run([exe, "-q", str(path), "-"], capture_output=True, timeout=120)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return proc.stdout.decode("utf-8", errors="replace") if proc.returncode == 0 else None
+
+
+def _files(folder: Path) -> list[str]:
+    return sorted(
+        p.relative_to(folder).as_posix()
+        for p in folder.rglob("*")
+        if p.is_file() and not p.is_symlink() and not p.relative_to(folder).as_posix().startswith(_LOCAL)
+    )
+
+
+def plan(folder: Path, texts: list[str], replacement: str = DEFAULT_REPLACEMENT) -> Plan:
+    """Where the texts are and what replacing them changes. Reads only."""
+    folder = Path(folder)
+    prov = _provenance(folder)
+    listed = prov.get("files") or {}
+    rep = replacement.encode("utf-8")
+    wanted = [t.encode("utf-8") for t in texts]
+    out = Plan()
+    for rel in _files(folder):
+        path = folder / rel
+        data = path.read_bytes()
+        if path.suffix.lower() == ".pdf":
+            text = _pdf_text(path)
+            if any(w in data for w in wanted) or (text is not None and any(t in text for t in texts)):
+                out.pdfs.append(rel)
+            elif text is None:
+                out.pdfs_unread.append(rel)
+            continue
+        if not any(w in data for w in wanted):
+            continue
+        if not _is_text(data):
+            out.binary.append(rel)
+            continue
+        if rel not in listed:
+            out.unlisted.append(rel)
+            continue
+        new, offsets = data, list[int]()
+        for w in wanted:
+            if w not in new:
+                continue
+            if offsets:
+                raise RedactError("give one --text per redaction: several texts in one file are redacted one by one")
+            new, offsets = replace_with_offsets(new, w, rep)
+        out.edits[rel] = (data, new, offsets)
+    return out
+
+
+def _provenance(folder: Path) -> dict[str, Any]:
+    p = folder / "provenance.json"
+    if not p.is_file():
+        raise RedactError(f"{folder} has no provenance.json: redact works on an exported study folder")
+    try:
+        prov = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        raise RedactError(f"provenance.json cannot be read: {e}") from e
+    if not isinstance(prov, dict) or not isinstance(prov.get("files"), dict):
+        raise RedactError("provenance.json lists no files")
+    return prov
+
+
+def redact(
+    folder: Path, text: str, *, replacement: str = DEFAULT_REPLACEMENT, dry_run: bool = False
+) -> tuple[Plan, list[dict[str, Any]]]:
+    """Replace ``text`` in the folder's text files and record an amendment per file (see the module docstring).
+
+    Refuses (RedactError, nothing changed) when the text is empty or inside the replacement, when a file to
+    change does not match provenance.json, or when the text is in a binary file, a PDF or a file provenance.json
+    does not list. Returns the plan and the amendments written (none in a dry run).
+    """
+    folder = Path(folder)
+    if not text.strip():
+        raise RedactError("--text is empty")
+    if text in replacement:
+        raise RedactError("the replacement contains the text it replaces")
+    if replacement in text:
+        raise RedactError("the replacement is part of the text it replaces; choose another replacement")
+    found = plan(folder, [text], replacement)
+    stuck = []
+    if found.binary:
+        stuck.append(
+            f"{', '.join(found.binary)} hold{'s' if len(found.binary) == 1 else ''} it in binary form, which "
+            "cannot be edited in place"
+        )
+    if found.pdfs:
+        stuck.append(
+            f"{', '.join(found.pdfs)}: the PDF's text holds it; redact its source (paper/paper.tex) and build the "
+            "PDF again (e2er publish compiles paper/paper.pdf from paper/paper.tex)"
+        )
+    if found.unlisted:
+        stuck.append(
+            f"{', '.join(found.unlisted)} {'is' if len(found.unlisted) == 1 else 'are'} not listed in "
+            "provenance.json (a record of an earlier publish, rewritten by the next one); remove the text there "
+            "by hand or publish again first"
+        )
+    if stuck:
+        raise RedactError("the text is also where redact cannot replace it; nothing was changed: " + "; ".join(stuck))
+    prov = _provenance(folder)
+    listed = prov["files"]
+    changed = [
+        rel for rel, (before, _a, _o) in found.edits.items() if (listed[rel] or {}).get("sha256") != _sha(before)
+    ]
+    if changed:
+        raise RedactError(
+            f"{', '.join(changed)} {'does' if len(changed) == 1 else 'do'} not match provenance.json: the folder "
+            "was changed after export; nothing was changed"
+        )
+    rep = replacement.encode("utf-8")
+    t = text.encode("utf-8")
+    for rel, (before, after, offsets) in found.edits.items():
+        # The proof: the new file with the text put back is exactly the file as it was.
+        if restore(after, offsets, rep, t) != before or t in after:
+            raise RedactError(f"{rel}: the redaction could not be proven to change only the text; nothing was changed")
+    if dry_run or not found.edits:
+        return found, []
+    at = _now()
+    written: list[dict[str, Any]] = []
+    for rel, (before, after, offsets) in found.edits.items():
+        entry = {
+            "path": rel,
+            "kind": KIND,
+            "sha256_before": _sha(before),
+            "sha256_after": _sha(after),
+            "reason": REASON,
+            "at": at,
+            "redaction": {
+                "replacement": replacement,
+                "count": len(offsets),
+                "offsets": offsets,
+                "removed_bytes": len(t),
+                # The size provenance.json listed: with it, the listing before the redaction can be rebuilt
+                # exactly (an earlier publish's content id, see :func:`provenance_before_redactions`).
+                "bytes_before": (listed[rel] or {}).get("bytes"),
+            },
+        }
+        listed[rel] = {"sha256": entry["sha256_after"], "bytes": len(after)}
+        prov.setdefault("amendments", []).append(entry)
+        written.append(entry)
+    prov["files"] = dict(sorted(listed.items()))
+    from .export.provenance import dump
+
+    # The files first, provenance.json last: an interrupted run leaves files that do not match it, which verify
+    # reports, never a record of an edit that was not made.
+    for rel, (_b, after, _o) in found.edits.items():
+        (folder / rel).write_bytes(after)
+    (folder / "provenance.json").write_text(dump(prov), encoding="utf-8")
+    return found, written
+
+
+def provenance_before_redactions(folder: Path) -> tuple[list[str], int]:
+    """provenance.json's text as it was before the redactions at the end of its amendments, and their number.
+
+    Several texts when the redactions added the "amendments" list itself (with and without an empty list):
+    the caller compares each with an earlier publish's content id. ([], 0) when the last amendment is not a
+    redaction or a redaction lacks the size the file had.
+    """
+    from .export.provenance import dump
+
+    try:
+        prov = json.loads((Path(folder) / "provenance.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return [], 0
+    if not isinstance(prov, dict) or not isinstance(prov.get("files"), dict):
+        return [], 0
+    amendments = list(prov.get("amendments") or [])
+    files = dict(prov["files"])
+    n = 0
+    while amendments and isinstance(amendments[-1], dict) and amendments[-1].get("kind") == KIND:
+        a = amendments.pop()
+        size = (a.get("redaction") or {}).get("bytes_before") if isinstance(a.get("redaction"), dict) else None
+        if not isinstance(a.get("path"), str) or not isinstance(a.get("sha256_before"), str) or size is None:
+            return [], 0
+        files[a["path"]] = {"sha256": a["sha256_before"], "bytes": size}
+        n += 1
+    if not n:
+        return [], 0
+    prov["files"] = files
+    prov["amendments"] = amendments
+    texts = [dump(prov)]
+    if not amendments:
+        texts.append(dump({k: v for k, v in prov.items() if k != "amendments"}))
+    return texts, n
+
+
+def record_problem(entry: dict[str, Any], data: bytes | None) -> str | None:
+    """Why a redaction amendment does not describe the file ``data`` (its current bytes), or None.
+
+    Checks the record's shape and that the replacement sits at every recorded offset.
+    """
+    red = entry.get("redaction")
+    path = entry.get("path")
+    if not isinstance(red, dict):
+        return f"{path}: the redaction record is missing"
+    rep, offsets, count, removed = (
+        red.get("replacement"),
+        red.get("offsets"),
+        red.get("count"),
+        red.get("removed_bytes"),
+    )
+    if not (
+        isinstance(rep, str)
+        and rep
+        and isinstance(offsets, list)
+        and offsets
+        and all(isinstance(o, int) and o >= 0 for o in offsets)
+        and count == len(offsets)
+        and isinstance(removed, int)
+        and removed > 0
+    ):
+        return f"{path}: the redaction record is incomplete"
+    if data is None:
+        return f"{path} is missing"
+    r = rep.encode("utf-8")
+    last = -1
+    for o in offsets:
+        if o <= last or data[o : o + len(r)] != r:
+            return f"{path}: the redaction record does not match the file (no {rep} at byte {o})"
+        last = o + len(r) - 1
+    return None
+
+
+def explains(amendments: list[dict[str, Any]], rel: str, sha_from: str | None, sha_to: str | None) -> bool:
+    """Do redactions alone take ``rel`` from ``sha_from`` to ``sha_to``: an unbroken chain of its amendments, each
+    of kind "redacted"?"""
+    if not sha_from or not sha_to:
+        return False
+    at: str | None = sha_from
+    for a in amendments:
+        if not isinstance(a, dict) or a.get("path") != rel or a.get("sha256_before") != at:
+            continue
+        if a.get("kind") != KIND:
+            return False
+        at = a.get("sha256_after")
+        if at == sha_to:
+            return True
+    return False
+
+
+def check(folder: Path, text: str) -> list[str]:
+    """With the text that was removed: rebuild each redacted file's earlier version and compare its fingerprint.
+
+    Returns one line per redaction amendment ("✓ path: …" or "✗ path: …"). Only the last redaction of a file can be
+    rebuilt from the file as it is now; earlier ones are named.
+    """
+    folder = Path(folder)
+    prov = _provenance(folder)
+    reds = [a for a in prov.get("amendments") or [] if isinstance(a, dict) and a.get("kind") == KIND]
+    last: dict[str, dict[str, Any]] = {}
+    for a in prov.get("amendments") or []:
+        if isinstance(a, dict) and isinstance(a.get("path"), str):
+            last[a["path"]] = a
+    t = text.encode("utf-8")
+    out = []
+    for a in reds:
+        rel = str(a.get("path"))
+        if last.get(rel) is not a:
+            out.append(f"· {rel}: a later change of the file follows this redaction; not rebuilt")
+            continue
+        path = folder / rel
+        data = path.read_bytes() if path.is_file() else None
+        why = record_problem(a, data)
+        if why or data is None:
+            out.append(f"✗ {why}")
+            continue
+        red = a["redaction"]
+        if len(t) != red["removed_bytes"]:
+            out.append(f"✗ {rel}: the text is {len(t)} bytes long, the redaction removed {red['removed_bytes']}")
+            continue
+        before = restore(data, red["offsets"], red["replacement"].encode("utf-8"), t)
+        if _sha(before) == a.get("sha256_before"):
+            out.append(
+                f"✓ {rel}: with the text put back, the file is exactly the earlier one ({red['count']} place(s))"
+            )
+        else:
+            out.append(f"✗ {rel}: with the text put back, the file is not the earlier one")
+    return out

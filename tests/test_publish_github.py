@@ -84,7 +84,37 @@ def github(tmp_path: Path, monkeypatch) -> Path:
     monkeypatch.delenv("E2ER_PURPOSE", raising=False)
     monkeypatch.delenv("DATABASE_URL", raising=False)
     del real_which
+    # A fake platform: `publish --github` always publishes on one (e2er.org by default).
+    from src.core import platform_client as pc
+
+    monkeypatch.setattr(pc, "load_token", lambda base: "tok")
+    monkeypatch.setattr(pc, "request", _fake_platform(root))
     return root
+
+
+def _fake_platform(root: Path, refuse: str | None = None):
+    """pc.request for a platform that signs in and registers every study (or refuses it: ``refuse``)."""
+
+    def request(base, method, path, token=None, body=None):
+        with open(root / "platform.log", "a") as f:
+            f.write(f"{method} {base}{path}\n")
+        if method == "GET" and path == "/api/v1/me":
+            return 200, {"name": "Ada", "handles": ["ada"]}
+        if method == "POST" and path == "/api/v1/studies":
+            if refuse:
+                return 409, {"error": refuse}
+            oid = body["manifest"]["id"]
+            (root / "registered.jsonl").open("a").write(json.dumps(body) + "\n")
+            return 201, {
+                "id": oid,
+                "owner_project": oid,
+                "version": 1,
+                "study_url": f"{base}/{oid}",
+                "dossier_url": "x",
+            }
+        return 404, {"error": "not found"}
+
+    return request
 
 
 def _git(*args: str, cwd: Path | None = None) -> str:
@@ -451,6 +481,8 @@ def test_publishing_to_e2er_org_sends_the_repository_at_the_pushed_commit_and_no
     sent: list[dict] = []
 
     def server(base, method, path, token=None, body=None):
+        if method == "GET":
+            return 200, {"name": "Ada"}
         sent.append(body)
         oid = body["manifest"]["id"]
         return 201, {"id": oid, "owner_project": oid, "version": 1, "study_url": f"{base}/{oid}", "dossier_url": "x"}
@@ -525,3 +557,131 @@ def test_a_file_github_would_refuse_for_its_size_stops_publish_before_anything_i
     captured = capsys.readouterr()
     assert rc != 0 and "GitHub refuses files larger than 100 MB" in captured.out + captured.err
     assert not (github / "ada" / "demos.git").exists(), "no repository was made and nothing was pushed"
+
+
+# ── 2026-10-20: the push happens only as part of a publish on a platform ─────
+
+
+def test_github_without_to_publishes_on_e2er_org_and_registers_the_pushed_commit(
+    who_study: Path, github: Path, tmp_path: Path, capsys
+):
+    """e2er-demos commit 0d9a2e3: `publish --github` without --to pushed the files and registered nothing."""
+    rc = publish(str(who_study), **ID, github_repo="ada/demos", github_path="who")
+    out = capsys.readouterr().out
+    assert rc == 0, out
+    assert "--github publishes on https://e2er.org (the default platform)" in out
+    log = (github / "platform.log").read_text().splitlines()
+    assert log[0] == "GET https://e2er.org/api/v1/me", "the sign-in is checked before anything is pushed"
+    assert log[-1] == "POST https://e2er.org/api/v1/studies"
+    (body,) = [json.loads(line) for line in (github / "registered.jsonl").read_text().splitlines()]
+    sha = _git("--git-dir", str(github / "ada" / "demos.git"), "rev-parse", "main")
+    assert body["repository"]["commit"] == sha
+    assert json.loads((who_study / ".e2er" / "link.json").read_text())["platform_url"] == "https://e2er.org"
+
+
+def test_github_without_to_publishes_where_the_folder_was_published_before(
+    who_study: Path, github: Path, tmp_path: Path, capsys
+):
+    args = dict(**ID, github_repo="ada/demos", github_path="who")
+    assert publish(str(who_study), **args, to_url="https://staging.e2er.example/") == 0
+    capsys.readouterr()
+    rc = publish(str(who_study), **args, license_id="MIT")
+    out = capsys.readouterr().out
+    assert rc == 0, out
+    assert "--github publishes on https://staging.e2er.example (where this folder was published before" in out
+    log = (github / "platform.log").read_text()
+    assert log.count("POST https://staging.e2er.example/api/v1/studies") == 2 and "https://e2er.org" not in log
+
+
+def test_not_signed_in_to_the_platform_pushes_nothing(
+    who_study: Path, github: Path, tmp_path: Path, monkeypatch, capsys
+):
+    from src.core import platform_client as pc
+
+    monkeypatch.setattr(pc, "load_token", lambda base: None)
+    rc = publish(str(who_study), **ID, github_repo="ada/demos", github_path="who")
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert "not signed in to https://e2er.org; run `e2er login --url https://e2er.org`; nothing was pushed" in out
+    assert not (github / "ada").exists(), "no repository was made and nothing was pushed"
+    assert not (who_study / "e2er.json").exists()
+
+
+def test_a_refused_sign_in_pushes_nothing(who_study: Path, github: Path, tmp_path: Path, monkeypatch, capsys):
+    from src.core import platform_client as pc
+
+    monkeypatch.setattr(pc, "request", lambda base, method, path, token=None, body=None: (401, {"error": "expired"}))
+    rc = publish(str(who_study), **ID, github_repo="ada/demos", github_path="who", to_url="https://e2er.org")
+    out = capsys.readouterr().out
+    assert rc == 1 and "did not accept the sign-in" in out and "nothing was pushed" in out
+    assert not (github / "ada").exists()
+
+
+def test_a_registration_refused_after_the_push_rolls_forward_when_run_again(
+    who_study: Path, github: Path, tmp_path: Path, monkeypatch, capsys
+):
+    from src.core import platform_client as pc
+
+    monkeypatch.setattr(pc, "request", _fake_platform(github, refuse="This study belongs to someone else."))
+    rc = publish(str(who_study), **ID, github_repo="ada/demos", github_path="who")
+    out = capsys.readouterr().out
+    assert rc == 1
+    bare = github / "ada" / "demos.git"
+    sha = _git("--git-dir", str(bare), "rev-parse", "main")
+    assert f"The files are on GitHub (https://github.com/ada/demos/tree/{sha}/who)" in out
+    assert "did not register the study. Run the same command again" in out
+    assert not (who_study / ".e2er" / "link.json").exists()
+    # Run again with the problem solved: no new commit, and the registration names the commit already there.
+    monkeypatch.setattr(pc, "request", _fake_platform(github))
+    rc = publish(str(who_study), **ID, github_repo="ada/demos", github_path="who")
+    out = capsys.readouterr().out
+    assert rc == 0, out
+    assert "Already on GitHub" in out
+    assert _git("--git-dir", str(bare), "rev-parse", "main") == sha
+    assert _git("--git-dir", str(bare), "rev-list", "--count", "main") == "1"
+    (body,) = [json.loads(line) for line in (github / "registered.jsonl").read_text().splitlines()]
+    assert body["repository"]["commit"] == sha
+
+
+def test_a_push_without_a_platform_is_refused_inside_describe(who_study: Path, github: Path, capsys):
+    """The guard below publish(): a run that writes only a registry entry never pushes."""
+    from src.cli_publish import _describe
+
+    target = gf.parse_target("ada/demos", project="demo", login="ada", path="who")
+    code, manifest = _describe(
+        str(who_study), **ID, github_target=target, github_mode="push", github_user={"login": "ada"}, remote=False
+    )
+    assert code == 1 and manifest is None
+    assert "only as part of a publish on a platform" in capsys.readouterr().out
+    assert not (github / "ada").exists()
+
+
+def test_a_published_study_redacted_afterwards_verifies_and_publishes_again_with_the_redactions(
+    who_study: Path, github: Path, tmp_path: Path, capsys
+):
+    """The school-fee demo: published, then the researcher's e-mail taken out of a plan file, then version 2."""
+    from src.core import redact as rd
+
+    email = "ada@uni.example.org"
+    _add(who_study, "design/paper_plan.md", f"Author context: {email} (project owner).\n".encode())
+    args = dict(**ID, github_repo="ada/demos", github_path="who")
+    assert publish(str(who_study), **args) == 0, capsys.readouterr().out
+    rd.redact(who_study, email)
+    checks = {c.name: c for c in _run_checks(who_study, online=False)}
+    assert checks["anchor"].status != FAIL, checks["anchor"].detail
+    assert "before the researcher redacted 1 file(s)" in checks["anchor"].detail
+    capsys.readouterr()
+    assert publish(str(who_study), **args) == 0, capsys.readouterr().out
+    bodies = [json.loads(line) for line in (github / "registered.jsonl").read_text().splitlines()]
+    shown = [a for a in bodies[-1]["dossier"]["doc"]["amendments"] if a.get("kind") == "redacted"]
+    assert [a["path"] for a in shown] == ["design/paper_plan.md"]
+    assert shown[0]["reason"] == "personal contact details removed by the researcher"
+    clone = _clone(github / "ada" / "demos.git", tmp_path / "clone")
+    assert email not in (clone / "who" / "design" / "paper_plan.md").read_text()
+    pushed = json.loads((clone / "who" / "provenance.json").read_text())
+    assert [a["path"] for a in pushed["amendments"] if a.get("kind") == "redacted"] == ["design/paper_plan.md"]
+    assert rd.check(clone / "who", email)[0].startswith("✓ design/paper_plan.md")
+    # A further change after publishing is still a changed folder.
+    p = who_study / "design" / "paper_plan.md"
+    p.write_text(p.read_text() + "x\n")
+    assert {c.name: c.status for c in _run_checks(who_study, online=False)}["integrity"] == FAIL

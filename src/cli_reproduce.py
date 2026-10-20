@@ -125,6 +125,9 @@ def render(
             "missing": "not built",
         }
         for entry in rebuilt:
+            if entry["status"] == rp.NOT_COMPARED:
+                lines.append(f"  {entry['path']}: {entry.get('why') or 'not compared'}")
+                continue
             lines.append(f"  {entry['path']}: {words.get(entry['status'], entry['status'])}")
     if files:
         lines += ["", "Results, value by value:"]
@@ -204,6 +207,13 @@ def _reproduce_folder(
     except rp.RecipeError as e:
         print(f"error: {e}")
         return 2
+    # A left-out output the step only updates (figure_spec.json, produced by the figure step): not compared.
+    from .core.derived_data import not_produced_by_step
+
+    not_produced = not_produced_by_step(root, recipe)
+    for item in recipe.get("inputs") or []:
+        if isinstance(item, dict) and str(item.get("path")) in not_produced:
+            item["not_compared"] = not_produced[str(item["path"])]
     try:
         own = json.loads((root / rp.RECIPE_FILE).read_text(encoding="utf-8")).get("steps") or []
     except (OSError, ValueError, AttributeError):

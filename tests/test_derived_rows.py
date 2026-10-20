@@ -387,7 +387,8 @@ def test_a_planted_declaration_of_a_results_file_does_not_excuse_it(tmp_path):
 
 
 def test_publish_to_github_keeps_row_level_results_out(tmp_path, rerun_here, monkeypatch, capsys):
-    from tests.test_publish_github import ID, _clone, _tree, github  # noqa: F401
+    from src.core import platform_client as pc
+    from tests.test_publish_github import ID, _clone, _fake_platform, _tree, github  # noqa: F401
 
     root = tmp_path / "github"
     root.mkdir()
@@ -408,6 +409,8 @@ def test_publish_to_github_keeps_row_level_results_out(tmp_path, rerun_here, mon
     monkeypatch.setattr(shutil, "which", lambda name, *a, **k: str(gh) if name == "gh" else None)
     monkeypatch.delenv("E2ER_PURPOSE", raising=False)
     monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setattr(pc, "load_token", lambda base: "tok")
+    monkeypatch.setattr(pc, "request", _fake_platform(root))
     from src.cli_publish import publish
 
     folder = _export(_gisco_workspace(tmp_path), tmp_path)

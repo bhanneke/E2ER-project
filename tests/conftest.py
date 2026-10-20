@@ -484,6 +484,31 @@ def _temporary_files_stay_in_the_test(monkeypatch, tmp_path_factory):
 
 
 @pytest.fixture(autouse=True)
+def _no_real_platform(monkeypatch, tmp_path_factory):
+    """No test signs in to a real platform or reaches one: no keychain, an empty credentials file, no
+    E2ER_TOKEN, and a platform client that refuses every request a test did not fake.
+
+    On 2026-10-20 `publish --github` began to publish on e2er.org by default; the suite, run on a machine
+    signed in to e2er.org, published test studies there with the machine's token.
+    """
+    import httpx
+
+    from src.core import platform_client as pc
+
+    monkeypatch.setattr(pc, "_keyring", lambda: None)
+    monkeypatch.setenv("E2ER_CREDENTIALS", str(tmp_path_factory.mktemp("no-credentials") / "credentials.json"))
+    monkeypatch.delenv("E2ER_TOKEN", raising=False)
+
+    def refuse(request: httpx.Request) -> httpx.Response:
+        raise AssertionError(f"a test reached a real platform: {request.method} {request.url}")
+
+    monkeypatch.setattr(
+        pc, "client_factory", lambda url: httpx.Client(base_url=url, transport=httpx.MockTransport(refuse))
+    )
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _isolate_the_cli_installs(monkeypatch, tmp_path_factory):
     """Never let the suite see this machine's AI CLIs outside PATH or Codex's model list.
 

@@ -737,6 +737,58 @@ def _argv(step: dict[str, Any]) -> list[str]:
     return str(run or "").split()
 
 
+#: What produced each kind of file a study's step only updates, when the run's own record does not say.
+_PRODUCED_BY = {"figure_spec.json": "the figure step"}
+
+
+def not_produced_by_step(folder: Path, recipe: dict[str, Any]) -> dict[str, str]:
+    """Left-out outputs a step of the recipe writes but did not produce: run path → why the rerun's copy is not
+    compared with the study's.
+
+    A step that reads the file before writing it (``json.load(open(p))`` … ``json.dump(…, open(p, "w"))``) only
+    updates the copy it finds: the study's copy was produced earlier in the run (``figure_spec.json`` by the
+    figure step) and maybe changed by other scripts after, so the rerun's copy differs for that reason alone.
+    The same holds when another script of the folder, not run by the recipe, writes the file as well.
+    """
+    folder = Path(folder)
+    files_map = recipe.get("files") or {}
+    scripts = {s.rel: s for s in scripts_of(folder)}
+    ran = {Path(a).name for st in recipe.get("steps") or [] if isinstance(st, dict) for a in _argv(st)}
+    out: dict[str, str] = {}
+    for item in recipe.get("inputs") or []:
+        if not (isinstance(item, dict) and item.get("output") and isinstance(item.get("rebuild"), str)):
+            continue
+        path, name = str(item["path"]), str(item["rebuild"])
+        step = scripts.get(str(files_map.get(name, ""))) or next(
+            (s for s in scripts.values() if s.rel.rsplit("/", 1)[-1] == name), None
+        )
+        if step is None:
+            continue
+        updates = any(_same_path(r, path) for r in step.reads)
+        others = sorted(
+            s.rel
+            for s in scripts.values()
+            # replication/ holds export's copy of the estimation script, not a script of the run of its own.
+            if s is not step
+            and not s.rel.startswith("replication/")
+            and s.rel.rsplit("/", 1)[-1] not in ran
+            and writes_file(s, path)
+        )
+        if not (updates or others):
+            continue
+        base = path.rsplit("/", 1)[-1]
+        source = _PRODUCED_BY.get(base, "an earlier step of the run")
+        why = f"not compared: the study's copy comes from {source}"
+        if others:
+            why += f" and was changed by {', '.join(others)}"
+        if updates:
+            why += f"; {name} only updates the copy it finds, so the rerun's copy is derived from {source}'s output"
+        else:
+            why += f"; the rerun's copy is the one {name} writes"
+        out[path] = why
+    return out
+
+
 def cannot_rebuild(folder: Path) -> list[Derived]:
     """Derived files the study's code reads that no recorded step builds again (a rerun without them fails)."""
     folder = Path(folder)

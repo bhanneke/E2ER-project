@@ -39,6 +39,8 @@ class FakePlatform:
         self.tamper = False
 
     def __call__(self, base, method, path, token=None, body=None):
+        if method == "GET" and path == "/api/v1/me":
+            return 200, {"name": "Ada", "handles": ["ada"]}
         if method == "POST" and path == "/api/v1/studies":
             self.sent.append(body)
             oid = body["manifest"]["id"]

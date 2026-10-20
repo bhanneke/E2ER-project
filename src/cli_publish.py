@@ -32,6 +32,18 @@ nothing is sent. ``--to https://e2er.org`` (after ``e2er login``) publishes the
 description, the dossier and the file fingerprints; the files stay here. A
 request that contains anything resembling a key or token, or a local path, is
 refused before it leaves the machine.
+
+``--github`` pushes the study's files to a public GitHub repository, and only
+as part of a publish on a platform: without ``--to`` the platform is the one
+``.e2er/link.json`` records, else e2er.org. The registration names the commit
+that holds the files, so the push comes first; everything that can be checked
+before it is checked before it: the rehearsal of the request in a scratch copy,
+the sign-in on the platform (``GET /api/v1/me``), the files themselves (keys,
+restricted data, GitHub's size limit). If the platform still refuses the
+registration after the push, the files sit at a commit no study names, and
+publish says so: the same command, run again, makes no new commit (the files
+are the same) and sends the registration again, so it rolls forward instead of
+leaving a second copy. A run that writes only a registry entry never pushes.
 """
 
 from __future__ import annotations
@@ -716,6 +728,9 @@ def _describe(
         return 1, None
 
     # The files on GitHub: pushed (or, rehearsing, a placeholder commit), then the paper's address at the commit.
+    if github_target is not None and github_mode == "push" and not remote:
+        print("error: --github pushes the files only as part of a publish on a platform (--to); nothing was pushed")
+        return 1, None
     if github_target is not None and hosted is not None:
         try:
             sha = _host_on_github(
@@ -921,6 +936,16 @@ def publish(bundle: str, *, dry_run: bool = False, to_url: str | None = None, of
             print(f"error: {e}")
             return 2
         kw["github_user"] = user
+        if not dry_run:
+            # The files go to GitHub only as part of a publish on a platform: a push that registers nothing
+            # leaves files on GitHub that no study names (e2er-demos, commit 0d9a2e3).
+            if not to_url:
+                to_url, where = _platform_for_github(b)
+                print(f"note: --github publishes on {to_url} ({where}); --to names another platform")
+            why = _platform_not_ready(to_url)
+            if why:
+                print(f"error: {why}; nothing was pushed")
+                return 1
     # The run's database and the study folder belong to the real folder: found here, so the
     # rehearsal in a scratch copy (somewhere else on disk) uses the same ones.
     if (b / "provenance.json").is_file() and not kw.get("no_db"):
@@ -1024,6 +1049,43 @@ def publish(bundle: str, *, dry_run: bool = False, to_url: str | None = None, of
     return _send(b, manifest, to_url)
 
 
+def _platform_for_github(b: Path) -> tuple[str, str]:
+    """Where `publish --github` without --to publishes: the platform the folder was published on, else e2er.org."""
+    from .cli_platform import read_link
+    from .core import platform_client as pc
+
+    try:
+        link = read_link(b) or {}
+    except (OSError, ValueError):
+        link = {}
+    if isinstance(link, dict) and isinstance(link.get("platform_url"), str) and link["platform_url"]:
+        return pc.base_url(link["platform_url"]), "where this folder was published before, .e2er/link.json"
+    return pc.base_url(None), "the default platform"
+
+
+def _platform_not_ready(to_url: str) -> str | None:
+    """Why the platform would not take the registration (not signed in, unreachable), or None.
+
+    Asked before anything is pushed. What the platform checks only when it receives the request (the
+    study's owner, a dossier of another study) can still refuse it after the push: then the files are on
+    GitHub at a commit no study names yet, and the same command, run again, registers them without a new
+    commit (the files are already there) — see :func:`_send`.
+    """
+    from .core import platform_client as pc
+
+    base = pc.base_url(to_url)
+    token = pc.load_token(base)
+    if not token:
+        return f"not signed in to {base}; run `e2er login --url {base}`"
+    try:
+        code, body = pc.request(base, "GET", "/api/v1/me", token=token)
+    except Exception as e:  # noqa: BLE001 - network errors are the user's to see
+        return f"could not reach {base}: {e}"
+    if code // 100 != 2:
+        return f"{base} did not accept the sign-in ({pc.error_text(code, body)}); run `e2er login --url {base}`"
+    return None
+
+
 def _github_conflicts(kw: dict[str, Any], *, offline: bool) -> str | None:
     """Why --github cannot go with the other options given, or None."""
     if offline:
@@ -1066,6 +1128,7 @@ def _send(b: Path, manifest: dict[str, Any], to_url: str) -> int:
         code, resp = pc.request(base, "POST", "/api/v1/studies", token=token, body=body)
     except Exception as e:  # noqa: BLE001 - network errors are the user's to see
         print(f"error: could not reach {base}: {e}")
+        _unregistered(manifest, base)
         return 1
     if code not in (200, 201):
         print(f"error: {pc.error_text(code, resp)}")
@@ -1073,6 +1136,7 @@ def _send(b: Path, manifest: dict[str, Any], to_url: str) -> int:
             print(f"  {p}")
         if resp.get("claim"):
             print(f"  {base}{resp['claim']}")
+        _unregistered(manifest, base)
         return 1
     link = write_link(
         b,
@@ -1098,6 +1162,18 @@ def _send(b: Path, manifest: dict[str, Any], to_url: str) -> int:
         print(f"  files {_files_url(manifest['repository'])}")
     print(f"  link written to {link.relative_to(b)}")
     return 0
+
+
+def _unregistered(manifest: dict[str, Any], base: str) -> None:
+    """After a push the platform did not register: where the files are, and how to finish."""
+    repository = manifest.get("repository") or {}
+    if repository.get("host") != "github" or not repository.get("commit"):
+        return
+    print(
+        f"  The files are on GitHub ({_files_url(repository)}), but {base} did not register the study. Run the "
+        "same command again once the problem is solved: the files are already there, so no new commit is made, "
+        "and the registration is sent again."
+    )
 
 
 def _files_url(repository: dict[str, Any]) -> str:

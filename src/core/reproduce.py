@@ -75,6 +75,8 @@ DEFAULT_STEP_TIMEOUT_MINUTES = 60
 #: Labels for one compared value, in the order the report lists them.
 IDENTICAL = "identical"
 AT_PRECISION = "same_at_precision"
+#: A left-out output the rerun wrote but whose study copy another step produced: reported, not compared.
+NOT_COMPARED = "not_compared"
 MINOR = "small_difference"
 DIFFERS = "differs"
 MISSING = "missing_in_rerun"
@@ -134,6 +136,7 @@ def load_recipe(folder: Path, rebuild: list[dict[str, Any]] | None = None) -> di
         raise RecipeError(f"{RECIPE_FILE} must hold a JSON object")
     if rebuild:
         apply_rebuild(recipe, rebuild)
+        drop_stale_notes(recipe)
     problems: list[str] = []
     if recipe.get("schema") != SCHEMA:
         problems.append(f'"schema" must be "{SCHEMA}"')
@@ -281,6 +284,41 @@ def apply_rebuild(recipe: dict[str, Any], plan: list[dict[str, Any]]) -> None:
                 "when_missing": [path],
             },
         )
+
+
+#: The note export writes for derived inputs it found no step to build again (reproduce_recipe).
+_STUCK = re.compile(
+    r"^(?P<paths>.+?) (?:is|are) built from data whose terms keep them out of a published study, and no recorded "
+    r"step builds them again from data the rerun can load: a folder without them cannot be run again\.$"
+)
+
+
+def drop_stale_notes(recipe: dict[str, Any]) -> None:
+    """Take out of the export's note "… no recorded step builds them again" the files a step now builds again
+    (a package's ``rebuild`` list, :func:`apply_rebuild`): the note was written before that list existed."""
+    raw = recipe.get("files")
+    files: dict[str, Any] = raw if isinstance(raw, dict) else {}
+    covered: set[str] = set()
+    for i in recipe.get("inputs") or []:
+        if isinstance(i, dict) and isinstance(i.get("path"), str) and (i.get("rebuild") or i.get("reload")):
+            covered |= {i["path"], str(files.get(i["path"], i["path"]))}
+    notes = recipe.get("notes")
+    if not isinstance(notes, list) or not covered:
+        return
+    kept: list[Any] = []
+    for note in notes:
+        m = _STUCK.match(note) if isinstance(note, str) else None
+        if m is None:
+            kept.append(note)
+            continue
+        left = [p for p in m.group("paths").split(", ") if p not in covered]
+        if left:
+            kept.append(
+                f"{', '.join(left)} {'is' if len(left) == 1 else 'are'} built from data whose terms keep them out of "
+                "a published study, and no recorded step builds them again from data the rerun can load: a folder "
+                "without them cannot be run again."
+            )
+    recipe["notes"] = kept
 
 
 def step_argv(step: dict[str, Any]) -> list[str]:
@@ -557,7 +595,11 @@ def compare_inputs(run_dir: Path, inputs: list[dict[str, Any]]) -> list[dict[str
         entry: dict[str, Any] = {"path": item["path"], "source": item.get("source")}
         if item.get("output"):
             entry["output"] = True  # a left-out output the rerun built again: reported, not an input
-        if not path.is_file():
+        if item.get("output") and isinstance(item.get("not_compared"), str):
+            # Not the step that produced the study's copy (derived_data.not_produced_by_step): nothing to compare.
+            status = NOT_COMPARED
+            entry["why"] = item["not_compared"]
+        elif not path.is_file():
             status = "missing"
         elif sha256_file(path) == item["sha256"]:
             status = "identical"

@@ -180,6 +180,7 @@ def _check_integrity(bundle: Path, package_left_out: dict[str, dict[str, Any]] |
                 "(table cells, citations, figures, estimation, data): provenance.json was edited"
             )
         bits += _amendment_problems(prov)
+        bits += _redaction_problems(bundle, prov)
     if bits:
         return Check("integrity", FAIL, "; ".join(bits))
     if _bundle_has_rendered_tables(bundle) and not _table_cell_edges(prov):
@@ -204,6 +205,12 @@ def _check_integrity(bundle: Path, package_left_out: dict[str, dict[str, Any]] |
     if amendments:
         paths = sorted({a["path"] for a in amendments})
         notes += f"; {len(amendments)} change(s) after export recorded as amendments ({', '.join(paths[:3])})"
+    redacted = sorted({a["path"] for a in amendments if a.get("kind") == "redacted"})
+    if redacted:
+        notes += (
+            f"; {len(redacted)} file(s) redacted by the researcher, personal contact details only "
+            f"({', '.join(redacted[:3])})"
+        )
     if listing.junk:
         notes += (
             f"; ignored {len(listing.junk)} operating-system file(s) ({', '.join(listing.junk[:3])}), "
@@ -236,6 +243,25 @@ def _amendment_problems(prov: dict[str, Any]) -> list[str]:
     for path, after in last.items():
         if (prov["files"].get(path) or {}).get("sha256") != after:
             out.append(f"{path}: its last amendment is not the fingerprint provenance.json lists")
+    return out
+
+
+def _redaction_problems(bundle: Path, prov: dict[str, Any]) -> list[str]:
+    """A redaction recorded as a file's last change must match the file: the replacement at every offset."""
+    from .core import redact as rd
+
+    last: dict[str, dict[str, Any]] = {}
+    for a in prov.get("amendments") or []:
+        if isinstance(a, dict) and isinstance(a.get("path"), str):
+            last[a["path"]] = a
+    out = []
+    for path, a in last.items():
+        if a.get("kind") != rd.KIND:
+            continue
+        f = bundle / path
+        why = rd.record_problem(a, f.read_bytes() if f.is_file() else None)
+        if why:
+            out.append(why)
     return out
 
 
@@ -373,6 +399,9 @@ def _check_anchor(bundle: Path) -> Check:
             if link.get("dossier_id") != named:
                 problems.append(".e2er/link.json names another dossier than e2er.json")
     if problems:
+        before = _anchor_before_redactions(bundle)
+        if before is not None:
+            return before
         more = f"; and {len(problems) - 4} more" if len(problems) > 4 else ""
         return Check("anchor", FAIL, "; ".join(problems[:4]) + more)
     has_link = " and .e2er/link.json" if link_path.exists() else ""
@@ -381,6 +410,37 @@ def _check_anchor(bundle: Path) -> Check:
         PASS,
         f"e2er.json{has_link} describe this folder (content {str(content_id)[:19]}…) and the dossier hashes to its id",
     )
+
+
+def _anchor_before_redactions(bundle: Path) -> Check | None:
+    """The anchor of a published folder the researcher redacted afterwards (`e2er redact`), or None.
+
+    e2er.json names the content as published; the redactions since (the last amendments, each matching its
+    file: the integrity check) changed provenance.json. Rolled back, provenance.json must be exactly the
+    published one, and e2er.json and .e2er/link.json must describe it.
+    """
+    from .core import redact as rd
+
+    texts, n = rd.provenance_before_redactions(bundle)
+    if not texts:
+        return None
+    for text in texts:
+        with tempfile.TemporaryDirectory() as td:
+            scratch = Path(td)
+            (scratch / "provenance.json").write_text(text, encoding="utf-8")
+            if (bundle / "e2er.json").is_file():
+                shutil.copy2(bundle / "e2er.json", scratch / "e2er.json")
+            if (bundle / ".e2er" / "link.json").is_file():
+                (scratch / ".e2er").mkdir()
+                shutil.copy2(bundle / ".e2er" / "link.json", scratch / ".e2er" / "link.json")
+            if _check_anchor(scratch).status == PASS:
+                return Check(
+                    "anchor",
+                    PASS,
+                    f"e2er.json describes this folder as published, before the researcher redacted {n} file(s) "
+                    "(personal contact details only); publish again to publish the redacted folder",
+                )
+    return None
 
 
 # ── the outside anchor: what e2er.org published (--against) ──────────────────
@@ -969,6 +1029,10 @@ def _check_preregistration(bundle: Path, required: str | None = None) -> Check |
         return None
     when = str(lock.get("frozen_at", ""))[:10]
     details = deviation_details(design, lock)
+    # A plan file whose only change since the freeze is the researcher's redaction of personal data
+    # (`e2er redact`, recorded as amendments that match the file): redacted, not changed.
+    redacted = [d for d in details if not d["approved"] and _only_redacted(bundle, d)]
+    details = [d for d in details if d not in redacted]
     unapproved = [d["text"] for d in details if not d["approved"]]
     approved = [d["text"] for d in details if d["approved"]]
     if unapproved:
@@ -980,6 +1044,9 @@ def _check_preregistration(bundle: Path, required: str | None = None) -> Check |
         )
     # A deviation the researcher approved at the estimation check passes, and is reported.
     approved_note = [f"deviation approved by the researcher: {d}" for d in approved]
+    from .core.redact import PREREG_WORDS
+
+    approved_note += [f"{d['file']} {PREREG_WORDS}" for d in redacted]
     problems, notes = _preregistered_results(bundle, lock)
     if problems:
         return Check(
@@ -990,6 +1057,23 @@ def _check_preregistration(bundle: Path, required: str | None = None) -> Check |
     extra = ("; " + "; ".join(approved_note + notes)) if approved_note or notes else ""
     head = "estimation follows the pre-registered plan" if not approved else "the pre-registered plan"
     return Check("preregistration", PASS, f"{head} (frozen {when}){extra}")
+
+
+def _only_redacted(bundle: Path, d: dict[str, Any]) -> bool:
+    """Is the deviation ``d`` (preregistration.deviation_details) explained by redactions alone, each recorded
+    in provenance.json and the last one matching the file?"""
+    from .core import redact as rd
+
+    prov = _load_json(bundle / "provenance.json")
+    if not isinstance(prov, dict):
+        return False
+    rel = f"design/{d['file']}"
+    amendments = [a for a in prov.get("amendments") or [] if isinstance(a, dict)]
+    if not rd.explains(amendments, rel, d.get("sha256_frozen"), d.get("sha256_now")):
+        return False
+    mine = [a for a in amendments if a.get("path") == rel]
+    f = bundle / rel
+    return bool(mine) and rd.record_problem(mine[-1], f.read_bytes() if f.is_file() else None) is None
 
 
 def _preregistered_results(bundle: Path, lock: dict[str, Any]) -> tuple[list[str], list[str]]:
