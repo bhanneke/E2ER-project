@@ -90,7 +90,7 @@ def platform(monkeypatch) -> FakePlatform:
 
 def _published_without_db(study: Path, tmp_path: Path, platform: FakePlatform) -> dict:
     """Version 1 published from the run database; then the database is gone. Returns version 1's dossier."""
-    assert publish(str(study), **ID, demonstration=True, to_url=SITE, site=SITE) == 0
+    assert publish(str(study), **ID, demonstration=True, to_url=SITE, site=SITE, yes=True) == 0
     (tmp_path / "e2er.db").unlink()
     first = platform.sent[0]["dossier"]["doc"]
     assert first["workflow"], "version 1 lists the run's steps"
@@ -112,7 +112,14 @@ def test_a_new_version_on_github_carries_over_the_dossier_with_its_steps(
     v1_manifest = json.loads((who_study / "e2er.json").read_text())
     capsys.readouterr()
     rc = publish(
-        str(who_study), **ID, demonstration=True, github_repo="ada/demos", github_path="who", to_url=SITE, site=SITE
+        str(who_study),
+        **ID,
+        demonstration=True,
+        github_repo="ada/demos",
+        github_path="who",
+        to_url=SITE,
+        site=SITE,
+        yes=True,
     )
     out = capsys.readouterr().out
     assert rc == 0, out
@@ -160,7 +167,9 @@ def test_dry_run_shows_the_carry_over_and_changes_nothing(
     first = _published_without_db(who_study, tmp_path, platform)
     before = _snapshot(who_study)
     capsys.readouterr()
-    rc = publish(str(who_study), **ID, demonstration=True, github_repo="ada/demos", github_path="who", dry_run=True)
+    rc = publish(
+        str(who_study), **ID, demonstration=True, github_repo="ada/demos", github_path="who", dry_run=True, yes=True
+    )
     got = capsys.readouterr()
     assert rc == 0, got.out + got.err
     assert "WARNING: the run database is not available" in got.err and "carried over" in got.err
@@ -181,7 +190,7 @@ def test_a_newer_version_published_elsewhere_is_never_carried_over(
     platform.versions.append({"number": 2, "content_id": "sha256:" + "1" * 64, "dossier_id": "sha256:" + "2" * 64})
     before = _snapshot(who_study)
     capsys.readouterr()
-    assert publish(str(who_study), **ID, demonstration=True, to_url=SITE, site=SITE) == 1
+    assert publish(str(who_study), **ID, demonstration=True, to_url=SITE, site=SITE, yes=True) == 1
     out = capsys.readouterr().out
     assert "cannot be carried over" in out and "published from elsewhere" in out
     assert _snapshot(who_study) == before
@@ -197,7 +206,7 @@ def test_a_dossier_that_does_not_hash_to_its_id_is_refused(
     platform.tamper = True
     before = _snapshot(who_study)
     capsys.readouterr()
-    assert publish(str(who_study), **ID, demonstration=True, to_url=SITE, site=SITE) == 1
+    assert publish(str(who_study), **ID, demonstration=True, to_url=SITE, site=SITE, yes=True) == 1
     out = capsys.readouterr().out
     assert "hashes to" in out and "not carried over" in out
     assert _snapshot(who_study) == before and len(platform.sent) == 1
@@ -212,7 +221,7 @@ def test_another_project_never_takes_the_folders_dossier(
     _published_without_db(who_study, tmp_path, platform)
     capsys.readouterr()
     args = {**ID, "project": "other"}
-    assert publish(str(who_study), **args, demonstration=True, to_url=SITE, site=SITE) == 1
+    assert publish(str(who_study), **args, demonstration=True, to_url=SITE, site=SITE, yes=True) == 1
     assert "another study's dossier is never carried over" in capsys.readouterr().out
 
 
@@ -230,7 +239,7 @@ def test_an_unreachable_platform_refuses_and_says_why(
 
     monkeypatch.setattr(pc, "request", down)
     capsys.readouterr()
-    assert publish(str(who_study), **ID, demonstration=True, to_url=SITE, site=SITE) == 1
+    assert publish(str(who_study), **ID, demonstration=True, to_url=SITE, site=SITE, yes=True) == 1
     out = capsys.readouterr().out
     assert "could not reach" in out and "no run database with paper" in out
 
@@ -244,7 +253,7 @@ def test_no_db_still_builds_the_dossier_without_steps(
     """--no-db is the researcher's explicit choice: no fetch, a dossier that says its steps are not recorded."""
     _published_without_db(who_study, tmp_path, platform)
     capsys.readouterr()
-    assert publish(str(who_study), **ID, demonstration=True, no_db=True, to_url=SITE, site=SITE) == 0
+    assert publish(str(who_study), **ID, demonstration=True, no_db=True, to_url=SITE, site=SITE, yes=True) == 0
     doc = platform.sent[-1]["dossier"]["doc"]
     assert doc["workflow"] == [] and doc["run"]["workflow_recorded"] is False
     assert not any(a.get("kind") == co.KIND for a in doc.get("amendments") or [])

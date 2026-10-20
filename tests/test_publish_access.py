@@ -33,7 +33,7 @@ def _manifest(bundle: Path) -> dict:
 
 
 def test_data_and_code_are_private_unless_stated(bundle: Path, tmp_path: Path):
-    assert publish(str(bundle), **BASE, **REPO, out=str(tmp_path / "e")) == 0
+    assert publish(str(bundle), **BASE, **REPO, out=str(tmp_path / "e"), yes=True) == 0
     m = _manifest(bundle)
     assert m["availability"] == {"data": {"access": "private"}, "code": {"access": "private"}}
     # A private study's dossier omits availability.
@@ -43,7 +43,7 @@ def test_data_and_code_are_private_unless_stated(bundle: Path, tmp_path: Path):
 
 
 def test_public_code_points_at_the_repository_not_the_commit(bundle: Path, tmp_path: Path):
-    assert publish(str(bundle), **BASE, **REPO, code="public", out=str(tmp_path / "e")) == 0
+    assert publish(str(bundle), **BASE, **REPO, code="public", out=str(tmp_path / "e"), yes=True) == 0
     m = _manifest(bundle)
     assert m["availability"]["code"] == {
         "access": "public",
@@ -62,7 +62,7 @@ def test_public_data_and_code_at_a_commit_leave_the_committed_files_as_they_are(
 
     public = dict(data="public", code="public", data_url="https://github.com/bhanneke/E2ER-project")
     repo = dict(repo="https://github.com/bhanneke/E2ER-project", path="examples/showcase")
-    assert publish(str(bundle), **BASE, **repo, **public, out=str(tmp_path / "e")) == 0
+    assert publish(str(bundle), **BASE, **repo, **public, out=str(tmp_path / "e"), yes=True) == 0
     first = _manifest(bundle)
 
     def fingerprints() -> dict[str, str]:
@@ -73,7 +73,7 @@ def test_public_data_and_code_at_a_commit_leave_the_committed_files_as_they_are(
 
     before = fingerprints()
     sha = "0123456789abcdef0123456789abcdef01234567"
-    assert publish(str(bundle), **BASE, **repo, commit=sha, **public, out=str(tmp_path / "e")) == 0
+    assert publish(str(bundle), **BASE, **repo, commit=sha, **public, out=str(tmp_path / "e"), yes=True) == 0
     second = _manifest(bundle)
     assert fingerprints() == before
     assert second["dossier"]["id"] == first["dossier"]["id"] and second["content_id"] == first["content_id"]
@@ -83,7 +83,13 @@ def test_public_data_and_code_at_a_commit_leave_the_committed_files_as_they_are(
 def test_private_material_carries_no_address_and_no_contents(bundle: Path, tmp_path: Path, capsys):
     assert (
         publish(
-            str(bundle), **BASE, **REPO, data="private", data_url="https://example.org/secret", out=str(tmp_path / "e")
+            str(bundle),
+            **BASE,
+            **REPO,
+            data="private",
+            data_url="https://example.org/secret",
+            out=str(tmp_path / "e"),
+            yes=True,
         )
         == 0
     )
@@ -143,7 +149,9 @@ def fake(monkeypatch) -> FakeZenodo:
 
 
 def test_zenodo_deposits_public_data_and_code_and_records_the_dois(bundle: Path, tmp_path: Path, fake: FakeZenodo):
-    code = publish(str(bundle), **BASE, **REPO, data="public", code="public", zenodo=True, out=str(tmp_path / "e"))
+    code = publish(
+        str(bundle), **BASE, **REPO, data="public", code="public", zenodo=True, out=str(tmp_path / "e"), yes=True
+    )
     assert code == 0
     m = _manifest(bundle)
     av = m["availability"]
@@ -162,7 +170,7 @@ def test_zenodo_deposits_public_data_and_code_and_records_the_dois(bundle: Path,
 
 def test_zenodo_sandbox(bundle: Path, tmp_path: Path, fake: FakeZenodo):
     code = publish(
-        str(bundle), **BASE, **REPO, code="public", zenodo=True, zenodo_sandbox=True, out=str(tmp_path / "e")
+        str(bundle), **BASE, **REPO, code="public", zenodo=True, zenodo_sandbox=True, out=str(tmp_path / "e"), yes=True
     )
     assert code == 0
     assert {host for _, host, _ in fake.calls} == {"sandbox.zenodo.org"}
@@ -171,17 +179,17 @@ def test_zenodo_sandbox(bundle: Path, tmp_path: Path, fake: FakeZenodo):
 def test_zenodo_without_a_token_writes_nothing(bundle: Path, tmp_path: Path, monkeypatch, capsys):
     monkeypatch.delenv("ZENODO_TOKEN", raising=False)
     monkeypatch.setattr(zen, "load_token", lambda sandbox=False: None)
-    assert publish(str(bundle), **BASE, **REPO, code="public", zenodo=True, out=str(tmp_path / "e")) == 1
+    assert publish(str(bundle), **BASE, **REPO, code="public", zenodo=True, out=str(tmp_path / "e"), yes=True) == 1
     assert "ZENODO_TOKEN" in capsys.readouterr().out
     assert not (bundle / "e2er.json").exists()
 
 
 def test_zenodo_refuses_private_material(bundle: Path, tmp_path: Path, fake: FakeZenodo, capsys):
-    assert publish(str(bundle), **BASE, **REPO, zenodo=True, out=str(tmp_path / "e")) == 1
+    assert publish(str(bundle), **BASE, **REPO, zenodo=True, out=str(tmp_path / "e"), yes=True) == 1
     assert "nothing to deposit" in capsys.readouterr().out
     assert fake.calls == []
     # Mixed: only the public item is deposited; the private one is named and left alone.
-    assert publish(str(bundle), **BASE, **REPO, code="public", zenodo=True, out=str(tmp_path / "e")) == 0
+    assert publish(str(bundle), **BASE, **REPO, code="public", zenodo=True, out=str(tmp_path / "e"), yes=True) == 0
     out = capsys.readouterr().out
     assert "leaves the data alone: it is private" in out
     assert not any("data_dictionary" in p for _, _, p in fake.calls)
@@ -189,7 +197,7 @@ def test_zenodo_refuses_private_material(bundle: Path, tmp_path: Path, fake: Fak
 
 def test_dry_run_prints_the_deposit_plan_and_deposits_nothing(bundle: Path, fake: FakeZenodo, capsys):
     before = {p: p.read_bytes() for p in bundle.rglob("*") if p.is_file()}
-    code = publish(str(bundle), **BASE, **REPO, data="public", code="public", zenodo=True, dry_run=True)
+    code = publish(str(bundle), **BASE, **REPO, data="public", code="public", zenodo=True, dry_run=True, yes=True)
     assert code == 0
     err = capsys.readouterr().err
     assert "zenodo data: would deposit 2 file(s)" in err and "demo-code.zip" in err
@@ -201,6 +209,6 @@ def test_in_a_terminal_the_researcher_is_asked(bundle: Path, tmp_path: Path, mon
     answers = iter(["public", ""])  # data public; code: Enter keeps private
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
     monkeypatch.setattr("builtins.input", lambda prompt: next(answers))
-    assert publish(str(bundle), **BASE, **REPO, out=str(tmp_path / "e")) == 0
+    assert publish(str(bundle), **BASE, **REPO, out=str(tmp_path / "e"), yes=True) == 0
     av = _manifest(bundle)["availability"]
     assert av["data"]["access"] == "public" and av["code"]["access"] == "private"

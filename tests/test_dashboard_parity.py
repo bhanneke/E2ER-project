@@ -294,3 +294,31 @@ def test_the_finish_page_says_yahoo_allows_personal_use_only(live_db, session):
     ) in html
     assert '<p class="small">Citation:' not in html and "Global Macro Database" not in html
     assert "Private: readers on e2er.org see a button to ask you for the data." not in html
+
+
+def test_the_page_publishes_only_with_its_confirmation(live_db, session, monkeypatch):
+    """`e2er publish --yes` from the page: without the page's confirmation nothing is sent."""
+    _gmd_export(live_db)
+    seen: list[dict[str, Any]] = []
+
+    def _publish(bundle, **kw):
+        seen.append(kw)
+        print("{}")
+        return 0
+
+    monkeypatch.setattr("src.cli_publish.publish", _publish)
+    monkeypatch.setattr("src.api.finish._signed_in", lambda base: True)
+    body = {"owner": "kim", "project": "gmd-study", "data": "private", "code": "private", "dry_run": False}
+    r = _client().post(f"/api/papers/{PID}/publish", json=body)
+    assert r.status_code == 422 and "Confirm publishing" in r.json()["detail"] and seen == []
+    r = _client().post(f"/api/papers/{PID}/publish", json={**body, "confirm": True})
+    assert r.status_code == 200, r.text
+    assert seen[-1]["yes"] is True and seen[-1]["interactive"] is False and seen[-1]["dry_run"] is False
+    r = _client().post(f"/api/papers/{PID}/publish", json={**body, "dry_run": True, "confirm": True})
+    assert seen[-1]["yes"] is False and seen[-1]["dry_run"] is True
+
+
+def test_the_publish_button_asks_before_it_sends(live_db, session):
+    _gmd_export(live_db)
+    html = _client().get(f"/papers/{PID}/finish").text
+    assert 'window.confirm("Publish \'"' in html and "confirm: true" in html

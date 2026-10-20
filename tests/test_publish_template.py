@@ -103,7 +103,9 @@ def test_resolve_template(tmp_path: Path):
 
 def test_publish_uses_the_recorded_template_and_its_disclaimer(tmp_path: Path, capsys):
     bundle = export_paper(_workspace(tmp_path), tmp_path / "out", date_str="20260930", template="replication")
-    rc = publish(str(bundle), **ARGS, demonstration=True, out=str(tmp_path / "entry"), data="public", code="public")
+    rc = publish(
+        str(bundle), **ARGS, demonstration=True, out=str(tmp_path / "entry"), data="public", code="public", yes=True
+    )
     out = capsys.readouterr().out
     assert rc == 0, out
     manifest = json.loads((bundle / "e2er.json").read_text())
@@ -117,7 +119,9 @@ def test_publish_uses_the_recorded_template_and_its_disclaimer(tmp_path: Path, c
 
 def test_publish_refuses_a_template_other_than_the_recorded_one(tmp_path: Path, capsys):
     bundle = export_paper(_workspace(tmp_path), tmp_path / "out", date_str="20260930", template="replication")
-    rc = publish(str(bundle), **ARGS, template="empirical", out=str(tmp_path / "entry"), data="public", code="public")
+    rc = publish(
+        str(bundle), **ARGS, template="empirical", out=str(tmp_path / "entry"), data="public", code="public", yes=True
+    )
     out = capsys.readouterr().out
     assert rc == 1
     assert "error: --template empirical does not match the template this study was run with, replication" in out
@@ -152,7 +156,7 @@ def test_a_refused_publish_names_the_status_and_the_body(tmp_path: Path, monkeyp
     rc = publish(
         str(bundle), to_url="https://platform.test", owner="ada-lab", project="showcase", github="ada-lab",
         name="Ada Lovelace", commit="abc1234", data="public", code="public",
-    )  # fmt: skip
+     yes=True)  # fmt: skip
     out = capsys.readouterr().out
     assert rc == 1
     line = next(ln for ln in out.splitlines() if ln.startswith("error:"))

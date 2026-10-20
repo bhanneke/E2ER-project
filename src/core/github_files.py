@@ -129,6 +129,14 @@ def parse_target(spec: str | None, *, project: str, login: str | None, path: str
 
 
 def _run(cmd: list[str], *, cwd: Path | None = None, env: dict[str, str] | None = None) -> subprocess.CompletedProcess:
+    from .test_guard import RefusedInTestError, check_github
+
+    # Every command here talks to GitHub (gh, or git with gh's login): none in a test run (test_guard.py).
+    if cmd[:1] in (["gh"], ["git"]):
+        try:
+            check_github()
+        except RefusedInTestError as e:
+            raise GitHubError(str(e)) from e
     return subprocess.run(cmd, cwd=cwd, env=env, capture_output=True, text=True, timeout=600)
 
 

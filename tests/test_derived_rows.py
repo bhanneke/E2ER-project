@@ -402,6 +402,7 @@ def test_publish_to_github_keeps_row_level_results_out(tmp_path, rerun_here, mon
     import os
 
     monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+    monkeypatch.setenv("E2ER_TEST_GITHUB", "fake")  # a fake gh (src/core/test_guard.py)
     monkeypatch.setenv("FAKE_GH_ROOT", str(root))
     monkeypatch.setenv("GIT_CONFIG_COUNT", "1")
     monkeypatch.setenv("GIT_CONFIG_KEY_0", f"url.file://{root}/.insteadOf")
@@ -414,7 +415,9 @@ def test_publish_to_github_keeps_row_level_results_out(tmp_path, rerun_here, mon
     from src.cli_publish import publish
 
     folder = _export(_gisco_workspace(tmp_path), tmp_path)
-    rc = publish(str(folder), **ID, no_db=True, github_repo="ada/demos", github_path="regions", out=str(tmp_path / "e"))
+    rc = publish(
+        str(folder), **ID, no_db=True, github_repo="ada/demos", github_path="regions", out=str(tmp_path / "e"), yes=True
+    )
     out = capsys.readouterr().out
     assert rc == 0, out
     tree = _tree(root / "ada" / "demos.git")

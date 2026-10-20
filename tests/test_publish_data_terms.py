@@ -100,7 +100,7 @@ def _states_terms(m: dict) -> None:
 
 
 def test_private_gmd_data_publish_without_confirmation_and_state_the_terms(bundle: Path, tmp_path: Path, capsys):
-    assert publish(str(bundle), **BASE, **REPO, data="private", out=str(tmp_path / "e")) == 0
+    assert publish(str(bundle), **BASE, **REPO, data="private", out=str(tmp_path / "e"), yes=True) == 0
     out = capsys.readouterr().out
     assert "uses Global Macro Database (GMD), release 2026_09 data (kept private)" in out
     assert "warning" not in out  # the paper cites the GMD
@@ -117,7 +117,7 @@ def test_public_gmd_data_without_confirmation_are_refused_and_nothing_is_written
 ):
     before = _snapshot(bundle)
     for extra in ({}, {"zenodo": True}, {"dry_run": True}, {"offline": True}):
-        assert publish(str(bundle), **BASE, **REPO, data="public", out=str(tmp_path / "e"), **extra) == 1
+        assert publish(str(bundle), **BASE, **REPO, data="public", out=str(tmp_path / "e"), **extra, yes=True) == 1
         out = capsys.readouterr().out
         assert "error: the study uses Global Macro Database (GMD), release 2026_09 data" in out
         assert "To confirm, add --accept-data-terms gmd; to keep the data here, use --data private." in out
@@ -131,13 +131,15 @@ def test_public_gmd_data_are_refused_before_anything_is_sent(bundle: Path, monke
     monkeypatch.setattr(pc, "request", lambda *a, **k: sent.append(a) or (201, {}))
     monkeypatch.setattr(pc, "load_token", lambda base: "tok")
     before = _snapshot(bundle)
-    assert publish(str(bundle), **BASE, **REPO, data="public", to_url="https://e2er.example") == 1
+    assert publish(str(bundle), **BASE, **REPO, data="public", to_url="https://e2er.example", yes=True) == 1
     assert "--accept-data-terms gmd" in capsys.readouterr().out
     assert sent == [] and _snapshot(bundle) == before
 
 
 def test_confirmed_public_gmd_data_publish_and_state_the_terms(bundle: Path, tmp_path: Path, capsys):
-    rc = publish(str(bundle), **BASE, **REPO, data="public", accept_data_terms=["gmd"], out=str(tmp_path / "e"))
+    rc = publish(
+        str(bundle), **BASE, **REPO, data="public", accept_data_terms=["gmd"], out=str(tmp_path / "e"), yes=True
+    )
     assert rc == 0
     assert "(published with the study)" in capsys.readouterr().out
     m = _manifest(bundle)
@@ -146,7 +148,9 @@ def test_confirmed_public_gmd_data_publish_and_state_the_terms(bundle: Path, tmp
 
 
 def test_unknown_terms_name_is_refused(bundle: Path, tmp_path: Path, capsys):
-    rc = publish(str(bundle), **BASE, **REPO, data="public", accept_data_terms=["gdm"], out=str(tmp_path / "e"))
+    rc = publish(
+        str(bundle), **BASE, **REPO, data="public", accept_data_terms=["gdm"], out=str(tmp_path / "e"), yes=True
+    )
     assert rc == 1
     out = capsys.readouterr().out
     assert "--accept-data-terms gdm: e2er knows the terms of " in out and " only" in out
@@ -167,6 +171,7 @@ def test_a_zenodo_deposit_of_gmd_data_states_the_terms_under_a_non_commercial_li
         zenodo=True,
         accept_data_terms=["gmd"],
         out=str(tmp_path / "e"),
+        yes=True,
     )
     assert rc == 0
     data_meta, code_meta = fake.meta[101], fake.meta[102]
@@ -178,7 +183,9 @@ def test_a_zenodo_deposit_of_gmd_data_states_the_terms_under_a_non_commercial_li
 
 
 def test_the_dry_run_plan_names_the_gmd_licence(bundle: Path, fake: FakeZenodo, capsys):
-    rc = publish(str(bundle), **BASE, **REPO, data="public", zenodo=True, dry_run=True, accept_data_terms=["gmd"])
+    rc = publish(
+        str(bundle), **BASE, **REPO, data="public", zenodo=True, dry_run=True, accept_data_terms=["gmd"], yes=True
+    )
     assert rc == 0
     err = capsys.readouterr().err
     assert "licence: other-nc" in err and "terms and citation of the Global Macro Database" in err
@@ -198,7 +205,7 @@ def test_in_a_terminal_the_researcher_confirms_the_gmd_terms(
 
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
     monkeypatch.setattr("builtins.input", ask)
-    assert publish(str(bundle), **BASE, **REPO, out=str(tmp_path / "e")) == rc
+    assert publish(str(bundle), **BASE, **REPO, out=str(tmp_path / "e"), yes=True) == rc
     out = capsys.readouterr().out
     assert asked[-1] == "Publish the GMD data with the study under these terms? [y/N]: "
     assert "The data may not be republished anywhere else." in out and gmd.TERMS_URL in out
@@ -210,7 +217,7 @@ def test_a_study_without_gmd_data_is_unaffected(plain_bundle: Path, tmp_path: Pa
     answers = iter(["public", ""])
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
     monkeypatch.setattr("builtins.input", lambda p: asked.append(p) or next(answers))
-    assert publish(str(plain_bundle), **BASE, **REPO, out=str(tmp_path / "e")) == 0
+    assert publish(str(plain_bundle), **BASE, **REPO, out=str(tmp_path / "e"), yes=True) == 0
     assert len(asked) == 2
     m = _manifest(plain_bundle)
     assert all(set(d) == {"path", "sha256", "bytes"} for d in m["data"])
@@ -221,7 +228,7 @@ def test_a_missing_gmd_citation_is_named(bundle: Path, tmp_path: Path, capsys):
     refs = bundle / "paper" / "refs.bib"
     text = refs.read_text(encoding="utf-8").replace(gmd.BIBTEX, "")
     _add(bundle, "paper/refs.bib", text.encode())
-    assert publish(str(bundle), **BASE, **REPO, data="private", out=str(tmp_path / "e")) == 0
+    assert publish(str(bundle), **BASE, **REPO, data="private", out=str(tmp_path / "e"), yes=True) == 0
     assert "warning: paper/refs.bib has no entry GMD2025" in capsys.readouterr().out
 
 
@@ -235,7 +242,9 @@ def test_a_gmd_publish_matches_the_sites_format(bundle: Path, monkeypatch):
 
     monkeypatch.setattr(pc, "request", server)
     monkeypatch.setattr(pc, "load_token", lambda base: "tok")
-    rc = publish(str(bundle), **BASE, **REPO, data="public", accept_data_terms=["gmd"], to_url="https://e2er.example")
+    rc = publish(
+        str(bundle), **BASE, **REPO, data="public", accept_data_terms=["gmd"], to_url="https://e2er.example", yes=True
+    )
     assert rc == 0 and len(sent) == 1
     manifest, d = sent[0]["manifest"], sent[0]["dossier"]
     jsonschema.Draft202012Validator(SCHEMA).validate(

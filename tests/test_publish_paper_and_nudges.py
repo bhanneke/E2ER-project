@@ -33,7 +33,7 @@ def _manifest(bundle: Path) -> dict:
 
 
 def test_the_paper_is_private_unless_stated_and_the_manifest_then_has_no_access(bundle: Path, tmp_path: Path, capsys):
-    assert publish(str(bundle), **BASE, **REPO, out=str(tmp_path / "e")) == 0
+    assert publish(str(bundle), **BASE, **REPO, out=str(tmp_path / "e"), yes=True) == 0
     assert "access" not in _manifest(bundle)
     out = capsys.readouterr().out
     assert "note: The paper is not public: readers on e2er.org see a button to ask you for it" in out
@@ -45,10 +45,10 @@ def test_the_paper_is_private_unless_stated_and_the_manifest_then_has_no_access(
 def test_a_public_paper_gives_its_address_in_e2er_json_and_the_request_but_not_in_the_dossier(
     bundle: Path, tmp_path: Path, capsys
 ):
-    assert publish(str(bundle), **BASE, **REPO, out=str(tmp_path / "e")) == 0
+    assert publish(str(bundle), **BASE, **REPO, out=str(tmp_path / "e"), yes=True) == 0
     private = _manifest(bundle)
     capsys.readouterr()
-    assert publish(str(bundle), **BASE, **REPO, paper="public", paper_url=PDF, out=str(tmp_path / "e")) == 0
+    assert publish(str(bundle), **BASE, **REPO, paper="public", paper_url=PDF, out=str(tmp_path / "e"), yes=True) == 0
     m = _manifest(bundle)
     assert m["access"] == {"status": "public", "pdf": PDF}
     assert request_body(m, bundle)["manifest"]["access"] == {"status": "public", "pdf": PDF}
@@ -88,7 +88,7 @@ def test_an_address_for_a_private_paper_is_ignored_with_a_note():
 
 
 def test_publish_refuses_a_public_paper_without_an_address_and_writes_nothing(bundle: Path, tmp_path: Path, capsys):
-    assert publish(str(bundle), **BASE, paper="public", out=str(tmp_path / "e")) == 1
+    assert publish(str(bundle), **BASE, paper="public", out=str(tmp_path / "e"), yes=True) == 1
     assert "--paper public needs the address of the PDF" in capsys.readouterr().out
     assert not (bundle / "e2er.json").exists()
 

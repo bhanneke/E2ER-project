@@ -319,6 +319,7 @@
   const pubMsg = document.getElementById('pub-msg');
   const pubBtn = document.getElementById('do-publish');
   let previewOk = false;
+  let previewTitle = '', previewPlatform = {{ platform|tojson }};
   // A preview or publish refused for terms not confirmed: say so next to each unticked box.
   const markTerms = (missing) => {
     document.querySelectorAll('#terms-box .terms').forEach((box) => {
@@ -341,13 +342,21 @@
       if (!d.ok) out.innerHTML = refused(d);
       pubMsg.textContent = d.ok ? 'Nothing was sent. Publish when it looks right.' : 'The preview found a problem; see below.';
       previewOk = d.ok;
+      previewTitle = (d.request && d.request.title) || '';
+      previewPlatform = d.platform || previewPlatform;
       pubBtn.disabled = !d.ok || document.getElementById('signin').hidden === false || currentPublished;
     } catch (e) { pubMsg.textContent = e.message; }
   });
   pubBtn.addEventListener('click', async () => {
+    // Nothing is sent before the researcher says yes (src/cli_publish.py asks the same on the terminal).
+    const f = form();
+    if (!window.confirm("Publish '" + (previewTitle || f.project) + "' to " + previewPlatform + ' as ' + f.owner + '?')) {
+      pubMsg.textContent = 'Not published: nothing was sent.';
+      return;
+    }
     pubMsg.textContent = 'Publishing…';
     try {
-      const d = await call('POST', '/api/papers/' + pid + '/publish', { ...form(), dry_run: false });
+      const d = await call('POST', '/api/papers/' + pid + '/publish', { ...f, dry_run: false, confirm: true });
       markTerms(d.terms_missing);
       const links = (d.study_url ? '<p><a class="btn-primary" href="' + esc(d.study_url) + '" target="_blank" rel="noopener">Open the study on e2er.org</a> ' : '<p>') +
         (d.dossier_url ? '<a class="btn" href="' + esc(d.dossier_url) + '" target="_blank" rel="noopener">Open its dossier</a>' : '') + '</p>';

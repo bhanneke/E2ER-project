@@ -213,7 +213,7 @@ def test_publish_treats_derived_data_like_the_sources_and_says_when_it_cannot_be
         },
     ]
     capsys.readouterr()
-    assert publish(str(folder), **BASE, data="public", no_db=True, out=str(tmp_path / "e1")) == 1
+    assert publish(str(folder), **BASE, data="public", no_db=True, out=str(tmp_path / "e1"), yes=True) == 1
     out = capsys.readouterr().out
     assert "--accept-data-terms gaia" in out, "public derived data need the same confirmation as the source's"
 
@@ -238,7 +238,7 @@ def test_publish_treats_derived_data_like_the_sources_and_says_when_it_cannot_be
     assert [d.path for d in dd.cannot_rebuild(folder)] == ["data/gaia_clean.csv"]
     assert "data/gaia_clean.csv" in data_terms.uses(folder)[0].files
     capsys.readouterr()
-    publish(str(folder), **BASE, data="private", no_db=True, out=str(tmp_path / "e2"))
+    publish(str(folder), **BASE, data="private", no_db=True, out=str(tmp_path / "e2"), yes=True)
     out = capsys.readouterr().out
     assert "data/gaia_clean.csv is built from ESA Gaia Data Release 3 (Gaia) data" in out
     assert "warning: data/gaia_clean.csv is built from data whose terms keep it out" in out

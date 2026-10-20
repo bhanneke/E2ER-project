@@ -690,6 +690,13 @@ def main() -> None:
         help="Print the exact request --to would send; change nothing and send nothing.",
     )
     publish_p.add_argument(
+        "--yes",
+        "-y",
+        action="store_true",
+        help="Publish without the question \"Publish '<title>' to <platform> as <handle>? [y/N]\". Needed when "
+        "standard input is not a terminal (scripts, CI); without it such a run sends nothing.",
+    )
+    publish_p.add_argument(
         "--data",
         choices=["public", "private"],
         default=None,
@@ -749,6 +756,23 @@ def main() -> None:
     )
     login_p.add_argument("--url", default=None, help=url_help)
     login_p.add_argument("--no-browser", action="store_true", help="Do not open the browser; print the address only.")
+    login_p.add_argument(
+        "--scope",
+        default=None,
+        metavar="study:OWNER/SLUG",
+        help="Create a token for automation (CI) that can only publish new versions of this one study: it cannot "
+        "create studies or handles and cannot withdraw. The token is printed once (pipe it into your CI secret, "
+        "e.g. `| gh secret set E2ER_TOKEN`) and not kept; your personal login stays as it is.",
+    )
+    token_p = subparsers.add_parser("token", help="Tokens for automation (`e2er token create --study OWNER/SLUG`).")
+    token_sub = token_p.add_subparsers(dest="token_command", required=True)
+    token_create = token_sub.add_parser(
+        "create",
+        help="With your personal login, create a token that can only publish new versions of one study (for CI).",
+    )
+    token_create.add_argument("--study", required=True, metavar="OWNER/SLUG", help="The published study, e.g. ada/fx.")
+    token_create.add_argument("--name", default=None, help="A name for the token (shown on your account page).")
+    token_create.add_argument("--url", default=None, help=url_help)
     logout_p = subparsers.add_parser("logout", help="End the command-line sign-in and forget the token.")
     logout_p.add_argument("--url", default=None, help=url_help)
     whoami_p = subparsers.add_parser("whoami", help="Show the account the command line is signed in as.")
@@ -926,14 +950,17 @@ def main() -> None:
                 accept_data_terms=args.accept_data_terms,
                 paper=args.paper,
                 paper_url=args.paper_url,
+                yes=args.yes,
             )
         )
 
-    if args.command in ("login", "logout", "whoami", "dossier"):
+    if args.command in ("login", "logout", "whoami", "dossier", "token"):
         from . import cli_platform
 
         if args.command == "login":
-            sys.exit(cli_platform.login(args.url, open_browser=not args.no_browser))
+            sys.exit(cli_platform.login(args.url, open_browser=not args.no_browser, scope=args.scope))
+        if args.command == "token":
+            sys.exit(cli_platform.token_create(args.study, url=args.url, name=args.name))
         if args.command == "logout":
             sys.exit(cli_platform.logout(args.url))
         if args.command == "whoami":

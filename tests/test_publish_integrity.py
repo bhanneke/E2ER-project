@@ -81,7 +81,7 @@ def _manifest(b: Path) -> dict:
 
 def test_publish_finds_the_studys_database_and_the_dossier_lists_the_run(bundle: Path, tmp_path: Path, capsys):
     make_run_db(tmp_path / "study", paper_id_of(bundle), researcher_actions=3)
-    assert publish(str(bundle), **ARGS, out=str(tmp_path / "e")) == 0
+    assert publish(str(bundle), **ARGS, out=str(tmp_path / "e"), yes=True) == 0
     out = capsys.readouterr().out
     assert "3 researcher actions" in out
     doc = _manifest(bundle)["dossier"]["doc"]
@@ -95,7 +95,7 @@ def test_publish_finds_the_studys_database_and_the_dossier_lists_the_run(bundle:
 
 def test_without_the_database_publish_refuses_and_changes_nothing(bundle: Path, tmp_path: Path, capsys):
     before = _snapshot(bundle)
-    assert publish(str(bundle), **ARGS, out=str(tmp_path / "e")) == 1
+    assert publish(str(bundle), **ARGS, out=str(tmp_path / "e"), yes=True) == 1
     out = capsys.readouterr().out
     assert "no run database with paper" in out and "--db" in out and "--no-db" in out
     assert _snapshot(bundle) == before
@@ -103,7 +103,7 @@ def test_without_the_database_publish_refuses_and_changes_nothing(bundle: Path, 
 
 def test_a_database_of_another_study_is_refused(bundle: Path, tmp_path: Path, capsys):
     other = make_run_db(tmp_path / "other", "11111111-2222-3333-4444-555555555555", env=False)
-    assert publish(str(bundle), **ARGS, db=str(other), out=str(tmp_path / "e")) == 1
+    assert publish(str(bundle), **ARGS, db=str(other), out=str(tmp_path / "e"), yes=True) == 1
     assert "holds no run of paper" in capsys.readouterr().out
     assert not (bundle / "e2er.json").exists()
 
@@ -111,7 +111,7 @@ def test_a_database_of_another_study_is_refused(bundle: Path, tmp_path: Path, ca
 def test_no_db_publishes_loudly_and_the_dossier_and_footnote_say_the_steps_are_missing(
     bundle: Path, tmp_path: Path, capsys
 ):
-    assert publish(str(bundle), **ARGS, no_db=True, name="Ada Lovelace", out=str(tmp_path / "e")) == 0
+    assert publish(str(bundle), **ARGS, no_db=True, name="Ada Lovelace", out=str(tmp_path / "e"), yes=True) == 0
     assert "WARNING: --no-db" in capsys.readouterr().out
     doc = _manifest(bundle)["dossier"]["doc"]
     assert doc["workflow"] == [] and doc["run"]["workflow_recorded"] is False and doc["e2er"]["commit"] is None
@@ -127,7 +127,7 @@ def test_a_folder_edited_after_export_is_refused_before_anything_changes(bundle:
     tex = bundle / "paper" / "paper.tex"
     tex.write_text(tex.read_text().replace("\\begin{document}", "\\begin{document}\nWe find a huge effect.", 1))
     before = _snapshot(bundle)
-    assert publish(str(bundle), **ARGS, name="Ada Lovelace", out=str(tmp_path / "e")) == 1
+    assert publish(str(bundle), **ARGS, name="Ada Lovelace", out=str(tmp_path / "e"), yes=True) == 1
     out = capsys.readouterr().out
     assert "not what was exported" in out and "paper/paper.tex" in out
     assert _snapshot(bundle) == before
@@ -136,7 +136,7 @@ def test_a_folder_edited_after_export_is_refused_before_anything_changes(bundle:
 def test_each_change_publish_makes_keeps_the_exported_fingerprint(bundle: Path, tmp_path: Path):
     make_run_db(tmp_path / "study", paper_id_of(bundle))
     exported = json.loads((bundle / "provenance.json").read_text())["files"]["paper/paper.tex"]["sha256"]
-    assert publish(str(bundle), **ARGS, name="Ada Lovelace", out=str(tmp_path / "e")) == 0
+    assert publish(str(bundle), **ARGS, name="Ada Lovelace", out=str(tmp_path / "e"), yes=True) == 0
     prov = json.loads((bundle / "provenance.json").read_text())
     tex_amendments = [a for a in prov["amendments"] if a["path"] == "paper/paper.tex"]
     assert tex_amendments[0]["sha256_before"] == exported
@@ -144,7 +144,7 @@ def test_each_change_publish_makes_keeps_the_exported_fingerprint(bundle: Path, 
     assert all(a["reason"] and a["at"].endswith("Z") for a in prov["amendments"])
     assert not any(c.status == FAIL for c in _run_checks(bundle, online=False))
     # publishing again changes nothing and still verifies
-    assert publish(str(bundle), **ARGS, name="Ada Lovelace", out=str(tmp_path / "e")) == 0
+    assert publish(str(bundle), **ARGS, name="Ada Lovelace", out=str(tmp_path / "e"), yes=True) == 0
     assert json.loads((bundle / "provenance.json").read_text())["amendments"] == prov["amendments"]
 
 
@@ -197,7 +197,7 @@ ZARGS = {**ARGS, "data": "public", "code": "public", "zenodo": True, "name": "Ad
 
 def test_the_dossier_id_is_the_hash_of_the_document_with_the_dois(bundle: Path, tmp_path: Path, fake_zenodo):
     make_run_db(tmp_path / "study", paper_id_of(bundle))
-    assert publish(str(bundle), **ZARGS, out=str(tmp_path / "e")) == 0
+    assert publish(str(bundle), **ZARGS, out=str(tmp_path / "e"), yes=True) == 0
     m = _manifest(bundle)
     assert m["dossier"]["id"] == dossier_id(m["dossier"]["doc"])
     av = m["dossier"]["doc"]["availability"]
@@ -213,11 +213,11 @@ def test_a_failing_stamp_publishes_no_deposit_and_the_retry_reuses_the_drafts(
 
     monkeypatch.setattr("src.cli_publish.shutil.which", lambda _: "/usr/bin/tectonic")
     monkeypatch.setattr("src.cli_publish.subprocess.run", lambda *a, **k: subprocess.CompletedProcess(a, 1, "", "boom"))
-    assert publish(str(bundle), **ZARGS, out=str(tmp_path / "e")) == 1
+    assert publish(str(bundle), **ZARGS, out=str(tmp_path / "e"), yes=True) == 1
     assert "tectonic failed" in capsys.readouterr().out
     assert fake_zenodo.count("create") == 2 and fake_zenodo.count("publish") == 0  # drafts only
     monkeypatch.setattr("src.cli_publish.shutil.which", lambda _: None)
-    assert publish(str(bundle), **ZARGS, out=str(tmp_path / "e")) == 0
+    assert publish(str(bundle), **ZARGS, out=str(tmp_path / "e"), yes=True) == 0
     assert fake_zenodo.count("create") == 2 and fake_zenodo.count("publish") == 2  # the same two deposits
 
 
@@ -234,7 +234,7 @@ def test_retrying_after_a_server_error_reuses_the_deposits_and_the_dossier(
     monkeypatch.setattr(pc, "request", refuse)
     monkeypatch.setattr(pc, "load_token", lambda base: "tok")
     for _ in range(2):
-        assert publish(str(bundle), **ZARGS, to_url="https://e2er.example", site="https://e2er.example") == 1
+        assert publish(str(bundle), **ZARGS, to_url="https://e2er.example", site="https://e2er.example", yes=True) == 1
     assert len(sent) == 2 and sent[0] == sent[1]
     assert fake_zenodo.count("create") == 2 and fake_zenodo.count("publish") == 2
 
@@ -257,7 +257,7 @@ def test_a_pdf_compiled_by_publish_is_added_to_provenance(bundle: Path, tmp_path
     monkeypatch.setattr("src.cli_publish.shutil.which", lambda _: "/usr/bin/tectonic")
     monkeypatch.setattr("src.cli_publish.subprocess.run", tectonic)
     monkeypatch.setattr("src.cli_publish.unresolved_citations", lambda work: [])
-    assert publish(str(bundle), **ARGS, name="Ada Lovelace", out=str(tmp_path / "e")) == 0
+    assert publish(str(bundle), **ARGS, name="Ada Lovelace", out=str(tmp_path / "e"), yes=True) == 0
     prov = json.loads((bundle / "provenance.json").read_text())
     assert prov["files"]["paper/paper.pdf"]["sha256"] == _sha(bundle / "paper" / "paper.pdf")
     [added] = [a for a in prov["amendments"] if a["path"] == "paper/paper.pdf"]
@@ -302,10 +302,10 @@ def test_a_changed_wording_replaces_the_disclaimer_and_no_purpose_removes_it(tmp
 def test_republishing_without_a_purpose_removes_the_disclaimer_everywhere(tmp_path: Path):
     b = _repl_bundle(tmp_path)
     report = b / "misc" / "reproduction_report.md"
-    assert publish(str(b), **ARGS, demonstration=True, out=str(tmp_path / "e")) == 0
+    assert publish(str(b), **ARGS, demonstration=True, out=str(tmp_path / "e"), yes=True) == 0
     assert disclaimer("replication") in report.read_text()
     assert disclaimer("replication") in (b / "paper" / "paper.tex").read_text()
-    assert publish(str(b), **ARGS, out=str(tmp_path / "e")) == 0
+    assert publish(str(b), **ARGS, out=str(tmp_path / "e"), yes=True) == 0
     m = _manifest(b)
     assert "purpose" not in m and "purpose" not in m["dossier"]["doc"]
     assert "Demonstration." not in report.read_text()
@@ -318,7 +318,7 @@ def test_a_purpose_recorded_on_the_study_is_honoured_without_the_flag(tmp_path: 
     ws = tmp_path / "study" / "workspaces" / "ws"
     manifest = json.loads((ws / "manifest.json").read_text())
     (ws / "manifest.json").write_text(json.dumps({**manifest, "purpose": "demonstration"}))
-    assert publish(str(b), **ARGS, out=str(tmp_path / "e")) == 0
+    assert publish(str(b), **ARGS, out=str(tmp_path / "e"), yes=True) == 0
     m = _manifest(b)
     assert m["purpose"] == "demonstration" and m["kind"] == "replication"
 
@@ -341,7 +341,7 @@ def test_a_local_path_in_the_runs_record_is_cut_to_its_last_part(bundle: Path, t
     )
     con.commit()
     con.close()
-    assert publish(str(bundle), **ARGS, out=str(tmp_path / "e")) == 0
+    assert publish(str(bundle), **ARGS, out=str(tmp_path / "e"), yes=True) == 0
     assert "names a path on this machine" not in capsys.readouterr().out
     doc = _manifest(bundle)["dossier"]["doc"]
     assert "/private/" not in json.dumps(doc)
@@ -356,7 +356,7 @@ def test_without_a_name_the_paper_still_carries_the_dossier_link_and_keeps_its_a
     make_run_db(tmp_path / "study", paper_id_of(bundle))
     tex = bundle / "paper" / "paper.tex"
     own = tex.read_text().split("\\author{", 1)[1].split("\\thanks", 1)[0]  # the paper's own author text
-    assert publish(str(bundle), **ARGS, demonstration=True, out=str(tmp_path / "e")) == 0
+    assert publish(str(bundle), **ARGS, demonstration=True, out=str(tmp_path / "e"), yes=True) == 0
     text = tex.read_text()
     m = _manifest(bundle)
     assert m["dossier"]["url"] in text and disclaimer() in text
@@ -364,7 +364,7 @@ def test_without_a_name_the_paper_still_carries_the_dossier_link_and_keeps_its_a
     assert text.count("This paper was produced with e2er") == 1
     # unresolved pins (the run's commit is not in this checkout): the footnote does not claim exact versions
     assert "where E2ER's repository holds them" in text
-    assert publish(str(bundle), **ARGS, demonstration=True, out=str(tmp_path / "e")) == 0
+    assert publish(str(bundle), **ARGS, demonstration=True, out=str(tmp_path / "e"), yes=True) == 0
     assert tex.read_text() == text  # stamping again changes nothing
 
 
@@ -404,6 +404,6 @@ def test_a_recompile_with_non_fatal_errors_is_kept_as_the_run_compiled_it(bundle
     monkeypatch.setattr("src.cli_publish.shutil.which", lambda _: "/usr/bin/tectonic")
     monkeypatch.setattr("src.cli_publish.subprocess.run", tectonic)
     monkeypatch.setattr("src.cli_publish.unresolved_citations", lambda work: [])
-    assert publish(str(bundle), **ARGS, out=str(tmp_path / "e")) == 0
+    assert publish(str(bundle), **ARGS, out=str(tmp_path / "e"), yes=True) == 0
     assert "continue-on-errors" in seen[0]
     assert (bundle / "paper" / "paper.pdf").read_bytes() == b"%PDF with a non-fatal error"

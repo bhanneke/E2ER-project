@@ -505,6 +505,15 @@ def _no_real_platform(monkeypatch, tmp_path_factory):
     monkeypatch.setattr(
         pc, "client_factory", lambda url: httpx.Client(base_url=url, transport=httpx.MockTransport(refuse))
     )
+    # Zenodo the same way, and no GitHub login of this machine (gh's own config, GH_TOKEN).
+    from src.core import zenodo as zen
+
+    monkeypatch.setattr(
+        zen, "client_factory", lambda base: httpx.Client(base_url=base, transport=httpx.MockTransport(refuse))
+    )
+    for var in ("ZENODO_TOKEN", "ZENODO_SANDBOX_TOKEN", "GH_TOKEN", "GITHUB_TOKEN", "E2ER_TEST_SERVER"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("GH_CONFIG_DIR", str(tmp_path_factory.mktemp("no-gh-config")))
     yield
 
 

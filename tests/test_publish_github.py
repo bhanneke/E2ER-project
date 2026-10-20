@@ -70,6 +70,8 @@ def github(tmp_path: Path, monkeypatch) -> Path:
     gh.chmod(0o755)
     monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
     monkeypatch.setenv("FAKE_GH_ROOT", str(root))
+    # In a test run e2er uses gh only when told that it is a fake one (src/core/test_guard.py).
+    monkeypatch.setenv("E2ER_TEST_GITHUB", "fake")
     monkeypatch.delenv("FAKE_GH_LOGGED_OUT", raising=False)
     # git sends https://github.com/<owner>/<repo>.git to the bare repository instead.
     monkeypatch.setenv("GIT_CONFIG_COUNT", "1")
@@ -184,7 +186,13 @@ def test_a_gaia_study_goes_up_without_its_restricted_or_derived_data_and_verifie
 ):
     assert (gaia_study / "data" / "gaia_clean.csv").is_file()
     rc = publish(
-        str(gaia_study), **ID, no_db=True, github_repo="ada/demos", github_path="pleiades", out=str(tmp_path / "e")
+        str(gaia_study),
+        **ID,
+        no_db=True,
+        github_repo="ada/demos",
+        github_path="pleiades",
+        out=str(tmp_path / "e"),
+        yes=True,
     )
     out = capsys.readouterr().out
     assert rc == 0, out
@@ -231,7 +239,13 @@ def test_a_who_study_goes_up_with_its_own_data_only_and_the_paper_links_the_comm
     who_study: Path, github: Path, tmp_path: Path, capsys
 ):
     rc = publish(
-        str(who_study), **ID, github_repo=True, license_id="CC-BY-4.0", demonstration=True, out=str(tmp_path / "e")
+        str(who_study),
+        **ID,
+        github_repo=True,
+        license_id="CC-BY-4.0",
+        demonstration=True,
+        out=str(tmp_path / "e"),
+        yes=True,
     )
     out = capsys.readouterr().out
     assert rc == 0, out
@@ -259,7 +273,7 @@ def test_a_who_study_goes_up_with_its_own_data_only_and_the_paper_links_the_comm
 def test_the_dossier_does_not_name_the_commit_and_dry_run_lists_without_pushing(
     who_study: Path, github: Path, tmp_path: Path, capsys
 ):
-    rc = publish(str(who_study), **ID, github_repo="ada/demos", github_path="who", dry_run=True)
+    rc = publish(str(who_study), **ID, github_repo="ada/demos", github_path="who", dry_run=True, yes=True)
     captured = capsys.readouterr()
     assert rc == 0, captured.out + captured.err
     assert "github: would push" in captured.err and "github   + data/own_counts.csv" in captured.err
@@ -290,6 +304,7 @@ def test_two_studies_share_a_repository_and_files_outside_their_folders_stay(
             github_repo="ada/demos",
             github_path="studies/pleiades",
             out=str(tmp_path / "e1"),
+            yes=True,
         )
         == 0
     )
@@ -301,6 +316,7 @@ def test_two_studies_share_a_repository_and_files_outside_their_folders_stay(
             github_repo="ada/demos",
             github_path="studies/who",
             out=str(tmp_path / "e2"),
+            yes=True,
         )
         == 0
     ), capsys.readouterr().out
@@ -319,14 +335,14 @@ def test_a_new_version_is_a_new_commit_and_the_same_files_make_none(
     who_study: Path, github: Path, tmp_path: Path, capsys
 ):
     args = dict(**ID, github_repo="ada/demos", github_path="who")
-    assert publish(str(who_study), **args, out=str(tmp_path / "e1")) == 0
+    assert publish(str(who_study), **args, out=str(tmp_path / "e1"), yes=True) == 0
     bare = github / "ada" / "demos.git"
     v1 = _git("--git-dir", str(bare), "rev-parse", "main")
     capsys.readouterr()
-    assert publish(str(who_study), **args, out=str(tmp_path / "e2")) == 0
+    assert publish(str(who_study), **args, out=str(tmp_path / "e2"), yes=True) == 0
     assert _git("--git-dir", str(bare), "rev-parse", "main") == v1, "the same files: no new commit"
     assert "Already on GitHub" in capsys.readouterr().out
-    assert publish(str(who_study), **args, license_id="MIT", out=str(tmp_path / "e3")) == 0
+    assert publish(str(who_study), **args, license_id="MIT", out=str(tmp_path / "e3"), yes=True) == 0
     v2 = _git("--git-dir", str(bare), "rev-parse", "main")
     assert v2 != v1 and _git("--git-dir", str(bare), "rev-parse", "main^") == v1
     m = _manifest(who_study)
@@ -339,7 +355,7 @@ def test_a_folder_with_someone_elses_files_is_refused_and_nothing_changes(
 ):
     bare = _seed(github, "ada/demos", {"who/notes.txt": "not a study\n"})
     before = _git("--git-dir", str(bare), "rev-parse", "main")
-    rc = publish(str(who_study), **ID, github_repo="ada/demos", github_path="who", out=str(tmp_path / "e"))
+    rc = publish(str(who_study), **ID, github_repo="ada/demos", github_path="who", out=str(tmp_path / "e"), yes=True)
     out = capsys.readouterr().out
     assert rc == 1 and "not this study's" in out and "who/notes.txt" not in out or "notes.txt" in out
     assert _git("--git-dir", str(bare), "rev-parse", "main") == before
@@ -349,7 +365,7 @@ def test_a_folder_with_someone_elses_files_is_refused_and_nothing_changes(
 def test_the_root_of_a_repository_with_other_files_is_refused(who_study: Path, github: Path, tmp_path: Path, capsys):
     bare = _seed(github, "ada/demos", {"README.md": "# Mine\n"})
     before = _git("--git-dir", str(bare), "rev-parse", "main")
-    assert publish(str(who_study), **ID, github_repo="ada/demos", out=str(tmp_path / "e")) == 1
+    assert publish(str(who_study), **ID, github_repo="ada/demos", out=str(tmp_path / "e"), yes=True) == 1
     assert "--github-path" in capsys.readouterr().out
     assert _git("--git-dir", str(bare), "rev-parse", "main") == before
 
@@ -359,7 +375,13 @@ def test_a_folder_inside_another_studys_folder_is_refused(
 ):
     assert (
         publish(
-            str(gaia_study), **ID, no_db=True, github_repo="ada/demos", github_path="pleiades", out=str(tmp_path / "e1")
+            str(gaia_study),
+            **ID,
+            no_db=True,
+            github_repo="ada/demos",
+            github_path="pleiades",
+            out=str(tmp_path / "e1"),
+            yes=True,
         )
         == 0
     )
@@ -371,6 +393,7 @@ def test_a_folder_inside_another_studys_folder_is_refused(
         github_repo="ada/demos",
         github_path="pleiades/who",
         out=str(tmp_path / "e2"),
+        yes=True,
     )
     assert rc == 1 and "inside the folder of another study" in capsys.readouterr().out
     assert _git("--git-dir", str(github / "ada" / "demos.git"), "rev-parse", "main") == before
@@ -379,13 +402,19 @@ def test_a_folder_inside_another_studys_folder_is_refused(
 def test_a_private_repository_is_refused(who_study: Path, github: Path, tmp_path: Path, capsys):
     bare = _seed(github, "ada/demos", {"x.txt": "x\n"})
     (bare / "PRIVATE").write_text("")
-    assert publish(str(who_study), **ID, github_repo="ada/demos", github_path="who", out=str(tmp_path / "e")) == 1
+    assert (
+        publish(str(who_study), **ID, github_repo="ada/demos", github_path="who", out=str(tmp_path / "e"), yes=True)
+        == 1
+    )
     assert "public repository" in capsys.readouterr().out
 
 
 def test_a_file_that_holds_a_token_is_never_pushed(who_study: Path, github: Path, tmp_path: Path, capsys):
     _add(who_study, "code/settings.py", b'TOKEN = "ghp_' + b"a1B2c3D4e5F6g7H8i9J0k1L2m3N4" + b'"\n')
-    assert publish(str(who_study), **ID, github_repo="ada/demos", github_path="who", out=str(tmp_path / "e")) == 1
+    assert (
+        publish(str(who_study), **ID, github_repo="ada/demos", github_path="who", out=str(tmp_path / "e"), yes=True)
+        == 1
+    )
     out = capsys.readouterr().out
     assert "code/settings.py: looks like a GitHub token" in out
     assert not (github / "ada" / "demos.git").exists() or not _tree(github / "ada" / "demos.git")
@@ -417,7 +446,7 @@ def test_without_gh_publish_says_what_to_install_and_changes_nothing(
     who_study: Path, github: Path, monkeypatch, capsys
 ):
     monkeypatch.setattr(shutil, "which", lambda name, *a, **k: None)
-    assert publish(str(who_study), **ID, github_repo=True) == 1
+    assert publish(str(who_study), **ID, github_repo=True, yes=True) == 1
     out = capsys.readouterr().out
     assert "https://cli.github.com" in out and "gh auth login" in out and "never receives a GitHub token" in out
     assert not (who_study / "e2er.json").exists()
@@ -425,7 +454,7 @@ def test_without_gh_publish_says_what_to_install_and_changes_nothing(
 
 def test_logged_out_gh_says_what_to_run(who_study: Path, github: Path, monkeypatch, capsys):
     monkeypatch.setenv("FAKE_GH_LOGGED_OUT", "1")
-    assert publish(str(who_study), **ID, github_repo="ada/demos") == 1
+    assert publish(str(who_study), **ID, github_repo="ada/demos", yes=True) == 1
     out = capsys.readouterr().out
     assert "gh auth login" in out and "GH_TOKEN" in out
 
@@ -441,12 +470,12 @@ def test_logged_out_gh_says_what_to_run(who_study: Path, github: Path, monkeypat
     ],
 )
 def test_options_that_contradict_github_are_refused(who_study: Path, github: Path, extra, words, capsys):
-    assert publish(str(who_study), **ID, github_repo=True, **extra) == 2
+    assert publish(str(who_study), **ID, github_repo=True, **extra, yes=True) == 2
     assert words in capsys.readouterr().out
 
 
 def test_github_path_needs_github(who_study: Path, capsys):
-    assert publish(str(who_study), **ID, github_path="x") == 2
+    assert publish(str(who_study), **ID, github_path="x", yes=True) == 2
 
 
 @pytest.mark.parametrize("bad", ["../x", ".git", "a//b", "a/.hidden", "a\\b"])
@@ -490,7 +519,9 @@ def test_publishing_to_e2er_org_sends_the_repository_at_the_pushed_commit_and_no
     monkeypatch.setattr(pc, "request", server)
     monkeypatch.setattr(pc, "load_token", lambda base: "tok")
     monkeypatch.setenv("GH_TOKEN", "ghp_" + "Z" * 36)
-    rc = publish(str(who_study), **ID, github_repo="ada/demos", github_path="who", to_url="https://e2er.example")
+    rc = publish(
+        str(who_study), **ID, github_repo="ada/demos", github_path="who", to_url="https://e2er.example", yes=True
+    )
     out = capsys.readouterr().out
     assert rc == 0, out
     bare = github / "ada" / "demos.git"
@@ -528,7 +559,9 @@ def test_the_summary_at_the_top_of_readme_changes_neither_the_title_nor_the_ques
     prov["edges"] = _edges(gaia_study)
     prov_path.write_text(json.dumps(prov, indent=2) + "\n", encoding="utf-8")
     before = _question_and_title(gaia_study)
-    rc = publish(str(gaia_study), **ID, no_db=True, github_repo="ada/demos", github_path="p", out=str(tmp_path / "e"))
+    rc = publish(
+        str(gaia_study), **ID, no_db=True, github_repo="ada/demos", github_path="p", out=str(tmp_path / "e"), yes=True
+    )
     assert rc == 0, capsys.readouterr().out
     text = (gaia_study / "README.md").read_text()
     assert text.startswith("<!-- e2er:github begin -->\n# Which Stars Are Pleiades Members? A Full Title")
@@ -549,11 +582,11 @@ def test_a_file_github_would_refuse_for_its_size_stops_publish_before_anything_i
 ):
     """The weather-words demo: data/data.db is 145 MB, over GitHub's 100 MB limit; the dry run said it would go up."""
     monkeypatch.setattr(gf, "GITHUB_FILE_LIMIT", 10)
-    rc = publish(str(who_study), **ID, github_repo="ada/demos", github_path="who", dry_run=True)
+    rc = publish(str(who_study), **ID, github_repo="ada/demos", github_path="who", dry_run=True, yes=True)
     captured = capsys.readouterr()
     assert rc != 0
     assert "GitHub refuses files larger than 100 MB" in captured.out + captured.err
-    rc = publish(str(who_study), **ID, github_repo="ada/demos", github_path="who", out=str(tmp_path / "e"))
+    rc = publish(str(who_study), **ID, github_repo="ada/demos", github_path="who", out=str(tmp_path / "e"), yes=True)
     captured = capsys.readouterr()
     assert rc != 0 and "GitHub refuses files larger than 100 MB" in captured.out + captured.err
     assert not (github / "ada" / "demos.git").exists(), "no repository was made and nothing was pushed"
@@ -566,7 +599,7 @@ def test_github_without_to_publishes_on_e2er_org_and_registers_the_pushed_commit
     who_study: Path, github: Path, tmp_path: Path, capsys
 ):
     """e2er-demos commit 0d9a2e3: `publish --github` without --to pushed the files and registered nothing."""
-    rc = publish(str(who_study), **ID, github_repo="ada/demos", github_path="who")
+    rc = publish(str(who_study), **ID, github_repo="ada/demos", github_path="who", yes=True)
     out = capsys.readouterr().out
     assert rc == 0, out
     assert "--github publishes on https://e2er.org (the default platform)" in out
@@ -583,9 +616,9 @@ def test_github_without_to_publishes_where_the_folder_was_published_before(
     who_study: Path, github: Path, tmp_path: Path, capsys
 ):
     args = dict(**ID, github_repo="ada/demos", github_path="who")
-    assert publish(str(who_study), **args, to_url="https://staging.e2er.example/") == 0
+    assert publish(str(who_study), **args, to_url="https://staging.e2er.example/", yes=True) == 0
     capsys.readouterr()
-    rc = publish(str(who_study), **args, license_id="MIT")
+    rc = publish(str(who_study), **args, license_id="MIT", yes=True)
     out = capsys.readouterr().out
     assert rc == 0, out
     assert "--github publishes on https://staging.e2er.example (where this folder was published before" in out
@@ -599,7 +632,7 @@ def test_not_signed_in_to_the_platform_pushes_nothing(
     from src.core import platform_client as pc
 
     monkeypatch.setattr(pc, "load_token", lambda base: None)
-    rc = publish(str(who_study), **ID, github_repo="ada/demos", github_path="who")
+    rc = publish(str(who_study), **ID, github_repo="ada/demos", github_path="who", yes=True)
     out = capsys.readouterr().out
     assert rc == 1
     assert "not signed in to https://e2er.org; run `e2er login --url https://e2er.org`; nothing was pushed" in out
@@ -611,7 +644,7 @@ def test_a_refused_sign_in_pushes_nothing(who_study: Path, github: Path, tmp_pat
     from src.core import platform_client as pc
 
     monkeypatch.setattr(pc, "request", lambda base, method, path, token=None, body=None: (401, {"error": "expired"}))
-    rc = publish(str(who_study), **ID, github_repo="ada/demos", github_path="who", to_url="https://e2er.org")
+    rc = publish(str(who_study), **ID, github_repo="ada/demos", github_path="who", to_url="https://e2er.org", yes=True)
     out = capsys.readouterr().out
     assert rc == 1 and "did not accept the sign-in" in out and "nothing was pushed" in out
     assert not (github / "ada").exists()
@@ -623,7 +656,7 @@ def test_a_registration_refused_after_the_push_rolls_forward_when_run_again(
     from src.core import platform_client as pc
 
     monkeypatch.setattr(pc, "request", _fake_platform(github, refuse="This study belongs to someone else."))
-    rc = publish(str(who_study), **ID, github_repo="ada/demos", github_path="who")
+    rc = publish(str(who_study), **ID, github_repo="ada/demos", github_path="who", yes=True)
     out = capsys.readouterr().out
     assert rc == 1
     bare = github / "ada" / "demos.git"
@@ -633,7 +666,7 @@ def test_a_registration_refused_after_the_push_rolls_forward_when_run_again(
     assert not (who_study / ".e2er" / "link.json").exists()
     # Run again with the problem solved: no new commit, and the registration names the commit already there.
     monkeypatch.setattr(pc, "request", _fake_platform(github))
-    rc = publish(str(who_study), **ID, github_repo="ada/demos", github_path="who")
+    rc = publish(str(who_study), **ID, github_repo="ada/demos", github_path="who", yes=True)
     out = capsys.readouterr().out
     assert rc == 0, out
     assert "Already on GitHub" in out
@@ -665,13 +698,13 @@ def test_a_published_study_redacted_afterwards_verifies_and_publishes_again_with
     email = "ada@uni.example.org"
     _add(who_study, "design/paper_plan.md", f"Author context: {email} (project owner).\n".encode())
     args = dict(**ID, github_repo="ada/demos", github_path="who")
-    assert publish(str(who_study), **args) == 0, capsys.readouterr().out
+    assert publish(str(who_study), **args, yes=True) == 0, capsys.readouterr().out
     rd.redact(who_study, email)
     checks = {c.name: c for c in _run_checks(who_study, online=False)}
     assert checks["anchor"].status != FAIL, checks["anchor"].detail
     assert "before the researcher redacted 1 file(s)" in checks["anchor"].detail
     capsys.readouterr()
-    assert publish(str(who_study), **args) == 0, capsys.readouterr().out
+    assert publish(str(who_study), **args, yes=True) == 0, capsys.readouterr().out
     bodies = [json.loads(line) for line in (github / "registered.jsonl").read_text().splitlines()]
     shown = [a for a in bodies[-1]["dossier"]["doc"]["amendments"] if a.get("kind") == "redacted"]
     assert [a["path"] for a in shown] == ["design/paper_plan.md"]
@@ -685,3 +718,29 @@ def test_a_published_study_redacted_afterwards_verifies_and_publishes_again_with
     p = who_study / "design" / "paper_plan.md"
     p.write_text(p.read_text() + "x\n")
     assert {c.name: c.status for c in _run_checks(who_study, online=False)}["integrity"] == FAIL
+
+
+def test_publish_asks_before_it_pushes_and_names_the_repository_and_folder(
+    who_study: Path, github: Path, monkeypatch, capsys
+):
+    asked: list[str] = []
+    monkeypatch.setattr("builtins.input", lambda q: asked.append(q) or "n")
+    rc = publish(str(who_study), **ID, github_repo="ada/demos", github_path="who", interactive=True)
+    out = capsys.readouterr().out
+    assert rc == 1, out
+    (q,) = asked
+    assert q.startswith("Publish '") and q.endswith(
+        "' to https://e2er.org as ada? Files to GitHub ada/demos/who. [y/N]: "
+    )
+    assert "GitHub github.com/ada/demos, folder who: the study's files" in out
+    assert "Not published: nothing was sent or pushed." in out
+    assert not (github / "ada" / "demos.git").exists(), "nothing was pushed"
+    log = (github / "platform.log").read_text() if (github / "platform.log").is_file() else ""
+    assert "POST" not in log
+
+
+def test_publish_github_without_a_terminal_needs_yes(who_study: Path, github: Path, capsys):
+    rc = publish(str(who_study), **ID, github_repo="ada/demos", github_path="who")
+    assert rc == 1 and "only after you confirm it" in capsys.readouterr().out
+    assert not (github / "ada" / "demos.git").exists()
+    assert not (github / "platform.log").exists(), "not even the sign-in was checked"

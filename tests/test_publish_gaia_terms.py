@@ -51,7 +51,7 @@ def _manifest(b: Path) -> dict:
 
 
 def test_public_gaia_data_without_confirmation_are_refused(bundle: Path, tmp_path: Path, capsys):
-    assert publish(str(bundle), **BASE, **REPO, data="public", out=str(tmp_path / "e")) == 1
+    assert publish(str(bundle), **BASE, **REPO, data="public", out=str(tmp_path / "e"), yes=True) == 1
     out = capsys.readouterr().out
     assert "ESA Gaia Data Release 3 (Gaia), release DR3" in out
     assert "--accept-data-terms gaia" in out
@@ -59,7 +59,9 @@ def test_public_gaia_data_without_confirmation_are_refused(bundle: Path, tmp_pat
 
 
 def test_confirmed_public_gaia_data_publish_and_state_the_licence(bundle: Path, tmp_path: Path, capsys):
-    rc = publish(str(bundle), **BASE, **REPO, data="public", accept_data_terms=["gaia"], out=str(tmp_path / "e"))
+    rc = publish(
+        str(bundle), **BASE, **REPO, data="public", accept_data_terms=["gaia"], out=str(tmp_path / "e"), yes=True
+    )
     assert rc == 0, capsys.readouterr().out
     m = _manifest(bundle)
     entry = next(d for d in m["data"] if d["path"] == CSV)
@@ -83,6 +85,7 @@ def test_a_zenodo_deposit_of_gaia_data_takes_a_non_commercial_licence(
         zenodo=True,
         accept_data_terms=["gaia"],
         out=str(tmp_path / "e"),
+        yes=True,
     )
     assert rc == 0
     data_meta, code_meta = fake.meta[101], fake.meta[102]

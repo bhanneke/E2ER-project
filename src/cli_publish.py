@@ -44,6 +44,14 @@ registration after the push, the files sit at a commit no study names, and
 publish says so: the same command, run again, makes no new commit (the files
 are the same) and sends the registration again, so it rolls forward instead of
 leaving a second copy. A run that writes only a registry entry never pushes.
+
+Nothing is sent or pushed before the researcher says yes. After the rehearsal
+passed, publish prints what goes where and asks "Publish '<title>' to
+<platform> as <handle>? Files to GitHub <repo>/<path>. [y/N]"; only y or yes
+goes on. A run without a terminal on standard input (a script, CI) needs
+``--yes`` and otherwise refuses with nothing sent; ``--dry-run`` never asks
+and never sends. The dashboard sends the same yes as an explicit confirmation
+from the page (``confirm``, src/api/finish.py).
 """
 
 from __future__ import annotations
@@ -901,16 +909,41 @@ def problems(body: dict[str, Any]) -> list[str]:
     return out
 
 
-def publish(bundle: str, *, dry_run: bool = False, to_url: str | None = None, offline: bool = False, **kw: Any) -> int:
+def publish(
+    bundle: str,
+    *,
+    dry_run: bool = False,
+    to_url: str | None = None,
+    offline: bool = False,
+    yes: bool = False,
+    **kw: Any,
+) -> int:
     """`e2er publish`: describe, stamp and verify; optionally rehearse (`dry_run`) or send (`to_url`).
 
     ``interactive=False`` never asks on the terminal (the dashboard's server);
     by default it asks only when standard input is a terminal.
 
+    Before anything is sent (``to_url``, ``--zenodo``) or pushed (``--github``) the researcher
+    confirms: asked on the terminal, or ``yes=True`` (``--yes``; the dashboard's ``confirm``).
+    Without a terminal and without ``yes`` nothing is sent.
+
     `offline` prepares the folder for publishing in the browser: it writes the
     dossier and e2er.json, makes no network request and names the next step.
     """
     b = Path(bundle).expanduser().resolve()
+    # The dashboard calls this from its server (interactive=False): a question on
+    # the server's terminal would hang the page, so nothing is ever asked there.
+    interactive = kw.pop("interactive", None)
+    if interactive is None:
+        interactive = sys.stdin.isatty()
+    # Something leaves this machine: the description (--to), the deposits (--zenodo), the files (--github).
+    sends = not dry_run and not offline and bool(to_url or kw.get("zenodo") or kw.get("github_repo") is not None)
+    if sends and not yes and not interactive:
+        print(
+            "error: e2er publish sends the study only after you confirm it. Run it in a terminal to be asked, "
+            "or add --yes (scripts, CI). --dry-run shows what would be sent. Nothing was sent."
+        )
+        return 1
     # --github: the files go to a public GitHub repository with the researcher's own gh login.
     gh_spec = kw.pop("github_repo", None)
     gh_path = kw.pop("github_path", None)
@@ -959,11 +992,6 @@ def publish(bundle: str, *, dry_run: bool = False, to_url: str | None = None, of
         if run_db is not None:
             kw["db"] = str(run_db)
     kw.setdefault("study_folder", _study_folder(b))
-    # The dashboard calls this from its server (interactive=False): a question on
-    # the server's terminal would hang the page, so nothing is ever asked there.
-    interactive = kw.pop("interactive", None)
-    if interactive is None:
-        interactive = sys.stdin.isatty()
     if kw.get("data") is None and kw.get("code") is None and interactive and gh_spec is None:
         kw["data"] = _ask("Are the study's data public or private?")
         kw["code"] = _ask("Is the study's code public or private?")
@@ -997,6 +1025,7 @@ def publish(bundle: str, *, dry_run: bool = False, to_url: str | None = None, of
         print(f"  2. choose this folder: {b}")
         print("  The page compares every file with its fingerprint in the browser and sends only the description.")
         return 0
+    rehearsed: dict[str, Any] | None = None
     if dry_run or to_url:
         # Rehearse in a scratch copy: the exact request, and nothing written here.
         with tempfile.TemporaryDirectory() as tmp:
@@ -1023,6 +1052,7 @@ def publish(bundle: str, *, dry_run: bool = False, to_url: str | None = None, of
                 print(log.getvalue().rstrip())
                 return code or 1
             body = request_body(manifest, scratch)
+            rehearsed = manifest
         found = problems(body)
         if dry_run:
             print(json.dumps(body, indent=2, ensure_ascii=False))
@@ -1041,12 +1071,61 @@ def publish(bundle: str, *, dry_run: bool = False, to_url: str | None = None, of
             for p in found:
                 print(f"  {p}")
             return 1
+    if sends and not _confirmed(b, rehearsed, to_url, kw, yes=yes):
+        print("Not published: nothing was sent or pushed.")
+        return 1
     if kw.get("github_target") is not None:
         kw["github_mode"] = "push"
     code, manifest = _describe(str(b), **kw, remote=bool(to_url))
     if code or manifest is None or not to_url:
         return code
     return _send(b, manifest, to_url)
+
+
+def confirm_question(
+    title: str, *, platform: str | None, handle: str, github: gf.Target | None = None, zenodo: str | None = None
+) -> str:
+    """The question publish asks before anything is sent, without the ``[y/N]``.
+
+    "Publish '<title>' to <platform> as <handle>? Files to GitHub <repo>/<path>." With ``--zenodo``
+    the deposits are named too; without a platform (a deposit only) the question is about Zenodo.
+    """
+    short = title if len(title) <= 120 else title[:117] + "…"
+    if platform:
+        q = f"Publish '{short}' to {platform} as {handle}?"
+    else:
+        q = f"Deposit the public data and code of '{short}' on Zenodo ({zenodo}) with your Zenodo token?"
+    if github is not None:
+        q += f" Files to GitHub {github.full}" + (f"/{github.path}" if github.path else "") + "."
+    if platform and zenodo:
+        q += f" Public data and code to Zenodo ({zenodo})."
+    return q
+
+
+def _confirmed(b: Path, rehearsed: dict[str, Any] | None, to_url: str | None, kw: dict[str, Any], *, yes: bool) -> bool:
+    """What goes where, then the question; True with ``yes`` or when the researcher types y or yes."""
+    from .core import platform_client as pc
+    from .core.research_object import _question_and_title
+
+    title = str((rehearsed or {}).get("title") or "") or _question_and_title(b)[1] or b.name
+    platform = pc.base_url(to_url) if to_url else None
+    handle = str(kw.get("owner") or "")
+    target: gf.Target | None = kw.get("github_target")
+    zenodo = None
+    if kw.get("zenodo"):
+        zenodo = zen.base_url(bool(kw.get("zenodo_sandbox"))).removeprefix("https://")
+    print("\nWhat goes where:")
+    if platform:
+        print(f"  {platform} ({kw.get('owner')}/{kw.get('project')}): the description, the dossier, file fingerprints")
+    if target is not None:
+        print(f"  GitHub {target.where()}: the study's files as `e2er pack` ships them (public)")
+    if zenodo:
+        print(f"  Zenodo ({zenodo}): the public data and code, with a DOI each")
+    question = confirm_question(title, platform=platform, handle=handle, github=target, zenodo=zenodo)
+    if yes:
+        print(f"{question} yes (--yes)")
+        return True
+    return _confirm(question)
 
 
 def _platform_for_github(b: Path) -> tuple[str, str]:

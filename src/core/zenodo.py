@@ -50,6 +50,10 @@ def load_token(sandbox: bool = False) -> str | None:
     env = (os.environ.get("ZENODO_SANDBOX_TOKEN" if sandbox else "ZENODO_TOKEN") or "").strip()
     if env:
         return env
+    from .test_guard import saved_logins_allowed
+
+    if not saved_logins_allowed():
+        return None  # a test run reads no saved token (src/core/test_guard.py)
     try:
         from ..config import get_settings
 
@@ -90,6 +94,12 @@ def client_factory(base: str) -> Any:
     """The HTTP client for ``base``; tests replace this with an httpx.MockTransport client."""
     import httpx
 
+    from .test_guard import RefusedInTestError, check_target
+
+    try:
+        check_target(base)
+    except RefusedInTestError as e:
+        raise ZenodoError(str(e)) from e
     return httpx.Client(base_url=base, timeout=120.0)
 
 

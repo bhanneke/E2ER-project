@@ -40,7 +40,9 @@ def test_the_published_description_matches_the_sites_format(bundle: Path, tmp_pa
 
     monkeypatch.setattr(pc, "request", server)
     monkeypatch.setattr(pc, "load_token", lambda base: "tok")
-    rc = publish(str(bundle), **ARGS, demonstration=True, to_url="https://e2er.example", site="https://e2er.example")
+    rc = publish(
+        str(bundle), **ARGS, demonstration=True, to_url="https://e2er.example", site="https://e2er.example", yes=True
+    )
     assert rc == 0 and len(sent) == 1
     manifest = sent[0]["manifest"]
     d = sent[0]["dossier"]
@@ -70,7 +72,7 @@ def test_publishing_to_another_platform_names_its_dossier_address(
     monkeypatch.setattr(pc, "request", server)
     monkeypatch.setattr(pc, "load_token", lambda base: "tok")
     monkeypatch.delenv("E2ER_URL", raising=False)
-    assert publish(str(bundle), **ARGS, to_url="https://e2er.example", site="https://e2er.example") == 0
+    assert publish(str(bundle), **ARGS, to_url="https://e2er.example", site="https://e2er.example", yes=True) == 0
     url = sent[0]["manifest"]["dossier"]["url"]
     assert url.startswith("https://e2er.example/d/")
     assert json.loads((bundle / "e2er.json").read_text())["dossier"]["url"] == url
@@ -102,7 +104,9 @@ def test_coauthors_from_the_terminal_reach_the_description(bundle: Path, tmp_pat
         "Grace Hopper|orcid=0000-0002-1825-0097|role=Writing - review & editing",
         f"Same Person|github={ARGS['github']}",  # the publisher is listed once
     ]
-    rc = publish(str(bundle), **ARGS, coauthors=coauthors, to_url="https://e2er.example", site="https://e2er.example")
+    rc = publish(
+        str(bundle), **ARGS, coauthors=coauthors, to_url="https://e2er.example", site="https://e2er.example", yes=True
+    )
     assert rc == 0
     people = sent[0]["manifest"]["contributors"]
     assert [p.get("github") or p.get("orcid") for p in people] == [ARGS["github"], "ada-l", "0000-0002-1825-0097"]
@@ -128,5 +132,5 @@ def test_coauthors_from_the_terminal_reach_the_description(bundle: Path, tmp_pat
     ],
 )
 def test_a_coauthor_that_cannot_be_listed_is_refused_plainly(bundle: Path, capsys, spec: str, says: str):  # noqa: F811
-    rc = publish(str(bundle), **ARGS, coauthors=[spec], dry_run=True)
+    rc = publish(str(bundle), **ARGS, coauthors=[spec], dry_run=True, yes=True)
     assert rc == 1 and says in capsys.readouterr().out

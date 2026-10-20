@@ -70,7 +70,7 @@ def test_yahoo_is_a_source_with_terms_taken_from_the_load_record():
 def test_private_yahoo_data_publish_with_a_link_to_the_source_and_no_nudge(bundle: Path, tmp_path: Path, capsys):
     refs = bundle / "paper" / "refs.bib"
     assert "yahoo" not in refs.read_text(encoding="utf-8").lower()
-    assert publish(str(bundle), **BASE, **REPO, data="private", out=str(tmp_path / "e")) == 0
+    assert publish(str(bundle), **BASE, **REPO, data="private", out=str(tmp_path / "e"), yes=True) == 0
     out = capsys.readouterr().out
     assert "note: the study uses Yahoo Finance data (kept private); the description states its terms\n" in out
     assert NOTE in out
@@ -89,7 +89,7 @@ def test_public_yahoo_data_without_confirmation_are_refused_and_say_personal_use
 ):
     before = _snapshot(bundle)
     for extra in ({}, {"dry_run": True}, {"offline": True}):
-        assert publish(str(bundle), **BASE, **REPO, data="public", out=str(tmp_path / "e"), **extra) == 1
+        assert publish(str(bundle), **BASE, **REPO, data="public", out=str(tmp_path / "e"), **extra, yes=True) == 1
         out = capsys.readouterr().out
         assert (
             "error: the study uses Yahoo Finance data. Publishing them with the study (--data public) "
@@ -102,7 +102,9 @@ def test_public_yahoo_data_without_confirmation_are_refused_and_say_personal_use
 
 
 def test_confirmed_public_yahoo_data_publish(bundle: Path, tmp_path: Path, capsys):
-    rc = publish(str(bundle), **BASE, **REPO, data="public", accept_data_terms=["yfinance"], out=str(tmp_path / "e"))
+    rc = publish(
+        str(bundle), **BASE, **REPO, data="public", accept_data_terms=["yfinance"], out=str(tmp_path / "e"), yes=True
+    )
     assert rc == 0
     out = capsys.readouterr().out
     assert "uses Yahoo Finance data (published with the study)" in out
@@ -130,6 +132,7 @@ def test_a_zenodo_deposit_of_yahoo_data_is_refused_before_anything_is_sent(
         accept_data_terms=["yfinance"],
         out=str(tmp_path / "e"),
         **extra,
+        yes=True,
     )
     assert rc == 1
     out = capsys.readouterr().out
@@ -148,7 +151,9 @@ def test_the_code_alone_goes_to_zenodo_when_the_yahoo_data_stay_private(
     tmp_path: Path,
     fake: FakeZenodo,
 ):
-    rc = publish(str(bundle), **BASE, **REPO, data="private", code="public", zenodo=True, out=str(tmp_path / "e"))
+    rc = publish(
+        str(bundle), **BASE, **REPO, data="private", code="public", zenodo=True, out=str(tmp_path / "e"), yes=True
+    )
     assert rc == 0
     (meta,) = fake.meta.values()
     assert meta["upload_type"] == "software" and "Yahoo" not in meta["description"]
@@ -167,7 +172,7 @@ def test_in_a_terminal_the_researcher_confirms_knowing_yahoo_allows_personal_use
 
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
     monkeypatch.setattr("builtins.input", ask)
-    assert publish(str(bundle), **BASE, **REPO, out=str(tmp_path / "e")) == rc
+    assert publish(str(bundle), **BASE, **REPO, out=str(tmp_path / "e"), yes=True) == rc
     out = capsys.readouterr().out
     assert asked[-1] == (
         "Publish the Yahoo Finance data with the study although Yahoo's terms allow personal use only? [y/N]: "
@@ -181,10 +186,10 @@ def test_in_a_terminal_the_researcher_confirms_knowing_yahoo_allows_personal_use
 
 def test_gmd_and_yahoo_data_name_both_sources(gmd_bundle: Path, tmp_path: Path, capsys):
     _add_yahoo(gmd_bundle)
-    assert publish(str(gmd_bundle), **BASE, **REPO, data="public", out=str(tmp_path / "e")) == 1
+    assert publish(str(gmd_bundle), **BASE, **REPO, data="public", out=str(tmp_path / "e"), yes=True) == 1
     out = capsys.readouterr().out
     assert "--accept-data-terms gmd, yfinance;" in out
-    assert publish(str(gmd_bundle), **BASE, **REPO, data="private", out=str(tmp_path / "e")) == 0
+    assert publish(str(gmd_bundle), **BASE, **REPO, data="private", out=str(tmp_path / "e"), yes=True) == 0
     out = capsys.readouterr().out
     assert (
         "note: The data come from the Global Macro Database (GMD), whose terms do not allow passing the data on "
@@ -222,7 +227,7 @@ def test_a_yahoo_publish_matches_the_sites_format(bundle: Path, monkeypatch):
 
     monkeypatch.setattr(pc, "request", server)
     monkeypatch.setattr(pc, "load_token", lambda base: "tok")
-    assert publish(str(bundle), **BASE, **REPO, data="private", to_url="https://e2er.example") == 0
+    assert publish(str(bundle), **BASE, **REPO, data="private", to_url="https://e2er.example", yes=True) == 0
     manifest, d = sent[0]["manifest"], sent[0]["dossier"]
     jsonschema.Draft202012Validator(SCHEMA).validate(
         {**manifest, "dossier": {"id": d["id"], "url": manifest["dossier"]["url"], "doc": d["doc"]}}

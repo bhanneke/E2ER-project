@@ -2,6 +2,48 @@
 
 `e2er publish <folder>` describes an exported study, writes its dossier and, with `--to https://e2er.org`, publishes the description. The files stay on your computer or in your repository; e2er.org receives the description, the dossier and a fingerprint (SHA-256) of every file. With `--github` the files go to a public GitHub repository of yours (see below). The dossier's address (in the paper's footnote, e2er.json and the output) is on the platform you publish to: `--to`, else `E2ER_URL`, else https://e2er.org. Prepare with `--offline` under the same `E2ER_URL` you publish to, or the footnote changes when you publish.
 
+## Publish asks first
+
+Nothing leaves your computer before you say yes. When the rehearsal of the request has passed, `e2er publish` prints what goes where and asks:
+
+```
+What goes where:
+  https://e2er.org (ada/road-deaths): the description, the dossier, file fingerprints
+  GitHub github.com/ada/studies, folder road-deaths: the study's files as `e2er pack` ships them (public)
+Publish 'Road deaths in 2021' to https://e2er.org as ada? Files to GitHub ada/studies/road-deaths. [y/N]:
+```
+
+Only `y` or `yes` publishes; anything else (or Enter) sends nothing, pushes nothing and leaves the folder as it was. With `--zenodo` the question names the Zenodo deposits too. A run without a terminal on standard input (a script, a CI job) cannot be asked, so it needs `--yes` (`-y`); without it publish refuses at once, with nothing sent. `--dry-run` never asks and never sends, with or without a terminal. The dashboard's Publish button asks the same question in the browser and sends the yes along with the request (`confirm: true` on `POST /api/papers/<id>/publish`); the local server refuses a publish without it.
+
+## Publishing from CI: a token for one study
+
+Your personal login (`e2er login`, kept in the system keychain) can publish any study under your handles. A CI job should not hold it. Give it a token that can only publish new versions of one study:
+
+```
+e2er login --scope study:ada/road-deaths | gh secret set E2ER_TOKEN      # approve in the browser
+e2er token create --study ada/road-deaths | gh secret set E2ER_TOKEN     # or with your personal login, no browser
+```
+
+The token is printed once, alone on standard output, so it can go straight into the CI secret; e2er does not keep it, and your personal login stays as it is. Such a token publishes new versions of `ada/road-deaths` only: it cannot create a study or a handle, cannot publish another study, cannot withdraw a study, and cannot create or list tokens. The study must already be published. In the CI job:
+
+```
+env:
+  E2ER_TOKEN: ${{ secrets.E2ER_TOKEN }}
+run: e2er publish ./study --owner ada --project road-deaths --to https://e2er.org --yes
+```
+
+`e2er whoami` with such a token says which study it is for. Revoke it on your account page (e2er.org/account) or with `e2er logout` run with it in `E2ER_TOKEN`, which ends that token and leaves a login saved on the computer as it is. On the platform the token is a row of `api_token` with the study in its `study` column (`POST /api/v1/tokens` with `{"study": "<owner>/<slug>"}`); e2er refuses to keep a token from a platform that does not limit it to the study.
+
+## Running e2er inside your own test suite
+
+When e2er runs inside a test runner it never uses your own login and never publishes anywhere but a local test server. A test run is one with `PYTEST_CURRENT_TEST` set (pytest sets it for every test, and a command a test starts inherits it), `E2ER_TEST=1` (set it for any other runner, or for a shell script of tests), or `CI=true` together with a test command (pytest, unittest, nose2, tox, nox). In a test run:
+
+- e2er never reads or writes the system keychain or `~/.e2er/credentials.json`; the Zenodo token saved in Setup or the keychain is not read either. Only `E2ER_TOKEN`, `ZENODO_TOKEN` and a credentials file the test names itself (`E2ER_CREDENTIALS`) are used.
+- Every request to a platform or to Zenodo is refused before it is made unless it goes to `localhost`, `127.0.0.1` (or another loopback address), or the one address in `E2ER_TEST_SERVER`, for a local copy of the platform your tests run. `E2ER_TEST_SERVER` may never name e2er.org or one of its subdomains. The refusal says "e2er is running under a test runner … Nothing was sent."
+- `gh` is not run and nothing is pushed to GitHub (e2er's own tests run a fake `gh` and say so with `E2ER_TEST_GITHUB=fake`).
+
+So a test that calls `e2er publish --to https://e2er.org --yes` on a machine signed in to e2er.org publishes nothing. (On 2026-10-20 a run of e2er's own tests did, with the machine's keychain token; the guard is in `src/core/test_guard.py`.)
+
 ## The run's database
 
 The dossier lists the steps of the run: each specialist with its model, each check, each of your actions as researcher, and the run's outcome. `e2er publish` reads them from the study's run database, which it finds the way the server does: `--db` when you give it, else the database the study folder's `.env` names (`DATABASE_URL`), else e2er's default `~/.e2er/papers.db`. The database must hold the run of the paper the folder was exported from (its id is in `provenance.json`); a database of another study is refused, and without one publish stops and says where it looked.
