@@ -134,3 +134,23 @@ def test_coauthors_from_the_terminal_reach_the_description(bundle: Path, tmp_pat
 def test_a_coauthor_that_cannot_be_listed_is_refused_plainly(bundle: Path, capsys, spec: str, says: str):  # noqa: F811
     rc = publish(str(bundle), **ARGS, coauthors=[spec], dry_run=True, yes=True)
     assert rc == 1 and says in capsys.readouterr().out
+
+
+def test_left_out_files_carry_only_the_kinds_the_site_knows():
+    """repository.left_out[].kind is an enum on e2er.org (terms, size, no_data): every kind pack can
+    give a left-out file must be one of them, and the entry publish sends validates."""
+    import re
+
+    from src.cli_publish import _left_out_entry
+
+    item_schema = SCHEMA["properties"]["repository"]["properties"]["left_out"]["items"]
+    kinds = set(item_schema["properties"]["kind"]["enum"])
+    assert kinds == {"terms", "size", "no_data"}
+    source = (Path(__file__).parent.parent / "src/core/export/package.py").read_text()
+    made = set(re.findall(r'"kind": "(\w+)"', source[source.index("def left_out_data") :]))
+    assert made and made <= kinds, made - kinds
+    for kind in sorted(kinds):
+        entry = _left_out_entry({"path": "data/x.csv", "reason": "r", "kind": kind, "host": "GitHub", "bytes": 1})
+        jsonschema.Draft202012Validator(item_schema).validate(entry)
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.Draft202012Validator(item_schema).validate({"path": "a", "reason": "r", "kind": "other"})
