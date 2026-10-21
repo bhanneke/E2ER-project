@@ -91,6 +91,7 @@ def test_publish_writes_a_manifest_that_does_not_break_verify(bundle: Path, work
         db=str(workflow_db),
         commit="abc1234",
         out=str(tmp_path / "entry"),
+        yes=True,
     )
     assert code == 0
     assert (bundle / "e2er.json").is_file()
@@ -211,6 +212,7 @@ def test_publish_stamps_the_paper_and_the_bundle_still_verifies(
         db=str(workflow_db),
         commit="abc1234",
         out=str(tmp_path / "entry"),
+        yes=True,
     )
     assert code == 0
     m = json.loads((bundle / "e2er.json").read_text())
@@ -265,6 +267,7 @@ def test_publish_refuses_a_recompile_that_loses_citations(bundle: Path, workflow
         db=str(workflow_db),
         commit="abc1234",
         out=str(tmp_path / "entry"),
+        yes=True,
     )
     assert code == 1
     assert (bundle / "paper" / "paper.pdf").read_bytes() == before_pdf

@@ -129,6 +129,14 @@ def parse_target(spec: str | None, *, project: str, login: str | None, path: str
 
 
 def _run(cmd: list[str], *, cwd: Path | None = None, env: dict[str, str] | None = None) -> subprocess.CompletedProcess:
+    from .test_guard import RefusedInTestError, check_github
+
+    # Every command here talks to GitHub (gh, or git with gh's login): none in a test run (test_guard.py).
+    if cmd[:1] in (["gh"], ["git"]):
+        try:
+            check_github()
+        except RefusedInTestError as e:
+            raise GitHubError(str(e)) from e
     return subprocess.run(cmd, cwd=cwd, env=env, capture_output=True, text=True, timeout=600)
 
 
@@ -193,6 +201,12 @@ def create_repo(t: Target, description: str) -> None:
 
 # ── what goes up: what `e2er pack` ships ─────────────────────────────────────
 
+#: The host, as package.left_out_data names it ("too large for GitHub (145 MB)").
+HOST = "GitHub"
+#: GitHub refuses a push with a file larger than this (100 MiB); there is no Git LFS on this path. A data file
+#: over it that a recorded step gets back is left out; any other file over it stops the publish (too_large).
+GITHUB_FILE_LIMIT = 100 * 1024 * 1024
+
 
 @dataclass
 class Staged:
@@ -208,13 +222,15 @@ def stage(bundle: Path, dest: Path) -> Staged:
     """Pack the study (package.build) and open the package into the new folder ``dest``: what goes up.
 
     Data a source's terms keep out (and data built from them) are not in the package, so they are not
-    here. The package's own e2er-package.json is: it names what was left out and how a rerun loads and
-    builds it again, which `e2er verify` and `e2er reproduce` read in a clone of the repository.
+    here; nor is a data file larger than GitHub takes that a recorded step of the study loads or builds
+    again (one that nothing gets back raises package.TooLargeError). The package's own e2er-package.json
+    is: it names what was left out and how a rerun loads and builds it again, which `e2er verify` and
+    `e2er reproduce` read in a clone of the repository.
     """
     from .export import package as pkg
 
     with tempfile.TemporaryDirectory(prefix="e2er-github-pack-") as td:
-        packed = pkg.build(bundle, Path(td) / f"study{pkg.SUFFIX}")
+        packed = pkg.build(bundle, Path(td) / f"study{pkg.SUFFIX}", host=HOST, max_file_bytes=GITHUB_FILE_LIMIT)
         opened = pkg.open_package(packed.path, dest)
     files = sorted(p.relative_to(opened.root).as_posix() for p in opened.root.rglob("*") if p.is_file())
     return Staged(
@@ -252,6 +268,16 @@ def secrets_in(staged: Staged) -> list[str]:
             continue
         hits += [f"{rel}: looks like a {kind}" for kind, rx in PATTERNS if rx.search(text)]
     return hits
+
+
+def too_large(staged: Staged) -> list[str]:
+    """``path (size)`` for every staged file GitHub would refuse: larger than 100 MiB."""
+    out: list[str] = []
+    for rel in staged.files:
+        size = (staged.root / rel).stat().st_size
+        if size > GITHUB_FILE_LIMIT:
+            out.append(f"{rel} ({size / 1_000_000:.0f} MB)")
+    return out
 
 
 # ── the push: one ordinary commit, never forced ──────────────────────────────

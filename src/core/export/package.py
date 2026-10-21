@@ -71,10 +71,18 @@ LARGE_WHEELS = 200 * 1024 * 1024
 _DATA_SUFFIXES = frozenset({".db", ".sqlite", ".sqlite3", ".csv", ".tsv", ".parquet", ".xlsx", ".jsonl", ".dta"})
 #: Records about the data that are not the data (kept in a package without data).
 _DATA_RECORDS = frozenset({"data/data_sources.json", "data/data_dictionary.json", "data/data_summary.md"})
+#: The largest file each host takes (GitHub refuses a push with a file over 100 MiB; no Git LFS on this path).
+#: A data file over it that a recorded step loads or builds again is left out (``kind: "size"``); `e2er verify`
+#: accepts such a declaration only when provenance.json records the file larger than the host's limit.
+HOST_FILE_LIMITS = {"GitHub": 100 * 1024 * 1024}
 
 
 class PackageError(Exception):
     """The package cannot be written or opened. The message is shown as is."""
+
+
+class TooLargeError(PackageError):
+    """A data file is larger than the host takes and no recorded step of the study gets it back."""
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -148,6 +156,14 @@ def _is_data(rel: str) -> bool:
     return rel.startswith("data/") and _data_suffix(rel)
 
 
+def _may_be_left_out(rel: str) -> bool:
+    """A file a package may declare left out: a data file, or an output the study's code wrote with data in
+    it (results/, misc/, paper/: derived_data.is_output). Code, the paper and the records never are."""
+    from ..derived_data import is_output
+
+    return _data_suffix(rel) or is_output(rel)
+
+
 def _input_files(recipe: dict[str, Any] | None) -> set[str]:
     """The folder's files that the recipe lists as inputs (the data the code reads), wherever they are."""
     if not recipe:
@@ -207,9 +223,12 @@ def _rebuilt(recipe: dict[str, Any] | None, rel: str, plan: list[dict[str, Any]]
         if isinstance(item.get("reload"), str):
             return {"by": f"code/{Path(item['reload']).name}", "source": str(item.get("source") or "")}
         if isinstance(item.get("rebuild"), str):
-            return {"by": str(files.get(item["rebuild"], item["rebuild"])), "source": "", "kind": "rebuild"}
+            kind = "written" if item.get("written") else "rebuild"
+            return {"by": str(files.get(item["rebuild"], item["rebuild"])), "source": "", "kind": kind}
     for p in plan:
-        if p["path"] in run_paths:
+        if p.get("folder") == rel or (p["path"] in run_paths and not p.get("folder")):
+            if p.get("written"):
+                return {"by": p["from"], "source": "", "kind": "written"}
             return {"by": p["from"], "source": "", "kind": "rebuild"}
     return None
 
@@ -222,38 +241,110 @@ def rebuild_for(folder: Path, recipe: dict[str, Any] | None, left_out: list[dict
 
     paths = {i["path"] for i in left_out}
     found = [d for d in derived(folder) if d.path in paths]
-    return rebuild_plan(folder, recipe, found) if found else []
+    plan = rebuild_plan(folder, recipe, found) if found else []
+    # A left-out output is compared with the study's file when the rerun has built it: its fingerprints.
+    listed = (_read_json(folder / "provenance.json") or {}).get("files") or {}
+    for item in plan:
+        rel = item.get("folder")
+        if not item.get("output") or not isinstance(rel, str):
+            continue
+        meta = listed.get(rel)
+        if isinstance(meta, dict) and isinstance(meta.get("sha256"), str):
+            item["sha256"] = meta["sha256"]
+        content = _content_of(folder / rel)
+        if content:
+            item["content"] = content
+    return plan
 
 
 def left_out_data(
-    folder: Path, files: dict[str, str] | dict[str, Path], recipe: dict[str, Any] | None, *, no_data: bool
+    folder: Path,
+    files: dict[str, str] | dict[str, Path],
+    recipe: dict[str, Any] | None,
+    *,
+    no_data: bool,
+    host: str | None = None,
+    max_file_bytes: int | None = None,
 ) -> list[dict[str, Any]]:
-    """The data files the package leaves out, each with why and how a rerun rebuilds it (or that it cannot)."""
+    """The data files the package leaves out, each with why and how a rerun rebuilds it (or that it cannot).
+
+    ``kind`` says why: ``"terms"`` (a source's terms keep it out), ``"no_data"`` (``--no-data``) or ``"size"``:
+    with a ``host`` (``"GitHub"``), a data file larger than the host takes (``max_file_bytes``, else
+    HOST_FILE_LIMITS) is left out when a recorded step of the study loads or builds it again; one that nothing
+    gets back raises TooLargeError.
+    """
     from .. import data_terms
 
+    folder = Path(folder)
     out: dict[str, dict[str, Any]] = {}
     for use in data_terms.uses(folder):
         for rel in use.files:
-            if rel in files and _is_data(rel):
-                out[rel] = {"path": rel, "reason": use.reason(rel), "source": use.terms.connector}
+            # A data file of the source's, or a file the study built from its data that holds its rows
+            # (a results table of the regions, a figure spec of the stars: derived_data.kept_out).
+            if rel in files and (_is_data(rel) or rel in use.derived):
+                out[rel] = {"path": rel, "reason": use.reason(rel), "source": use.terms.connector, "kind": "terms"}
     if no_data:
         inputs = _input_files(recipe)
         for rel in files:
             if (_is_data(rel) or (rel in inputs and _data_suffix(rel))) and rel not in out:
-                out[rel] = {"path": rel, "reason": "packed with --no-data"}
+                out[rel] = {"path": rel, "reason": "packed with --no-data", "kind": "no_data"}
+    limit = max_file_bytes if max_file_bytes is not None else HOST_FILE_LIMITS.get(host or "")
+    if host and limit:
+        for rel in files:
+            size = (folder / rel).stat().st_size
+            if rel not in out and size > limit and _may_be_left_out(rel):
+                out[rel] = {
+                    "path": rel,
+                    "reason": f"too large for {host} ({_mb(size)})",
+                    "kind": "size",
+                    "host": host,
+                    "bytes": size,
+                }
     inputs = _input_files(recipe)
+    # The files the recipe lays out for the code: the study's code reads them (a units table, a figure spec).
+    laid_out = {str(v) for v in ((recipe or {}).get("files") or {}).values()}
     plan = rebuild_for(folder, recipe, list(out.values()))
     for rel, item in out.items():
         item["rebuilt_by"] = _rebuilt(recipe, rel, plan)
         # Whether the study's code reads it: a file no step reads is not needed for a rerun.
-        item["needed"] = rel in inputs
+        item["needed"] = rel in inputs or rel in laid_out
         item.update(_rerun_plan(folder, recipe, rel, item, plan))
         # The file's rows, order and the last digits of its numbers aside: `e2er reproduce` compares the file
         # a rerun loads or builds again with it (reproduce.content_fingerprint).
         content = _content_of(folder / rel)
         if content:
             item["content"] = content
+    stuck = [_size_problem(item, recipe) for item in out.values() if item.get("kind") == "size"]
+    stuck = [p for p in stuck if p]
+    if stuck:
+        raise TooLargeError(
+            f"{host} does not take files larger than {(limit or 0) / 1024**2:.0f} MB, and no recorded step of the "
+            "study gets these back, so a copy without them could not be run again:\n  " + "\n  ".join(stuck)
+        )
     return [out[k] for k in sorted(out)]
+
+
+def _mb(n: int) -> str:
+    """A file's size as GitHub states its limit: "145 MB" (decimal), "12 kB" under a megabyte."""
+    return f"{n / 1_000_000:.0f} MB" if n >= 1_000_000 else f"{max(1, round(n / 1000))} kB"
+
+
+def _size_problem(item: dict[str, Any], recipe: dict[str, Any] | None) -> str:
+    """Why a file too large for the host cannot be left out, in plain words; empty when a rerun gets it back."""
+    rel, size = item["path"], _mb(int(item["bytes"]))
+    if recipe is None:
+        return f"{rel} ({size}): the study has no reproduce.json"
+    compared = {str(c.get("published")) for c in recipe.get("compare") or [] if isinstance(c, dict)}
+    if rel in compared:
+        return f"{rel} ({size}): it is the published result a rerun is compared with"
+    if not isinstance(item.get("rebuilt_by"), dict):
+        return f"{rel} ({size}): no step of reproduce.json loads it or builds it again"
+    if item.get("not_built"):
+        return (
+            f"{rel} ({size}): reproduce.json loads or builds only some of its tables again; no step builds "
+            + ", ".join(item["not_built"])
+        )
+    return ""
 
 
 def _content_of(path: Path) -> dict[str, Any]:
@@ -292,12 +383,17 @@ def _rerun_plan(
     if not recipe or not isinstance(item.get("rebuilt_by"), dict):
         return {}
     how = item["rebuilt_by"]
+    if how.get("kind") == "written":  # a step of the recipe writes it (rerun_words says so)
+        return {}
     if how.get("kind") == "rebuild":  # a file built from loaded data (derived_data)
         return {"builds": [{"by": how["by"], "what": [rel]}]}
     if Path(rel).suffix.lower() not in {".db", ".sqlite", ".sqlite3"}:
         return {"loads": [rel]}
     from .reproduce_recipe import _db_tables, _load_tables, _writes_table
 
+    mapped = _database_rerun(folder, recipe, rel, how)
+    if mapped is not None:
+        return mapped
     loads_doc = _read_json(folder / "data" / "data_sources.json")
     loads = loads_doc.get("loads") if isinstance(loads_doc, dict) else None
     loaded = _load_tables([e for e in loads or [] if isinstance(e, dict)])
@@ -305,7 +401,11 @@ def _rerun_plan(
     made = [t for t in tables if t not in loaded]
     builds: list[dict[str, Any]] = []
     left = list(made)
-    for script in _step_scripts(recipe, _run_paths(recipe, rel)):
+    # The study's own preparation steps for the database, and the scripts a rerun runs to build left-out
+    # files again (they write tables too: build_data.py writes gdp_pps_sample with the units).
+    scripts = _step_scripts(recipe, _run_paths(recipe, rel))
+    scripts += [str(p["from"]) for p in plan if not p.get("written") and str(p["from"]) not in scripts]
+    for script in scripts:
         try:
             text = (folder / script).read_text(encoding="utf-8", errors="replace")
         except OSError:
@@ -315,6 +415,53 @@ def _rerun_plan(
             builds.append({"by": script, "what": what})
             left = [t for t in left if t not in what]
     out: dict[str, Any] = {"loads": [t for t in tables if t in loaded], "builds": builds}
+    if left:
+        out["not_built"] = left
+    return out
+
+
+def _database_rerun(folder: Path, recipe: dict[str, Any], rel: str, how: dict[str, Any]) -> dict[str, Any] | None:
+    """_rerun_plan for the database reproduce.json maps table by table (``database``, e2er after 0.17.1).
+
+    ``loads``: tables get_data.py loads again; ``builds``: the scripts that build the others; ``not_read``:
+    tables no step reads, which a rerun does not need; ``not_built``: tables a step reads that nothing gets
+    back. None when the recipe has no map for ``rel``.
+    """
+    from .. import reproduce as rp
+    from .reproduce_recipe import _db_tables
+
+    db = recipe.get("database")
+    if not isinstance(db, dict) or not isinstance(db.get("tables"), dict):
+        return None
+    files = recipe.get("files") or {}
+    db_path = str(db.get("path") or "data.db")
+    if str(files.get(db_path, db_path)) != rel:
+        return None
+    mapped: dict[str, Any] = db["tables"]
+    tables = _db_tables(folder / rel)
+    loads: list[str] = []
+    builds: dict[str, list[str]] = {}
+    not_read: list[str] = []
+    left: list[str] = []
+    # Only what a step of the recipe runs gets a table back (a recipe edited by hand may name a script no step runs).
+    steps = {Path(a).name for st in recipe.get("steps") or [] if isinstance(st, dict) for a in rp.step_argv(st)}
+    for t in tables:
+        e = mapped.get(t)
+        if not isinstance(e, dict):
+            left.append(t)
+            continue
+        back = e.get("back") if Path(str(e.get("back") or "")).name in steps else None
+        if back == "get_data.py":
+            loads.append(t)
+        elif isinstance(back, str) and back:
+            builds.setdefault(str(files.get(back, back)), []).append(t)
+        elif not e.get("read"):
+            not_read.append(t)
+        else:
+            left.append(t)
+    out: dict[str, Any] = {"loads": loads, "builds": [{"by": by, "what": what} for by, what in builds.items()]}
+    if not_read:
+        out["not_read"] = not_read
     if left:
         out["not_built"] = left
     return out
@@ -334,10 +481,14 @@ def rerun_words(item: dict[str, Any]) -> str:
             what = "it" if b["what"] == [item["path"]] else f"the tables {', '.join(b['what'])}"
             source = " from the data it loads again" if not item.get("loads") else ""
             parts.append(f"builds {what} again with {b['by']}{source}")
+        if item.get("not_read"):
+            parts.append(f"does not need the tables {', '.join(item['not_read'])} (no step reads them)")
         if item.get("not_built"):
             parts.append(f"cannot get the tables {', '.join(item['not_built'])} (no step builds them)")
         if parts:
             return "`e2er reproduce` " + "; ".join(parts)
+    if isinstance(how, dict) and how.get("kind") == "written":
+        return f"`e2er reproduce` writes it again with {how['by']}, a step of the rerun"
     if isinstance(how, dict) and how.get("kind") == "rebuild":
         return f"`e2er reproduce` builds it again with {how['by']} from the data it loads again"
     if isinstance(how, dict):
@@ -345,6 +496,11 @@ def rerun_words(item: dict[str, Any]) -> str:
             f" from {how['source']}" if how.get("source") else ""
         )
     if item.get("needed") is False:
+        if not _is_data(str(item.get("path") or "")):
+            return (
+                "the study's code does not read it, so a rerun does not need it; no recorded step builds it again "
+                "from the data a rerun loads"
+            )
         return "the study's code does not read it, so a rerun does not need it"
     return "a rerun cannot rebuild it"
 
@@ -559,8 +715,14 @@ def build(
     no_data: bool = False,
     locker: Locker | None = None,
     downloader: Downloader | None = None,
+    host: str | None = None,
+    max_file_bytes: int | None = None,
 ) -> Packed:
-    """Write the exported study ``folder`` into one ``.e2er`` file; returns where and what it holds."""
+    """Write the exported study ``folder`` into one ``.e2er`` file; returns where and what it holds.
+
+    ``host`` (``"GitHub"``): the package is opened there, so a data file larger than the host takes is left
+    out when a recorded step gets it back, and TooLargeError is raised when none does (left_out_data).
+    """
     from ... import __version__
 
     folder = Path(folder).expanduser().resolve()
@@ -580,7 +742,7 @@ def build(
     prov = _read_json(folder / "provenance.json") or {}
     files = study_files(folder)
     recipe, why = _recipe(folder)
-    left_out = left_out_data(folder, files, recipe, no_data=no_data)
+    left_out = left_out_data(folder, files, recipe, no_data=no_data, host=host, max_file_bytes=max_file_bytes)
     for item in left_out:
         files.pop(item["path"], None)
     rebuild = rebuild_for(folder, recipe, left_out)
@@ -880,15 +1042,37 @@ def left_out_content(folder: Path, *, trusted: bool = False) -> dict[str, dict[s
     """The content fingerprints the package recorded for the files it left out, by path.
 
     From a package `e2er reproduce` opened (``trusted``) all of them; in a folder (a clone of a repository
-    that holds an unpacked package) only for files the folder's own records say a source's terms keep out.
+    that holds an unpacked package) only those its own records support (supported_left_out).
+    """
+    declared = declared_left_out(folder) if trusted else supported_left_out(folder)
+    return {p: i["content"] for p, i in declared.items() if isinstance(i.get("content"), dict)}
+
+
+def too_large_for_host(folder: Path, item: dict[str, Any]) -> bool:
+    """Whether a declaration "left out for its size" holds by the folder's own records: provenance.json records
+    the file larger than the limit of the host the declaration names (HOST_FILE_LIMITS, not the declaration's
+    own numbers)."""
+    limit = HOST_FILE_LIMITS.get(str(item.get("host") or ""))
+    if item.get("kind") != "size" or not limit:
+        return False
+    meta = ((_read_json(Path(folder) / "provenance.json") or {}).get("files") or {}).get(item.get("path"))
+    return isinstance(meta, dict) and isinstance(meta.get("bytes"), int) and meta["bytes"] > limit
+
+
+def supported_left_out(folder: Path) -> dict[str, dict[str, Any]]:
+    """The declared left-out files of an unpacked package in a folder that the folder's own records support:
+    under a source's terms (data_terms.restricted_paths), or too large for the host (too_large_for_host).
+
+    In a folder, e2er-package.json is only a file anyone can write; these are the declarations `e2er verify`
+    and `e2er reproduce` accept there.
     """
     declared = declared_left_out(folder)
-    if not trusted:
-        from ..data_terms import restricted_paths
+    if not declared:
+        return {}
+    from ..data_terms import restricted_paths
 
-        restricted = restricted_paths(folder)
-        declared = {p: i for p, i in declared.items() if p in restricted}
-    return {p: i["content"] for p, i in declared.items() if isinstance(i.get("content"), dict)}
+    restricted = restricted_paths(folder)
+    return {p: i for p, i in declared.items() if p in restricted or too_large_for_host(folder, i)}
 
 
 def declared_left_out(folder: Path) -> dict[str, dict[str, Any]]:
@@ -896,7 +1080,7 @@ def declared_left_out(folder: Path) -> dict[str, dict[str, Any]]:
     doc = package_manifest(folder)
     out: dict[str, dict[str, Any]] = {}
     for item in (doc or {}).get("left_out") or []:
-        if isinstance(item, dict) and isinstance(item.get("path"), str) and _data_suffix(item["path"]):
+        if isinstance(item, dict) and isinstance(item.get("path"), str) and _may_be_left_out(item["path"]):
             out[item["path"]] = item
     return out
 

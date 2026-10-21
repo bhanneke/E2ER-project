@@ -6,6 +6,10 @@ token (``POST /api/v1/tokens``). The token is kept in the OS keychain when the
 ``keyring`` package is installed, otherwise in ``~/.e2er/credentials.json``
 (mode 0600); ``E2ER_TOKEN`` overrides both. AI provider keys are never read
 or sent here.
+
+In a test run (src/core/test_guard.py) the keychain and the default
+credentials file are never read or written, and only a local test server is
+reached: e2er's own login never publishes from a test.
 """
 
 from __future__ import annotations
@@ -13,12 +17,15 @@ from __future__ import annotations
 import json
 import os
 import platform
+import re
 import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 import httpx
+
+from . import test_guard
 
 DEFAULT_URL = "https://e2er.org"
 CLIENT_ID = "e2er-cli"
@@ -34,16 +41,28 @@ def base_url(url: str | None = None) -> str:
     return (url or os.environ.get("E2ER_URL") or DEFAULT_URL).rstrip("/")
 
 
-def credentials_path() -> Path:
-    return Path(os.environ.get("E2ER_CREDENTIALS", "~/.e2er/credentials.json")).expanduser()
+def credentials_path() -> Path | None:
+    """The credentials file: ``E2ER_CREDENTIALS``, else ``~/.e2er/credentials.json`` (None in a test run)."""
+    explicit = os.environ.get("E2ER_CREDENTIALS")
+    if explicit:
+        return Path(explicit).expanduser()
+    if not test_guard.saved_logins_allowed():
+        return None
+    return Path("~/.e2er/credentials.json").expanduser()
 
 
 # Tests replace this with a client on an httpx.MockTransport.
 def client_factory(url: str) -> httpx.Client:
+    try:
+        test_guard.check_target(url)
+    except test_guard.RefusedInTestError as e:
+        raise PlatformError(str(e)) from e
     return httpx.Client(base_url=url, timeout=30.0, headers={"user-agent": "e2er-cli"})
 
 
 def _keyring():
+    if not test_guard.saved_logins_allowed():
+        return None  # a test run never touches the researcher's keychain
     try:
         import keyring  # type: ignore[import-not-found]
     except ImportError:
@@ -53,6 +72,11 @@ def _keyring():
 
 def _write_credentials(url: str, token: str) -> Path:
     p = credentials_path()
+    if p is None:
+        raise PlatformError(
+            f"e2er is running under a test runner ({test_guard.why_test_run()}): it keeps no login in the keychain "
+            "or in ~/.e2er/credentials.json. Set E2ER_CREDENTIALS to a file of the test, or E2ER_TOKEN."
+        )
     p.parent.mkdir(parents=True, exist_ok=True)
     data = json.loads(p.read_text(encoding="utf-8")) if p.is_file() else {}
     data[url] = token
@@ -89,7 +113,7 @@ def load_token(url: str) -> str | None:
         if t:
             return t
     p = credentials_path()
-    if p.is_file():
+    if p is not None and p.is_file():
         return json.loads(p.read_text(encoding="utf-8")).get(url)
     return None
 
@@ -102,7 +126,7 @@ def forget_token(url: str) -> None:
         except Exception:  # noqa: BLE001 - nothing stored there
             pass
     p = credentials_path()
-    if p.is_file():
+    if p is not None and p.is_file():
         data = json.loads(p.read_text(encoding="utf-8"))
         if data.pop(url, None) is not None:
             p.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
@@ -142,13 +166,38 @@ def _raise(r: httpx.Response, what: str) -> None:
         raise PlatformError(f"{what}: {error_text(r.status_code, _json(r))}")
 
 
+#: ``study:<owner>/<slug>``: a token that can only publish new versions of that study.
+_STUDY = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}/[a-z0-9][a-z0-9._-]{0,99}$")
+
+
+def parse_study_scope(spec: str, *, scope: bool = True) -> str:
+    """``owner/slug`` from ``study:owner/slug`` (``--scope``) or ``owner/slug`` (``--study``); ValueError says why."""
+    raw = spec.strip()
+    if scope and not raw.startswith("study:"):
+        raise ValueError(f"--scope {spec!r}: the one scope is study:<owner>/<slug>, e.g. study:ada/fx-carry")
+    study = raw.removeprefix("study:").strip().strip("/").lower()
+    if not _STUDY.match(study):
+        flag = "--scope" if scope else "--study"
+        raise ValueError(f"{flag} {spec!r}: give the study as <owner>/<slug>, e.g. ada/fx-carry")
+    return study
+
+
+def study_token_body(study: str, name: str | None = None) -> dict[str, Any]:
+    """The request for a study token (POST /api/v1/tokens): it may publish new versions of ``study`` only."""
+    return {"name": (name or f"e2er token for {study}")[:120], "study": study}
+
+
 def login(
     url: str,
     *,
     announce: Callable[[str, str], None],
     sleep: Callable[[float], None] | None = None,
+    study: str | None = None,
 ) -> dict[str, Any]:
-    """Run the device flow; ``announce(verification_url, user_code)`` tells the user where to approve."""
+    """Run the device flow; ``announce(verification_url, user_code)`` tells the user where to approve.
+
+    With ``study`` the token made from the approved sign-in can only publish new versions of that study.
+    """
     with client_factory(url) as c:
         r = c.post("/api/auth/device/code", json={"client_id": CLIENT_ID})
         _raise(r, "Could not start the sign-in")
@@ -183,9 +232,27 @@ def login(
                 raise PlatformError("The sign-in code expired. Run `e2er login` again.")
             _raise(p, "The sign-in failed")
         name = f"e2er command line on {platform.system() or 'a computer'}"
-        t = c.post("/api/v1/tokens", json={"name": name}, headers={"authorization": f"Bearer {access}"})
+        body = study_token_body(study) if study else {"name": name}
+        t = c.post("/api/v1/tokens", json=body, headers={"authorization": f"Bearer {access}"})
         _raise(t, "Could not create the command-line token")
-        return t.json()
+        made = t.json()
+        if study and made.get("study") != study:
+            # A platform without study tokens made a token with every right: end it at once.
+            c.delete("/api/v1/tokens/current", headers={"authorization": f"Bearer {made.get('token', '')}"})
+            raise PlatformError(f"{url} does not make tokens limited to one study yet; no token was kept")
+        return made
+
+
+def create_study_token(url: str, token: str, study: str, name: str | None = None) -> dict[str, Any]:
+    """With the personal token, a token that can only publish new versions of ``study`` (POST /api/v1/tokens)."""
+    code, made = request(url, "POST", "/api/v1/tokens", token=token, body=study_token_body(study, name))
+    if code not in (200, 201):
+        raise PlatformError(f"Could not create the token for {study}: {error_text(code, made)}")
+    if made.get("study") != study:
+        if made.get("token"):
+            request(url, "DELETE", "/api/v1/tokens/current", token=str(made["token"]))
+        raise PlatformError(f"{url} does not make tokens limited to one study yet; no token was kept")
+    return made
 
 
 def request(

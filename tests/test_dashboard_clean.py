@@ -77,7 +77,7 @@ def test_publish_from_the_server_never_reads_the_terminal(tmp_path, monkeypatch)
     monkeypatch.setattr("builtins.input", _no_input)
     seen = {}
     monkeypatch.setattr(cli_publish, "_describe", lambda *a, **kw: (seen.update(kw) or 1, None))
-    cli_publish.publish(str(bundle), offline=True, interactive=False, data="public", code="private")
+    cli_publish.publish(str(bundle), offline=True, interactive=False, data="public", code="private", yes=True)
     assert "interactive" not in seen  # used up here, never passed on
 
 
@@ -170,6 +170,9 @@ def test_the_zenodo_key_saved_under_settings_is_used(home, monkeypatch, tmp_path
     monkeypatch.delenv("ZENODO_TOKEN", raising=False)
     monkeypatch.setitem(sys.modules, "keyring", None)
     get_settings.cache_clear()
+    # A test run reads no saved token (src/core/test_guard.py); outside one, the settings file's.
+    assert zenodo.load_token() is None
+    monkeypatch.setattr("src.core.test_guard.saved_logins_allowed", lambda: True)
     assert zenodo.load_token() == "zen-from-settings"
     monkeypatch.setenv("ZENODO_TOKEN", "from-env")
     assert zenodo.load_token() == "from-env"

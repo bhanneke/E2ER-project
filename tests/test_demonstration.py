@@ -58,6 +58,7 @@ def _publish(bundle: Path, tmp_path: Path, **kw) -> int:
         data="private",
         code="private",
         **kw,
+        yes=True,
     )
 
 
@@ -178,7 +179,7 @@ def test_dry_run_request_carries_the_purpose(bundle: Path, capsys):
     code = publish(
         str(bundle), owner="bhanneke", project="demo", github="bhanneke", name="Ada Lovelace",
         commit="abc1234", data="private", code="private", dry_run=True, demonstration=True,
-    )  # fmt: skip
+     yes=True)  # fmt: skip
     assert code == 0
     body = json.loads(capsys.readouterr().out)
     assert body["manifest"]["purpose"] == "demonstration"

@@ -16,6 +16,9 @@ from src.modules.llm.base import LLMBackend, TokenUsage, ToolHandler, ToolLoopRe
 # The dashboard sends a first-time user to /setup while no settings exist. Tests
 # of other pages run without a .env; tests of the setup page delete this.
 os.environ.setdefault("E2ER_SKIP_SETUP_REDIRECT", "1")
+# Tests run in pytest's temporary folders with nothing set up: e2er would otherwise use the
+# default studies folder (~/e2er-studies) instead of a temporary current folder (src/home.py).
+os.environ.setdefault("E2ER_TEMPORARY_FOLDER_OK", "1")
 
 # ---------------------------------------------------------------------------
 # Deterministic specialist outputs (filename, content)
@@ -477,6 +480,40 @@ def _temporary_files_stay_in_the_test(monkeypatch, tmp_path_factory):
     tmp = tmp_path_factory.mktemp("tmp")
     monkeypatch.setattr(tempfile, "tempdir", str(tmp))
     monkeypatch.setenv("TMPDIR", str(tmp))
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _no_real_platform(monkeypatch, tmp_path_factory):
+    """No test signs in to a real platform or reaches one: no keychain, an empty credentials file, no
+    E2ER_TOKEN, and a platform client that refuses every request a test did not fake.
+
+    On 2026-10-20 `publish --github` began to publish on e2er.org by default; the suite, run on a machine
+    signed in to e2er.org, published test studies there with the machine's token.
+    """
+    import httpx
+
+    from src.core import platform_client as pc
+
+    monkeypatch.setattr(pc, "_keyring", lambda: None)
+    monkeypatch.setenv("E2ER_CREDENTIALS", str(tmp_path_factory.mktemp("no-credentials") / "credentials.json"))
+    monkeypatch.delenv("E2ER_TOKEN", raising=False)
+
+    def refuse(request: httpx.Request) -> httpx.Response:
+        raise AssertionError(f"a test reached a real platform: {request.method} {request.url}")
+
+    monkeypatch.setattr(
+        pc, "client_factory", lambda url: httpx.Client(base_url=url, transport=httpx.MockTransport(refuse))
+    )
+    # Zenodo the same way, and no GitHub login of this machine (gh's own config, GH_TOKEN).
+    from src.core import zenodo as zen
+
+    monkeypatch.setattr(
+        zen, "client_factory", lambda base: httpx.Client(base_url=base, transport=httpx.MockTransport(refuse))
+    )
+    for var in ("ZENODO_TOKEN", "ZENODO_SANDBOX_TOKEN", "GH_TOKEN", "GITHUB_TOKEN", "E2ER_TEST_SERVER"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("GH_CONFIG_DIR", str(tmp_path_factory.mktemp("no-gh-config")))
     yield
 
 

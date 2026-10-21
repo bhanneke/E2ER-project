@@ -20,8 +20,10 @@ The dossier is built from the study's run database, which publish finds by
 itself: ``--db``, else the database the study folder's settings name (the
 first ``.env`` above the bundle, ``DATABASE_URL``, as the server reads it),
 else the one of the current folder, else ``~/.e2er/papers.db``. It must hold
-the run of the paper the folder was exported from; without one, publish
-refuses. ``--no-db`` publishes anyway, with a dossier that says its workflow
+the run of the paper the folder was exported from. Without one, a folder
+published before carries over the dossier of the version it published,
+checked against the platform (src/core/carry_over.py); any other folder is
+refused. ``--no-db`` publishes anyway, with a dossier that says its workflow
 is not recorded.
 
 ``--dry-run`` rehearses everything in a scratch copy of the bundle and prints
@@ -30,6 +32,26 @@ nothing is sent. ``--to https://e2er.org`` (after ``e2er login``) publishes the
 description, the dossier and the file fingerprints; the files stay here. A
 request that contains anything resembling a key or token, or a local path, is
 refused before it leaves the machine.
+
+``--github`` pushes the study's files to a public GitHub repository, and only
+as part of a publish on a platform: without ``--to`` the platform is the one
+``.e2er/link.json`` records, else e2er.org. The registration names the commit
+that holds the files, so the push comes first; everything that can be checked
+before it is checked before it: the rehearsal of the request in a scratch copy,
+the sign-in on the platform (``GET /api/v1/me``), the files themselves (keys,
+restricted data, GitHub's size limit). If the platform still refuses the
+registration after the push, the files sit at a commit no study names, and
+publish says so: the same command, run again, makes no new commit (the files
+are the same) and sends the registration again, so it rolls forward instead of
+leaving a second copy. A run that writes only a registry entry never pushes.
+
+Nothing is sent or pushed before the researcher says yes. After the rehearsal
+passed, publish prints what goes where and asks "Publish '<title>' to
+<platform> as <handle>? Files to GitHub <repo>/<path>. [y/N]"; only y or yes
+goes on. A run without a terminal on standard input (a script, CI) needs
+``--yes`` and otherwise refuses with nothing sent; ``--dry-run`` never asks
+and never sends. The dashboard sends the same yes as an explicit confirmation
+from the page (``confirm``, src/api/finish.py).
 """
 
 from __future__ import annotations
@@ -51,6 +73,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from .core import carry_over as co
 from .core import data_terms
 from .core import github_files as gf
 from .core import zenodo as zen
@@ -384,9 +407,11 @@ def _describe(
     prov = json.loads((b / "provenance.json").read_text(encoding="utf-8"))
     paper_id = (prov.get("run") or {}).get("paper_id")
 
-    # 2. The run's database: the dossier's workflow comes from it.
+    # 2. The run's database: the dossier's workflow comes from it. Without it, a folder published
+    # before carries over the dossier of the version it published (checked against e2er.org).
     run_db: Path | None = None
     run_record = None
+    previous: co.Previous | None = None
     if no_db:
         print(
             "WARNING: --no-db: publishing WITHOUT the run's database. The dossier will not list the steps of the "
@@ -394,9 +419,24 @@ def _describe(
         )
     else:
         run_db, why = find_run_db(b, db, paper_id)
-        if run_db is None:
+        if run_db is None and db is None and co.published_link(b) is not None:
+            try:
+                previous = co.fetch_previous(b, f"{owner}/{project}")
+            except co.CarryOverError as e:
+                print(f"error: {why}")
+                print(f"error: the dossier of the version published before cannot be carried over: {e}")
+                return 1, None
+            print(
+                f"WARNING: the run database is not available ({why.split(' (looked at')[0]}). This folder was "
+                f"published as version {previous.version}: its dossier {previous.platform_url}/d/"
+                f"{previous.dossier_id.removeprefix('sha256:')[:16]} (checked against {previous.platform_url}) is "
+                f"carried over with its {previous.steps} steps unchanged; the new dossier says so (an amendment "
+                "on e2er.json). No step is added or rebuilt."
+            )
+        elif run_db is None:
             print(f"error: {why}")
             return 1, None
+    if run_db is not None:
         assert paper_id is not None
         run_record = read_run(run_db, paper_id, files_at_export(prov), b)
         if not run_record.recorded:
@@ -425,7 +465,7 @@ def _describe(
         repository = {"url": github_target.url, **({"path": github_target.path} if github_target.path else {})}
         repository |= {
             "host": "github",
-            "left_out": [{"path": i["path"], "reason": i["reason"]} for i in hosted.left_out],
+            "left_out": [_left_out_entry(i) for i in hosted.left_out],
         }
         code = "public"
         data = "public" if hosted.data else "private"
@@ -576,6 +616,8 @@ def _describe(
             verification=verification,
             run_record=run_record,
         )
+        if previous is not None:
+            co.carried_manifest_parts(m, previous)
         _declare(m, purpose, kind)
         data_terms.annotate(m, licensed)
         return m
@@ -616,9 +658,31 @@ def _describe(
             return 1, None
 
     # 5. The dossier, from the final availability (a copy: nothing changes it afterwards).
-    manifest["amendments"] = _amendments_for_dossier(b)
-    doc = build_dossier(manifest, db=run_db, bundle=b, availability=copy.deepcopy(availability), run=run_record)
-    del manifest["amendments"]
+    if previous is not None:
+        # The earlier version's dossier: its steps unchanged, this version's availability and amendments.
+        differ = co.data_mismatch(previous, manifest["data"])
+        if differ:
+            print(
+                "error: the data of this folder are not the ones the earlier dossier fingerprints, so it cannot "
+                f"be carried over: {', '.join(differ[:5])}"
+            )
+            return 1, None
+        from . import __version__
+
+        doc = co.carried_dossier(
+            previous,
+            availability=availability,
+            amendments=_amendments_for_dossier(b),
+            purpose=purpose,
+            kind=kind,
+            github=github_target is not None,
+            at=_now(),
+            e2er_version=__version__,
+        )
+    else:
+        manifest["amendments"] = _amendments_for_dossier(b)
+        doc = build_dossier(manifest, db=run_db, bundle=b, availability=copy.deepcopy(availability), run=run_record)
+        del manifest["amendments"]
     leaks = find_local_paths(doc)
     if leaks:
         print("error: the dossier names a path on this machine; nothing was written:")
@@ -672,6 +736,9 @@ def _describe(
         return 1, None
 
     # The files on GitHub: pushed (or, rehearsing, a placeholder commit), then the paper's address at the commit.
+    if github_target is not None and github_mode == "push" and not remote:
+        print("error: --github pushes the files only as part of a publish on a platform (--to); nothing was pushed")
+        return 1, None
     if github_target is not None and hosted is not None:
         try:
             sha = _host_on_github(
@@ -751,6 +818,11 @@ def _describe(
     steps = len(doc.get("workflow") or [])
     researcher = sum(1 for s in doc.get("workflow") or [] if s.get("type") == "researcher")
     print(f"✓ Dossier {did[:23]}…  {dossier_url(did, site_url)}  ({steps} steps, {researcher} researcher actions)")
+    if previous is not None:
+        print(
+            f"  dossier carried over from version {previous.version} ({previous.dossier_id[:23]}…): the run "
+            "database was not available; the dossier's amendment on e2er.json says so"
+        )
     print(f"  availability: {describe_availability(availability)}")
     if access:
         print(f"  paper: public ({access['pdf']})")
@@ -837,16 +909,41 @@ def problems(body: dict[str, Any]) -> list[str]:
     return out
 
 
-def publish(bundle: str, *, dry_run: bool = False, to_url: str | None = None, offline: bool = False, **kw: Any) -> int:
+def publish(
+    bundle: str,
+    *,
+    dry_run: bool = False,
+    to_url: str | None = None,
+    offline: bool = False,
+    yes: bool = False,
+    **kw: Any,
+) -> int:
     """`e2er publish`: describe, stamp and verify; optionally rehearse (`dry_run`) or send (`to_url`).
 
     ``interactive=False`` never asks on the terminal (the dashboard's server);
     by default it asks only when standard input is a terminal.
 
+    Before anything is sent (``to_url``, ``--zenodo``) or pushed (``--github``) the researcher
+    confirms: asked on the terminal, or ``yes=True`` (``--yes``; the dashboard's ``confirm``).
+    Without a terminal and without ``yes`` nothing is sent.
+
     `offline` prepares the folder for publishing in the browser: it writes the
     dossier and e2er.json, makes no network request and names the next step.
     """
     b = Path(bundle).expanduser().resolve()
+    # The dashboard calls this from its server (interactive=False): a question on
+    # the server's terminal would hang the page, so nothing is ever asked there.
+    interactive = kw.pop("interactive", None)
+    if interactive is None:
+        interactive = sys.stdin.isatty()
+    # Something leaves this machine: the description (--to), the deposits (--zenodo), the files (--github).
+    sends = not dry_run and not offline and bool(to_url or kw.get("zenodo") or kw.get("github_repo") is not None)
+    if sends and not yes and not interactive:
+        print(
+            "error: e2er publish sends the study only after you confirm it. Run it in a terminal to be asked, "
+            "or add --yes (scripts, CI). --dry-run shows what would be sent. Nothing was sent."
+        )
+        return 1
     # --github: the files go to a public GitHub repository with the researcher's own gh login.
     gh_spec = kw.pop("github_repo", None)
     gh_path = kw.pop("github_path", None)
@@ -872,6 +969,16 @@ def publish(bundle: str, *, dry_run: bool = False, to_url: str | None = None, of
             print(f"error: {e}")
             return 2
         kw["github_user"] = user
+        if not dry_run:
+            # The files go to GitHub only as part of a publish on a platform: a push that registers nothing
+            # leaves files on GitHub that no study names (e2er-demos, commit 0d9a2e3).
+            if not to_url:
+                to_url, where = _platform_for_github(b)
+                print(f"note: --github publishes on {to_url} ({where}); --to names another platform")
+            why = _platform_not_ready(to_url)
+            if why:
+                print(f"error: {why}; nothing was pushed")
+                return 1
     # The run's database and the study folder belong to the real folder: found here, so the
     # rehearsal in a scratch copy (somewhere else on disk) uses the same ones.
     if (b / "provenance.json").is_file() and not kw.get("no_db"):
@@ -885,11 +992,6 @@ def publish(bundle: str, *, dry_run: bool = False, to_url: str | None = None, of
         if run_db is not None:
             kw["db"] = str(run_db)
     kw.setdefault("study_folder", _study_folder(b))
-    # The dashboard calls this from its server (interactive=False): a question on
-    # the server's terminal would hang the page, so nothing is ever asked there.
-    interactive = kw.pop("interactive", None)
-    if interactive is None:
-        interactive = sys.stdin.isatty()
     if kw.get("data") is None and kw.get("code") is None and interactive and gh_spec is None:
         kw["data"] = _ask("Are the study's data public or private?")
         kw["code"] = _ask("Is the study's code public or private?")
@@ -923,6 +1025,7 @@ def publish(bundle: str, *, dry_run: bool = False, to_url: str | None = None, of
         print(f"  2. choose this folder: {b}")
         print("  The page compares every file with its fingerprint in the browser and sends only the description.")
         return 0
+    rehearsed: dict[str, Any] | None = None
     if dry_run or to_url:
         # Rehearse in a scratch copy: the exact request, and nothing written here.
         with tempfile.TemporaryDirectory() as tmp:
@@ -943,13 +1046,18 @@ def publish(bundle: str, *, dry_run: bool = False, to_url: str | None = None, of
             with contextlib.redirect_stdout(log):
                 code, manifest = _describe(str(scratch), **rehearsal, remote=True)
             plan = [ln for ln in log.getvalue().splitlines() if ln.startswith(("zenodo", "note: --zenodo", "github"))]
+            # Said in a dry run too: the run's database is missing and the earlier dossier is carried over.
+            warnings = [ln for ln in log.getvalue().splitlines() if ln.startswith("WARNING:")]
             if code or manifest is None:
                 print(log.getvalue().rstrip())
                 return code or 1
             body = request_body(manifest, scratch)
+            rehearsed = manifest
         found = problems(body)
         if dry_run:
             print(json.dumps(body, indent=2, ensure_ascii=False))
+            for w in warnings:
+                print(w, file=sys.stderr)
             if kw.get("zenodo") or kw.get("github_target"):
                 print("\n".join(plan), file=sys.stderr)
             for p in found:
@@ -963,12 +1071,98 @@ def publish(bundle: str, *, dry_run: bool = False, to_url: str | None = None, of
             for p in found:
                 print(f"  {p}")
             return 1
+    if sends and not _confirmed(b, rehearsed, to_url, kw, yes=yes):
+        print("Not published: nothing was sent or pushed.")
+        return 1
     if kw.get("github_target") is not None:
         kw["github_mode"] = "push"
     code, manifest = _describe(str(b), **kw, remote=bool(to_url))
     if code or manifest is None or not to_url:
         return code
     return _send(b, manifest, to_url)
+
+
+def confirm_question(
+    title: str, *, platform: str | None, handle: str, github: gf.Target | None = None, zenodo: str | None = None
+) -> str:
+    """The question publish asks before anything is sent, without the ``[y/N]``.
+
+    "Publish '<title>' to <platform> as <handle>? Files to GitHub <repo>/<path>." With ``--zenodo``
+    the deposits are named too; without a platform (a deposit only) the question is about Zenodo.
+    """
+    short = title if len(title) <= 120 else title[:117] + "…"
+    if platform:
+        q = f"Publish '{short}' to {platform} as {handle}?"
+    else:
+        q = f"Deposit the public data and code of '{short}' on Zenodo ({zenodo}) with your Zenodo token?"
+    if github is not None:
+        q += f" Files to GitHub {github.full}" + (f"/{github.path}" if github.path else "") + "."
+    if platform and zenodo:
+        q += f" Public data and code to Zenodo ({zenodo})."
+    return q
+
+
+def _confirmed(b: Path, rehearsed: dict[str, Any] | None, to_url: str | None, kw: dict[str, Any], *, yes: bool) -> bool:
+    """What goes where, then the question; True with ``yes`` or when the researcher types y or yes."""
+    from .core import platform_client as pc
+    from .core.research_object import _question_and_title
+
+    title = str((rehearsed or {}).get("title") or "") or _question_and_title(b)[1] or b.name
+    platform = pc.base_url(to_url) if to_url else None
+    handle = str(kw.get("owner") or "")
+    target: gf.Target | None = kw.get("github_target")
+    zenodo = None
+    if kw.get("zenodo"):
+        zenodo = zen.base_url(bool(kw.get("zenodo_sandbox"))).removeprefix("https://")
+    print("\nWhat goes where:")
+    if platform:
+        print(f"  {platform} ({kw.get('owner')}/{kw.get('project')}): the description, the dossier, file fingerprints")
+    if target is not None:
+        print(f"  GitHub {target.where()}: the study's files as `e2er pack` ships them (public)")
+    if zenodo:
+        print(f"  Zenodo ({zenodo}): the public data and code, with a DOI each")
+    question = confirm_question(title, platform=platform, handle=handle, github=target, zenodo=zenodo)
+    if yes:
+        print(f"{question} yes (--yes)")
+        return True
+    return _confirm(question)
+
+
+def _platform_for_github(b: Path) -> tuple[str, str]:
+    """Where `publish --github` without --to publishes: the platform the folder was published on, else e2er.org."""
+    from .cli_platform import read_link
+    from .core import platform_client as pc
+
+    try:
+        link = read_link(b) or {}
+    except (OSError, ValueError):
+        link = {}
+    if isinstance(link, dict) and isinstance(link.get("platform_url"), str) and link["platform_url"]:
+        return pc.base_url(link["platform_url"]), "where this folder was published before, .e2er/link.json"
+    return pc.base_url(None), "the default platform"
+
+
+def _platform_not_ready(to_url: str) -> str | None:
+    """Why the platform would not take the registration (not signed in, unreachable), or None.
+
+    Asked before anything is pushed. What the platform checks only when it receives the request (the
+    study's owner, a dossier of another study) can still refuse it after the push: then the files are on
+    GitHub at a commit no study names yet, and the same command, run again, registers them without a new
+    commit (the files are already there) — see :func:`_send`.
+    """
+    from .core import platform_client as pc
+
+    base = pc.base_url(to_url)
+    token = pc.load_token(base)
+    if not token:
+        return f"not signed in to {base}; run `e2er login --url {base}`"
+    try:
+        code, body = pc.request(base, "GET", "/api/v1/me", token=token)
+    except Exception as e:  # noqa: BLE001 - network errors are the user's to see
+        return f"could not reach {base}: {e}"
+    if code // 100 != 2:
+        return f"{base} did not accept the sign-in ({pc.error_text(code, body)}); run `e2er login --url {base}`"
+    return None
 
 
 def _github_conflicts(kw: dict[str, Any], *, offline: bool) -> str | None:
@@ -1013,6 +1207,7 @@ def _send(b: Path, manifest: dict[str, Any], to_url: str) -> int:
         code, resp = pc.request(base, "POST", "/api/v1/studies", token=token, body=body)
     except Exception as e:  # noqa: BLE001 - network errors are the user's to see
         print(f"error: could not reach {base}: {e}")
+        _unregistered(manifest, base)
         return 1
     if code not in (200, 201):
         print(f"error: {pc.error_text(code, resp)}")
@@ -1020,6 +1215,7 @@ def _send(b: Path, manifest: dict[str, Any], to_url: str) -> int:
             print(f"  {p}")
         if resp.get("claim"):
             print(f"  {base}{resp['claim']}")
+        _unregistered(manifest, base)
         return 1
     link = write_link(
         b,
@@ -1045,6 +1241,18 @@ def _send(b: Path, manifest: dict[str, Any], to_url: str) -> int:
         print(f"  files {_files_url(manifest['repository'])}")
     print(f"  link written to {link.relative_to(b)}")
     return 0
+
+
+def _unregistered(manifest: dict[str, Any], base: str) -> None:
+    """After a push the platform did not register: where the files are, and how to finish."""
+    repository = manifest.get("repository") or {}
+    if repository.get("host") != "github" or not repository.get("commit"):
+        return
+    print(
+        f"  The files are on GitHub ({_files_url(repository)}), but {base} did not register the study. Run the "
+        "same command again once the problem is solved: the files are already there, so no new commit is made, "
+        "and the registration is sent again."
+    )
 
 
 def _files_url(repository: dict[str, Any]) -> str:
@@ -1264,6 +1472,14 @@ def _print_deposit_plan(
 # ── the files in a public GitHub repository (--github) ───────────────────────
 
 
+def _left_out_entry(item: dict[str, Any]) -> dict[str, Any]:
+    """A left-out file as e2er.json's ``repository.left_out`` names it: path, reason and why (``kind``)."""
+    out = {"path": item["path"], "reason": item["reason"]}
+    if item.get("kind"):
+        out["kind"] = item["kind"]
+    return out
+
+
 @dataclass
 class _Hosted:
     """What --github puts in the repository: the study's files as `e2er pack` ships them."""
@@ -1275,14 +1491,15 @@ class _Hosted:
 
 def _hosting_plan(b: Path) -> _Hosted:
     """The files that go up and the data that stay out, by pack's own rules (package.left_out_data)."""
+    from .core import github_files as gf
     from .core.export import package as pkg
 
     try:
         files = pkg.study_files(b)
+        recipe, _why = pkg._recipe(b)
+        left = pkg.left_out_data(b, files, recipe, no_data=False, host=gf.HOST, max_file_bytes=gf.GITHUB_FILE_LIMIT)
     except pkg.PackageError as e:
-        raise ValueError(str(e)) from e
-    recipe, _why = pkg._recipe(b)
-    left = pkg.left_out_data(b, files, recipe, no_data=False)
+        raise ValueError(f"{e}\nNothing was published or pushed.") from e
     out = {i["path"] for i in left}
     shipped = sorted(r for r in files if r not in out)
     return _Hosted(files=shipped, left_out=left, data=[r for r in shipped if pkg._is_data(r)])
@@ -1459,6 +1676,13 @@ def _host_on_github(
                     "the study's files hold something that looks like a key or token; nothing was pushed:\n  "
                     + "\n  ".join(secrets[:10])
                 )
+            large = gf.too_large(staged)
+            if large:
+                raise gf.GitHubError(
+                    "GitHub refuses files larger than 100 MB, and these are not data files a recorded step of the "
+                    "study loads or builds again, so the study cannot go up as it is; nothing was pushed:\n  "
+                    + "\n  ".join(large)
+                )
             if mode == "plan":
                 _print_github_plan(t, staged)
                 restore()
@@ -1498,7 +1722,7 @@ def _host_on_github(
             "commit": pushed.commit,
             "branch": pushed.branch,
             "files": staged.files,
-            "left_out": [{"path": i["path"], "reason": i["reason"]} for i in staged.left_out],
+            "left_out": [_left_out_entry(i) for i in staged.left_out],
             "pushed_at": _now(),
         },
     )

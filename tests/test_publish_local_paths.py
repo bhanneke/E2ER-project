@@ -94,7 +94,7 @@ def test_a_0137_claude_code_run_publishes_without_a_local_path(bundle: Path, tmp
     db = make_run_db(tmp_path / "study", pid)
     _record_0137_run(db, pid)
 
-    assert publish(str(bundle), **ARGS, dry_run=True) == 0
+    assert publish(str(bundle), **ARGS, dry_run=True, yes=True) == 0
     assert "names a path on this machine" not in capsys.readouterr().out
 
     sent: list[dict] = []
@@ -106,7 +106,7 @@ def test_a_0137_claude_code_run_publishes_without_a_local_path(bundle: Path, tmp
 
     monkeypatch.setattr(pc, "request", server)
     monkeypatch.setattr(pc, "load_token", lambda base: "tok")
-    assert publish(str(bundle), **ARGS, to_url="https://e2er.example") == 0
+    assert publish(str(bundle), **ARGS, to_url="https://e2er.example", yes=True) == 0
     doc = sent[0]["dossier"]["doc"]
     _no_path_left(doc)
     events = {e["event"]: e for e in doc["run"]["events"]} if "run" in doc else {}
@@ -152,7 +152,7 @@ def test_a_local_path_outside_the_run_record_still_stops_publish(bundle: Path, t
         "files": [{"path": "/Users/ann/Downloads/prices.csv", "sha256": "b" * 64}],
     }
     _add(bundle, "data/data_sources.json", json.dumps({"loads": [load]}).encode())
-    assert publish(str(bundle), **ARGS, dry_run=True) == 1
+    assert publish(str(bundle), **ARGS, dry_run=True, yes=True) == 1
     assert "names a path on this machine" in capsys.readouterr().out
     assert not (bundle / "e2er.json").exists()
 

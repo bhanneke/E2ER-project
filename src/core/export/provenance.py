@@ -72,7 +72,7 @@ def inventory(bundle: Path) -> dict[str, dict[str, Any]]:
     }
 
 
-def _source_key_file(bundle: Path, source_key: str) -> str | None:
+def _source_key_file(bundle: Path, source_key: str, assume: frozenset[str] = frozenset()) -> str | None:
     """Which results/*.json a flattened numeric key came from.
 
     ``verify_numbers`` flattens each source file with the FILENAME as prefix
@@ -84,11 +84,19 @@ def _source_key_file(bundle: Path, source_key: str) -> str | None:
 
     for fn in _SOURCE_JSON_FILES:
         if source_key == fn or source_key.startswith((f"{fn}.", f"{fn}[")):
-            return f"results/{fn}" if (bundle / "results" / fn).is_file() else None
+            rel = f"results/{fn}"
+            return rel if rel in assume or (bundle / rel).is_file() else None
     return None
 
 
-def _edges(bundle: Path) -> list[dict[str, Any]]:
+def _edges(bundle: Path, assume: frozenset[str] | set[str] = frozenset()) -> list[dict[str, Any]]:
+    """The derivation edges the bundle's own reports give. ``assume``: files a published copy left out
+    (a source's terms), counted as present, so the edges are the ones export recorded."""
+    assume = frozenset(assume)
+
+    def there(rel: str) -> bool:
+        return rel in assume or (bundle / rel).is_file()
+
     edges: list[dict[str, Any]] = []
 
     # table_cell: a LaTeX table cell that traced to a source JSON key.
@@ -103,7 +111,7 @@ def _edges(bundle: Path) -> list[dict[str, Any]]:
                     "cell_value": cell.get("draft_value"),
                     "table_context": cell.get("table_context"),
                     "source_key": key,
-                    "source": _source_key_file(bundle, key),
+                    "source": _source_key_file(bundle, key, assume),
                 }
             )
 
@@ -125,7 +133,7 @@ def _edges(bundle: Path) -> list[dict[str, Any]]:
 
     # figure: rendered figures declared by the figure spec.
     figdir = bundle / "results" / "figures"
-    if (bundle / "results" / "figure_spec.json").is_file() and figdir.is_dir():
+    if there("results/figure_spec.json") and figdir.is_dir():
         for fig in sorted(figdir.iterdir()):
             if fig.is_file():
                 edges.append(
@@ -137,7 +145,7 @@ def _edges(bundle: Path) -> list[dict[str, Any]]:
                 )
 
     # estimation: results produced by the (orchestrator-executed) script.
-    if (bundle / "results" / "estimation_results.json").is_file():
+    if there("results/estimation_results.json"):
         edge: dict[str, Any] = {"type": "estimation", "output": "results/estimation_results.json"}
         if (bundle / "code" / "run_estimation.py").is_file():
             edge["script"] = "code/run_estimation.py"
@@ -146,7 +154,7 @@ def _edges(bundle: Path) -> list[dict[str, Any]]:
         edges.append(edge)
 
     # data: the warehouse built from the recorded queries.
-    if (bundle / "data" / "data.db").is_file():
+    if there("data/data.db"):
         edge = {"type": "data", "output": "data/data.db"}
         if (bundle / "replication" / "data_queries.sql").is_file():
             edge["queries"] = "replication/data_queries.sql"

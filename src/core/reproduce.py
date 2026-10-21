@@ -75,6 +75,8 @@ DEFAULT_STEP_TIMEOUT_MINUTES = 60
 #: Labels for one compared value, in the order the report lists them.
 IDENTICAL = "identical"
 AT_PRECISION = "same_at_precision"
+#: A left-out output the rerun wrote but whose study copy another step produced: reported, not compared.
+NOT_COMPARED = "not_compared"
 MINOR = "small_difference"
 DIFFERS = "differs"
 MISSING = "missing_in_rerun"
@@ -134,6 +136,7 @@ def load_recipe(folder: Path, rebuild: list[dict[str, Any]] | None = None) -> di
         raise RecipeError(f"{RECIPE_FILE} must hold a JSON object")
     if rebuild:
         apply_rebuild(recipe, rebuild)
+        drop_stale_notes(recipe)
     problems: list[str] = []
     if recipe.get("schema") != SCHEMA:
         problems.append(f'"schema" must be "{SCHEMA}"')
@@ -199,11 +202,15 @@ def optional_inputs(recipe: dict[str, Any]) -> set[str]:
 
 
 def apply_rebuild(recipe: dict[str, Any], plan: list[dict[str, Any]]) -> None:
-    """Add the steps that build derived inputs again (data built from data a source's terms keep out).
+    """Add the steps that build derived files again (files built from data a source's terms keep out).
 
     Each item ``{"path": run-folder path, "script": run name, "from": folder path}`` marks the input with
     ``"rebuild"``, lays the script out and runs it after the steps that load inputs again, only when the
-    folder lacked the input (``"when_missing"``). Items for inputs the recipe does not list are ignored.
+    folder lacked the input (``"when_missing"``). Items for inputs the recipe does not list are ignored,
+    except a left-out output (``"output": true``, derived_data.rebuild_plan): it becomes an input marked
+    ``"output"`` (compared with the study's file, apart from the verdict), and the script runs after the
+    step its ``"after"`` names, or not at all when a step of the recipe writes it (``"written"``). Items with
+    the same script share one step.
     """
     inputs = {str(i.get("path")): i for i in recipe.get("inputs") or [] if isinstance(i, dict)}
     files = recipe.setdefault("files", {}) if isinstance(recipe.get("files"), dict) else None
@@ -214,19 +221,61 @@ def apply_rebuild(recipe: dict[str, Any], plan: list[dict[str, Any]]) -> None:
         if not isinstance(item, dict):
             continue
         path, script, src = str(item.get("path")), str(item.get("script")), str(item.get("from"))
+        if not (_safe_rel(path) and _safe_rel(script) and _safe_rel(src)):
+            continue
         target = inputs.get(path)
-        if (
-            target is None
-            or target.get("reload")
-            or target.get("rebuild")
-            or not (_safe_rel(script) and _safe_rel(src))
-        ):
+        if target is None and item.get("output") and isinstance(item.get("sha256"), str):
+            target = {
+                "path": path,
+                "sha256": item["sha256"],
+                "source": f"{item.get('folder') or path}, built by the study's code from data a source's terms keep "
+                "out of a published folder",
+                "output": True,
+            }
+            content = item.get("content")
+            if isinstance(content, dict):
+                target.update(
+                    {k: v for k, v in content.items() if k in ("rows", "content_sha256", "numeric_sha256", "tables")}
+                )
+            recipe.setdefault("inputs", []).append(target)
+            inputs[path] = target
+        if target is None or target.get("reload") or target.get("rebuild"):
             continue
         target["rebuild"] = script
         if files is not None:
             files.setdefault(script, src)
+        if item.get("written"):
+            target["written"] = True  # a step of the recipe writes it: no step to add
+            continue
+        existing = next(
+            (
+                st
+                for st in steps
+                if isinstance(st, dict)
+                and isinstance(st.get("when_missing"), list)
+                and any(Path(a).name == script for a in step_argv(st))
+            ),
+            None,
+        )
+        if existing is not None:
+            existing["when_missing"].append(path)
+            existing["about"] = (
+                "data preparation: builds "
+                + ", ".join(map(str, existing["when_missing"]))
+                + (" again from the data loaded again")
+            )
+            continue
+        after = item.get("after")
+        named = [
+            i
+            for i, st in enumerate(steps)
+            if isinstance(st, dict) and after and any(Path(a).name == after for a in step_argv(st))
+        ]
         reload_at = [i for i, st in enumerate(steps) if isinstance(st, dict) and is_reload_step(st, recipe)]
-        at = (reload_at[-1] + 1) if reload_at else 0
+        if named:
+            at = named[-1] + 1
+        else:
+            at = (reload_at[-1] + 1) if reload_at else 0
         steps.insert(
             at,
             {
@@ -235,6 +284,41 @@ def apply_rebuild(recipe: dict[str, Any], plan: list[dict[str, Any]]) -> None:
                 "when_missing": [path],
             },
         )
+
+
+#: The note export writes for derived inputs it found no step to build again (reproduce_recipe).
+_STUCK = re.compile(
+    r"^(?P<paths>.+?) (?:is|are) built from data whose terms keep them out of a published study, and no recorded "
+    r"step builds them again from data the rerun can load: a folder without them cannot be run again\.$"
+)
+
+
+def drop_stale_notes(recipe: dict[str, Any]) -> None:
+    """Take out of the export's note "… no recorded step builds them again" the files a step now builds again
+    (a package's ``rebuild`` list, :func:`apply_rebuild`): the note was written before that list existed."""
+    raw = recipe.get("files")
+    files: dict[str, Any] = raw if isinstance(raw, dict) else {}
+    covered: set[str] = set()
+    for i in recipe.get("inputs") or []:
+        if isinstance(i, dict) and isinstance(i.get("path"), str) and (i.get("rebuild") or i.get("reload")):
+            covered |= {i["path"], str(files.get(i["path"], i["path"]))}
+    notes = recipe.get("notes")
+    if not isinstance(notes, list) or not covered:
+        return
+    kept: list[Any] = []
+    for note in notes:
+        m = _STUCK.match(note) if isinstance(note, str) else None
+        if m is None:
+            kept.append(note)
+            continue
+        left = [p for p in m.group("paths").split(", ") if p not in covered]
+        if left:
+            kept.append(
+                f"{', '.join(left)} {'is' if len(left) == 1 else 'are'} built from data whose terms keep them out of "
+                "a published study, and no recorded step builds them again from data the rerun can load: a folder "
+                "without them cannot be run again."
+            )
+    recipe["notes"] = kept
 
 
 def step_argv(step: dict[str, Any]) -> list[str]:
@@ -465,7 +549,8 @@ def content_fingerprint(path: Path) -> dict[str, Any] | None:
                 tables = {}
                 for name in names:
                     cur = con.execute('SELECT * FROM "' + name.replace('"', '""') + '"')
-                    tables[name] = _rows_fingerprint([d[0] for d in cur.description or ()], cur)
+                    header = [d[0] for d in cur.description or ()]
+                    tables[name] = {**_rows_fingerprint(header, cur), "columns": [str(c) for c in header]}
             finally:
                 con.close()
             return {"tables": tables}
@@ -485,6 +570,32 @@ def _match(want: Any, have: dict[str, Any]) -> str:
     return ""
 
 
+def _on_columns(path: Path, table: str, columns: list[str]) -> dict[str, Any]:
+    """The fingerprint of ``table`` in the database ``path`` on ``columns`` only (in that order); {} on failure."""
+    import sqlite3
+
+    q = ", ".join('"' + c.replace('"', '""') + '"' for c in columns)
+    try:
+        con = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+        try:
+            cur = con.execute(f'SELECT {q} FROM "' + table.replace('"', '""') + '"')
+            return _rows_fingerprint(columns, cur)
+        finally:
+            con.close()
+    except sqlite3.Error:
+        return {}
+
+
+def _extra_columns(want: Any, have: dict[str, Any]) -> list[str]:
+    """The columns a reloaded table has beyond the study's (a connector that now records more), or []."""
+    if not isinstance(want, dict) or not isinstance(want.get("columns"), list):
+        return []
+    mine, theirs = [str(c) for c in want["columns"]], [str(c) for c in have.get("columns") or []]
+    if mine == theirs or not set(mine) < set(theirs):
+        return []
+    return [c for c in theirs if c not in mine]
+
+
 def _same_content(item: dict[str, Any], path: Path) -> tuple[str, list[str]]:
     """(SAME_ROWS, SAME_NUMBERS or DIFFERS, the tables that differ) for an input with a recorded content fingerprint."""
     found = content_fingerprint(path)
@@ -492,7 +603,15 @@ def _same_content(item: dict[str, Any], path: Path) -> tuple[str, list[str]]:
         return DIFFERS, []
     if isinstance(item.get("tables"), dict):
         have = found.get("tables") or {}
-        matches = {t: _match(want, have.get(t) or {}) for t, want in sorted(item["tables"].items())}
+        # Tables no step reads (reproduce.json's "not_read"): a rerun that built the database again lacks them.
+        skip = {str(t) for t in item.get("not_read") or [] if str(t) not in have}
+        matches = {t: _match(want, have.get(t) or {}) for t, want in sorted(item["tables"].items()) if t not in skip}
+        for t, m in matches.items():
+            want = item["tables"][t]
+            # A reload whose table has more columns than the study's (the connector records more since): the
+            # study's input is the same when its own columns hold the same rows.
+            if not m and _extra_columns(want, have.get(t) or {}):
+                matches[t] = _match(want, _on_columns(path, t, [str(c) for c in want["columns"]]))
         differ = [t for t, m in matches.items() if not m]
         if differ:
             return DIFFERS, differ
@@ -509,7 +628,13 @@ def compare_inputs(run_dir: Path, inputs: list[dict[str, Any]]) -> list[dict[str
     for item in inputs:
         path = run_dir / item["path"]
         entry: dict[str, Any] = {"path": item["path"], "source": item.get("source")}
-        if not path.is_file():
+        if item.get("output"):
+            entry["output"] = True  # a left-out output the rerun built again: reported, not an input
+        if item.get("output") and isinstance(item.get("not_compared"), str):
+            # Not the step that produced the study's copy (derived_data.not_produced_by_step): nothing to compare.
+            status = NOT_COMPARED
+            entry["why"] = item["not_compared"]
+        elif not path.is_file():
             status = "missing"
         elif sha256_file(path) == item["sha256"]:
             status = "identical"
@@ -1021,8 +1146,11 @@ def verdict(
 
     bad_files = [f.published for f in files if f.problem]
     bad_tables = len((tables or {}).get("differ") or []) + len((tables or {}).get("not_shipped") or [])
-    other = [i for i in inputs or [] if i.get("status") == "differs"]
-    absent = [i for i in inputs or [] if i.get("status") == "missing"]
+    # Left-out outputs the rerun built again (a figure's data) are reported apart: they are not what the
+    # study's results are compared on.
+    inputs = [i for i in inputs or [] if not i.get("output")]
+    other = [i for i in inputs if i.get("status") == "differs"]
+    absent = [i for i in inputs if i.get("status") == "missing"]
     if (
         not any(count(k) for k in LABELS if k not in MATCHING)
         and not bad_files

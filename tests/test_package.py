@@ -244,9 +244,24 @@ def test_no_data_leaves_every_data_file_out_and_says_what_cannot_be_rebuilt(tmp_
     folder = _export(tmp_path)
     packed = pkg.build(folder, tmp_path / "out.e2er", no_data=True)
     [left] = packed.manifest["left_out"]
+    # The open sources' tables are loaded again and the study's own step builds rates_clean (e2er after 0.17.1).
+    assert left["kind"] == "no_data" and left["rebuilt_by"]["by"] == "code/get_data.py"
+    assert left["loads"] == ["country_names", "rates_raw"]
+    assert left["builds"] == [{"by": "code/scratch/clean_rates.py", "what": ["rates_clean"]}]
+    assert not any("cannot rebuild it" in n for n in packed.notes)
+    # A recipe without those steps (an export before 0.17.1): nothing gets it back, and the package says so.
+    recipe = json.loads((folder / "reproduce.json").read_text(encoding="utf-8"))
+    recipe["steps"] = [s for s in recipe["steps"] if s["run"][-1] == "run_estimation.py"]
+    recipe.pop("database")
+    for item in recipe["inputs"]:
+        item.pop("reload", None)
+    (folder / "reproduce.json").write_text(json.dumps(recipe), encoding="utf-8")
+    packed = pkg.build(folder, tmp_path / "old.e2er", no_data=True)
+    [left] = packed.manifest["left_out"]
     assert {k: v for k, v in left.items() if k != "content"} == {
         "path": "data/data.db",
         "reason": "packed with --no-data",
+        "kind": "no_data",
         "rebuilt_by": None,
         "needed": True,
     }

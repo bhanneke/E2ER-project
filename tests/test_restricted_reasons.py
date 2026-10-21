@@ -113,7 +113,7 @@ def bundle(plain_bundle: Path) -> Path:
 def test_github_data_with_a_private_paper_are_refused_and_say_why(bundle: Path, tmp_path: Path, capsys):
     before = _snapshot(bundle)
     for extra in ({}, {"dry_run": True}, {"offline": True}, {"paper": "private"}):
-        assert publish(str(bundle), **BASE, **REPO, out=str(tmp_path / "e"), **extra) == 1
+        assert publish(str(bundle), **BASE, **REPO, out=str(tmp_path / "e"), **extra, yes=True) == 1
         out = capsys.readouterr().out
         assert "error: the study uses GitHub repository metadata. GitHub's Acceptable Use Policies" in out
         assert "Acceptable Use Policies (section 7" in out and "open access" in out
@@ -130,6 +130,7 @@ def test_github_data_with_a_public_paper_publish(bundle: Path, tmp_path: Path, c
         paper="public",
         paper_url="https://example.org/paper.pdf",
         out=str(tmp_path / "e"),
+        yes=True,
     )
     out = capsys.readouterr().out
     assert rc == 0, out

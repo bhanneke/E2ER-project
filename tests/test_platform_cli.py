@@ -147,7 +147,7 @@ def test_scanner_finds_keys_tokens_and_env_lines():
 
 def test_dry_run_changes_nothing_and_prints_the_request(bundle: Path, capsys):
     before = snapshot(bundle)
-    code = publish(str(bundle), dry_run=True, **ARGS)
+    code = publish(str(bundle), dry_run=True, **ARGS, yes=True)
     out = capsys.readouterr()
     assert code == 0, out.out + out.err
     assert snapshot(bundle) == before  # not one byte changed, nothing written
@@ -168,7 +168,7 @@ def test_a_planted_key_blocks_the_publish(bundle: Path, platform: FakePlatform, 
     )
     _rehash(bundle, ["README.md"])
     before = snapshot(bundle)
-    assert publish(str(bundle), to_url=URL, **ARGS) == 1
+    assert publish(str(bundle), to_url=URL, **ARGS, yes=True) == 1
     assert "Anthropic key" in capsys.readouterr().out
     assert platform.requests == [] and snapshot(bundle) == before
 
@@ -188,7 +188,7 @@ def test_publish_to_the_platform_links_the_folder_and_it_still_verifies(
     bundle: Path, platform: FakePlatform, monkeypatch, capsys
 ):
     monkeypatch.setenv("E2ER_TOKEN", "e2er_" + "C" * 43)
-    assert publish(str(bundle), to_url=URL, **ARGS) == 0, capsys.readouterr().out
+    assert publish(str(bundle), to_url=URL, **ARGS, yes=True) == 0, capsys.readouterr().out
     sent = platform.published
     assert sent["manifest"]["contributors"][0]["github"] == "ada-lab"
     assert sent["dossier"]["id"] == dossier_id(sent["dossier"]["doc"])
@@ -200,7 +200,7 @@ def test_publish_to_the_platform_links_the_folder_and_it_still_verifies(
 
 
 def test_dossier_push_registers_the_dossier_alone(bundle: Path, platform: FakePlatform, monkeypatch, capsys):
-    assert publish(str(bundle), **{**ARGS, "out": str(bundle.parent / "entry")}) == 0
+    assert publish(str(bundle), **{**ARGS, "out": str(bundle.parent / "entry")}, yes=True) == 0
     monkeypatch.setenv("E2ER_TOKEN", "e2er_" + "D" * 43)
     assert cli_platform.dossier_push(str(bundle), URL) == 0
     method, path, body = platform.requests[-1]
@@ -246,7 +246,7 @@ def test_publish_offline_writes_e2er_json_and_sends_nothing(bundle, tmp_path, mo
 
     monkeypatch.setattr(pc, "client_factory", no_network)
     monkeypatch.chdir(tmp_path)
-    assert publish(str(bundle), offline=True, **ARGS) == 0
+    assert publish(str(bundle), offline=True, **ARGS, yes=True) == 0
     m = json.loads((bundle / "e2er.json").read_text())
     assert m["dossier"]["id"] == dossier_id(m["dossier"]["doc"])
     assert not (tmp_path / "e2er-registry-entry").exists()
@@ -256,4 +256,4 @@ def test_publish_offline_writes_e2er_json_and_sends_nothing(bundle, tmp_path, mo
 
 
 def test_publish_offline_refuses_to_send(bundle):
-    assert publish(str(bundle), offline=True, to_url=URL, **ARGS) == 2
+    assert publish(str(bundle), offline=True, to_url=URL, **ARGS, yes=True) == 2

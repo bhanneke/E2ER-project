@@ -316,7 +316,7 @@
         },
         "left_out": {
           "type": "array",
-          "description": "Data files of the study that are not in the repository because their source's terms keep them out; the study's recipe loads them again. e2er.org's check accepts them as left out, not missing, when the description names their source's terms.",
+          "description": "Files of the study that are not in the repository, each with why (kind): \"terms\" (a source's terms keep it out; e2er.org's check accepts it as left out, not missing, when the description names the source's terms), \"size\" (larger than GitHub takes, 100 MiB; accepted when provenance.json records it larger), \"no_data\" (the authors left it out with --no-data). An entry without kind is left out under its source's terms. The study's recipe loads or builds them again.",
           "items": {
             "type": "object",
             "required": [
@@ -329,6 +329,14 @@
               },
               "reason": {
                 "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "terms",
+                  "size",
+                  "no_data"
+                ],
+                "description": "Why the file is left out; absent in descriptions from older e2er versions (left out under a source's terms)."
               }
             }
           }

@@ -1,6 +1,8 @@
 """``e2er login``, ``logout``, ``whoami``, ``status`` and ``dossier push``.
 
     e2er login [--url https://preview.e2er.org]
+    e2er login --scope study:<owner>/<slug>     # a token for CI: new versions of one study only
+    e2er token create --study <owner>/<slug>    # the same, with your personal login
     e2er whoami
     e2er status [bundle]
     e2er dossier push [bundle]
@@ -15,10 +17,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sys
 import webbrowser
 from pathlib import Path
 from typing import Any
+
+import httpx
 
 from .core import platform_client as pc
 
@@ -37,24 +42,78 @@ def write_link(bundle: Path, link: dict[str, Any]) -> Path:
     return p
 
 
-def login(url: str | None = None, *, open_browser: bool = True) -> int:
+def _hand_over(base: str, made: dict[str, Any]) -> None:
+    """The study token, printed once on standard output (and nothing else there), so it can be piped into a
+    CI secret (``| gh secret set E2ER_TOKEN``); everything said about it goes to standard error."""
+    err = sys.stderr
+    print(
+        f"✓ A token for {made['study']} on {base}: it can publish new versions of that study only (no new "
+        f"studies or handles, no withdrawal), until {made.get('expires_at', 'it expires')}. e2er does not keep it.",
+        file=err,
+    )
+    if sys.stdout.isatty():
+        print(
+            "  It is shown once. Store it as a secret of your CI (E2ER_TOKEN), never in a file of the repository:",
+            file=err,
+        )
+    print(made["token"], flush=True)
+    print(f"  Revoke it on {base}/account. Your personal login is unchanged.", file=err)
+
+
+def login(url: str | None = None, *, open_browser: bool = True, scope: str | None = None) -> int:
     base = pc.base_url(url)
+    study = None
+    if scope is not None:
+        try:
+            study = pc.parse_study_scope(scope)
+        except ValueError as e:
+            print(f"error: {e}")
+            return 2
+
+    # With --scope the token goes to standard output, so the rest goes to standard error.
+    out = sys.stderr if study else sys.stdout
 
     def announce(verify: str, code: str) -> None:
         # Flushed: the code must appear at once even when the output is piped.
-        print(f"To sign in, open {verify}", flush=True)
-        print(f"and confirm the code {code}", flush=True)
-        if open_browser and sys.stdout.isatty():
+        print(f"To sign in, open {verify}", file=out, flush=True)
+        print(f"and confirm the code {code}", file=out, flush=True)
+        if study:
+            print(f"The token will only publish new versions of {study}.", file=out, flush=True)
+        if open_browser and out.isatty():
             webbrowser.open(verify)
-        print("Waiting for your approval…", flush=True)
+        print("Waiting for your approval…", file=out, flush=True)
 
     try:
-        t = pc.login(base, announce=announce)
+        t = pc.login(base, announce=announce, study=study)
     except pc.PlatformError as e:
-        print(f"error: {e}")
+        print(f"error: {e}", file=out)
         return 1
+    if study:
+        _hand_over(base, t)
+        return 0
     where = pc.save_token(base, t["token"])
     print(f"✓ Signed in to {base}. The token is kept in {where}; it lasts {90} days from its last use.")
+    return 0
+
+
+def token_create(study: str, *, url: str | None = None, name: str | None = None) -> int:
+    """`e2er token create --study owner/slug`: a study token, made with the personal login (no browser)."""
+    base = pc.base_url(url)
+    try:
+        slug = pc.parse_study_scope(study, scope=False)
+    except ValueError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+    token = pc.load_token(base)
+    if not token:
+        print(f"error: not signed in to {base}; run `e2er login --url {base}` first", file=sys.stderr)
+        return 1
+    try:
+        made = pc.create_study_token(base, token, slug, name)
+    except pc.PlatformError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+    _hand_over(base, made)
     return 0
 
 
@@ -64,17 +123,25 @@ def whoami(url: str | None = None) -> int:
     if not token:
         print(f"Not signed in to {base}. Run `e2er login`.")
         return 1
-    code, body = pc.request(base, "GET", "/api/v1/me", token=token)
+    try:
+        code, body = pc.request(base, "GET", "/api/v1/me", token=token)
+    except (pc.PlatformError, httpx.HTTPError) as e:
+        print(f"error: could not reach {base}: {e}")
+        return 1
     if code != 200:
         print(f"error: {pc.error_text(code, body)}")
         return 1
-    handles = ", ".join(body.get("handles") or []) or "none yet (your first publication creates one)"
+    handles = ", ".join(body.get("handles") or []) or f"none yet (add one in account settings on {base})"
     print(f"{body['name']} <{body['email']}> on {base}\nHandles: {handles}")
+    if body.get("study"):
+        print(f"This token can only publish new versions of {body['study']}.")
     return 0
 
 
 def logout(url: str | None = None) -> int:
     base = pc.base_url(url)
+    # With E2ER_TOKEN (a CI job's token for one study), that token is ended and the saved login stays.
+    from_env = bool(os.environ.get("E2ER_TOKEN"))
     token = pc.load_token(base)
     if token:
         try:
@@ -84,6 +151,9 @@ def logout(url: str | None = None) -> int:
         if code not in (200, 401, 404):
             print(f"warning: the platform did not confirm the token was ended ({pc.error_text(code, body)});")
             print(f"  remove it on {base}/account")
+    if from_env:
+        print(f"✓ Ended the token in E2ER_TOKEN on {base}. A login saved on this computer is unchanged.")
+        return 0
     pc.forget_token(base)
     print(f"✓ Signed out of {base}.")
     return 0

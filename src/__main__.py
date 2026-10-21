@@ -565,6 +565,30 @@ def main() -> None:
         help="Emit comparison.json on stdout instead of the human-readable report.",
     )
 
+    redact_p = subparsers.add_parser(
+        "redact",
+        help="Remove personal data (an e-mail address, a phone number) from a study folder before publishing.",
+        description="Replaces every occurrence of the text in the folder's text files, changes nothing else, and "
+        'records an amendment per file in provenance.json (kind "redacted", the fingerprints before and after). '
+        "The next `e2er publish` shows the redactions in the dossier; `e2er verify` accepts a redacted "
+        "pre-registration as redacted, not changed. A PDF, a database or another binary file that holds the text "
+        "stops the redaction: nothing is changed.",
+    )
+    redact_p.add_argument("folder", help="The exported study folder.")
+    redact_p.add_argument(
+        "--text", action="append", required=True, dest="texts", help="The text to remove (repeatable)."
+    )
+    redact_p.add_argument(
+        "--replace", default="<redacted>", dest="replacement", help='What takes its place (default "<redacted>").'
+    )
+    redact_p.add_argument("--dry-run", action="store_true", help="Say what would change; change nothing.")
+    redact_p.add_argument(
+        "--check",
+        action="store_true",
+        help="Change nothing: with the removed text, rebuild each redacted file's earlier version and compare "
+        "its fingerprint with the one provenance.json recorded.",
+    )
+
     publish_p = subparsers.add_parser(
         "publish",
         help="Verify an exported bundle; write its research-object manifest (e2er.json) and registry entry.",
@@ -580,8 +604,9 @@ def main() -> None:
         metavar="OWNER/REPO",
         help="Put the study's files (what `e2er pack` ships: no data a source's terms keep out) in a public GitHub "
         "repository with your own gh login, and link them at the pushed commit. Alone: <your login>/<project>, "
-        "created when missing; with OWNER/REPO: that repository. A value without / is read as --github-login "
-        "(its earlier meaning).",
+        "created when missing; with OWNER/REPO: that repository. The files go up only as part of a publish on a "
+        "platform: without --to, the one .e2er/link.json records, else e2er.org (signed in with `e2er login`). "
+        "A value without / is read as --github-login (its earlier meaning).",
     )
     publish_p.add_argument(
         "--github-path",
@@ -617,7 +642,8 @@ def main() -> None:
         "--no-db",
         action="store_true",
         help="Publish without the run's database: the dossier then lists no steps, no commit and no researcher "
-        "actions, and says so. Only for a folder whose database is gone.",
+        "actions, and says so. Only for a folder whose database is gone. (Without --no-db, a folder published "
+        "before whose database is gone carries over the dossier of the version it published.)",
     )
     publish_p.add_argument(
         "--template",
@@ -662,6 +688,13 @@ def main() -> None:
         "--dry-run",
         action="store_true",
         help="Print the exact request --to would send; change nothing and send nothing.",
+    )
+    publish_p.add_argument(
+        "--yes",
+        "-y",
+        action="store_true",
+        help="Publish without the question \"Publish '<title>' to <platform> as <handle>? [y/N]\". Needed when "
+        "standard input is not a terminal (scripts, CI); without it such a run sends nothing.",
     )
     publish_p.add_argument(
         "--data",
@@ -723,6 +756,23 @@ def main() -> None:
     )
     login_p.add_argument("--url", default=None, help=url_help)
     login_p.add_argument("--no-browser", action="store_true", help="Do not open the browser; print the address only.")
+    login_p.add_argument(
+        "--scope",
+        default=None,
+        metavar="study:OWNER/SLUG",
+        help="Create a token for automation (CI) that can only publish new versions of this one study: it cannot "
+        "create studies or handles and cannot withdraw. The token is printed once (pipe it into your CI secret, "
+        "e.g. `| gh secret set E2ER_TOKEN`) and not kept; your personal login stays as it is.",
+    )
+    token_p = subparsers.add_parser("token", help="Tokens for automation (`e2er token create --study OWNER/SLUG`).")
+    token_sub = token_p.add_subparsers(dest="token_command", required=True)
+    token_create = token_sub.add_parser(
+        "create",
+        help="With your personal login, create a token that can only publish new versions of one study (for CI).",
+    )
+    token_create.add_argument("--study", required=True, metavar="OWNER/SLUG", help="The published study, e.g. ada/fx.")
+    token_create.add_argument("--name", default=None, help="A name for the token (shown on your account page).")
+    token_create.add_argument("--url", default=None, help=url_help)
     logout_p = subparsers.add_parser("logout", help="End the command-line sign-in and forget the token.")
     logout_p.add_argument("--url", default=None, help=url_help)
     whoami_p = subparsers.add_parser("whoami", help="Show the account the command line is signed in as.")
@@ -756,7 +806,11 @@ def main() -> None:
     submit_p.add_argument(
         "--improves", default=None, help="A listed part this is a new version of, e.g. skill:ines/codebook-development."
     )
-    submit_p.add_argument("--handle", default=None, help="Your profile handle, for a first contribution.")
+    submit_p.add_argument(
+        "--handle",
+        default=None,
+        help="The handle to contribute as: one of your account's handles (add them in account settings on e2er.org).",
+    )
     submit_p.add_argument("--discipline", default=None, help="Field, e.g. organization-science.")
     submit_p.add_argument("--role", default=None, help="Specialist: its role, in a sentence.")
     submit_p.add_argument("--output", default=None, help="Specialist: the file it writes, e.g. codebook.md.")
@@ -856,6 +910,11 @@ def main() -> None:
         logs_to_stderr()
     _clean_path_args(args)
 
+    if args.command == "redact":
+        from .cli_redact import redact as _redact
+
+        sys.exit(_redact(args.folder, args.texts, replacement=args.replacement, dry_run=args.dry_run, check=args.check))
+
     if args.command == "publish":
         from .cli_publish import publish as _publish
 
@@ -895,14 +954,17 @@ def main() -> None:
                 accept_data_terms=args.accept_data_terms,
                 paper=args.paper,
                 paper_url=args.paper_url,
+                yes=args.yes,
             )
         )
 
-    if args.command in ("login", "logout", "whoami", "dossier"):
+    if args.command in ("login", "logout", "whoami", "dossier", "token"):
         from . import cli_platform
 
         if args.command == "login":
-            sys.exit(cli_platform.login(args.url, open_browser=not args.no_browser))
+            sys.exit(cli_platform.login(args.url, open_browser=not args.no_browser, scope=args.scope))
+        if args.command == "token":
+            sys.exit(cli_platform.token_create(args.study, url=args.url, name=args.name))
         if args.command == "logout":
             sys.exit(cli_platform.logout(args.url))
         if args.command == "whoami":
@@ -1204,6 +1266,7 @@ _PATH_ARGS: dict[str, tuple[str, ...]] = {
     "run-matrix": ("rq_file", "out"),
     "status": ("paper_id",),
     "verify": ("bundle",),
+    "redact": ("folder",),
     "reproduce": ("folder", "json_out"),
     "verify-citations": ("draft", "bib"),
     "publish": ("bundle", "out", "db"),
@@ -1344,6 +1407,9 @@ def _serve(*, host: str, port: int, reload: bool, no_browser: bool) -> int:
     if open_it and not reload:
         _open_browser(url)
 
+    from .home import print_storage_warnings
+
+    print_storage_warnings()
     print(f"e2er is running at {url}")
     print("   (keep this window open while you work; ctrl-c stops e2er)")
     stop = _write_session_file_when_up(host, port, token)

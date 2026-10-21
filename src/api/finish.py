@@ -399,11 +399,14 @@ class PublishRequest(BaseModel):
     derived_from: list[str] = []
     demonstration: bool = False
     dry_run: bool = True
+    #: The researcher's yes to "Publish '<title>' to <platform> as <handle>?" on the page (`--yes` of the
+    #: command): without it nothing is sent.
+    confirm: bool = False
 
 
 @router.post("/api/papers/{paper_id}/publish", dependencies=[Depends(require_local_session)])
 async def publish_study(paper_id: str, req: PublishRequest) -> dict[str, Any]:
-    """`e2er publish --to <platform>`: a dry run shows the request; otherwise it is sent."""
+    """`e2er publish --to <platform>`: a dry run shows the request; otherwise it is sent once the page confirmed."""
     from ..cli_publish import publish
 
     paper = await _paper(paper_id)
@@ -416,6 +419,10 @@ async def publish_study(paper_id: str, req: PublishRequest) -> dict[str, Any]:
     if not owner or not project:
         raise HTTPException(status_code=422, detail="Fill in the owner and the project name.")
     base = _platform()
+    if not req.dry_run and not req.confirm:
+        raise HTTPException(
+            status_code=422, detail=f"Confirm publishing on {base} first (the question on the page); nothing was sent."
+        )
     if not req.dry_run and not _signed_in(base):
         raise HTTPException(status_code=401, detail=f"Sign in to {base} first.")
     code, output = await asyncio.to_thread(
@@ -446,6 +453,7 @@ async def publish_study(paper_id: str, req: PublishRequest) -> dict[str, Any]:
         derived_from=[d.strip() for d in req.derived_from if d.strip()] or None,
         demonstration=req.demonstration,
         interactive=False,
+        yes=req.confirm and not req.dry_run,
         out=None,
         site=base,
         db=_server_db(),

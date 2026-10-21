@@ -16,6 +16,12 @@ without running anything:
   module-level constants and ``os.path.join``) is restricted too, and so on,
   until nothing new is found.
 
+Not only data files: a results table, a weights list or the data behind a figure that such a
+script writes (OUTPUT_SUFFIXES under results/, misc/, paper/), and the figure spec of a study
+that loaded restricted data, are built from it too. Whether a published copy leaves such a
+file out is :func:`kept_out`'s answer: every data file under data/, and every other file that
+holds the source's rows rather than an aggregate of them (derived_rows.py).
+
 The reading is deliberately cautious: a script that names a restricted file
 in a string counts as reading it. A file wrongly counted stays out of a
 package or needs a confirmation at publishing; a file wrongly missed would be
@@ -33,9 +39,75 @@ from typing import Any
 
 #: Endings of files that hold data (reproduce_recipe.DATA_SUFFIXES).
 DATA_SUFFIXES = frozenset({".db", ".sqlite", ".sqlite3", ".csv", ".tsv", ".parquet", ".xlsx", ".jsonl", ".dta"})
-_WRITE_METHODS = frozenset(
-    {"to_csv", "to_parquet", "to_excel", "to_feather", "to_stata", "to_pickle", "to_hdf", "savetxt", "write_csv"}
+#: Endings of every file a script writes that can hold data: the data files, and the results, figure specs
+#: and arrays a study writes next to them (results/figure_spec.json). Rendered output (PDF, PNG, LaTeX) is not.
+OUTPUT_SUFFIXES = DATA_SUFFIXES | frozenset(
+    {
+        ".json",
+        ".geojson",
+        ".txt",
+        ".dat",
+        ".npy",
+        ".npz",
+        ".pkl",
+        ".pickle",
+        ".feather",
+        ".arrow",
+        ".h5",
+        ".hdf5",
+        ".xls",
+        ".ods",
+        ".gpkg",
+        ".shp",
+        ".nc",
+        ".rds",
+        ".rdata",
+        ".sav",
+    }
 )
+#: Where in an exported folder a script's outputs are kept (scripts, design and reviews are not outputs).
+OUTPUT_DIRS = ("data/", "results/", "misc/", "paper/")
+#: Records about the data that are not the data (never left out: they say what was loaded).
+DATA_RECORDS = frozenset({"data/data_sources.json", "data/data_dictionary.json", "data/data_summary.md"})
+_WRITE_METHODS = frozenset(
+    {
+        "to_csv",
+        "to_parquet",
+        "to_excel",
+        "to_feather",
+        "to_stata",
+        "to_pickle",
+        "to_hdf",
+        "to_json",
+        "savetxt",
+        "write_csv",
+        "write_text",
+        "write_bytes",
+        "save",
+        "savez",
+        "savez_compressed",
+    }
+)
+#: Calls that read the file their first argument names (or, for a path's method, the path itself).
+_READ_CALLS = frozenset(
+    {
+        "read_csv",
+        "read_table",
+        "read_json",
+        "read_parquet",
+        "read_excel",
+        "read_feather",
+        "read_stata",
+        "read_pickle",
+        "read_hdf",
+        "loadtxt",
+        "genfromtxt",
+        "load",
+        "connect",
+        "read_file",
+    }
+)
+_PATH_READS = frozenset({"read_text", "read_bytes"})
 #: Where the scripts of an exported folder are.
 _SCRIPT_DIRS = ("code", "replication")
 
@@ -48,6 +120,9 @@ class Script:
     strings: set[str] = field(default_factory=set)
     writes: set[str] = field(default_factory=set)
     tables_written: set[str] = field(default_factory=set)
+    #: Files the script opens for reading (``pd.read_csv(p)``, ``open(p)``, ``json.load(open(p))``,
+    #: ``Path(p).read_text()``): a file it names and writes is read too only when it is in here.
+    reads: set[str] = field(default_factory=set)
 
 
 @dataclass
@@ -58,6 +133,12 @@ class Derived:
     connectors: list[str]
     writers: list[str]  # the scripts (folder paths) that write it
     named: str  # the path as the scripts name it (run-folder path)
+    #: Why the file holds the source's rows (derived_rows.row_level), set by :func:`kept_out`; "" for a
+    #: data file under data/, which is left out whatever it holds.
+    rows: str = ""
+    #: What export recorded (provenance.json run.derived_data ``holds_rows``): whether the file held the
+    #: source's rows when the folder had it. None: not recorded (exported before e2er 0.17.2).
+    recorded_rows: bool | None = None
 
 
 def _norm(p: str) -> str:
@@ -125,7 +206,14 @@ def analyse(rel: str, source: str) -> Script:
         func = node.func
         name = func.attr if isinstance(func, ast.Attribute) else func.id if isinstance(func, ast.Name) else ""
         target: str | None = None
-        if name in _WRITE_METHODS:
+        if name in ("write_text", "write_bytes") and isinstance(func, ast.Attribute):
+            # Path(p).write_text(…), OUT.write_text(…): the path is the object the method is called on.
+            target = _resolve(func.value, consts)
+        elif name in _PATH_READS and isinstance(func, ast.Attribute):
+            read = _resolve(func.value, consts)
+            if read:
+                out.reads.add(_norm(read))
+        elif name in _WRITE_METHODS:
             arg = (
                 node.args[0]
                 if node.args
@@ -142,6 +230,14 @@ def analyse(rel: str, source: str) -> Script:
             mode = _resolve(mode_node, consts) if mode_node is not None else "r"
             if mode and any(c in mode for c in "wax"):
                 target = _resolve(node.args[0], consts)
+            else:
+                read = _resolve(node.args[0], consts)
+                if read:
+                    out.reads.add(_norm(read))
+        elif name in _READ_CALLS and node.args:
+            read = _resolve(node.args[0], consts)
+            if read:
+                out.reads.add(_norm(read))
         elif name == "to_sql":
             arg = node.args[0] if node.args else next((k.value for k in node.keywords if k.arg == "name"), None)
             table = _resolve(arg, consts) if arg is not None else None
@@ -222,12 +318,39 @@ def scripts_of(folder: Path) -> list[Script]:
 
 def _in_folder(folder: Path, named: str, known: set[str]) -> str | None:
     """Where the folder keeps a file a script named (``data/x.csv``; ``x.csv`` → ``results/x.csv``), or None."""
+    found = _all_in_folder(folder, named, known)
+    return found[0] if found else None
+
+
+def _all_in_folder(folder: Path, named: str, known: set[str]) -> list[str]:
+    """Every place an exported folder keeps a file a script named: the run's outputs are copied to results/
+    and, for some, to misc/ or paper/ as well (each copy holds the same data)."""
     named = _norm(named)
     base = named.rsplit("/", 1)[-1]
-    for cand in (named, f"data/{base}", f"results/{base}"):
+    # A path the script named outside the folder (the run's workspace by its full path) is looked for by name.
+    inside = not (named.startswith("/") or ".." in named.split("/") or re.match(r"^[A-Za-z]:", named))
+    out: list[str] = []
+    for cand in (
+        named,
+        f"data/{base}",
+        f"results/{base}",
+        f"misc/{base}",
+        f"paper/{base}",
+        f"results/figures/{base}",
+        f"paper/figures/{base}",
+    ):
+        if cand == named and not inside:
+            continue
+        if cand in out or cand in DATA_RECORDS or (cand != named and not cand.startswith(OUTPUT_DIRS)):
+            continue
         if cand in known or (folder / cand).is_file():
-            return cand
-    return None
+            out.append(cand)
+    return out
+
+
+def is_output(rel: str) -> bool:
+    """A file of an exported folder that a script may have written with data in it (OUTPUT_SUFFIXES/DIRS)."""
+    return rel.startswith(OUTPUT_DIRS) and rel not in DATA_RECORDS and Path(rel).suffix.lower() in OUTPUT_SUFFIXES
 
 
 def derived(folder: Path, restricted: set[str] | None = None, known: set[str] | None = None) -> list[Derived]:
@@ -285,7 +408,7 @@ def derived(folder: Path, restricted: set[str] | None = None, known: set[str] | 
             if not reads:
                 continue
             for w in s.writes:
-                if Path(w).suffix.lower() not in DATA_SUFFIXES:
+                if Path(w).suffix.lower() not in OUTPUT_SUFFIXES:
                     continue
                 writers.setdefault(w, set()).add(s.rel)
                 before = files.get(w, set())
@@ -312,30 +435,108 @@ def derived(folder: Path, restricted: set[str] | None = None, known: set[str] | 
             continue
         writers_here = [w for w in entry.get("writers") or [] if isinstance(w, str) and (folder / w).is_file()]
         static = writers.get(str(entry.get("named") or entry["path"]), set())
+        held = entry.get("holds_rows")
         out.append(
             Derived(
                 path=entry["path"],
                 connectors=sorted(listed_cs),
                 writers=sorted(set(writers_here) | static),
                 named=str(entry.get("named") or entry["path"]),
+                recorded_rows=held if isinstance(held, bool) else None,
             )
         )
         seen.add(entry["path"])
+    # The figure spec holds the data behind the figures: e2er's figure step builds it from the study's data,
+    # so in a study that loaded restricted data it counts as built from them, whoever wrote it.
+    sources = sorted({c for cs in files.values() for c in cs})
+    if sources:
+        for cand in ("results/figure_spec.json", "misc/figure_spec.json"):
+            if cand not in seen and cand not in {w for n in files for w in _all_in_folder(folder, n, known)}:
+                if cand in known or (folder / cand).is_file():
+                    out.append(
+                        Derived(cand, sources, sorted(writers.get("figure_spec.json", set())), "figure_spec.json")
+                    )
+                    seen.add(cand)
     for named, cs in sorted(files.items()):
         if named in roots or named == "data.db":
             continue
-        where = _in_folder(folder, named, known)
-        if where is None or where in seen:
-            continue  # written by a run, not in the folder (or already recorded)
-        out.append(
-            Derived(
-                path=where,
-                connectors=sorted(cs),
-                writers=sorted(writers.get(named, set())),
-                named=named,
+        for where in _all_in_folder(folder, named, known):
+            if where in seen:
+                continue  # already recorded
+            seen.add(where)
+            out.append(
+                Derived(
+                    path=where,
+                    connectors=sorted(cs),
+                    writers=sorted(writers.get(named, set())),
+                    named=named,
+                )
             )
-        )
     return out
+
+
+_SHAPES: dict[tuple[str, frozenset[str], tuple[float, ...]], Any] = {}
+
+
+def _shape(folder: Path, restricted: set[str]) -> Any:
+    """derived_rows.shape, read once per folder state (it reads the restricted sources' rows)."""
+    from .derived_rows import shape
+
+    stamps = []
+    for rel in ("data/data_sources.json", "data_sources.json", "data/data.db", "data.db"):
+        try:
+            stamps.append((folder / rel).stat().st_mtime)
+        except OSError:
+            stamps.append(0.0)
+    key = (str(folder.resolve()), frozenset(restricted), tuple(stamps))
+    if key not in _SHAPES:
+        if len(_SHAPES) > 32:
+            _SHAPES.clear()
+        # The source's own rows are often not in the folder (export never ships Gaia's raw rows), but the
+        # data files built from them are (data/gaia_clean.csv): their identifier columns are the source's.
+        extra = [
+            (folder / d.path, d.connectors)
+            for d in derived(folder, restricted)
+            if d.path.startswith("data/") and Path(d.path).suffix.lower() in (".csv", ".tsv")
+        ]
+        _SHAPES[key] = shape(folder, restricted, extra)
+    return _SHAPES[key]
+
+
+def kept_out(folder: Path, restricted: set[str] | None = None, known: set[str] | None = None) -> list[Derived]:
+    """The derived files a published copy of the folder leaves out (pack, publish --github), each with why.
+
+    Every derived data file under data/; every other derived output (a results table, a figure spec) that
+    holds the source's rows (derived_rows.row_level: not an aggregate); and every derived file that is not
+    in the folder, since what it holds cannot be read. A derived aggregate is not in the list: it goes up.
+    """
+    folder = Path(folder)
+    if restricted is None:
+        from .data_terms import known as known_terms
+
+        restricted = set(known_terms())
+    return [d for d in derived(folder, restricted, known) if holds_rows(folder, d, restricted)]
+
+
+def holds_rows(folder: Path, d: Derived, restricted: set[str]) -> bool:
+    """Does a published copy leave the derived file out (kept_out)? Sets ``d.rows`` to why, for an output."""
+    p = Path(folder) / d.path
+    if d.path.startswith("data/") and Path(d.path).suffix.lower() in DATA_SUFFIXES:
+        return True
+    if not p.is_file():
+        # Not here (a published copy left it out): what export recorded of it, else kept out to be safe.
+        if d.recorded_rows is False:
+            return False
+        d.rows = "not in the folder, so what it holds cannot be read"
+        return True
+    if not is_output(d.path):
+        return True  # not a format or place e2er reads for rows: kept out
+    from .derived_rows import row_level
+
+    why = row_level(p, d.connectors, _shape(Path(folder), restricted))
+    if why:
+        d.rows = why
+    return bool(why)
 
 
 def restricted_reads(script: Script, folder: Path) -> tuple[set[str], set[str]]:
@@ -356,20 +557,49 @@ def restricted_reads(script: Script, folder: Path) -> tuple[set[str], set[str]]:
     return files, tables
 
 
-def rebuild_plan(folder: Path, recipe: dict[str, Any], derived_files: list[Derived]) -> list[dict[str, Any]]:
-    """How a rerun builds each derived input again: the script that writes it from data the rerun reloads.
+def _same_path(a: str, b: str) -> bool:
+    a, b = _norm(a), _norm(b)
+    return a == b or a.endswith("/" + b) or b.endswith("/" + a) or (a.rsplit("/", 1)[-1] == b and "/" not in b)
 
-    Returns ``[{"path": run-folder path, "script": run name, "from": folder path of the script}]`` for the
-    derived files the recipe lists as inputs and has no way yet to get back. A writer qualifies when every
-    restricted file or table it reads is loaded again by the recipe (``"reload"``) or built by another
-    planned step; among several, the first in the order of the folder. Inputs with no such writer are left
-    out of the plan (the caller says that they cannot be rebuilt).
+
+def writes_file(script: Script, path: str) -> bool:
+    """Does the script write ``path`` (as the run named it)?"""
+    return any(_same_path(w, path) for w in script.writes)
+
+
+def reads_file(script: Script, path: str) -> bool:
+    """Does the script read ``path``: it opens it for reading, or names it without writing it."""
+    if any(_same_path(r, path) for r in script.reads):
+        return True
+    return _names_file(script, path) and not writes_file(script, path)
+
+
+def rebuild_plan(folder: Path, recipe: dict[str, Any], derived_files: list[Derived]) -> list[dict[str, Any]]:
+    """How a rerun gets back each derived file a published folder leaves out: the script that writes it from
+    data the rerun loads again.
+
+    Returns a list of steps, each ``{"path": run-folder path, "script": run name, "from": folder path of the
+    script}``:
+
+    - **an input** the recipe lists and cannot yet get back: a writer qualifies when every restricted file
+      or table it reads is loaded again by the recipe (``"reload"``) or built by another planned step, and
+      every other left-out file it reads is planned before it; the first in the order of the folder;
+    - **an output** (``"output": true``) that no input lists: a result, a figure's data. A file one of the
+      recipe's steps writes needs nothing more (``"written": true``, the step's script), unless an earlier
+      step reads it: then a writer that does not read it builds it after the data are loaded again. A file
+      no step writes is built by such a writer, after the last step that writes a file it reads
+      (``"after"``: that step's script).
+
+    Files with no such writer are left out of the plan (the caller says that they cannot be rebuilt).
     """
     folder = Path(folder)
     files_map = recipe.get("files") or {}
     by_source = {str(src): str(dst) for dst, src in files_map.items()}
     inputs = {str(i.get("path")): i for i in recipe.get("inputs") or [] if isinstance(i, dict)}
     reloaded = {p for p, i in inputs.items() if i.get("reload")}
+    # What the rerun has before any planned step: inputs loaded again, and inputs a step of the recipe
+    # already builds again (``"rebuild"``).
+    rebuilt = {p for p, i in inputs.items() if i.get("rebuild")}
     reloaded_tables: set[str] = set()
     if "data.db" in reloaded:
         reloaded_tables = {
@@ -379,39 +609,125 @@ def rebuild_plan(folder: Path, recipe: dict[str, Any], derived_files: list[Deriv
             if isinstance(t, str) and t
         }
     scripts = {s.rel: s for s in scripts_of(folder)}
-    steps = {Path(a).name for st in recipe.get("steps") or [] if isinstance(st, dict) for a in _argv(st)}
+    steps = [Path(a).name for st in recipe.get("steps") or [] if isinstance(st, dict) for a in _argv(st)]
+    steps = [n for n in dict.fromkeys(steps) if n.endswith(".py")]
+    by_name = {s.rel.rsplit("/", 1)[-1]: s for s in scripts.values()}
+    step_scripts = [(n, scripts.get(str(files_map.get(n, ""))) or by_name.get(n)) for n in steps]
     plan: list[dict[str, Any]] = []
-    available = set(reloaded)
-    pending = [d for d in derived_files if by_source.get(d.path, d.named) in inputs or d.named in inputs]
-    progress = True
-    while pending and progress:
+    available = reloaded | rebuilt
+    left = {d.path for d in derived_files}
+
+    def run_path(d: Derived) -> str:
+        return by_source.get(d.path) or d.named
+
+    def reads_ok(s: Script, d: Derived) -> bool:
+        rfiles, rtables = restricted_reads(s, folder)
+        if not all(any(_norm(f) == _norm(a) or a.endswith("/" + _norm(f)) for a in available) for f in rfiles):
+            return False
+        if not rtables <= reloaded_tables:
+            return False
+        others = [x for x in derived_files if x is not d and x.path in left and reads_file(s, x.named)]
+        return all(run_path(x) in available or x.named in available for x in others)
+
+    def qualifies(w: str) -> str | None:
+        name = Path(w).name
+        if name not in steps and name in files_map and files_map[name] != w:
+            return None  # another file already runs under that name
+        return name
+
+    inputs_pending = [d for d in derived_files if run_path(d) in inputs or d.named in inputs]
+    outputs_pending = [d for d in derived_files if d not in inputs_pending]
+    progress, fallback = True, False
+    while (inputs_pending or outputs_pending) and progress:
         progress = False
-        for d in list(pending):
-            run_path = by_source.get(d.path) or d.named
-            item = inputs.get(run_path) or inputs.get(d.named)
+        for d in list(inputs_pending):
+            item = inputs.get(run_path(d)) or inputs.get(d.named)
             if item is None or item.get("reload") or item.get("rebuild"):
-                pending.remove(d)
+                inputs_pending.remove(d)
                 continue
             for w in d.writers:
                 s = scripts.get(w)
-                if s is None:
+                name = qualifies(w)
+                if s is None or name is None or _reads(s, d, d.named):
                     continue
-                rfiles, rtables = restricted_reads(s, folder)
-                derived_reads = {x.named for x in derived_files if x is not d and _names_file(s, x.named)}
-                ok = all(any(_norm(f) == _norm(a) or a.endswith("/" + _norm(f)) for a in available) for f in rfiles)
-                ok = ok and rtables <= reloaded_tables
-                ok = ok and all(x in available for x in derived_reads)
-                if not ok:
+                if not reads_ok(s, d):
                     continue
-                name = Path(w).name
-                if name not in steps and name in files_map and files_map[name] != w:
-                    continue  # another file already runs under that name
                 plan.append({"path": str(item["path"]), "script": name, "from": w})
                 available.add(str(item["path"]))
-                pending.remove(d)
+                inputs_pending.remove(d)
                 progress = True
                 break
+        for d in list(outputs_pending):
+            rp_ = run_path(d)
+            readers = [i for i, (_n, s) in enumerate(step_scripts) if s is not None and _reads(s, d, rp_)]
+            writers = [i for i, (_n, s) in enumerate(step_scripts) if s is not None and _writes(s, d, rp_)]
+            first_reader = min(readers) if readers else None
+            if writers and not readers:
+                n = step_scripts[writers[0]][0]
+                plan.append(_written(rp_, n, files_map, d))
+                available.add(rp_)
+                outputs_pending.remove(d)
+                progress = True
+                continue
+            built = False
+            for w in d.writers:
+                s = scripts.get(w)
+                name = qualifies(w)
+                if s is None or name is None or name in steps or _reads(s, d, rp_):
+                    continue
+                if not reads_ok(s, d):
+                    continue
+                # After the last step that writes something it reads (a result it reads), before the first reader.
+                needs = [i for i, (_n, st) in enumerate(step_scripts) if st is not None and _feeds(st, s)]
+                after = max(needs) if needs else None
+                if first_reader is not None and after is not None and after >= first_reader:
+                    continue
+                entry: dict[str, Any] = {"path": rp_, "script": name, "from": w, "output": True, "folder": d.path}
+                if after is not None:
+                    entry["after"] = step_scripts[after][0]
+                plan.append(entry)
+                built = True
+                break
+            if not built and fallback and writers and all(i in writers for i in readers):
+                # Only steps that read the file and write it again (a script updating its own output): it
+                # copes without it or fails, which the rerun reports.
+                plan.append(_written(rp_, step_scripts[writers[0]][0], files_map, d))
+                built = True
+            if built:
+                available.add(rp_)
+                outputs_pending.remove(d)
+                progress = True
+        if not progress and not fallback and outputs_pending:
+            fallback = progress = True  # once nothing else is found: the steps that update their own output
     return plan
+
+
+def _written(path: str, name: str, files_map: dict[str, Any], d: Derived) -> dict[str, Any]:
+    return {
+        "path": path,
+        "script": name,
+        "from": str(files_map.get(name, name)),
+        "output": True,
+        "written": True,
+        "folder": d.path,
+    }
+
+
+def _writes(script: Script, d: Derived, path: str) -> bool:
+    """Does the script write the derived file: as its code reads, or as the run's record of it says."""
+    return script.rel in d.writers or writes_file(script, path)
+
+
+def _reads(script: Script, d: Derived, path: str) -> bool:
+    """Does the script read the derived file (one the run recorded it writing reads it only by opening it)."""
+    if any(_same_path(r, path) for r in script.reads):
+        return True
+    return _names_file(script, path) and not _writes(script, d, path)
+
+
+def _feeds(step: Script, script: Script) -> bool:
+    """Does ``step`` write a file ``script`` reads?"""
+    return any(reads_file(script, w) for w in step.writes)
 
 
 def _argv(step: dict[str, Any]) -> list[str]:
@@ -419,6 +735,58 @@ def _argv(step: dict[str, Any]) -> list[str]:
     if isinstance(run, list):
         return [str(a) for a in run]
     return str(run or "").split()
+
+
+#: What produced each kind of file a study's step only updates, when the run's own record does not say.
+_PRODUCED_BY = {"figure_spec.json": "the figure step"}
+
+
+def not_produced_by_step(folder: Path, recipe: dict[str, Any]) -> dict[str, str]:
+    """Left-out outputs a step of the recipe writes but did not produce: run path → why the rerun's copy is not
+    compared with the study's.
+
+    A step that reads the file before writing it (``json.load(open(p))`` … ``json.dump(…, open(p, "w"))``) only
+    updates the copy it finds: the study's copy was produced earlier in the run (``figure_spec.json`` by the
+    figure step) and maybe changed by other scripts after, so the rerun's copy differs for that reason alone.
+    The same holds when another script of the folder, not run by the recipe, writes the file as well.
+    """
+    folder = Path(folder)
+    files_map = recipe.get("files") or {}
+    scripts = {s.rel: s for s in scripts_of(folder)}
+    ran = {Path(a).name for st in recipe.get("steps") or [] if isinstance(st, dict) for a in _argv(st)}
+    out: dict[str, str] = {}
+    for item in recipe.get("inputs") or []:
+        if not (isinstance(item, dict) and item.get("output") and isinstance(item.get("rebuild"), str)):
+            continue
+        path, name = str(item["path"]), str(item["rebuild"])
+        step = scripts.get(str(files_map.get(name, ""))) or next(
+            (s for s in scripts.values() if s.rel.rsplit("/", 1)[-1] == name), None
+        )
+        if step is None:
+            continue
+        updates = any(_same_path(r, path) for r in step.reads)
+        others = sorted(
+            s.rel
+            for s in scripts.values()
+            # replication/ holds export's copy of the estimation script, not a script of the run of its own.
+            if s is not step
+            and not s.rel.startswith("replication/")
+            and s.rel.rsplit("/", 1)[-1] not in ran
+            and writes_file(s, path)
+        )
+        if not (updates or others):
+            continue
+        base = path.rsplit("/", 1)[-1]
+        source = _PRODUCED_BY.get(base, "an earlier step of the run")
+        why = f"not compared: the study's copy comes from {source}"
+        if others:
+            why += f" and was changed by {', '.join(others)}"
+        if updates:
+            why += f"; {name} only updates the copy it finds, so the rerun's copy is derived from {source}'s output"
+        else:
+            why += f"; the rerun's copy is the one {name} writes"
+        out[path] = why
+    return out
 
 
 def cannot_rebuild(folder: Path) -> list[Derived]:
@@ -430,7 +798,7 @@ def cannot_rebuild(folder: Path) -> list[Derived]:
     files_map = recipe.get("files") or {}
     inputs = {str(i.get("path")): i for i in recipe.get("inputs") or [] if isinstance(i, dict)}
     out = []
-    found = [d for d in derived(folder) if (folder / d.path).is_file()]
+    found = [d for d in kept_out(folder) if (folder / d.path).is_file()]
     for d in found:
         run_paths = {dst for dst, src in files_map.items() if src == d.path} or {d.path}
         items = [inputs[p] for p in run_paths if p in inputs]
@@ -453,18 +821,26 @@ def export_record(workspace: Path, out: Path) -> list[dict[str, Any]]:
         if (out / "code").is_dir()
         else {}
     )
+    from .data_terms import known as known_terms
+
+    restricted = set(known_terms())
     record = []
-    for d in derived(workspace, known=set()):
-        base = d.path.rsplit("/", 1)[-1]
-        where = next((c for c in (d.path, f"data/{base}", f"results/{base}") if (out / c).is_file()), None)
-        if where is None:
-            continue
-        record.append(
-            {
-                "path": where,
-                "named": d.named,
-                "connectors": d.connectors,
-                "writers": sorted({copies[Path(w).name] for w in d.writers if Path(w).name in copies}),
-            }
-        )
+    seen: set[str] = set()
+    for d in derived(workspace, restricted, known=set()):
+        for where in _all_in_folder(out, d.path, set()):
+            if where in seen:
+                continue
+            seen.add(where)
+            copy = Derived(where, d.connectors, d.writers, d.named)
+            record.append(
+                {
+                    "path": where,
+                    "named": d.named,
+                    "connectors": d.connectors,
+                    "writers": sorted({copies[Path(w).name] for w in d.writers if Path(w).name in copies}),
+                    # Whether it holds the source's rows (derived_rows.py), so a copy without it can tell an
+                    # aggregate that must be there from rows that were left out.
+                    "holds_rows": holds_rows(out, copy, restricted),
+                }
+            )
     return record

@@ -442,22 +442,17 @@ def _load_tables(loads: list[dict[str, Any]]) -> set[str]:
 
 
 #: A script that writes a table of data.db.
-_DB_WRITE = re.compile(
-    r"to_sql\(|CREATE\s+(?:TEMP(?:ORARY)?\s+)?TABLE|INSERT\s+(?:OR\s+\w+\s+)?INTO|REPLACE\s+INTO", re.I
-)
 
 
 def _names(source: str, table: str) -> bool:
     return re.search(rf"(?<![\w]){re.escape(table)}(?![\w])", source) is not None
 
 
-def _writes_table(source: str, table: str) -> bool:
-    """Whether a script writes ``table`` (``df.to_sql("t", …)``, ``CREATE TABLE t``, ``INSERT INTO t``)."""
+def _sql_writes(source: str, table: str) -> bool:
     t = re.escape(table)
     q = r"""\\?[\"'`\[]?"""
     return (
-        re.search(rf"""to_sql\(\s*(?:name\s*=\s*)?f?["']{t}["']""", source) is not None
-        or re.search(
+        re.search(
             rf"(?:CREATE\s+(?:TEMP(?:ORARY)?\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?|INSERT\s+(?:OR\s+\w+\s+)?INTO\s+"
             rf"|REPLACE\s+INTO\s+){q}{t}(?![\w])",
             source,
@@ -467,62 +462,243 @@ def _writes_table(source: str, table: str) -> bool:
     )
 
 
+#: Stands for a computed part of an f-string ("gutenberg_texts_{c}") while its names are read.
+_HOLE = "\x00"
+
+
+def _template(parts: list[str]) -> list[re.Pattern[str]]:
+    """The names an f-string can make: each word with a computed part, as a pattern (``gutenberg_texts_\\w+``).
+
+    A word needs three letters of its own; ``{c}`` alone could be any table.
+    """
+    text = "".join(parts)
+    out = []
+    for word in re.findall(rf"[A-Za-z0-9_{_HOLE}]+", text):
+        if _HOLE in word and len(word.replace(_HOLE, "")) >= 3:
+            out.append(re.compile("".join(r"\w+" if ch == _HOLE else re.escape(ch) for ch in word)))
+    return out
+
+
+@dataclass
+class _Code:
+    """What a script's code says about the tables of data.db: names it writes and reads (literal and f-string)."""
+
+    source: str
+    strings: set[str] = field(default_factory=set)
+    templates: list[re.Pattern[str]] = field(default_factory=list)
+    to_sql: set[str] = field(default_factory=set)
+    to_sql_templates: list[re.Pattern[str]] = field(default_factory=list)
+    #: ``t.to_sql(name, con)``: a name the code computes (a loop over names, a variable).
+    to_sql_computed: bool = False
+
+
+def _code(source: str) -> _Code:
+    code = _Code(source)
+    try:
+        tree = ast.parse(source)
+    except (SyntaxError, ValueError):
+        code.strings = set(re.findall(r"""['"]([^'"\n]{1,300})['"]""", source))
+        code.to_sql_computed = re.search(r"""to_sql\(\s*(?!(?:name\s*=\s*)?f?["'])""", source) is not None
+        return code
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            code.strings.add(node.value)
+        elif isinstance(node, ast.JoinedStr):
+            parts = [
+                v.value if isinstance(v, ast.Constant) and isinstance(v.value, str) else _HOLE for v in node.values
+            ]
+            code.templates += _template(parts)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "to_sql":
+            name = node.args[0] if node.args else next((k.value for k in node.keywords if k.arg == "name"), None)
+            if isinstance(name, ast.Constant) and isinstance(name.value, str):
+                code.to_sql.add(name.value)
+            elif isinstance(name, ast.JoinedStr):
+                parts = [
+                    v.value if isinstance(v, ast.Constant) and isinstance(v.value, str) else _HOLE for v in name.values
+                ]
+                code.to_sql_templates += _template(parts)
+                if not code.to_sql_templates:
+                    code.to_sql_computed = True
+            elif name is not None:
+                code.to_sql_computed = True
+    return code
+
+
+def _writes_table(source: str | _Code, table: str) -> bool:
+    """Whether a script writes ``table``, by its code.
+
+    ``df.to_sql("t", …)``, ``df.to_sql(f"t_{c}", …)``, ``CREATE TABLE t``, ``INSERT INTO t``; and
+    ``t.to_sql(name, …)`` with a name the code computes, when the script names the table in a string
+    (``for name, t in [("corpus", corpus), …]``, build_data.py of the weather-words study of 2026-10-14).
+    """
+    code = source if isinstance(source, _Code) else _code(source)
+    if table in code.to_sql or any(p.fullmatch(table) for p in code.to_sql_templates):
+        return True
+    if code.to_sql_computed and table in code.strings:
+        return True
+    return _sql_writes(code.source, table)
+
+
+def _reads_table(source: str | _Code, table: str) -> bool:
+    """Whether a script names ``table``: as a word of its code or SQL, or as an f-string's name
+    (``f"select … from gutenberg_texts_{c}"`` names gutenberg_texts_c1 … _c6)."""
+    code = source if isinstance(source, _Code) else _code(source)
+    return _names(code.source, table) or any(p.fullmatch(table) for p in code.templates)
+
+
+#: How a table of data.db comes back in a rerun (``database.tables`` of reproduce.json).
+LOADED = "loaded"
+BUILT = "built"
+UNKNOWN = "unknown"
+
+
+def _run_index(runs: list[dict[str, Any]]) -> dict[str, int]:
+    """The position of each script's last successful run in the script log."""
+    out: dict[str, int] = {}
+    for i, r in enumerate(runs):
+        if r.get("exit_code") == 0:
+            out[str(r["script"])] = i
+    return out
+
+
+def table_writers(
+    workspace: Path, loads: list[dict[str, Any]], exclude: set[str] | None = None
+) -> dict[str, dict[str, Any]]:
+    """Where each table of the study's data.db came from: {table: {"how", "by"/"source", "evidence"}}.
+
+    ``how`` is ``loaded`` (a load of data_sources.json; ``changed_by`` names a script that rewrote it after
+    the load), ``built`` (``by``: the script that wrote it) or ``unknown``. The writer comes from the script
+    log first: e2er records the tables each run created or changed (after 0.17.1), so a table the code names
+    with a variable is traced too. Without that record, from the scripts' code (:func:`_writes_table`); the
+    last script of the run that writes it. Scripts in ``exclude`` (the estimation) are not data preparation.
+    """
+    from ..script_log import read_script_runs
+
+    db = workspace / "data.db"
+    tables = _db_tables(db) if db.is_file() else []
+    if not tables:
+        return {}
+    exclude = exclude or set()
+    out: dict[str, dict[str, Any]] = {}
+    when_loaded: dict[str, str] = {}
+    for e in loads:
+        for t in [e.get("table"), *(e.get("tables") or [])]:
+            if isinstance(t, str) and t in tables:
+                out[t] = {"how": LOADED, "source": _describe(e), "evidence": "data_sources.json"}
+                when_loaded[t] = str(e.get("retrieved_at") or "")
+    runs = read_script_runs(workspace)
+    logged: dict[str, str] = {}
+    for r in runs:
+        rec = r.get("tables")
+        if r.get("exit_code") != 0 or not isinstance(rec, dict):
+            continue
+        for t in rec.get("written") or []:
+            logged[str(t)] = str(r["script"])
+            if t in when_loaded and str(r.get("started_at") or "") <= when_loaded[t]:
+                logged.pop(str(t))  # the script ran the load itself (e2er-data in a subprocess)
+        for t in rec.get("dropped") or []:
+            logged.pop(str(t), None)
+    last_ok = _run_index(runs)
+    candidates = [
+        p
+        for p in sorted(workspace.glob("*.py"))
+        if p.is_file() and p.name not in exclude and (not runs or p.name in last_ok)
+    ]
+    codes = {p.name: _code(_read(p)) for p in candidates}
+    for t in tables:
+        script = logged.get(t)
+        if script is not None and script in exclude:
+            script = None
+        if t in out:
+            if script is not None:
+                out[t]["changed_by"] = script
+            continue
+        if script is not None:
+            out[t] = {"how": BUILT, "by": script, "evidence": "script log"}
+            continue
+        writers = [n for n, c in codes.items() if not _writes_results(c.source) and _writes_table(c, t)]
+        if writers:
+            writers.sort(key=lambda n: (last_ok.get(n, -1), n))
+            out[t] = {"how": BUILT, "by": writers[-1], "evidence": "the scripts' code"}
+        else:
+            out[t] = {"how": UNKNOWN}
+    return out
+
+
+def needed_tables(workspace: Path, chain: list[Path], writers: dict[str, dict[str, Any]]) -> list[str]:
+    """The tables of data.db the estimation reads, and the tables the scripts that build those read, and so on."""
+    tables = list(writers)
+    todo: list[str] = []
+    for p in chain:
+        code = _code(_read(p))
+        todo += [t for t in tables if t not in todo and _reads_table(code, t)]
+    seen = set(todo)
+    while todo:
+        t = todo.pop(0)
+        w = writers.get(t) or {}
+        script = w.get("by") if w.get("how") == BUILT else w.get("changed_by")
+        if not script or not (workspace / script).is_file():
+            continue
+        code = _code(_read(workspace / script))
+        for other in tables:
+            if other not in seen and _reads_table(code, other):
+                seen.add(other)
+                todo.append(other)
+    return [t for t in tables if t in seen]
+
+
 def preparation_scripts(
     workspace: Path, chain: list[Path], loads: list[dict[str, Any]]
 ) -> tuple[list[Path], list[str]]:
     """The data preparation: the scripts that build the tables of data.db the estimation reads, in run order.
 
     (scripts, the tables they build). A table no load wrote (``who_rs198_2021_clean``, cleaned by the data
-    analyst's script) is rebuilt by the scripts that name it and write a table, and so on for the tables those
-    read. The scripts and their order come from the script log (the last successful run of each); a run
-    without one falls back to file times.
+    analyst's script; ``corpus``, written by build_data.py with ``t.to_sql(name, con)``) is rebuilt by the
+    script that wrote it (:func:`table_writers`), and so on for the tables that script reads. The order is the
+    one of the script log (the last successful run of each); a run without one falls back to file times.
     """
     from ..script_log import read_script_runs
 
-    db = workspace / "data.db"
-    if not db.is_file():
-        return [], []
-    loaded = _load_tables(loads)
-    derived = [t for t in _db_tables(db) if t not in loaded]
-    if not derived:
-        return [], []
-    chain_names = {p.name for p in chain}
+    writers = table_writers(workspace, loads, {p.name for p in chain})
+    needed = needed_tables(workspace, chain, writers)
+    scripts: dict[str, Path] = {}
+    built: list[str] = []
+    for t in needed:
+        w = writers[t]
+        name = w.get("by") if w.get("how") == BUILT else w.get("changed_by")
+        if not name or not (workspace / name).is_file():
+            continue
+        scripts.setdefault(name, workspace / name)
+        if w.get("how") == BUILT:
+            built.append(t)
+    chosen = list(scripts.values())
     runs = read_script_runs(workspace)
-    last_ok: dict[str, int] = {}
-    for i, r in enumerate(runs):
-        if r.get("exit_code") == 0:
-            last_ok[str(r["script"])] = i
-    candidates = [
-        p
-        for p in sorted(workspace.glob("*.py"))
-        if p.is_file() and p.name not in chain_names and (not runs or p.name in last_ok)
-    ]
-    sources = {p: _read(p) for p in candidates}
-    builders = {p: src for p, src in sources.items() if _DB_WRITE.search(src) and not _writes_results(src)}
-    chain_source = "\n".join(_read(p) for p in chain)
-    todo = [t for t in derived if _names(chain_source, t)]
-    seen: set[str] = set(todo)
-    chosen: list[Path] = []
-    while todo:
-        table = todo.pop(0)
-        for p, src in builders.items():
-            if p in chosen or not _writes_table(src, table):
-                continue
-            chosen.append(p)
-            for other in derived:
-                if other not in seen and _names(src, other):
-                    seen.add(other)
-                    todo.append(other)
     if runs:
+        last_ok = _run_index(runs)
         chosen.sort(key=lambda p: last_ok.get(p.name, -1))
     else:
         chosen.sort(key=lambda p: (p.stat().st_mtime_ns, p.name))
-    built = sorted(t for t in derived if any(_writes_table(builders[p], t) for p in chosen))
-    return chosen, built
+    return chosen, sorted(built)
 
 
-def _reloads(workspace: Path, loads: list[dict[str, Any]], inputs: list[str]) -> tuple[list[dict[str, Any]], bool]:
-    """The loads get_data.py repeats: loads of sources with terms (Yahoo, the GMD, …) that went into an input.
+def _rows(entry: dict[str, Any]) -> dict[str, int]:
+    """``{"rows": n}``: how many rows the load wrote into its table, when it recorded that."""
+    n = entry.get("table_rows")
+    try:
+        return {"rows": int(n)} if n is not None and int(n) > 0 else {}
+    except (TypeError, ValueError):
+        return {}
+
+
+def _reloads(
+    workspace: Path, loads: list[dict[str, Any]], inputs: list[str], needed: set[str] | None = None
+) -> tuple[list[dict[str, Any]], bool]:
+    """The loads get_data.py repeats when the folder lacks what they loaded.
+
+    Loads of sources with terms (Yahoo, the GMD, …) that went into an input; and loads of open sources
+    into an input file or into a table of data.db the study's steps read (``needed``): a folder may come
+    without data.db (too large for GitHub), and the data preparation builds the rest from them. When the
+    folder has the input, get_data.py loads nothing.
 
     Returns (reloads, any without dates).
     """
@@ -530,6 +706,7 @@ def _reloads(workspace: Path, loads: list[dict[str, Any]], inputs: list[str]) ->
     undated = False
     uses_db = "data.db" in inputs
     restricted = _restricted()
+    needed = needed or set()
     # data.db holds a table a published study may leave out, so the folder can come without data.db: then every
     # table a source loaded into it is loaded again, the sources without terms too (WHO with Natural Earth's
     # country names, demo 7 of 2026-10-13), and the data preparation builds the rest (_preparation).
@@ -537,10 +714,18 @@ def _reloads(workspace: Path, loads: list[dict[str, Any]], inputs: list[str]) ->
     for e in loads:
         if e.get("connector") not in restricted:
             table = e.get("table") if isinstance(e.get("table"), str) else None
-            made = _any_reload_args(e) if whole_db and table else None
+            saved = _saved(e)
+            wanted_table = bool(table and uses_db and (whole_db or table in needed))
+            wanted_file = bool(saved and saved in inputs)
+            made = _any_reload_args(e) if wanted_table or wanted_file else None
             if made is not None:
                 args, note = made
-                out.append({"table": table, "args": [*args, "--table", table], "what": _describe(e)})
+                if wanted_table:
+                    out.append({"table": table, "args": [*args, "--table", table], "what": _describe(e), **_rows(e)})
+                if wanted_file and saved:
+                    out.append(
+                        {"file": saved, "args": [*args, "--save-to", saved[len("data/") :]], "what": _describe(e)}
+                    )
             continue
         made = _reload_args(e)
         if made is None:
@@ -551,7 +736,7 @@ def _reloads(workspace: Path, loads: list[dict[str, Any]], inputs: list[str]) ->
         saved = _saved(e)
         what = _describe(e)
         if table and uses_db:
-            out.append({"table": table, "args": [*args, "--table", table], "what": what})
+            out.append({"table": table, "args": [*args, "--table", table], "what": what, **_rows(e)})
         if saved and saved in inputs:
             out.append({"file": saved, "args": [*args, "--save-to", saved[len("data/") :]], "what": what})
     return out, undated
@@ -577,10 +762,16 @@ import shutil
 import sqlite3
 import subprocess
 import sys
+import time
 from pathlib import Path
 
-# What the run loaded and how to load it again (e2er-data arguments).
+# What the run loaded and how to load it again (e2er-data arguments; "rows": how many rows the run's load
+# wrote into the table, when it recorded that).
 RELOADS = {reloads}
+# A source that does not answer in time (Gutendex answers a query it has not seen in a minute, then from its
+# cache) is asked again: this many times in all, this many seconds apart.
+ATTEMPTS = 3
+PAUSE_SECONDS = 30
 # The other tables of the study's data.db: they came from elsewhere, and get_data.py cannot load them.
 OTHER_TABLES = {other_tables}
 
@@ -592,21 +783,39 @@ def e2er_data() -> str:
     return found
 
 
+def count(here: Path, item: dict) -> int:
+    """The rows of the item's table in the folder's data.db (0 without it)."""
+    db = here / "data.db"
+    if not db.is_file():
+        return 0
+    try:
+        con = sqlite3.connect(f"file:{{db}}?mode=ro", uri=True)
+        try:
+            (rows,) = con.execute('SELECT COUNT(*) FROM "' + item["table"].replace('"', '""') + '"').fetchone()
+        finally:
+            con.close()
+    except sqlite3.Error:
+        return 0
+    return int(rows)
+
+
 def present(here: Path, item: dict) -> bool:
     if item.get("table"):
-        db = here / "data.db"
-        if not db.is_file():
-            return False
-        try:
-            con = sqlite3.connect(f"file:{{db}}?mode=ro", uri=True)
-            try:
-                (rows,) = con.execute('SELECT COUNT(*) FROM "' + item["table"].replace('"', '""') + '"').fetchone()
-            finally:
-                con.close()
-        except sqlite3.Error:
-            return False
-        return rows > 0
+        return count(here, item) > 0
     return (here / item["file"]).is_file()
+
+
+def load(here: Path, env: dict, item: dict) -> str:
+    """Load one item again; an empty string when it worked, else why not."""
+    cmd = [e2er_data(), "--paper-id", here.name, "--specialist", "researcher", *item["args"]]
+    out = subprocess.run(cmd, env=env, capture_output=True, text=True)
+    try:
+        result = json.loads(out.stdout)
+    except ValueError:
+        result = {{"error": (out.stderr or out.stdout).strip()[-300:]}}
+    if out.returncode != 0 or result.get("error") or not present(here, item):
+        return str(result.get("error") or "nothing was loaded")
+    return ""
 
 
 def main() -> int:
@@ -626,14 +835,23 @@ def main() -> int:
         if present(here, item):
             print(f"{{target}}: the study's own copy is here, not loaded again")
             continue
-        cmd = [e2er_data(), "--paper-id", here.name, "--specialist", "researcher", *item["args"]]
-        out = subprocess.run(cmd, env=env, capture_output=True, text=True)
-        try:
-            result = json.loads(out.stdout)
-        except ValueError:
-            result = {{"error": (out.stderr or out.stdout).strip()[-300:]}}
-        if out.returncode != 0 or result.get("error") or not present(here, item):
-            failed.append(f"{{target}} ({{item['what']}}): {{result.get('error') or 'nothing was loaded'}}")
+        why = ""
+        for attempt in range(1, ATTEMPTS + 1):
+            why = load(here, env, item)
+            if not why or present(here, item):
+                break
+            if attempt < ATTEMPTS:
+                print(f"{{target}}: not loaded ({{why}}); trying again in {{PAUSE_SECONDS}} s", file=sys.stderr)
+                time.sleep(PAUSE_SECONDS)
+        if why:
+            failed.append(f"{{target}} ({{item['what']}}): {{why}}")
+            continue
+        if item.get("table") and isinstance(item.get("rows"), int) and count(here, item) < item["rows"]:
+            # A load that stopped early (a source's time limit) has only some of the rows the run loaded.
+            failed.append(
+                f"{{target}} ({{item['what']}}): loaded {{count(here, item)}} of the "
+                f"{{item['rows']}} rows the run loaded"
+            )
             continue
         print(f"{{target}}: loaded again ({{item['what']}})")
     if failed:
@@ -926,6 +1144,103 @@ def _chain_tables(workspace: Path, chain: list[Path]) -> set[str]:
     return out
 
 
+#: A script that draws at random with a fixed seed (it can repeat its draw).
+_SEEDED = re.compile(r"\bseed\b|random_state|default_rng\(\s*\d|RandomState\(\s*\d", re.I)
+
+
+def _made_by(workspace: Path, out: Path, rel: str, sha: str | None, depth: int = 0) -> dict[str, Any] | None:
+    """The script of the run that wrote the data file ``rel`` (the script log's outputs), or None.
+
+    With ``sha``, only when that run wrote the file as it is. ``file``: the script's copy in the export (the
+    version that ran); ``seeded``: its code sets a random seed (a draw it can repeat); ``from``: the files it
+    read that other scripts of the run wrote, the same way (data/sample_ids_v2.csv ← draw_refill.py, from
+    data/sample_ids.csv ← draw_sample.py, a seeded draw).
+    """
+    from ..script_log import read_script_runs, results_writer
+
+    runs = read_script_runs(workspace)
+    row = results_writer(workspace, rel, runs)
+    if row is None or row.get("exit_code") != 0:
+        return None
+    if sha is not None and (row.get("outputs") or {}).get(rel) != sha:
+        return None
+    name = str(row["script"])
+    script = workspace / name
+    item: dict[str, Any] = {"script": name, "run": str(row.get("started_at") or "")}
+    if not script.is_file():
+        return item
+    text = _read(script)
+    if _sha256(script) == row.get("sha256"):
+        copy = _exported_copy(out, script.name, _sha256(script))
+        if copy is not None:
+            item["file"] = copy
+    if _SEEDED.search(text):
+        item["seeded"] = True
+    if depth < 3:
+        written = {str(k) for r in runs for k in (r.get("outputs") or {}) if str(r.get("script")) != name}
+        upstream = []
+        for lit in sorted(set(_literals(text))):
+            path = lit.strip().removeprefix("./")
+            if path in written and path != rel and Path(path).suffix.lower() in DATA_SUFFIXES:
+                made = _made_by(workspace, out, path, None, depth + 1)
+                if made is not None:
+                    upstream.append({"path": path, **made})
+        if upstream:
+            item["from"] = upstream
+    return item
+
+
+def _made_words(maker: dict[str, Any]) -> str:
+    """How a shipped data file was made, for the recipe's notes: "draw_refill.py, from data/sample_ids.csv
+    (draw_sample.py, a seeded draw)"."""
+    words = maker["script"] + (", a seeded draw" if maker.get("seeded") else "")
+    ups = [f"{u['path']} ({_made_words(u)})" for u in maker.get("from") or []]
+    return words + (", from " + "; ".join(ups) if ups else "")
+
+
+def _database_map(
+    writers: dict[str, dict[str, Any]],
+    needed: list[str],
+    reloads: list[dict[str, Any]],
+    prep: list[Path],
+    workspace: Path,
+    chain: list[Path],
+) -> dict[str, Any]:
+    """reproduce.json's ``database``: each table of data.db, where it came from in the run and how a rerun
+    without data.db gets it back (``back``: get_data.py, a data preparation script, the estimation itself,
+    or nothing when no step reads it)."""
+    reloaded = {r["table"] for r in reloads if r.get("table")}
+    prep_names = {p.name for p in prep}
+    by_chain = _chain_tables(workspace, chain)
+    tables: dict[str, Any] = {}
+    for t, w in writers.items():
+        entry = {k: v for k, v in w.items() if k in ("how", "source", "by", "changed_by", "evidence")}
+        entry["read"] = t in needed
+        if t in by_chain:
+            back = chain[0].name if chain else None
+        elif w.get("how") == LOADED and t in reloaded:
+            back = "get_data.py"
+        elif w.get("how") == BUILT and w.get("by") in prep_names:
+            back = str(w["by"])
+        else:
+            back = None
+        entry["back"] = back
+        tables[t] = entry
+    not_read = sorted(t for t, e in tables.items() if not e["read"] and t not in by_chain)
+    return {
+        "map": {
+            "path": "data.db",
+            "about": (
+                "Where each table of data.db came from in the run (data_sources.json for loads; the script log, "
+                "or else the scripts' code, for tables a script wrote) and how a rerun without data.db gets it "
+                "back. A table no step reads is not loaded again and not compared."
+            ),
+            "tables": tables,
+        },
+        "not_read": not_read,
+    }
+
+
 def _iso(date_str: str) -> str:
     if re.fullmatch(r"\d{8}", date_str or ""):
         return f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:]}"
@@ -949,8 +1264,11 @@ def write_recipe(workspace: Path, out: Path, *, date_str: str = "") -> Outcome:
     notes: list[str] = list(ordered.notes)
     files: dict[str, str] = {}
     rewritten: list[str] = []
-    # A folder without data.db (a source's terms) needs the tables the data analyst built from the loads.
-    prep, prep_tables = preparation_scripts(workspace, chain, loads) if _restricted_db(loads) else ([], [])
+    # A folder without data.db (a source's terms, or too large for GitHub) needs the tables the study built
+    # from the loads: the scripts that built them are steps of the recipe, run only when data.db is missing.
+    prep, prep_tables = preparation_scripts(workspace, chain, loads)
+    writers = table_writers(workspace, loads, {p.name for p in chain})
+    needed = needed_tables(workspace, chain, writers)
     for script in prep:
         copy = _exported_copy(out, script.name, _sha256(script))
         if copy is None:
@@ -1021,12 +1339,20 @@ def write_recipe(workspace: Path, out: Path, *, date_str: str = "") -> Outcome:
             item: dict[str, Any] = {"path": rel, "sha256": sha, "source": source}
             # Its rows, order aside: a reloaded source may return the same rows in another order (e2er reproduce).
             item.update(_content(src))
+            maker = _made_by(workspace, out, rel, sha)
+            if maker:
+                item["made_by"] = maker
+                notes.append(
+                    f"{rel} was made during the run by {_made_words(maker)}. The folder ships the file the study "
+                    "used" + (f" and the script ({maker['file']})" if maker.get("file") else "") + "; the rerun "
+                    "reads the file and does not draw it again."
+                )
             inputs.append(item)
         elif copy is None:
             notes.append(f"{rel}, which a script reads, is not in the folder")
 
     steps: list[dict[str, Any]] = []
-    reloads, undated = _reloads(workspace, loads, data_inputs)
+    reloads, undated = _reloads(workspace, loads, data_inputs, set(needed))
     if reloads:
         reloaded = {r.get("file") for r in reloads} | ({"data.db"} if any(r.get("table") for r in reloads) else set())
         for item in inputs:
@@ -1039,8 +1365,13 @@ def write_recipe(workspace: Path, out: Path, *, date_str: str = "") -> Outcome:
         names = {c: sources[c].article + sources[c].name for c in used}
         reloaded_tables = {r["table"] for r in reloads if r.get("table")}
         rebuilt = set(prep_tables) | _chain_tables(workspace, chain)
+        whole_db = _restricted_db(loads)
         other_tables = (
-            [t for t in _db_tables(workspace / "data.db") if t not in reloaded_tables and t not in rebuilt]
+            [
+                t
+                for t in _db_tables(workspace / "data.db")
+                if t not in reloaded_tables and t not in rebuilt and (whole_db or t in needed)
+            ]
             if reloaded_tables
             else []
         )
@@ -1061,37 +1392,60 @@ def write_recipe(workspace: Path, out: Path, *, date_str: str = "") -> Outcome:
         )
         files["get_data.py"] = "code/get_data.py"
         steps.append({"run": ["python", "get_data.py"], "about": "load the inputs the folder does not ship (if any)"})
-        if reloaded_tables and prep:
-            # The tables the estimation reads that no source loaded: built again from the loaded ones, only
-            # when data.db was not in the folder (a folder with it keeps the study's own tables).
-            for script in prep:
-                steps.append(
-                    {
-                        "run": ["python", script.name],
-                        "about": "data preparation: builds the study's tables from the loaded ones",
-                        "when_missing": ["data.db"],
-                    }
-                )
-            notes.append(
-                f"When data.db is not in the folder, {', '.join(p.name for p in prep)} "
-                f"{'builds' if len(prep) == 1 else 'build'} the tables the estimation reads "
-                f"({', '.join(prep_tables)}) again from the tables get_data.py loads, as the run did."
-            )
         revised = (
             " Yahoo Finance revises its history (prices adjusted for dividends change with every new dividend), "
             "so reloaded prices can differ slightly from the study's."
             if _YAHOO in used
             else ""
         )
-        notes.append(f"{terms} get_data.py loads these data again with e2er-data when the folder lacks them.{revised}")
+        if terms:
+            notes.append(
+                f"{terms} get_data.py loads these data again with e2er-data when the folder lacks them.{revised}"
+            )
+        open_loads = [r for r in reloads if r["args"][0] not in sources]
+        if open_loads:
+            what = sorted({str(r["what"]).split(",")[0] for r in open_loads})
+            notes.append(
+                f"get_data.py also lists {len(open_loads)} load(s) of open sources ({'; '.join(what)}) that went "
+                "into the inputs. It loads one again only when the folder lacks it (a folder without data.db, "
+                "too large for its host): that needs the internet and takes about as long as the run's own "
+                "loads, and a source may have revised its data since."
+            )
         if undated:
             notes.append(
                 "The run did not record the dates of its Yahoo Finance loads (e2er before 0.15.0), so get_data.py "
                 "loads the full history; the study's own rows are a part of it."
             )
+    if prep and "data.db" in data_inputs:
+        # The tables the estimation reads that no source loaded: built again by the scripts that built them in
+        # the run, from the loaded ones, only when data.db was not in the folder (a folder with it keeps the
+        # study's own tables).
+        for script in prep:
+            steps.append(
+                {
+                    "run": ["python", script.name],
+                    "about": "data preparation: builds the study's tables from the loaded ones",
+                    "when_missing": ["data.db"],
+                }
+            )
+        notes.append(
+            f"When data.db is not in the folder, {', '.join(p.name for p in prep)} "
+            f"{'builds' if len(prep) == 1 else 'build'} the tables the estimation reads "
+            f"({', '.join(prep_tables)}) again"
+            + (" from the tables get_data.py loads" if reloads else "")
+            + ", as the run did."
+        )
     for i, script in enumerate(chain):
         about = "the estimation script" if i == 0 else f"a later script of the run that writes {RESULTS} again"
         steps.append({"run": ["python", script.name], "about": about})
+    if "data.db" in data_inputs and writers:
+        recipe_db = _database_map(writers, needed, reloads, prep, workspace, chain)
+        for item in inputs:
+            if item["path"] == "data.db" and recipe_db["not_read"]:
+                # Not read by any step: a rerun that builds data.db again does not load them, nor compare them.
+                item["not_read"] = recipe_db["not_read"]
+    else:
+        recipe_db = None
 
     # The Python the run ran the scripts with (its script log), not the one this export runs on.
     py = recorded_python(workspace, prep + chain)
@@ -1167,25 +1521,54 @@ def write_recipe(workspace: Path, out: Path, *, date_str: str = "") -> Outcome:
         "compare": compare,
         "notes": notes,
     }
+    if recipe_db is not None:
+        recipe["database"] = recipe_db["map"]
     # Data files the study built from a source's data hold that data too (data/gaia_clean.csv from the Gaia
-    # rows): a published folder or a package may leave them out, so the recipe says which script builds each
-    # again from the data get_data.py loads (derived_data.py).
+    # rows), and so do results that hold their rows (a units table of the regions): a published folder or a
+    # package may leave them out, so the recipe says which script builds each again from the data get_data.py
+    # loads (derived_data.py). Aggregates (a table of estimates) are not left out and need nothing.
     from .. import reproduce as rp
-    from ..derived_data import Derived, derived, export_record, rebuild_plan
+    from ..data_terms import known as known_terms
+    from ..derived_data import Derived, export_record, holds_rows, kept_out, rebuild_plan
 
-    found = [d for d in derived(out, known=set()) if (out / d.path).is_file()]
+    found = [d for d in kept_out(out, known=set()) if (out / d.path).is_file()]
     have = {d.path for d in found}
+    restricted_names = set(known_terms())
     for entry in export_record(workspace, out):  # from the run's scripts and script log, mapped into the folder
         if entry["path"] not in have:
-            found.append(Derived(entry["path"], entry["connectors"], entry["writers"], entry["named"]))
+            d = Derived(entry["path"], entry["connectors"], entry["writers"], entry["named"])
+            if holds_rows(out, d, restricted_names):
+                found.append(d)
     plan = rebuild_plan(out, recipe, found) if found else []
+    # A left-out output is rebuilt here only where the recipe lays it out for the code (the units table the
+    # estimation reads) or a step writes it; any other is the package's to rebuild (e2er-package.json).
+    plan = [p for p in plan if not p.get("output") or p.get("written") or p["path"] in files]
+    for p in plan:
+        kept = p.get("folder")
+        if p.get("output") and isinstance(kept, str) and (out / kept).is_file():
+            from ..reproduce import sha256_file
+
+            p["sha256"] = sha256_file(out / kept)
+            content = _content(out / kept)
+            if content:
+                p["content"] = content
     if plan:
         rp.apply_rebuild(recipe, plan)
-        notes.append(
-            "Built from data whose terms keep them out of a published study: "
-            + ", ".join(f"{p['path']} ({p['from']})" for p in plan)
-            + ". When the folder lacks one, the script in brackets builds it again from the data get_data.py loads."
-        )
+        built = [p for p in plan if not p.get("written")]
+        if built:
+            notes.append(
+                "Built from data whose terms keep them out of a published study: "
+                + ", ".join(f"{p.get('folder') or p['path']} ({p['from']})" for p in built)
+                + ". When the folder lacks one, the script in brackets builds it again from the data get_data.py "
+                "loads."
+            )
+        written = [p for p in plan if p.get("written")]
+        if written:
+            notes.append(
+                "Written by the steps from data whose terms keep them out of a published study: "
+                + ", ".join(f"{p['folder']} ({p['from']})" for p in written)
+                + ". The rerun writes them again and compares them with the study's files."
+            )
     stuck = [
         d.path
         for d in found
