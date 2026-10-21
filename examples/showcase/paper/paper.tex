@@ -27,7 +27,7 @@
 
 \title{No Cash Flows, New Owners:\\ Spot Bitcoin ETFs and the Origins of Co-movement}
 
-\author{Björn Hanneke with e2er\thanks{This paper was produced with e2er. Its dossier lists every step of the run (the specialists, the checks and the researcher's actions), the files the steps produced, and the template, specialists, skills, connectors and AI models used, pinned to the versions the run used where E2ER's repository holds them: \url{https://e2er.org/d/37aca410ed871da5}.}\thanks{Demonstration. This study was produced with e2er as a demonstration or test run and is published as is. It is not presented as a research contribution, and its author does not vouch for its findings.}}
+\author{Björn Hanneke with e2er\thanks{This paper was produced with e2er. Its dossier lists every step of the run (the specialists, the checks and the researcher's actions), the files the steps produced, and the template, specialists, skills, connectors and AI models used, pinned to the versions the run used where E2ER's repository holds them: \url{https://e2er.org/d/267a5da9cd232b7b}.}\thanks{Demonstration. This study was produced with e2er as a demonstration or test run and is published as is. It is not presented as a research contribution, and its author does not vouch for its findings.}}
 \date{}
 
 \begin{document}
@@ -35,21 +35,16 @@
 \maketitle
 
 \begin{abstract}
-\noindent On January 10, 2024 the SEC approved eleven US spot Bitcoin exchange-traded products, and trading began the following morning. The approval changed who could conveniently hold Bitcoin and in what wrapper; it changed nothing about the asset itself. We use this access shock to ask whether the identity of the marginal investor determines an asset's factor structure in a setting where the cash-flow channel that confounds the index-inclusion literature is unavailable by construction: Bitcoin has no earnings, so a change in its equity loading cannot be a change in the correlation of its cash-flow news. Our design is a difference-in-differences on a panel of monthly equity co-movement for Bitcoin and nine never-listed cryptocurrencies, with coin and calendar-month fixed effects, and with randomization inference over a grid of placebo assignments as the governing inference procedure, because there is exactly one treated unit. We find no detectable change. The estimated differential shift in Bitcoin's Fisher-$z$ correlation with the S\&P 500 is
-% src: estimation_results.json#main.coefficients.d_etf_listed.estimate
-$-0.0212$, equivalent to under two correlation points and of the wrong sign for the broadened-access hypothesis, with a randomization $p$-value of
-% src: estimation_results.json#main.p_value_ri
-$0.665$ and a randomization 95\% interval running from
-% src: estimation_results.json#power_analysis.ri_ci95_lower_correlation_units
-% src: estimation_results.json#power_analysis.ri_ci95_upper_correlation_units
-$-0.122$ to $+0.086$ in correlation units. The result survives six methodologically distinct estimators, an endogenous break-dating procedure that locates no break at the approval, and a grid of placebo assets and placebo dates. Three findings qualify it. Bitcoin's volatility relative to the equity market fell after the listing even though its correlation did not move, which is the margin a broader investor base plausibly operates on. The sign, though not the null, reverses when the macro volatility regime is allowed to load differentially on Bitcoin, so the estimate is robustly null rather than robustly negative. And with 80\% power the design could only have detected a correlation increase of about
+\noindent On January 10, 2024 the SEC approved US spot Bitcoin exchange-traded products, widening who can conveniently hold an asset that has no cash flows. We ask whether this change in the investor base altered Bitcoin's co-movement with US equities. We compare Bitcoin with nine cryptocurrencies that never received such a product, using monthly correlations with the S\&P 500 from 2021 and randomization inference suited to a single treated asset. Bitcoin's equity correlation shows no detectable change relative to the controls: the estimated shift is $-0.0181$ in correlation units, under two correlation points and of the opposite sign to the broadened-access prediction.
+% src: estimation_results.json#main.effect_in_correlation_units
+The design could detect only an increase of about $0.148$ or larger, the conservative of two power calculations, so an increase of half that size remains possible.
 % src: estimation_results.json#power_analysis.mde_correlation_units_ri
-$0.148$; it excludes increases above roughly $0.086$, which rules out the upper half of the range the index-inclusion literature reports, but it cannot rule out an increase of half that magnitude. We read the evidence as bounding the ETF-attributable component of the 2024 co-movement environment rather than as a rejection of the habitat hypothesis.
+Bitcoin's volatility relative to equities fell after the listing. The evidence bounds the part of Bitcoin's 2024 co-movement with equities that the listing can explain.
 
-\bigskip
-\noindent\textbf{Keywords:} co-movement, exchange-traded funds, investor clienteles, Bitcoin, difference-in-differences, randomization inference
+\medskip
+\noindent\textbf{Keywords:} co-movement, exchange-traded funds, investor clienteles, Bitcoin, difference-in-differences
 
-\noindent\textbf{JEL:} G12, G14, G23, G11
+\noindent\textbf{JEL:} G12, G14, G23
 \end{abstract}
 
 \newpage
