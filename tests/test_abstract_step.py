@@ -164,6 +164,10 @@ def test_years_rate_bases_names_and_sample_bounds_are_not_counted():
         "12.3 people per 100,000 in COVID-19 times within 3 degrees of the centre."
     )
     assert [n for n, _v, _p in nums] == ["12.3"]
+    # A minimum detectable effect is a result, whatever follows it.
+    assert [n for n, _v, _p in ab.counted_numbers("The design could detect an increase of 0.148 or larger.")] == [
+        "0.148"
+    ]
 
 
 def test_a_finding_is_required():

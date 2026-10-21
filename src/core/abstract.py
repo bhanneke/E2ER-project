@@ -236,7 +236,7 @@ _SAMPLE_BOUND_BEFORE_RE = re.compile(
     re.I,
 )
 _SAMPLE_BOUND_AFTER_RE = re.compile(
-    r"^[\$\})]*\s*(?:\+|\\?plus\b|(?:and|or)\s+(?:larger|above|higher|over|more|greater|older|bigger))", re.I
+    r"^[\$\})]*\s*(?:\+|\\?plus\b|and\s+(?:larger|above|higher|over|greater|older|bigger))", re.I
 )
 
 
@@ -298,7 +298,10 @@ def _spots(prose: str, num_str: str) -> list[re.Match[str]]:
 
 
 def _is_sample_bound(prose: str, num_str: str) -> bool:
-    """Does ``num_str`` only define the sample ("magnitude 5 and larger", "at least 30 years")?"""
+    """Does ``num_str`` only define the sample ("magnitude 5 and larger", "at least 30 years")?
+
+    "or larger" does not make a bound: "could detect an increase of 0.148 or larger" states a result.
+    """
     spots = _spots(prose, num_str)
     return bool(spots) and all(
         _SAMPLE_BOUND_BEFORE_RE.search(prose[max(0, m.start() - 20) : m.start()])
