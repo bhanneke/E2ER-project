@@ -829,10 +829,11 @@
   },
   "repository": {
     "url": "https://github.com/bhanneke/E2ER-project",
+    "commit": "cc4c7b5ef85976cb391d404b0f1b20a1faefb1f2",
     "path": "examples/showcase"
   },
   "license": null,
-  "published": "2026-10-21T23:20:29Z",
+  "published": "2026-10-21T23:21:01Z",
   "purpose": "demonstration",
   "availability": {
     "data": {
@@ -842,6 +843,10 @@
       "access": "public",
       "url": "https://github.com/bhanneke/E2ER-project"
     }
+  },
+  "access": {
+    "status": "public",
+    "pdf": "https://github.com/bhanneke/E2ER-project/raw/cc4c7b5ef85976cb391d404b0f1b20a1faefb1f2/examples/showcase/paper/paper.pdf"
   },
   "dossier": {
     "id": "sha256:057929c26221ef8090a9989a86361bbdde737209c7a879c1523f780c98a75a35",
