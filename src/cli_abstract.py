@@ -223,8 +223,8 @@ def rewrite(
             else:
                 home._KNOWN[paper_id] = known_before
         if not outcome.passed:
-            written = ws / ab.ABSTRACT_FILE
-            last = written.read_text(encoding="utf-8").strip() if written.is_file() else ""
+            last_file = ws / ab.ABSTRACT_FILE
+            last = last_file.read_text(encoding="utf-8").strip() if last_file.is_file() else ""
             raise AbstractError(
                 f"the new abstract failed its check after {outcome.attempts} attempt(s): "
                 + "; ".join(outcome.check.problems)
