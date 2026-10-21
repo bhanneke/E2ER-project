@@ -7,7 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.17.2] — 2026-10-21
+## [0.17.3] — 2026-10-21
+
+### Fixed
+- **The release workflow's tests have 50 minutes.** The suite takes up to 30 minutes on a hosted runner, so the 25-minute limit cancelled the release of 0.17.2 before anything was built; 0.17.2 was tagged but never published to PyPI. 0.17.3 is 0.17.2 with this change.
+
+## [0.17.2] — 2026-10-21 (tagged, not published)
 
 ### Added
 - **`e2er publish` asks before anything is sent or pushed.** After the rehearsal it prints what goes where (the platform and handle, the GitHub repository and folder, Zenodo) and asks "Publish '<title>' to <platform> as <handle>? Files to GitHub <repo>/<path>. [y/N]"; only `y` or `yes` goes on, anything else sends nothing, pushes nothing and leaves the folder as it was. A run without a terminal on standard input needs `--yes` (`-y`) and otherwise refuses at once with nothing sent; `--dry-run` never asks and never sends. The dashboard's Publish button asks the same question in the browser and sends `confirm: true`; `POST /api/papers/<id>/publish` without it (and not a dry run) is refused with 422.
