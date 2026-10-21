@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.2] — 2026-10-21
+
 ### Added
 - **`e2er publish` asks before anything is sent or pushed.** After the rehearsal it prints what goes where (the platform and handle, the GitHub repository and folder, Zenodo) and asks "Publish '<title>' to <platform> as <handle>? Files to GitHub <repo>/<path>. [y/N]"; only `y` or `yes` goes on, anything else sends nothing, pushes nothing and leaves the folder as it was. A run without a terminal on standard input needs `--yes` (`-y`) and otherwise refuses at once with nothing sent; `--dry-run` never asks and never sends. The dashboard's Publish button asks the same question in the browser and sends `confirm: true`; `POST /api/papers/<id>/publish` without it (and not a dry run) is refused with 422.
 - **No publishing from a test run** (`src/core/test_guard.py`). With `PYTEST_CURRENT_TEST` set (also in a command a test starts), `E2ER_TEST=1`, or `CI=true` together with a test command (pytest, unittest, nose2, tox, nox), e2er never reads or writes the keychain or `~/.e2er/credentials.json` and reads no saved Zenodo token (only `E2ER_TOKEN`, `ZENODO_TOKEN` and a credentials file the test names in `E2ER_CREDENTIALS`), refuses every request to a platform or Zenodo other than a loopback address or the address in `E2ER_TEST_SERVER` (never e2er.org), and runs no `gh` and no push to GitHub (`E2ER_TEST_GITHUB=fake` for e2er's own tests with a fake gh). Documented under "Running e2er inside your own test suite" in docs/publishing.md. On 2026-10-20 a run of `tests/test_publish_github.py` published test studies to e2er.org with the machine's keychain token.
