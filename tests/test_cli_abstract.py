@@ -43,8 +43,13 @@ class FakeWriter(LLMBackend):
         self.prompts: list[str] = []
 
     async def tool_loop(self, system, messages, tools, tool_handler, max_turns=30, *, paper_id=None, specialist=None):
+        from src.home import find_workspace
+
         self.calls += 1
         self.prompts.append(str(messages[0]["content"]))
+        # A CLI backend runs in the workspace it finds by the paper id: the scratch workspace.
+        self.cwd = find_workspace(paper_id or "")
+        assert (self.cwd / "paper_draft.tex").is_file(), self.cwd
         text = self.texts[min(self.calls, len(self.texts)) - 1]
         await tool_handler.handle("write_file", {"path": "abstract.tex", "content": text})
         return ToolLoopResult(success=True, output="written", tool_calls_made=1, usage=TokenUsage(1, 1))

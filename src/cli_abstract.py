@@ -183,6 +183,11 @@ def rewrite(
         ws.mkdir()
         _workspace(b, ws, template)
         token = activate(spec)
+        # The CLI backends run the writer in the study's workspace, found by its paper id: the scratch one.
+        from . import home
+
+        known_before = home._KNOWN.get(paper_id)
+        home.remember_workspace(paper_id, ws)
         try:
             write_abstract_findings(ws, collect_abstract_findings(ws, spec.panel()))
             economics = active_economics()
@@ -213,6 +218,10 @@ def rewrite(
                 outcome = asyncio.run(ab.write_abstract(ws, execute, resend=True, economics=economics))
         finally:
             deactivate(token)
+            if known_before is None:
+                home._KNOWN.pop(paper_id, None)
+            else:
+                home._KNOWN[paper_id] = known_before
         if not outcome.passed:
             raise AbstractError(
                 f"the new abstract failed its check after {outcome.attempts} attempt(s): "
