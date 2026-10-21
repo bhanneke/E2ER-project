@@ -806,7 +806,11 @@ def main() -> None:
     submit_p.add_argument(
         "--improves", default=None, help="A listed part this is a new version of, e.g. skill:ines/codebook-development."
     )
-    submit_p.add_argument("--handle", default=None, help="Your profile handle, for a first contribution.")
+    submit_p.add_argument(
+        "--handle",
+        default=None,
+        help="The handle to contribute as: one of your account's handles (add them in account settings on e2er.org).",
+    )
     submit_p.add_argument("--discipline", default=None, help="Field, e.g. organization-science.")
     submit_p.add_argument("--role", default=None, help="Specialist: its role, in a sentence.")
     submit_p.add_argument("--output", default=None, help="Specialist: the file it writes, e.g. codebook.md.")

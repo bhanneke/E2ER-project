@@ -131,7 +131,7 @@ def whoami(url: str | None = None) -> int:
     if code != 200:
         print(f"error: {pc.error_text(code, body)}")
         return 1
-    handles = ", ".join(body.get("handles") or []) or "none yet (your first publication creates one)"
+    handles = ", ".join(body.get("handles") or []) or f"none yet (add one in account settings on {base})"
     print(f"{body['name']} <{body['email']}> on {base}\nHandles: {handles}")
     if body.get("study"):
         print(f"This token can only publish new versions of {body['study']}.")
