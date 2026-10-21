@@ -161,7 +161,7 @@ def test_at_most_three_numbers_each_a_result():
 def test_years_rate_bases_names_and_sample_bounds_are_not_counted():
     nums = ab.counted_numbers(
         "Between 1994 and 2005, magnitude 5 and larger earthquakes in NUTS-2 regions and the S\\&P 500 killed "
-        "12.3 people per 100,000 in COVID-19 times."
+        "12.3 people per 100,000 in COVID-19 times within 3 degrees of the centre."
     )
     assert [n for n, _v, _p in nums] == ["12.3"]
 

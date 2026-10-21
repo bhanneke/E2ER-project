@@ -49,7 +49,7 @@ The median country records 12.3 deaths per 100,000 people.
 ```
 
 Years, the base of a rate ("per 100,000") and the threshold that defines the
-sample ("magnitude 5 and larger") are not counted as numbers. Everything else
+sample ("magnitude 5 and larger", "within 3 degrees") are not counted as numbers. Everything else
 is: sample sizes, shares, ratios, estimates. Say the rest in words ("about
 three times", "two-thirds", "most").
 

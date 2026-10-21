@@ -131,8 +131,9 @@ def test_an_abstract_that_fails_twice_changes_nothing(bundle: Path):
         "The study makes no causal claim.\n\\end{abstract}"
     )
     writer = FakeWriter(bad)
-    with pytest.raises(AbstractError, match="failed its check after 2 attempt"):
+    with pytest.raises(AbstractError, match="failed its check after 2 attempt") as raised:
         _run(bundle, writer)
+    assert "The abstract of the last attempt:" in str(raised.value) and "(p = 0.4)" in str(raised.value)
     assert writer.calls == 2  # one resend, no more
     assert "Sent back by the abstract check" in writer.prompts[1]
     assert _snapshot(bundle) == before

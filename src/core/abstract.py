@@ -228,9 +228,12 @@ _MIRROR_STOP = frozenset({"that", "this", "with", "from", "were", "have", "been"
 _NAME_DIGITS_RE = re.compile(r"[A-Za-z][-\u2010\u2011]$")
 #: The number of a name written with a space: the S&P 500, the FTSE 100, NUTS 2.
 _INDEX_NAME_RE = re.compile(r"(?<![A-Za-z])[A-Z][A-Z&\\]*[A-Z]\s+$")
-#: A number that defines the sample, part of the question: "magnitude 5 and larger", "at least 30 years".
+#: A number that defines the sample, part of the question: "magnitude 5 and larger", "at least 30 years",
+#: "within 3 degrees of the cluster centre".
 _SAMPLE_BOUND_BEFORE_RE = re.compile(
-    r"(?:\bat\s+(?:least|most)|\bmagnitudes?|\bover|\bunder|\babove|\bbelow)\s*[\$\{(]*\s*$", re.I
+    r"(?:\bat\s+(?:least|most)|\bmagnitudes?|\bover|\bunder|\babove|\bbelow|\bwithin|\binside|\bup\s+to)"
+    r"\s*[\$\{(]*\s*$",
+    re.I,
 )
 _SAMPLE_BOUND_AFTER_RE = re.compile(
     r"^[\$\})]*\s*(?:\+|\\?plus\b|(?:and|or)\s+(?:larger|above|higher|over|more|greater|older|bigger))", re.I

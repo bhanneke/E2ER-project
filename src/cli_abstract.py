@@ -223,10 +223,13 @@ def rewrite(
             else:
                 home._KNOWN[paper_id] = known_before
         if not outcome.passed:
+            written = ws / ab.ABSTRACT_FILE
+            last = written.read_text(encoding="utf-8").strip() if written.is_file() else ""
             raise AbstractError(
                 f"the new abstract failed its check after {outcome.attempts} attempt(s): "
                 + "; ".join(outcome.check.problems)
                 + ". Nothing in the folder changed."
+                + (f"\nThe abstract of the last attempt:\n{last}" if last else "")
             )
         if not outcome.check.compared and outcome.check.numbers:
             raise AbstractError("the study has no results files to compare the abstract's numbers with")
