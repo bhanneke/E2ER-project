@@ -170,6 +170,10 @@ EXPORT_MAP: dict[str, list[tuple[str, str | None]]] = {
         # from the results (the researcher's decision, or a regime that does not
         # stop): e2er verify reads the decision from here.
         ("number_check.json", None),
+        # The abstract step (src/core/abstract.py): what its check found, and the
+        # points the reviewers made about the abstract that the writer was given.
+        ("abstract_check.json", None),
+        ("abstract_findings.json", None),
     ],
 }
 

@@ -1277,6 +1277,40 @@ def latex_packages_missing(output: str) -> bool:
     )
 
 
+def recompile_paper(bundle: Path) -> None:
+    """Compile ``paper/paper.tex`` into ``paper/paper.pdf`` with tectonic, in a scratch copy.
+
+    The export keeps figures in results/figures, while the paper includes them
+    from figures/ as in the run's workspace. Raises PublishError, with
+    paper.pdf left as it was, when tectonic produces no PDF or the PDF has a
+    citation turned into "?".
+    """
+    tex = bundle / "paper" / "paper.tex"
+    with tempfile.TemporaryDirectory() as tmp:
+        work = Path(tmp) / "paper"
+        shutil.copytree(tex.parent, work)
+        figs = bundle / "results" / "figures"
+        if not (work / "figures").exists() and figs.is_dir():
+            shutil.copytree(figs, work / "figures")
+        (work / "paper.pdf").unlink(missing_ok=True)  # only a PDF this compile writes counts
+        # As the run compiled it (renderer/compiler.py): tectonic continues past
+        # non-fatal errors (a package option xetex ignores, a missing figure).
+        run = subprocess.run(
+            ["tectonic", "--keep-intermediates", "-Z", "continue-on-errors", "paper.tex"],
+            cwd=work,
+            capture_output=True,
+            text=True,
+        )
+        produced = (work / "paper.pdf").is_file()
+        missing = unresolved_citations(work) if produced else []
+        if not produced and latex_packages_missing(f"{run.stdout}\n{run.stderr}"):
+            raise PublishError(LATEX_OFFLINE)
+        if not produced or missing:
+            why = f"{len(missing)} citation(s) unresolved: {', '.join(missing[:5])}" if missing else "tectonic failed"
+            raise PublishError(f"recompiling paper.tex would break the PDF ({why}); nothing was changed")
+        shutil.copyfile(work / "paper.pdf", tex.parent / "paper.pdf")
+
+
 def _stamp_and_compile(
     bundle: Path,
     author: str | None,
@@ -1303,35 +1337,11 @@ def _stamp_and_compile(
     tex.write_text(new, encoding="utf-8")
     rels = ["paper/paper.tex"]
     if shutil.which("tectonic"):
-        # Compile in a scratch copy: the export keeps figures in results/figures,
-        # while the paper includes them from figures/ as in the run's workspace.
-        with tempfile.TemporaryDirectory() as tmp:
-            work = Path(tmp) / "paper"
-            shutil.copytree(tex.parent, work)
-            figs = bundle / "results" / "figures"
-            if not (work / "figures").exists() and figs.is_dir():
-                shutil.copytree(figs, work / "figures")
-            (work / "paper.pdf").unlink(missing_ok=True)  # only a PDF this compile writes counts
-            # As the run compiled it (renderer/compiler.py): tectonic continues past
-            # non-fatal errors (a package option xetex ignores, a missing figure).
-            run = subprocess.run(
-                ["tectonic", "--keep-intermediates", "-Z", "continue-on-errors", "paper.tex"],
-                cwd=work,
-                capture_output=True,
-                text=True,
-            )
-            produced = (work / "paper.pdf").is_file()
-            missing = unresolved_citations(work) if produced else []
-            if not produced and latex_packages_missing(f"{run.stdout}\n{run.stderr}"):
-                tex.write_text(old, encoding="utf-8")
-                raise PublishError(LATEX_OFFLINE)
-            if not produced or missing:
-                tex.write_text(old, encoding="utf-8")
-                why = (
-                    f"{len(missing)} citation(s) unresolved: {', '.join(missing[:5])}" if missing else "tectonic failed"
-                )
-                raise PublishError(f"recompiling paper.tex would break the PDF ({why}); nothing was changed")
-            shutil.copyfile(work / "paper.pdf", tex.parent / "paper.pdf")
+        try:
+            recompile_paper(bundle)
+        except PublishError:
+            tex.write_text(old, encoding="utf-8")
+            raise
         rels.append("paper/paper.pdf")
     else:
         print("note: tectonic is not installed; paper.pdf was not recompiled (the footnote is in paper.tex)")

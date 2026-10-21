@@ -535,6 +535,7 @@ def test_the_iterative_mode_replays_to_the_end_through_the_server(tmp_path: Path
             "polish",
             "review",
             "revision",
+            "abstract",
             "replication",
         ], order
         rec = {et: json.loads(pl) for et, _, _, pl in rows if et in ("pivot", "self_critique", "polish_applied")}
@@ -545,7 +546,10 @@ def test_the_iterative_mode_replays_to_the_end_through_the_server(tmp_path: Path
             (2, ["section_writer"]),
         ]
         assert [(c["round"], c["verdict"]) for c in checks] == [(1, "continue"), (2, "pivot")]
-        assert rec["pivot"]["specialists"] == ["abstract_writer"] and rec["pivot"]["round"] == 2
+        # The change of approach asked for the abstract writer; the abstract step writes the abstract after the
+        # revision, so the pivot leaves it out and says so.
+        assert rec["pivot"]["specialists"] == [] and rec["pivot"]["round"] == 2
+        assert [r["specialist"] for r in rec["pivot"]["refused"]] == ["abstract_writer"]
         assert rec["self_critique"] == {
             "findings": 2,
             "serious": 1,
@@ -569,10 +573,18 @@ def test_the_iterative_mode_replays_to_the_end_through_the_server(tmp_path: Path
         assert "which we did not pre-register and report as exploratory" in draft
         assert "However, a longer post-announcement window" not in draft
         # The pivot's abstract, less its "<!-- src: -->" notes (compiling removes them: LaTeX prints them).
+        # The abstract step (after the revision) puts the paper's title on its first line (core/abstract.py).
+        from src.core.abstract import title_command
         from src.core.renderer.compiler import _HTML_COMMENT_RE
 
-        assert (ws / "abstract.tex").read_text(encoding="utf-8") == _HTML_COMMENT_RE.sub(
-            "", (files / "abstract_writer.pivot" / "abstract.tex").read_text(encoding="utf-8")
+        written = (ws / "abstract.tex").read_text(encoding="utf-8")
+        title = title_command(written)
+        assert title and written.startswith(title)
+        assert (
+            written[len(title) :].lstrip()
+            == _HTML_COMMENT_RE.sub(
+                "", (files / "abstract_writer.pivot" / "abstract.tex").read_text(encoding="utf-8")
+            ).lstrip()
         )
         corrections = json.loads((ws / "self_attack_corrections.json").read_text(encoding="utf-8"))
         assert corrections["applied"] == 1 and not corrections["failed"]
@@ -598,7 +610,7 @@ def test_the_iterative_mode_replays_to_the_end_through_the_server(tmp_path: Path
             ("pivot", "a change of approach"),
         ]
         assert run.rounds[1]["pivot"]["label"] == "Change of approach"
-        assert run.rounds[1]["pivot"]["specialist_labels"] == ["Abstract"]
+        assert run.rounds[1]["pivot"]["specialist_labels"] == []  # the abstract writer was left out
         in_rounds = [
             (s["specialist"], s["round"], s.get("pivot", False)) for s in run.workflow if s.get("phase") == "iterative"
         ]
@@ -606,7 +618,6 @@ def test_the_iterative_mode_replays_to_the_end_through_the_server(tmp_path: Path
             ("econometrics_specialist", 1, False),
             ("paper_drafter", 1, False),
             ("section_writer", 2, False),
-            ("abstract_writer", 2, True),
         ]
         critique = next(e for e in run.events if e["event"] == "self_critique")
         assert critique["label"] == "Self-critique" and critique["corrections_made"] == 1
@@ -619,8 +630,8 @@ def test_the_iterative_mode_replays_to_the_end_through_the_server(tmp_path: Path
         assert "Rounds of improvement" in text
         assert "Round 1: Estimation, Paper draft" in text and "Round 2: Sections and table layout" in text
         assert "Ceiling check: another round" in text and "Ceiling check: a change of approach" in text
-        assert "Change of approach: Abstract" in text
-        assert "2 rounds, then a change of approach" in text
+        assert "Not run as part of the change of approach: Abstract (the abstract step writes the abstract" in text
+        assert "2 rounds" in text  # the change of approach ran nobody: its abstract writer was left out
         assert "Self-critique: 2 findings, 1 serious; 1 correction made in the draft" in text
         assert "Polish: 2 notes; 1 change made in the draft" in text
         assert not problems(live), problems(live)

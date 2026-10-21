@@ -322,7 +322,7 @@ def test_a_step_that_runs_at_every_start_is_not_where_a_rerun_picks_up(tmp_path:
     st.completed_stages = ["initial"]
     st.last_status = "failed"
     payload = apply_rerun(tmp_path, st, find_spec("empirical"), "review", REMARK)
-    assert payload["reruns"] == ["review", "revision", "replication"]
+    assert payload["reruns"] == ["review", "revision", "abstract", "replication"]
 
 
 # ── a rerun from a specialist of the initial phase (2026-10-14 text-analysis demo) ──

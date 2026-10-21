@@ -18,6 +18,41 @@ paper is created; resume keeps it. e2er ships eleven:
 | `systematic-review` | A systematic review with a random-effects meta-analysis (PRISMA 2020): protocol, a recorded OpenAlex search, screening with a reason for every exclusion, open-access full texts, extraction with every number traced to its page and quote, e2er's own meta-analysis code, forest, funnel and flow figures; a narrative synthesis when too few studies can be pooled. |
 | `text-analysis` | Counts and models of the language of a corpus (Project Gutenberg or the researcher's texts): term frequencies, key terms by log-likelihood with the log ratio, collocations, dictionary and sentiment measures with a hand-checked sample, topic models with their stability across seeds. The corpus design is reviewed before the corpus is built; e2er recounts every number from the corpus. |
 
+## The abstract step
+
+Every template whose strategist plans a paper (empirical, empirical-preregistered,
+event-study-finance, policy-evaluation, spatial-analysis, descriptive-study,
+text-analysis, time-series-forecasting) has an `abstract` step after `revision`:
+
+```toml
+[[steps]]
+kind = "specialists"
+name = "abstract"
+run  = ["abstract_writer"]
+```
+
+The abstract writer reads the final `paper_draft.tex`, the result values the
+paper's text cites (its `% src:` notes) and what the reviewers and the
+self-attack said about the abstract (`abstract_findings.json`, written by the
+revision step whatever the reviewer's score), and writes `abstract.tex`. A
+deterministic check then reads it (`src/core/abstract.py`): at most 160 words;
+no p-values, intervals, standard errors, Fisher-z or test statistics; at most
+three numbers (years, the base of a rate and a sample threshold do not count),
+each a value of the results at the precision shown; a sentence that states a
+finding; a last sentence that is no negation and has no "rather than"; none of
+the constructions the phrase check refuses, "X, not Y" and the mirrored
+"changed A; changed nothing about B" among them. A failure sends the writer
+back once with the reasons. A second failure is a finding: `abstract_check.json`
+(exported to `reviews/`) and a failed `abstract` check in the dossier; the run
+goes on. Under `--governance off` or `contracts` the verdict is recorded and
+nobody is sent back. The compiler puts `abstract.tex` into the paper, in place
+of the draft's abstract environment or after the title, so the PDF,
+`report.html` and the title read from `abstract.tex` show one abstract. The
+strategist no longer plans the abstract writer, and the paper drafter is told
+to leave the abstract out. The field-map and systematic-review templates keep
+the abstract their review writers write. `e2er abstract <folder>` runs the
+same step on a finished study (docs/publishing.md).
+
 ## Skills and files a template adds
 
 A template can give its specialists extra skills and ask them for extra

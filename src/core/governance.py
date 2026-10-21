@@ -80,6 +80,9 @@ GATES: tuple[str, ...] = (
     "corpus",
     "text_results",
     "text_validation",
+    # The abstract (src/core/abstract.py): words, statistics, numbers that are results,
+    # a finding, the last sentence. Enforced, it sends the writer back once; it never halts.
+    "abstract",
 )
 
 #: Deterministic steps of a template whose failure means the run cannot go on,

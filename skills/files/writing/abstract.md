@@ -1,113 +1,193 @@
-# Writing Abstracts for Economics Papers
+# Writing the Abstract
 
-## Purpose
+## When you write it, and from what
 
-The abstract is the single most-read part of any paper. It determines whether a referee agrees to review, whether a colleague reads further, and how your paper is indexed and discovered. In roughly 150 words (100--200 depending on the journal), you must convey the full arc of the paper: what question you ask, why it matters, how you answer it, what you find, and why anyone should care.
+You write the abstract last. The paper is final when you start: it has been
+drafted, reviewed and revised, and the abstract step hands you the final
+`paper_draft.tex`, the headline result entries (the result values the paper's
+own text cites) and what the reviewers said about the abstract. Write
+`abstract.tex` from these. Every statement in the abstract is one the paper
+makes, and every number is a value of the results files. The compiler puts
+your abstract into the paper; the PDF, the report and the study page all show it.
+
+`abstract.tex` holds one `\begin{abstract} ... \end{abstract}` environment and
+nothing else: no `\title`, no `\documentclass`. Keywords go on a line inside
+the environment, after the text.
+
+**JEL codes (economics papers only) and keywords.** An economics paper gives
+2 to 3 JEL codes after the keywords. A paper in any other field (astronomy,
+climate, earth science, linguistics, public health, ...) has no JEL line: give
+keywords only.
+
+## What it says
+
+A good abstract has five parts, usually one sentence each, in 100 to 150 words
+(the check refuses more than 160):
+
+1. **Context.** The phenomenon and why it matters, anchored in a concrete fact.
+2. **Question.** What the paper asks, stated precisely.
+3. **Design and data.** How the paper answers it: the data, the setting, the method.
+4. **Finding.** What the paper found, in plain words, with one to three headline
+   magnitudes in plain units ("22 percentage points", "about three times",
+   "12.3 deaths per 100,000 people"). Give the finding the most space.
+5. **Meaning.** What follows from the finding for the question, stated as far
+   as the evidence carries it.
+
+The finding is stated as a finding: "Gross enrolment rose by about 22
+percentage points", never "We examine enrolment".
+
+## Numbers in the abstract
+
+Write one to three headline magnitudes, no more, each in plain units. Every
+number must be a value of the results files at the precision you show, and it
+gets its own source note on the line after its sentence, as everywhere in the
+paper (`writing/cite-numbers-by-source`):
+
+```latex
+The median country records 12.3 deaths per 100,000 people.
+% src: estimation_results.json#statistics.death_rate.median
+```
+
+Years, the base of a rate ("per 100,000") and the threshold that defines the
+sample ("magnitude 5 and larger") are not counted as numbers. Everything else
+is: sample sizes, shares, ratios, estimates. Say the rest in words ("about
+three times", "two-thirds", "most").
+
+Never report a p-value, a confidence interval (no "95%", no "interval"), a
+standard error, a Fisher-z or a test statistic. "No statistically significant
+effect" is plain language and allowed.
+
+## Null results and caveats
+
+A null result leads with what the null means. Write "Calendar seasonality in
+NFT returns is no larger than chance would produce" before any number, and
+then say what that implies for the question.
+
+A caveat gets at most one clause. The abstract does not list limitations; the
+paper does.
+
+Write "makes no causal claim" only where a reader could read the question
+causally (a policy, a treatment, an exposure). A descriptive question about a
+distribution needs no such sentence.
+
+Use plain language: a reader outside the field must understand every word.
+Name the method in words a general reader knows ("a difference-in-differences
+comparison of reforming and non-reforming countries").
+
+## How the abstract ends
+
+The last sentence says what the study shows or what follows from it. It is not
+a negation ("makes no causal claim", "does not identify", "none is causal") and
+it has no "rather than".
+
+## Constructions the check refuses
+
+"rather than"; "X, not Y" ("patterns in the catalogue, not in the planet
+population"); the mirrored "changed A; changed nothing about B"; and every
+construction of the phrase check (`reasoning/anti-slop`): "not only X but
+also Y", "not X but Y", "It is important to note", "Against this
+background", "delve", "plays a crucial role". State the positive claim and stop.
+
+## The check after you
+
+A deterministic check reads `abstract.tex` when you finish: at most 160 words;
+no p-values, intervals, standard errors, Fisher-z or test statistics; at most
+three numbers, each one a value of the results; at least one sentence that
+states a finding; a last sentence that is no negation and has no "rather
+than"; none of the refused constructions. When it fails you are sent back once
+with its reasons. Change what it names and keep the rest.
 
 ---
 
-## Structure: Five Sentences
+## Worked example: an empirical paper (NFT seasonality, e2er v1)
 
-A strong economics abstract follows a five-element structure. Not every element requires exactly one sentence, but the total should rarely exceed 150 words.
+> The Halloween effect---systematically higher November--April returns
+> relative to May--October---is the most robust calendar anomaly in equity
+> markets, persisting across countries and centuries. We test whether this
+> anomaly extends to non-fungible token (NFT) markets, which lack the
+> institutional features commonly invoked to explain equity seasonality while
+> preserving behavioral channels that operate through retail investor
+> psychology. Using 35.8 million Ethereum-based NFT trades across eight
+> platforms from 2017 to 2023, we find no statistically significant Halloween
+> effect in either USD- or ETH-denominated returns. Two-thirds of the raw
+> seasonal differential in USD returns comes from ETH price seasonality.
+> Summer returns are twice as volatile as winter returns. Day-of-week effects,
+> by contrast, are highly significant, suggesting that shorter-horizon
+> calendar patterns dominate seasonal ones. The absence of a Halloween effect
+> in a market without institutional investors, short selling, or exchange
+> closures is consistent with institutional mechanisms playing a necessary
+> role in sustaining the equity anomaly.
+>
+> Keywords: calendar anomaly, seasonality, cryptocurrency, behavioral finance.
+> JEL codes: G12, G14, G41.
 
-### 1. Context and Motivation (1 sentence)
+149 words; one counted number (35.8 million; the years 2017 and 2023 are not counted).
 
-Establish the topic and why it matters. Anchor in a concrete fact, policy question, or unresolved debate -- not a generic claim about importance.
+Sentence by sentence:
 
-**Good:** "Over 40 percent of U.S. workers changed occupations during the COVID-19 pandemic, yet little is known about the wage consequences of these transitions."
+1. *The Halloween effect ... persisting across countries and centuries.*
+   Context. It names the phenomenon, defines it in the same sentence and says
+   why it matters (the most robust calendar anomaly). No citation, no number.
+2. *We test whether this anomaly extends to NFT markets, which lack ...
+   while preserving ...* The question, and why this market is the test: it
+   removes the institutional explanations and keeps the behavioural ones. The
+   reader now knows what each outcome would mean.
+3. *Using 35.8 million Ethereum-based NFT trades ... we find no statistically
+   significant Halloween effect ...* Data, scope and the headline finding in
+   one sentence. The one number is the sample's size, in plain units. The
+   null is stated in plain words, with no p-value.
+4. *Two-thirds of the raw seasonal differential in USD returns comes from ETH
+   price seasonality.* A second finding, as a magnitude in words. It says
+   where the raw difference comes from. (The v1 paper wrote "reflects ETH
+   price seasonality rather than NFT-specific patterns"; the positive claim
+   alone says the same.)
+5. *Summer returns are twice as volatile as winter returns.* A finding in
+   eight words, the magnitude in words.
+6. *Day-of-week effects, by contrast, are highly significant, suggesting ...*
+   The contrast that gives the null its meaning: calendar patterns exist,
+   at a shorter horizon.
+7. *The absence of a Halloween effect in a market without ... is consistent
+   with institutional mechanisms playing a necessary role ...* What follows
+   for the question asked in sentence 2. It ends on a positive inference,
+   hedged once ("is consistent with").
 
-**Weak:** "Occupational mobility is an important topic in labor economics."
+## Worked example: a descriptive study (road traffic deaths, e2er demo)
 
-The first version gives the reader a reason to care. The second says nothing informative.
+> Road traffic deaths are a major source of preventable mortality, and the
+> reported burden differs sharply between countries. We ask how the World
+> Health Organization's estimated road traffic death rate varies across
+> countries and WHO regions in 2021. We describe the rate for 195 countries
+> from the WHO Global Health Observatory and summarise it by region. The
+> median country records 12.3 deaths per 100,000 population, and the average
+> rate of the African region is about three times that of the European region.
+> WHO region membership accounts for 39 percent of the variation between
+> countries. Because the rates are WHO model estimates, comparisons between
+> countries inherit the assumptions of WHO's estimation model.
 
-### 2. Research Question or Gap (1 sentence)
+111 words; three counted numbers (195, 12.3, 39), each with its `% src:` line in
+`abstract.tex`; 2021 and "per 100,000" are not counted.
 
-State what specific question the paper answers or what gap it fills. This should flow naturally from the motivation.
+1. Context: why the rate matters and that it varies.
+2. The question, as the study asks it.
+3. Data and design: the source, the sample and what is computed. A description
+   needs no method name beyond "describe" and "summarise".
+4. The headline finding: the typical level and the largest regional contrast,
+   one number and one ratio in words.
+5. A second finding: how much of the variation the regions account for.
+6. The one caveat, in one clause, stated as what it implies for the
+   comparisons. There is no "makes no causal claim": the question is
+   descriptive and cannot be read causally.
 
-**Good:** "This paper asks whether pandemic-induced occupation switching led to persistent wage losses or whether workers recovered within two years."
+## Checklist
 
-**Weak:** "This paper studies occupation switching."
-
-Be precise. The reader should know the exact scope of the inquiry.
-
-### 3. Method and Data (1 sentence)
-
-Describe how you answer the question. Include the identification strategy, the data source, and the setting. If you exploit a natural experiment or use a specific method, name it.
-
-**Good:** "Using matched employer-employee records from Denmark and exploiting municipality-level variation in lockdown severity as an instrument, we estimate the causal effect of involuntary occupation switching on wages."
-
-This sentence tells the reader: the data (Danish administrative records), the method (IV), the source of variation (lockdown severity), and the estimand (causal effect on wages).
-
-### 4. Key Findings (1--2 sentences)
-
-Report the main results with numbers. Quantify the magnitude of effects. Do not hide behind vague language.
-
-**Good:** "We find that involuntary switchers experience an initial wage penalty of 8 percent, which shrinks to 3 percent after two years. The penalty is concentrated among workers over 45 and those switching to lower-skill occupations."
-
-**Weak:** "We find significant negative effects on wages, with heterogeneity across groups."
-
-The first version is informative. The second could describe virtually any paper.
-
-### 5. Implications (1 sentence)
-
-State what follows from the findings -- for policy, for theory, or for understanding the world. Be specific but do not overclaim.
-
-**Good:** "These findings suggest that retraining subsidies targeted at older workers could substantially reduce the long-run costs of labor market disruptions."
-
-**Weak:** "Our results have important policy implications."
-
----
-
-## Assembled Example
-
-> Over 40 percent of U.S. workers changed occupations during the COVID-19 pandemic, yet little is known about the wage consequences of these transitions. This paper estimates the causal effect of pandemic-induced occupation switching on short- and medium-run earnings. Using matched employer-employee records from Denmark and exploiting municipality-level variation in lockdown severity as an instrument, we isolate involuntary switches from voluntary career changes. We find that involuntary switchers experience an initial wage penalty of 8 percent, which shrinks to 3 percent after two years; the penalty is concentrated among workers over 45 and those moving to lower-skill occupations. These findings suggest that targeted retraining subsidies for older displaced workers could substantially reduce the persistent costs of large-scale labor market disruptions.
-
-Word count: 127. This abstract contains all five elements, includes quantitative findings, and fits comfortably within typical journal limits.
-
----
-
-## Common Mistakes
-
-**Too vague.** Abstracts that rely on phrases like "we find significant effects" or "results suggest important implications" communicate nothing. Always include magnitudes.
-
-**Too long.** If your abstract exceeds 150 words, cut. Aim for 100-150 words. The abstract is not a miniature paper -- it is a summary that makes people want to read the paper. If you are over 150 words, you are including unnecessary detail.
-
-**Too much statistical detail.** Do NOT report p-values, coefficients, standard errors, confidence intervals, or test statistics in the abstract. Report findings in plain economic language with magnitudes: "a 12 percent increase," "roughly twice the baseline rate," "no statistically significant effect." The abstract conveys the story, not the regression output. A reader should understand the finding without knowing what a p-value is.
-
-**Burying the finding.** Some authors spend 80 percent of the abstract on background and method, then rush through results in the final clause. The findings are the most important part. Give them space.
-
-**No research question.** An abstract that describes an activity ("we estimate a model of...") without framing a question leaves the reader unsure what puzzle the paper solves.
-
-**Overclaiming.** Do not claim your paper "proves" a causal relationship if your design has important limitations. Do not claim policy implications that go far beyond your evidence. Referees notice.
-
-**JEL codes (economics papers only) and keywords.** Economics journals require JEL classification codes and keywords below the abstract; choose 2--3 JEL codes that match the paper's primary fields. A paper in any other field (astronomy, climate, earth science, linguistics, public health, ...) has no JEL line: give keywords only. Keywords should be specific enough to aid search but broad enough to reach the right audience. Include the key method or setting as a keyword.
-
----
-
-## Journal-Specific Guidelines
-
-Different journals have different word limits and expectations:
-
-- **AER, QJE, JPE, Econometrica, REStud (Top 5):** Typically 100--150 words. Very tight. Every word must earn its place.
-- **AEJ sub-journals, JEEA, REStat:** Usually 150 words, occasionally up to 200.
-- **Field journals (JDE, JHR, JUE, etc.):** Often allow up to 200 words. Still keep it concise.
-- **NBER Working Papers:** No strict limit, but convention is 150--200 words.
-- **Job market papers:** Slightly longer abstracts (up to 200 words) are acceptable since the audience may be less familiar with the subfield.
-
-Always check the journal's submission guidelines for specific requirements.
-
----
-
-## Revision Checklist
-
-- [ ] Abstract is 100-150 words (hard ceiling: 150 words)
-- [ ] Research question is stated explicitly
-- [ ] Method and data are identified in one sentence
-- [ ] Main finding includes a quantitative magnitude in plain language
-- [ ] NO p-values, coefficients, standard errors, or test statistics
-- [ ] NO confidence intervals or significance thresholds (e.g., "p < 0.01")
-- [ ] Implications are specific, not generic
-- [ ] No jargon that a general economist would not understand
-- [ ] No citations in the abstract (rare exceptions exist, but avoid)
-- [ ] Abstract can stand alone -- a reader learns the full contribution without reading the paper
-- [ ] Keywords are included; JEL codes only in an economics paper
+- [ ] 100 to 150 words (the check refuses more than 160)
+- [ ] The question is stated
+- [ ] Data and design in one sentence
+- [ ] The finding is stated as a finding, in plain words
+- [ ] One to three headline numbers, each a value of the results with its `% src:` line
+- [ ] No p-values, intervals, standard errors, Fisher-z or test statistics
+- [ ] A null result leads with what it means
+- [ ] At most one clause of caveat; "no causal claim" only where the question could be read causally
+- [ ] The last sentence is no negation and has no "rather than"
+- [ ] No "X, not Y", no mirrored clauses, no constructions of the phrase check
+- [ ] Keywords inside the environment; JEL codes only in an economics paper

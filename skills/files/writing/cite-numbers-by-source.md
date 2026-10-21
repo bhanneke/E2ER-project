@@ -5,13 +5,22 @@
 > sidecars via `table_spec.json` (see the `data/table-spec` skill), so a
 > rendered table cell cannot drift from its source and needs no `% src:`
 > comment. The rule below governs every number you write in **prose**
-> (abstract, body text, figure captions). Do not write tables in the draft.
+> (body text, figure captions, the abstract). Do not write tables in the draft.
 
 ## The rule
 
-Every numeric value you put in a paper — in the abstract, in body
-text, in a table cell, in a figure caption — MUST trace back to a
+Every numeric value you put in a paper — in body text, in a table
+cell, in a figure caption, in the abstract — MUST trace back to a
 value in one of the workspace's machine-readable JSON sidecars.
+
+**The abstract is the exception in how many numbers it carries, not in
+where they come from.** It reports one to three headline magnitudes in
+plain units, each with its own `% src:` line, and says the rest in
+words; no p-values, intervals, standard errors or test statistics (the
+`writing/abstract` skill, and the check of the abstract step). The
+paper's body is where the full set of numbers belongs. Only the
+abstract writer writes the abstract, after the revision; the paper
+drafter leaves it out.
 
 The sidecars are:
 
