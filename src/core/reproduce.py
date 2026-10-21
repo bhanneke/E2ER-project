@@ -549,7 +549,8 @@ def content_fingerprint(path: Path) -> dict[str, Any] | None:
                 tables = {}
                 for name in names:
                     cur = con.execute('SELECT * FROM "' + name.replace('"', '""') + '"')
-                    tables[name] = _rows_fingerprint([d[0] for d in cur.description or ()], cur)
+                    header = [d[0] for d in cur.description or ()]
+                    tables[name] = {**_rows_fingerprint(header, cur), "columns": [str(c) for c in header]}
             finally:
                 con.close()
             return {"tables": tables}
@@ -569,6 +570,32 @@ def _match(want: Any, have: dict[str, Any]) -> str:
     return ""
 
 
+def _on_columns(path: Path, table: str, columns: list[str]) -> dict[str, Any]:
+    """The fingerprint of ``table`` in the database ``path`` on ``columns`` only (in that order); {} on failure."""
+    import sqlite3
+
+    q = ", ".join('"' + c.replace('"', '""') + '"' for c in columns)
+    try:
+        con = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+        try:
+            cur = con.execute(f'SELECT {q} FROM "' + table.replace('"', '""') + '"')
+            return _rows_fingerprint(columns, cur)
+        finally:
+            con.close()
+    except sqlite3.Error:
+        return {}
+
+
+def _extra_columns(want: Any, have: dict[str, Any]) -> list[str]:
+    """The columns a reloaded table has beyond the study's (a connector that now records more), or []."""
+    if not isinstance(want, dict) or not isinstance(want.get("columns"), list):
+        return []
+    mine, theirs = [str(c) for c in want["columns"]], [str(c) for c in have.get("columns") or []]
+    if mine == theirs or not set(mine) < set(theirs):
+        return []
+    return [c for c in theirs if c not in mine]
+
+
 def _same_content(item: dict[str, Any], path: Path) -> tuple[str, list[str]]:
     """(SAME_ROWS, SAME_NUMBERS or DIFFERS, the tables that differ) for an input with a recorded content fingerprint."""
     found = content_fingerprint(path)
@@ -579,6 +606,12 @@ def _same_content(item: dict[str, Any], path: Path) -> tuple[str, list[str]]:
         # Tables no step reads (reproduce.json's "not_read"): a rerun that built the database again lacks them.
         skip = {str(t) for t in item.get("not_read") or [] if str(t) not in have}
         matches = {t: _match(want, have.get(t) or {}) for t, want in sorted(item["tables"].items()) if t not in skip}
+        for t, m in matches.items():
+            want = item["tables"][t]
+            # A reload whose table has more columns than the study's (the connector records more since): the
+            # study's input is the same when its own columns hold the same rows.
+            if not m and _extra_columns(want, have.get(t) or {}):
+                matches[t] = _match(want, _on_columns(path, t, [str(c) for c in want["columns"]]))
         differ = [t for t, m in matches.items() if not m]
         if differ:
             return DIFFERS, differ

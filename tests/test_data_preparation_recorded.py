@@ -378,3 +378,27 @@ def test_get_data_asks_a_slow_source_again_and_says_when_a_load_has_too_few_rows
     assert module.main() == 1
     err = capsys.readouterr().err
     assert "Could not load:" in err and "loaded 2 of the 5 rows the run loaded" in err
+
+
+def test_a_reloaded_table_with_more_columns_is_compared_on_the_studys_columns(tmp_path):
+    """The Gutenberg connector records translators since the demo ran: the reloaded texts have two more
+    columns. The study's input is the same when its own columns hold the same rows; a changed text is not."""
+    study, rerun = tmp_path / "study.db", tmp_path / "rerun.db"
+    con = sqlite3.connect(study)
+    con.execute("CREATE TABLE texts (id INTEGER, text TEXT)")
+    con.executemany("INSERT INTO texts VALUES (?,?)", [(1, "Rain fell."), (2, "Fog rose.")])
+    con.commit()
+    con.close()
+    con = sqlite3.connect(rerun)
+    con.execute("CREATE TABLE texts (id INTEGER, translators TEXT, text TEXT)")
+    con.executemany("INSERT INTO texts VALUES (?,?,?)", [(2, "", "Fog rose."), (1, "", "Rain fell.")])
+    con.commit()
+    con.close()
+    want = rp.content_fingerprint(study)
+    assert want and want["tables"]["texts"]["columns"] == ["id", "text"]
+    assert rp._same_content(want, rerun) == (rp.SAME_ROWS, [])
+    con = sqlite3.connect(rerun)
+    con.execute("UPDATE texts SET text = 'Fog rose' WHERE id = 2")  # the source revised a text
+    con.commit()
+    con.close()
+    assert rp._same_content(want, rerun) == (rp.DIFFERS, ["texts"])
