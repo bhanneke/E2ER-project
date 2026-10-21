@@ -41,22 +41,24 @@ def _put(folder: Path, rel: str, content: bytes) -> None:
 def _open_study(tmp_path: Path, *, reload: bool, prepare: bool = True) -> Path:
     """A study on open data (World Bank, Natural Earth) in data/data.db.
 
-    Export writes no step that loads an open source again, so by itself nothing gets data.db back. With
-    ``reload`` the recipe records one (code/get_data.py, as export writes it for a source with terms), and
-    with ``prepare`` also the study's step that builds rates_clean from the loaded tables.
+    Export records the steps that get data.db back (e2er after 0.17.1): code/get_data.py loads the open
+    sources' tables again, and the study's own step builds rates_clean from them. Without ``reload`` the
+    recipe is the one an earlier export wrote (no step loads an open source again); without ``prepare`` the
+    step that builds rates_clean is gone.
     """
     folder = _export(tmp_path / "open")
-    if not reload:
-        return folder
-    # The loader and steps export writes for the same study when its data have terms.
-    model = _export(tmp_path / "model", restricted=True)
-    _put(folder, "code/get_data.py", (model / "code" / "get_data.py").read_bytes())
     recipe = json.loads((folder / "reproduce.json").read_text(encoding="utf-8"))
-    theirs = json.loads((model / "reproduce.json").read_text(encoding="utf-8"))
-    recipe["files"] = theirs["files"]
-    recipe["steps"] = [s for s in theirs["steps"] if prepare or "when_missing" not in s]
-    [item] = [i for i in recipe["inputs"] if i["path"] == "data.db"]
-    item["reload"] = "get_data.py"
+    assert [s["run"][-1] for s in recipe["steps"]] == ["get_data.py", "clean_rates.py", "run_estimation.py"]
+    if reload and prepare:
+        return folder
+    if not reload:
+        recipe["steps"] = [s for s in recipe["steps"] if s["run"][-1] == "run_estimation.py"]
+        recipe["files"].pop("get_data.py")
+        recipe.pop("database")
+        for item in recipe["inputs"]:
+            item.pop("reload", None)
+    else:
+        recipe["steps"] = [s for s in recipe["steps"] if "when_missing" not in s]
     _put(folder, "reproduce.json", (json.dumps(recipe, indent=2) + "\n").encode())
     return folder
 

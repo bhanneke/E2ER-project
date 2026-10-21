@@ -16,7 +16,8 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 #: The workspace's record of every script run (by `e2er-run` and by the runner), one JSON line each:
-#: ``{script, sha256, started_at, exit_code, by, python, packages, outputs}``; ``outputs`` maps every
+#: ``{script, sha256, started_at, exit_code, by, python, packages, outputs, tables}``; ``tables`` names the
+#: tables of data.db the run created, changed or dropped (:func:`written_tables`); ``outputs`` maps every
 #: result-type file the run wrote (:data:`OUTPUT_SUFFIXES`) to its SHA-256 after the run, so a results
 #: file can be traced to the run of the script that wrote it (:func:`results_writer`). Export reads it
 #: to rerun the scripts in the order the run ran them (reproduce.json) and to pin the packages they
@@ -111,8 +112,22 @@ _SKIP_DIRS = frozenset({".git", ".venv", "venv", "__pycache__", "node_modules", 
 #: A file larger than this is not fingerprinted (a data export, not a results file).
 _MAX_OUTPUT_BYTES = 64 * 1024 * 1024
 
-#: (modification time in ns, size) of each candidate output, by workspace-relative path.
-Snapshot = dict[str, tuple[int, int]]
+#: The study's database, whose tables a run may write (``df.to_sql(name, ...)`` with a name the code computes).
+DATABASE = "data.db"
+#: e2er's record of the tables of data.db as they were when it last looked: ``{"stat": [...], "tables":
+#: {table: digest}}``, so a run's "before" costs nothing when the database has not changed since. A dotfile:
+#: internal, never exported.
+DB_TABLES_CACHE = ".e2er-db-tables.json"
+#: A database larger than this gets a cheap digest per table (its definition, row count and last rowid)
+#: instead of one over every row: the record then misses a table rewritten with the same number of rows.
+_MAX_DB_DIGEST_BYTES = 2 * 1024 * 1024 * 1024
+
+
+class Snapshot(dict[str, tuple[int, int]]):
+    """(modification time in ns, size) of each candidate output, by workspace-relative path; and the tables of
+    the study's database (``db``: table -> digest, None without a database) as they were before the run."""
+
+    db: dict[str, str] | None = None
 
 
 def _candidates(workspace: Path) -> list[Path]:
@@ -137,9 +152,100 @@ def _candidates(workspace: Path) -> list[Path]:
     return out
 
 
+def _db_stat(workspace: Path) -> list[int] | None:
+    """What changes when the database changes: size and time of data.db and of its write-ahead log."""
+    out: list[int] = []
+    for name in (DATABASE, DATABASE + "-wal"):
+        try:
+            st = (Path(workspace) / name).stat()
+        except OSError:
+            if name == DATABASE:
+                return None
+            out += [0, 0]
+            continue
+        out += [st.st_mtime_ns, st.st_size]
+    return out
+
+
+def table_digests(db: Path) -> dict[str, str] | None:
+    """{table: digest of its definition and rows} of a SQLite database; None when it cannot be read.
+
+    A digest changes when the table is written: rows added, changed or removed, or the table replaced
+    (``to_sql(if_exists="replace")``). Standard library only.
+    """
+    import sqlite3
+
+    try:
+        big = Path(db).stat().st_size > _MAX_DB_DIGEST_BYTES
+        con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+    except (OSError, sqlite3.Error):
+        return None
+    try:
+        out: dict[str, str] = {}
+        rows = con.execute("SELECT name, sql FROM sqlite_master WHERE type='table' ORDER BY name").fetchall()
+        for name, sql in rows:
+            if str(name).startswith("sqlite_"):
+                continue
+            q = '"' + str(name).replace('"', '""') + '"'
+            h = hashlib.sha256(str(sql).encode("utf-8"))
+            if big:
+                h.update(repr(con.execute(f"SELECT COUNT(*), MAX(rowid) FROM {q}").fetchone()).encode())
+            else:
+                for row in con.execute(f"SELECT * FROM {q}"):
+                    h.update(repr(row).encode("utf-8", "replace"))
+            out[str(name)] = h.hexdigest()
+        return out
+    except sqlite3.Error:
+        return None
+    finally:
+        con.close()
+
+
+def db_tables_now(workspace: Path) -> dict[str, str] | None:
+    """The tables of the workspace's data.db (table -> digest), from e2er's record when the database has not
+    changed since it was made; None without a readable database."""
+    workspace = Path(workspace)
+    stat = _db_stat(workspace)
+    if stat is None:
+        return None
+    cache = workspace / DB_TABLES_CACHE
+    try:
+        doc = json.loads(cache.read_text(encoding="utf-8"))
+        if doc.get("stat") == stat and isinstance(doc.get("tables"), dict):
+            return {str(k): str(v) for k, v in doc["tables"].items()}
+    except (OSError, ValueError, AttributeError):
+        pass
+    tables = table_digests(workspace / DATABASE)
+    if tables is not None and _db_stat(workspace) == stat:
+        try:
+            cache.write_text(json.dumps({"stat": stat, "tables": tables}), encoding="utf-8")
+        except OSError:
+            pass
+    return tables
+
+
+def written_tables(workspace: Path, before: dict[str, str] | None) -> dict[str, list[str]] | None:
+    """{"written": [...], "dropped": [...]}: the tables of data.db a run created or changed, and removed.
+
+    None when the database is unchanged (or absent before and after).
+    """
+    after = db_tables_now(workspace)
+    if after is None and before is None:
+        return None
+    before = before or {}
+    after = after or {}
+    written = sorted(t for t, d in after.items() if before.get(t) != d)
+    dropped = sorted(t for t in before if t not in after)
+    if not written and not dropped:
+        return None
+    return {"written": written, "dropped": dropped}
+
+
 def output_snapshot(workspace: Path) -> Snapshot:
-    """The candidate outputs as they are before a script runs (pass it to :func:`record_script_run`)."""
-    snap: Snapshot = {}
+    """The candidate outputs, and the tables of data.db, as they are before a script runs (pass it to
+    :func:`record_script_run`)."""
+    snap = Snapshot()
+    snap.db = db_tables_now(workspace)
     for p in _candidates(workspace):
         try:
             st = p.stat()
@@ -180,7 +286,10 @@ def record_script_run(
     """Append one run to the workspace's script log; never raises.
 
     With ``before`` (:func:`output_snapshot` taken before the script ran) the line
-    also records the files the run wrote, each with its SHA-256 (``outputs``).
+    also records the files the run wrote, each with its SHA-256 (``outputs``), and the tables of
+    data.db it created, changed or removed (``tables``: ``{"written": [...], "dropped": [...]}``),
+    found by comparing the tables before and after the run, so a table the code names with a
+    variable (``t.to_sql(name, con)``) is traced to its script too.
     """
     try:
         sha = hashlib.sha256((Path(workspace) / rel).read_bytes()).hexdigest()
@@ -193,6 +302,9 @@ def record_script_run(
         }
         if before is not None:
             line["outputs"] = written_outputs(Path(workspace), before)
+            tables = written_tables(Path(workspace), before.db) if isinstance(before, Snapshot) else None
+            if tables is not None:
+                line["tables"] = tables
         if record:  # the interpreter's Python version and the packages the script loaded
             if isinstance(record.get("python"), str):
                 line["python"] = record["python"]

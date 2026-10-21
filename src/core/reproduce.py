@@ -576,7 +576,9 @@ def _same_content(item: dict[str, Any], path: Path) -> tuple[str, list[str]]:
         return DIFFERS, []
     if isinstance(item.get("tables"), dict):
         have = found.get("tables") or {}
-        matches = {t: _match(want, have.get(t) or {}) for t, want in sorted(item["tables"].items())}
+        # Tables no step reads (reproduce.json's "not_read"): a rerun that built the database again lacks them.
+        skip = {str(t) for t in item.get("not_read") or [] if str(t) not in have}
+        matches = {t: _match(want, have.get(t) or {}) for t, want in sorted(item["tables"].items()) if t not in skip}
         differ = [t for t, m in matches.items() if not m]
         if differ:
             return DIFFERS, differ

@@ -391,6 +391,9 @@ def _rerun_plan(
         return {"loads": [rel]}
     from .reproduce_recipe import _db_tables, _load_tables, _writes_table
 
+    mapped = _database_rerun(folder, recipe, rel, how)
+    if mapped is not None:
+        return mapped
     loads_doc = _read_json(folder / "data" / "data_sources.json")
     loads = loads_doc.get("loads") if isinstance(loads_doc, dict) else None
     loaded = _load_tables([e for e in loads or [] if isinstance(e, dict)])
@@ -417,6 +420,53 @@ def _rerun_plan(
     return out
 
 
+def _database_rerun(folder: Path, recipe: dict[str, Any], rel: str, how: dict[str, Any]) -> dict[str, Any] | None:
+    """_rerun_plan for the database reproduce.json maps table by table (``database``, e2er after 0.17.1).
+
+    ``loads``: tables get_data.py loads again; ``builds``: the scripts that build the others; ``not_read``:
+    tables no step reads, which a rerun does not need; ``not_built``: tables a step reads that nothing gets
+    back. None when the recipe has no map for ``rel``.
+    """
+    from .. import reproduce as rp
+    from .reproduce_recipe import _db_tables
+
+    db = recipe.get("database")
+    if not isinstance(db, dict) or not isinstance(db.get("tables"), dict):
+        return None
+    files = recipe.get("files") or {}
+    db_path = str(db.get("path") or "data.db")
+    if str(files.get(db_path, db_path)) != rel:
+        return None
+    mapped: dict[str, Any] = db["tables"]
+    tables = _db_tables(folder / rel)
+    loads: list[str] = []
+    builds: dict[str, list[str]] = {}
+    not_read: list[str] = []
+    left: list[str] = []
+    # Only what a step of the recipe runs gets a table back (a recipe edited by hand may name a script no step runs).
+    steps = {Path(a).name for st in recipe.get("steps") or [] if isinstance(st, dict) for a in rp.step_argv(st)}
+    for t in tables:
+        e = mapped.get(t)
+        if not isinstance(e, dict):
+            left.append(t)
+            continue
+        back = e.get("back") if Path(str(e.get("back") or "")).name in steps else None
+        if back == "get_data.py":
+            loads.append(t)
+        elif isinstance(back, str) and back:
+            builds.setdefault(str(files.get(back, back)), []).append(t)
+        elif not e.get("read"):
+            not_read.append(t)
+        else:
+            left.append(t)
+    out: dict[str, Any] = {"loads": loads, "builds": [{"by": by, "what": what} for by, what in builds.items()]}
+    if not_read:
+        out["not_read"] = not_read
+    if left:
+        out["not_built"] = left
+    return out
+
+
 def rerun_words(item: dict[str, Any]) -> str:
     """What a rerun of the package does about a left-out file, in plain words: what it loads again from the
     sources, what the study's own steps build again, and what it cannot get."""
@@ -431,6 +481,8 @@ def rerun_words(item: dict[str, Any]) -> str:
             what = "it" if b["what"] == [item["path"]] else f"the tables {', '.join(b['what'])}"
             source = " from the data it loads again" if not item.get("loads") else ""
             parts.append(f"builds {what} again with {b['by']}{source}")
+        if item.get("not_read"):
+            parts.append(f"does not need the tables {', '.join(item['not_read'])} (no step reads them)")
         if item.get("not_built"):
             parts.append(f"cannot get the tables {', '.join(item['not_built'])} (no step builds them)")
         if parts:

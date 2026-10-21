@@ -68,11 +68,34 @@ The scripts' copies in `code/` name the run folder instead of the workspace's
 full path. A study without estimation results or without such a script gets no
 recipe, and README.md says why; so does `e2er reproduce` on the folder.
 
-When a source with terms loaded a table into `data.db` (the folder may then come
-without it), `get_data.py` loads every table a source loaded, and the recipe runs
-the data preparation after it: the scripts of the script log that build the
-tables the estimation reads (a cleaned table of the data analyst). Those steps
-carry `"when_missing": ["data.db"]` and run only when the folder lacks data.db.
+A folder may come without `data.db` (a source's terms, or too large for GitHub),
+so the recipe records how to get it back. `get_data.py` lists the loads of every
+table a step reads, open sources too (Project Gutenberg, World Bank; when a source
+with terms loaded a table, every table a source loaded), and loads one only when
+the folder lacks it; that needs the internet and takes about as long as the run's
+loads, which the recipe's notes say. The recipe then runs the data preparation:
+the scripts that built the tables the estimation reads, and the tables those read,
+in the order the run ran them. Those steps carry `"when_missing": ["data.db"]` and
+run only when the folder lacks data.db. Who wrote a table comes from the script
+log: since 0.17.1 each run records the tables of `data.db` it created, changed or
+dropped (`tables: {"written": [...], "dropped": [...]}`, from the database before
+and after the run, kept current in `.e2er-db-tables.json`), so a table written
+under a name the code computes (`for name, t in [("corpus", corpus), …]:
+t.to_sql(name, con)`) is traced too. For older runs the scripts' code answers:
+`to_sql("t")`, `to_sql(f"t_{c}")`, `CREATE TABLE`/`INSERT INTO`, or `to_sql(name)`
+with the table's name in a string of the script; tables read through an f-string
+(`f"select … from gutenberg_texts_{c}"`) count as read. `reproduce.json`'s
+`database` maps every table: `how` (`loaded`, `built`, `unknown`), `source` or `by`
+(the script), `evidence` (`data_sources.json`, `script log`, `the scripts' code`),
+`read` (a step reads it) and `back` (how a rerun without data.db gets it:
+`get_data.py`, the preparation script, or null). A table no step reads (a
+catalogue the study drew its sample from) is not loaded again; the `data.db` input
+lists it in `not_read`, and a rebuilt database is compared without it. A small data
+file a step reads (`data/sample_ids_v2.csv`) ships with the folder; when the script
+log says which script made it, the input carries `made_by` (`script`, `file` in the
+folder, `seeded` for a script that sets a random seed, `from`: the files it read that
+other scripts made), and the notes say that the rerun reads the file rather than
+drawing it again.
 Table inputs (CSV/TSV, and each table of a SQLite database) also carry their
 content (`rows`, `content_sha256`, or `tables`), order of rows aside: a reload
 with the same rows in another order is the study's input. `numeric_sha256` is the
