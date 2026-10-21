@@ -71,10 +71,18 @@ LARGE_WHEELS = 200 * 1024 * 1024
 _DATA_SUFFIXES = frozenset({".db", ".sqlite", ".sqlite3", ".csv", ".tsv", ".parquet", ".xlsx", ".jsonl", ".dta"})
 #: Records about the data that are not the data (kept in a package without data).
 _DATA_RECORDS = frozenset({"data/data_sources.json", "data/data_dictionary.json", "data/data_summary.md"})
+#: The largest file each host takes (GitHub refuses a push with a file over 100 MiB; no Git LFS on this path).
+#: A data file over it that a recorded step loads or builds again is left out (``kind: "size"``); `e2er verify`
+#: accepts such a declaration only when provenance.json records the file larger than the host's limit.
+HOST_FILE_LIMITS = {"GitHub": 100 * 1024 * 1024}
 
 
 class PackageError(Exception):
     """The package cannot be written or opened. The message is shown as is."""
+
+
+class TooLargeError(PackageError):
+    """A data file is larger than the host takes and no recorded step of the study gets it back."""
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -250,23 +258,48 @@ def rebuild_for(folder: Path, recipe: dict[str, Any] | None, left_out: list[dict
 
 
 def left_out_data(
-    folder: Path, files: dict[str, str] | dict[str, Path], recipe: dict[str, Any] | None, *, no_data: bool
+    folder: Path,
+    files: dict[str, str] | dict[str, Path],
+    recipe: dict[str, Any] | None,
+    *,
+    no_data: bool,
+    host: str | None = None,
+    max_file_bytes: int | None = None,
 ) -> list[dict[str, Any]]:
-    """The data files the package leaves out, each with why and how a rerun rebuilds it (or that it cannot)."""
+    """The data files the package leaves out, each with why and how a rerun rebuilds it (or that it cannot).
+
+    ``kind`` says why: ``"terms"`` (a source's terms keep it out), ``"no_data"`` (``--no-data``) or ``"size"``:
+    with a ``host`` (``"GitHub"``), a data file larger than the host takes (``max_file_bytes``, else
+    HOST_FILE_LIMITS) is left out when a recorded step of the study loads or builds it again; one that nothing
+    gets back raises TooLargeError.
+    """
     from .. import data_terms
 
+    folder = Path(folder)
     out: dict[str, dict[str, Any]] = {}
     for use in data_terms.uses(folder):
         for rel in use.files:
             # A data file of the source's, or a file the study built from its data that holds its rows
             # (a results table of the regions, a figure spec of the stars: derived_data.kept_out).
             if rel in files and (_is_data(rel) or rel in use.derived):
-                out[rel] = {"path": rel, "reason": use.reason(rel), "source": use.terms.connector}
+                out[rel] = {"path": rel, "reason": use.reason(rel), "source": use.terms.connector, "kind": "terms"}
     if no_data:
         inputs = _input_files(recipe)
         for rel in files:
             if (_is_data(rel) or (rel in inputs and _data_suffix(rel))) and rel not in out:
-                out[rel] = {"path": rel, "reason": "packed with --no-data"}
+                out[rel] = {"path": rel, "reason": "packed with --no-data", "kind": "no_data"}
+    limit = max_file_bytes if max_file_bytes is not None else HOST_FILE_LIMITS.get(host or "")
+    if host and limit:
+        for rel in files:
+            size = (folder / rel).stat().st_size
+            if rel not in out and size > limit and _may_be_left_out(rel):
+                out[rel] = {
+                    "path": rel,
+                    "reason": f"too large for {host} ({_mb(size)})",
+                    "kind": "size",
+                    "host": host,
+                    "bytes": size,
+                }
     inputs = _input_files(recipe)
     # The files the recipe lays out for the code: the study's code reads them (a units table, a figure spec).
     laid_out = {str(v) for v in ((recipe or {}).get("files") or {}).values()}
@@ -281,7 +314,37 @@ def left_out_data(
         content = _content_of(folder / rel)
         if content:
             item["content"] = content
+    stuck = [_size_problem(item, recipe) for item in out.values() if item.get("kind") == "size"]
+    stuck = [p for p in stuck if p]
+    if stuck:
+        raise TooLargeError(
+            f"{host} does not take files larger than {(limit or 0) / 1024**2:.0f} MB, and no recorded step of the "
+            "study gets these back, so a copy without them could not be run again:\n  " + "\n  ".join(stuck)
+        )
     return [out[k] for k in sorted(out)]
+
+
+def _mb(n: int) -> str:
+    """A file's size as GitHub states its limit: "145 MB" (decimal), "12 kB" under a megabyte."""
+    return f"{n / 1_000_000:.0f} MB" if n >= 1_000_000 else f"{max(1, round(n / 1000))} kB"
+
+
+def _size_problem(item: dict[str, Any], recipe: dict[str, Any] | None) -> str:
+    """Why a file too large for the host cannot be left out, in plain words; empty when a rerun gets it back."""
+    rel, size = item["path"], _mb(int(item["bytes"]))
+    if recipe is None:
+        return f"{rel} ({size}): the study has no reproduce.json"
+    compared = {str(c.get("published")) for c in recipe.get("compare") or [] if isinstance(c, dict)}
+    if rel in compared:
+        return f"{rel} ({size}): it is the published result a rerun is compared with"
+    if not isinstance(item.get("rebuilt_by"), dict):
+        return f"{rel} ({size}): no step of reproduce.json loads it or builds it again"
+    if item.get("not_built"):
+        return (
+            f"{rel} ({size}): reproduce.json loads or builds only some of its tables again; no step builds "
+            + ", ".join(item["not_built"])
+        )
+    return ""
 
 
 def _content_of(path: Path) -> dict[str, Any]:
@@ -600,8 +663,14 @@ def build(
     no_data: bool = False,
     locker: Locker | None = None,
     downloader: Downloader | None = None,
+    host: str | None = None,
+    max_file_bytes: int | None = None,
 ) -> Packed:
-    """Write the exported study ``folder`` into one ``.e2er`` file; returns where and what it holds."""
+    """Write the exported study ``folder`` into one ``.e2er`` file; returns where and what it holds.
+
+    ``host`` (``"GitHub"``): the package is opened there, so a data file larger than the host takes is left
+    out when a recorded step gets it back, and TooLargeError is raised when none does (left_out_data).
+    """
     from ... import __version__
 
     folder = Path(folder).expanduser().resolve()
@@ -621,7 +690,7 @@ def build(
     prov = _read_json(folder / "provenance.json") or {}
     files = study_files(folder)
     recipe, why = _recipe(folder)
-    left_out = left_out_data(folder, files, recipe, no_data=no_data)
+    left_out = left_out_data(folder, files, recipe, no_data=no_data, host=host, max_file_bytes=max_file_bytes)
     for item in left_out:
         files.pop(item["path"], None)
     rebuild = rebuild_for(folder, recipe, left_out)
@@ -921,15 +990,37 @@ def left_out_content(folder: Path, *, trusted: bool = False) -> dict[str, dict[s
     """The content fingerprints the package recorded for the files it left out, by path.
 
     From a package `e2er reproduce` opened (``trusted``) all of them; in a folder (a clone of a repository
-    that holds an unpacked package) only for files the folder's own records say a source's terms keep out.
+    that holds an unpacked package) only those its own records support (supported_left_out).
+    """
+    declared = declared_left_out(folder) if trusted else supported_left_out(folder)
+    return {p: i["content"] for p, i in declared.items() if isinstance(i.get("content"), dict)}
+
+
+def too_large_for_host(folder: Path, item: dict[str, Any]) -> bool:
+    """Whether a declaration "left out for its size" holds by the folder's own records: provenance.json records
+    the file larger than the limit of the host the declaration names (HOST_FILE_LIMITS, not the declaration's
+    own numbers)."""
+    limit = HOST_FILE_LIMITS.get(str(item.get("host") or ""))
+    if item.get("kind") != "size" or not limit:
+        return False
+    meta = ((_read_json(Path(folder) / "provenance.json") or {}).get("files") or {}).get(item.get("path"))
+    return isinstance(meta, dict) and isinstance(meta.get("bytes"), int) and meta["bytes"] > limit
+
+
+def supported_left_out(folder: Path) -> dict[str, dict[str, Any]]:
+    """The declared left-out files of an unpacked package in a folder that the folder's own records support:
+    under a source's terms (data_terms.restricted_paths), or too large for the host (too_large_for_host).
+
+    In a folder, e2er-package.json is only a file anyone can write; these are the declarations `e2er verify`
+    and `e2er reproduce` accept there.
     """
     declared = declared_left_out(folder)
-    if not trusted:
-        from ..data_terms import restricted_paths
+    if not declared:
+        return {}
+    from ..data_terms import restricted_paths
 
-        restricted = restricted_paths(folder)
-        declared = {p: i for p, i in declared.items() if p in restricted}
-    return {p: i["content"] for p, i in declared.items() if isinstance(i.get("content"), dict)}
+    restricted = restricted_paths(folder)
+    return {p: i for p, i in declared.items() if p in restricted or too_large_for_host(folder, i)}
 
 
 def declared_left_out(folder: Path) -> dict[str, dict[str, Any]]:

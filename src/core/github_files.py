@@ -201,6 +201,12 @@ def create_repo(t: Target, description: str) -> None:
 
 # ── what goes up: what `e2er pack` ships ─────────────────────────────────────
 
+#: The host, as package.left_out_data names it ("too large for GitHub (145 MB)").
+HOST = "GitHub"
+#: GitHub refuses a push with a file larger than this (100 MiB); there is no Git LFS on this path. A data file
+#: over it that a recorded step gets back is left out; any other file over it stops the publish (too_large).
+GITHUB_FILE_LIMIT = 100 * 1024 * 1024
+
 
 @dataclass
 class Staged:
@@ -216,13 +222,15 @@ def stage(bundle: Path, dest: Path) -> Staged:
     """Pack the study (package.build) and open the package into the new folder ``dest``: what goes up.
 
     Data a source's terms keep out (and data built from them) are not in the package, so they are not
-    here. The package's own e2er-package.json is: it names what was left out and how a rerun loads and
-    builds it again, which `e2er verify` and `e2er reproduce` read in a clone of the repository.
+    here; nor is a data file larger than GitHub takes that a recorded step of the study loads or builds
+    again (one that nothing gets back raises package.TooLargeError). The package's own e2er-package.json
+    is: it names what was left out and how a rerun loads and builds it again, which `e2er verify` and
+    `e2er reproduce` read in a clone of the repository.
     """
     from .export import package as pkg
 
     with tempfile.TemporaryDirectory(prefix="e2er-github-pack-") as td:
-        packed = pkg.build(bundle, Path(td) / f"study{pkg.SUFFIX}")
+        packed = pkg.build(bundle, Path(td) / f"study{pkg.SUFFIX}", host=HOST, max_file_bytes=GITHUB_FILE_LIMIT)
         opened = pkg.open_package(packed.path, dest)
     files = sorted(p.relative_to(opened.root).as_posix() for p in opened.root.rglob("*") if p.is_file())
     return Staged(
@@ -260,10 +268,6 @@ def secrets_in(staged: Staged) -> list[str]:
             continue
         hits += [f"{rel}: looks like a {kind}" for kind, rx in PATTERNS if rx.search(text)]
     return hits
-
-
-#: GitHub refuses a push with a file larger than this (100 MiB); there is no Git LFS on this path.
-GITHUB_FILE_LIMIT = 100 * 1024 * 1024
 
 
 def too_large(staged: Staged) -> list[str]:

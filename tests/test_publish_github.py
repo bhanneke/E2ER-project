@@ -262,6 +262,7 @@ def test_a_who_study_goes_up_with_its_own_data_only_and_the_paper_links_the_comm
         {
             "path": "data/data.db",
             "reason": "the terms of the WHO Global Health Observatory (WHO GHO) do not allow passing the data on",
+            "kind": "terms",
         }
     ]
     readme = _git("--git-dir", str(bare), "show", "main:README.md")
@@ -578,21 +579,38 @@ def test_the_summary_at_the_top_of_readme_changes_neither_the_title_nor_the_ques
 
 
 def test_a_file_github_would_refuse_for_its_size_stops_publish_before_anything_is_pushed(
-    who_study: Path, github: Path, tmp_path: Path, monkeypatch, capsys
+    who_study: Path, github: Path, tmp_path: Path, capsys
 ):
-    """The weather-words demo: data/data.db is 145 MB, over GitHub's 100 MB limit; the dry run said it would go up."""
-    monkeypatch.setattr(gf, "GITHUB_FILE_LIMIT", 10)
-    rc = publish(str(who_study), **ID, github_repo="ada/demos", github_path="who", dry_run=True, yes=True)
+    """The weather-words demo: data/data.db is 145 MB, over GitHub's 100 MB limit; the dry run said it would go up.
+
+    A file over the limit that is not data a recorded step gets back (here the paper's appendix, 101 MiB of
+    random bytes: zeros would trip the package's zip-bomb guard first) still stops the publish, in the dry run and
+    in the push. Data files: tests/test_left_out_for_size.py.
+    """
+    big = who_study / "paper" / "appendix.pdf"
+    with open(big, "wb") as f:
+        for _ in range(101):
+            f.write(os.urandom(1024 * 1024))
+    import hashlib
+
+    digest = hashlib.sha256()
+    with open(big, "rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            digest.update(block)
+    prov_path = who_study / "provenance.json"
+    prov = json.loads(prov_path.read_text(encoding="utf-8"))
+    prov["files"]["paper/appendix.pdf"] = {"sha256": digest.hexdigest(), "bytes": big.stat().st_size}
+    prov_path.write_text(json.dumps(prov, indent=2) + "\n", encoding="utf-8")
+
+    rc = publish(str(who_study), **ID, github_repo="ada/demos", github_path="who", dry_run=True)
     captured = capsys.readouterr()
     assert rc != 0
     assert "GitHub refuses files larger than 100 MB" in captured.out + captured.err
+    assert "paper/appendix.pdf (106 MB)" in captured.out + captured.err
     rc = publish(str(who_study), **ID, github_repo="ada/demos", github_path="who", out=str(tmp_path / "e"), yes=True)
     captured = capsys.readouterr()
     assert rc != 0 and "GitHub refuses files larger than 100 MB" in captured.out + captured.err
     assert not (github / "ada" / "demos.git").exists(), "no repository was made and nothing was pushed"
-
-
-# ── 2026-10-20: the push happens only as part of a publish on a platform ─────
 
 
 def test_github_without_to_publishes_on_e2er_org_and_registers_the_pushed_commit(

@@ -112,7 +112,7 @@ def _check_integrity(bundle: Path, package_left_out: dict[str, dict[str, Any]] |
     system clutter (.DS_Store, Thumbs.db, ._*) is ignored and named.
     """
     from .core.export.bundle_files import not_evidence, walk
-    from .core.export.package import declared_left_out
+    from .core.export.package import supported_left_out
 
     prov, why = _load_provenance(bundle)
     if prov is None:
@@ -120,16 +120,11 @@ def _check_integrity(bundle: Path, package_left_out: dict[str, dict[str, Any]] |
     files: dict[str, dict[str, Any]] = prov["files"]
     listing = walk(bundle)
     on_disk = {rel: p for rel, p in listing.files.items() if not not_evidence(rel)}
-    # Data files a .e2er package left out (a source's terms, --no-data). From a package that verify opened, its
-    # manifest is checked against the archive and counts. In a folder, an e2er-package.json is only a file: a
-    # declaration counts only for a file the folder's own records say a source's terms keep out.
-    if package_left_out is not None:
-        declared = package_left_out
-    else:
-        from .core.data_terms import restricted_paths
-
-        restricted = restricted_paths(bundle)
-        declared = {p: item for p, item in declared_left_out(bundle).items() if p in restricted}
+    # Data files a .e2er package left out (a source's terms, --no-data, too large for GitHub). From a package
+    # that verify opened, its manifest is checked against the archive and counts. In a folder, an
+    # e2er-package.json is only a file: a declaration counts only for a file the folder's own records say a
+    # source's terms keep out, or that provenance.json records as larger than the host takes.
+    declared = package_left_out if package_left_out is not None else supported_left_out(bundle)
     missing: list[str] = []
     mismatched: list[str] = []
     resized: list[str] = []
@@ -1285,22 +1280,14 @@ def _required_checks(bundle: Path) -> dict[str, str]:
 
 
 def _left_out_here(bundle: Path, package_left_out: dict[str, dict[str, Any]] | None) -> dict[str, dict[str, Any]]:
-    """Files a published copy left out under a source's terms and the folder does not have, by path.
+    """Files a published copy left out (a source's terms, too large for the host) and the folder does not have.
 
     From a package verify opened, its checked manifest; in a folder, only declarations the folder's own
-    records support (data_terms.restricted_paths), as the integrity check counts them.
+    records support (package.supported_left_out), as the integrity check counts them.
     """
-    from .core.export.package import declared_left_out
+    from .core.export.package import supported_left_out
 
-    if package_left_out is not None:
-        declared = package_left_out
-    else:
-        declared = declared_left_out(bundle)
-        if declared:
-            from .core.data_terms import restricted_paths
-
-            restricted = restricted_paths(bundle)
-            declared = {p: i for p, i in declared.items() if p in restricted}
+    declared = package_left_out if package_left_out is not None else supported_left_out(bundle)
     return {p: i for p, i in declared.items() if not (bundle / p).exists()}
 
 
@@ -1311,7 +1298,13 @@ def _needs(name: str, left: dict[str, dict[str, Any]], paths: list[str]) -> Chec
     terms = known()
     shown = sorted(paths)
     sources = []
+    hosts = []
     for p in shown:
+        if left[p].get("kind") == "size":
+            host = str(left[p].get("host") or "the host")
+            if host not in hosts:
+                hosts.append(host)
+            continue
         c = left[p].get("source")
         t = terms.get(str(c)) if c else None
         label = t.short if t else str(c or "its source's")
@@ -1324,7 +1317,10 @@ def _needs(name: str, left: dict[str, dict[str, Any]], paths: list[str]) -> Chec
         if rebuilt
         else "no recorded step rebuilds " + ("it" if len(shown) == 1 else "all of them")
     )
-    return Check(name, SKIP, f"needs {what}, left out under {' and '.join(sources)} terms; {how}")
+    why = ([f"under {' and '.join(sources)} terms"] if sources else []) + (
+        [f"as too large for {' and '.join(hosts)}"] if hosts else []
+    )
+    return Check(name, SKIP, f"needs {what}, left out {' and '.join(why)}; {how}")
 
 
 def _referenced(ws: Path, left: dict[str, dict[str, Any]], names: tuple[str, ...] = ()) -> list[str]:

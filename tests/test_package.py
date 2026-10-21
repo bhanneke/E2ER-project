@@ -247,6 +247,7 @@ def test_no_data_leaves_every_data_file_out_and_says_what_cannot_be_rebuilt(tmp_
     assert {k: v for k, v in left.items() if k != "content"} == {
         "path": "data/data.db",
         "reason": "packed with --no-data",
+        "kind": "no_data",
         "rebuilt_by": None,
         "needed": True,
     }

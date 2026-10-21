@@ -465,7 +465,7 @@ def _describe(
         repository = {"url": github_target.url, **({"path": github_target.path} if github_target.path else {})}
         repository |= {
             "host": "github",
-            "left_out": [{"path": i["path"], "reason": i["reason"]} for i in hosted.left_out],
+            "left_out": [_left_out_entry(i) for i in hosted.left_out],
         }
         code = "public"
         data = "public" if hosted.data else "private"
@@ -1472,6 +1472,14 @@ def _print_deposit_plan(
 # ── the files in a public GitHub repository (--github) ───────────────────────
 
 
+def _left_out_entry(item: dict[str, Any]) -> dict[str, Any]:
+    """A left-out file as e2er.json's ``repository.left_out`` names it: path, reason and why (``kind``)."""
+    out = {"path": item["path"], "reason": item["reason"]}
+    if item.get("kind"):
+        out["kind"] = item["kind"]
+    return out
+
+
 @dataclass
 class _Hosted:
     """What --github puts in the repository: the study's files as `e2er pack` ships them."""
@@ -1483,14 +1491,15 @@ class _Hosted:
 
 def _hosting_plan(b: Path) -> _Hosted:
     """The files that go up and the data that stay out, by pack's own rules (package.left_out_data)."""
+    from .core import github_files as gf
     from .core.export import package as pkg
 
     try:
         files = pkg.study_files(b)
+        recipe, _why = pkg._recipe(b)
+        left = pkg.left_out_data(b, files, recipe, no_data=False, host=gf.HOST, max_file_bytes=gf.GITHUB_FILE_LIMIT)
     except pkg.PackageError as e:
-        raise ValueError(str(e)) from e
-    recipe, _why = pkg._recipe(b)
-    left = pkg.left_out_data(b, files, recipe, no_data=False)
+        raise ValueError(f"{e}\nNothing was published or pushed.") from e
     out = {i["path"] for i in left}
     shipped = sorted(r for r in files if r not in out)
     return _Hosted(files=shipped, left_out=left, data=[r for r in shipped if pkg._is_data(r)])
@@ -1670,8 +1679,9 @@ def _host_on_github(
             large = gf.too_large(staged)
             if large:
                 raise gf.GitHubError(
-                    "GitHub refuses files larger than 100 MB, so the study cannot go up as it is; nothing was "
-                    "pushed:\n  " + "\n  ".join(large)
+                    "GitHub refuses files larger than 100 MB, and these are not data files a recorded step of the "
+                    "study loads or builds again, so the study cannot go up as it is; nothing was pushed:\n  "
+                    + "\n  ".join(large)
                 )
             if mode == "plan":
                 _print_github_plan(t, staged)
@@ -1712,7 +1722,7 @@ def _host_on_github(
             "commit": pushed.commit,
             "branch": pushed.branch,
             "files": staged.files,
-            "left_out": [{"path": i["path"], "reason": i["reason"]} for i in staged.left_out],
+            "left_out": [_left_out_entry(i) for i in staged.left_out],
             "pushed_at": _now(),
         },
     )

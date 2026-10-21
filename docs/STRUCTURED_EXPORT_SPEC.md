@@ -194,7 +194,15 @@ results/spatial_units.csv, left out under GISCO terms; run `e2er reproduce` to r
                 "loads": ["gmd_panel"],         // tables (or the file) get_data.py loads again from their sources
                 "builds": [{"by": "code/scratch/clean.py", "what": ["panel_clean"]}],  // the study's own steps
                 "not_built": [],                // tables no step loads or builds (a rerun cannot get them)
-                "content": {"tables": {"gmd_panel": {"rows": 120, "content_sha256": "…", "numeric_sha256": "…"}}}}],
+                "content": {"tables": {"gmd_panel": {"rows": 120, "content_sha256": "…", "numeric_sha256": "…"}}},
+                "kind": "terms"},               // why: "terms" (a source's terms), "no_data" (--no-data), "size"
+               {"path": "data/texts.db", "reason": "too large for GitHub (145 MB)", "kind": "size",
+                "host": "GitHub", "bytes": 145076224, "rebuilt_by": {"by": "code/get_data.py", "source": "…"},
+                "loads": ["…"], "builds": [], "needed": true}],
+                // "size": only in a package made for a host (`e2er publish --github`): a data file larger than
+                // the host takes that a recorded step loads or builds again (otherwise the publish is refused).
+                // In a folder, `e2er verify` accepts it only when provenance.json records the file larger than
+                // the host's limit (GitHub: 100 MiB).
   "rebuild": [{"path": "data/gaia_clean.csv", "script": "clean_gaia.py", "from": "code/scratch/clean_gaia.py"},
               {"path": "spatial_units.csv", "script": "build_data.py", "from": "code/scratch/build_data.py",
                "output": true, "folder": "results/spatial_units.csv", "sha256": "…",
