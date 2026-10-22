@@ -41,20 +41,19 @@ Hard rules:
 
 `E2ER` is **not** auto-published when `dev` merges into `main`. The
 `.github/workflows/release.yml` workflow only fires on `push: tags: v*`,
-and the build job hard-fails unless the tag matches both:
-
-  - `pyproject.toml` `version`
-  - `src/__init__.py` `__version__`
+and the version-check job hard-fails unless every place that names the
+version (`scripts/release.py --check --tag vX.Y.Z`) names the tag's.
 
 Substantial changes can sit on `main` indefinitely without ever
 shipping a tagged release. That is intentional.
 
 Release procedure:
 
-1. Open a release PR `dev` → `main`. In that PR:
-   - Bump version in both files.
-   - Move `CHANGELOG.md` entries from `## Unreleased` to
-     `## vX.Y.Z — YYYY-MM-DD`.
+1. On a clean `dev`, run `python scripts/release.py X.Y.Z --commit`: it makes
+   every version edit (pyproject.toml, src/__init__.py, CITATION.cff, the
+   README citation, the CHANGELOG heading) and commits them. Then bring
+   `dev` to `main` (release PR). docs/RELEASING.md has the details and the
+   format of `release-facts.json`, which the workflow attaches to the release.
 2. Merge the PR.
 3. Tag and push from `main`:
    ```

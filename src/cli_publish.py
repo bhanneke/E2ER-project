@@ -58,6 +58,7 @@ from __future__ import annotations
 
 import contextlib
 import copy
+import datetime as _dt
 import io
 import json
 import os
@@ -646,6 +647,35 @@ def _describe(
                     dep = z.create(reserve_doi=True)
                     reserved[item] = {"id": dep.id, "bucket": dep.bucket, "doi": dep.doi, "state": "draft"}
                     _save_zenodo_record(b, zrec)
+                elif reserved.get(item, {}).get("state") == "published":
+                    # A new version of the study: unchanged files keep their DOI; changed ones
+                    # become a new version of the same Zenodo record (a new DOI, the same concept).
+                    rec = reserved[item]
+                    now = zen.md5s(deposits[item]["files"])
+                    before = rec.get("files")
+                    if before is None and z is not None:  # recorded before e2er kept the checksums
+                        before = z.checksums(rec["id"])
+                    if before is None:  # a rehearsal does not ask Zenodo
+                        print(f"zenodo {item}: published as doi {rec.get('doi')}; publishing compares its files")
+                    elif before != now:
+                        if z is None:
+                            print(
+                                f"zenodo {item}: files changed since doi {rec.get('doi')}: would deposit a new version"
+                            )
+                        else:
+                            dep = z.new_version(rec["id"])
+                            earlier = [*rec.get("earlier", []), {"id": rec["id"], "doi": rec.get("doi")}]
+                            reserved[item] = {
+                                "id": dep.id,
+                                "bucket": dep.bucket,
+                                "doi": dep.doi,
+                                "state": "draft",
+                                "earlier": earlier,
+                            }
+                            _save_zenodo_record(b, zrec)
+                            print(f"zenodo {item}: the files changed since doi {rec.get('doi')}; new version {dep.doi}")
+                    elif z is None:
+                        print(f"zenodo {item}: unchanged since doi {rec.get('doi')}; nothing new is deposited")
                 got = reserved.get(item)
                 if got and got.get("doi"):
                     availability[item]["doi"] = got["doi"]
@@ -771,6 +801,7 @@ def _describe(
                 if rec.get("state") == "published":
                     continue
                 dep = zen.Deposit(id=rec["id"], bucket=rec["bucket"], doi=rec.get("doi"))
+                z.clear_files(dep)  # a new version starts with the earlier files; a retry with its own
                 for fname, data_bytes in deposits[item]["files"]:
                     z.upload(dep, fname, data_bytes)
                 z.describe(
@@ -785,7 +816,7 @@ def _describe(
                     ),
                 )
                 done = z.publish(dep)
-                rec.update(state="published", published_url=done.get("url"))
+                rec.update(state="published", published_url=done.get("url"), files=zen.md5s(deposits[item]["files"]))
                 _save_zenodo_record(b, zrec)
                 if rec.get("doi") and done.get("doi") and done["doi"] != rec["doi"]:
                     print(f"warning: Zenodo published the {item} as doi {done['doi']}, not the reserved {rec['doi']}")
@@ -1401,10 +1432,11 @@ def _deposit_plan(bundle: Path, availability: dict[str, Any], project: str) -> d
     """What --zenodo would deposit: the public data files one by one, the public code as one zip."""
     plan: dict[str, Any] = {}
     if availability["data"]["access"] == "public" and (bundle / "data").is_dir():
-        files = [
-            (rel.removeprefix("data/").replace("/", "_"), (bundle / rel).read_bytes())
-            for rel in _listed(bundle, "data")
-        ]
+        listed = _listed(bundle, "data")
+        files = [(rel.removeprefix("data/").replace("/", "_"), (bundle / rel).read_bytes()) for rel in listed]
+        if len(files) > zen.MAX_FILES or len({n for n, _ in files}) < len(files):
+            # More files than a Zenodo record takes, or two that flatten to one name: one zip.
+            files = [(f"{project}-data.zip", _code_zip(bundle, ("data",)))]
         if files:
             plan["data"] = {"files": files, "upload_type": "dataset"}
     if availability["code"]["access"] == "public":
@@ -1447,6 +1479,7 @@ def _deposit_metadata(
         "description": description,
         "creators": zen.creators(manifest.get("contributors") or []),
         "access_right": "open",
+        "publication_date": _dt.date.today().isoformat(),
         "license": _deposit_licence(item, manifest, licensed),
         "keywords": keywords,
         "related_identifiers": [

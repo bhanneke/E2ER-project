@@ -102,15 +102,17 @@ GitHub's Acceptable Use Policies (section 7, Information Usage Restrictions) all
 `--zenodo` deposits the public data and code on Zenodo with your own account and records the DOIs:
 
 ```
-export ZENODO_TOKEN=…   # a personal token from zenodo.org, scope deposit:write
+export ZENODO_TOKEN=…   # a personal token from zenodo.org, scopes deposit:write and deposit:actions (publish)
 e2er publish ./my-study … --data public --code public --zenodo
 ```
 
-The data files are deposited one by one, the code (`code/` and `replication/`) as one zip. Each deposit names the study's authors with their ORCID iDs, its licence, and links back to the study page and the dossier; the DOIs go into the dossier and the study page. The files go from your computer straight to Zenodo; the token is never sent to e2er.org. Private material is never deposited.
+The data files are deposited one by one (as one zip `<project>-data.zip` when there are more than the 100 files a Zenodo record takes, or two files whose flattened names collide), the code (`code/` and `replication/`) as one zip. Each deposit names the study's authors with their ORCID iDs, its licence, and links back to the study page and the dossier; the DOIs go into the dossier and the study page. The files go from your computer straight to Zenodo; the token is never sent to e2er.org. Private material is never deposited.
 
 The DOIs are reserved first (drafts), everything that can still fail runs next (the dossier, the paper's stamp and recompile, the checks), and the deposits are published last. The reserved deposits are recorded in `.e2er/zenodo.json`; if publish stops on the way, or the platform refuses the request, the next publish reuses them, so a retry makes no new deposits and gives the same dossier.
 
-To try it first, use Zenodo's sandbox (`--zenodo-sandbox`, token in `ZENODO_SANDBOX_TOKEN`), or add `--dry-run` to see what would be deposited without depositing anything.
+A new version of the study (publishing the folder again) keeps a deposit's DOI when its files are the ones deposited (their MD5 checksums, recorded in `.e2er/zenodo.json` and, for deposits made before e2er recorded them, read from Zenodo). When they changed, publish makes a new version of the same Zenodo record (`newversion`): a new DOI under the record's concept DOI, holding exactly the new files; the dossier and the study page name the new DOI, and `.e2er/zenodo.json` keeps the earlier ones (`earlier`). A rehearsal (`--dry-run`) says which deposits would get a new version.
+
+To try it first, use Zenodo's sandbox (`--zenodo-sandbox`, which implies `--zenodo`; token in `ZENODO_SANDBOX_TOKEN` from sandbox.zenodo.org, a separate account with its own tokens; its DOIs start with `10.5072/` and resolve nowhere), or add `--dry-run` to see what would be deposited without depositing anything. Sandbox and real deposits are kept apart: a folder deposited on the sandbox starts afresh on zenodo.org.
 
 ## The files in a public GitHub repository
 

@@ -620,3 +620,27 @@ def _the_local_session(monkeypatch):
         real(self, *args, headers={"x-e2er-token": TEST_SESSION_TOKEN, **(headers or {})}, **kwargs)
 
     monkeypatch.setattr(TestClient, "__init__", init)
+
+
+def pytest_collection_modifyitems(config, items):
+    """With ``E2ER_TEST_PART=k/n`` run only part k of n (whole files; tests/parts.py).
+
+    The release workflow runs the suite as four parallel jobs this way; without the variable every
+    test runs, as before.
+    """
+    spec = os.environ.get("E2ER_TEST_PART")
+    if not spec:
+        return
+    from tests.parts import assign, load_durations, parse_part
+
+    part, parts = parse_part(spec)
+    counts: dict[str, int] = {}
+    for item in items:
+        f = item.nodeid.split("::", 1)[0]
+        counts[f] = counts.get(f, 0) + 1
+    keep = set(assign(counts, parts, load_durations())[part - 1])
+    selected = [i for i in items if i.nodeid.split("::", 1)[0] in keep]
+    deselected = [i for i in items if i.nodeid.split("::", 1)[0] not in keep]
+    if deselected:
+        config.hook.pytest_deselected(items=deselected)
+    items[:] = selected
