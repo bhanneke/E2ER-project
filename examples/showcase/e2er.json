@@ -1,7 +1,7 @@
 {
   "schema": "e2er-research-object/0.1",
   "id": "bhanneke/spot-bitcoin-etf-comovement",
-  "content_id": "sha256:b984c9649e773346e57675910ec16c2312a2a2a2a8edfa18a5da7ad520160938",
+  "content_id": "sha256:7bdaf4fb0b1b6d80857a6026f93e82984035e5fab5cac9b8dfb431611318a565",
   "title": "No Cash Flows, New Owners: Spot Bitcoin ETFs and the Origins of Co-movement",
   "question": "Did the January 2024 approval of US spot Bitcoin ETFs change the co-movement between Bitcoin returns and US equity returns?",
   "contributors": [
@@ -586,15 +586,15 @@
   "outputs": [
     {
       "path": "paper/abstract.tex",
-      "sha256": "7d2d0db05353ac08f1aead0b1e6e8e8e096a7e13920940bbee7a9a783b219383"
+      "sha256": "66dd3dbd3d55a016225bb7d042454b59d8c29b14f85c2b84a0b7438771d0a4b5"
     },
     {
       "path": "paper/paper.pdf",
-      "sha256": "5e052f65cf4934cdcf4409c34f56bf16811fa248acc5faec150f89d65062baf5"
+      "sha256": "ebdee5cb0adbd279fa64a00f5d6de66bbddf84103b595e5d6448ce25d45d8d60"
     },
     {
       "path": "paper/paper.tex",
-      "sha256": "ea54604a5083ed213bebd2ea36bd6493ff9d60f5f2724e015220913b9debe50d"
+      "sha256": "dc7548f572b910dedde56beed4e83d2cac14e8fc35ef9ac77bb0ad7144c57ac9"
     },
     {
       "path": "paper/refs.bib",
@@ -738,12 +738,12 @@
     {
       "check": "integrity",
       "status": "PASS",
-      "detail": "73 files hash-verified against provenance.json; 346 table cell(s) traced in the derivation graph; 11 change(s) after export recorded as amendments (paper/abstract.tex, paper/paper.pdf, paper/paper.tex); the abstract rewritten after export by e2er's abstract step (paper/abstract.tex, paper/paper.pdf, paper/paper.tex, report.html)"
+      "detail": "73 files hash-verified against provenance.json; 346 table cell(s) traced in the derivation graph; 17 change(s) after export recorded as amendments (paper/abstract.tex, paper/paper.pdf, paper/paper.tex); the abstract rewritten after export by e2er's abstract step (paper/abstract.tex, paper/paper.pdf, paper/paper.tex, report.html)"
     },
     {
       "check": "numbers",
       "status": "PASS",
-      "detail": "290 table cell(s) are source values at the precision shown; 48 coefficient(s) checked, 0 inconsistent; text (not gating): 245 of 246 number(s) are source values, 1 differ from the quantity named nearby, 0 untraced"
+      "detail": "290 table cell(s) are source values at the precision shown; 48 coefficient(s) checked, 0 inconsistent; text (not gating): 244 of 245 number(s) are source values, 1 differ from the quantity named nearby, 0 untraced"
     },
     {
       "check": "tables",
@@ -829,11 +829,10 @@
   },
   "repository": {
     "url": "https://github.com/bhanneke/E2ER-project",
-    "commit": "cc4c7b5ef85976cb391d404b0f1b20a1faefb1f2",
     "path": "examples/showcase"
   },
   "license": null,
-  "published": "2026-10-21T23:21:01Z",
+  "published": "2026-10-22T08:02:34Z",
   "purpose": "demonstration",
   "availability": {
     "data": {
@@ -844,13 +843,9 @@
       "url": "https://github.com/bhanneke/E2ER-project"
     }
   },
-  "access": {
-    "status": "public",
-    "pdf": "https://github.com/bhanneke/E2ER-project/raw/cc4c7b5ef85976cb391d404b0f1b20a1faefb1f2/examples/showcase/paper/paper.pdf"
-  },
   "dossier": {
-    "id": "sha256:057929c26221ef8090a9989a86361bbdde737209c7a879c1523f780c98a75a35",
-    "url": "https://e2er.org/d/057929c26221ef80",
+    "id": "sha256:1606581708e0909b6f58c50a9161638e36153177bf95bc46a6f3c3d3f5f6fa62",
+    "url": "https://e2er.org/d/1606581708e0909b",
     "doc": {
       "study": {
         "title": "No Cash Flows, New Owners: Spot Bitcoin ETFs and the Origins of Co-movement"
@@ -2504,6 +2499,54 @@
           "backend": "claude_code",
           "e2er_version": "0.17.3",
           "bytes_before": 19233
+        },
+        {
+          "path": "paper/abstract.tex",
+          "kind": "abstract_rewritten",
+          "sha256_before": "7d2d0db05353ac08f1aead0b1e6e8e8e096a7e13920940bbee7a9a783b219383",
+          "sha256_after": "66dd3dbd3d55a016225bb7d042454b59d8c29b14f85c2b84a0b7438771d0a4b5",
+          "reason": "abstract rewritten by e2er's abstract step after the abstract fix; the paper's text and results are unchanged",
+          "at": "2026-10-22T08:02:17Z",
+          "model": "claude-sonnet-5-5",
+          "backend": "claude_code",
+          "e2er_version": "0.17.3",
+          "bytes_before": 1434
+        },
+        {
+          "path": "paper/paper.tex",
+          "kind": "abstract_rewritten",
+          "sha256_before": "ea54604a5083ed213bebd2ea36bd6493ff9d60f5f2724e015220913b9debe50d",
+          "sha256_after": "1adfa4f55f3cbcfdafee304949134f773850bf95f47d47637477cea41954955f",
+          "reason": "abstract rewritten by e2er's abstract step after the abstract fix; the paper's text and results are unchanged",
+          "at": "2026-10-22T08:02:17Z",
+          "model": "claude-sonnet-5-5",
+          "backend": "claude_code",
+          "e2er_version": "0.17.3",
+          "bytes_before": 103595
+        },
+        {
+          "path": "paper/paper.pdf",
+          "kind": "abstract_rewritten",
+          "sha256_before": "5e052f65cf4934cdcf4409c34f56bf16811fa248acc5faec150f89d65062baf5",
+          "sha256_after": "5d0ef481ca4a8e5cb1e138bd132c5f81d4386eb851a3589061af76dfeb82c90b",
+          "reason": "abstract rewritten by e2er's abstract step after the abstract fix; the paper's text and results are unchanged",
+          "at": "2026-10-22T08:02:17Z",
+          "model": "claude-sonnet-5-5",
+          "backend": "claude_code",
+          "e2er_version": "0.17.3",
+          "bytes_before": 465954
+        },
+        {
+          "path": "report.html",
+          "kind": "abstract_rewritten",
+          "sha256_before": "8610e215305d55fea40f171f6638abc1fcedf686394673bc88fe2c3ddbc782d2",
+          "sha256_after": "5546b4ff4c8b9ee1431d2fdd63f1ad638e7a9fa34874e673d5a66820214cf2e1",
+          "reason": "abstract rewritten by e2er's abstract step after the abstract fix; the paper's text and results are unchanged",
+          "at": "2026-10-22T08:02:17Z",
+          "model": "claude-sonnet-5-5",
+          "backend": "claude_code",
+          "e2er_version": "0.17.3",
+          "bytes_before": 18014
         }
       ]
     }

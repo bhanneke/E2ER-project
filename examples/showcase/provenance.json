@@ -123,16 +123,16 @@
       "bytes": 17518
     },
     "paper/abstract.tex": {
-      "sha256": "7d2d0db05353ac08f1aead0b1e6e8e8e096a7e13920940bbee7a9a783b219383",
-      "bytes": 1434
+      "sha256": "66dd3dbd3d55a016225bb7d042454b59d8c29b14f85c2b84a0b7438771d0a4b5",
+      "bytes": 1370
     },
     "paper/paper.pdf": {
-      "sha256": "5e052f65cf4934cdcf4409c34f56bf16811fa248acc5faec150f89d65062baf5",
-      "bytes": 465954
+      "sha256": "ebdee5cb0adbd279fa64a00f5d6de66bbddf84103b595e5d6448ce25d45d8d60",
+      "bytes": 465587
     },
     "paper/paper.tex": {
-      "sha256": "ea54604a5083ed213bebd2ea36bd6493ff9d60f5f2724e015220913b9debe50d",
-      "bytes": 103595
+      "sha256": "dc7548f572b910dedde56beed4e83d2cac14e8fc35ef9ac77bb0ad7144c57ac9",
+      "bytes": 103531
     },
     "paper/refs.bib": {
       "sha256": "ac1a3e8e7085ab21a9c3c81d5b1c82a2980b4fc321691d9d5299d3cf179ba5b2",
@@ -215,8 +215,8 @@
       "bytes": 132900
     },
     "report.html": {
-      "sha256": "8610e215305d55fea40f171f6638abc1fcedf686394673bc88fe2c3ddbc782d2",
-      "bytes": 18014
+      "sha256": "5546b4ff4c8b9ee1431d2fdd63f1ad638e7a9fa34874e673d5a66820214cf2e1",
+      "bytes": 17949
     },
     "reproduce.json": {
       "sha256": "842633d4f3628ea8caca5f5b49078059c27923a224b7c47ee67c20f7d3077237",
@@ -3469,6 +3469,70 @@
       "sha256_after": "5e052f65cf4934cdcf4409c34f56bf16811fa248acc5faec150f89d65062baf5",
       "reason": "recompiled with the dossier link",
       "at": "2026-10-21T23:20:29Z",
+      "kind": "stamp"
+    },
+    {
+      "path": "paper/abstract.tex",
+      "kind": "abstract_rewritten",
+      "sha256_before": "7d2d0db05353ac08f1aead0b1e6e8e8e096a7e13920940bbee7a9a783b219383",
+      "sha256_after": "66dd3dbd3d55a016225bb7d042454b59d8c29b14f85c2b84a0b7438771d0a4b5",
+      "reason": "abstract rewritten by e2er's abstract step after the abstract fix; the paper's text and results are unchanged",
+      "at": "2026-10-22T08:02:17Z",
+      "model": "claude-sonnet-5-5",
+      "backend": "claude_code",
+      "e2er_version": "0.17.3",
+      "bytes_before": 1434
+    },
+    {
+      "path": "paper/paper.tex",
+      "kind": "abstract_rewritten",
+      "sha256_before": "ea54604a5083ed213bebd2ea36bd6493ff9d60f5f2724e015220913b9debe50d",
+      "sha256_after": "1adfa4f55f3cbcfdafee304949134f773850bf95f47d47637477cea41954955f",
+      "reason": "abstract rewritten by e2er's abstract step after the abstract fix; the paper's text and results are unchanged",
+      "at": "2026-10-22T08:02:17Z",
+      "model": "claude-sonnet-5-5",
+      "backend": "claude_code",
+      "e2er_version": "0.17.3",
+      "bytes_before": 103595
+    },
+    {
+      "path": "paper/paper.pdf",
+      "kind": "abstract_rewritten",
+      "sha256_before": "5e052f65cf4934cdcf4409c34f56bf16811fa248acc5faec150f89d65062baf5",
+      "sha256_after": "5d0ef481ca4a8e5cb1e138bd132c5f81d4386eb851a3589061af76dfeb82c90b",
+      "reason": "abstract rewritten by e2er's abstract step after the abstract fix; the paper's text and results are unchanged",
+      "at": "2026-10-22T08:02:17Z",
+      "model": "claude-sonnet-5-5",
+      "backend": "claude_code",
+      "e2er_version": "0.17.3",
+      "bytes_before": 465954
+    },
+    {
+      "path": "report.html",
+      "kind": "abstract_rewritten",
+      "sha256_before": "8610e215305d55fea40f171f6638abc1fcedf686394673bc88fe2c3ddbc782d2",
+      "sha256_after": "5546b4ff4c8b9ee1431d2fdd63f1ad638e7a9fa34874e673d5a66820214cf2e1",
+      "reason": "abstract rewritten by e2er's abstract step after the abstract fix; the paper's text and results are unchanged",
+      "at": "2026-10-22T08:02:17Z",
+      "model": "claude-sonnet-5-5",
+      "backend": "claude_code",
+      "e2er_version": "0.17.3",
+      "bytes_before": 18014
+    },
+    {
+      "path": "paper/paper.tex",
+      "sha256_before": "1adfa4f55f3cbcfdafee304949134f773850bf95f47d47637477cea41954955f",
+      "sha256_after": "dc7548f572b910dedde56beed4e83d2cac14e8fc35ef9ac77bb0ad7144c57ac9",
+      "reason": "stamped with the dossier link",
+      "at": "2026-10-22T08:02:34Z",
+      "kind": "stamp"
+    },
+    {
+      "path": "paper/paper.pdf",
+      "sha256_before": "5d0ef481ca4a8e5cb1e138bd132c5f81d4386eb851a3589061af76dfeb82c90b",
+      "sha256_after": "ebdee5cb0adbd279fa64a00f5d6de66bbddf84103b595e5d6448ce25d45d8d60",
+      "reason": "recompiled with the dossier link",
+      "at": "2026-10-22T08:02:34Z",
       "kind": "stamp"
     }
   ]
