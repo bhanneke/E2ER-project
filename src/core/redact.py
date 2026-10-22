@@ -292,14 +292,14 @@ def provenance_before_redactions(folder: Path) -> tuple[list[str], int]:
         return [], 0
     if not isinstance(prov, dict) or not isinstance(prov.get("files"), dict):
         return [], 0
-    from .abstract import AMENDMENT_KIND as ABSTRACT_KIND
+    from .abstract import AMENDMENT_KINDS as ABSTRACT_KINDS
 
     amendments = list(prov.get("amendments") or [])
     files = dict(prov["files"])
     n = 0
-    while amendments and isinstance(amendments[-1], dict) and amendments[-1].get("kind") in (KIND, ABSTRACT_KIND):
+    while amendments and isinstance(amendments[-1], dict) and amendments[-1].get("kind") in (KIND, *ABSTRACT_KINDS):
         a = amendments.pop()
-        if a.get("kind") == ABSTRACT_KIND:
+        if a.get("kind") in ABSTRACT_KINDS:
             # The abstract rewritten after publishing (`e2er abstract`): the file as it was, or none.
             if not isinstance(a.get("path"), str):
                 return [], 0

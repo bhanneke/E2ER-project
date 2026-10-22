@@ -594,3 +594,35 @@ def test_the_drafter_is_told_to_leave_the_abstract_out():
         assert "Do not write an abstract" not in _build_system_prompt("paper_drafter", "")
     finally:
         deactivate(token)
+
+
+# ── no coefficients quoted as raw numbers (2026-10-22) ───────────────────────
+
+
+@pytest.mark.parametrize(
+    "sentence",
+    [
+        "The estimated shift is $-0.0181$ in correlation units, which is small.",
+        "The coefficient on treatment is 0.04 for every country.",
+        "Enrolment changes with an effect of $\\beta = 0.31$ per reform.",
+        "Returns fell by $-0.3$ over the window.",
+    ],
+)
+def test_a_coefficient_quoted_as_a_raw_number_fails(sentence):
+    probs = _problems(f"We ask whether listings matter. {sentence} Listing widened access to the asset.")
+    assert any("quoted as a raw estimate" in p for p in probs), probs
+
+
+@pytest.mark.parametrize(
+    "sentence",
+    [
+        "The estimated effect is about 22 percentage points over six years.",
+        "The effect shifts the correlation by under two correlation points.",
+        "The estimated rise is 0.50 degrees per decade in every season.",
+        "Moran's I is 0.37 under queen contiguity.",
+        "Calculated radii have a median period about 45 times that of measured radii.",
+    ],
+)
+def test_magnitudes_in_plain_units_pass(sentence):
+    probs = _problems(f"We ask whether listings matter. {sentence} Listing widened access to the asset.")
+    assert not any("raw estimate" in p for p in probs), probs

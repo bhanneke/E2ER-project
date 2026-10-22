@@ -53,6 +53,14 @@ sample ("magnitude 5 and larger", "within 3 degrees") are not counted as numbers
 is: sample sizes, shares, ratios, estimates. Say the rest in words ("about
 three times", "two-thirds", "most").
 
+Never quote a regression coefficient or an estimate as a raw number ("the
+estimated shift is -0.0181", "beta = 0.31"). Give its magnitude in a plain unit
+people use (percentage points, percent, times, deaths per 100,000, Earth radii)
+or in words ("under two correlation points", "about a fifth", "two-thirds"). The
+check treats a number next to estimate, coefficient, shift, effect, beta or slope
+as a raw estimate unless a plain unit follows it, and a signed decimal below 1
+with no unit as a coefficient wherever it stands.
+
 Never report a p-value, a confidence interval (no "95%", no "interval"), a
 standard error, a Fisher-z or a test statistic. "No statistically significant
 effect" is plain language and allowed.
@@ -186,6 +194,7 @@ Sentence by sentence:
 - [ ] The finding is stated as a finding, in plain words
 - [ ] One to three headline numbers, each a value of the results with its `% src:` line
 - [ ] No p-values, intervals, standard errors, Fisher-z or test statistics
+- [ ] No coefficient or estimate as a raw number: a plain unit or words
 - [ ] A null result leads with what it means
 - [ ] At most one clause of caveat; "no causal claim" only where the question could be read causally
 - [ ] The last sentence is no negation and has no "rather than"

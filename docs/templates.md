@@ -38,7 +38,10 @@ revision step whatever the reviewer's score), and writes `abstract.tex`. A
 deterministic check then reads it (`src/core/abstract.py`): at most 160 words;
 no p-values, intervals, standard errors, Fisher-z or test statistics; at most
 three numbers (years, the base of a rate and a sample threshold do not count),
-each a value of the results at the precision shown; a sentence that states a
+each a value of the results at the precision shown; no coefficient or estimate
+quoted as a raw number (a number next to estimate, coefficient, shift, effect,
+beta or slope needs a plain unit; a signed decimal below 1 without a unit is a
+coefficient); a sentence that states a
 finding; a last sentence that is no negation and has no "rather than"; none of
 the constructions the phrase check refuses, "X, not Y" and the mirrored
 "changed A; changed nothing about B" among them. A failure sends the writer

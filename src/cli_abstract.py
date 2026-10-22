@@ -139,8 +139,14 @@ def rewrite(
     backend_factory: Callable[[str, str], Any] | None = None,
     compile_pdf: Callable[[Path], None] | None = None,
     say: Callable[[str], None] = print,
+    from_file: Path | None = None,
+    reason: str | None = None,
 ) -> dict[str, Any]:
     """Rewrite the abstract of an exported study folder (see the module docstring). Returns a summary.
+
+    ``from_file`` (``--from-file``) takes the researcher's own abstract (a LaTeX abstract
+    environment) instead of the writer's: no AI call; the same check, number check included;
+    recorded as ``kind: "abstract_edited_by_researcher"`` with ``reason`` (required).
 
     ``backend_factory(name, model)`` builds the LLM backend (tests pass a fake one);
     ``compile_pdf(bundle)`` recompiles paper/paper.pdf (default: tectonic, as publish does).
@@ -156,6 +162,16 @@ def rewrite(
     from .core.strategist.findings import collect_abstract_findings, write_abstract_findings
 
     b = Path(folder).expanduser().resolve()
+    supplied = None
+    if from_file is not None:
+        if not (reason or "").strip():
+            raise AbstractError("--from-file needs --reason: why the researcher changed the abstract")
+        try:
+            supplied = Path(from_file).expanduser().read_text(encoding="utf-8")
+        except OSError as e:
+            raise AbstractError(f"cannot read {from_file}: {e}") from e
+        if ab.environment(supplied) is None:
+            supplied = "\\begin{abstract}\n" + supplied.strip() + "\n\\end{abstract}\n"
     if not (b / "provenance.json").is_file():
         raise AbstractError(f"{b} is not an exported study folder (no provenance.json)")
     if not (b / "paper" / "paper.tex").is_file():
@@ -191,31 +207,36 @@ def rewrite(
         try:
             write_abstract_findings(ws, collect_abstract_findings(ws, spec.panel()))
             economics = active_economics()
-            with _scratch_database(scratch):
-                if backend_factory is not None:
-                    llm = backend_factory(name, model_name)
-                else:
-                    from .modules.llm.registry import get_backend
+            if supplied is not None:
+                (ws / ab.ABSTRACT_FILE).write_text(supplied, encoding="utf-8")
+                checked = ab.check_workspace(ws, economics=economics)
+                outcome = ab.AbstractOutcome(passed=checked.passed, attempts=1, check=checked)
+            else:
+                with _scratch_database(scratch):
+                    if backend_factory is not None:
+                        llm = backend_factory(name, model_name)
+                    else:
+                        from .modules.llm.registry import get_backend
 
-                    llm = get_backend(get_settings(), name, model_name)
+                        llm = get_backend(get_settings(), name, model_name)
 
-                async def execute(focus: str) -> bool:
-                    from .core.specialists.contracts import WorkOrder
-                    from .core.specialists.dispatcher import execute_work_order
+                    async def execute(focus: str) -> bool:
+                        from .core.specialists.contracts import WorkOrder
+                        from .core.specialists.dispatcher import execute_work_order
 
-                    order = WorkOrder(
-                        paper_id=paper_id,
-                        specialist="abstract_writer",
-                        focus=focus,
-                        context=ab.work_context(ws, paper_id),
-                        output_file=ab.ABSTRACT_FILE,
-                    )
-                    c = await execute_work_order(order, llm, ws, model_name, None, None, name)
-                    if not c.success:
-                        say(f"note: the abstract writer's call reported: {(c.error or '')[:300]}")
-                    return c.success
+                        order = WorkOrder(
+                            paper_id=paper_id,
+                            specialist="abstract_writer",
+                            focus=focus,
+                            context=ab.work_context(ws, paper_id),
+                            output_file=ab.ABSTRACT_FILE,
+                        )
+                        c = await execute_work_order(order, llm, ws, model_name, None, None, name)
+                        if not c.success:
+                            say(f"note: the abstract writer's call reported: {(c.error or '')[:300]}")
+                        return c.success
 
-                outcome = asyncio.run(ab.write_abstract(ws, execute, resend=True, economics=economics))
+                    outcome = asyncio.run(ab.write_abstract(ws, execute, resend=True, economics=economics))
         finally:
             deactivate(token)
             if known_before is None:
@@ -263,6 +284,8 @@ def rewrite(
             report.write_text(
                 _report_with(report.read_text(encoding="utf-8"), ab.readable(new_abstract)), encoding="utf-8"
             )
+        kind = ab.AMENDMENT_KIND if supplied is None else ab.EDITED_KIND
+        why = ab.AMENDMENT_REASON if supplied is None else str(reason).strip()
         prov = json.loads(before["provenance.json"] or b"{}")
         listed = prov["files"]
         at = _now()
@@ -280,13 +303,12 @@ def rewrite(
                 continue
             entry = {
                 "path": rel,
-                "kind": ab.AMENDMENT_KIND,
+                "kind": kind,
                 "sha256_before": (meta or {}).get("sha256") if old is not None else None,
                 "sha256_after": _sha(data),
-                "reason": ab.AMENDMENT_REASON,
+                "reason": why,
                 "at": at,
-                "model": model_name,
-                "backend": name,
+                **({"model": model_name, "backend": name} if supplied is None else {"edited_by": "researcher"}),
                 "e2er_version": __version__,
                 "bytes_before": (meta or {}).get("bytes") if old is not None else None,
             }
@@ -312,25 +334,40 @@ def rewrite(
         "attempts": outcome.attempts,
         "abstract": ab.readable(new_abstract),
         "amended": [e["path"] for e in written],
-        "model": model_name,
-        "backend": name,
+        "model": model_name if supplied is None else "",
+        "backend": name if supplied is None else "researcher",
+        "kind": kind,
         "verdict": verdict,
     }
 
 
-def abstract(folder: str, *, backend: str | None = None, model: str | None = None) -> int:
+def abstract(
+    folder: str,
+    *,
+    backend: str | None = None,
+    model: str | None = None,
+    from_file: str | None = None,
+    reason: str | None = None,
+) -> int:
     """Entry point of ``e2er abstract``."""
     try:
-        out = rewrite(Path(folder), backend=backend, model=model)
+        out = rewrite(
+            Path(folder),
+            backend=backend,
+            model=model,
+            from_file=Path(from_file) if from_file else None,
+            reason=reason,
+        )
     except AbstractError as e:
         print(f"error: {e}")
         return 1
-    print(f"✓ New abstract ({out['new_words']} words, before {out['old_words']}; {out['backend']} {out['model']}):")
+    who = "the researcher's" if out["kind"] == ab.EDITED_KIND else f"{out['backend']} {out['model']}"
+    print(f"✓ New abstract ({out['new_words']} words, before {out['old_words']}; {who}):")
     print(f"  {out['abstract']}")
     nums = ", ".join(out["numbers"]) or "none"
     print(f"✓ Abstract check passed on attempt {out['attempts']}; numbers: {nums}, each a value of the results")
     print(
-        f'✓ Recorded {len(out["amended"])} amendment(s) in provenance.json (kind "{ab.AMENDMENT_KIND}"): '
+        f'✓ Recorded {len(out["amended"])} amendment(s) in provenance.json (kind "{out["kind"]}"): '
         + ", ".join(out["amended"])
     )
     print(out["verdict"])

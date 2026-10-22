@@ -33,6 +33,11 @@ The check's rules (``RULES``):
   and digits that belong to a name (Gaia DR3, NUTS-2) are not counted;
 * every counted number is a result: a value of the study's results files at
   the precision the abstract shows (``unmatched``);
+* no coefficient or estimate quoted as a raw number: a number next to an
+  estimate word (estimate, coefficient, shift, effect, beta, slope) needs a
+  plain unit (percentage points, percent, times, deaths per 100,000, Earth
+  radii, ...); a signed decimal below 1 with no unit is a coefficient anywhere
+  (``raw_estimates``);
 * at least one sentence states a finding;
 * the last sentence is not a negation and holds no "rather than";
 * none of the constructions the researcher rejects: "rather than", "X, not Y",
@@ -65,6 +70,11 @@ AMENDMENT_REASON = (
     "abstract rewritten by e2er's abstract step after the abstract fix; the paper's text and results are unchanged"
 )
 
+#: The amendment of an abstract the researcher wrote (``e2er abstract --from-file``), checked like any other.
+EDITED_KIND = "abstract_edited_by_researcher"
+#: Both kinds: the abstract changed after export; verify's anchor rolls them back like redactions.
+AMENDMENT_KINDS = (AMENDMENT_KIND, EDITED_KIND)
+
 MAX_WORDS = 160
 MAX_NUMBERS = 3
 
@@ -74,6 +84,9 @@ RULES: tuple[str, ...] = (
     "no p-values, confidence intervals, standard errors, Fisher-z or test statistics",
     f"at most {MAX_NUMBERS} numbers (years and the base of a rate such as 'per 100,000' do not count)",
     "every number is a value of the study's results at the precision shown",
+    "no coefficient or estimate as a raw number: a number next to estimate, coefficient, shift, effect, beta or "
+    "slope needs a plain unit (percentage points, percent, times, deaths per 100,000, ...); no signed decimal "
+    "below 1 without a unit",
     "at least one sentence states a finding",
     "the last sentence is not a negation and has no 'rather than'",
     "no 'rather than', no 'X, not Y', no mirrored 'changed A; changed nothing about B', "
@@ -293,6 +306,54 @@ def counted_numbers(text_tex: str) -> list[tuple[str, float, bool]]:
     return out
 
 
+#: Words that make a number next to them an estimate: "the estimated shift is -0.0181".
+_ESTIMATE_WORD_RE = re.compile(
+    r"\b(?:estimates?|estimated|coefficients?|shifts?|shifted|effects?|beta|elasticit(?:y|ies)|slopes?|parameters?)\b"
+    r"|\\beta\b|\u03b2",
+    re.IGNORECASE,
+)
+#: A plain unit after a number: the magnitude in terms people use (percentage points, percent, times, deaths ...).
+_PLAIN_UNIT_RE = re.compile(
+    r"^[\s~$}]*(?:\\[,;: ]\s*)*(?:\\?%|per\s?cent\b|percentage\s+points?\b|(?:\w+\s+)?points?\b|times\b|-?fold\b"
+    r"|degrees?\b|\u00b0|\^\s*\{?\\circ|earth\s+radi|radii\b|deaths?\b|days?\b|years?\b|months?\b|weeks?\b"
+    r"|hours?\b|minutes?\b|km\b|kilomet|met(?:re|er)s?\b|kg\b|tonnes?\b|countries\b|regions\b|planets\b|stars\b"
+    r"|events\b|earthquakes\b|novels\b|words\b|hits\b|people\b|persons\b|children\b|pupils\b|firms\b"
+    r"|households\b|trades\b|per\s+(?:[\d{]|capita|year|decade|month|week|day|hour|person|inhabitant|head|km)|(?:us\s+)?dollars?\b|euros?\b|\\\$)",
+    re.IGNORECASE,
+)
+
+
+def raw_estimates(text_tex: str) -> list[tuple[str, str]]:
+    """Numbers quoted as raw estimates (coefficients): (as written, its neighbourhood).
+
+    A number next to an estimate word (estimate, coefficient, shift, effect, beta, slope ...)
+    is a raw estimate unless a plain unit follows it (percentage points, percent, times,
+    deaths per 100,000, Earth radii, ...). A signed decimal below 1 with no unit is one
+    wherever it stands ("-0.0181").
+    """
+    from .pipeline import verify_numbers as vn
+
+    prose = vn._strip_latex_machinery(text_tex)
+    out: list[tuple[str, str]] = []
+    for num_str, value, is_percent in counted_numbers(text_tex):
+        if is_percent:
+            continue
+        for m in _spots(prose, num_str.lstrip("+-")):
+            start = m.start()
+            head = prose[max(0, start - 90) : start]
+            cut = max(head.rfind(". "), head.rfind("? "), head.rfind("! "))
+            before = head[cut + 1 :] if cut >= 0 else head
+            after = prose[m.end() : m.end() + 40]
+            if _PLAIN_UNIT_RE.match(after):
+                continue
+            signed = num_str.startswith(("-", "+")) or bool(re.search(r"[-\u2212+]\s*\$?\s*$", before))
+            if _ESTIMATE_WORD_RE.search(before) or (signed and abs(value) < 1 and value != int(value)):
+                near = " ".join(prose[max(0, start - 40) : m.end() + 30].split())
+                out.append((num_str, near))
+                break
+    return out
+
+
 def _spots(prose: str, num_str: str) -> list[re.Match[str]]:
     return list(re.finditer(rf"(?<![\d.,]){re.escape(num_str)}(?![\d])", prose))
 
@@ -400,6 +461,12 @@ def check(
                 f"{', '.join(unmatched)} {'is' if len(unmatched) == 1 else 'are'} no value of the study's results "
                 "at the precision shown: state only numbers the results files hold, each with its % src: line"
             )
+
+    for num_str, near in raw_estimates(text_tex):
+        problems.append(
+            f"{num_str} is quoted as a raw estimate ({near!r}): give the magnitude in a plain unit "
+            '(percentage points, percent, times, deaths per 100,000, ...) or in words ("under two correlation points")'
+        )
 
     found = sentences(text)
     if found and not any(_FINDING_RE.search(s) for s in found):

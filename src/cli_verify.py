@@ -203,6 +203,9 @@ def _check_integrity(bundle: Path, package_left_out: dict[str, dict[str, Any]] |
     rewritten = sorted({a["path"] for a in amendments if a.get("kind") == "abstract_rewritten"})
     if rewritten:
         notes += f"; the abstract rewritten after export by e2er's abstract step ({', '.join(rewritten[:4])})"
+    edited = sorted({a["path"] for a in amendments if a.get("kind") == "abstract_edited_by_researcher"})
+    if edited:
+        notes += f"; the abstract edited by the researcher after export ({', '.join(edited[:4])})"
     redacted = sorted({a["path"] for a in amendments if a.get("kind") == "redacted"})
     if redacted:
         notes += (
@@ -432,10 +435,10 @@ def _anchor_before_redactions(bundle: Path) -> Check | None:
                 (scratch / ".e2er").mkdir()
                 shutil.copy2(bundle / ".e2er" / "link.json", scratch / ".e2er" / "link.json")
             if _check_anchor(scratch).status == PASS:
-                from .core.abstract import AMENDMENT_KIND
+                from .core.abstract import AMENDMENT_KINDS
 
                 kinds = {a.get("kind") for a in (_load_json(bundle / "provenance.json") or {}).get("amendments") or []}
-                if AMENDMENT_KIND in kinds and rd.KIND not in kinds:
+                if kinds & set(AMENDMENT_KINDS) and rd.KIND not in kinds:
                     what = f"the abstract was rewritten ({n} file(s): e2er abstract)"
                     again = "publish again to publish the new abstract"
                 else:

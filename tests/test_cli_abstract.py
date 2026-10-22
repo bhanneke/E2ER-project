@@ -211,3 +211,39 @@ def test_the_command_line_entry(bundle: Path, monkeypatch, capsys):
     assert abstract(str(bundle), backend="claude_code", model="m") == 0
     out = capsys.readouterr().out
     assert "Abstract check passed on attempt 1" in out and "abstract_rewritten" in out
+
+
+# ── the researcher's own abstract (--from-file) ──────────────────────────────
+
+
+def test_a_researchers_abstract_is_checked_and_recorded_as_theirs(bundle: Path, tmp_path: Path):
+    mine = tmp_path / "mine.tex"
+    mine.write_text(
+        GOOD.replace("left its link to the stock market where it was", "left its stock-market link as it was")
+    )
+    out = rewrite(
+        bundle, from_file=mine, reason="corrected to the paper's claim", compile_pdf=_fake_pdf, say=lambda _s: None
+    )
+    assert out["kind"] == ab.EDITED_KIND and out["backend"] == "researcher"
+    prov = json.loads((bundle / "provenance.json").read_text())
+    mine_entries = [a for a in prov["amendments"] if a.get("kind") == ab.EDITED_KIND]
+    assert {a["path"] for a in mine_entries} >= {"paper/abstract.tex", "paper/paper.tex"}
+    assert all(a["reason"] == "corrected to the paper's claim" and a["edited_by"] == "researcher" for a in mine_entries)
+    assert not any("model" in a for a in mine_entries)
+    assert "left its stock-market link as it was" in (bundle / "paper" / "paper.tex").read_text()
+    checks = _run_checks(bundle, False)
+    assert not [c for c in checks if c.status == FAIL]
+    from src.core.redact import provenance_before_redactions
+
+    assert provenance_before_redactions(bundle)[1] == len(mine_entries)
+
+
+def test_a_researchers_abstract_must_pass_the_check_and_give_a_reason(bundle: Path, tmp_path: Path):
+    before = _snapshot(bundle)
+    mine = tmp_path / "mine.tex"
+    mine.write_text(GOOD.replace("with 9 cryptocurrencies", "with 9.137 cryptocurrencies"))
+    with pytest.raises(AbstractError, match="needs --reason"):
+        rewrite(bundle, from_file=mine, compile_pdf=_fake_pdf)
+    with pytest.raises(AbstractError, match="9.137 is no value"):
+        rewrite(bundle, from_file=mine, reason="x", compile_pdf=_fake_pdf)
+    assert _snapshot(bundle) == before
