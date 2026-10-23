@@ -427,6 +427,10 @@ def test_zero_citations_and_zero_table_cells_are_skips_not_passes(tmp_path: Path
     (b / "paper" / "paper.tex").write_text("\\begin{document}No tables, no citations.\\end{document}\n")
     (b / "results" / "estimation_results.json").write_text(json.dumps({"main": {"coefficients": {}}}))
     write_provenance(b, {"paper_id": "p1"}, exported_at="20261001")
+    # An export of e2er 0.16.0, before output records: "results from code" is skipped too.
+    prov = json.loads((b / "provenance.json").read_text())
+    prov["run"]["e2er_version"] = "0.16.0"
+    (b / "provenance.json").write_text(json.dumps(prov))
     c = _checks(b)
     assert c["citations"][0] == SKIP and "cites nothing" in c["citations"][1]
     assert c["numbers"][0] == SKIP

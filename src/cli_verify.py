@@ -1323,29 +1323,53 @@ def _check_results_from_code(bundle: Path, left_out: set[str] | None = None) -> 
     ``run.results_from_code``. The bundle's results file must have that run's
     output hash, the run must have succeeded with the script as the study ships
     it, and the folder must carry the script. A results file no recorded run
-    wrote fails ("the results have no script that computes them"). SKIP for a
-    run that predates output records (e2er up to 0.16.0); None for a bundle
-    without a results file.
+    wrote fails ("the results have no script that computes them"), and so does
+    a results file (estimation, robustness) the record has no entry for. SKIP
+    for a run that predates output records only when provenance.json was written
+    by e2er 0.16.0 or earlier; from a later e2er, which records the run, a missing
+    record or "predates output records" fails. None for a bundle without a
+    results file.
     """
+    from .core.export.provenance import RESULTS_FROM_CODE
+
     prov = _load_json(bundle / "provenance.json")
     run = prov.get("run") if isinstance(prov, dict) else None
     record = run.get("results_from_code") if isinstance(run, dict) else None
+    version = str((run or {}).get("e2er_version") or "") if isinstance(run, dict) else ""
+    # Output records came with e2er 0.17.0: provenance.json of an earlier e2er cannot have them, any later one
+    # records the run that wrote each results file, so "predates output records" is no reason there.
+    old = _version_at_most(version, (0, 16, 0))
+    newer = f"provenance.json was written by e2er {version or '(no version)'}, which records the run"
+    present = [rel for rel in RESULTS_FROM_CODE if (bundle / rel).is_file() or rel in ((prov or {}).get("files") or {})]
     if not isinstance(record, dict) or not record:
-        if (bundle / "results" / "estimation_results.json").is_file():
+        if not present:
+            return None
+        if old:
             # Exported by e2er up to 0.16.0: the run recorded no script outputs.
             return Check("results from code", SKIP, "not checked: the run predates output records")
-        return None
+        return Check(
+            "results from code",
+            FAIL,
+            f"provenance.json records no run that wrote {', '.join(p.rsplit('/', 1)[-1] for p in present)}, but "
+            f"{newer} that wrote each results file",
+        )
     problems: list[str] = []
     traced: list[str] = []
     skipped: list[str] = []
     left: list[str] = []
+    for rel in present:
+        if rel not in record:
+            problems.append(f"{rel.rsplit('/', 1)[-1]}: provenance.json records no run that wrote it")
     for rel, entry in sorted(record.items()):
         name = str(rel).rsplit("/", 1)[-1]
         if not isinstance(entry, dict):
             problems.append(f"{name}: the record is unreadable")
             continue
         if entry.get("outcome") == "not_recorded":
-            skipped.append(name)
+            if old:
+                skipped.append(name)
+            else:
+                problems.append(f"{name}: the record says the run predates output records, but {newer}")
             continue
         path = bundle / str(rel)
         if not path.is_file() and str(rel) in (left_out or set()):
@@ -1394,6 +1418,15 @@ def _check_results_from_code(bundle: Path, left_out: set[str] | None = None) -> 
     if left:
         detail += f"; not checked (left out under a source's terms): {', '.join(left)}"
     return Check("results from code", PASS, detail)
+
+
+def _version_at_most(version: str, limit: tuple[int, ...]) -> bool:
+    """Whether the e2er version ``version`` ("0.16.0", "0.17.0rc1") is ``limit`` or earlier. A provenance.json
+    without a version is not: every e2er writes one, so a missing version proves no age."""
+    nums = re.findall(r"\d+", version)[:3]
+    if not nums:
+        return False
+    return tuple(int(n) for n in nums) <= limit
 
 
 def _required_checks(bundle: Path) -> dict[str, str]:

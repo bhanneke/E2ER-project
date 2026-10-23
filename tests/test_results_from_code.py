@@ -225,27 +225,49 @@ def test_verify_fails_results_that_no_run_wrote(tmp_path):
     assert "the results have no script that computes them" in check.detail
 
 
-def test_verify_does_not_judge_a_run_from_before_output_records(tmp_path):
-    from src.cli_verify import SKIP, _check_results_from_code
+def test_a_record_that_the_run_predates_output_records_fails_from_an_e2er_that_records_them(tmp_path):
+    """Review of 2026-10-23: "predates output records" is accepted only from provenance of e2er 0.16.0 or
+    earlier; a later e2er records the run, so the words are no reason to skip the check."""
+    from src.cli_verify import FAIL, _check_results_from_code
 
     ws = _ws(tmp_path)
     (ws / "estimation_results.json").write_text('{"main": {"n": 4}}', encoding="utf-8")
     line = {"script": "run_estimation.py", "sha256": "x", "started_at": "t", "exit_code": 0, "by": "e2er-run"}
     (ws / SCRIPT_RUNS).write_text(json.dumps(line) + "\n", encoding="utf-8")
     check = _check_results_from_code(_bundle(tmp_path, ws))
-    assert check is not None and check.status == SKIP
-    assert check.detail == "not checked: the run predates output records"
+    assert check is not None and check.status == FAIL
+    assert "the run predates output records, but provenance.json was written by e2er" in check.detail
 
 
 def test_verify_of_an_export_without_the_record_says_it_was_not_checked(tmp_path):
-    from src.cli_verify import SKIP, _check_results_from_code
+    from src.cli_verify import FAIL, SKIP, _check_results_from_code
 
     bundle = tmp_path / "old-export"
     (bundle / "results").mkdir(parents=True)
     (bundle / "results" / "estimation_results.json").write_text('{"main": {"n": 4}}', encoding="utf-8")
-    (bundle / "provenance.json").write_text(json.dumps({"run": {}}), encoding="utf-8")
+    (bundle / "provenance.json").write_text(json.dumps({"run": {"e2er_version": "0.16.0"}}), encoding="utf-8")
     check = _check_results_from_code(bundle)
     assert check is not None and check.status == SKIP and "predates output records" in check.detail
+    # The record taken out of a later export (or the version with it): a failure, not a skip.
+    for run in ({"e2er_version": "0.18.0"}, {}):
+        (bundle / "provenance.json").write_text(json.dumps({"run": run}), encoding="utf-8")
+        check = _check_results_from_code(bundle)
+        assert check is not None and check.status == FAIL and "records no run that wrote" in check.detail
+
+
+def test_a_results_file_without_an_entry_in_the_record_fails(tmp_path):
+    from src.cli_verify import FAIL, _check_results_from_code
+
+    bundle = tmp_path / "b"
+    (bundle / "results").mkdir(parents=True)
+    for name in ("estimation_results.json", "robustness_results.json"):
+        (bundle / "results" / name).write_text('{"main": {"n": 4}}', encoding="utf-8")
+    record = {"results/estimation_results.json": {"outcome": "not_recorded", "reason": "x"}}
+    run = {"e2er_version": "0.16.0", "results_from_code": record}
+    (bundle / "provenance.json").write_text(json.dumps({"run": run}), encoding="utf-8")
+    check = _check_results_from_code(bundle)
+    assert check is not None and check.status == FAIL
+    assert "robustness_results.json: provenance.json records no run that wrote it" in check.detail
 
 
 # ── results with no code behind them ─────────────────────────────────────────
