@@ -79,7 +79,8 @@ async def compile_latex(workspace: Path, main_file: str = "paper_draft.tex") -> 
     """Assemble (preamble + body + bibliography) and compile to PDF.
 
     Pipeline:
-      1. Read paper_draft.tex (the drafter's body, ideally without \\documentclass).
+      1. Read paper_draft.tex (the drafter's body, ideally without \\documentclass) and put
+         abstract.tex into it (the abstract step's abstract).
       2. Assemble refs.bib by merging literature.bib + user_refs.bib (deduped).
       3. Wrap body with the standard preamble (templates.PREAMBLE).
       4. Compile with the first available engine: latexmk, tectonic, or pdflatex.
@@ -98,6 +99,13 @@ async def compile_latex(workspace: Path, main_file: str = "paper_draft.tex") -> 
     # cite-numbers skill once taught) were printed into the PDF as text.
     for part in (tex_path, workspace / "abstract.tex"):
         strip_html_comments(part)
+
+    # The abstract step's abstract (src/core/abstract.py) is the paper's: in place
+    # of the draft's abstract environment, or where one belongs when it has none.
+    from ..abstract import insert_into_file
+
+    if insert_into_file(tex_path, workspace / "abstract.tex"):
+        logger.info("Put abstract.tex into %s", tex_path.name)
 
     # Wrap the body if needed. Original draft is preserved as paper_draft.body.tex.
     body = tex_path.read_text(encoding="utf-8")

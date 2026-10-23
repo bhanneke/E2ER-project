@@ -141,7 +141,7 @@ resumable = false
 [[steps]]
 kind  = "researcher"
 name  = "review_draft"
-files = ["paper_draft.tex", "abstract.tex"]
+files = ["paper_draft.tex"]
 
 [[steps]]
 kind  = "specialists"
@@ -172,6 +172,17 @@ run = [
 kind = "specialists"
 name = "revision"
 run  = ["revisor", "patch_revisor"]
+
+# The abstract, written last: from the final paper and the headline results it
+# cites, after the revision and before the paper is compiled, which puts it into
+# the paper (src/core/abstract.py). Its check (at most 160 words, no test
+# statistics, at most three numbers and each one a result, a finding, no
+# negation at the end) sends the writer back once; a second failure is recorded
+# as a finding in the dossier.
+[[steps]]
+kind = "specialists"
+name = "abstract"
+run  = ["abstract_writer"]
 
 [[steps]]
 kind = "specialists"

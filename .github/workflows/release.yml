@@ -22,20 +22,16 @@ name: Release
 # Until the pending publisher is registered, the first publish run fails
 # with "invalid-publisher" — expected. Register on PyPI, then re-run.
 #
-# Release procedure (see AGENTS.md for the full version):
-#   1. Open release PR dev → main. Bump version in BOTH:
-#        - pyproject.toml [project].version
-#        - src/__init__.py __version__
-#      Move CHANGELOG entries from `## Unreleased` to `## vX.Y.Z — YYYY-MM-DD`.
-#   2. Merge the PR to main.
-#   3. From main, tag and push:
-#        git checkout main && git pull
-#        git tag vX.Y.Z
-#        git push origin vX.Y.Z
-#   4. This workflow runs — it creates the GitHub release AND publishes to
-#      PyPI. Do NOT manually `gh release create` the tag: this workflow owns
-#      release creation. (The `release` job is now idempotent so a manual
-#      release won't break it, but manual creation is unnecessary.)
+# Release procedure: docs/RELEASING.md. In short:
+#   1. On a clean dev: `python scripts/release.py X.Y.Z --commit` makes every
+#      version edit (pyproject.toml, src/__init__.py, CITATION.cff, README.md,
+#      the CHANGELOG heading) and commits them.
+#   2. Bring dev to main, then tag and push from main:
+#        git tag vX.Y.Z && git push origin main vX.Y.Z
+#   3. This workflow runs: version check -> tests (four parallel parts) ->
+#      build -> GitHub release with release-facts.json -> PyPI; and, beside
+#      PyPI, the job that waits for Zenodo's version DOI and fills it into
+#      release-facts.json. Do NOT `gh release create` the tag by hand.
 #
 # Re-publishing a tag whose run skipped publish: re-run the workflow run
 # (`gh run rerun <id>`). The idempotent `release` job + `skip-existing` on
@@ -60,34 +56,22 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Check version consistency
-        run: |
-          TAG="${GITHUB_REF#refs/tags/v}"
-          PYPROJECT_VERSION=$(grep '^version' pyproject.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
-          INIT_VERSION=$(grep '^__version__' src/__init__.py | sed 's/.*"\(.*\)".*/\1/')
-
-          echo "Git tag:        v$TAG"
-          echo "pyproject.toml: $PYPROJECT_VERSION"
-          echo "src/__init__.py: $INIT_VERSION"
-
-          fail=0
-          if [ "$PYPROJECT_VERSION" != "$INIT_VERSION" ]; then
-            echo "::error::pyproject.toml and src/__init__.py disagree on version"
-            fail=1
-          fi
-          if [ "$TAG" != "$PYPROJECT_VERSION" ]; then
-            echo "::error::Git tag does not match pyproject.toml version"
-            fail=1
-          fi
-          if [ "$fail" -eq 1 ]; then exit 1; fi
-          echo "Version consistency: OK"
+        # Every place that names the version (scripts/release.py makes the edits) must name the tag's.
+        run: python3 scripts/release.py --check --tag "$GITHUB_REF_NAME"
 
   test:
-    name: Run tests before building
+    name: Run tests before building (part ${{ matrix.part }} of 4)
     needs: version-check
     runs-on: ubuntu-latest
-    # The suite (about 4,200 tests, -v) takes up to 30 min on a hosted runner; 10 cancelled 0.16.1's first run,
-    # 25 cancelled 0.17.2's (it was never published).
-    timeout-minutes: 50
+    # The suite (about 4,200 tests) took up to 30 min in one job on a hosted runner: 10 cancelled
+    # 0.16.1's first run, 25 cancelled 0.17.2's (it was never published). It now runs in four parts
+    # of whole test files balanced by tests/test_durations.json (E2ER_TEST_PART, tests/parts.py):
+    # about a quarter of the suite's time each (4.5-5 min each locally, 21 min in one run), 30 min is ample headroom.
+    timeout-minutes: 30
+    strategy:
+      fail-fast: true
+      matrix:
+        part: [1, 2, 3, 4]
 
     steps:
       - uses: actions/checkout@v4
@@ -105,7 +89,41 @@ jobs:
           pip install -e ".[dev]"
 
       - name: Run tests
+        env:
+          E2ER_TEST_PART: ${{ matrix.part }}/4
         run: pytest tests/ -v --tb=short -m "not e2e"
+
+  facts:
+    name: Release facts (counts from the code)
+    needs: version-check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Write release-facts.json
+        # Format: docs/RELEASING.md. doi stays null here; the zenodo-doi job fills it in.
+        run: python scripts/release_facts.py --out release-facts.json
+
+      - name: Upload it
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-facts
+          path: release-facts.json
+          retention-days: 30
 
   build:
     name: Build wheel + sdist
@@ -136,7 +154,7 @@ jobs:
 
   release:
     name: Create GitHub release
-    needs: build
+    needs: [build, facts]
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
@@ -148,6 +166,12 @@ jobs:
         with:
           name: dist
           path: dist/
+
+      - name: Download the release facts
+        uses: actions/download-artifact@v4
+        with:
+          name: release-facts
+          path: facts/
 
       - name: Create release
         env:
@@ -176,12 +200,35 @@ jobs:
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "Release $TAG exists — updating notes and (re)uploading assets."
             gh release edit "$TAG" --title "$TAG" --notes-file "$NOTES_FILE"
-            gh release upload "$TAG" dist/* --clobber
+            gh release upload "$TAG" dist/* facts/release-facts.json --clobber
           else
             gh release create "$TAG" \
               --title "$TAG" \
               --notes-file "$NOTES_FILE" \
-              dist/*
+              dist/* facts/release-facts.json
+          fi
+
+  zenodo-doi:
+    # Zenodo's GitHub integration mints the version DOI after the release exists (seconds to
+    # minutes; for 0.16.1 never). Ask Zenodo's public records API (no token) for up to 30 min and
+    # put the DOI into release-facts.json; without one, doi stays null (readers use the concept DOI).
+    name: Zenodo version DOI into release-facts.json
+    needs: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fill in the DOI
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          gh release download "$TAG" --pattern release-facts.json --dir facts --clobber
+          python3 scripts/release_facts.py zenodo-doi facts/release-facts.json --wait 1800 --every 30
+          if python3 -c "import json,sys; sys.exit(0 if json.load(open('facts/release-facts.json'))['doi'] else 1)"; then
+            gh release upload "$TAG" facts/release-facts.json --clobber
           fi
 
   publish:

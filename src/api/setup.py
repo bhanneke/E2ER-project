@@ -53,7 +53,7 @@ OPTIONAL_KEYS: list[tuple[str, str, str]] = [
     (
         "ZENODO_TOKEN",
         "Deposits on Zenodo with your own account (a pre-registration, public data and code). "
-        "Create a personal token with the scope deposit:write.",
+        "Create a personal token with the scopes deposit:write and deposit:actions.",
         "https://zenodo.org/account/settings/applications/tokens/new/",
     ),
 ]

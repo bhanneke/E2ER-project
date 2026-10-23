@@ -729,10 +729,33 @@ def _build_system_prompt(
                 "",
             ]
         )
+    if specialist in _NO_ABSTRACT_WRITERS and _abstract_step_follows():
+        lines.extend(
+            [
+                "## The abstract is written after you",
+                "Do not write an abstract. Leave \\begin{abstract} ... \\end{abstract} out of paper_draft.tex "
+                "(an empty \\begin{abstract}\\end{abstract} may mark where it goes). The template's abstract "
+                "step writes the abstract from the final paper, after the revision, and the compiler puts it "
+                "into the paper.",
+                "",
+            ]
+        )
     if skills_text:
         lines.append("## Your Expertise\n")
         lines.append(skills_text)
     return "\n".join(lines)
+
+
+#: Writers of the whole draft, who leave the abstract to the abstract step (src/core/abstract.py).
+_NO_ABSTRACT_WRITERS = frozenset({"paper_drafter", "revisor"})
+
+
+def _abstract_step_follows() -> bool:
+    """Does the running template write the abstract in a step of its own (``abstract``)?"""
+    from ..pipeline.components import active
+
+    spec = active()
+    return spec is not None and spec.step("abstract") is not None
 
 
 _BIB_SPECIALISTS = frozenset(

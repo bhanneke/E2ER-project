@@ -1,4 +1,4 @@
-.PHONY: install test lint typecheck format smoke smoke-paid hooks clean help check release-audit rebuild-app
+.PHONY: install test lint typecheck format smoke smoke-paid hooks clean help check release-audit release rebuild-app
 
 # Use the same Python that resolves `python3` so Makefile works regardless of
 # whether `pytest` / `ruff` happen to be on the user's PATH.
@@ -15,6 +15,7 @@ help:
 	@echo "  format         Auto-format with ruff"
 	@echo "  check          Run lint + tests (pre-PR gate)"
 	@echo "  release-audit  Run pre-release audit (version match, clean tree, CHANGELOG, tests)"
+	@echo "  release        Make every version edit and commit it: make release VERSION=X.Y.Z (docs/RELEASING.md)"
 	@echo "  rebuild-app    Stop + start the local uvicorn dev server"
 	@echo "  hooks          Install pre-commit hooks (ruff + mypy on every commit)"
 	@echo "  clean          Remove caches and build artifacts"
@@ -63,6 +64,11 @@ check: lint smoke
 # Pre-release audit. See scripts/release_audit.py for the full gate list.
 release-audit:
 	@$(PY) scripts/release_audit.py
+
+# Every version edit of a release, committed. See docs/RELEASING.md.
+release:
+	@test -n "$(VERSION)" || (echo "usage: make release VERSION=X.Y.Z" && exit 1)
+	@$(PY) scripts/release.py $(VERSION) --commit
 
 # Restart the local dev server. Kills any running uvicorn and starts fresh
 # with the venv at /tmp/e2er_venv2 (Python 3.12). The app port is 8280.

@@ -102,15 +102,17 @@ GitHub's Acceptable Use Policies (section 7, Information Usage Restrictions) all
 `--zenodo` deposits the public data and code on Zenodo with your own account and records the DOIs:
 
 ```
-export ZENODO_TOKEN=…   # a personal token from zenodo.org, scope deposit:write
+export ZENODO_TOKEN=…   # a personal token from zenodo.org, scopes deposit:write and deposit:actions (publish)
 e2er publish ./my-study … --data public --code public --zenodo
 ```
 
-The data files are deposited one by one, the code (`code/` and `replication/`) as one zip. Each deposit names the study's authors with their ORCID iDs, its licence, and links back to the study page and the dossier; the DOIs go into the dossier and the study page. The files go from your computer straight to Zenodo; the token is never sent to e2er.org. Private material is never deposited.
+The data files are deposited one by one (as one zip `<project>-data.zip` when there are more than the 100 files a Zenodo record takes, or two files whose flattened names collide), the code (`code/` and `replication/`) as one zip. Each deposit names the study's authors with their ORCID iDs, its licence, and links back to the study page and the dossier; the DOIs go into the dossier and the study page. The files go from your computer straight to Zenodo; the token is never sent to e2er.org. Private material is never deposited.
 
 The DOIs are reserved first (drafts), everything that can still fail runs next (the dossier, the paper's stamp and recompile, the checks), and the deposits are published last. The reserved deposits are recorded in `.e2er/zenodo.json`; if publish stops on the way, or the platform refuses the request, the next publish reuses them, so a retry makes no new deposits and gives the same dossier.
 
-To try it first, use Zenodo's sandbox (`--zenodo-sandbox`, token in `ZENODO_SANDBOX_TOKEN`), or add `--dry-run` to see what would be deposited without depositing anything.
+A new version of the study (publishing the folder again) keeps a deposit's DOI when its files are the ones deposited (their MD5 checksums, recorded in `.e2er/zenodo.json` and, for deposits made before e2er recorded them, read from Zenodo). When they changed, publish makes a new version of the same Zenodo record (`newversion`): a new DOI under the record's concept DOI, holding exactly the new files; the dossier and the study page name the new DOI, and `.e2er/zenodo.json` keeps the earlier ones (`earlier`). A rehearsal (`--dry-run`) says which deposits would get a new version.
+
+To try it first, use Zenodo's sandbox (`--zenodo-sandbox`, which implies `--zenodo`; token in `ZENODO_SANDBOX_TOKEN` from sandbox.zenodo.org, a separate account with its own tokens; its DOIs start with `10.5072/` and resolve nowhere), or add `--dry-run` to see what would be deposited without depositing anything. Sandbox and real deposits are kept apart: a folder deposited on the sandbox starts afresh on zenodo.org.
 
 ## The files in a public GitHub repository
 
@@ -139,6 +141,14 @@ e2er publish ./my-study --owner you --project my-study --github you/studies --gi
 ## Taking personal data out before publishing
 
 `e2er redact <folder> --text <text>` replaces every occurrence of the text in the folder's text files with `<redacted>` (`--replace` sets another word) and changes nothing else; before writing, it proves that the new file with the text put back is byte for byte the old one. Each changed file gets an amendment in `provenance.json`: `{path, kind: "redacted", sha256_before, sha256_after, reason: "personal contact details removed by the researcher", redaction: {replacement, count, offsets, removed_bytes, bytes_before}}`. The record never holds the text, nor a hash of it. The next publish shows the redactions in the dossier. `e2er verify` checks that the replacement sits at every recorded offset, and a pre-registered plan file whose only change since the freeze is a redaction passes with "redacted by the researcher after registration: contact details only"; any other change still fails. A folder published before and redacted since still verifies against its `e2er.json` (with the redactions rolled back, `provenance.json` is the published one) until it is published again. `e2er redact <folder> --check --text <text>` rebuilds each redacted file's earlier version with the text and compares its hash value, so whoever knows the text can confirm that nothing else changed. Text in a PDF (searched with `pdftotext`), a database or another binary file, or in a file `provenance.json` does not list, stops the redaction with nothing changed: redact the PDF's LaTeX source and let publish build the PDF again. `--dry-run` says what would change.
+
+## Writing a finished study's abstract again
+
+`e2er abstract <folder>` runs e2er's abstract step on a study that was exported, or published, before the abstract had a step of its own (0.18.0). It lays the study out in a scratch folder (the final `paper/paper.tex`, the results, the reviews), runs the abstract writer once with the configured backend (`--backend`, `--model`), and then the abstract check: at most 160 words; no p-values, intervals, standard errors, Fisher-z or test statistics; at most three numbers, each a value of the study's results at the precision shown; a sentence that states a finding; a last sentence that is no negation and has no "rather than"; none of the constructions the phrase check refuses ("rather than", "X, not Y", the mirrored "changed A; changed nothing about B"). A failure sends the writer back once with the reasons; a second failure changes nothing in the folder. The calls' records go to a scratch database, never to the run's.
+
+On a pass it puts the abstract into `paper/paper.tex` (in place of its abstract, or after the title where it had none), writes `paper/abstract.tex` (the study's `\title` stays in it when it was there), recompiles `paper/paper.pdf` with tectonic and shows the abstract in `report.html`. Each changed file gets an amendment in `provenance.json`: `{path, kind: "abstract_rewritten", sha256_before, sha256_after, bytes_before, model, backend, e2er_version, reason: "abstract rewritten by e2er's abstract step after the abstract fix; the paper's text and results are unchanged"}`, which the next publish puts in the dossier. The command then runs the checks of `e2er verify` and puts every file back when they fail. A published folder still verifies against its `e2er.json` until it is published again (with these amendments rolled back, `provenance.json` is the published one).
+
+`e2er abstract <folder> --from-file <file> --reason "<why>"` puts the researcher's own abstract (a LaTeX abstract environment, or its text) in place of the writer's, for instance to correct one sentence of a written abstract. Nothing is sent to an AI. The abstract passes the same check, number check included, and each changed file gets an amendment of kind `abstract_edited_by_researcher` with the reason and `edited_by: "researcher"`.
 
 ## Demonstration studies
 

@@ -58,6 +58,7 @@ from __future__ import annotations
 
 import contextlib
 import copy
+import datetime as _dt
 import io
 import json
 import os
@@ -646,6 +647,35 @@ def _describe(
                     dep = z.create(reserve_doi=True)
                     reserved[item] = {"id": dep.id, "bucket": dep.bucket, "doi": dep.doi, "state": "draft"}
                     _save_zenodo_record(b, zrec)
+                elif reserved.get(item, {}).get("state") == "published":
+                    # A new version of the study: unchanged files keep their DOI; changed ones
+                    # become a new version of the same Zenodo record (a new DOI, the same concept).
+                    rec = reserved[item]
+                    now = zen.md5s(deposits[item]["files"])
+                    before = rec.get("files")
+                    if before is None and z is not None:  # recorded before e2er kept the checksums
+                        before = z.checksums(rec["id"])
+                    if before is None:  # a rehearsal does not ask Zenodo
+                        print(f"zenodo {item}: published as doi {rec.get('doi')}; publishing compares its files")
+                    elif before != now:
+                        if z is None:
+                            print(
+                                f"zenodo {item}: files changed since doi {rec.get('doi')}: would deposit a new version"
+                            )
+                        else:
+                            dep = z.new_version(rec["id"])
+                            earlier = [*rec.get("earlier", []), {"id": rec["id"], "doi": rec.get("doi")}]
+                            reserved[item] = {
+                                "id": dep.id,
+                                "bucket": dep.bucket,
+                                "doi": dep.doi,
+                                "state": "draft",
+                                "earlier": earlier,
+                            }
+                            _save_zenodo_record(b, zrec)
+                            print(f"zenodo {item}: the files changed since doi {rec.get('doi')}; new version {dep.doi}")
+                    elif z is None:
+                        print(f"zenodo {item}: unchanged since doi {rec.get('doi')}; nothing new is deposited")
                 got = reserved.get(item)
                 if got and got.get("doi"):
                     availability[item]["doi"] = got["doi"]
@@ -771,6 +801,7 @@ def _describe(
                 if rec.get("state") == "published":
                     continue
                 dep = zen.Deposit(id=rec["id"], bucket=rec["bucket"], doi=rec.get("doi"))
+                z.clear_files(dep)  # a new version starts with the earlier files; a retry with its own
                 for fname, data_bytes in deposits[item]["files"]:
                     z.upload(dep, fname, data_bytes)
                 z.describe(
@@ -785,7 +816,7 @@ def _describe(
                     ),
                 )
                 done = z.publish(dep)
-                rec.update(state="published", published_url=done.get("url"))
+                rec.update(state="published", published_url=done.get("url"), files=zen.md5s(deposits[item]["files"]))
                 _save_zenodo_record(b, zrec)
                 if rec.get("doi") and done.get("doi") and done["doi"] != rec["doi"]:
                     print(f"warning: Zenodo published the {item} as doi {done['doi']}, not the reserved {rec['doi']}")
@@ -1277,6 +1308,40 @@ def latex_packages_missing(output: str) -> bool:
     )
 
 
+def recompile_paper(bundle: Path) -> None:
+    """Compile ``paper/paper.tex`` into ``paper/paper.pdf`` with tectonic, in a scratch copy.
+
+    The export keeps figures in results/figures, while the paper includes them
+    from figures/ as in the run's workspace. Raises PublishError, with
+    paper.pdf left as it was, when tectonic produces no PDF or the PDF has a
+    citation turned into "?".
+    """
+    tex = bundle / "paper" / "paper.tex"
+    with tempfile.TemporaryDirectory() as tmp:
+        work = Path(tmp) / "paper"
+        shutil.copytree(tex.parent, work)
+        figs = bundle / "results" / "figures"
+        if not (work / "figures").exists() and figs.is_dir():
+            shutil.copytree(figs, work / "figures")
+        (work / "paper.pdf").unlink(missing_ok=True)  # only a PDF this compile writes counts
+        # As the run compiled it (renderer/compiler.py): tectonic continues past
+        # non-fatal errors (a package option xetex ignores, a missing figure).
+        run = subprocess.run(
+            ["tectonic", "--keep-intermediates", "-Z", "continue-on-errors", "paper.tex"],
+            cwd=work,
+            capture_output=True,
+            text=True,
+        )
+        produced = (work / "paper.pdf").is_file()
+        missing = unresolved_citations(work) if produced else []
+        if not produced and latex_packages_missing(f"{run.stdout}\n{run.stderr}"):
+            raise PublishError(LATEX_OFFLINE)
+        if not produced or missing:
+            why = f"{len(missing)} citation(s) unresolved: {', '.join(missing[:5])}" if missing else "tectonic failed"
+            raise PublishError(f"recompiling paper.tex would break the PDF ({why}); nothing was changed")
+        shutil.copyfile(work / "paper.pdf", tex.parent / "paper.pdf")
+
+
 def _stamp_and_compile(
     bundle: Path,
     author: str | None,
@@ -1303,35 +1368,11 @@ def _stamp_and_compile(
     tex.write_text(new, encoding="utf-8")
     rels = ["paper/paper.tex"]
     if shutil.which("tectonic"):
-        # Compile in a scratch copy: the export keeps figures in results/figures,
-        # while the paper includes them from figures/ as in the run's workspace.
-        with tempfile.TemporaryDirectory() as tmp:
-            work = Path(tmp) / "paper"
-            shutil.copytree(tex.parent, work)
-            figs = bundle / "results" / "figures"
-            if not (work / "figures").exists() and figs.is_dir():
-                shutil.copytree(figs, work / "figures")
-            (work / "paper.pdf").unlink(missing_ok=True)  # only a PDF this compile writes counts
-            # As the run compiled it (renderer/compiler.py): tectonic continues past
-            # non-fatal errors (a package option xetex ignores, a missing figure).
-            run = subprocess.run(
-                ["tectonic", "--keep-intermediates", "-Z", "continue-on-errors", "paper.tex"],
-                cwd=work,
-                capture_output=True,
-                text=True,
-            )
-            produced = (work / "paper.pdf").is_file()
-            missing = unresolved_citations(work) if produced else []
-            if not produced and latex_packages_missing(f"{run.stdout}\n{run.stderr}"):
-                tex.write_text(old, encoding="utf-8")
-                raise PublishError(LATEX_OFFLINE)
-            if not produced or missing:
-                tex.write_text(old, encoding="utf-8")
-                why = (
-                    f"{len(missing)} citation(s) unresolved: {', '.join(missing[:5])}" if missing else "tectonic failed"
-                )
-                raise PublishError(f"recompiling paper.tex would break the PDF ({why}); nothing was changed")
-            shutil.copyfile(work / "paper.pdf", tex.parent / "paper.pdf")
+        try:
+            recompile_paper(bundle)
+        except PublishError:
+            tex.write_text(old, encoding="utf-8")
+            raise
         rels.append("paper/paper.pdf")
     else:
         print("note: tectonic is not installed; paper.pdf was not recompiled (the footnote is in paper.tex)")
@@ -1391,10 +1432,11 @@ def _deposit_plan(bundle: Path, availability: dict[str, Any], project: str) -> d
     """What --zenodo would deposit: the public data files one by one, the public code as one zip."""
     plan: dict[str, Any] = {}
     if availability["data"]["access"] == "public" and (bundle / "data").is_dir():
-        files = [
-            (rel.removeprefix("data/").replace("/", "_"), (bundle / rel).read_bytes())
-            for rel in _listed(bundle, "data")
-        ]
+        listed = _listed(bundle, "data")
+        files = [(rel.removeprefix("data/").replace("/", "_"), (bundle / rel).read_bytes()) for rel in listed]
+        if len(files) > zen.MAX_FILES or len({n for n, _ in files}) < len(files):
+            # More files than a Zenodo record takes, or two that flatten to one name: one zip.
+            files = [(f"{project}-data.zip", _code_zip(bundle, ("data",)))]
         if files:
             plan["data"] = {"files": files, "upload_type": "dataset"}
     if availability["code"]["access"] == "public":
@@ -1437,6 +1479,7 @@ def _deposit_metadata(
         "description": description,
         "creators": zen.creators(manifest.get("contributors") or []),
         "access_right": "open",
+        "publication_date": _dt.date.today().isoformat(),
         "license": _deposit_licence(item, manifest, licensed),
         "keywords": keywords,
         "related_identifiers": [

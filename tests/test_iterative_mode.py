@@ -165,15 +165,15 @@ async def test_a_pivot_that_would_rewrite_the_whole_draft_is_refused_and_recorde
     runner._execute_orders = execute  # type: ignore[method-assign]
     pivots = [
         WorkOrder(specialist="paper_drafter", focus="Rewrite it all."),
-        WorkOrder(specialist="abstract_writer", focus="Lead with the pre-registered window."),
+        WorkOrder(specialist="section_writer", focus="section:introduction Lead with the pre-registered window."),
     ]
     await _pivot_once(runner, pivots)
-    assert ran == [["abstract_writer"]]
+    assert ran == [["section_writer"]]
     pivot = dict(logged)["pivot"]
-    assert pivot["specialists"] == ["abstract_writer"]
+    assert pivot["specialists"] == ["section_writer"]
     assert pivot["refused"] == [{"specialist": "paper_drafter", "note": FULL_REWRITE_REFUSED}]
     rounds = labels.round_summary([{"event_type": et, "payload": p} for et, p in logged])
-    assert rounds[0]["pivot"] == ["Abstract"] and rounds[0]["pivot_refused"] == ["Paper draft"]
+    assert rounds[0]["pivot"] == ["Sections and table layout"] and rounds[0]["pivot_refused"] == ["Paper draft"]
 
 
 async def test_the_circuit_breaker_counts_a_pivot(tmp_path: Path, monkeypatch):
@@ -182,11 +182,11 @@ async def test_the_circuit_breaker_counts_a_pivot(tmp_path: Path, monkeypatch):
     from src.core.strategist.runner import _MAX_SPECIALIST_ATTEMPTS, CircuitBreakerError
 
     runner, _ = _runner(tmp_path, monkeypatch)
-    runner._failure_counts["abstract_writer"] = _MAX_SPECIALIST_ATTEMPTS
+    runner._failure_counts["section_writer"] = _MAX_SPECIALIST_ATTEMPTS
     runner._execute_orders = AsyncMock(return_value=[])  # type: ignore[method-assign]
     with pytest.raises(CircuitBreakerError):
         await _pivot_once(
-            runner, [WorkOrder(specialist="abstract_writer", focus="Lead with the pre-registered window.")]
+            runner, [WorkOrder(specialist="section_writer", focus="section:introduction Lead with the window.")]
         )
     runner._execute_orders.assert_not_called()
 

@@ -9,7 +9,7 @@ A researcher step is a point in a template where the run stops for the researche
 [[steps]]
 kind  = "researcher"
 name  = "review_draft"
-files = ["paper_draft.tex", "abstract.tex"]
+files = ["paper_draft.tex"]
 
 # Stop inside the initial phase, right after the design specialists, before
 # anything else runs.

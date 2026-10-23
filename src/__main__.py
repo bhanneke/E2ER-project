@@ -589,6 +589,29 @@ def main() -> None:
         "its fingerprint with the one provenance.json recorded.",
     )
 
+    abstract_p = subparsers.add_parser(
+        "abstract",
+        help="Write a finished study's abstract again with e2er's abstract step (one AI call, one resend at most).",
+        description="Runs the abstract writer on the study's final paper with the configured backend, then the "
+        "abstract check (at most 160 words, no test statistics, at most three numbers and each a value of the "
+        "results, a finding, no negation at the end). On a pass it puts the abstract into paper/paper.tex, "
+        "writes paper/abstract.tex, recompiles paper/paper.pdf (tectonic) and shows it in report.html, and "
+        'records an amendment per file in provenance.json (kind "abstract_rewritten"); the next `e2er publish` '
+        "shows them in the dossier. Nothing changes when the check fails or the folder does not verify.",
+    )
+    abstract_p.add_argument("folder", help="The exported study folder.")
+    abstract_p.add_argument("--backend", default=None, help="The AI backend (default: the configured one).")
+    abstract_p.add_argument("--model", default=None, help="The model (default: the backend's configured model).")
+    abstract_p.add_argument(
+        "--from-file",
+        default=None,
+        dest="from_file",
+        metavar="FILE",
+        help="Your own abstract (a LaTeX abstract environment, or its text) instead of the writer's: no AI call; "
+        'the same check and number check; recorded as kind "abstract_edited_by_researcher". Needs --reason.',
+    )
+    abstract_p.add_argument("--reason", default=None, help="Why you changed the abstract (with --from-file).")
+
     publish_p = subparsers.add_parser(
         "publish",
         help="Verify an exported bundle; write its research-object manifest (e2er.json) and registry entry.",
@@ -909,6 +932,13 @@ def main() -> None:
 
         logs_to_stderr()
     _clean_path_args(args)
+
+    if args.command == "abstract":
+        from .cli_abstract import abstract as _abstract
+
+        sys.exit(
+            _abstract(args.folder, backend=args.backend, model=args.model, from_file=args.from_file, reason=args.reason)
+        )
 
     if args.command == "redact":
         from .cli_redact import redact as _redact
@@ -1267,6 +1297,7 @@ _PATH_ARGS: dict[str, tuple[str, ...]] = {
     "status": ("paper_id",),
     "verify": ("bundle",),
     "redact": ("folder",),
+    "abstract": ("folder", "from_file"),
     "reproduce": ("folder", "json_out"),
     "verify-citations": ("draft", "bib"),
     "publish": ("bundle", "out", "db"),

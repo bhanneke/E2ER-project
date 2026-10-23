@@ -42,6 +42,7 @@ PHASE_METHODS = {
     "_run_polish_phase": "polish",
     "_run_review_phase": "review",
     "_run_revision_phase": "revision",
+    "_run_abstract_phase": "abstract",
     "_run_replication_phase": "replication",
 }
 
@@ -153,6 +154,7 @@ async def test_single_pass_sequence_is_pinned(monkeypatch, tmp_path):
         "estimation_gate",
         "review",
         "revision",
+        "abstract",
         "replication",
     ]
 
@@ -170,6 +172,7 @@ async def test_iterative_sequence_is_pinned(monkeypatch, tmp_path):
         "polish",
         "review",
         "revision",
+        "abstract",
         "replication",
     ]
 
@@ -190,7 +193,7 @@ async def test_the_estimation_gate_runs_even_on_a_full_resume(monkeypatch, tmp_p
         monkeypatch,
         tmp_path,
         mode="iterative",
-        complete={"initial", "iterative", "self_attack", "polish", "review", "revision", "replication"},
+        complete={"initial", "iterative", "self_attack", "polish", "review", "revision", "abstract", "replication"},
     )
     await runner.run()
 
@@ -221,7 +224,7 @@ async def test_a_resume_skips_only_what_was_completed(monkeypatch, tmp_path):
     runner, phases = _recording_runner(monkeypatch, tmp_path, mode="iterative", complete={"initial", "iterative"})
     await runner.run()
 
-    assert phases == ["estimation_gate", "self_attack", "polish", "review", "revision", "replication"]
+    assert phases == ["estimation_gate", "self_attack", "polish", "review", "revision", "abstract", "replication"]
 
 
 async def test_the_iterative_only_phases_never_run_in_single_pass(monkeypatch, tmp_path):

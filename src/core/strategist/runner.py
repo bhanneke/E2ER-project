@@ -227,6 +227,8 @@ _STEP_EFFECTS: dict[str, _StepEffects] = {
     "polish": _StepEffects(captures_status=True),
     "review": _StepEffects(captures_status=True),
     "replication": _StepEffects(updates_contributions=True),
+    # The abstract, written from the final paper after the revision (src/core/abstract.py).
+    "abstract": _StepEffects(updates_contributions=True),
 }
 
 
@@ -1081,6 +1083,15 @@ class PipelineRunner:
                     # failure counts apply. Before 0.15.1 it went straight to
                     # execute_parallel, past both.
                     kept, refused = _split_full_rewrites(ceiling.suggested_pivots)
+                    notes = [{"specialist": sp, "note": FULL_REWRITE_REFUSED} for sp, _ in refused]
+                    if self._spec.step("abstract") is not None:
+                        # The abstract is written by its own step, after the revision, from the final paper.
+                        notes += [
+                            {"specialist": wo.specialist, "note": ABSTRACT_LATER}
+                            for wo in kept
+                            if wo.specialist == "abstract_writer"
+                        ]
+                        kept = [wo for wo in kept if wo.specialist != "abstract_writer"]
                     await log_event(
                         self._paper_id,
                         "pivot",
@@ -1089,11 +1100,7 @@ class PipelineRunner:
                             "round": iteration,
                             "specialists": [wo.specialist for wo in kept],
                             "focus": [wo.focus for wo in kept],
-                            **(
-                                {"refused": [{"specialist": sp, "note": FULL_REWRITE_REFUSED} for sp, _ in refused]}
-                                if refused
-                                else {}
-                            ),
+                            **({"refused": notes} if notes else {}),
                         },
                     )
                     pivot_decision = StrategistDecision(
@@ -2529,6 +2536,7 @@ class PipelineRunner:
         result = aggregate_reviews(scores)  # the running template's panel and weights
         logger.info("Internal quality review: %.2f of 10 (%s)", result.weighted_avg, result.rule_triggered)
         self._write_review_aggregation(result)
+        await self._record_abstract_findings()
 
         if result.verdict in {"ACCEPT", "MINOR_REVISION"}:
             await self._update_status(PaperStatus.COMPLETED)
@@ -2569,6 +2577,28 @@ class PipelineRunner:
         )
         await self._update_status(PaperStatus.COMPLETED)
         return PaperStatus.COMPLETED
+
+    async def _record_abstract_findings(self) -> None:
+        """What the reviewers (and the self-attack) said about the abstract, whatever their score.
+
+        Written to ``abstract_findings.json`` for the abstract step, which writes
+        the abstract after the revision; the revision's targeted corrections
+        leave the abstract alone. Up to 0.17.3 a reviewer scoring 6.0 or more
+        produced no finding at all (``findings._REVIEW_SCORE_FINDING_FLOOR``), so
+        its points on the abstract were dropped.
+        """
+        from ...db.events import log_event
+        from .findings import collect_abstract_findings, write_abstract_findings
+
+        findings = collect_abstract_findings(self._workspace, self._panel())
+        write_abstract_findings(self._workspace, findings)
+        if findings:
+            await log_event(
+                self._paper_id,
+                "abstract_findings",
+                stage="revision",
+                payload={"count": len(findings), "from": sorted({f.source_detail for f in findings})},
+            )
 
     def _read_review_scores(self) -> list:
         """Parse each reviewer's score from its file on disk (canonical), with
@@ -3402,7 +3432,12 @@ class PipelineRunner:
                     e,
                 )
 
-        return combine_findings(review_findings, verify_findings)
+        # A finding on the abstract goes to the abstract step, which writes the abstract after this round.
+        found = combine_findings(review_findings, verify_findings)
+        spec = getattr(self, "_spec", None)
+        if spec is not None and spec.step("abstract") is not None:
+            found = [f for f in found if f.target != "abstract"]
+        return found
 
     async def _run_patch_revision(self, scores: list) -> PaperStatus:
         """MAJOR_REVISION path: collect findings, dispatch patch_revisor, apply.
@@ -3748,9 +3783,19 @@ class PipelineRunner:
                     self._last_specialist_errors[c.specialist] = c.error
 
     def _to_contract_orders(self, strategist_orders: list) -> list[WorkOrder]:
-        """Adapt strategist.actions.WorkOrder → specialists.contracts.WorkOrder."""
+        """Adapt strategist.actions.WorkOrder → specialists.contracts.WorkOrder.
+
+        An abstract writer the strategist plans is left out when the template has
+        an ``abstract`` step: the abstract is written there, from the final paper,
+        after the revision (src/core/abstract.py).
+        """
         result = []
+        spec = getattr(self, "_spec", None)
+        own_step = spec is not None and spec.step("abstract") is not None
         for wo in strategist_orders:
+            if own_step and wo.specialist == "abstract_writer":
+                logger.info("abstract_writer left out of the strategist's plan: the abstract step writes it")
+                continue
             result.append(
                 WorkOrder(
                     paper_id=self._paper_id,
@@ -3812,6 +3857,74 @@ class PipelineRunner:
             self._governance,
         )
         self._contributions.append(contribution)
+
+    async def _run_abstract_phase(self) -> None:
+        """The abstract, from the final paper: the writer, the check, at most one resend (src/core/abstract.py).
+
+        Runs after the revision, before the paper is compiled (the compiler puts
+        ``abstract.tex`` into the paper). A second failure of the check is a
+        finding: ``abstract_check.json``, a failed ``abstract`` check in the
+        dossier and an ``abstract_finding`` event; the run goes on. A regime that
+        does not enforce the check records its verdict and sends nobody back.
+        """
+        from ...db.events import log_event
+        from ..abstract import ABSTRACT_FILE, title_command, with_title, work_context, write_abstract
+        from ..specialists.dispatcher import execute_work_order
+
+        if not (self._workspace / "paper_draft.tex").is_file():
+            logger.warning("Paper %s: no paper_draft.tex, so no abstract is written", self._paper_id)
+            return
+
+        async def execute(focus: str) -> bool:
+            order = WorkOrder(
+                paper_id=self._paper_id,
+                specialist="abstract_writer",
+                focus=focus,
+                context=work_context(self._workspace, self._paper_id),
+                output_file=ABSTRACT_FILE,
+            )
+            contribution = await execute_work_order(
+                order,
+                self._backend,
+                self._workspace,
+                self._model,
+                self._extra_tools,
+                self._extra_handlers,
+                self._backend_name,
+                self._governance,
+            )
+            self._contributions.append(contribution)
+            return contribution.success
+
+        outcome = await write_abstract(self._workspace, execute, resend=self._governance_enforces("abstract"))
+        # The study's title is read from abstract.tex (research_object): the paper's own.
+        target = self._workspace / ABSTRACT_FILE
+        if target.is_file():
+            paper_title = title_command((self._workspace / "paper_draft.tex").read_text(encoding="utf-8"))
+            text = target.read_text(encoding="utf-8")
+            titled = with_title(text, paper_title)
+            if titled != text:
+                target.write_text(titled, encoding="utf-8")
+        await self._record_gate(
+            "abstract",
+            passed=outcome.passed,
+            detail=outcome.check.detail()
+            + ("" if outcome.passed else f" (after {outcome.attempts} attempt(s); recorded as a finding)"),
+        )
+        if not outcome.passed:
+            logger.warning(
+                "Paper %s: the abstract failed its check after %d attempt(s): %s",
+                self._paper_id,
+                outcome.attempts,
+                outcome.check.detail()[:500],
+            )
+            await log_event(
+                self._paper_id,
+                "abstract_finding",
+                stage="abstract",
+                specialist="abstract_writer",
+                payload={"problems": outcome.check.problems[:20], "attempts": outcome.attempts},
+            )
 
     async def _run_compile_phase(self) -> None:
         """Compile paper_draft.tex to PDF. Non-fatal — PDF is a bonus output."""
@@ -3997,6 +4110,8 @@ def _estimation_next(orders: list[WorkOrder]) -> bool:
 _FULL_REWRITERS = frozenset({"paper_drafter", "revisor"})
 
 #: Why a full rewrite is refused, in the words the record and the run page use.
+ABSTRACT_LATER = "left out: the abstract step writes the abstract after the revision, from the final paper"
+
 FULL_REWRITE_REFUSED = (
     "refused: it would rewrite the whole draft after the first round; a change to one section "
     "(Sections and table layout) or the targeted corrections can do it"

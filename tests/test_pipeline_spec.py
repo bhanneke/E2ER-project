@@ -34,7 +34,7 @@ BUILTIN = Path(__file__).resolve().parents[1] / "pipelines" / "empirical.toml"
 # Lifted from tests/test_pipeline_sequence.py, which pins these against the real
 # runner. Duplicated deliberately: if someone changes one, the other should not
 # quietly follow.
-SINGLE_PASS = ["initial", "estimation_gate", "review", "revision", "replication"]
+SINGLE_PASS = ["initial", "estimation_gate", "review", "revision", "abstract", "replication"]
 ITERATIVE = [
     "initial",
     "iterative",
@@ -43,6 +43,7 @@ ITERATIVE = [
     "polish",
     "review",
     "revision",
+    "abstract",
     "replication",
 ]
 
@@ -74,7 +75,7 @@ def test_the_builtin_spec_predicts_resume_behaviour():
     spec = load_spec(BUILTIN)
 
     resumed = spec.sequence_for("iterative", {"initial", "iterative"})
-    assert resumed == ["estimation_gate", "self_attack", "polish", "review", "revision", "replication"]
+    assert resumed == ["estimation_gate", "self_attack", "polish", "review", "revision", "abstract", "replication"]
 
 
 def test_the_estimation_gate_is_not_resumable_in_the_spec_either():

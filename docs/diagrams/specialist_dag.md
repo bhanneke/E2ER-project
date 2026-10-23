@@ -21,9 +21,8 @@ graph LR
 
     subgraph G2["Group 2 — Writing (sequential)"]
         SW[section_writer]
-        AW[abstract_writer]
         LF[latex_formatter]
-        SW --> AW --> LF
+        SW --> LF
     end
 
     subgraph G3["Group 3 — V3 Extensions (sequential phases)"]

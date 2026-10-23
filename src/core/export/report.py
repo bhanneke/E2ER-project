@@ -188,6 +188,31 @@ color:var(--muted);font-size:13px}
 """
 
 
+def paper_abstract(bundle: Path) -> str:
+    """The study's abstract as plain text: ``paper/abstract.tex``, else the abstract of ``paper/paper.tex``.
+
+    The same abstract the PDF shows (the compiler puts abstract.tex into the paper), without
+    its LaTeX, its ``% src:`` notes and its keywords.
+    """
+    from ..abstract import environment, readable
+
+    for rel in ("paper/abstract.tex", "paper/paper.tex"):
+        path = bundle / rel
+        if not path.is_file():
+            continue
+        try:
+            raw = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        m = environment(raw)
+        if m is None and rel.endswith("paper.tex"):
+            continue
+        text = readable(raw)
+        if text:
+            return text[:2200]
+    return ""
+
+
 def render_report(bundle: Path, manifest: dict[str, Any], prov_doc: dict[str, Any] | None = None) -> str:
     """Build the standalone HTML. Pure — takes a bundle, returns a document.
 
@@ -203,16 +228,7 @@ def render_report(bundle: Path, manifest: dict[str, Any], prov_doc: dict[str, An
     run = prov["run"]
     verdicts = _verdicts(bundle)
 
-    abstract = ""
-    abs_path = bundle / "paper" / "abstract.tex"
-    if abs_path.is_file():
-        try:
-            raw = abs_path.read_text(encoding="utf-8", errors="replace")
-            for marker in ("\\begin{abstract}", "\\end{abstract}"):
-                raw = raw.replace(marker, "")
-            abstract = " ".join(raw.split())[:2200]
-        except OSError:
-            abstract = ""
+    abstract = paper_abstract(bundle)
 
     reads = [(rel, label) for rel, label in _READABLE if (bundle / rel).is_file()]
 

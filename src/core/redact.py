@@ -277,6 +277,9 @@ def redact(
 def provenance_before_redactions(folder: Path) -> tuple[list[str], int]:
     """provenance.json's text as it was before the redactions at the end of its amendments, and their number.
 
+    The abstract rewritten after publishing (``e2er abstract``, kind ``abstract_rewritten``) is rolled back
+    the same way: each such amendment records the size the file had (``bytes_before``), or that it was new.
+
     Several texts when the redactions added the "amendments" list itself (with and without an empty list):
     the caller compares each with an earlier publish's content id. ([], 0) when the last amendment is not a
     redaction or a redaction lacks the size the file had.
@@ -289,11 +292,25 @@ def provenance_before_redactions(folder: Path) -> tuple[list[str], int]:
         return [], 0
     if not isinstance(prov, dict) or not isinstance(prov.get("files"), dict):
         return [], 0
+    from .abstract import AMENDMENT_KINDS as ABSTRACT_KINDS
+
     amendments = list(prov.get("amendments") or [])
     files = dict(prov["files"])
     n = 0
-    while amendments and isinstance(amendments[-1], dict) and amendments[-1].get("kind") == KIND:
+    while amendments and isinstance(amendments[-1], dict) and amendments[-1].get("kind") in (KIND, *ABSTRACT_KINDS):
         a = amendments.pop()
+        if a.get("kind") in ABSTRACT_KINDS:
+            # The abstract rewritten after publishing (`e2er abstract`): the file as it was, or none.
+            if not isinstance(a.get("path"), str):
+                return [], 0
+            if a.get("sha256_before") is None:
+                files.pop(a["path"], None)
+            elif isinstance(a.get("sha256_before"), str) and isinstance(a.get("bytes_before"), int):
+                files[a["path"]] = {"sha256": a["sha256_before"], "bytes": a["bytes_before"]}
+            else:
+                return [], 0
+            n += 1
+            continue
         size = (a.get("redaction") or {}).get("bytes_before") if isinstance(a.get("redaction"), dict) else None
         if not isinstance(a.get("path"), str) or not isinstance(a.get("sha256_before"), str) or size is None:
             return [], 0

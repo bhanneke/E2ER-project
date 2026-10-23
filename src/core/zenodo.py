@@ -9,6 +9,14 @@ A deposit is created with a pre-reserved DOI, so the DOI is known before the
 record is published: ``e2er publish`` writes it into the dossier, then puts
 the dossier's address into the Zenodo description, then publishes.
 
+A new version of a study whose deposited files changed becomes a new version
+of the same Zenodo record (``newversion``): a new DOI under the record's
+concept DOI. The calls are those of Zenodo's deposit API
+(https://developers.zenodo.org/): ``POST /api/deposit/depositions``, ``PUT
+<bucket>/<name>``, ``PUT /api/deposit/depositions/<id>``, ``POST
+.../actions/publish``, ``POST .../actions/newversion`` and the draft it names
+in ``links.latest_draft``, ``GET``/``DELETE .../files``.
+
 The token comes from ``ZENODO_TOKEN`` (``ZENODO_SANDBOX_TOKEN`` for the
 sandbox), else from the system keychain (service ``zenodo.org`` or
 ``sandbox.zenodo.org``, username ``token``).
@@ -16,9 +24,14 @@ sandbox), else from the system keychain (service ``zenodo.org`` or
 
 from __future__ import annotations
 
+import hashlib
 import os
 from dataclasses import dataclass, field
 from typing import Any
+from urllib.parse import quote
+
+#: Zenodo takes at most this many files in one record.
+MAX_FILES = 100
 
 ZENODO_URL = "https://zenodo.org"
 ZENODO_SANDBOX_URL = "https://sandbox.zenodo.org"
@@ -77,7 +90,10 @@ def load_token(sandbox: bool = False) -> str | None:
 def token_hint(sandbox: bool = False) -> str:
     var = "ZENODO_SANDBOX_TOKEN" if sandbox else "ZENODO_TOKEN"
     site = "sandbox.zenodo.org" if sandbox else "zenodo.org"
-    return f"set {var} to a personal token from {site} (Applications → Personal access tokens, scope deposit:write)"
+    return (
+        f"set {var} to a personal token from {site} "
+        "(Applications → Personal access tokens, scopes deposit:write and deposit:actions)"
+    )
 
 
 @dataclass
@@ -120,15 +136,67 @@ class Zenodo:
             raise ZenodoError(f"Zenodo refused to {what} ({r.status_code}): {str(detail)[:300]}")
         return r
 
+    @staticmethod
+    def _deposit(dep: dict[str, Any]) -> Deposit:
+        doi = ((dep.get("metadata") or {}).get("prereserve_doi") or {}).get("doi")
+        return Deposit(id=dep["id"], bucket=(dep.get("links") or {})["bucket"], doi=doi)
+
     def create(self, *, reserve_doi: bool = True) -> Deposit:
         body = {"metadata": {"prereserve_doi": True}} if reserve_doi else {}
         r = self._check(self.http.post("/api/deposit/depositions", json=body, headers=self.auth), "create a deposit")
-        dep = r.json()
-        doi = ((dep.get("metadata") or {}).get("prereserve_doi") or {}).get("doi")
-        return Deposit(id=dep["id"], bucket=dep["links"]["bucket"], doi=doi)
+        return self._deposit(r.json())
+
+    def get(self, dep_id: int | str) -> dict[str, Any]:
+        r = self._check(self.http.get(f"/api/deposit/depositions/{dep_id}", headers=self.auth), "read a deposit")
+        out: dict[str, Any] = r.json()
+        return out
+
+    def new_version(self, published_id: int | str) -> Deposit:
+        """A draft of a new version of the published deposit ``published_id``, with its own reserved DOI.
+
+        Zenodo answers ``newversion`` with the published deposit, whose ``links.latest_draft`` is the
+        new draft. The draft starts with the files of the version before; ``clear_files`` removes them.
+        """
+        r = self._check(
+            self.http.post(f"/api/deposit/depositions/{published_id}/actions/newversion", headers=self.auth),
+            "start a new version",
+        )
+        answer = r.json()
+        draft_url = (answer.get("links") or {}).get("latest_draft")
+        if draft_url:
+            draft = self._check(self.http.get(draft_url, headers=self.auth), "read the new version").json()
+        elif str(answer.get("id")) != str(published_id):
+            draft = answer  # a Zenodo that answers with the draft itself
+        else:
+            raise ZenodoError("Zenodo started no new version: its answer names no draft (links.latest_draft)")
+        dep = self._deposit(draft)
+        if not dep.doi:
+            raise ZenodoError(f"Zenodo reserved no DOI for the new version (deposit {dep.id}); nothing was published")
+        return dep
+
+    def files(self, dep_id: int | str) -> list[dict[str, Any]]:
+        """The deposit's files as Zenodo lists them (``filename``, ``checksum``, ``links.self``)."""
+        r = self._check(self.http.get(f"/api/deposit/depositions/{dep_id}/files", headers=self.auth), "list files")
+        got = r.json()
+        return [f for f in got if isinstance(f, dict)] if isinstance(got, list) else []
+
+    def checksums(self, dep_id: int | str) -> dict[str, str]:
+        """{filename: md5} of a deposit's files."""
+        return {
+            str(f.get("filename") or f.get("key")): str(f.get("checksum") or "").removeprefix("md5:")
+            for f in self.files(dep_id)
+        }
+
+    def clear_files(self, dep: Deposit) -> None:
+        """Remove every file of a draft (those a new version starts with, or a failed attempt's)."""
+        for f in self.files(dep.id):
+            url = (f.get("links") or {}).get("self") or f"/api/deposit/depositions/{dep.id}/files/{f.get('id')}"
+            self._check(self.http.delete(url, headers=self.auth), f"remove {f.get('filename')} from the draft")
 
     def upload(self, dep: Deposit, name: str, data: bytes) -> None:
-        self._check(self.http.put(f"{dep.bucket}/{name}", content=data, headers=self.auth), f"upload {name}")
+        self._check(
+            self.http.put(f"{dep.bucket}/{quote(name, safe='')}", content=data, headers=self.auth), f"upload {name}"
+        )
         dep.files.append(name)
 
     def describe(self, dep: Deposit, metadata: dict[str, Any]) -> None:
@@ -168,6 +236,11 @@ def deposit_files(
         z.upload(dep, name, data)
     z.describe(dep, metadata)
     return z.publish(dep)
+
+
+def md5s(files: list[tuple[str, bytes]]) -> dict[str, str]:
+    """{name: md5} of the files of a deposit, as Zenodo's checksums state them."""
+    return {name: hashlib.md5(data, usedforsecurity=False).hexdigest() for name, data in files}
 
 
 def creators(contributors: list[dict[str, Any]]) -> list[dict[str, str]]:

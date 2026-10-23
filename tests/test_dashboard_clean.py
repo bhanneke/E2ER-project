@@ -201,6 +201,7 @@ def test_the_stops_on_offer_are_the_chosen_templates_steps(monkeypatch):
         "polish",
         "review",
         "revision",
+        "abstract",
         "replication",
     ]
     assert "fetch" in choices["replication"] and "review" not in choices["replication"]

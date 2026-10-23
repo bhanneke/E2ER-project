@@ -487,4 +487,5 @@ async def test_with_no_draft_yet_section_writers_become_the_drafter(tmp_path, mo
     ):
         await runner._dispatch(decision)
 
-    assert sorted(dispatched) == ["abstract_writer", "paper_drafter"]
+    # The abstract writer is left out: the template's abstract step writes the abstract after the revision.
+    assert sorted(dispatched) == ["paper_drafter"]

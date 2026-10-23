@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
@@ -330,3 +331,108 @@ def combine_findings(*finding_lists: list[Finding]) -> list[Finding]:
         all_findings,
         key=lambda f: (-f.severity, _source_priority.get(f.source, 99)),
     )
+
+
+# ---------------------------------------------------------------------------
+# Findings on the abstract (0.18.0): whatever the reviewer's score
+# ---------------------------------------------------------------------------
+
+_ABSTRACT_RE = re.compile(r"\babstracts?\b", re.IGNORECASE)
+#: A block of a review: a paragraph, or one item of a list.
+_BLOCK_SPLIT_RE = re.compile(r"\n\s*\n|\n(?=\s*(?:[-*+]|\d+[.)])\s)")
+
+
+def _abstract_passages(text: str, limit: int = 6) -> list[str]:
+    """The paragraphs and list items of a review that name the abstract, whitespace collapsed."""
+    out: list[str] = []
+    for block in _BLOCK_SPLIT_RE.split(text):
+        flat = " ".join(block.split()).strip(" -*+#>")
+        if len(flat) < 20 or not _ABSTRACT_RE.search(flat):
+            continue
+        if re.match(r"^(?:OVERALL SCORE|RECOMMENDATION)\b", flat, re.IGNORECASE):
+            continue
+        if flat not in out:
+            out.append(flat[:900])
+        if len(out) >= limit:
+            break
+    return out
+
+
+def collect_abstract_findings(workspace: Path, reviewers: list[str] | None = None) -> list[Finding]:
+    """Every point the reviewers and the self-attack made about the abstract, as findings on ``abstract``.
+
+    Read from the review files themselves, whatever the reviewer scored: up to
+    0.17.3 a reviewer at 6.0 or more gave no finding (``_REVIEW_SCORE_FINDING_FLOOR``)
+    and its remarks on the abstract were lost. The abstract step reads them.
+    """
+    import json
+
+    from ..specialists.registry import ALL_REVIEWERS, SPECIALIST_ARTIFACTS
+    from .review_aggregator import parse_review_output
+
+    out: list[Finding] = []
+    for reviewer in reviewers or ALL_REVIEWERS:
+        artifact = SPECIALIST_ARTIFACTS.get(reviewer, "")
+        path = workspace / artifact if artifact else None
+        if path is None or not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        passages = _abstract_passages(text)
+        if not passages:
+            continue
+        score = parse_review_output(reviewer, text)
+        severity = max(5, _review_severity_from_score(score.score)) if score else 5
+        for passage in passages:
+            out.append(
+                Finding(
+                    source="review",
+                    source_detail=reviewer,
+                    target="abstract",
+                    severity=severity,
+                    problem=passage,
+                    suggested_fix="Write the abstract so that this point no longer applies.",
+                )
+            )
+    attack = workspace / "self_attack_report.json"
+    if attack.is_file():
+        try:
+            report = json.loads(attack.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            report = {}
+        for f in (report.get("findings") or []) if isinstance(report, dict) else []:
+            if not isinstance(f, dict):
+                continue
+            said = " ".join(str(f.get(k) or "") for k in ("description", "suggested_fix")) + " ".join(
+                str(x) for x in f.get("locations") or []
+            )
+            if not _ABSTRACT_RE.search(said):
+                continue
+            try:
+                severity = max(1, min(10, int(f.get("severity") or 5)))
+            except (TypeError, ValueError):
+                severity = 5
+            out.append(
+                Finding(
+                    source="self_attack",
+                    source_detail="self_attack",
+                    target="abstract",
+                    severity=severity,
+                    problem=str(f.get("description") or "")[:900],
+                    suggested_fix=str(f.get("suggested_fix") or "")[:600],
+                )
+            )
+    return out
+
+
+def write_abstract_findings(workspace: Path, findings: list[Finding]) -> None:
+    """``abstract_findings.json``: the findings on the abstract, for the abstract step (and the export)."""
+    import json
+    from dataclasses import asdict
+
+    from ..abstract import FINDINGS_FILE
+
+    doc = {"findings": [asdict(f) for f in findings]}
+    try:
+        (workspace / FINDINGS_FILE).write_text(json.dumps(doc, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    except OSError:
+        pass

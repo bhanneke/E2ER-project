@@ -27,6 +27,7 @@ STEPS: dict[str, str] = {
     "review": "Review panel",
     "revision": "Revision",
     "replication": "Replication package",
+    "abstract": "Abstract, from the final paper",
     "review_design": "Design review",
     "preregister": "Pre-registration",
     "review_draft": "Draft review",
@@ -214,6 +215,8 @@ EVENTS: dict[str, str] = {
     "method_sources": "The template's method sources added to the bibliography",
     "sent_out_before": "Specialists sent out before the draft",
     "drafter_sent_out": "Paper drafter sent out: the plan left the draft out",
+    "abstract_findings": "Reviewers' points on the abstract kept for the abstract step",
+    "abstract_finding": "The abstract failed its check after one resend",
 }
 
 #: What the ceiling check after a round of improvement decided (its ``verdict``).
@@ -378,6 +381,12 @@ def round_summary(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
             refused = [x for x in data.get("refused") or [] if isinstance(x, dict)]
             if refused:
                 r["pivot_refused"] = [specialist(str(x.get("specialist") or "")) for x in refused]
+                later = all(str(x.get("specialist")) == "abstract_writer" for x in refused)
+                r["pivot_refused_why"] = (
+                    "the abstract step writes the abstract after the revision"
+                    if later
+                    else "it would rewrite the whole draft"
+                )
         else:
             r["ended"] = True
             r["reason"] = r["reason"] or str(data.get("reason") or "")

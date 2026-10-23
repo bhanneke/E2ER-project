@@ -48,7 +48,7 @@ Your entire response MUST be a single JSON object — nothing else.
     {
       "specialist": "<one of: idea_developer, literature_scanner, identification_strategist,
                      data_architect, econometrics_specialist, data_analyst, theory_specialist,
-                     paper_drafter, section_writer, abstract_writer, latex_formatter, revisor>",
+                     paper_drafter, section_writer, latex_formatter, revisor>",
       "focus": "<one-paragraph specific instruction for this specialist>",
       "parallel_group": <integer 0..N — same group runs in parallel; later groups depend on earlier>
     }
@@ -56,6 +56,10 @@ Your entire response MUST be a single JSON object — nothing else.
   "rationale": "<short justification>"
 }
 ```
+
+Note: the abstract is not yours to plan. The `abstract` step of the template
+writes it after the revision, from the final paper; an abstract_writer work
+order is left out of your plan.
 
 Note: reviewer specialists (mechanism_reviewer, technical_reviewer,
 literature_reviewer, writing_reviewer, data_reviewer, identification_reviewer)
@@ -74,8 +78,7 @@ do not return them as work_orders.
     {"specialist":"data_architect","focus":"Write data_dictionary.json.","parallel_group":1},
     {"specialist":"data_analyst","focus":"Acquire data via Allium.","parallel_group":2},
     {"specialist":"econometrics_specialist","focus":"Estimate the econometric model.","parallel_group":3},
-    {"specialist":"paper_drafter","focus":"Draft the paper body.","parallel_group":4},
-    {"specialist":"abstract_writer","focus":"Write the abstract.","parallel_group":4}
+    {"specialist":"paper_drafter","focus":"Draft the paper body.","parallel_group":4}
   ],
   "rationale": "Initial design + data acquisition + writing pass."
 }
