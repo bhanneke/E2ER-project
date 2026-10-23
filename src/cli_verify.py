@@ -1059,11 +1059,13 @@ def _check_citations_offline(bundle: Path) -> Check:
         return Check("citations", SKIP, "no paper/paper.tex")
     from .core.pipeline.verify_citations import load_bib, parse_bibitem_keys, parse_cite_keys
 
-    text = tex.read_text(encoding="utf-8", errors="replace")
+    # The paper with the files it \input or \include: a citation in a section file counts as one in the paper.
+    text = _inlined(tex, bundle / "paper")
     keys = parse_cite_keys(text)
     from .core.bibliography import bibliography_names
 
-    absent = [n for n in bibliography_names(text) if not (bundle / "paper" / f"{n}.bib").is_file()]
+    names = bibliography_names(text)
+    absent = [n for n in names if not _inside(bundle / "paper" / f"{n}.bib", bundle)]
     if keys and absent:
         return Check(
             "citations",
@@ -1071,8 +1073,13 @@ def _check_citations_offline(bundle: Path) -> Check:
             f"paper.tex uses {', '.join(n + '.bib' for n in absent)}, which is not in the bundle; "
             "compiled from the bundle, every citation would be unresolved",
         )
-    refs = bundle / "paper" / "refs.bib"
-    bib = load_bib(refs) if refs.is_file() else {}
+    # Every database \bibliography{…} names (refs.bib when it names none).
+    bibs = [bundle / "paper" / f"{n}.bib" for n in names] or [bundle / "paper" / "refs.bib"]
+    bib: dict[str, dict] = {}
+    for f in bibs:
+        if _inside(f, bundle):
+            bib.update({k: v for k, v in load_bib(f).items() if k not in bib})
+    shown_bibs = ", ".join(f.name for f in bibs)
     missing = [k for k in keys if k not in bib]
 
     # Consistency of the bundled registry snapshot: recomputed status counts
@@ -1087,7 +1094,7 @@ def _check_citations_offline(bundle: Path) -> Check:
         snapshot = f"; snapshot: {ci.get('verified', 0)} verified, {ci.get('unverifiable', 0)} unverifiable at run time"
 
     if missing:
-        return Check("citations", FAIL, f"{len(missing)} cited key(s) not in refs.bib: {', '.join(missing[:5])}")
+        return Check("citations", FAIL, f"{len(missing)} cited key(s) not in {shown_bibs}: {', '.join(missing[:5])}")
     if not keys and not parse_bibitem_keys(text):
         # The template's method sources are citable, never required: they do not count here.
         literature = [k for k, f in bib.items() if f.get("e2er_source") != "template"]
@@ -1095,7 +1102,7 @@ def _check_citations_offline(bundle: Path) -> Check:
             # The paper ignores the bibliography it ships: nothing it says is
             # tied to a source (the 2026-10-10 Haiku paper, 21 entries, 0 cites).
             return Check(
-                "citations", FAIL, f"paper.tex cites none of the {len(literature)} work(s) in refs.bib{snapshot}"
+                "citations", FAIL, f"paper.tex cites none of the {len(literature)} work(s) in {shown_bibs}{snapshot}"
             )
         return Check(
             "citations",
@@ -1104,7 +1111,35 @@ def _check_citations_offline(bundle: Path) -> Check:
         )
     if not keys:
         return Check("citations", SKIP, f"paper.tex cites nothing, so there is no citation to check{snapshot}")
-    return Check("citations", PASS, f"{len(keys)} cite key(s) resolve in refs.bib{snapshot}")
+    return Check("citations", PASS, f"{len(keys)} cite key(s) resolve in {shown_bibs}{snapshot}")
+
+
+_INCLUDE_RE = re.compile(r"\\(?:input|include|subfile)\s*\{([^}]+)\}")
+
+
+def _inside(path: Path, bundle: Path) -> bool:
+    """A regular file inside the bundle, not reached through a link."""
+    try:
+        return path.is_file() and not path.is_symlink() and path.resolve().is_relative_to(bundle.resolve())
+    except OSError:
+        return False
+
+
+def _inlined(tex: Path, base: Path, depth: int = 0) -> str:
+    """``tex`` with each \\input / \\include / \\subfile replaced by the file's text (comments dropped first,
+    files inside the bundle's paper folder only, five levels at most). A file that is not there stays as it is."""
+    text = _strip_tex_comments(tex.read_text(encoding="utf-8", errors="replace"))
+    if depth >= 5:
+        return text
+
+    def one(m: re.Match[str]) -> str:
+        ref = m.group(1).strip()
+        for cand in (tex.parent / ref, tex.parent / f"{ref}.tex", base / ref, base / f"{ref}.tex"):
+            if _inside(cand, base):
+                return _inlined(cand, base, depth + 1)
+        return m.group(0)
+
+    return _INCLUDE_RE.sub(one, text)
 
 
 # ── check 4b: citations (online) ─────────────────────────────────────────────

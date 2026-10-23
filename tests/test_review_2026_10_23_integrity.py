@@ -9,7 +9,7 @@ import json
 import shutil
 from pathlib import Path
 
-from src.cli_verify import FAIL, SKIP, _check_numbers, _check_tables, _reconstruct_workspace, _run_checks
+from src.cli_verify import FAIL, PASS, SKIP, _check_numbers, _check_tables, _reconstruct_workspace, _run_checks
 
 LEFT = {"path": "results/summary_statistics.json", "kind": "terms", "source": "gaia", "reason": "Gaia's terms"}
 
@@ -287,3 +287,51 @@ def test_an_empty_compared_file_reproduces_nothing(tmp_path: Path):
         text, code = rp.verdict([fc], None, [])
         assert code == 1 and not text.startswith("Reproduced") and "no value was compared" in text
     assert rp.verdict([], None, [])[1] == 1
+
+
+# ── 10. citations in \input files, keys in every named .bib ──────────────────
+
+
+def _paper(tmp_path: Path, tex: str, files: dict[str, str]) -> Path:
+    b = tmp_path / "b"
+    (b / "paper").mkdir(parents=True)
+    (b / "paper" / "paper.tex").write_text(tex)
+    for rel, text in files.items():
+        (b / "paper" / rel).parent.mkdir(parents=True, exist_ok=True)
+        (b / "paper" / rel).write_text(text)
+    return b
+
+
+def test_a_citation_in_an_input_file_is_checked(tmp_path: Path):
+    """The reviewer's repro: an unresolved \\cite in a section file passed, since only paper.tex was read."""
+    from src.cli_verify import _check_citations_offline
+
+    tex = "\\begin{document}\nSee \\cite{smith2021}.\n\\input{sections/intro}\n\\bibliography{refs}\n\\end{document}\n"
+    b = _paper(
+        tmp_path,
+        tex,
+        {"refs.bib": "@article{smith2021, title={X}, year={2021}}\n", "sections/intro.tex": "As \\cite{ghost2020}.\n"},
+    )
+    c = _check_citations_offline(b)
+    assert c.status == FAIL and "ghost2020" in c.detail
+
+
+def test_keys_resolve_in_every_named_bib_file(tmp_path: Path):
+    from src.cli_verify import _check_citations_offline
+
+    tex = "\\begin{document}\n\\cite{smith2021,jones2022}\n\\bibliography{refs,more}\n\\end{document}\n"
+    files = {"refs.bib": "@article{smith2021, title={X}, year={2021}}\n"}
+    c = _check_citations_offline(_paper(tmp_path, tex, files))
+    assert c.status == FAIL and "more.bib" in c.detail
+    files["more.bib"] = "@article{jones2022, title={Y}, year={2022}}\n"
+    shutil.rmtree(tmp_path / "b")
+    c = _check_citations_offline(_paper(tmp_path, tex, files))
+    assert c.status == PASS and "2 cite key(s) resolve in refs.bib, more.bib" in c.detail
+
+
+def test_an_input_outside_the_paper_folder_is_not_read(tmp_path: Path):
+    from src.cli_verify import _inlined
+
+    (tmp_path / "secret.tex").write_text("\\cite{outside}")
+    b = _paper(tmp_path, "\\input{../../secret}\n", {})
+    assert "outside" not in _inlined(b / "paper" / "paper.tex", b / "paper")
