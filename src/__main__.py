@@ -827,9 +827,9 @@ def main() -> None:
         "--unblind",
         default=None,
         metavar="CODE",
-        help="After the review: publish a version with authors of the anonymous version CODE (or its address "
-        "…/r/CODE) as --owner/--project. The bundle is the anonymised copy (same files, your name shown) or a "
-        "named export of the study (its files become the new version). The anonymous version stays as it is.",
+        help="After the review: says where to unblind the anonymous version CODE (or its address …/r/CODE): "
+        "on your account page on e2er.org, signed in in the browser (a command-line token cannot). A named "
+        "export is then published as a normal new version of that study. Sends nothing.",
     )
 
     url_help = "Platform address (default: E2ER_URL, else https://e2er.org)."

@@ -172,10 +172,17 @@ def status(bundle: str = ".", url: str | None = None) -> int:
         return 1
     base = pc.base_url(url or link.get("platform_url"))
     code, body = pc.request(base, "GET", f"/api/v1/studies/{link['owner_project']}", token=pc.load_token(base))
+    latest = (body.get("latest") or {}) if code == 200 and isinstance(body, dict) else {}
+    if link.get("held") and latest.get("dossier_id") != link.get("dossier_id"):
+        print(
+            f"{link['owner_project']}: the version this folder sent is held on {base}, waiting for your "
+            f"confirmation in the browser: {link.get('confirm_url') or base + '/account'}"
+        )
+        if code != 200:
+            return 0
     if code != 200:
         print(f"error: {pc.error_text(code, body)}")
         return 1
-    latest = body.get("latest") or {}
     local = _content_id(b)
     print(f"{body['id']}: {body['title']}\n  {body['url']}")
     print(f"  version {latest.get('number')} of {len(body.get('versions', []))}, dossier {latest.get('dossier_url')}")

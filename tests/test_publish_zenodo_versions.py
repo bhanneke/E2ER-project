@@ -19,7 +19,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from src.cli_publish import ZENODO_RECORD, publish
+from src.cli_publish import ZENODO_RECORD, _save_zenodo_record, _zenodo_records, publish
 from src.core import zenodo as zen
 from tests.run_db import make_run_db, paper_id_of
 from tests.test_publish_access import BASE, REPO, SHOWCASE
@@ -68,6 +68,8 @@ class Zenodo:
             return httpx.Response(201, json={"key": parts[3]})
         if parts[:3] == ["api", "deposit", "depositions"]:
             i = int(parts[3])
+            if i not in self.deps:  # deleted on the website
+                return httpx.Response(404, json={"message": "PID does not exist."})
             dep = self.deps[i]
             rest = parts[4:]
             if req.method == "GET" and not rest:
@@ -143,8 +145,19 @@ def zenodo(monkeypatch) -> Zenodo:
     return z
 
 
-def _record(b: Path) -> dict:
-    return json.loads((b / ZENODO_RECORD).read_text())
+def _record(b: Path, sandbox: bool | None = None) -> dict:
+    """The record of one Zenodo's deposits; without ``sandbox``, the one host the folder has deposits on."""
+    hosts = _zenodo_records(b)
+    if sandbox is None:
+        assert len(hosts) == 1, hosts
+        return next(iter(hosts.values()))
+    return hosts[zen.service(sandbox)]
+
+
+def _write(b: Path, record: dict, sandbox: bool | None = None) -> None:
+    if sandbox is None:
+        sandbox = next(iter(_zenodo_records(b))) == "sandbox.zenodo.org"
+    _save_zenodo_record(b, record, sandbox)
 
 
 def test_first_publish_creates_uploads_describes_and_publishes(bundle: Path, tmp_path: Path, zenodo: Zenodo):
@@ -179,7 +192,7 @@ def test_changed_files_become_a_new_version_of_the_same_record(bundle: Path, tmp
     # The study's code changed since the deposit (e.g. an amendment): pretend the deposit holds other bytes.
     zenodo.deps[old["id"]]["files"] = {"demo-code.zip": b"the earlier code"}
     first["deposits"]["code"]["files"] = {"demo-code.zip": hashlib.md5(b"the earlier code").hexdigest()}
-    (bundle / ZENODO_RECORD).write_text(json.dumps(first))
+    _write(bundle, first)
     capsys.readouterr()
 
     assert publish(str(bundle), **BASE, **REPO, **PUBLIC, out=str(tmp_path / "e")) == 0
@@ -208,7 +221,7 @@ def test_a_record_without_checksums_asks_zenodo(bundle: Path, tmp_path: Path, ze
     record = _record(bundle)
     for r in record["deposits"].values():
         del r["files"]
-    (bundle / ZENODO_RECORD).write_text(json.dumps(record))
+    _write(bundle, record)
     n = len(zenodo.calls)
     assert publish(str(bundle), **BASE, **REPO, **PUBLIC, out=str(tmp_path / "e")) == 0
     later = zenodo.calls[n:]
@@ -249,7 +262,7 @@ def test_the_sandbox_is_another_address_and_token(bundle: Path, tmp_path: Path, 
     monkeypatch.delenv("ZENODO_TOKEN")
     assert publish(str(bundle), **BASE, **REPO, **PUBLIC, zenodo_sandbox=True, out=str(tmp_path / "e")) == 0
     assert seen == ["https://sandbox.zenodo.org"]
-    assert _record(bundle)["sandbox"] is True
+    assert set(_zenodo_records(bundle)) == {"sandbox.zenodo.org"}
     assert json.loads((bundle / "e2er.json").read_text())["availability"]["code"]["zenodo"].startswith(
         "https://sandbox.zenodo.org/records/"
     )
@@ -281,7 +294,7 @@ def test_a_sandbox_record_written_with_production_s_prefix_is_corrected(
     record = _record(bundle)
     for r in record["deposits"].values():
         r["doi"] = r["doi"].replace("10.5072/", "10.5281/")
-    (bundle / ZENODO_RECORD).write_text(json.dumps(record))
+    _write(bundle, record)
     capsys.readouterr()
     assert publish(str(bundle), **kw) == 0
     assert "unchanged since doi 10.5072/" in capsys.readouterr().out
@@ -319,7 +332,7 @@ def test_a_folder_published_on_a_platform_takes_deposits_without_to_and_publishe
     (bundle / ".e2er" / "link.json").write_text(json.dumps(link))
     record = _record(bundle)
     record["deposits"]["code"]["files"] = {}  # the code changed: a new version, a new dossier
-    (bundle / ZENODO_RECORD).write_text(json.dumps(record))
+    _write(bundle, record)
     assert publish(str(bundle), **kw) == 0
     now = json.loads((bundle / "e2er.json").read_text())
     assert now["dossier"]["id"] != link["dossier_id"]
@@ -331,6 +344,83 @@ def test_a_folder_published_on_a_platform_takes_deposits_without_to_and_publishe
     assert anchor.status == PASS and "describes it again since version 1 on https://e2er.example" in anchor.detail
     capsys.readouterr()
     assert publish(str(bundle), **kw) == 0, capsys.readouterr().out
+
+
+def test_a_sandbox_run_keeps_the_production_deposits(bundle: Path, tmp_path: Path, zenodo: Zenodo, capsys):
+    """.e2er/zenodo.json is keyed by host: a sandbox rehearsal no longer wipes the production record.
+
+    Before, a record of the other host was dropped and the sandbox's written in its place, so the next
+    production publish reserved new DOIs for unchanged files.
+    """
+    kw = dict(**BASE, **REPO, **PUBLIC, out=str(tmp_path / "e"))
+    assert publish(str(bundle), **kw) == 0
+    production = _record(bundle, sandbox=False)
+    assert publish(str(bundle), **kw, zenodo_sandbox=True) == 0
+    assert _record(bundle, sandbox=False) == production
+    assert _record(bundle, sandbox=True)["deposits"]["data"]["id"] != production["deposits"]["data"]["id"]
+    n = len(zenodo.calls)
+    capsys.readouterr()
+    assert publish(str(bundle), **kw) == 0
+    assert zenodo.calls[n:] == [], "unchanged files on zenodo.org: nothing new is deposited"
+    assert f"unchanged since doi {production['deposits']['data']['doi']}" in capsys.readouterr().out
+
+
+def test_a_record_in_the_format_before_hosts_is_read_as_its_host(bundle: Path, tmp_path: Path, zenodo: Zenodo):
+    kw = dict(**BASE, **REPO, **PUBLIC, out=str(tmp_path / "e"))
+    assert publish(str(bundle), **kw) == 0
+    production = _record(bundle, sandbox=False)
+    (bundle / ZENODO_RECORD).write_text(json.dumps({"sandbox": False, **production}))
+    n = len(zenodo.calls)
+    assert publish(str(bundle), **kw) == 0
+    assert zenodo.calls[n:] == []
+    assert _zenodo_records(bundle) == {"zenodo.org": production}
+    assert publish(str(bundle), **kw, zenodo_sandbox=True) == 0  # written in the new format, production kept
+    saved = json.loads((bundle / ZENODO_RECORD).read_text())
+    assert set(saved) == {"hosts"} and saved["hosts"]["zenodo.org"] == production
+
+
+def test_a_draft_deleted_on_zenodo_is_reserved_again(bundle: Path, tmp_path: Path, zenodo: Zenodo, monkeypatch, capsys):
+    """A reserved draft deleted on Zenodo's website answered 404 to every later deposit; now a new one is reserved."""
+    real = zen.Zenodo.publish
+    monkeypatch.setattr(zen.Zenodo, "publish", lambda self, dep: (_ for _ in ()).throw(zen.ZenodoError("later")))
+    kw = dict(**BASE, **REPO, **PUBLIC, out=str(tmp_path / "e"))
+    assert publish(str(bundle), **kw) == 1
+    drafts = {k: v["id"] for k, v in _record(bundle)["deposits"].items()}
+    del zenodo.deps[drafts["data"]]  # deleted on the website
+    monkeypatch.setattr(zen.Zenodo, "publish", real)
+    capsys.readouterr()
+    assert publish(str(bundle), **kw) == 0
+    out = capsys.readouterr().out
+    rec = _record(bundle)["deposits"]
+    assert rec["data"]["id"] not in drafts.values() and rec["data"]["state"] == "published"
+    assert rec["code"]["id"] == drafts["code"]
+    assert f"the draft {drafts['data']}" in out and "a new one is reserved" in out
+    m = json.loads((bundle / "e2er.json").read_text())
+    assert m["availability"]["data"]["doi"] == rec["data"]["doi"]
+
+
+def test_a_deleted_draft_of_a_new_version_starts_again_from_the_published_version(
+    bundle: Path, tmp_path: Path, zenodo: Zenodo
+):
+    kw = dict(**BASE, **REPO, **PUBLIC, out=str(tmp_path / "e"))
+    assert publish(str(bundle), **kw) == 0
+    record = _record(bundle)
+    old = record["deposits"]["code"]
+    zenodo.deps[old["id"]]["files"] = {"demo-code.zip": b"the earlier code"}  # the code changed since
+    # An earlier attempt reserved a new version's draft (id 999), deleted on Zenodo's website since.
+    record["deposits"]["code"] = {
+        "id": 999,
+        "bucket": "https://zenodo.org/api/files/bucket-999",
+        "doi": "10.5281/zenodo.999",
+        "state": "draft",
+        "earlier": [{"id": old["id"], "doi": old["doi"]}],
+    }
+    _write(bundle, record)
+    assert publish(str(bundle), **kw) == 0
+    new = _record(bundle)["deposits"]["code"]
+    assert new["state"] == "published" and new["id"] not in (old["id"], 999)
+    assert new["earlier"] == [{"id": old["id"], "doi": old["doi"]}]
+    assert zenodo.deps[new["id"]]["concept"] == zenodo.deps[old["id"]]["concept"]
 
 
 # ── the client on its own ────────────────────────────────────────────────────

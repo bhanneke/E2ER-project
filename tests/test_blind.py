@@ -604,25 +604,38 @@ def test_pack_blind_needs_an_anonymised_copy(study, capsys):
     assert "publish it first" in capsys.readouterr().out
 
 
-def test_unblind_asks_the_platform_for_a_version_with_authors(study, platform, capsys):
+def test_unblind_points_to_the_account_page_and_sends_nothing(study, platform, capsys):
+    """e2er.org unblinds only in the browser, signed in (a command-line token gets 403 since 2026-10-23).
+
+    --unblind says where, and that a named export is then published as a normal new version; it sends nothing.
+    """
     assert blind(study) == 0
     code = platform.blind["blind"]["code"]
     copy = cli_blind.copy_path(study, code)
+    capsys.readouterr()
+    n = len(platform.requests)
     rc = publish(str(copy), to_url=URL, yes=True, interactive=False, unblind=code, owner=HANDLE, project="study",
                  name=NAME, github=GITHUB, orcid=ORCID)  # fmt: skip
-    assert rc == 0, capsys.readouterr().out
-    method, path, body = platform.requests[-1]
-    assert (method, path) == ("POST", f"/api/v1/blind/{code}/unblind")
-    assert body["owner"] == HANDLE and body["project"] == "study" and body["contributors"][0]["orcid"] == ORCID
-    assert "manifest" not in body
-    platform.me = {**ME, "study": "iquarry/study"}
-    assert publish(str(copy), to_url=URL, yes=True, interactive=False, unblind=code, owner=HANDLE, project="s") == 1
-    assert "personal login" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert rc == 1 and platform.requests[n:] == []
+    assert f"{URL}/account#blind" in out and "A command-line token cannot unblind" in out
+    assert "normal new version" in out and "Nothing was sent." in out
+    assert not any(p.endswith("/unblind") for _, p, _ in platform.requests)
 
 
-def test_unblind_needs_a_handle_and_a_name(study, platform, capsys):
-    assert publish(str(study), to_url=URL, yes=True, interactive=False, unblind="a" * 32, owner="", project="") == 2
+def test_unblind_with_a_named_export_no_longer_crashes(study, platform, capsys):
+    """`e2er publish <named export> --unblind <code>` raised TypeError (an unexpected keyword to _describe)."""
+    rc = publish(str(study), to_url=URL, yes=True, interactive=False, unblind="a" * 32, owner=HANDLE, project="s",
+                 name=NAME, github=GITHUB, orcid=ORCID, data="private", code="private")  # fmt: skip
+    assert rc == 1 and platform.requests == []
+    out = capsys.readouterr().out
+    assert f"e2er publish {study} --owner <handle> --project <name> --to {URL}" in out
+
+
+def test_unblind_needs_a_code(study, platform, capsys):
     assert publish(str(study), to_url=URL, yes=True, interactive=False, unblind="nope", owner="a", project="b") == 2
+    assert publish(str(study), unblind=f"{URL}/r/{'a' * 32}") == 1  # the address names the platform
+    assert f"{URL}/account#blind" in capsys.readouterr().out
 
 
 def test_the_command_line_has_the_flags():

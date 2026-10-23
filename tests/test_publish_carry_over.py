@@ -157,6 +157,41 @@ def test_a_new_version_on_github_carries_over_the_dossier_with_its_steps(
     assert link["version"] == 2 and link["dossier_id"] == d["id"]
 
 
+def test_a_retry_of_a_carry_over_sends_the_same_dossier(
+    who_study: Path,  # noqa: F811
+    tmp_path: Path,
+    platform: FakePlatform,
+    monkeypatch,
+    capsys,
+):
+    """The carried dossier's amendment had the time of each run: a retry (or the run after the rehearsal)
+    sent another dossier id. The time is recorded in .e2er/link.json the first time and reused."""
+    import itertools
+
+    import src.cli_publish as cp
+
+    _published_without_db(who_study, tmp_path, platform)
+    clock = (f"2026-10-23T12:00:{n:02d}Z" for n in itertools.count())
+    monkeypatch.setattr(cp, "_now", lambda: next(clock))
+    refused: list[str] = []
+
+    def flaky(base, method, path, token=None, body=None):
+        if method == "POST" and path == "/api/v1/studies" and not refused:
+            refused.append(body["dossier"]["id"])
+            return 503, {"error": "try again later"}
+        return platform(base, method, path, token, body)
+
+    monkeypatch.setattr(pc, "request", flaky)
+    assert publish(str(who_study), **ID, demonstration=True, to_url=SITE, site=SITE, yes=True) == 1
+    capsys.readouterr()
+    assert publish(str(who_study), **ID, demonstration=True, to_url=SITE, site=SITE, yes=True) == 0, (
+        capsys.readouterr().out
+    )
+    assert platform.sent[-1]["dossier"]["id"] == refused[0]
+    (carried,) = [a for a in platform.sent[-1]["dossier"]["doc"]["amendments"] if a.get("kind") == co.KIND]
+    assert carried["at"].startswith("2026-10-23T12:00:")
+
+
 def test_dry_run_shows_the_carry_over_and_changes_nothing(
     who_study: Path,  # noqa: F811
     github: Path,  # noqa: F811

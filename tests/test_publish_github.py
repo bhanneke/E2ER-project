@@ -668,6 +668,31 @@ def test_a_refused_sign_in_pushes_nothing(who_study: Path, github: Path, tmp_pat
     assert not (github / "ada").exists()
 
 
+@pytest.mark.parametrize(
+    "me, words",
+    [
+        ({"name": "Ada", "handles": ["ada-lab"]}, "--owner ada is not one of your account's handles"),
+        ({"name": "Ada", "study": "ada/other"}, "can only publish new versions of ada/other"),
+    ],
+)
+def test_a_handle_or_token_the_platform_would_refuse_pushes_nothing(
+    who_study: Path, github: Path, monkeypatch, capsys, me, words
+):
+    """Checked before the push: the owner is a handle of the account, and a study token is this study's."""
+    from src.core import platform_client as pc
+
+    def request(base, method, path, token=None, body=None):
+        if method == "GET" and path == "/api/v1/me":
+            return 200, me
+        raise AssertionError(f"{method} {path} before the check passed")
+
+    monkeypatch.setattr(pc, "request", request)
+    rc = publish(str(who_study), **ID, github_repo="ada/demos", github_path="who", yes=True)
+    out = capsys.readouterr().out
+    assert rc == 1 and words in out and "nothing was pushed" in out
+    assert not (github / "ada").exists(), "no repository was made and nothing was pushed"
+
+
 def test_a_registration_refused_after_the_push_rolls_forward_when_run_again(
     who_study: Path, github: Path, tmp_path: Path, monkeypatch, capsys
 ):

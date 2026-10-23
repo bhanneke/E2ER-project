@@ -15,10 +15,10 @@ the data, the code or the paper are refused: each would name the author.
 Reviewers run ``e2er verify <file.e2er> --against https://e2er.org/r/<code>`` and
 ``e2er reproduce <file.e2er>``.
 
-After the review, ``e2er publish <copy> --unblind <code> --owner <handle> --project <name>``
-(or the account page on e2er.org) publishes a new, normal version under the author's name;
-the anonymous version stays as it is. With a named export in place of the copy, that
-export is the new version's content.
+After the review the author unblinds it on the account page on e2er.org, signed in in the
+browser (a command-line token cannot): that publishes a new, normal version under the
+author's name; the anonymous version stays as it is. ``e2er publish --unblind`` says so and
+sends nothing; a named export is then published as a normal new version of that study.
 """
 
 from __future__ import annotations
@@ -357,10 +357,7 @@ def publish_blind(
         print(f"  For the journal: e2er pack --blind {dest}")
         print(f"  Reviewers check it: e2er verify <file.e2er> --against {resp.get('url') or url}")
         print("                     e2er reproduce <file.e2er>")
-        print(
-            f"  After the review: e2er publish {dest} --unblind {code} --owner <your handle> --project <name> "
-            f"--to {base} (or on your account page)"
-        )
+        print(f"  After the review: unblind it on your account page, signed in in the browser: {base}/account#blind")
         return 0
     finally:
         shutil.rmtree(work, ignore_errors=True)
@@ -449,81 +446,3 @@ def parse_code(spec: str) -> str | None:
     s = spec.strip().rstrip("/")
     code = s.rsplit("/r/", 1)[-1] if "/r/" in s else s
     return code if len(code) == 32 and all(c in "abcdefghijklmnopqrstuvwxyz234567" for c in code) else None
-
-
-def unblind(
-    bundle: str,
-    spec: str,
-    *,
-    to_url: str | None,
-    yes: bool,
-    interactive: bool,
-    owner: str,
-    project: str,
-    contributors: list[dict[str, Any]],
-    named: dict[str, Any] | None = None,
-) -> int:
-    """POST /api/v1/blind/<code>/unblind: a new, normal version under ``owner/project``; the anonymous one stays.
-
-    ``named`` (the request of a named export, built by publish): that export becomes the new version's content.
-    """
-    code = parse_code(spec)
-    if code is None:
-        print(f"error: --unblind {spec!r}: give the anonymous version's code or its address (…/r/<code>)")
-        return 2
-    base = pc.base_url(to_url or (spec.split("/r/")[0] if "/r/" in spec else None))
-    token = pc.load_token(base)
-    me, why_not = _me(base, token)
-    if me is None:
-        print(f"error: {why_not}; run `e2er login --url {base}`. Nothing was sent.")
-        return 1
-    what = "the named export in this folder" if named else "the files of the anonymous version"
-    question = (
-        f"Publish a version of {base}/r/{code} with its authors as {owner}/{project}, with {what}? Your name is "
-        "then shown to everyone; the anonymous version stays as it is."
-    )
-    if not yes and not interactive:
-        print("error: unblinding needs your confirmation: run it in a terminal, or add --yes. Nothing was sent.")
-        return 1
-    if yes and named:
-        pass  # asked before the named export was described
-    elif yes:
-        print(f"{question} yes (--yes)")
-    else:
-        from .cli_publish import _confirm
-
-        if not _confirm(question):
-            print("Not unblinded: nothing was sent.")
-            return 1
-    body: dict[str, Any] = {"owner": owner, "project": project}
-    if contributors:
-        body["contributors"] = contributors
-    if named:
-        body.update(named)
-    try:
-        status, resp = pc.request(base, "POST", f"/api/v1/blind/{code}/unblind", token=token, body=body)
-    except Exception as e:  # noqa: BLE001 - network errors are the user's to see
-        print(f"error: could not reach {base}: {e}")
-        return 1
-    if status not in (200, 201):
-        print(f"error: {pc.error_text(status, resp)}")
-        for p in resp.get("problems") or []:
-            print(f"  {p}")
-        return 1
-    print(f"✓ Unblinded: {resp.get('owner_project')}, version {resp.get('version')}: {resp.get('study_url')}")
-    print(f"  The anonymous version {base}/r/{code} stays as it was published and links to it.")
-    if bundle and named and resp.get("id"):
-        from .cli_platform import write_link
-
-        write_link(
-            Path(bundle).expanduser().resolve(),
-            {
-                "platform_url": base,
-                "id": resp["id"],
-                "owner_project": resp["owner_project"],
-                "version": resp["version"],
-                "dossier_id": (named.get("dossier") or {}).get("id"),
-                "content_id": (named.get("manifest") or {}).get("content_id"),
-            },
-        )
-    return 0

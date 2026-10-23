@@ -360,10 +360,11 @@
     try {
       const d = await call('POST', '/api/papers/' + pid + '/publish', { ...f, dry_run: false, confirm: true });
       markTerms(d.terms_missing);
-      const links = (d.study_url ? '<p><a class="btn-primary" href="' + esc(httpUrl(d.study_url)) + '" target="_blank" rel="noopener">Open the study on e2er.org</a> ' : '<p>') +
+      const held = d.held ? '<p>Held on e2er.org until you confirm it, signed in in the browser: <a class="btn-primary" href="' + esc(httpUrl(d.confirm_url)) + '" target="_blank" rel="noopener">Confirm it on e2er.org</a></p>' : '';
+      const links = held + (d.study_url ? '<p><a class="btn-primary" href="' + esc(httpUrl(d.study_url)) + '" target="_blank" rel="noopener">Open the study on e2er.org</a> ' : '<p>') +
         (d.dossier_url ? '<a class="btn" href="' + esc(httpUrl(d.dossier_url)) + '" target="_blank" rel="noopener">Open its dossier</a>' : '') + '</p>';
       document.getElementById('pub-out').innerHTML = d.ok ? links + folded(d.output) : refused(d);
-      pubMsg.textContent = d.ok ? 'Published.' : 'Not published; see below.';
+      pubMsg.textContent = d.ok ? (d.held ? 'Held: confirm it in your browser.' : 'Published.') : 'Not published; see below.';
       card('card-publish', d.ok ? 'ok' : 'bad', d.ok ? 'Published' : 'Not published');
       if (d.ok) {
         showFolders(d);

@@ -87,7 +87,13 @@ class FakePlatform:
             )
         if p == "/api/v1/me":
             return httpx.Response(
-                200, json={"name": "Ada Lovelace", "email": "ada@example.org", "scopes": ["publish"], "handles": []}
+                200,
+                json={
+                    "name": "Ada Lovelace",
+                    "email": "ada@example.org",
+                    "scopes": ["publish"],
+                    "handles": ["ada-lab"],
+                },
             )
         if p == "/api/v1/studies" and req.method == "POST":
             self.published = body

@@ -274,7 +274,7 @@ def _folders_view(paper_id: str) -> dict[str, Any]:
         did = str(link.get("dossier_id") or "")
         view["published"] = {
             "owner_project": link.get("owner_project"),
-            "version": link.get("version"),
+            "version": link.get("version") if not link.get("held") else "held: confirm it in your browser",
             "study_url": f"{base}/{link.get('owner_project')}" if base else "",
             "dossier_url": f"{base}/d/{did.removeprefix('sha256:')[:16]}" if base and did else "",
             "folder": str(pub),
@@ -527,6 +527,10 @@ def _terms_missing(bundle: Path, req: PublishRequest) -> list[str]:
 def _published_links(output: str) -> dict[str, Any]:
     """Where the published study can be read, from what `e2er publish` printed: its page and its dossier."""
     links: dict[str, Any] = {}
+    held = re.search(r"Confirm or discard it, signed in in the browser: (https?://\S+)", output)
+    if held:  # e2er.org keeps the version back until the author confirms it (HTTP 202): not an error
+        links["held"] = True
+        links["confirm_url"] = held.group(1)
     page = re.search(r"published as [^:]+: (https?://\S+)", output)
     dossier = re.search(r"^\s*dossier (https?://\S+)", output, re.MULTILINE)
     if page:

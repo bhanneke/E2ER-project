@@ -55,7 +55,14 @@ LICENCES = {
 
 
 class ZenodoError(RuntimeError):
-    """A deposit could not be made; the message says why in plain words."""
+    """A deposit could not be made; the message says why in plain words.
+
+    ``status`` is Zenodo's HTTP status when Zenodo answered with an error (404: no such deposit), else None.
+    """
+
+    def __init__(self, message: str, status: int | None = None) -> None:
+        super().__init__(message)
+        self.status = status
 
 
 def base_url(sandbox: bool = False) -> str:
@@ -289,7 +296,7 @@ class Zenodo:
                 detail = r.json().get("message") or r.text
             except Exception:  # noqa: BLE001
                 detail = r.text
-            raise ZenodoError(f"Zenodo refused to {what} ({r.status_code}): {str(detail)[:300]}")
+            raise ZenodoError(f"Zenodo refused to {what} ({r.status_code}): {str(detail)[:300]}", r.status_code)
         return r
 
     def _deposit(self, dep: dict[str, Any]) -> Deposit:
