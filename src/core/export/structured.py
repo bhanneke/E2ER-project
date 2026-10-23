@@ -233,6 +233,14 @@ def _skip(src: Path, workspace: Path) -> str | None:
 
     if never_exported(src.name):
         return "a dotfile, key file or operating-system file"
+    try:
+        parts = src.relative_to(workspace).parts[:-1]
+    except ValueError:
+        parts = ()
+    if any(part.startswith(".") for part in parts):
+        # sandbox/run/.cache/x.json: pack leaves out every path with a hidden folder, so export does too
+        # (the package lacked a file provenance.json listed).
+        return "in a hidden folder"
     if is_leftover(src.name):
         return "a backup, lock file or earlier version of an output"
     if _leaves_workspace(src, workspace):
@@ -329,7 +337,7 @@ def _redact_secrets(target: Path, notes: list[str] | None) -> None:
 MAX_OUTPUT_BYTES = 200 * 1024 * 1024
 
 
-def _copy_reproduction_outputs(workspace: Path, out: Path) -> None:
+def _copy_reproduction_outputs(workspace: Path, out: Path, left_out: list[dict] | None = None) -> None:
     """Copy the sandbox's logs and the output files its run wrote into the bundle.
 
     ``sandbox/logs/`` goes in whole. From the run folder (``sandbox_log.json``
@@ -364,12 +372,67 @@ def _copy_reproduction_outputs(workspace: Path, out: Path) -> None:
             continue
         if _skip(run_dir / rel, workspace):
             continue
-        if src_path.stat().st_size > MAX_OUTPUT_BYTES:
+        size = src_path.stat().st_size
+        if size > MAX_OUTPUT_BYTES:
+            dest_rel = (dest_run / rel).relative_to(out).as_posix()
             logger.warning("export: %s is larger than %d bytes; left out of the bundle", rel, MAX_OUTPUT_BYTES)
+            if left_out is not None:
+                left_out.append(
+                    {
+                        "path": dest_rel,
+                        "kind": "size",
+                        "bytes": size,
+                        "reason": f"an output of the reproduction larger than {MAX_OUTPUT_BYTES // (1024 * 1024)} MB",
+                    }
+                )
             continue
         dest = dest_run / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src_path, dest)
+
+
+def _copy_data_folder(workspace: Path, out: Path, notes: list[str]) -> None:
+    """Copy ``workspace/data/`` into ``data/``: every file a source's terms let the study pass on, with the
+    recipe's rules (no link out of the workspace unless the run recorded it as the researcher's file, at most
+    200 MB, no hidden or leftover file). A file already there (data.db, the records) is kept."""
+    from .reproduce_recipe import MAX_INPUT_BYTES, _loads, _restricted, _saved
+
+    src_root = workspace / "data"
+    if not src_root.is_dir() or src_root.is_symlink():
+        return
+    loads = _loads(workspace)
+    restricted = _restricted()
+    unshippable = {x for e in loads if e.get("connector") in restricted and (x := _saved(e))}
+    recorded = {
+        f.get("path"): f.get("sha256")
+        for e in loads
+        if e.get("connector") == "data-folder"
+        for f in e.get("files") or []
+        if isinstance(f, dict)
+    }
+    for src in sorted(src_root.rglob("*")):
+        rel = src.relative_to(workspace).as_posix()
+        if src.is_dir() or rel in unshippable:
+            continue
+        target = out / rel
+        outside = _leaves_workspace(src, workspace)
+        if target.exists() or (_skip(src, workspace) and not outside):
+            continue
+        try:
+            if outside:
+                import hashlib
+
+                if not src.is_file() or recorded.get(rel) != hashlib.sha256(src.read_bytes()).hexdigest():
+                    logger.warning("export: left out %s: a link to something outside the workspace", rel)
+                    continue
+            size = src.stat().st_size
+            if size > MAX_INPUT_BYTES:
+                notes.append(f"`{rel}` ({size / (1024 * 1024):.0f} MB) is left out: larger than 200 MB")
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(src, target)
+        except OSError as e:  # noqa: PERF203 — per-file tolerance
+            logger.warning("export: could not copy %s: %s", rel, e)
 
 
 def _read_json(path: Path) -> dict:
@@ -599,8 +662,19 @@ def export_paper(
 
     # A reproduction: what the sandbox run wrote, so `e2er verify` can re-read
     # every compared number offline (see _copy_reproduction_outputs).
+    left_out: list[dict] = []
     if (workspace / "reproduction_report.json").is_file():
-        _copy_reproduction_outputs(workspace, out)
+        _copy_reproduction_outputs(workspace, out, left_out)
+    for item in left_out:
+        notes.append(
+            f"`{item['path']}` ({item['bytes'] / (1024 * 1024):.0f} MB) is left out: {item['reason']}; "
+            "`e2er verify` cannot re-read the numbers compared from it"
+        )
+
+    # The study's data folder (e2er-data --save-to files, the researcher's own files). The recipe copies the
+    # inputs its scripts read; a template without a working recipe (a systematic review, a field map, a text
+    # study, a run whose recipe failed) shipped data_sources.json naming files the folder lacked.
+    _copy_data_folder(workspace, out, notes)
 
     # misc/ — top-level files we didn't map (no silent loss), minus internal ones.
     for src in sorted(workspace.iterdir()):
@@ -654,6 +728,7 @@ def export_paper(
             results_from_code=code_record,
             derived_data=derived_record,
             ran_with=ran_with,
+            left_out=left_out,
         ),
     )
     write_provenance(
@@ -663,6 +738,7 @@ def export_paper(
         results_from_code=code_record,
         derived_data=derived_record,
         ran_with=ran_with,
+        left_out=left_out,
     )
 
     logger.info("Exported paper %s → %s", workspace.name, out)

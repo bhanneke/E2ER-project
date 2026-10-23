@@ -1326,6 +1326,13 @@ def _check_reproduction(bundle: Path, required: str | None = None) -> Check | No
     reasons = [*doc["reasons"], *report_text_reasons(md_text, report if isinstance(report, dict) else {}, log)]
     if reasons:
         shown = "; ".join(reasons[:3]) + (f"; and {len(reasons) - 3} more" if len(reasons) > 3 else "")
+        # Outputs the export left out for their size (provenance.json run.left_out): the folder says why.
+        prov_doc = _load_json(bundle / "provenance.json")
+        run_doc = prov_doc.get("run") if isinstance(prov_doc, dict) else None
+        listed = run_doc.get("left_out") if isinstance(run_doc, dict) else None
+        big = [i for i in listed or [] if isinstance(i, dict) and i.get("kind") == "size"]
+        if big:
+            shown += "; left out of the export for their size: " + ", ".join(str(i.get("path")) for i in big[:3])
         return Check("reproduction", FAIL, f"{len(reasons)} problem(s): {shown}")
     stats = doc["stats"]
     parts = []

@@ -43,6 +43,20 @@
             "frozen_at": { "type": ["string", "null"] }
           }
         },
+        "left_out": {
+          "type": "array",
+          "description": "Files of the run the export left out, each with why: a reproduction output larger than 200 MB (kind \"size\"); `e2er verify` cannot re-read the numbers compared from it and says so.",
+          "items": {
+            "type": "object",
+            "required": ["path", "kind"],
+            "properties": {
+              "path": { "type": "string" },
+              "kind": { "type": "string" },
+              "bytes": { "type": "integer", "minimum": 0 },
+              "reason": { "type": "string" }
+            }
+          }
+        },
         "derived_data": {
           "type": "array",
           "description": "Files the run built from a source whose terms keep its data out of a published copy (src/core/derived_data.py): restricted like the source.",

@@ -251,6 +251,7 @@ def build_provenance(
     results_from_code: dict[str, Any] | None = None,
     derived_data: list[dict[str, Any]] | None = None,
     ran_with: dict[str, Any] | None = None,
+    left_out: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     run: dict[str, Any] = {
         "paper_id": manifest.get("paper_id"),
@@ -283,6 +284,10 @@ def build_provenance(
             run["e2er_versions_run"] = ran_with["versions"]
         if ran_with.get("commit"):
             run["e2er_commit_run"] = ran_with["commit"]
+    if left_out:
+        # Files of the run the export left out (a reproduction output over 200 MB: kind "size"), so the folder
+        # says why a compared number cannot be re-read.
+        run["left_out"] = left_out
     return {
         "schema": SCHEMA_ID,
         "run": run,
@@ -361,6 +366,7 @@ def write_provenance(
     results_from_code: dict[str, Any] | None = None,
     derived_data: list[dict[str, Any]] | None = None,
     ran_with: dict[str, Any] | None = None,
+    left_out: list[dict[str, Any]] | None = None,
 ) -> Path:
     """Write ``<bundle>/provenance.json`` and return its path. Call AFTER every
     other bundle file exists (README and report.html included) so the inventory is complete."""
@@ -372,6 +378,7 @@ def write_provenance(
         results_from_code=results_from_code,
         derived_data=derived_data,
         ran_with=ran_with,
+        left_out=left_out,
     )
     out.write_text(dump(prov), encoding="utf-8")
     return out
