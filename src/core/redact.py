@@ -404,12 +404,91 @@ def redact(
     prov["files"] = dict(sorted(listed.items()))
     from .export.provenance import dump
 
-    # The files first, provenance.json last: an interrupted run leaves files that do not match it, which verify
-    # reports, never a record of an edit that was not made.
-    for rel, (_b, after, _o) in found.edits.items():
-        (folder / rel).write_bytes(after)
-    (folder / "provenance.json").write_text(dump(prov), encoding="utf-8")
+    # The files first, provenance.json last, each through a temporary file and a rename; on any error every
+    # file written is put back as it was (write_all), so the folder never holds half a redaction.
+    changes = {folder / rel: after for rel, (_b, after, _o) in found.edits.items()}
+    changes[folder / "provenance.json"] = dump(prov).encode("utf-8")
+    write_all(changes)
     return found, written
+
+
+def _tmp_name(path: Path) -> Path:
+    return path.with_name(f".{path.name}.e2er-redact-{os.getpid()}-{secrets.token_hex(4)}.tmp")
+
+
+def write_all(changes: dict[Path, bytes]) -> None:
+    """Write every file in ``changes`` (in order) or none of them.
+
+    Each new content goes to a temporary file beside its file first (a full disk fails here, before anything
+    changed), then each is renamed over its file (``os.replace``). If a rename fails, the files already
+    replaced get their earlier bytes back. Temporary files never stay behind.
+    """
+    temps: dict[Path, Path] = {}
+    try:
+        for path, data in changes.items():
+            tmp = _tmp_name(path)
+            temps[path] = tmp
+            with open(tmp, "wb") as fh:
+                fh.write(data)
+                fh.flush()
+                os.fsync(fh.fileno())
+            try:
+                shutil.copymode(path, tmp)
+            except OSError:
+                pass
+        originals: dict[Path, bytes | None] = {}
+        try:
+            for path, tmp in temps.items():
+                originals[path] = path.read_bytes() if path.is_file() else None
+                os.replace(tmp, path)
+        except BaseException:
+            for path, old in originals.items():
+                try:
+                    if old is None:
+                        path.unlink(missing_ok=True)
+                    else:
+                        back = _tmp_name(path)
+                        back.write_bytes(old)
+                        os.replace(back, path)
+                except OSError:
+                    pass
+            raise
+    finally:
+        for tmp in temps.values():
+            try:
+                tmp.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+
+def redact_all(
+    folder: Path, texts: list[str], *, replacement: str = DEFAULT_REPLACEMENT, dry_run: bool = False
+) -> list[tuple[Plan, list[dict[str, Any]]]]:
+    """:func:`redact` for each text in turn, all or nothing: if one is refused or fails, the folder is put back
+    as it was before the first (every file a redaction changed, and provenance.json)."""
+    folder = Path(folder)
+    if dry_run:
+        return [redact(folder, t, replacement=replacement, dry_run=True) for t in texts]
+    saved: dict[Path, bytes | None] = {}
+
+    def save(path: Path) -> None:
+        if path not in saved:
+            saved[path] = path.read_bytes() if path.is_file() else None
+
+    save(folder / "provenance.json")
+    out: list[tuple[Plan, list[dict[str, Any]]]] = []
+    try:
+        for t in texts:
+            # Which files this text changes: saved before it changes them.
+            for rel in plan(folder, [t], replacement).edits:
+                save(folder / rel)
+            out.append(redact(folder, t, replacement=replacement))
+    except BaseException:
+        if len(out):
+            restore_files = {p: d for p, d in saved.items() if d is not None}
+            write_all(restore_files)
+        raise
+    return out
 
 
 def provenance_before_redactions(folder: Path) -> tuple[list[str], int]:
@@ -646,20 +725,23 @@ def chain_problem(links: list[dict[str, Any]], data: bytes | None) -> str | None
     return None
 
 
-def check(folder: Path, text: str) -> list[str]:
-    """With the text that was removed: rebuild each redacted file's earlier version and compare its fingerprint.
+def check(folder: Path, text: str | list[str]) -> list[str]:
+    """With the text(s) that were removed: rebuild each redacted file's earlier version and compare its fingerprint.
 
     Returns one line per redaction amendment ("✓ path: …" or "✗ path: …"). Only the last redaction of a file can be
-    rebuilt from the file as it is now; earlier ones are named.
+    rebuilt from the file as it is now; earlier ones are named. With several texts (``--text`` given more than
+    once), each amendment is checked with the text it took out: the one that rebuilds the earlier file; a ✗
+    only when none does.
     """
     folder = Path(folder)
+    texts = [text] if isinstance(text, str) else list(text)
     prov = _provenance(folder)
     reds = [a for a in prov.get("amendments") or [] if isinstance(a, dict) and a.get("kind") == KIND]
     last: dict[str, dict[str, Any]] = {}
     for a in prov.get("amendments") or []:
         if isinstance(a, dict) and isinstance(a.get("path"), str):
             last[a["path"]] = a
-    t = text.encode("utf-8")
+    encoded = [t.encode("utf-8") for t in texts]
     out = []
     for a in reds:
         rel = str(a.get("path"))
@@ -673,10 +755,14 @@ def check(folder: Path, text: str) -> list[str]:
             out.append(f"✗ {why}")
             continue
         red = a["redaction"]
-        if len(t) != red["removed_bytes"]:
-            out.append(f"✗ {rel}: the text is {len(t)} bytes long, the redaction removed {red['removed_bytes']}")
+        sized = [t for t in encoded if len(t) == red["removed_bytes"]]
+        if not sized:
+            lengths = ", ".join(str(len(t)) for t in encoded)
+            out.append(
+                f"✗ {rel}: the text{'s are' if len(encoded) > 1 else ' is'} {lengths} bytes long, "
+                f"the redaction removed {red['removed_bytes']}"
+            )
             continue
-        before = restore(data, red["offsets"], red["replacement"].encode("utf-8"), t)
         recorded = str(a.get("sha256_before") or "")
         if recorded.startswith(KEYED) and not salt_file().is_file():
             out.append(
@@ -684,7 +770,14 @@ def check(folder: Path, text: str) -> list[str]:
                 "(~/.e2er/redaction-salt); run the check there"
             )
             continue
-        if (keyed(before) if recorded.startswith(KEYED) else _sha(before)) == recorded:
+        rep = red["replacement"].encode("utf-8")
+        matched = False
+        for t in sized:
+            before = restore(data, red["offsets"], rep, t)
+            if (keyed(before) if recorded.startswith(KEYED) else _sha(before)) == recorded:
+                matched = True
+                break
+        if matched:
             out.append(
                 f"✓ {rel}: with the text put back, the file is exactly the earlier one ({red['count']} place(s))"
             )
