@@ -720,7 +720,7 @@ def test_a_published_study_redacted_afterwards_verifies_and_publishes_again_with
     rd.redact(who_study, email)
     checks = {c.name: c for c in _run_checks(who_study, online=False)}
     assert checks["anchor"].status != FAIL, checks["anchor"].detail
-    assert "before the researcher redacted 1 file(s)" in checks["anchor"].detail
+    assert "before 1 change(s) recorded as redactions by the researcher" in checks["anchor"].detail
     capsys.readouterr()
     assert publish(str(who_study), **args, yes=True) == 0, capsys.readouterr().out
     bodies = [json.loads(line) for line in (github / "registered.jsonl").read_text().splitlines()]

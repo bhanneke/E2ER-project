@@ -12,11 +12,15 @@ fingerprint. ``redact`` does the edit the supported way:
 
       {"path", "kind": "redacted", "sha256_before", "sha256_after",
        "reason": "personal contact details removed by the researcher", "at",
-       "redaction": {"replacement", "count", "offsets", "removed_bytes"}}
+       "redaction": {"replacement", "count", "offsets", "removed_bytes",
+                     "bytes_before", "kept": {"salt", "hmac_sha256"}}}
 
   ``offsets`` are the byte offsets of the replacement in the new file and
   ``removed_bytes`` the length of the text taken out. The record never holds
-  the text, nor a hash of it;
+  the text, nor a hash of it. ``kept`` is the
+  HMAC-SHA256 of the bytes the redaction kept (the new file with the
+  replacements cut out), keyed with a random salt recorded beside it (the kept
+  bytes are in the published file anyway: no guess can be confirmed with it);
 * ``sha256_before`` is keyed (``hmac-sha256:<hex>``, an HMAC with a salt kept on
   this computer in ``~/.e2er/redaction-salt``) unless the earlier fingerprint is
   public anyway: a pre-registered plan file (its frozen fingerprint is in the lock
@@ -26,13 +30,17 @@ fingerprint. ``redact`` does the edit the supported way:
   2026-10-23). ``e2er redact --check`` on this computer still rebuilds the earlier
   file and compares it;
 * before anything is written, the edit is proven: the new file, with the text
-  put back at the offsets, has exactly the fingerprint the file had.
+  put back at the offsets, has exactly the fingerprint the file had. A text
+  longer than ``MAX_REMOVED_BYTES`` is refused: contact details are short.
 
 The amendments go into the dossier when the study is published. ``e2er verify``
-accepts a pre-registered plan file whose only change since the freeze is such a
-redaction ("redacted by the researcher after registration: contact details
-only"), after checking that the record matches the file: the replacement sits
-at every recorded offset.
+checks each record against the file: the replacement sits at every recorded
+offset, the sizes add up (``bytes_before`` is the size now plus, per place, the
+removed length less the replacement's), the kept bytes have the recorded
+fingerprint, and no place lost more than ``MAX_REMOVED_BYTES``. A pre-registered
+plan file whose only change since the freeze is such a redaction passes, "recorded
+as redacted by the researcher after registration": the record holds, but what was
+taken out is not in the folder, so verify cannot confirm it was contact details.
 
 Text inside a binary file (a PDF, a database) cannot be replaced in place;
 ``redact`` names such files and changes nothing.
@@ -44,6 +52,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import secrets
 import shutil
 import subprocess
@@ -55,8 +64,12 @@ from typing import Any
 KIND = "redacted"
 REASON = "personal contact details removed by the researcher"
 DEFAULT_REPLACEMENT = "<redacted>"
-#: What verify says about a pre-registered plan file whose only change is a redaction.
-PREREG_WORDS = "redacted by the researcher after registration: contact details only"
+#: What verify says about a pre-registered plan file whose only change is a redaction. The record matches the
+#: file; what was taken out is not in the folder, so verify cannot say it was contact details.
+PREREG_WORDS = "recorded as redacted by the researcher after registration (personal contact details, the record says)"
+#: The longest text one redaction takes out, in bytes: an e-mail address, a telephone number, a postal address.
+#: Anything longer is no redaction of contact details (a fake one could replace a whole script).
+MAX_REMOVED_BYTES = 256
 #: Local records, never published: not searched and not changed.
 _LOCAL = (".e2er/",)
 
@@ -114,6 +127,47 @@ def _public_before(folder: Path, rel: str) -> bool:
     from .anonymise import prereg_paths
 
     return rel in prereg_paths(folder) or (folder / "e2er.json").is_file() or (folder / ".e2er" / "link.json").is_file()
+
+
+def keyed_fingerprint(salt: str, data: bytes) -> str:
+    """HMAC-SHA256 of ``data`` keyed with ``salt`` (hex): the fingerprint of the bytes a redaction kept."""
+    return hmac.new(bytes.fromhex(salt), data, hashlib.sha256).hexdigest()
+
+
+def kept_bytes(after: bytes, spans: list[tuple[int, int]]) -> bytes:
+    """``after`` with the (offset, length) spans of the replacements cut out: the bytes the change kept,
+    the same before and after it."""
+    out = bytearray()
+    i = 0
+    for off, length in sorted(spans):
+        out += after[i:off]
+        i = off + length
+    out += after[i:]
+    return bytes(out)
+
+
+def kept_record(after: bytes, spans: list[tuple[int, int]]) -> dict[str, str]:
+    """The ``kept`` record of an amendment: a fresh random salt and the keyed fingerprint of the kept bytes.
+
+    The salt is published with the record, so anyone can recompute the fingerprint from the file. Keyed per
+    record, it matches nothing outside this amendment (no table of fingerprints of common files applies).
+    """
+    salt = secrets.token_hex(16)
+    return {"salt": salt, "hmac_sha256": keyed_fingerprint(salt, kept_bytes(after, spans))}
+
+
+def kept_problem(entry: dict[str, Any], kept: Any, data: bytes, spans: list[tuple[int, int]]) -> str | None:
+    """Why the ``kept`` record does not match ``data`` with the replacement spans cut out (None: it matches, or
+    the record predates it)."""
+    if kept is None:
+        return None
+    path = entry.get("path")
+    salt, mac = (kept.get("salt"), kept.get("hmac_sha256")) if isinstance(kept, dict) else (None, None)
+    if not (isinstance(salt, str) and isinstance(mac, str) and re.fullmatch(r"[0-9a-f]{32,128}", salt)):
+        return f"{path}: the record of the kept bytes is incomplete"
+    if not hmac.compare_digest(keyed_fingerprint(salt, kept_bytes(data, spans)), mac):
+        return f"{path}: the bytes outside the replacements are not the ones the change kept"
+    return None
 
 
 def _now() -> str:
@@ -255,10 +309,17 @@ def redact(
     folder = Path(folder)
     if not text.strip():
         raise RedactError("--text is empty")
+    if not replacement:
+        raise RedactError("the replacement is empty; give a word that shows where the text was (--replace)")
     if text in replacement:
         raise RedactError("the replacement contains the text it replaces")
     if replacement in text:
         raise RedactError("the replacement is part of the text it replaces; choose another replacement")
+    if len(text.encode("utf-8")) > MAX_REMOVED_BYTES:
+        raise RedactError(
+            f"the text is {len(text.encode('utf-8'))} bytes long; redact takes out personal contact details, at most "
+            f"{MAX_REMOVED_BYTES} bytes at a time (an e-mail address, a telephone number, an address)"
+        )
     found = plan(folder, [text], replacement)
     stuck = []
     if found.binary:
@@ -311,6 +372,10 @@ def redact(
         if key_it and previous is not None:
             # The earlier redaction's "after" is this one's "before": keyed as well, so the chain still links.
             previous["sha256_after"] = before_value
+            # Its kept bytes hold this text: the fingerprint of them would confirm a guess of it. Verify checks an
+            # earlier redaction of a file by its sizes only, so nothing is lost.
+            if isinstance(previous.get("redaction"), dict):
+                previous["redaction"].pop("kept", None)
         entry = {
             "path": rel,
             "kind": KIND,
@@ -326,6 +391,8 @@ def redact(
                 # The size provenance.json listed: with it, the listing before the redaction can be rebuilt
                 # exactly (an earlier publish's content id, see :func:`provenance_before_redactions`).
                 "bytes_before": (listed[rel] or {}).get("bytes"),
+                # The bytes the redaction kept (the file without the replacements), keyed: verify recomputes it.
+                "kept": kept_record(after, [(o, len(rep)) for o in offsets]),
             },
         }
         listed[rel] = {"sha256": entry["sha256_after"], "bytes": len(after)}
@@ -466,33 +533,53 @@ def record_problem(
         and count > 0
     ):
         # A copy for double-blind review keeps no offsets (src/core/anonymise.py): the replacement is counted.
+        if not bytes_known:
+            return None
         if data is None:
             return f"{path} is missing"
         if data.count(rep.encode("utf-8")) < count:
             return f"{path}: the redaction record does not match the file (fewer {rep} than recorded)"
         return None
+    before = red.get("bytes_before")
     if not (
         isinstance(rep, str)
         and rep
         and isinstance(offsets, list)
         and offsets
-        and all(isinstance(o, int) and o >= 0 for o in offsets)
+        and all(isinstance(o, int) and not isinstance(o, bool) and o >= 0 for o in offsets)
         and count == len(offsets)
         and isinstance(removed, int)
+        and not isinstance(removed, bool)
         and removed > 0
+        and isinstance(before, int)
+        and not isinstance(before, bool)
     ):
         return f"{path}: the redaction record is incomplete"
+    if removed > MAX_REMOVED_BYTES:
+        return (
+            f"{path}: the redaction record says {removed} bytes were taken out at each place; a redaction of "
+            f"contact details takes out at most {MAX_REMOVED_BYTES}"
+        )
+    if before - count * removed <= 0:
+        return f"{path}: the redaction record says the whole file was taken out; a redaction keeps the file"
+    r = rep.encode("utf-8")
+    size = len(data) if bytes_known and data is not None else size_after
+    # The sizes add up: the file before is the file after with each replacement swapped for the removed text.
+    if isinstance(size, int) and before != size + count * (removed - len(r)):
+        return (
+            f"{path}: the redaction record's sizes do not add up ({before} bytes before, {size} after, "
+            f"{count} x {removed} bytes taken out and {count} x {len(r)} put in)"
+        )
     if not bytes_known:
         return None
     if data is None:
         return f"{path} is missing"
-    r = rep.encode("utf-8")
     last = -1
     for o in offsets:
         if o <= last or data[o : o + len(r)] != r:
             return f"{path}: the redaction record does not match the file (no {rep} at byte {o})"
         last = o + len(r) - 1
-    return None
+    return kept_problem(entry, red.get("kept"), data, [(o, len(r)) for o in offsets])
 
 
 def explains(amendments: list[dict[str, Any]], rel: str, sha_from: str | None, sha_to: str | None) -> bool:
@@ -511,6 +598,49 @@ def explains(amendments: list[dict[str, Any]], rel: str, sha_from: str | None, s
         if at == sha_to:
             return True
     return False
+
+
+def chain(amendments: list[dict[str, Any]], rel: str, sha_from: str | None, sha_to: str | None) -> list[dict[str, Any]]:
+    """The amendments that take ``rel`` from ``sha_from`` to ``sha_to`` (see :func:`explains`), or [] when
+    redactions and anonymisations alone do not."""
+    if not sha_from or not sha_to:
+        return []
+    at: str | None = sha_from
+    out: list[dict[str, Any]] = []
+    for a in amendments:
+        if not isinstance(a, dict) or a.get("path") != rel or a.get("sha256_before") != at:
+            continue
+        if a.get("kind") not in (KIND, "anonymised"):
+            return []
+        out.append(a)
+        at = a.get("sha256_after")
+        if at == sha_to:
+            return out
+    return []
+
+
+def chain_problem(links: list[dict[str, Any]], data: bytes | None) -> str | None:
+    """Why the chain of redactions (and anonymisations) of one file does not hold, or None.
+
+    The last link is checked against the file as it is (``data``); an earlier one only as a record, its
+    sizes against the size the next link records the file had before it.
+    """
+    from . import anonymise as an
+
+    size: int | None = None
+    for i in range(len(links) - 1, -1, -1):
+        a = links[i]
+        last = i == len(links) - 1
+        if a.get("kind") == an.KIND:
+            why = an.record_problem(a, data) if last else None
+            size = None
+        else:
+            why = record_problem(a, data, size_after=size, bytes_known=last)
+            red: dict[str, Any] = a["redaction"] if isinstance(a.get("redaction"), dict) else {}
+            size = red.get("bytes_before") if isinstance(red.get("bytes_before"), int) else None
+        if why:
+            return why
+    return None
 
 
 def check(folder: Path, text: str) -> list[str]:

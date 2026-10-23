@@ -209,8 +209,9 @@ def _check_integrity(bundle: Path, package_left_out: dict[str, dict[str, Any]] |
     redacted = sorted({a["path"] for a in amendments if a.get("kind") == "redacted"})
     if redacted:
         notes += (
-            f"; {len(redacted)} file(s) redacted by the researcher, personal contact details only "
-            f"({', '.join(redacted[:3])})"
+            f"; {len(redacted)} file(s) recorded as redacted by the researcher ({', '.join(redacted[:3])}): the "
+            "records match the files; what was taken out is not in the folder (personal contact details, the "
+            "records say)"
         )
     if listing.junk:
         notes += (
@@ -482,7 +483,10 @@ def _anchor_before_redactions(bundle: Path) -> Check | None:
                     what = f"the abstract was rewritten ({n} file(s): e2er abstract)"
                     again = "publish again to publish the new abstract"
                 else:
-                    what = f"the researcher redacted {n} file(s) (personal contact details only)"
+                    what = (
+                        f"{n} change(s) recorded as redactions by the researcher (personal contact details, the "
+                        "record says)"
+                    )
                     again = "publish again to publish the redacted folder"
                 return Check("anchor", PASS, f"e2er.json describes this folder as published, before {what}; {again}")
     return None
@@ -1118,7 +1122,9 @@ def _redaction_words(bundle: Path, name: str, redacted_words: str) -> str:
         if isinstance(a, dict) and a.get("path") == f"design/{name}"
     }
     if an.KIND in kinds and "redacted" not in kinds:
-        return "anonymised for double-blind review after registration: identifying details only"
+        return (
+            "recorded as anonymised for double-blind review after registration (identifying details, the record says)"
+        )
     return redacted_words
 
 
@@ -1132,16 +1138,13 @@ def _only_redacted(bundle: Path, d: dict[str, Any]) -> bool:
         return False
     rel = f"design/{d['file']}"
     amendments = [a for a in prov.get("amendments") or [] if isinstance(a, dict)]
-    if not rd.explains(amendments, rel, d.get("sha256_frozen"), d.get("sha256_now")):
+    links = rd.chain(amendments, rel, d.get("sha256_frozen"), d.get("sha256_now"))
+    if not links:
         return False
-    mine = [a for a in amendments if a.get("path") == rel]
     f = bundle / rel
-    if not mine:
-        return False
-    from .core import anonymise as an
-
-    check = an.record_problem if mine[-1].get("kind") == an.KIND else rd.record_problem
-    return check(mine[-1], f.read_bytes() if f.is_file() else None) is None
+    # Each record holds: the sizes add up, the replacement sits at its offsets, the kept bytes are the ones
+    # recorded, no more than contact details' length taken out at a place.
+    return rd.chain_problem(links, f.read_bytes() if f.is_file() else None) is None
 
 
 def _preregistered_results(bundle: Path, lock: dict[str, Any]) -> tuple[list[str], list[str]]:

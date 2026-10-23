@@ -680,12 +680,13 @@ def latex_blocks(text: str) -> list[tuple[int, int, str, str]]:
         if end is None:
             break
         cmd = m.group(1)
+        # Never an empty replacement: each one is recorded where it sits, so verify sees every change.
         if cmd == "author":
             out.append((m.start(), end, f"\\author{{{AUTHOR_BLOCK}}}", "author block"))
         elif cmd == "thanks":
-            out.append((m.start(), end, "", "author block"))
+            out.append((m.start(), end, f"\\thanks{{{MARK}}}", "author block"))
         else:
-            out.append((m.start(), end, "", "affiliation"))
+            out.append((m.start(), end, f"\\{cmd}{{{MARK}}}", "affiliation"))
         k = end
     for m in _ACK_SECTION.finditer(text):
         stop = _SECTION_END.search(text, m.end())
@@ -805,8 +806,9 @@ def _edit(text: str, rel: str, pats: Patterns, latex: bool) -> tuple[str, list[s
         piece = text[at:s]
         out.append(piece)
         size += len(piece.encode("utf-8"))
-        if rep:
-            offsets.setdefault(rep, []).append(size)
+        if not rep:
+            raise AnonymiseError(f"{rel}: an empty replacement for the {rule} would not be recorded")
+        offsets.setdefault(rep, []).append(size)
         out.append(rep)
         size += len(rep.encode("utf-8"))
         rules.add(rule)
@@ -955,10 +957,14 @@ def record_problem(entry: dict[str, Any], data: bytes | None) -> str | None:
     if data is None:
         return f"{path} is missing"
     total = 0
+    spans: list[tuple[int, int]] = []
     for r in rec["replacements"]:
         if isinstance(r, dict) and "offsets" not in r and isinstance(r.get("count"), int) and r["count"] >= 0:
-            t = str(r.get("text") or "").encode("utf-8")
-            if t and data.count(t) < r["count"]:
+            if not isinstance(r.get("text"), str) or not r["text"]:
+                # An empty replacement occurs everywhere: it would vouch for any change.
+                return f"{path}: the anonymisation record has an empty replacement"
+            t = r["text"].encode("utf-8")
+            if data.count(t) < r["count"]:
                 return (
                     f"{path}: the anonymisation record does not match the file (fewer {r.get('text')!r} than recorded)"
                 )
@@ -966,14 +972,23 @@ def record_problem(entry: dict[str, Any], data: bytes | None) -> str | None:
             continue
         if not isinstance(r, dict) or not isinstance(r.get("offsets"), list):
             return f"{path}: the anonymisation record is incomplete"
-        t = str(r.get("text") or "").encode("utf-8")
+        if not isinstance(r.get("text"), str) or not r["text"]:
+            # An empty replacement sits everywhere: it would vouch for any change.
+            return f"{path}: the anonymisation record has an empty replacement"
+        t = r["text"].encode("utf-8")
         for o in r["offsets"]:
-            if not isinstance(o, int) or o < 0 or (t and data[o : o + len(t)] != t):
+            if not isinstance(o, int) or isinstance(o, bool) or o < 0 or data[o : o + len(t)] != t:
                 return f"{path}: the anonymisation record does not match the file (no {r.get('text')!r} at byte {o})"
+            spans.append((o, len(t)))
             total += 1
     if rec.get("count") != total:
         return f"{path}: the anonymisation record counts {rec.get('count')} replacements, it lists {total}"
-    return None
+    ordered = sorted(spans)
+    if any(a[0] + a[1] > b[0] for a, b in zip(ordered, ordered[1:], strict=False)):
+        return f"{path}: the anonymisation record's replacements overlap"
+    from .redact import kept_problem
+
+    return kept_problem(entry, rec.get("kept"), data, spans)
 
 
 def withhold(doc: Any, fingerprints: set[str]) -> Any:
