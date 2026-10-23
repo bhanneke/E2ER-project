@@ -228,6 +228,8 @@ def test_retrying_after_a_server_error_reuses_the_deposits_and_the_dossier(
     sent: list[str] = []
 
     def refuse(base, method, path, token=None, body=None):
+        if path == "/api/v1/me":  # the sign-in check before anything is sent
+            return 200, {"name": "Test"}
         sent.append(body["dossier"]["id"])
         return 500, {"error": "internal server error"}
 
@@ -236,7 +238,9 @@ def test_retrying_after_a_server_error_reuses_the_deposits_and_the_dossier(
     for _ in range(2):
         assert publish(str(bundle), **ZARGS, to_url="https://e2er.example", site="https://e2er.example", yes=True) == 1
     assert len(sent) == 2 and sent[0] == sent[1]
-    assert fake_zenodo.count("create") == 2 and fake_zenodo.count("publish") == 2
+    # The platform refused the registration: the deposits stay drafts, no DOI is minted (it was, before the
+    # review of 2026-10-23: the deposits were published before the platform was asked).
+    assert fake_zenodo.count("create") == 2 and fake_zenodo.count("publish") == 0
 
 
 # ── 4: a PDF publish compiles is fingerprinted ───────────────────────────────

@@ -100,6 +100,8 @@ def test_a_0137_claude_code_run_publishes_without_a_local_path(bundle: Path, tmp
     sent: list[dict] = []
 
     def server(base, method, path, token=None, body=None):
+        if path == "/api/v1/me":  # the sign-in check before anything is sent
+            return 200, {"name": "Test"}
         sent.append(body)
         oid = body["manifest"]["id"]
         return 201, {"id": oid, "owner_project": oid, "version": 1, "study_url": "u", "dossier_url": "d"}
