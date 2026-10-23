@@ -30,7 +30,10 @@ untouched.
 ├── data/
 │   ├── data.db          the per-paper SQLite warehouse (copy or symlink — see D3)
 │   ├── data_summary.md
-│   └── data_dictionary.json
+│   ├── data_dictionary.json
+│   └── …                the workspace's data/ folder (e2er-data --save-to files, the researcher's own
+│                        files): every file a source's terms let the study pass on, at most 200 MB, no link
+│                        out of the study unless recorded as the researcher's file, no hidden file
 ├── results/
 │   ├── estimation_results.json
 │   ├── robustness_results.json
@@ -143,7 +146,10 @@ no `..` or `.` segment, no empty segment, no backslash, no control character
 
 **Contents.** The exported folder as `e2er verify` reads it (`bundle_files.walk`), without
 dotfiles, operating-system clutter and `.e2er/` (local publishing records), plus the
-package's own files under `e2er-package/`:
+package's own files under `e2er-package/`. Export itself leaves out every file under a hidden
+folder (`sandbox/run/.cache/x.json`), so the folder lists nothing the package drops; a reproduction
+output over 200 MB is left out of the export and recorded in `provenance.json` (`run.left_out`,
+kind `size`) and the README, and `e2er verify`'s reproduction check names it:
 
 | Path | What |
 |---|---|
@@ -160,9 +166,18 @@ terms, or a file provenance.json records larger than the host takes): a file lef
 `--no-data` or under a declaration nothing supports is missing, and the integrity check
 fails and says so. **Data built from such data are restricted too**
 (`src/core/derived_data.py`): a data file a script writes after reading a restricted file or
-table (directly or through module-level constants, `os.path.join`, `Path / "x"`; and, in a
-workspace, every file its script-log runs recorded as `outputs`) inherits the restriction,
-transitively. Export records them in `provenance.json` (`run.derived_data`: path, the
+table (directly or through module-level constants, `os.path.join`, `Path / "x"`, f-strings and `+`
+of known parts; and, in a workspace, every file its script-log runs recorded as `outputs` or, too
+large to fingerprint, as `outputs_unhashed`) inherits the restriction, transitively. The writes
+it follows: pandas `to_*` (`to_csv`, `to_parquet`, …), geopandas `to_file`, xarray `to_netcdf`,
+polars and DuckDB `write_csv`/`write_parquet`/`write_json`/`write_ipc`, pyarrow `write_table` and
+`write_feather`, NumPy `save*`/`savetxt`, `joblib.dump`, `open(…, "w")`, `Path.write_text`,
+`shutil.copy`/`copy2`/`copyfile`/`move` (the copy holds its source's data), DuckDB's
+`COPY … TO 'file'` and `to_sql`/`CREATE TABLE`/`INSERT INTO` for tables. **The cautious default:**
+a script that reads restricted data and writes a path the scan cannot work out (a computed path,
+an f-string with a loop variable, `shutil.copytree`, `COPY … TO` with a computed target) counts as
+writing every output file of the folder newer than itself. The script log records every file of a
+data format the run wrote (not only `.json`/`.csv`/`.tsv`), and the path of one over 64 MB too. Export records them in `provenance.json` (`run.derived_data`: path, the
 connectors, the scripts that write them), so the record holds also when a script is not
 shipped; pack, publish and verify read that record and the folder's scripts. Such a file is
 left out with the reason "built from ESA Gaia Data Release 3 (Gaia) data, whose terms do not
@@ -329,7 +344,14 @@ Mapping lives in one dict so it's trivial to re-shape; anything unmatched falls 
 - **D4 — When it runs.** Both: **auto** at terminal status (completed, stopped by a check, or failed), plus a
   manual CLI `e2er export <paper_id> [--to DIR]` for on-demand / re-export.
 - **D5 — Re-export.** Handled by D2's `NN` version counter — each export is a fresh `-NN` folder; nothing
-  is overwritten.
+  is overwritten. The run's own exports and the finish page keep one current folder
+  (`src/core/export/current.py`): unchanged, it is used again; changed, the newest folder (the highest
+  `-YYYYMMDD-NN`, not the newest modification time) is rebuilt under its name, unless it was published or
+  changed after export (amendments in its `provenance.json`: a redaction, a new abstract, the stamp),
+  which is kept and gets a new `-NN` folder. The rebuild happens in a hidden temporary folder beside the
+  exports and is renamed into place only when complete, one export per run at a time (a lock file
+  `.e2er-export-<run>.lock`). A run from before 0.14 (no `paper_id` in manifest.json) gets its id in
+  `run.paper_id` from the export.
 - **D6 — Folder names.** As proposed: `paper/ code/ (+code/scratch/) data/ results/ design/ reviews/`.
   Probe scripts kept under `code/scratch/` for reproducibility.
 - **D7 — Partial runs.** Yes — best-effort over whatever artifacts exist, so a stopped/failed run still
