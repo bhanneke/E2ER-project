@@ -372,9 +372,12 @@ def redact(
         if key_it and previous is not None:
             # The earlier redaction's "after" is this one's "before": keyed as well, so the chain still links.
             previous["sha256_after"] = before_value
-            # Its kept bytes hold this text: the fingerprint of them would confirm a guess of it. Verify checks an
-            # earlier redaction of a file by its sizes only, so nothing is lost.
-            if isinstance(previous.get("redaction"), dict):
+        published = (folder / "e2er.json").is_file() or (folder / ".e2er" / "link.json").is_file()
+        if previous is not None and previous.get("kind") == KIND and isinstance(previous.get("redaction"), dict):
+            # The earlier redaction's kept bytes hold this text: their fingerprint would confirm a guess of it.
+            # Verify checks an earlier redaction of a file by its sizes only, so nothing is lost. A record
+            # already published stays as it was (the bytes it covers were published with it).
+            if not published:
                 previous["redaction"].pop("kept", None)
         entry = {
             "path": rel,

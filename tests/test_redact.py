@@ -273,6 +273,8 @@ def test_an_earlier_redaction_in_a_chain_is_checked_by_its_sizes(study: Path):
     assert status == PASS, detail
     prov = _prov(study)
     first = next(a for a in prov["amendments"] if a["path"] == "design/preregistration.md")
+    # Its kept bytes held the second text: their fingerprint would confirm a guess of it.
+    assert "kept" not in first["redaction"]
     first["redaction"]["bytes_before"] += 3
     (study / "provenance.json").write_text(json.dumps(prov, indent=2))
     status, detail = _checks(study)["preregistration"]

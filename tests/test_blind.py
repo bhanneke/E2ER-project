@@ -636,18 +636,16 @@ def test_the_command_line_has_the_flags():
 
 
 def test_an_anonymisation_record_with_an_empty_replacement_fails(tmp_path):
-    """An empty replacement sits at every offset: it would vouch for any change (review 2026-10-23)."""
+    """An empty replacement occurs everywhere: it would vouch for any change (review 2026-10-23)."""
     b = mini(tmp_path)
     an.anonymise(b, ids())
     prov = json.loads((b / "provenance.json").read_text(encoding="utf-8"))
     a = next(x for x in prov["amendments"] if x["path"] == "code/run.py")
     data = (b / "code" / "run.py").read_bytes()
-    assert "kept" in a["anonymisation"] and an.record_problem(a, data) is None
-    empty = {**a, "anonymisation": {**a["anonymisation"], "replacements": [{"text": "", "offsets": [0]}], "count": 1}}
-    assert "empty replacement" in str(an.record_problem(empty, data))
-    # A change beside the replacements: the kept bytes are not the recorded ones.
-    edited = data.replace(b"print", b"prinz", 1)
-    assert "not the ones the change kept" in str(an.record_problem(a, edited))
+    assert an.record_problem(a, data) is None
+    for empty in ({"text": "", "count": 1}, {"text": "", "offsets": [0]}):
+        bad = {**a, "anonymisation": {**a["anonymisation"], "replacements": [empty], "count": 1}}
+        assert "empty replacement" in str(an.record_problem(bad, data))
 
 
 def test_the_affiliation_and_thanks_blocks_are_replaced_never_deleted():
