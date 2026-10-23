@@ -96,7 +96,10 @@ class GitHubClient:
         commit_message: str,
         branch: str = "main",
     ) -> None:
-        """Create or update a file in the repo."""
+        """Create or update a file in the repo. ``file_path`` is a plain relative path (no ``..``, no ``/`` first)."""
+        parts = file_path.replace("\\", "/").split("/")
+        if not file_path or file_path.startswith("/") or any(p in ("", ".", "..") for p in parts):
+            raise ValueError(f"refusing the repository path {file_path!r}")
         repo = self._user.get_repo(repo_name)
         if isinstance(content, str):
             encoded = content.encode()
@@ -135,13 +138,20 @@ class GitHubClient:
     ) -> int:
         """Push all files from a local directory to the repo. Returns file count."""
         count = 0
+        root = local_dir.resolve()
         for file_path in sorted(local_dir.rglob("*")):
-            if not file_path.is_file():
+            # A link in a workspace (an AI step can make one) would upload the file it points to: ~/.ssh, .env.
+            if file_path.is_symlink() or not file_path.is_file():
+                continue
+            if not file_path.resolve().is_relative_to(root):
+                logger.warning("Not pushing %s: it is outside %s", file_path, local_dir)
                 continue
             if extensions and file_path.suffix not in extensions:
                 continue
             relative = file_path.relative_to(local_dir)
-            remote_path = f"{remote_prefix}/{relative}" if remote_prefix else str(relative)
+            if any(part.startswith(".") for part in relative.parts):
+                continue  # hidden files and folders (.env, .git, .e2er) never go up
+            remote_path = f"{remote_prefix}/{relative.as_posix()}" if remote_prefix else relative.as_posix()
             try:
                 content = file_path.read_bytes()
                 self.push_file(repo_name, remote_path, content, commit_message)

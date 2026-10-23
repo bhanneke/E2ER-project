@@ -372,6 +372,25 @@ def _claim(work: Path, t: Target, study_ids: set[str]) -> list[str]:
     return rel
 
 
+def _inside(root: Path, path: Path) -> bool:
+    """Does ``path`` (with every link on the way resolved) stay inside ``root`` (resolved)?"""
+    try:
+        return path.resolve().is_relative_to(root)
+    except (OSError, RuntimeError):
+        return False
+
+
+def _tracked_links(work: Path, path: str) -> list[str]:
+    """The symbolic links git tracks in the study's folder (mode 120000)."""
+    proc = _git(["ls-files", "-s", "-z", "--", path or "."], cwd=work)
+    out = []
+    for entry in proc.stdout.split("\0"):
+        meta, _, name = entry.partition("\t")
+        if name and meta.split(" ", 1)[0] == "120000":
+            out.append(name)
+    return sorted(out)
+
+
 def push(
     t: Target,
     staged: Staged,
@@ -394,7 +413,16 @@ def push(
         _git(["-c", "init.defaultBranch=main", "clone", "--quiet", "--depth", "1", t.remote, str(work)])
         branch = _git(["symbolic-ref", "--short", "HEAD"], cwd=work).stdout.strip() or "main"
         tracked = _claim(work, t, study_ids)
+        links = _tracked_links(work, t.path)
+        if links:
+            # A collaborator's committed link ("code" -> /Users/…/victim_dir) made e2er write the study's files
+            # outside the clone, on this computer (security review 2026-10-23).
+            raise GitHubError(
+                f"{t.full} holds symbolic links in the study's folder ({', '.join(links[:5])}); e2er does not write "
+                "through them. Remove them from the repository; nothing was pushed."
+            )
         folder = work / t.path if t.path else work
+        root = work.resolve()
         previous = _previous_files(folder) if tracked else set()
         new = set(staged.files)
         kept = [r for r in tracked if r not in new and r not in previous and not r.startswith("e2er-package/")]
@@ -403,10 +431,12 @@ def push(
                 _git(["rm", "--quiet", "--", f"{t.path}/{r}" if t.path else r], cwd=work)
         for r in staged.files:
             dst = folder / r
+            if not _inside(root, dst):
+                raise GitHubError(f"{t.full}: {r} would be written outside the clone; nothing was pushed")
             dst.parent.mkdir(parents=True, exist_ok=True)
-            if dst.is_symlink() or dst.is_dir():
+            if dst.is_symlink() or dst.is_dir() or not _inside(root, dst):
                 raise GitHubError(f"{t.full}: {r} in the study's folder is not a plain file; nothing was pushed")
-            shutil.copyfile(staged.root / r, dst)
+            shutil.copyfile(staged.root / r, dst, follow_symlinks=False)
         # The last word: no file a source's terms keep out is in the folder about to be committed.
         present = sorted(r for r in restricted if (folder / r).exists())
         if present:
