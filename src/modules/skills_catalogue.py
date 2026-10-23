@@ -19,6 +19,7 @@ can always answer "whose is this?".
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -239,6 +240,28 @@ def find_pack(slug: str, path: str | Path | None = None) -> SkillPack:
 # ── installing ───────────────────────────────────────────────────────────────
 
 
+#: A pack or skill slug: it becomes a folder or file name under the install root. The catalogue's
+#: own slugs use lowercase letters, digits, ``-`` and ``_`` and run up to 70 characters
+#: (theory_lab-personas-tier6_social_humanities-science_technology_studies).
+_SAFE_SLUG = re.compile(r"^[a-z0-9][a-z0-9_-]{0,95}$")
+
+
+def safe_slug(slug: object) -> bool:
+    """May ``slug`` name a folder or file under the install root? No ``/``, ``..`` or uppercase."""
+    return isinstance(slug, str) and bool(_SAFE_SLUG.fullmatch(slug))
+
+
+def _inside(root: Path, name: str) -> Path:
+    """``root / name`` when ``name`` is a safe slug and the path stays inside ``root``, else CatalogueError."""
+    if not safe_slug(name):
+        raise CatalogueError(f"refusing the slug {name!r}: only a-z, 0-9, - and _ (up to 96 characters)")
+    base = root.resolve()
+    target = (base / name).resolve()
+    if target.parent != base:
+        raise CatalogueError(f"refusing the slug {name!r}: it leads outside {base}")
+    return target
+
+
 def install_root() -> Path:
     """Where installed packs live. Searched by the skill loader."""
     return Path.home() / ".e2er" / "skills"
@@ -288,13 +311,21 @@ async def install_pack(
     """Fetch a pack's skill files. Returns a report; never raises for one bad file."""
     from .fetch.http import fetch_bytes
 
-    target = (dest or install_root()) / pack.slug
+    root = dest or install_root()
+    root.mkdir(parents=True, exist_ok=True)
+    # A catalogue entry is someone else's YAML: "../../.claude" as a slug wrote CLAUDE.md into ~/.claude.
+    target = _inside(root, pack.slug)
     target.mkdir(parents=True, exist_ok=True)
 
     written: list[dict[str, str]] = []
     failed: list[dict[str, str]] = []
 
     for skill in pack.skills:
+        if not safe_slug(skill.slug):
+            failed.append({"skill": skill.slug[:80], "error": "refused: the slug is not a plain name (a-z, 0-9, -, _)"})
+            if on_event:
+                on_event("fail", skill.slug[:80], "refused: not a plain name")
+            continue
         candidates = _candidate_urls(skill.details_url) if skill.details_url else []
         if not candidates:
             failed.append({"skill": skill.slug, "error": "no source URL in the catalogue"})
@@ -316,6 +347,9 @@ async def install_pack(
             continue
 
         out = target / f"{skill.slug}.md"
+        if out.resolve().parent != target or out.is_symlink():
+            failed.append({"skill": skill.slug, "error": "refused: the file would land outside the pack's folder"})
+            continue
         out.write_bytes(data)
         written.append({"skill": skill.slug, "file": out.name, "url": url})
         if on_event:
@@ -369,8 +403,11 @@ def installed_packs(dest: Path | None = None) -> list[dict[str, Any]]:
 def remove_pack(slug: str, dest: Path | None = None) -> bool:
     import shutil
 
-    target = (dest or install_root()) / slug
-    if not target.is_dir():
+    root = dest or install_root()
+    if not root.is_dir():
+        return False
+    target = _inside(root, slug)
+    if not target.is_dir() or (root / slug).is_symlink():
         return False
     shutil.rmtree(target)
     return True

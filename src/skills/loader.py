@@ -12,7 +12,10 @@ Consolidated into a single source 2026-05-15.
 
 from __future__ import annotations
 
-from pathlib import Path
+import logging
+from pathlib import Path, PurePosixPath
+
+logger = logging.getLogger(__name__)
 
 # Search in two locations: src/skills/files/ (installed package) and
 # project-root skills/files/ (development checkout, Docker mount).
@@ -90,8 +93,18 @@ def load_skills_for_specialist(specialist: str) -> str:
     return "\n\n---\n\n".join(parts)
 
 
+def _plain_skill_path(path: object) -> bool:
+    """``category/name`` or a stem: relative, ``/``-separated, no ``..``, no backslash, no NUL."""
+    if not isinstance(path, str) or not path or any(c in path for c in "\\\x00:*?["):
+        return False
+    pp = PurePosixPath(path)
+    return not pp.is_absolute() and all(part not in ("", ".", "..") for part in path.split("/"))
+
+
 def skill_exists(path: str) -> bool:
     """True iff ``path`` (e.g. ``"econometrics/event-study"``) names a skill file on disk."""
+    if not _plain_skill_path(path):
+        return False
     return any((d / f"{path}.md").is_file() for d in _SKILLS_DIRS)
 
 
@@ -102,7 +115,14 @@ def _load_skill(path_or_stem: str) -> str:
     identifies the file. The stem-only fallback exists so tests and
     scripts that haven't been updated yet keep working; new code should
     always use the full path.
+
+    A template names its skills (``[skills]`` in a downloaded template), so a path with ``..``,
+    a backslash or an absolute path is refused: ``"../../../.ssh/config"`` would read a file
+    outside the skill folders into the model's prompt.
     """
+    if not _plain_skill_path(path_or_stem):
+        logger.warning("refusing the skill path %r: not a plain path inside the skill folders", path_or_stem)
+        return ""
     rel = f"{path_or_stem}.md"
     for skills_dir in _SKILLS_DIRS:
         candidate = skills_dir / rel
