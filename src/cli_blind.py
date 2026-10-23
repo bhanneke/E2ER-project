@@ -244,11 +244,27 @@ def publish_blind(
             texts={"the request": an.json_text(body), "the dossier": an.json_text(manifest["dossier"]["doc"])},
         )
         if not report.clean:
-            _print_findings(
-                "error: the anonymous version would still identify you; nothing was sent. Take these out of the "
-                "exported folder (`e2er redact`, or edit the source and export again) and publish again:",
-                report.leaks + report.unread,
-            )
+            from .core.redact import is_record
+
+            still = report.leaks + report.unread
+            # e2er's own records (provenance.json, e2er.json, the request and the dossier built from them):
+            # `e2er redact` cannot change them, only a new export from a corrected source can.
+            records = [f for f in still if is_record(f.where) or f.where in ("the request", "the dossier")]
+            files = [f for f in still if f not in records]
+            if files:
+                _print_findings(
+                    "error: the anonymous version would still identify you; nothing was sent. Take these out of the "
+                    "exported folder (`e2er redact`, or edit the source and export again) and publish again:",
+                    files,
+                )
+            if records:
+                _print_findings(
+                    "error: e2er's own records of the folder would still identify you; nothing was sent. "
+                    "`e2er redact` cannot change them: take the identifier out where it comes from (the run's "
+                    "workspace: manifest.json, data_sources.json, the files) and export again (`e2er export "
+                    "<run id>`), then publish the new folder:",
+                    records,
+                )
             return 1
         cites = an.self_citations(copy, ids) + report.citations
         if (cites or report.confirm) and not ack_self_citations:

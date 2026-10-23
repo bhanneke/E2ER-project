@@ -74,6 +74,18 @@ MAX_REMOVED_BYTES = 256
 _LOCAL = (".e2er/",)
 
 
+#: Said after "export again": a new export makes a new folder, so the redactions of this one are made there again.
+REEXPORT_NOTE = "; the new export is a new folder, so make this folder's other redactions there again"
+
+
+def is_record(rel: str) -> bool:
+    """A record of the folder that no redaction can change: provenance.json, e2er.json, the files under .e2er/
+    and a package's own files (bundle_files.not_evidence). An identifier there needs a new export."""
+    from .export.bundle_files import not_evidence
+
+    return not_evidence(rel) or rel.startswith(".e2er/")
+
+
 class RedactError(Exception):
     """The redaction cannot be made; the message says why. Nothing was changed."""
 
@@ -332,9 +344,18 @@ def redact(
             f"{', '.join(found.pdfs)}: the PDF's text holds it; redact its source (paper/paper.tex) and build the "
             "PDF again (e2er publish compiles paper/paper.pdf from paper/paper.tex)"
         )
-    if found.unlisted:
+    records = [rel for rel in found.unlisted if is_record(rel)]
+    others = [rel for rel in found.unlisted if not is_record(rel)]
+    if records:
         stuck.append(
-            f"{', '.join(found.unlisted)} {'is' if len(found.unlisted) == 1 else 'are'} not listed in "
+            f"{', '.join(records)} {'is' if len(records) == 1 else 'are'} e2er's own record of the folder, which "
+            "redact cannot change (the fingerprints of every file are kept there): take the text out of the "
+            "study's files where it comes from (the run's workspace, its manifest.json or data_sources.json) and "
+            f"export again (`e2er export <run id>`){REEXPORT_NOTE}"
+        )
+    if others:
+        stuck.append(
+            f"{', '.join(others)} {'is' if len(others) == 1 else 'are'} not listed in "
             "provenance.json (a record of an earlier publish, rewritten by the next one); remove the text there "
             "by hand or publish again first"
         )
