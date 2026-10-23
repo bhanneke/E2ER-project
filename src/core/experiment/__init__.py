@@ -536,10 +536,10 @@ def _default_workspace(paper_id: str) -> str | None:
     """The paper's workspace dir, so a non-completed run is still measurable."""
     import httpx
 
-    from ...cli_run import _api_root
+    from ...cli_run import _api_root, api_headers
 
     try:
-        r = httpx.get(f"{_api_root()}/api/papers/{paper_id}", timeout=15.0)
+        r = httpx.get(f"{_api_root()}/api/papers/{paper_id}", headers=api_headers(), timeout=15.0)
         if r.status_code != 200:
             return None
         return (r.json() or {}).get("workspace") or None
@@ -550,10 +550,10 @@ def _default_workspace(paper_id: str) -> str | None:
 def _default_events(paper_id: str) -> list:
     import httpx
 
-    from ...cli_run import _api_root
+    from ...cli_run import _api_root, api_headers
 
     try:
-        r = httpx.get(f"{_api_root()}/api/papers/{paper_id}/events", timeout=15.0)
+        r = httpx.get(f"{_api_root()}/api/papers/{paper_id}/events", headers=api_headers(), timeout=15.0)
         return r.json() if r.status_code == 200 else []
     except httpx.HTTPError:
         return []

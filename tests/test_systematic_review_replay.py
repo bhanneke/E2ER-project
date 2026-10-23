@@ -172,7 +172,9 @@ def test_an_extracted_number_that_is_not_in_its_quote_stops_the_run_before_the_s
             httpx.post(f"{api}/api/papers/{pid}/review", json={"action": "approve"}, headers=TOKEN, timeout=30)
         p = _wait(api, pid)
         assert p["status"] == "paused", p
-        review = httpx.get(f"{api}/api/papers/{pid}/review", timeout=10).json()["pending"]
+        review = httpx.get(
+            f"{api}/api/papers/{pid}/review", headers={"x-e2er-token": "replay-session"}, timeout=10
+        ).json()["pending"]
         text = json.dumps(review)
         assert "421" in text and "is not printed in the quote" in text, review
         ws = Path(p["workspace"])

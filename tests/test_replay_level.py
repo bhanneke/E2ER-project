@@ -291,7 +291,10 @@ def _replay_server(tmp_path: Path, scenario: str, settings: list[str]):
     try:
         for _ in range(120):
             try:
-                if httpx.get(f"{api}/api/papers", timeout=1).status_code == 200:
+                if (
+                    httpx.get(f"{api}/api/papers", headers={"x-e2er-token": "replay-session"}, timeout=1).status_code
+                    == 200
+                ):
                     break
             except httpx.HTTPError:
                 time.sleep(0.25)
@@ -307,7 +310,9 @@ def _approve_to_the_end(api: str, pid: str) -> tuple[dict, list[str]]:
         p = _wait(api, pid)
         if p["status"] == "completed":
             break
-        stage = httpx.get(f"{api}/api/papers/{pid}/review", timeout=10).json()["pending"]["stage"]
+        stage = httpx.get(
+            f"{api}/api/papers/{pid}/review", headers={"x-e2er-token": "replay-session"}, timeout=10
+        ).json()["pending"]["stage"]
         stops.append(stage)
         r = httpx.post(
             f"{api}/api/papers/{pid}/review",
@@ -421,7 +426,7 @@ def test_a_study_with_chosen_data_and_papers_replays_to_the_end(tmp_path: Path):
 
 def _wait(api: str, pid: str) -> dict:
     for _ in range(600):
-        p = httpx.get(f"{api}/api/papers/{pid}", timeout=30).json()
+        p = httpx.get(f"{api}/api/papers/{pid}", headers={"x-e2er-token": "replay-session"}, timeout=30).json()
         if p["status"] in {"paused", "completed", "failed", "rejected", "cancelled"} and not p.get("run_owner"):
             return p
         time.sleep(0.2)

@@ -236,7 +236,8 @@ def test_only_loopback_clients(home, session):
 @pytest.mark.parametrize("host", ["evil.example:8290", "192.168.1.20:8290", "e2er.org"])
 def test_only_a_local_host_header(home, session, host):
     """A site that points its own name at 127.0.0.1 (DNS rebinding) sends its own Host."""
-    assert _client().get("/api/local/browse", headers={"host": host}).status_code == 403
+    # Refused for every route since 0.19.0 (local_session.guard_request), before any endpoint runs.
+    assert _client().get("/api/local/browse", headers={"host": host}).status_code == 400
 
 
 @pytest.mark.parametrize("host", ["127.0.0.1:8290", "localhost:8290", "[::1]:8290"])

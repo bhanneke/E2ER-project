@@ -186,12 +186,16 @@ def test_a_pre_trend_stops_the_run_before_anything_is_drafted(tmp_path: Path):
     with _replay_server(tmp_path, "did-pretrend", [f"LOCAL_DATA_DIR={study / 'data'}"]) as (api, _):
         pid = _start(api, "A pre-trend (synthetic)")
         p = _wait(api, pid)
-        review = httpx.get(f"{api}/api/papers/{pid}/review", timeout=10).json()["pending"]
+        review = httpx.get(
+            f"{api}/api/papers/{pid}/review", headers={"x-e2er-token": "replay-session"}, timeout=10
+        ).json()["pending"]
         assert review["stage"] == "preregister"
         httpx.post(f"{api}/api/papers/{pid}/review", json={"action": "approve"}, headers=TOKEN, timeout=30)
         p = _wait(api, pid)
         assert p["status"] == "paused", p
-        review = httpx.get(f"{api}/api/papers/{pid}/review", timeout=10).json()["pending"]
+        review = httpx.get(
+            f"{api}/api/papers/{pid}/review", headers={"x-e2er-token": "replay-session"}, timeout=10
+        ).json()["pending"]
         assert review["stage"] == "did_results_gate", review
         reasons = " ".join(review.get("reasons") or [])
         assert "jointly different from zero" in reasons and "Rambachan" in reasons, review
@@ -210,4 +214,9 @@ def test_a_pre_trend_stops_the_run_before_anything_is_drafted(tmp_path: Path):
         # Approving does not pass a check: the run stops at it again.
         httpx.post(f"{api}/api/papers/{pid}/review", json={"action": "approve"}, headers=TOKEN, timeout=30)
         p = _wait(api, pid)
-        assert httpx.get(f"{api}/api/papers/{pid}/review", timeout=10).json()["pending"]["stage"] == "did_results_gate"
+        assert (
+            httpx.get(f"{api}/api/papers/{pid}/review", headers={"x-e2er-token": "replay-session"}, timeout=10).json()[
+                "pending"
+            ]["stage"]
+            == "did_results_gate"
+        )

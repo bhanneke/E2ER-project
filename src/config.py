@@ -302,7 +302,9 @@ class Settings(BaseSettings):
     max_tokens_per_call: int = 32768
 
     # ── Server ────────────────────────────────────────────────────────────────
-    host: str = "0.0.0.0"
+    host: str = "127.0.0.1"
+    # More host names the dashboard answers to (comma-separated), e.g. behind a reverse proxy.
+    allowed_hosts: str = ""
     port: int = 8280
     log_level: str = "INFO"
     artifacts_dir: str = "artifacts"
@@ -355,9 +357,10 @@ class Settings(BaseSettings):
     gemini_cwd: str = ""
 
     # ── API security ──────────────────────────────────────────────────────────
-    # When set, all mutating endpoints (POST/DELETE) require
-    # `Authorization: Bearer <token>`. When unset (default), the API is open
-    # — fine for localhost dev, NOT fine for any deploy beyond your machine.
+    # When set, API requests may use `Authorization: Bearer <token>` instead of the
+    # dashboard's session token. Required to serve on an address other than
+    # 127.0.0.1 (`e2er serve --host`, the Docker image). Unset (default), every
+    # /api/ route needs the session token that `e2er` makes at each start.
     api_auth_token: str | None = None
     # Comma-separated origins for CORS. Default is the dashboard on localhost.
     # Set to '*' explicitly to allow any origin (only do this for non-secret deploys).

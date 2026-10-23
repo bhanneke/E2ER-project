@@ -104,8 +104,9 @@ def _api_reachable(timeout: float = 1.5) -> bool:
     import httpx
 
     try:
-        r = httpx.get(f"{_api_root()}/api/papers", timeout=timeout)
-        return r.status_code == 200
+        # /health answers without the session (the API itself needs it since 0.19.0).
+        r = httpx.get(f"{_api_root()}/health", timeout=timeout)
+        return r.status_code == 200 and (r.json() or {}).get("service") == "e2er-v3"
     except Exception:
         return False
 
@@ -129,7 +130,7 @@ def _start_uvicorn_in_background() -> int:
     # The server needs the session token that this and later `e2er` commands
     # send (X-E2ER-Token); without it the server made a random one of its own
     # and refused every POST with 403.
-    token = os.environ.get(ls.ENV_TOKEN) or ls.stable_token()
+    token = os.environ.get(ls.ENV_TOKEN) or ls.new_token()  # a new token per start (0.19.0)
     env = {**os.environ, ls.ENV_TOKEN: token}
     cmd = [
         sys.executable,
@@ -336,7 +337,7 @@ def _poll_status(paper_id: str, total_seconds: float, poll_interval: float = 15.
     last_state = ""
     while time.monotonic() - start < total_seconds:
         try:
-            r = httpx.get(f"{_api_root()}/api/papers/{paper_id}", timeout=10.0)
+            r = httpx.get(f"{_api_root()}/api/papers/{paper_id}", headers=api_headers(), timeout=10.0)
             d = r.json()
         except Exception:
             time.sleep(poll_interval)
@@ -466,6 +467,11 @@ def run(
         return 0
     if final in {"failed", "paused", "stopped"}:
         print(f"\n⚠ Paper {status_words(final)}. Diagnose with:", file=sys.stderr)
-        print(f"  curl -s {_api_root()}/api/papers/{paper_id}/failure-bundle | jq", file=sys.stderr)
+        # The API needs the session token (~/.e2er/session-<port>.json); never print the token itself.
+        print(
+            f'  curl -s -H "X-E2ER-Token: $(jq -r .token ~/.e2er/session-{_api_port()}.json)" '
+            f"{_api_root()}/api/papers/{paper_id}/failure-bundle | jq",
+            file=sys.stderr,
+        )
         return 1
     return 0

@@ -143,7 +143,7 @@ def status(paper_id: str, tail: bool = False, monitor_seconds: float = 1800.0) -
         return 3
 
     try:
-        r = httpx.get(f"{_api_root()}/api/papers/{paper_id}", timeout=10.0)
+        r = httpx.get(f"{_api_root()}/api/papers/{paper_id}", headers=api_headers(), timeout=10.0)
     except Exception as e:
         print(f"e2er status: request failed: {e}", file=sys.stderr)
         return 3
@@ -163,7 +163,7 @@ def status(paper_id: str, tail: bool = False, monitor_seconds: float = 1800.0) -
     if (payload.get("shown_status") or payload.get("status")) == "paused":
         # Stopped at a researcher step: say which, and what it waits for.
         try:
-            rv = httpx.get(f"{_api_root()}/api/papers/{paper_id}/review", timeout=10.0)
+            rv = httpx.get(f"{_api_root()}/api/papers/{paper_id}/review", headers=api_headers(), timeout=10.0)
             review = rv.json() if rv.status_code == 200 else {}
         except Exception:  # noqa: BLE001 — the summary above stands without it
             review = {}
@@ -263,7 +263,7 @@ def cancel(paper_id: str, yes: bool = False) -> int:
 
     # Fetch first so we can show the user what they're about to cancel.
     try:
-        r = httpx.get(f"{_api_root()}/api/papers/{paper_id}", timeout=10.0)
+        r = httpx.get(f"{_api_root()}/api/papers/{paper_id}", headers=api_headers(), timeout=10.0)
     except Exception as e:
         print(f"e2er cancel: lookup failed: {e}", file=sys.stderr)
         return 3
@@ -326,7 +326,7 @@ def cancel(paper_id: str, yes: bool = False) -> int:
     while time.monotonic() < deadline:
         time.sleep(1.0)
         try:
-            r = httpx.get(f"{_api_root()}/api/papers/{paper_id}", timeout=5.0)
+            r = httpx.get(f"{_api_root()}/api/papers/{paper_id}", headers=api_headers(), timeout=5.0)
             body = r.json()
             new_status = body.get("shown_status") or body.get("status", "?")
             if new_status in {"cancelled", "completed", "failed", "stopped", "rejected"}:
@@ -378,7 +378,7 @@ def resume(
 
     # Look up first so the prompt + log can show what's being resumed.
     try:
-        r = httpx.get(f"{_api_root()}/api/papers/{paper_id}", timeout=10.0)
+        r = httpx.get(f"{_api_root()}/api/papers/{paper_id}", headers=api_headers(), timeout=10.0)
     except Exception as e:
         print(f"e2er resume: lookup failed: {e}", file=sys.stderr)
         return 3

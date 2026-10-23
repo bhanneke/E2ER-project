@@ -188,7 +188,9 @@ def _stop(api: str, pid: str, at: str) -> tuple[dict, dict, list[str]]:
     stops = []
     for _ in range(4):
         p = _wait(api, pid)
-        pending = httpx.get(f"{api}/api/papers/{pid}/review", timeout=10).json()["pending"]
+        pending = httpx.get(
+            f"{api}/api/papers/{pid}/review", headers={"x-e2er-token": "replay-session"}, timeout=10
+        ).json()["pending"]
         assert pending, (p.get("status"), p.get("last_error"), stops)
         stops.append(pending["stage"])
         if pending["stage"] == at:

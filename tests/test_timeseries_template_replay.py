@@ -191,7 +191,9 @@ def test_a_model_fitted_on_the_hold_out_stops_the_run_until_the_analysis_is_redo
             stops = []
             for _ in range(4):
                 p = _wait(api, pid)
-                pending = httpx.get(f"{api}/api/papers/{pid}/review", timeout=10).json()["pending"]
+                pending = httpx.get(
+                    f"{api}/api/papers/{pid}/review", headers={"x-e2er-token": "replay-session"}, timeout=10
+                ).json()["pending"]
                 assert pending, (p.get("status"), p.get("last_error"), stops)
                 stops.append(pending["stage"])
                 if pending["stage"] == "forecasts_before_draft":

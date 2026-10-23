@@ -178,7 +178,9 @@ def test_a_data_unit_without_geometry_that_is_not_listed_stops_the_run_before_th
         pid = _start(api)
         p = _wait(api, pid)
         assert p["status"] == "paused", p
-        review = httpx.get(f"{api}/api/papers/{pid}/review", timeout=10).json()["pending"]
+        review = httpx.get(
+            f"{api}/api/papers/{pid}/review", headers={"x-e2er-token": "replay-session"}, timeout=10
+        ).json()["pending"]
         assert review["stage"] == "spatial_design_gate", review
         reasons = " ".join(review.get("reasons") or [])
         assert "have no geometry" in reasons and "RZZ" in reasons, reasons

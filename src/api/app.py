@@ -99,6 +99,21 @@ def _ticks(text: object) -> Any:
 templates.env.filters["ticks"] = _ticks
 
 
+def _http_url(value: object) -> str:
+    """A link from a platform's or a source's answer, for an ``href``: http(s) only, else ""."""
+    from urllib.parse import urlsplit
+
+    text = str(value or "").strip()
+    try:
+        scheme = urlsplit(text).scheme.lower()
+    except ValueError:
+        return ""
+    return text if scheme in {"http", "https"} else ""
+
+
+templates.env.filters["http_url"] = _http_url
+
+
 def _check_detail(detail: object, name: str) -> str:
     """`e2er doctor`'s text for a check, said plainly (no setting names); the terminal keeps the original."""
     from ..core.labels import check_detail
@@ -298,11 +313,33 @@ async def _session_from_launch_url(request: Request, call_next):
         from starlette.datastructures import URL
 
         clean = URL(str(request.url)).remove_query_params(ls.QUERY)
-        target = clean.path + (f"?{clean.query}" if clean.query else "")
+        # One leading slash: "//evil.example/x?t=…" must not redirect to another site.
+        target = "/" + clean.path.lstrip("/\\") + (f"?{clean.query}" if clean.query else "")
         resp = RedirectResponse(url=target, status_code=303)
         if secrets.compare_digest(token, ls.session_token()):
             ls.set_session_cookies(resp, request, token)
         return resp
+    return await call_next(request)
+
+
+@app.middleware("http")
+async def _host_and_session_guard(request: Request, call_next):
+    """Every request: a Host that names this server, and the session on every ``/api/`` route.
+
+    Registered after the other middleware, so it runs first. A page on another site that points
+    its own domain at 127.0.0.1 (DNS rebinding) sends its own name as Host and is refused here;
+    a script on this computer without the session token reads no run, file or bundle.
+    """
+    from fastapi.responses import JSONResponse, PlainTextResponse
+
+    from . import local_session as ls
+
+    problem = ls.guard_request(request)
+    if problem is not None:
+        status, detail = problem
+        if status == 400:
+            return PlainTextResponse(detail, status_code=400)
+        return JSONResponse({"detail": detail}, status_code=status)
     return await call_next(request)
 
 

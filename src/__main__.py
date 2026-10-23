@@ -1441,8 +1441,9 @@ def _already_serving(host: str, port: int) -> bool:
     try:
         import httpx
 
-        r = httpx.get(f"http://{host}:{port}/api/papers", timeout=1.5)
-        return r.status_code == 200
+        # /health answers without the session (the API itself needs it since 0.19.0).
+        r = httpx.get(f"http://{host}:{port}/health", timeout=1.5)
+        return r.status_code == 200 and (r.json() or {}).get("service") == "e2er-v3"
     except Exception:  # noqa: BLE001 — any failure means "not ours"
         return False
 
@@ -1483,6 +1484,27 @@ def _open_browser(url: str, delay: float = 1.2) -> None:
     threading.Thread(target=_later, daemon=True).start()
 
 
+def _loopback_host(host: str) -> bool:
+    import ipaddress
+
+    h = host.strip().strip("[]").lower()
+    if h == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(h).is_loopback
+    except ValueError:
+        return False
+
+
+def _settings_or_none() -> Any:
+    try:
+        from .config import get_settings
+
+        return get_settings()
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def _serve(*, host: str, port: int, reload: bool, no_browser: bool) -> int:
     """Run the dashboard. Returns the process exit code.
 
@@ -1510,8 +1532,18 @@ def _serve(*, host: str, port: int, reload: bool, no_browser: bool) -> int:
                 pass
         return 0
 
-    token = os.environ.get(ls.ENV_TOKEN) or ls.stable_token()
+    if not _loopback_host(host) and not getattr(_settings_or_none(), "api_auth_token", None):
+        print(
+            f"Refusing to serve on {host}: the dashboard would answer other computers. Set API_AUTH_TOKEN "
+            "(every API request then needs `Authorization: Bearer <token>`) or serve on 127.0.0.1.",
+            file=sys.stderr,
+        )
+        return 2
+    # A new session token per start: the cookie of the last start no longer works (0.19.0).
+    ls.forget_stable_secret()
+    token = os.environ.get(ls.ENV_TOKEN) or ls.new_token()
     os.environ[ls.ENV_TOKEN] = token  # the uvicorn app (and a --reload worker) read it from here
+    os.environ[ls.ENV_SERVE_HOST] = host  # the Host allowlist adds the address served on
     from .home import ENV_PROJECT, project_dir
 
     if reload:

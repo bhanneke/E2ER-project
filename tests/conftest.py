@@ -16,6 +16,28 @@ from src.modules.llm.base import LLMBackend, TokenUsage, ToolHandler, ToolLoopRe
 # The dashboard sends a first-time user to /setup while no settings exist. Tests
 # of other pages run without a .env; tests of the setup page delete this.
 os.environ.setdefault("E2ER_SKIP_SETUP_REDIRECT", "1")
+
+
+def _loopback_test_clients() -> None:
+    """Every TestClient talks to 127.0.0.1 unless a test names another base_url.
+
+    The server answers only to a Host that names this computer (local_session.guard_request);
+    TestClient's own default, "testserver", is not one. Patched here, at import, so module-scoped
+    clients made before any function fixture get it too.
+    """
+    from starlette.testclient import TestClient
+
+    real = TestClient.__init__
+
+    def init(self, *args, **kwargs):
+        if len(args) < 2:
+            kwargs.setdefault("base_url", "http://127.0.0.1")
+        real(self, *args, **kwargs)
+
+    TestClient.__init__ = init  # type: ignore[method-assign]
+
+
+_loopback_test_clients()
 # Tests run in pytest's temporary folders with nothing set up: e2er would otherwise use the
 # default studies folder (~/e2er-studies) instead of a temporary current folder (src/home.py).
 os.environ.setdefault("E2ER_TEMPORARY_FOLDER_OK", "1")
