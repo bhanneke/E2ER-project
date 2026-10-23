@@ -345,6 +345,11 @@ class Settings(BaseSettings):
     # only one under which specialists can write files and stay confined.
     codex_sandbox: str = "workspace-write"
     codex_cwd: str = ""
+    # Off by default since 0.19.0: in a workspace-write sandbox with the network on, any shell command
+    # of the model reaches any address. True lets e2er-data and e2er-lit download (and every command).
+    codex_network_access: bool = False
+    # danger-full-access (no sandbox at all) runs only with this set as well (and a warning).
+    codex_allow_full_access: bool = False
 
     # ── Gemini CLI backend (not tested) ───────────────────────────────────────
     # Set LLM_BACKEND=gemini to delegate to the `gemini` subprocess. Requires
@@ -355,6 +360,9 @@ class Settings(BaseSettings):
     gemini_timeout: int = 1800
     gemini_model: str = ""  # Empty → CLI's default
     gemini_cwd: str = ""
+    # The Gemini CLI always runs with --sandbox. Its shell tool runs commands without asking only with
+    # this set (--approval-mode yolo, with a warning); otherwise it may edit files only (auto_edit).
+    gemini_yolo: bool = False
 
     # ── API security ──────────────────────────────────────────────────────────
     # When set, API requests may use `Authorization: Bearer <token>` instead of the
@@ -419,6 +427,16 @@ def get_settings() -> Settings:
 
     here = home.project_dir()
     s = Settings(_env_file=str(here / ".env"))  # type: ignore[call-arg]
+    # What a folder's .env may not decide without a yes: the programs e2er starts, their sandbox (env_trust.py).
+    from .env_trust import untrusted, warn
+
+    refused = untrusted(here / ".env")
+    if refused:
+        warn(here / ".env", refused)
+        for key in refused:
+            name = key.lower()
+            if name in Settings.model_fields:
+                setattr(s, name, Settings.model_fields[name].default)
     try:
         elsewhere = here.resolve() != Path.cwd().resolve()
     except OSError:

@@ -1520,7 +1520,7 @@ def recompile_paper(bundle: Path) -> None:
         # As the run compiled it (renderer/compiler.py): tectonic continues past
         # non-fatal errors (a package option xetex ignores, a missing figure).
         run = subprocess.run(
-            ["tectonic", "--keep-intermediates", "-Z", "continue-on-errors", "paper.tex"],
+            ["tectonic", "--untrusted", "--keep-intermediates", "-Z", "continue-on-errors", "paper.tex"],
             cwd=work,
             capture_output=True,
             text=True,

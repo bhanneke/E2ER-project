@@ -166,6 +166,38 @@ def _clip(text: str, limit: int = _MAX_ERROR_CHARS) -> str:
     return f"{text[:head]}\n… [{len(text) - limit} chars omitted] …\n{text[-tail:]}"
 
 
+#: Tools a specialist never gets, whatever the user's settings allow: the web outside e2er's wrappers,
+#: notebooks, sub-agents, and the files of this computer that hold logins and keys.
+_SENSITIVE_PATHS = (
+    "~/.ssh/**", "~/.e2er/**", "~/.aws/**", "~/.gnupg/**", "~/.config/gh/**", "~/.config/gcloud/**",
+    "~/.codex/**", "~/.docker/**", "~/.kube/**", "~/.netrc", "~/.pgpass", "~/.git-credentials",
+    "**/.env", "**/.env.*",
+)  # fmt: skip
+DISALLOWED_TOOLS = (
+    "WebFetch", "WebSearch", "NotebookEdit", "Task", "Agent",
+    *(f"{tool}({path})" for tool in ("Read", "Edit", "Write") for path in _SENSITIVE_PATHS),
+)  # fmt: skip
+
+
+def isolation_flags() -> list[str]:
+    """What keeps a `claude -p` call to e2er's own instructions and tools (security review 2026-10-23).
+
+    ``--setting-sources ""``: none of the user's, the project's or a folder's settings (their
+    permission rules, hooks, CLAUDE.md files); ``--strict-mcp-config`` with an empty MCP config:
+    no MCP server of the user's; ``--disallowedTools``: the tools and paths above, refused even
+    when a setting would allow them.
+    """
+    return [
+        "--setting-sources",
+        "",
+        "--strict-mcp-config",
+        "--mcp-config",
+        '{"mcpServers": {}}',
+        "--disallowedTools",
+        ",".join(DISALLOWED_TOOLS),
+    ]
+
+
 def allowed_tools_for(specialist: str | None) -> list[str]:
     """CLI tool allowlist for a specialist.
 
@@ -390,6 +422,7 @@ async def _invoke_cli(
         cmd.extend(["--model", model])
     if allowed_tools:
         cmd.extend(["--allowedTools", ",".join(allowed_tools)])
+    cmd.extend(isolation_flags())
 
     logger.info("ClaudeCode: invoking %s (max_turns=%d, prompt=%d chars)", cli_path, max_turns, len(prompt))
 

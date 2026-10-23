@@ -27,16 +27,32 @@ def _select_engine() -> str | None:
 
 
 def _build_cmd(engine: str, main_file: str) -> list[str]:
+    """The compile command. The paper is AI-written: no latexmkrc is read (``-norc``; a workspace
+    ``latexmkrc`` is Perl that latexmk runs), no shell escape, and tectonic in ``--untrusted`` mode."""
     if engine == "latexmk":
-        return ["latexmk", "-pdf", "-interaction=nonstopmode", main_file]
+        return ["latexmk", "-norc", "-pdf", "-no-shell-escape", "-interaction=nonstopmode", main_file]
     if engine == "tectonic":
         # Non-interactive by default; --keep-logs leaves a .log for debugging.
         # -Z continue-on-errors is tectonic's nonstopmode equivalent: a missing
         # figure or a stray undefined macro still yields a PDF instead of
         # halting (so a paper always compiles to *something*). Default output is
         # the input file's directory (cwd=workspace) → workspace/<main>.pdf.
-        return ["tectonic", "--keep-logs", "--chatter", "minimal", "-Z", "continue-on-errors", main_file]
-    return ["pdflatex", "-interaction=nonstopmode", main_file]
+        return ["tectonic", "--untrusted", "--keep-logs", "--chatter", "minimal", "-Z", "continue-on-errors", main_file]
+    return ["pdflatex", "-no-shell-escape", "-interaction=nonstopmode", main_file]
+
+
+def compile_env() -> dict[str, str]:
+    """The compiler's environment: no key or token (child_env), and TeX may read and write files only
+    below the workspace (kpathsea's paranoid ``openin_any=p`` / ``openout_any=p``: no ``..``, no
+    absolute path, no dot file), so ``\\input{/Users/x/.ssh/id_rsa}`` reads nothing."""
+    import os
+
+    from ..child_env import agent_env
+
+    env = agent_env(source=dict(os.environ))
+    env["openin_any"] = "p"
+    env["openout_any"] = "p"
+    return env
 
 
 def _mirror_figures_into_subdir(workspace: Path) -> None:
@@ -137,8 +153,17 @@ async def compile_latex(workspace: Path, main_file: str = "paper_draft.tex") -> 
             cwd=str(workspace),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            env=compile_env(),
+            start_new_session=True,  # the time limit stops the compiler with what it started
         )
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        try:
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        except TimeoutError:
+            from ...modules.llm.cli_support import kill_process_group
+
+            kill_process_group(proc)
+            await proc.wait()
+            raise
         # Use the PDF if it was produced, even on a non-zero exit: with
         # continue-on-errors / nonstopmode the engine often emits a usable PDF
         # while still returning non-zero on non-fatal warnings (undefined refs,

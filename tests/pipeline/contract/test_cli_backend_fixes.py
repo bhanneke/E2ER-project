@@ -99,11 +99,11 @@ async def test_codex_command_line_runs_writable_outside_git_with_network(cfg, tm
     assert cmd[cmd.index("-s") + 1] == "workspace-write"
     # B2: study folders and temp dirs are not git repositories.
     assert "--skip-git-repo-check" in cmd
-    # W1: e2er-data / e2er-lit need the network, which the sandbox turns off.
-    assert "sandbox_workspace_write.network_access=true" in cmd
-    # W3: keys reach the wrappers' shell.
+    # W1 (since 0.19.0): the network is off unless CODEX_NETWORK_ACCESS=true (security review 2026-10-23).
+    assert "sandbox_workspace_write.network_access=false" in cmd
+    # W3: the allowlisted environment reaches the shell; Codex's default excludes (KEY/SECRET/TOKEN) apply.
     assert 'shell_environment_policy.inherit="all"' in cmd
-    assert "shell_environment_policy.ignore_default_excludes=true" in cmd
+    assert "shell_environment_policy.ignore_default_excludes=true" not in cmd
     # W4: the run database's folder is writable.
     assert cmd[cmd.index("--add-dir") + 1] == str((tmp_path / "db").resolve())
     # W5: none of the user's own Codex config, rules or session history.
@@ -636,3 +636,59 @@ async def test_every_cli_call_is_marked_as_an_ai_step(cfg):
     with patch("src.modules.llm.codex.asyncio.create_subprocess_exec", new=fake):
         await _call(CodexBackend())  # a tool-less strategist call: no specialist
     assert calls["kwargs"]["env"]["E2ER_AI_STEP"] == "strategist"
+
+
+# ---------- security review 2026-10-23: what the CLIs may reach ----------
+
+_CLAUDE_OK = json.dumps({"type": "result", "subtype": "success", "is_error": False, "result": "DONE"}).encode()
+
+
+async def test_claude_code_loads_no_settings_no_mcp_and_refuses_the_sensitive_tools(cfg, tmp_path):
+    from src.modules.llm.claude_code import ClaudeCodeBackend
+
+    (tmp_path / "workspaces" / "p1").mkdir(parents=True)
+    fake, calls = _fake_proc(_CLAUDE_OK)
+    with patch("src.modules.llm.claude_code.asyncio.create_subprocess_exec", new=fake):
+        await _call(ClaudeCodeBackend(), paper_id="p1", specialist="data_analyst")
+    cmd = calls["cmd"]
+    assert cmd[cmd.index("--setting-sources") + 1] == ""
+    assert "--strict-mcp-config" in cmd
+    assert json.loads(cmd[cmd.index("--mcp-config") + 1]) == {"mcpServers": {}}
+    denied = cmd[cmd.index("--disallowedTools") + 1].split(",")
+    for tool in ("WebFetch", "WebSearch", "Read(~/.ssh/**)", "Read(~/.e2er/**)", "Edit(~/.e2er/**)", "Read(**/.env)"):
+        assert tool in denied, tool
+    allowed = cmd[cmd.index("--allowedTools") + 1].split(",")
+    assert not any(a in ("Bash", "Bash(*)") for a in allowed)
+
+
+async def test_codex_runs_without_network_with_an_empty_home_and_no_key_bypass(cfg, tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path / "realhome"))
+    (tmp_path / "workspaces" / "p1").mkdir(parents=True)
+    fake, calls = _fake_proc(_OK_EVENTS)
+    with patch("src.modules.llm.codex.asyncio.create_subprocess_exec", new=fake):
+        await _call(CodexBackend(), paper_id="p1")
+    cmd = calls["cmd"]
+    assert "sandbox_workspace_write.network_access=false" in cmd
+    assert not any("ignore_default_excludes" in c for c in cmd)
+    env = calls["kwargs"]["env"]
+    assert env["HOME"] != str(tmp_path / "realhome") and env["CODEX_HOME"] == str(codex._codex_home())
+    assert not Path(env["HOME"]).exists(), "the empty home is removed after the call"
+
+
+async def test_codex_network_and_full_access_are_opt_in(cfg, caplog):
+    cfg(CODEX_SANDBOX="danger-full-access")
+    assert CodexBackend()._sandbox == "workspace-write"
+    cfg(CODEX_SANDBOX="danger-full-access", CODEX_ALLOW_FULL_ACCESS="true", CODEX_NETWORK_ACCESS="true")
+    b = CodexBackend()
+    assert b._sandbox == "danger-full-access" and b._network is True
+    assert "WITHOUT a sandbox" in caplog.text and "CODEX_NETWORK_ACCESS=true" in caplog.text
+
+
+def test_gemini_always_runs_in_its_sandbox_and_yolo_is_opt_in(cfg, caplog):
+    cmd = GeminiBackend().build_cmd(approval_mode=True, output_format=True)
+    assert "--sandbox" in cmd and "yolo" not in cmd and "--yolo" not in cmd
+    assert cmd[cmd.index("--approval-mode") + 1] == "auto_edit"
+    cfg(GEMINI_YOLO="true")
+    cmd = GeminiBackend().build_cmd(approval_mode=True, output_format=True)
+    assert "--sandbox" in cmd and cmd[cmd.index("--approval-mode") + 1] == "yolo"
+    assert "GEMINI_YOLO=true" in caplog.text

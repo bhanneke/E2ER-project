@@ -33,6 +33,7 @@ def _refuse_inside_a_specialist() -> None:
 
 def main() -> None:
     _refuse_inside_a_specialist()
+    _ask_about_the_folders_env()
     # `e2er corpus …` delegates wholesale to its own parser. Done before the
     # main parser sees anything, so `corpus search --limit 5` and
     # `corpus --help` reach cli_corpus intact instead of being claimed here.
@@ -1534,6 +1535,17 @@ def _settings_or_none() -> Any:
         return get_settings()
     except Exception:  # noqa: BLE001
         return None
+
+
+def _ask_about_the_folders_env() -> None:
+    """A folder's .env that names a program to start or turns a sandbox off: ask at a terminal (env_trust.py)."""
+    try:
+        from .env_trust import ask
+        from .home import env_file
+
+        ask(env_file())
+    except Exception:  # noqa: BLE001 — never block a command on this question
+        pass
 
 
 def _serve(*, host: str, port: int, reload: bool, no_browser: bool) -> int:

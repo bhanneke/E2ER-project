@@ -45,5 +45,7 @@ def test_build_cmd_tectonic_has_continue_on_errors():
 
 
 def test_build_cmd_latexmk_and_pdflatex():
-    assert _build_cmd("latexmk", "p.tex") == ["latexmk", "-pdf", "-interaction=nonstopmode", "p.tex"]
-    assert _build_cmd("pdflatex", "p.tex") == ["pdflatex", "-interaction=nonstopmode", "p.tex"]
+    assert _build_cmd("latexmk", "p.tex") == [
+        "latexmk", "-norc", "-pdf", "-no-shell-escape", "-interaction=nonstopmode", "p.tex",
+    ]  # fmt: skip
+    assert _build_cmd("pdflatex", "p.tex") == ["pdflatex", "-no-shell-escape", "-interaction=nonstopmode", "p.tex"]
