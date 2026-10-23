@@ -268,6 +268,34 @@ def test_a_tampered_link_fails(tmp_path: Path):
     assert status == FAIL and "link.json" in detail
 
 
+def _described_again(b: Path) -> tuple[dict, dict]:
+    """The link of an earlier platform version, and e2er.json describing the folder since (a deposit without --to)."""
+    link = json.loads((b / ".e2er" / "link.json").read_text())
+    m = json.loads((b / "e2er.json").read_text())
+    link.update(dossier_id="sha256:" + "a" * 64, content_id="sha256:" + "b" * 64)
+    return link, m
+
+
+def test_a_link_to_an_earlier_platform_version_passes_when_it_records_this_description(tmp_path: Path):
+    b = _published(tmp_path)
+    link, m = _described_again(b)
+    link["described_here"] = {"content_id": m["content_id"], "dossier_id": m["dossier"]["id"], "at": "now"}
+    (b / ".e2er" / "link.json").write_text(json.dumps(link))
+    status, detail = _checks(b)["anchor"]
+    assert status == PASS and "describes it again since version 1 on https://e2er.example" in detail
+
+
+@pytest.mark.parametrize("field", ["content_id", "dossier_id"])
+def test_a_link_recording_another_description_fails(tmp_path: Path, field: str):
+    b = _published(tmp_path)
+    link, m = _described_again(b)
+    link["described_here"] = {"content_id": m["content_id"], "dossier_id": m["dossier"]["id"]}
+    link["described_here"][field] = "sha256:" + "c" * 64
+    (b / ".e2er" / "link.json").write_text(json.dumps(link))
+    status, detail = _checks(b)["anchor"]
+    assert status == FAIL and "link.json names another" in detail
+
+
 # ── --against: the anchor outside the folder ─────────────────────────────────
 
 

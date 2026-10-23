@@ -2,8 +2,11 @@
 
 The fake answers as Zenodo's REST API documents it (https://developers.zenodo.org/): a deposition
 has ``id``, ``links.bucket`` and ``metadata.prereserve_doi.doi``; files go to ``PUT <bucket>/<name>``;
-``POST .../actions/newversion`` answers with the published deposition, whose ``links.latest_draft``
-is the new draft, and the draft starts with the files of the version before.
+``POST .../actions/newversion`` answers with the new draft (``links.latest_draft`` names it), and the
+draft starts with the files of the version before. As sandbox.zenodo.org did on 2026-10-23 (deposits
+625117 to 625129), a reserved DOI carries production's prefix (``10.5281/zenodo.N``) and the sandbox
+publishes it as ``10.5072/zenodo.N``; a file's ``links.self`` in a draft is
+``/api/deposit/depositions/<id>/files/<file id>``, which ``DELETE`` removes.
 """
 
 from __future__ import annotations
@@ -22,6 +25,7 @@ from tests.run_db import make_run_db, paper_id_of
 from tests.test_publish_access import BASE, REPO, SHOWCASE
 
 PUBLIC = dict(data="public", code="public", zenodo=True, yes=True)
+SANDBOX = "sandbox.zenodo.org"
 
 
 class Zenodo:
@@ -40,7 +44,7 @@ class Zenodo:
             "state": "unsubmitted",
             "concept": concept or i,
             "links": {"bucket": f"https://{host}/api/files/bucket-{i}"},
-            "metadata": {"prereserve_doi": {"doi": f"10.5072/zenodo.{i}", "recid": i}},
+            "metadata": {"prereserve_doi": {"doi": f"10.5281/zenodo.{i}", "recid": i}},
             "files": dict(files or {}),
         }
         self.deps[i] = dep
@@ -100,7 +104,7 @@ class Zenodo:
                     202,
                     json={
                         **self._view(dep),
-                        "doi": dep["metadata"]["prereserve_doi"]["doi"],
+                        "doi": f"{'10.5072' if host == SANDBOX else '10.5281'}/zenodo.{i}",
                         "links": {**dep["links"], "record_html": f"https://{host}/records/{i}"},
                     },
                 )
@@ -110,9 +114,9 @@ class Zenodo:
                 return httpx.Response(
                     201,
                     json={
-                        **self._view(dep),
+                        **self._view(draft),
                         "links": {
-                            **dep["links"],
+                            **draft["links"],
                             "latest_draft": f"https://{host}/api/deposit/depositions/{draft['id']}",
                         },
                     },
@@ -249,6 +253,84 @@ def test_the_sandbox_is_another_address_and_token(bundle: Path, tmp_path: Path, 
     assert json.loads((bundle / "e2er.json").read_text())["availability"]["code"]["zenodo"].startswith(
         "https://sandbox.zenodo.org/records/"
     )
+
+
+def test_the_sandbox_s_dois_carry_its_test_prefix(bundle: Path, tmp_path: Path, zenodo: Zenodo, capsys):
+    """The sandbox reserves 10.5281/zenodo.N and publishes 10.5072/zenodo.N: the study names the second."""
+    kw = dict(**BASE, **REPO, **PUBLIC, zenodo_sandbox=True, out=str(tmp_path / "e"))
+    assert publish(str(bundle), **kw) == 0
+    out = capsys.readouterr().out
+    assert "not the reserved" not in out
+    rec = _record(bundle)["deposits"]
+    m = json.loads((bundle / "e2er.json").read_text())
+    for item in ("data", "code"):
+        doi = f"10.5072/zenodo.{rec[item]['id']}"
+        assert rec[item]["doi"] == doi and m["availability"][item]["doi"] == doi
+        assert m["dossier"]["doc"]["availability"][item]["doi"] == doi
+    # A test DOI resolves nowhere: the data's address is the sandbox's record (the code's is the repository).
+    assert m["availability"]["data"]["url"] == f"https://sandbox.zenodo.org/records/{rec['data']['id']}"
+    assert "10.5281/" not in (bundle / "e2er.json").read_text()
+
+
+def test_a_sandbox_record_written_with_production_s_prefix_is_corrected(
+    bundle: Path, tmp_path: Path, zenodo: Zenodo, capsys
+):
+    """.e2er/zenodo.json from e2er 0.18.0 names the sandbox deposits 10.5281/…: the next publish says 10.5072/…."""
+    kw = dict(**BASE, **REPO, **PUBLIC, zenodo_sandbox=True, out=str(tmp_path / "e"))
+    assert publish(str(bundle), **kw) == 0
+    record = _record(bundle)
+    for r in record["deposits"].values():
+        r["doi"] = r["doi"].replace("10.5072/", "10.5281/")
+    (bundle / ZENODO_RECORD).write_text(json.dumps(record))
+    capsys.readouterr()
+    assert publish(str(bundle), **kw) == 0
+    assert "unchanged since doi 10.5072/" in capsys.readouterr().out
+    assert "10.5281/" not in (bundle / "e2er.json").read_text()
+
+
+def test_production_dois_keep_their_prefix(bundle: Path, tmp_path: Path, zenodo: Zenodo):
+    assert publish(str(bundle), **BASE, **REPO, **PUBLIC, out=str(tmp_path / "e")) == 0
+    m = json.loads((bundle / "e2er.json").read_text())
+    rec = _record(bundle)["deposits"]
+    assert m["availability"]["code"]["doi"] == f"10.5281/zenodo.{rec['code']['id']}"
+    assert m["availability"]["data"]["url"] == f"https://doi.org/10.5281/zenodo.{rec['data']['id']}"
+
+
+def test_a_folder_published_on_a_platform_takes_deposits_without_to_and_publishes_again(
+    bundle: Path, tmp_path: Path, zenodo: Zenodo, capsys
+):
+    """A deposit without --to rewrites e2er.json of a folder with .e2er/link.json; the folder still verifies.
+
+    Before, the link named the platform's version, e2er.json the new one, and every later publish
+    refused the folder ("the folder is not what was exported"), --to included.
+    """
+    from src.cli_verify import PASS, _check_anchor
+
+    kw = dict(**BASE, **REPO, **PUBLIC, out=str(tmp_path / "e"))
+    assert publish(str(bundle), **kw) == 0
+    m = json.loads((bundle / "e2er.json").read_text())
+    link = {
+        "platform_url": "https://e2er.example",
+        "owner_project": "bhanneke/demo",
+        "version": 1,
+        "dossier_id": m["dossier"]["id"],
+        "content_id": m["content_id"],
+    }
+    (bundle / ".e2er" / "link.json").write_text(json.dumps(link))
+    record = _record(bundle)
+    record["deposits"]["code"]["files"] = {}  # the code changed: a new version, a new dossier
+    (bundle / ZENODO_RECORD).write_text(json.dumps(record))
+    assert publish(str(bundle), **kw) == 0
+    now = json.loads((bundle / "e2er.json").read_text())
+    assert now["dossier"]["id"] != link["dossier_id"]
+    saved = json.loads((bundle / ".e2er" / "link.json").read_text())
+    assert {k: saved[k] for k in link} == link  # still the platform's version
+    assert saved["described_here"]["dossier_id"] == now["dossier"]["id"]
+    assert saved["described_here"]["content_id"] == now["content_id"]
+    anchor = _check_anchor(bundle)
+    assert anchor.status == PASS and "describes it again since version 1 on https://e2er.example" in anchor.detail
+    capsys.readouterr()
+    assert publish(str(bundle), **kw) == 0, capsys.readouterr().out
 
 
 # ── the client on its own ────────────────────────────────────────────────────

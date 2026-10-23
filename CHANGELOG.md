@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Sandbox deposits name the DOI the sandbox publishes** (`e2er publish --zenodo-sandbox`). sandbox.zenodo.org reserves a draft's DOI with production's prefix (`prereserve_doi` says `10.5281/zenodo.N`) and publishes the record as `10.5072/zenodo.N` (seen on 2026-10-23 with deposits 625117 and 625119). Publish wrote the reserved `10.5281/…` DOI into `e2er.json`, the dossier and `.e2er/zenodo.json`, a DOI that on zenodo.org belongs to some other record, and warned "Zenodo published the data as doi 10.5072/…, not the reserved 10.5281/…". It now records `10.5072/zenodo.N` from the start, corrects a `.e2er/zenodo.json` written with the wrong prefix on the next publish, and links the sandbox's record instead of `https://doi.org/10.5072/…`, which resolves nowhere. zenodo.org deposits are unchanged.
+- **A folder published on a platform and then deposited on Zenodo without `--to` publishes again.** The publish rewrote `e2er.json`, while `.e2er/link.json` still named the platform's version, so every later publish, `--to` included, refused the folder ("the folder is not what was exported … .e2er/link.json names another content than provenance.json") and `e2er verify` failed its anchor. A send the platform refused after `e2er.json` was written left the folder the same way. The link now keeps naming the platform's version and records the description `e2er.json` holds (`described_here`: content id, dossier id, time); verify accepts the link when that record matches the folder and says "e2er.json describes it again since version N on <platform>"; a publish with `--to` writes the link anew. A link that matches neither is still refused.
+- **An unchanged deposit says so when publishing**, not only in a dry run: "zenodo code: unchanged since doi …; nothing new is deposited".
+
 ## [0.18.0] — 2026-10-23
 
 ### Added

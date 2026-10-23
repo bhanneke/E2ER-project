@@ -58,6 +58,19 @@ def base_url(sandbox: bool = False) -> str:
     return ZENODO_SANDBOX_URL if sandbox else ZENODO_URL
 
 
+def registered_doi(doi: str | None, base: str = ZENODO_URL) -> str | None:
+    """The DOI a deposit is published under.
+
+    sandbox.zenodo.org reserves a DOI with production's prefix (``prereserve_doi`` says
+    ``10.5281/zenodo.N``) but publishes the record as ``10.5072/zenodo.N``, the test prefix
+    (seen 2026-10-23, deposits 625117 and 625119). ``10.5281/zenodo.N`` is a real record on
+    zenodo.org, so a sandbox deposit must never name it.
+    """
+    if doi and base.rstrip("/") == ZENODO_SANDBOX_URL and doi.startswith("10.5281/"):
+        return "10.5072/" + doi.removeprefix("10.5281/")
+    return doi
+
+
 def load_token(sandbox: bool = False) -> str | None:
     """The researcher's Zenodo token: environment first, then the settings file Setup writes, then the keychain."""
     env = (os.environ.get("ZENODO_SANDBOX_TOKEN" if sandbox else "ZENODO_TOKEN") or "").strip()
@@ -136,10 +149,9 @@ class Zenodo:
             raise ZenodoError(f"Zenodo refused to {what} ({r.status_code}): {str(detail)[:300]}")
         return r
 
-    @staticmethod
-    def _deposit(dep: dict[str, Any]) -> Deposit:
+    def _deposit(self, dep: dict[str, Any]) -> Deposit:
         doi = ((dep.get("metadata") or {}).get("prereserve_doi") or {}).get("doi")
-        return Deposit(id=dep["id"], bucket=(dep.get("links") or {})["bucket"], doi=doi)
+        return Deposit(id=dep["id"], bucket=(dep.get("links") or {})["bucket"], doi=registered_doi(doi, self.base))
 
     def create(self, *, reserve_doi: bool = True) -> Deposit:
         body = {"metadata": {"prereserve_doi": True}} if reserve_doi else {}

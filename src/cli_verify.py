@@ -382,6 +382,7 @@ def _check_anchor(bundle: Path) -> Check:
     prov, _ = _load_provenance(bundle)
     problems: list[str] = []
     manifest: Any = None
+    later = ""
     if e2er_path.exists():
         manifest, why = load_json_strict(e2er_path)
         problems += [why] if why else _manifest_problems(manifest, prov, content_id)
@@ -394,11 +395,24 @@ def _check_anchor(bundle: Path) -> Check:
         elif not isinstance(link, dict):
             problems.append(".e2er/link.json is not a JSON object")
         else:
-            if link.get("content_id") != content_id:
-                problems.append(".e2er/link.json names another content than provenance.json")
             named = ((manifest or {}).get("dossier") or {}).get("id") if isinstance(manifest, dict) else None
-            if link.get("dossier_id") != named:
-                problems.append(".e2er/link.json names another dossier than e2er.json")
+            here = link.get("described_here")
+            if (
+                named
+                and isinstance(here, dict)
+                and here.get("content_id") == content_id
+                and here.get("dossier_id") == named
+            ):
+                # Described again after the version on the platform (a publish without --to, or a send that
+                # failed): the link names that version and records the description e2er.json now holds.
+                later = (
+                    f"; e2er.json describes it again since version {link.get('version')} on {link.get('platform_url')}"
+                )
+            else:
+                if link.get("content_id") != content_id:
+                    problems.append(".e2er/link.json names another content than provenance.json")
+                if link.get("dossier_id") != named:
+                    problems.append(".e2er/link.json names another dossier than e2er.json")
     if problems:
         before = _anchor_before_redactions(bundle)
         if before is not None:
@@ -409,7 +423,8 @@ def _check_anchor(bundle: Path) -> Check:
     return Check(
         "anchor",
         PASS,
-        f"e2er.json{has_link} describe this folder (content {str(content_id)[:19]}…) and the dossier hashes to its id",
+        f"e2er.json{has_link} describe this folder (content {str(content_id)[:19]}…) and the dossier hashes to its id"
+        f"{later}",
     )
 
 

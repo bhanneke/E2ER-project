@@ -279,6 +279,30 @@ def _folder_problems(b: Path) -> list[str]:
     return [f"{c.name}: {c.detail}" for c in (_check_integrity(b), _check_anchor(b)) if c.status == FAIL]
 
 
+def _note_described_here(b: Path, manifest: dict[str, Any]) -> None:
+    """A folder published on a platform before and described again here: say so in .e2er/link.json.
+
+    The link names the version the platform holds; e2er.json now describes the folder as this
+    publish left it (a deposit on Zenodo without --to, or a send to the platform that failed).
+    ``described_here`` records that description, so the folder still verifies and the next publish
+    takes it; a publish with --to writes the link anew.
+    """
+    from .cli_platform import read_link, write_link
+
+    try:
+        link = read_link(b)
+    except (OSError, ValueError):
+        return
+    if not isinstance(link, dict):
+        return
+    did = (manifest.get("dossier") or {}).get("id")
+    if link.get("content_id") == manifest.get("content_id") and link.get("dossier_id") == did:
+        link.pop("described_here", None)
+    else:
+        link["described_here"] = {"content_id": manifest.get("content_id"), "dossier_id": did, "at": _now()}
+    write_link(b, link)
+
+
 # ── Zenodo deposits, reused on a retry ───────────────────────────────────────
 
 
@@ -635,6 +659,13 @@ def _describe(
     zrec = _zenodo_record(b)
     if zrec and zrec.get("sandbox") != bool(zenodo_sandbox):
         zrec = {}
+    for rec in (zrec.get("deposits") or {}).values():
+        # Recorded before e2er knew that the sandbox reserves 10.5281/ DOIs it publishes as 10.5072/.
+        if isinstance(rec, dict):
+            rec["doi"] = zen.registered_doi(rec.get("doi"), zen.base_url(zenodo_sandbox))
+            for e in rec.get("earlier") or []:
+                if isinstance(e, dict):
+                    e["doi"] = zen.registered_doi(e.get("doi"), zen.base_url(zenodo_sandbox))
     z = zen.Zenodo(token, base=zen.base_url(zenodo_sandbox)) if deposits and token else None
     if deposits and zenodo_plan_only:
         _print_deposit_plan(deposits, manifest, availability, zenodo_sandbox, licensed)
@@ -674,15 +705,15 @@ def _describe(
                             }
                             _save_zenodo_record(b, zrec)
                             print(f"zenodo {item}: the files changed since doi {rec.get('doi')}; new version {dep.doi}")
-                    elif z is None:
+                    else:
                         print(f"zenodo {item}: unchanged since doi {rec.get('doi')}; nothing new is deposited")
                 got = reserved.get(item)
                 if got and got.get("doi"):
+                    record = got.get("record") or f"{zen.base_url(zenodo_sandbox)}/records/{got['id']}"
                     availability[item]["doi"] = got["doi"]
-                    availability[item].setdefault("url", f"https://doi.org/{got['doi']}")
-                    availability[item]["zenodo"] = (
-                        got.get("record") or f"{zen.base_url(zenodo_sandbox)}/records/{got['id']}"
-                    )
+                    # The sandbox's test DOIs (10.5072/) resolve nowhere: its record is the address.
+                    availability[item].setdefault("url", record if zenodo_sandbox else f"https://doi.org/{got['doi']}")
+                    availability[item]["zenodo"] = record
         except zen.ZenodoError as e:
             print(f"error: {e}")
             return 1, None
@@ -830,6 +861,7 @@ def _describe(
             return 1, None
 
     written = write_manifest(b, manifest)
+    _note_described_here(b, manifest)
     # The registry-entry file is for a pull request; publishing to a platform needs none unless asked for.
     entry: Path | None = None
     if out or not remote:
