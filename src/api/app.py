@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import io
 import json
 import mimetypes
 import secrets
 import tarfile
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -374,6 +376,36 @@ app.include_router(_inputs_router)
 # Used by POST /api/papers/{id}/cancel to cancel an in-flight run.
 _RUNNING: dict[str, asyncio.Task] = {}
 _HEARTBEAT: list[asyncio.Task] = []
+# One action that may start a run (resume, a researcher's review action, a rerun) at a time per paper.
+# Two resumes sent together both passed the "is a task running?" check before either had
+# registered its task (the check and the start had awaits between them), and two runners worked in
+# the same workspace (2026-10-23 review). The lock is taken before the first await.
+_PAPER_LOCKS: dict[str, asyncio.Lock] = {}
+_LOCK_HOLDER: dict[str, asyncio.Task | None] = {}
+
+
+@contextlib.asynccontextmanager
+async def _paper_action(paper_id: str, busy: str) -> AsyncIterator[None]:
+    """Hold the paper's lock for an action that may start its run; 409 with ``busy`` while another
+    such action is under way or a run task is working.
+
+    The request that holds it passes through again (a rerun or a review action resumes the run
+    through resume_paper)."""
+    lock = _PAPER_LOCKS.setdefault(paper_id, asyncio.Lock())
+    me = asyncio.current_task()
+    if lock.locked() and _LOCK_HOLDER.get(paper_id) is me:
+        yield
+        return
+    existing = _RUNNING.get(paper_id)
+    if lock.locked() or (existing is not None and not existing.done()):
+        raise HTTPException(status_code=409, detail=busy)
+    await lock.acquire()  # free (checked above, nothing awaited since): returns at once
+    _LOCK_HOLDER[paper_id] = me
+    try:
+        yield
+    finally:
+        _LOCK_HOLDER.pop(paper_id, None)
+        lock.release()
 
 
 async def _track_run(paper_id: str, task: asyncio.Task) -> None:
@@ -386,7 +418,9 @@ async def _track_run(paper_id: str, task: asyncio.Task) -> None:
 
     _RUNNING[paper_id] = task
 
-    def _done(_t: asyncio.Task) -> None:
+    def _done(t: asyncio.Task) -> None:
+        if _RUNNING.get(paper_id) is not t:
+            return  # a later run of the paper is registered: it is not this callback's to remove
         _RUNNING.pop(paper_id, None)
         try:
             asyncio.get_running_loop().create_task(run_owner.release(paper_id))
@@ -1344,12 +1378,14 @@ async def get_review(paper_id: PaperId) -> dict[str, Any]:
 @app.post("/api/papers/{paper_id}/review", dependencies=[Depends(require_auth)])
 async def post_review(req: ReviewAction, paper_id: PaperId) -> dict[str, Any]:
     """Apply one researcher action; approve and send back continue the run unless resume=false."""
+    async with _paper_action(paper_id, "the run is working; wait until it stops at a researcher step"):
+        return await _post_review(req, paper_id)
+
+
+async def _post_review(req: ReviewAction, paper_id: str) -> dict[str, Any]:
     from ..core.pipeline.researcher import ResearcherActionError, apply_action
     from ..db.events import log_event
 
-    existing = _RUNNING.get(paper_id)
-    if existing and not existing.done():
-        raise HTTPException(status_code=409, detail="the run is working; wait until it stops at a researcher step")
     _row, workspace, state, (pending, spec) = await _review_context(paper_id)
     if pending is None:
         raise HTTPException(status_code=409, detail="the run is not stopped at a researcher step")
@@ -1390,14 +1426,16 @@ async def rerun_paper(req: RerunRequest, paper_id: PaperId) -> dict[str, Any]:
     again at the next researcher step. The dashboard's study page and
     ``e2er rerun`` both come here.
     """
+    async with _paper_action(paper_id, "the study is running; stop it or wait for it to stop"):
+        return await _rerun_paper(req, paper_id)
+
+
+async def _rerun_paper(req: RerunRequest, paper_id: str) -> dict[str, Any]:
     from ..core.pipeline.researcher import ResearcherActionError, apply_rerun
     from ..core.pipeline.state import PipelineState
     from ..db.client import execute, fetch_one
     from ..db.events import log_event
 
-    existing = _RUNNING.get(paper_id)
-    if existing and not existing.done():
-        raise HTTPException(status_code=409, detail="the study is running; stop it or wait for it to stop")
     row = await fetch_one("SELECT * FROM papers WHERE id = %(id)s", {"id": paper_id})
     if row is None:
         raise HTTPException(status_code=404, detail="paper not found")
@@ -1446,131 +1484,127 @@ async def resume_paper(paper_id: PaperId, req: ResumeRequest | None = None) -> d
     time a server restart left zombie rows behind.
     """
     _validate_uuid(paper_id)
+    # Reject if a task is genuinely running for this paper, or another resume is starting one:
+    # double-spawning would race the shared workspace.
+    async with _paper_action(paper_id, "A pipeline task is already running for this paper"):
+        from ..db.client import fetch_one
 
-    # Reject if a task is genuinely running for this paper — double-spawning
-    # would race the shared workspace.
-    existing = _RUNNING.get(paper_id)
-    if existing and not existing.done():
-        raise HTTPException(status_code=409, detail="A pipeline task is already running for this paper")
-
-    from ..db.client import fetch_one
-
-    try:
-        row = await fetch_one(
-            "SELECT id, status, workspace, mode, max_cost_usd, methodology, backend, model, governance, "
-            "review_stages, pipeline, run_owner, heartbeat_at FROM papers WHERE id = %(id)s",
-            {"id": paper_id},
-        )
-    except Exception as e:
-        logger.warning("DB lookup failed for resume %s: %s", paper_id, e)
-        raise HTTPException(status_code=503, detail="database unavailable") from e
-
-    if row is None:
-        raise HTTPException(status_code=404, detail="paper not found")
-
-    current = (row.get("status") or "").lower()
-    # Only terminal states (work is done) reject resume. Everything else —
-    # including zombies in mid-pipeline statuses (revision, in_progress, …) —
-    # is a candidate.
-    terminal = {"completed", "cancelled"}
-    if current in terminal:
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                f"paper status is '{current}' (terminal) — nothing to resume. "
-                "Resume only handles in-flight or failed/paused papers."
-            ),
-        )
-
-    elsewhere = await _running_elsewhere({**row, "id": paper_id})
-    if elsewhere:
-        raise HTTPException(status_code=409, detail=_elsewhere_text(elsewhere))
-
-    workspace = Path(row["workspace"])
-    mode = row.get("mode") or "single_pass"
-    cap = float(row.get("max_cost_usd") or get_settings().default_max_cost_usd)
-    methodology = row.get("methodology") or "empirical"
-    # Read from the row, never re-chosen: half a run's state on disk was
-    # produced by one DAG, and resuming under a different one would skip or
-    # repeat stages depending on which steps the two pipelines happen to share.
-    pipeline = row.get("pipeline") or "empirical"
-    backend_name = row.get("backend")  # None → server default at run time
-    model = row.get("model")
-    governance = row.get("governance")  # None → server default at run time
-    try:
-        review_stages = json.loads(row.get("review_stages") or "[]")
-    except (TypeError, ValueError):
-        review_stages = []
-
-    # If this pause was a human-review checkpoint, approve the pending stage so
-    # the resumed run continues past it instead of immediately re-pausing.
-    try:
-        from ..core.pipeline.state import PipelineState
-
-        pstate = PipelineState.load(workspace, paper_id, mode)
-        # After a send-back the researcher wants to see the redone step, so the
-        # pending researcher step stays unapproved and the run stops there again.
-        # A stop for output that failed its contract is never approved by a plain
-        # resume: approving it is the researcher's decision (e2er review --approve);
-        # a resume gives the failed specialists fresh attempts.
-        contract_stop = (pstate.metadata.get("review") or {}).get("kind") == "contract"
-        # Nor is the number check: continuing with mismatches is the researcher's
-        # decision too; a plain resume runs the check again.
-        numbers_stop = (pstate.metadata.get("review") or {}).get("kind") == "numbers"
-        if (
-            pstate.pending_review_stage
-            and not pstate.metadata.get("sent_back")
-            and not contract_stop
-            and not numbers_stop
-        ):
-            pstate.approve(pstate.pending_review_stage)
-            pstate.save(workspace)
-    except Exception as e:  # noqa: BLE001 — approval is best-effort; resume proceeds
-        logger.warning("Could not clear review checkpoint on resume %s: %s", paper_id, e)
-
-    # Optional cap raise (v0.5): if the request body provides a new
-    # max_cost_usd, persist it before re-firing the runner so the
-    # budget check reads the new value. Reject non-positive values —
-    # zero/negative caps would re-pause immediately.
-    if req is not None and req.max_cost_usd is not None:
-        if req.max_cost_usd <= 0:
-            raise HTTPException(
-                status_code=400,
-                detail=f"max_cost_usd must be positive, got {req.max_cost_usd}",
+        try:
+            row = await fetch_one(
+                "SELECT id, status, workspace, mode, max_cost_usd, methodology, backend, model, governance, "
+                "review_stages, pipeline, run_owner, heartbeat_at FROM papers WHERE id = %(id)s",
+                {"id": paper_id},
             )
-        cap = float(req.max_cost_usd)
+        except Exception as e:
+            logger.warning("DB lookup failed for resume %s: %s", paper_id, e)
+            raise HTTPException(status_code=503, detail="database unavailable") from e
 
-    # Reset status to the lowest reasonable resume point. The runner's
-    # state-load will detect what's actually on disk and skip ahead.
-    # Persist the (possibly updated) cap in the same UPDATE so the
-    # row reflects the resume request atomically.
-    from ..db.client import execute
+        if row is None:
+            raise HTTPException(status_code=404, detail="paper not found")
 
-    try:
-        await execute(
-            "UPDATE papers SET status = 'in_progress', last_error = NULL, max_cost_usd = %(cap)s WHERE id = %(id)s",
-            {"id": paper_id, "cap": cap},
+        current = (row.get("status") or "").lower()
+        # Only terminal states (work is done) reject resume. Everything else —
+        # including zombies in mid-pipeline statuses (revision, in_progress, …) —
+        # is a candidate.
+        terminal = {"completed", "cancelled"}
+        if current in terminal:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"paper status is '{current}' (terminal) — nothing to resume. "
+                    "Resume only handles in-flight or failed/paused papers."
+                ),
+            )
+
+        elsewhere = await _running_elsewhere({**row, "id": paper_id})
+        if elsewhere:
+            raise HTTPException(status_code=409, detail=_elsewhere_text(elsewhere))
+
+        workspace = Path(row["workspace"])
+        mode = row.get("mode") or "single_pass"
+        cap = float(row.get("max_cost_usd") or get_settings().default_max_cost_usd)
+        methodology = row.get("methodology") or "empirical"
+        # Read from the row, never re-chosen: half a run's state on disk was
+        # produced by one DAG, and resuming under a different one would skip or
+        # repeat stages depending on which steps the two pipelines happen to share.
+        pipeline = row.get("pipeline") or "empirical"
+        backend_name = row.get("backend")  # None → server default at run time
+        model = row.get("model")
+        governance = row.get("governance")  # None → server default at run time
+        try:
+            review_stages = json.loads(row.get("review_stages") or "[]")
+        except (TypeError, ValueError):
+            review_stages = []
+
+        # If this pause was a human-review checkpoint, approve the pending stage so
+        # the resumed run continues past it instead of immediately re-pausing.
+        try:
+            from ..core.pipeline.state import PipelineState
+
+            pstate = PipelineState.load(workspace, paper_id, mode)
+            # After a send-back the researcher wants to see the redone step, so the
+            # pending researcher step stays unapproved and the run stops there again.
+            # A stop for output that failed its contract is never approved by a plain
+            # resume: approving it is the researcher's decision (e2er review --approve);
+            # a resume gives the failed specialists fresh attempts.
+            contract_stop = (pstate.metadata.get("review") or {}).get("kind") == "contract"
+            # Nor is the number check: continuing with mismatches is the researcher's
+            # decision too; a plain resume runs the check again.
+            numbers_stop = (pstate.metadata.get("review") or {}).get("kind") == "numbers"
+            if (
+                pstate.pending_review_stage
+                and not pstate.metadata.get("sent_back")
+                and not contract_stop
+                and not numbers_stop
+            ):
+                pstate.approve(pstate.pending_review_stage)
+                pstate.save(workspace)
+        except Exception as e:  # noqa: BLE001 — approval is best-effort; resume proceeds
+            logger.warning("Could not clear review checkpoint on resume %s: %s", paper_id, e)
+
+        # Optional cap raise (v0.5): if the request body provides a new
+        # max_cost_usd, persist it before re-firing the runner so the
+        # budget check reads the new value. Reject non-positive values —
+        # zero/negative caps would re-pause immediately.
+        if req is not None and req.max_cost_usd is not None:
+            if req.max_cost_usd <= 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"max_cost_usd must be positive, got {req.max_cost_usd}",
+                )
+            cap = float(req.max_cost_usd)
+
+        # Reset status to the lowest reasonable resume point. The runner's
+        # state-load will detect what's actually on disk and skip ahead.
+        # Persist the (possibly updated) cap in the same UPDATE so the
+        # row reflects the resume request atomically.
+        from ..db.client import execute
+
+        try:
+            await execute(
+                "UPDATE papers SET status = 'in_progress', last_error = NULL, max_cost_usd = %(cap)s WHERE id = %(id)s",
+                {"id": paper_id, "cap": cap},
+            )
+        except Exception as e:
+            logger.warning("Could not update status on resume %s: %s", paper_id, e)
+
+        task = asyncio.create_task(
+            _run_pipeline(
+                paper_id,
+                workspace,
+                mode,
+                cap,
+                methodology,
+                backend_name,
+                model,
+                governance,
+                review_stages,
+                pipeline=pipeline,
+            )
         )
-    except Exception as e:
-        logger.warning("Could not update status on resume %s: %s", paper_id, e)
+        await _track_run(paper_id, task)
 
-    task = asyncio.create_task(
-        _run_pipeline(
-            paper_id,
-            workspace,
-            mode,
-            cap,
-            methodology,
-            backend_name,
-            model,
-            governance,
-            review_stages,
-            pipeline=pipeline,
-        )
-    )
-    await _track_run(paper_id, task)
-
-    return {"status": "resuming", "paper_id": paper_id, "from_status": current}
+        return {"status": "resuming", "paper_id": paper_id, "from_status": current}
 
 
 @app.get("/api/papers/{paper_id}/failure-bundle")
