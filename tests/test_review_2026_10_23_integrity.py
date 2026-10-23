@@ -213,3 +213,47 @@ def test_reproduce_of_a_folder_without_provenance_says_so(tmp_path: Path, capsys
     assert reproduce(str(folder), yes=True, sandbox=False) == 0
     out = capsys.readouterr().out
     assert "no provenance.json, so nothing ties its files" in out and "Reproduced:" in out
+
+
+# ── 6. reproduce renders the tables from the rerun's outputs only ────────────
+
+
+def _tables_study(tmp_path: Path) -> tuple[Path, Path]:
+    from src.core.renderer.tables import render_tables
+
+    folder, run_dir = tmp_path / "study", tmp_path / "run"
+    (folder / "results").mkdir(parents=True)
+    (folder / "paper" / "tables").mkdir(parents=True)
+    run_dir.mkdir()
+    cols = [{"field": "v", "header": "V", "decimals": 2}]
+    tables = [
+        {"filename": "est.tex", "layout": "records", "source": "estimation_results.json", "path": "rows",
+         "columns": cols},
+        {"filename": "sum.tex", "layout": "records", "source": "summary_statistics.json", "path": "rows",
+         "columns": cols},
+    ]  # fmt: skip
+    (folder / "results" / "table_spec.json").write_text(json.dumps({"tables": tables}))
+    (folder / "results" / "estimation_results.json").write_text(json.dumps({"rows": {"a": {"v": 1.25}}}))
+    (folder / "results" / "summary_statistics.json").write_text(json.dumps({"rows": {"a": {"v": 7.5}}}))
+    scratch = tmp_path / "scratch"
+    shutil.copytree(folder / "results", scratch)
+    render_tables(scratch)
+    for name in ("est.tex", "sum.tex"):
+        shutil.copy2(scratch / "tables" / name, folder / "paper" / "tables" / name)
+    (run_dir / "estimation_results.json").write_text(json.dumps({"rows": {"a": {"v": 1.25}}}))
+    return folder, run_dir
+
+
+def test_a_table_whose_results_were_not_rerun_is_not_compared(tmp_path: Path):
+    """The reviewer's repro: the published summary_statistics.json was copied in, so its table "rendered the same"
+    although the rerun never wrote it."""
+    from src.core import reproduce as rp
+
+    folder, run_dir = _tables_study(tmp_path)
+    compare = [{"published": "results/estimation_results.json", "produced": "estimation_results.json"}]
+    out = rp.compare_tables(folder, run_dir, compare)
+    assert out is not None
+    assert out["identical"] == ["est.tex"] and out["not_compared"] == ["sum.tex"] and out["rendered"] == 1
+    fc = rp.compare_json(folder / "results" / "estimation_results.json", run_dir / "estimation_results.json", "e", "e")
+    text, code = rp.verdict([fc], out, [])
+    assert code == 0 and "1 table(s) not compared" in text and "sum.tex" in text

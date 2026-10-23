@@ -547,6 +547,23 @@ def _spec_name(spec_obj: dict[str, Any]) -> str:
     return str(spec)[:40] if isinstance(spec, str) else ""
 
 
+def table_sources(workspace: Path) -> dict[str, set[str]]:
+    """Each declared table's results files, by its filename: a ``records`` table reads its ``source``, a
+    regression table the estimation and robustness results."""
+    spec = _load_json(Path(workspace) / "table_spec.json")
+    out: dict[str, set[str]] = {}
+    tables: list[Any] = spec["tables"] if isinstance(spec.get("tables"), list) else []
+    for t in tables:
+        if not isinstance(t, dict):
+            continue
+        name = str(t.get("filename", "")).strip()
+        if t.get("layout") == "records":
+            out[name] = {str(t.get("source") or "estimation_results.json")} & set(RECORD_SOURCES)
+        else:
+            out[name] = {"estimation_results.json", "robustness_results.json"}
+    return out
+
+
 def render_tables(workspace: Path) -> RenderReport:
     """Render all tables declared in ``table_spec.json`` to ``tables/*.tex``.
 

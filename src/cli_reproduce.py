@@ -157,6 +157,11 @@ def render(
                 lines.append(f"  {len(tables['differ'])} differ: {', '.join(sorted(tables['differ']))}")
             if tables["not_shipped"]:
                 lines.append(f"  {len(tables['not_shipped'])} not in the paper: {', '.join(tables['not_shipped'])}")
+            if tables.get("not_compared"):
+                lines.append(
+                    f"  {len(tables['not_compared'])} not compared (they read results the rerun did not write "
+                    f"again): {', '.join(sorted(tables['not_compared']))}"
+                )
     notes = [n for n in recipe.get("notes") or [] if isinstance(n, str)]
     if notes:
         lines += ["", "Notes from the study's reproduce.json:"] + [f"  - {n}" for n in notes]

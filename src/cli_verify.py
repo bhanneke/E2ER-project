@@ -894,21 +894,9 @@ def _included_tables(bundle: Path) -> set[str]:
 
 
 def _table_sources(ws: Path) -> dict[str, set[str]]:
-    """Each declared table's results files (renderer/tables.py): a ``records`` table reads its ``source``, a
-    regression table the estimation and robustness results."""
-    from .core.renderer.tables import RECORD_SOURCES
+    from .core.renderer.tables import table_sources
 
-    spec = _load_json(ws / "table_spec.json")
-    out: dict[str, set[str]] = {}
-    for t in (spec or {}).get("tables") or [] if isinstance(spec, dict) else []:
-        if not isinstance(t, dict):
-            continue
-        name = str(t.get("filename", "")).strip()
-        if t.get("layout") == "records":
-            out[name] = {str(t.get("source") or "estimation_results.json")} & set(RECORD_SOURCES)
-        else:
-            out[name] = {"estimation_results.json", "robustness_results.json"}
-    return out
+    return table_sources(ws)
 
 
 def _check_tables(bundle: Path, ws: Path, left: dict[str, dict[str, Any]] | None = None) -> Check:

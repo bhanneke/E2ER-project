@@ -787,21 +787,29 @@ def add_numeric_fingerprints(recipe: dict[str, Any], recorded: dict[str, dict[st
 
 
 def compare_tables(folder: Path, run_dir: Path, compare: list[dict[str, Any]]) -> dict[str, Any] | None:
-    """Render the paper's tables again from the rerun's results; None when the study ships none."""
+    """Render the paper's tables again from the rerun's results; None when the study ships none.
+
+    Only the rerun's own outputs go in (and the table spec): a table that reads a results file the rerun did
+    not write again is not compared (``not_compared``), never rendered from the published file.
+    """
     spec = folder / "results" / "table_spec.json"
     shipped = folder / "paper" / "tables"
     if not spec.is_file() or not shipped.is_dir():
         return None
-    from .renderer.tables import render_tables
+    from .renderer.tables import render_tables, table_sources
 
     ws = run_dir / ".e2er-tables"
     ws.mkdir(exist_ok=True)
-    for f in (folder / "results").glob("*.json"):
-        shutil.copy2(f, ws / f.name)
+    shutil.copy2(spec, ws / "table_spec.json")
+    rerun: set[str] = set()
     for c in compare:
         produced = run_dir / c["produced"]
         if produced.is_file() and c["published"].startswith("results/"):
-            shutil.copy2(produced, ws / Path(c["published"]).name)
+            name = Path(c["published"]).name
+            shutil.copy2(produced, ws / name)
+            rerun.add(name)
+    published = {p.name for p in (folder / "results").glob("*.json")}
+    reads = table_sources(ws)
     quiet = logging.getLogger("src.core.renderer.tables")
     level = quiet.level
     quiet.setLevel(logging.WARNING)  # the renderer's progress line is not part of the report
@@ -811,16 +819,24 @@ def compare_tables(folder: Path, run_dir: Path, compare: list[dict[str, Any]]) -
         quiet.setLevel(level)
     if report.skipped_reason:
         return {"skipped": report.skipped_reason}
-    identical, differ, not_shipped = [], [], []
+    identical, differ, not_shipped, not_compared = [], [], [], []
     for name in report.rendered:
         old = shipped / name
-        if not old.is_file():
+        if (reads.get(name, set()) & published) - rerun:
+            not_compared.append(name)  # it reads a published results file the rerun did not write again
+        elif not old.is_file():
             not_shipped.append(name)
         elif old.read_bytes() == (ws / "tables" / name).read_bytes():
             identical.append(name)
         else:
             differ.append(name)
-    return {"rendered": len(report.rendered), "identical": identical, "differ": differ, "not_shipped": not_shipped}
+    return {
+        "rendered": len(report.rendered) - len(not_compared),
+        "identical": identical,
+        "differ": differ,
+        "not_shipped": not_shipped,
+        "not_compared": not_compared,
+    }
 
 
 # ── running ──────────────────────────────────────────────────────────────────
@@ -1308,6 +1324,12 @@ def verdict(
         and not (other or absent)
     ):
         tail = " and every table renders the same" if tables and tables.get("rendered") else ""
+        skipped = (tables or {}).get("not_compared") or []
+        if skipped:
+            tail += (
+                f"; {len(skipped)} table(s) not compared, since they read results the rerun did not write again "
+                f"({', '.join(sorted(skipped)[:3])})"
+            )
         close = [i["path"] for i in inputs or [] if i.get("status") == SAME_NUMBERS]
         if close:
             tail += (
