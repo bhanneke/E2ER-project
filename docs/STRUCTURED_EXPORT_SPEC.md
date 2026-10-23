@@ -197,7 +197,11 @@ rerun wrote them"); it does not change the verdict. In a folder that lacks such 
 `e2er verify` counts it as left out (not missing) when the folder's own records say it
 holds restricted rows; a check that needs it is skipped and says so: "needs
 results/spatial_units.csv, left out under GISCO terms; run `e2er reproduce` to rebuild it"
-(or "no recorded step rebuilds it").
+(or "no recorded step rebuilds it"). A failure is skipped only where it is the left-out
+file's: a table cell whose recorded source (provenance.json's `table_cell` edge) is that
+file, a rendered table that reads it, or no cell checked because every file the numbers are
+traced to is left out. Every other differing cell or table, and every p-value/t
+inconsistency, still fails.
 
 **`e2er-package.json`.**
 

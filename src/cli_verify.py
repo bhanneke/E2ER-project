@@ -675,7 +675,32 @@ def _check_statistics(ws: Path) -> tuple[list[str], str]:
     return report.problems, report.summary() if report.checked or report.not_analytic else ""
 
 
-def _check_numbers(bundle: Path, ws: Path) -> Check:
+def _left_out_cells(bundle: Path, left: dict[str, dict[str, Any]]) -> dict[tuple[str, str], str]:
+    """(table context, cell value) → the left-out results file provenance.json traces the cell to.
+
+    The derivation edges are recomputed by the integrity check, so a cell counts only where the study's own
+    record ties it to a file a published copy left out.
+    """
+    if not left:
+        return {}
+    prov = _load_json(bundle / "provenance.json")
+    edges = prov.get("edges") if isinstance(prov, dict) else None
+    out: dict[tuple[str, str], str] = {}
+    for e in edges if isinstance(edges, list) else []:
+        if isinstance(e, dict) and e.get("type") == "table_cell" and e.get("source") in left:
+            out[(str(e.get("table_context")), str(e.get("cell_value")))] = str(e["source"])
+    return out
+
+
+def _check_numbers(bundle: Path, ws: Path, left: dict[str, dict[str, Any]] | None = None) -> Check:
+    """Every table cell a source value at the precision shown; t and p consistent in the results.
+
+    ``left``: results files a published copy left out. A failure is skipped for them only where it is theirs:
+    a cell whose recorded source is a left-out file, or no cell checked because the files the numbers are
+    traced to are left out. The statistics (p-value and t) of the files that are here always count.
+    """
+    left = left or {}
+    left_json = sorted(p for p in left if p.endswith(".json") and p.count("/") == 1)
     stats_problems, stats_note = _check_statistics(ws)
     if stats_problems:
         more = f"; and {len(stats_problems) - 3} more" if len(stats_problems) > 3 else ""
@@ -693,7 +718,11 @@ def _check_numbers(bundle: Path, ws: Path) -> Check:
     # (the run's gate let values within 10% pass as "major" and cells with no
     # value nearby pass as "unverifiable").
     report = verify_numbers(tex, ws, rounding=True)
+    sources_left = [p for p in left_json if p.rsplit("/", 1)[-1] in set(report.source_files_missing)]
     if report.skipped_reason and not report.tables_conclusive:
+        if sources_left and not report.source_files_found:
+            # Every file the numbers are traced to is left out: nothing here to check them against.
+            return _needs("numbers", left, sources_left)
         if _bundle_has_rendered_tables(bundle):
             return Check(
                 "numbers",
@@ -717,18 +746,27 @@ def _check_numbers(bundle: Path, ws: Path) -> Check:
             f"the results and the researcher continued with them at the number check (recorded in the dossier): "
             f"{shown}{note}{_prose_note(report)}",
         )
-    if report.mismatches:
+    if open_:
+        # A cell whose recorded source is a left-out file cannot be checked here; any other differing cell fails.
+        cells = _left_out_cells(bundle, left)
+        theirs = [m for m in open_ if (m.table_context, m.draft_value) in cells]
+        rest = [m for m in open_ if m not in theirs]
+        if not rest:
+            return _needs("numbers", left, sorted({cells[(m.table_context, m.draft_value)] for m in theirs}))
         first = "; ".join(
             f"{m.draft_value} ({m.table_context}; nearest source value {m.source_value}, {m.source_key})"
-            for m in report.mismatches[:3]
+            for m in rest[:3]
         )
         return Check(
             "numbers",
             FAIL,
-            f"{len(report.mismatches)} of {report.total_values_in_tables} table cell(s) are no source value at the "
+            f"{len(rest)} of {report.total_values_in_tables} table cell(s) are no source value at the "
             f"precision shown: {first}",
         )
     if not report.tables_conclusive:
+        if sources_left and _left_out_cells(bundle, left):
+            # The tables' cells are traced to left-out files only: nothing here to check them against.
+            return _needs("numbers", left, sources_left)
         if _bundle_has_rendered_tables(bundle):
             # The paper ships rendered tables and the check traced no cell in any of
             # them. That is not a pass: it is the gate failing to run on the one
@@ -841,8 +879,33 @@ def _included_tables(bundle: Path) -> set[str]:
     return names
 
 
-def _check_tables(bundle: Path, ws: Path) -> Check:
-    """Re-render the declared tables and compare them byte for byte."""
+def _table_sources(ws: Path) -> dict[str, set[str]]:
+    """Each declared table's results files (renderer/tables.py): a ``records`` table reads its ``source``, a
+    regression table the estimation and robustness results."""
+    from .core.renderer.tables import RECORD_SOURCES
+
+    spec = _load_json(ws / "table_spec.json")
+    out: dict[str, set[str]] = {}
+    for t in (spec or {}).get("tables") or [] if isinstance(spec, dict) else []:
+        if not isinstance(t, dict):
+            continue
+        name = str(t.get("filename", "")).strip()
+        if t.get("layout") == "records":
+            out[name] = {str(t.get("source") or "estimation_results.json")} & set(RECORD_SOURCES)
+        else:
+            out[name] = {"estimation_results.json", "robustness_results.json"}
+    return out
+
+
+def _check_tables(bundle: Path, ws: Path, left: dict[str, dict[str, Any]] | None = None) -> Check:
+    """Re-render the declared tables and compare them byte for byte.
+
+    ``left``: results files a published copy left out. A table that differs is skipped only when it reads one
+    of them; every other table that differs fails.
+    """
+    left = left or {}
+    if "results/table_spec.json" in left:
+        return _needs("tables", left, ["results/table_spec.json"])
     if not (ws / "table_spec.json").is_file():
         return Check("tables", SKIP, "no results/table_spec.json in bundle")
 
@@ -865,6 +928,13 @@ def _check_tables(bundle: Path, ws: Path) -> Check:
         elif shipped.read_bytes() != fresh.read_bytes():
             differing.append(name)
 
+    if differing and left:
+        reads = _table_sources(ws)
+        gone = {p.rsplit("/", 1)[-1]: p for p in left if p.count("/") == 1}
+        theirs = {n: sorted(gone[f] for f in reads.get(n, set()) if f in gone) for n in differing}
+        if not missing and all(theirs.values()):
+            return _needs("tables", left, sorted({p for ps in theirs.values() for p in ps}))
+        differing = [n for n in differing if not theirs[n]] or differing
     if differing or missing:
         bits = []
         if differing:
@@ -1430,20 +1500,11 @@ def _run_checks(bundle: Path, online: bool, package_left_out: dict[str, dict[str
     # Results files a published copy left out (they hold a restricted source's rows): a check that needs one
     # is skipped and says which, instead of failing on a file that is missing for a reason.
     left = {p: i for p, i in _left_out_here(bundle, package_left_out).items() if p.startswith("results/")}
-    left_json = sorted(p for p in left if p.endswith(".json") and p.count("/") == 1)
     with tempfile.TemporaryDirectory() as td:
         ws = Path(td)
         _reconstruct_workspace(bundle, ws)
-        numbers = _check_numbers(bundle, ws)
-        if left_json and numbers.status != PASS:
-            numbers = _needs("numbers", left, left_json)
-        checks.append(numbers)
-        tables = _check_tables(bundle, ws)
-        if "results/table_spec.json" in left or (left_json and tables.status == FAIL):
-            tables = _needs(
-                "tables", left, ["results/table_spec.json"] if "results/table_spec.json" in left else left_json
-            )
-        checks.append(tables)
+        checks.append(_check_numbers(bundle, ws, left))
+        checks.append(_check_tables(bundle, ws, left))
         if "results/estimation_results.json" in left:
             checks.append(_needs("spec", left, ["results/estimation_results.json"]))
         else:
