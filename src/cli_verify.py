@@ -255,12 +255,15 @@ def _redaction_problems(bundle: Path, prov: dict[str, Any]) -> list[str]:
     for a in prov.get("amendments") or []:
         if isinstance(a, dict) and isinstance(a.get("path"), str):
             last[a["path"]] = a
+    from .core import anonymise as an
+
     out = []
     for path, a in last.items():
-        if a.get("kind") != rd.KIND:
+        if a.get("kind") not in (rd.KIND, an.KIND):
             continue
         f = bundle / path
-        why = rd.record_problem(a, f.read_bytes() if f.is_file() else None)
+        check = rd.record_problem if a.get("kind") == rd.KIND else an.record_problem
+        why = check(a, f.read_bytes() if f.is_file() else None)
         if why:
             out.append(why)
     return out
@@ -483,13 +486,16 @@ def _fetch_published(spec: str) -> tuple[str, Any]:
     base = f"{u.scheme}://{u.netloc}"
     if len(parts) >= 2 and parts[0] == "d":
         kind, path = "dossier", f"/api/v1/dossiers/{parts[1]}"
+    elif len(parts) >= 2 and parts[0] == "r":
+        # An anonymous version for double-blind review (e2er publish --blind): its record lists the one version.
+        kind, path = "study", f"/api/v1/blind/{parts[1]}"
     elif len(parts) >= 4 and parts[:2] == ["api", "v1"] and parts[2] in ("studies", "dossiers"):
         kind = "study" if parts[2] == "studies" else "dossier"
         path = "/" + "/".join(parts)
     elif len(parts) >= 2:
         kind, path = "study", f"/api/v1/studies/{parts[0]}/{parts[1]}"
     else:
-        raise AgainstError(f"{spec} names neither a study (…/<owner>/<project>) nor a dossier (…/d/<id>)")
+        raise AgainstError(f"{spec} names neither a study (…/<owner>/<project>, …/r/<code>) nor a dossier (…/d/<id>)")
     try:
         with pc.client_factory(base) as client:
             resp = client.get(path, headers={"accept": "application/json"})
@@ -1066,7 +1072,7 @@ def _check_preregistration(bundle: Path, required: str | None = None) -> Check |
     approved_note = [f"deviation approved by the researcher: {d}" for d in approved]
     from .core.redact import PREREG_WORDS
 
-    approved_note += [f"{d['file']} {PREREG_WORDS}" for d in redacted]
+    approved_note += [f"{d['file']} {_redaction_words(bundle, d['file'], PREREG_WORDS)}" for d in redacted]
     problems, notes = _preregistered_results(bundle, lock)
     if problems:
         return Check(
@@ -1077,6 +1083,21 @@ def _check_preregistration(bundle: Path, required: str | None = None) -> Check |
     extra = ("; " + "; ".join(approved_note + notes)) if approved_note or notes else ""
     head = "estimation follows the pre-registered plan" if not approved else "the pre-registered plan"
     return Check("preregistration", PASS, f"{head} (frozen {when}){extra}")
+
+
+def _redaction_words(bundle: Path, name: str, redacted_words: str) -> str:
+    """What verify says about a pre-registered plan file changed after the freeze by redaction or anonymisation."""
+    from .core import anonymise as an
+
+    prov = _load_json(bundle / "provenance.json")
+    kinds = {
+        a.get("kind")
+        for a in ((prov or {}).get("amendments") or [] if isinstance(prov, dict) else [])
+        if isinstance(a, dict) and a.get("path") == f"design/{name}"
+    }
+    if an.KIND in kinds and "redacted" not in kinds:
+        return "anonymised for double-blind review after registration: identifying details only"
+    return redacted_words
 
 
 def _only_redacted(bundle: Path, d: dict[str, Any]) -> bool:
@@ -1093,7 +1114,12 @@ def _only_redacted(bundle: Path, d: dict[str, Any]) -> bool:
         return False
     mine = [a for a in amendments if a.get("path") == rel]
     f = bundle / rel
-    return bool(mine) and rd.record_problem(mine[-1], f.read_bytes() if f.is_file() else None) is None
+    if not mine:
+        return False
+    from .core import anonymise as an
+
+    check = an.record_problem if mine[-1].get("kind") == an.KIND else rd.record_problem
+    return check(mine[-1], f.read_bytes() if f.is_file() else None) is None
 
 
 def _preregistered_results(bundle: Path, lock: dict[str, Any]) -> tuple[list[str], list[str]]:

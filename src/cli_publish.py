@@ -403,8 +403,13 @@ def _describe(
     github_target: gf.Target | None = None,
     github_mode: str = "",
     github_user: dict[str, Any] | None = None,
+    blind: dict[str, Any] | None = None,
 ) -> tuple[int, dict[str, Any] | None]:
     """Describe, stamp and verify the bundle; write e2er.json.
+
+    ``blind`` ({code, url, withheld}): an anonymous version for double-blind review of an anonymised copy
+    (src/cli_blind.py): it names no author, its dossier's address is ``url`` (e2er.org/r/<code>) and the
+    fingerprints ``withheld`` (files before their anonymisation) are taken out of the dossier.
 
     ``github_target`` hosts the files in a public GitHub repository; ``github_mode`` is ``push`` (push them),
     ``plan`` (list what would go up, push nothing: --dry-run) or ``rehearse`` (push nothing, list nothing).
@@ -614,8 +619,8 @@ def _describe(
     if contributor:
         contributor["roles"] = roles or ["conceptualization", "investigation"]
     # Co-authors (`--coauthor`), after the publisher; e2er.org asks each to confirm the credit.
-    people = [contributor] if contributor else []
-    for c in listed:
+    people = [contributor] if contributor and blind is None else []
+    for c in listed if blind is None else []:
         same = any(
             (c.get("github") and str(p.get("github") or "").lower() == c["github"].lower())
             or (c.get("orcid") and p.get("orcid") == c["orcid"])
@@ -744,6 +749,11 @@ def _describe(
         manifest["amendments"] = _amendments_for_dossier(b)
         doc = build_dossier(manifest, db=run_db, bundle=b, availability=copy.deepcopy(availability), run=run_record)
         del manifest["amendments"]
+    if blind is not None:
+        from .core.anonymise import withhold
+
+        # The run recorded the files before they were anonymised: those fingerprints could confirm a guess.
+        doc = withhold(doc, set(blind.get("withheld") or ()))
     leaks = find_local_paths(doc)
     if leaks:
         print("error: the dossier names a path on this machine; nothing was written:")
@@ -751,11 +761,22 @@ def _describe(
             print(f"  {p}")
         return 1, None
     did = dossier_id(doc)
+    address = str(blind["url"]) if blind is not None else dossier_url(did, site_url)
 
     # 6. The paper's first page: the dossier link (and the disclaimer); the author line with --name.
     if stamp and tex.is_file():
         try:
-            changed = _stamp_and_compile(b, name, did, purpose=purpose, kind=kind, doc=doc, site=site_url)
+            changed = _stamp_and_compile(
+                b,
+                None if blind is not None else name,
+                did,
+                purpose=purpose,
+                kind=kind,
+                doc=doc,
+                site=site_url,
+                address=address if blind is not None else None,
+                rebuild_pdf=blind is not None,
+            )
         except PublishError as e:
             print(f"error: {e}")
             return 1, None
@@ -788,7 +809,7 @@ def _describe(
         manifest["access"] = copy.deepcopy(access)
     # The amendments stay in provenance.json (fixed by content_id) and in the dossier;
     # e2er.org's research-object format has no field for them.
-    manifest["dossier"] = {"id": did, "url": dossier_url(did, site_url), "doc": doc}
+    manifest["dossier"] = {"id": did, "url": address, "doc": doc}
     leaks = problems(request_body(manifest, b))
     if leaks:
         print("error: the description would carry something that must not leave this machine; nothing was written:")
@@ -880,7 +901,7 @@ def _describe(
     )
     steps = len(doc.get("workflow") or [])
     researcher = sum(1 for s in doc.get("workflow") or [] if s.get("type") == "researcher")
-    print(f"✓ Dossier {did[:23]}…  {dossier_url(did, site_url)}  ({steps} steps, {researcher} researcher actions)")
+    print(f"✓ Dossier {did[:23]}…  {address}  ({steps} steps, {researcher} researcher actions)")
     if previous is not None:
         print(
             f"  dossier carried over from version {previous.version} ({previous.dossier_id[:23]}…): the run "
@@ -999,6 +1020,35 @@ def publish(
     interactive = kw.pop("interactive", None)
     if interactive is None:
         interactive = sys.stdin.isatty()
+    # Double-blind review (src/cli_blind.py): an anonymous version, or a version with authors after the review.
+    blind = kw.pop("blind", False)
+    blind_ids = kw.pop("blind_identifiers", None)
+    blind_ack = kw.pop("blind_ack_self_citations", False)
+    unblind_spec = kw.pop("unblind", None)
+    if blind and unblind_spec:
+        print("error: --blind publishes an anonymous version, --unblind names its authors after the review; use one")
+        return 2
+    if blind:
+        from . import cli_blind
+
+        if offline:
+            print("error: --blind cannot go with --offline: the anonymous version is published from the command line")
+            return 2
+        return cli_blind.publish_blind(
+            str(b),
+            to_url=to_url,
+            dry_run=dry_run,
+            yes=yes,
+            interactive=interactive,
+            identifiers=blind_ids,
+            ack_self_citations=blind_ack,
+            **kw,
+        )
+    if (blind_ids or blind_ack) and not blind:
+        print("error: --blind-identifier and --blind-ack-self-citations go with --blind")
+        return 2
+    if unblind_spec:
+        return _unblind(b, str(unblind_spec), to_url=to_url, dry_run=dry_run, yes=yes, interactive=interactive, kw=kw)
     # Something leaves this machine: the description (--to), the deposits (--zenodo), the files (--github).
     sends = not dry_run and not offline and bool(to_url or kw.get("zenodo") or kw.get("github_repo") is not None)
     if sends and not yes and not interactive:
@@ -1143,6 +1193,112 @@ def publish(
     if code or manifest is None or not to_url:
         return code
     return _send(b, manifest, to_url)
+
+
+def _unblind(
+    b: Path, spec: str, *, to_url: str | None, dry_run: bool, yes: bool, interactive: bool, kw: dict[str, Any]
+) -> int:
+    """`e2er publish <folder> --unblind <code>`: a version with authors of an anonymous version.
+
+    ``<folder>`` is the anonymised copy (the new version has its files, with the authors shown) or a named export
+    of the same study (its files are the new version's content, published and checked as any version).
+    """
+    from . import cli_blind
+
+    if dry_run:
+        print("error: --unblind has no dry run; it asks before anything is sent")
+        return 2
+    if cli_blind.parse_code(spec) is None:
+        print(f"error: --unblind {spec!r}: give the anonymous version's code or its address (…/r/<code>)")
+        return 2
+    for key, flag in (("github_repo", "--github"), ("zenodo", "--zenodo")):
+        if kw.get(key):
+            print(f"error: --unblind cannot go with {flag}; publish a new version with it afterwards")
+            return 2
+    try:
+        listed = [parse_coauthor(c) for c in kw.get("coauthors") or []]
+    except ValueError as e:
+        print(f"error: {e}")
+        return 1
+    me = {k: v for k, v in {"name": kw.get("name"), "github": kw.get("github"), "orcid": kw.get("orcid")}.items() if v}
+    people = (
+        [{**me, "roles": kw.get("roles") or ["conceptualization", "investigation"]}]
+        if me.get("github") or me.get("orcid")
+        else []
+    )
+    people += listed
+    owner, project = str(kw.get("owner") or ""), str(kw.get("project") or "")
+    if not owner or not project:
+        print(
+            "error: --unblind needs --owner (your handle) and --project (the study's name at e2er.org/<handle>/<name>)"
+        )
+        return 2
+    if cli_blind.anonymous_code(b):
+        return cli_blind.unblind(
+            str(b),
+            spec,
+            to_url=to_url,
+            yes=yes,
+            interactive=interactive,
+            owner=owner,
+            project=project,
+            contributors=people,
+        )
+    # A named export: described, stamped and verified as for any version, then sent as the new version's content.
+    if not yes and not interactive:
+        print("error: unblinding needs your confirmation: run it in a terminal, or add --yes. Nothing was sent.")
+        return 1
+    if (b / "provenance.json").is_file() and not kw.get("no_db"):
+        try:
+            paper_id = (json.loads((b / "provenance.json").read_text(encoding="utf-8")).get("run") or {}).get(
+                "paper_id"
+            )
+        except (OSError, ValueError, AttributeError):
+            paper_id = None
+        run_db, _why = find_run_db(b, kw.get("db"), paper_id)
+        if run_db is not None:
+            kw["db"] = str(run_db)
+    kw.setdefault("study_folder", _study_folder(b))
+    base = cli_blind.pc.base_url(to_url or (spec.split("/r/")[0] if "/r/" in spec else None))
+    kw["site"] = base
+    with tempfile.TemporaryDirectory() as tmp:
+        scratch = Path(tmp) / b.name
+        shutil.copytree(b, scratch)
+        log = io.StringIO()
+        with contextlib.redirect_stdout(log):
+            code, manifest = _describe(str(scratch), **{**kw, "out": str(Path(tmp) / "entry")}, remote=True)
+        if code or manifest is None:
+            print(log.getvalue().rstrip())
+            return code or 1
+        found = problems(request_body(manifest, scratch))
+    if found:
+        print("error: the request contains something that must not leave this machine; nothing was written or sent:")
+        for p in found:
+            print(f"  {p}")
+        return 1
+    question = (
+        f"Publish this named export as the version with authors of {base}/r/{cli_blind.parse_code(spec) or spec}, "
+        f"as {owner}/{project}? Your name is then shown to everyone; the anonymous version stays as it is."
+    )
+    if yes:
+        print(f"{question} yes (--yes)")
+    elif not _confirm(question):
+        print("Not unblinded: nothing was sent.")
+        return 1
+    code, manifest = _describe(str(b), **kw, remote=True)
+    if code or manifest is None:
+        return code or 1
+    return cli_blind.unblind(
+        str(b),
+        spec,
+        to_url=base,
+        yes=True,
+        interactive=interactive,
+        owner=owner,
+        project=project,
+        contributors=people,
+        named=request_body(manifest, b),
+    )
 
 
 def confirm_question(
@@ -1383,8 +1539,13 @@ def _stamp_and_compile(
     kind: str | None = None,
     doc: dict[str, Any] | None = None,
     site: str | None = None,
+    address: str | None = None,
+    rebuild_pdf: bool = False,
 ) -> bool:
     """Stamp paper.tex and recompile paper.pdf with tectonic when it is installed.
+
+    ``rebuild_pdf`` (an anonymous version): a paper.pdf the folder has must be built again from the stamped,
+    anonymised paper.tex; without tectonic PublishError is raised and nothing is changed.
 
     The paper is pointed at the bibliography the bundle ships (refs.bib). A
     recompile that leaves any citation unresolved is refused: paper.tex is
@@ -1394,9 +1555,24 @@ def _stamp_and_compile(
     """
     tex = bundle / "paper" / "paper.tex"
     old = tex.read_text(encoding="utf-8")
-    new = stamp_paper(point_bibliography(old, tex.parent), author, did, purpose=purpose, kind=kind, doc=doc, site=site)
+    new = stamp_paper(
+        point_bibliography(old, tex.parent),
+        author,
+        did,
+        purpose=purpose,
+        kind=kind,
+        doc=doc,
+        site=site,
+        address=address,
+    )
     if new == old:
         return False
+    if rebuild_pdf and (tex.parent / "paper.pdf").is_file() and not shutil.which("tectonic"):
+        raise PublishError(
+            "paper/paper.pdf must be built again from the anonymised paper/paper.tex, and tectonic (the LaTeX "
+            "engine e2er uses) is not installed. Install it (https://tectonic-typesetting.github.io) and publish "
+            "again; nothing was sent."
+        )
     tex.write_text(new, encoding="utf-8")
     rels = ["paper/paper.tex"]
     if shutil.which("tectonic"):

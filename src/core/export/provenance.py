@@ -309,14 +309,30 @@ def files_at_export(prov: dict[str, Any]) -> dict[str, dict[str, Any]]:
     A file publish changed gets its exported fingerprint back (the first
     amendment's ``sha256_before``); a file publish added (``sha256_before``
     None) is left out. The size of a changed file is not kept, so it is None.
+    A file anonymised for double-blind review (``e2er publish --blind``, kind
+    ``anonymised``) has no fingerprint before (it is withheld): it counts as
+    exported as it is now, after its anonymisation.
     """
     files = {k: dict(v) for k, v in (prov.get("files") or {}).items()}
     first: dict[str, Any] = {}
+    withheld: set[str] = set()
     for a in prov.get("amendments") or []:
         path = a.get("path") if isinstance(a, dict) else None
         if isinstance(path, str) and path not in first:
             first[path] = a.get("sha256_before")
+            if a.get("kind") == "anonymised" and a.get("sha256_before") is None:
+                withheld.add(path)
+    for path in withheld:
+        last = None
+        for a in prov.get("amendments") or []:
+            if isinstance(a, dict) and a.get("path") == path and a.get("kind") == "anonymised":
+                last = a.get("sha256_after")
+        first[path] = last
     for path, before in first.items():
+        if path in withheld:
+            if before is not None and path in files:
+                files[path] = {"sha256": before, "bytes": None}
+            continue
         if before is None:
             files.pop(path, None)
         elif path in files:

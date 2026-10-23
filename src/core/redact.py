@@ -365,14 +365,15 @@ def record_problem(entry: dict[str, Any], data: bytes | None) -> str | None:
 
 def explains(amendments: list[dict[str, Any]], rel: str, sha_from: str | None, sha_to: str | None) -> bool:
     """Do redactions alone take ``rel`` from ``sha_from`` to ``sha_to``: an unbroken chain of its amendments, each
-    of kind "redacted"?"""
+    of kind "redacted" (or "anonymised", for double-blind review)?"""
     if not sha_from or not sha_to:
         return False
     at: str | None = sha_from
     for a in amendments:
         if not isinstance(a, dict) or a.get("path") != rel or a.get("sha256_before") != at:
             continue
-        if a.get("kind") != KIND:
+        # A redaction, or an anonymisation for double-blind review (src/core/anonymise.py): personal details only.
+        if a.get("kind") not in (KIND, "anonymised"):
             return False
         at = a.get("sha256_after")
         if at == sha_to:

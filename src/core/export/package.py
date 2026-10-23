@@ -717,9 +717,11 @@ def build(
     downloader: Downloader | None = None,
     host: str | None = None,
     max_file_bytes: int | None = None,
+    anonymous: bool = False,
 ) -> Packed:
     """Write the exported study ``folder`` into one ``.e2er`` file; returns where and what it holds.
 
+    ``anonymous``: the file for a double-blind review (``e2er pack --blind``): its list names no author.
     ``host`` (``"GitHub"``): the package is opened there, so a data file larger than the host takes is left
     out when a recorded step gets it back, and TooLargeError is raised when none does (left_out_data).
     """
@@ -828,6 +830,10 @@ def build(
             )
             entries.append((rel, src))
         study = _study(folder, prov)
+        if anonymous:
+            # The file for a journal's double-blind review (`e2er pack --blind`): no author, no folder name.
+            study["authors"] = []
+            study["folder"] = "anonymous"
         manifest: dict[str, Any] = {
             "format": FORMAT,
             "e2er_version": __version__,

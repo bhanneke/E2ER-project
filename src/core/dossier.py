@@ -1092,9 +1092,10 @@ _E2ER_THANKS = re.compile(r"\\thanks\{(?:This paper was produced with e2er|Demon
 _WITH_E2ER = re.compile(r"\s*with e2er\s*$")
 
 
-def footnote(doc: dict[str, Any] | None, did: str, site: str | None = None) -> str:
-    """The first-page footnote: what the dossier at ``did`` lists, and only what it lists (its address on ``site``)."""
-    url = f"\\url{{{dossier_url(did, site)}}}"
+def footnote(doc: dict[str, Any] | None, did: str, site: str | None = None, address: str | None = None) -> str:
+    """The first-page footnote: what the dossier at ``did`` lists, and only what it lists (its address on ``site``,
+    or ``address``: an anonymous version's e2er.org/r/<code>)."""
+    url = f"\\url{{{address or dossier_url(did, site)}}}"
     if doc is not None and doc.get("run", {}).get("workflow_recorded") is False:
         return (
             "This paper was produced with e2er. Its dossier records the template, specialists, skills, connectors "
@@ -1125,6 +1126,7 @@ def stamp_paper(
     kind: str | None = None,
     doc: dict[str, Any] | None = None,
     site: str | None = None,
+    address: str | None = None,
 ) -> str:
     """Write the dossier footnote (and the disclaimer) into a paper's first page; the author line with ``author``.
 
@@ -1136,7 +1138,7 @@ def stamp_paper(
     the replication wording when ``kind="replication"``; without a purpose an
     earlier disclaimer is removed.
     """
-    notes = f"\\thanks{{{footnote(doc, did, site)}}}"
+    notes = f"\\thanks{{{footnote(doc, did, site, address)}}}"
     if purpose == DEMONSTRATION:
         notes += f"\\thanks{{{disclaimer(kind)}}}"
     m = _AUTHOR.search(tex)

@@ -495,8 +495,9 @@ def main() -> None:
         "--against",
         default=None,
         metavar="URL",
-        help="Compare the folder with what e2er.org published: a study address (https://e2er.org/<owner>/<project>) "
-        "or a dossier address (https://e2er.org/d/<id>). Read with GET only. Without it, the folder is verified "
+        help="Compare the folder with what e2er.org published: a study address (https://e2er.org/<owner>/<project>), "
+        "an anonymous version's address (https://e2er.org/r/<code>) or a dossier address (https://e2er.org/d/<id>). "
+        "Read with GET only. Without it, the folder is verified "
         "against itself only.",
     )
     verify_p.add_argument(
@@ -617,8 +618,12 @@ def main() -> None:
         help="Verify an exported bundle; write its research-object manifest (e2er.json) and registry entry.",
     )
     publish_p.add_argument("bundle", help="Path to an exported bundle directory (from `e2er export`).")
-    publish_p.add_argument("--owner", required=True, help="Registry namespace: your GitHub login, lower case.")
-    publish_p.add_argument("--project", required=True, help="Project name within your namespace, e.g. etf-comovement.")
+    publish_p.add_argument(
+        "--owner", default=None, help="Your handle on e2er.org (your GitHub login, lower case). Not with --blind."
+    )
+    publish_p.add_argument(
+        "--project", default=None, help="Project name within your namespace, e.g. etf-comovement. Not with --blind."
+    )
     publish_p.add_argument(
         "--github",
         nargs="?",
@@ -772,6 +777,36 @@ def main() -> None:
         help="Prepare the folder for publishing in the browser (e2er.org/publish): write the dossier and "
         "e2er.json, send nothing.",
     )
+    publish_p.add_argument(
+        "--blind",
+        action="store_true",
+        help="Publish an anonymous version for double-blind review at an address nobody can guess "
+        "(e2er.org/r/<code>): a copy of the folder is anonymised and checked for anything that names you before "
+        "anything is sent; e2er.org shows no author and lists it nowhere. Needs no --owner or --project. GitHub, "
+        "Zenodo and public addresses are refused. `e2er pack --blind` then makes the file for the journal.",
+    )
+    publish_p.add_argument(
+        "--blind-identifier",
+        action="append",
+        default=None,
+        dest="blind_identifiers",
+        metavar="TEXT",
+        help="With --blind: one more thing that identifies you (a co-author, your institute, a project name), "
+        "taken out and checked like your name (repeatable; also E2ER_BLIND_IDENTIFIERS, separated by ;).",
+    )
+    publish_p.add_argument(
+        "--blind-ack-self-citations",
+        action="store_true",
+        help="With --blind: you read the places listed that may cite your own work, and they may stay.",
+    )
+    publish_p.add_argument(
+        "--unblind",
+        default=None,
+        metavar="CODE",
+        help="After the review: publish a version with authors of the anonymous version CODE (or its address "
+        "…/r/CODE) as --owner/--project. The bundle is the anonymised copy (same files, your name shown) or a "
+        "named export of the study (its files become the new version). The anonymous version stays as it is.",
+    )
 
     url_help = "Platform address (default: E2ER_URL, else https://e2er.org)."
     login_p = subparsers.add_parser(
@@ -889,6 +924,12 @@ def main() -> None:
     pack_p.add_argument(
         "--no-data", action="store_true", help="Leave every data file out; `e2er reproduce` loads them again."
     )
+    pack_p.add_argument(
+        "--blind",
+        action="store_true",
+        help="Pack the anonymised copy `e2er publish --blind` made (the folder itself or its copy next to it): the "
+        "file for the journal names no author and is checked for anything that names you.",
+    )
 
     unpack_p = subparsers.add_parser(
         "unpack",
@@ -948,6 +989,9 @@ def main() -> None:
     if args.command == "publish":
         from .cli_publish import publish as _publish
 
+        if not args.blind and not (args.owner and args.project):
+            publish_p.error("--owner and --project are required (an anonymous version with --blind needs neither)")
+
         sys.exit(
             _publish(
                 args.bundle,
@@ -985,6 +1029,10 @@ def main() -> None:
                 paper=args.paper,
                 paper_url=args.paper_url,
                 yes=args.yes,
+                blind=args.blind,
+                blind_identifiers=args.blind_identifiers,
+                blind_ack_self_citations=args.blind_ack_self_citations,
+                unblind=args.unblind,
             )
         )
 
@@ -1036,6 +1084,10 @@ def main() -> None:
     if args.command == "pack":
         from .cli_package import pack as _pack
 
+        if args.blind:
+            from .cli_blind import pack_blind
+
+            sys.exit(pack_blind(args.target, args.out, offline=args.offline, no_data=args.no_data))
         sys.exit(_pack(args.target, args.out, offline=args.offline, no_data=args.no_data))
 
     if args.command == "unpack":
