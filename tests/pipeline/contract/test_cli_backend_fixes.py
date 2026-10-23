@@ -144,7 +144,8 @@ async def test_codex_postgres_database_needs_no_extra_dir(cfg):
     with patch("src.modules.llm.codex.asyncio.create_subprocess_exec", new=fake):
         await _call(CodexBackend(), paper_id="p1")
     assert "--add-dir" not in calls["cmd"]
-    assert calls["kwargs"]["env"].get("DATABASE_URL") == "postgresql://u:p@h:5432/d"
+    # A server URL can carry the database password: the model's shell never sees it (security review 2026-10-23).
+    assert "DATABASE_URL" not in calls["kwargs"]["env"]
 
 
 # ---------- the subprocess environment (W2, R7, .env passthrough) ----------

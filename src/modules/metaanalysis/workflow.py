@@ -16,9 +16,8 @@
 from __future__ import annotations
 
 import json
-import os
 import re
-import subprocess
+import shutil
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
@@ -245,18 +244,14 @@ def run_script(ws: Path, *, timeout: int = 300) -> tuple[int, str]:
     started = _now()
     before = output_snapshot(ws)
     argv, extra, packages_file = script_command(sys.executable, ws / SCRIPT)
+    from ...core.child_env import empty_home, run_in_own_session, script_env
+
+    home = empty_home()  # the synthesis script is AI-written: no key or token, an empty HOME
     try:
-        proc = subprocess.run(
-            argv,
-            cwd=ws,
-            env={**os.environ, **extra},
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            check=False,
-        )
+        proc = run_in_own_session(argv, cwd=ws, env=script_env(home=home, extra=extra), timeout=timeout)
     finally:
         record = script_record(packages_file)
+        shutil.rmtree(home, ignore_errors=True)
     record_script_run(ws, SCRIPT, started, proc.returncode, by="e2er", record=record, before=before)
     return proc.returncode, (proc.stderr or proc.stdout)[-1500:]
 

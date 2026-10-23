@@ -209,7 +209,14 @@ class CodexBackend(LLMBackend):
         settings = get_settings()
         prompt = flatten_prompt(system, messages)
         cwd, root = workspace_cwd(settings, paper_id, self._cwd)
-        env = run_env(settings, paper_id=paper_id, specialist=specialist, workspace_root_abs=root, cli_keys=CLI_KEYS)
+        env = run_env(
+            settings,
+            paper_id=paper_id,
+            specialist=specialist,
+            workspace_root_abs=root,
+            cli_keys=CLI_KEYS,
+            cli_prefixes=("CODEX_", "NODE_", "NVM_"),
+        )
         extra_dirs: list[str] = []
         db = db_path(settings)
         if db is not None and not _inside(db.parent, Path(cwd)):

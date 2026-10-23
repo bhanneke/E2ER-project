@@ -405,6 +405,7 @@ async def _invoke_cli(
         specialist=specialist,
         workspace_root_abs=workspace_root_abs,
         cli_keys=CLI_KEYS,
+        cli_prefixes=("CLAUDE_", "ANTHROPIC_", "NODE_", "NVM_"),
     )
 
     try:

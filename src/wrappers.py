@@ -68,11 +68,15 @@ def run_main(argv: list[str] | None = None) -> int:
 
     # Run through the script log's bootstrap: it records the packages the script loaded (reproduce.json pins them).
     argv, extra, packages_file = script_command(python, resolved)
-    env = {**os.environ, "PYTHON_COLORS": "0", **extra}
+    from .core.child_env import empty_home, run_in_own_session, script_env
+
+    # The script is the model's: none of the CLI's keys (data keys, its sign-in), an empty HOME.
+    home = empty_home()
+    env = script_env(home=home, extra=extra)
     started = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     before = output_snapshot(workspace)  # the log records which files the run wrote, with their SHA-256
     try:
-        code = subprocess.run(argv, cwd=workspace, env=env, timeout=timeout, check=False).returncode
+        code = run_in_own_session(argv, cwd=workspace, env=env, timeout=timeout, capture=False).returncode
     except subprocess.TimeoutExpired:
         print(f"e2er-run: stopped {target} after {timeout:.0f}s", file=sys.stderr)
         code = TIMED_OUT
@@ -80,6 +84,10 @@ def run_main(argv: list[str] | None = None) -> int:
         script_record(packages_file)
         print(f"e2er-run: could not start {python}: {e}", file=sys.stderr)
         return REFUSED
+    finally:
+        import shutil
+
+        shutil.rmtree(home, ignore_errors=True)
     record_script_run(
         workspace,
         resolved.relative_to(workspace).as_posix(),

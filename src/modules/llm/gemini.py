@@ -130,7 +130,14 @@ class GeminiBackend(LLMBackend):
         settings = get_settings()
         prompt = flatten_prompt(system, messages)
         cwd, root = workspace_cwd(settings, paper_id, self._cwd)
-        env = run_env(settings, paper_id=paper_id, specialist=specialist, workspace_root_abs=root, cli_keys=CLI_KEYS)
+        env = run_env(
+            settings,
+            paper_id=paper_id,
+            specialist=specialist,
+            workspace_root_abs=root,
+            cli_keys=CLI_KEYS,
+            cli_prefixes=("GEMINI_", "GOOGLE_CLOUD_", "NODE_", "NVM_"),
+        )
         # The probe is a blocking subprocess; keep it off the event loop.
         approval_mode, output_format = await asyncio.to_thread(_probe_gemini_flags, self._cli_path)
         cmd = self.build_cmd(approval_mode, output_format)
