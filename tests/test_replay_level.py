@@ -244,26 +244,16 @@ def _free_port() -> int:
 
 @contextlib.contextmanager
 def _replay_server(tmp_path: Path, scenario: str, settings: list[str]):
-    """`e2er serve` under the replay level for a study folder in tmp; yields (api, study folder)."""
-    port = _free_port()
+    """`e2er serve` under the replay level for a study folder in tmp; yields (api, study folder).
+
+    The port is free when it is picked, not necessarily when the server binds it: another process can
+    take it in between. A server that exits before it answers (the port was taken, or another e2er
+    answered there and this one deferred to it) is started again on a new port, up to three times; the
+    server must answer within 60 s and still be running, else the test fails here.
+    """
     study, home = tmp_path / "study", tmp_path / "home"
     study.mkdir(exist_ok=True)
     home.mkdir(exist_ok=True)
-    (study / ".env").write_text(
-        "\n".join(
-            [
-                "LLM_BACKEND=claude_code",
-                "CLAUDE_CODE_MODEL=claude-haiku-4-5-20251001",
-                f"WORKSPACE_ROOT={study / 'workspaces'}",
-                f"OUTPUT_DIR={study / 'exports'}",
-                f"PORT={port}",
-                "CORPUS_AUTOINGEST=false",
-                "LITERATURE_ACQUIRE_LIMIT=0",
-                *settings,
-            ]
-        )
-        + "\n"
-    )
     env = {
         **os.environ,
         "HOME": str(home),
@@ -280,28 +270,60 @@ def _replay_server(tmp_path: Path, scenario: str, settings: list[str]):
         "NO_PROXY": "127.0.0.1,localhost",
     }
     env.pop("TECTONIC_CACHE_DIR", None)
-    server = subprocess.Popen(
-        [sys.executable, "-m", "tests.replay.cli", "serve", "--no-browser", "--port", str(port)],
-        cwd=study,
-        env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-    )
-    api = f"http://127.0.0.1:{port}"
-    try:
-        for _ in range(120):
-            try:
-                if (
-                    httpx.get(f"{api}/api/papers", headers={"x-e2er-token": "replay-session"}, timeout=1).status_code
-                    == 200
-                ):
-                    break
-            except httpx.HTTPError:
-                time.sleep(0.25)
-        yield api, study
-    finally:
-        server.terminate()
-        server.wait(timeout=10)
+    tried: list[str] = []
+    for _attempt in range(3):
+        port = _free_port()
+        (study / ".env").write_text(
+            "\n".join(
+                [
+                    "LLM_BACKEND=claude_code",
+                    "CLAUDE_CODE_MODEL=claude-haiku-4-5-20251001",
+                    f"WORKSPACE_ROOT={study / 'workspaces'}",
+                    f"OUTPUT_DIR={study / 'exports'}",
+                    f"PORT={port}",
+                    "CORPUS_AUTOINGEST=false",
+                    "LITERATURE_ACQUIRE_LIMIT=0",
+                    *settings,
+                ]
+            )
+            + "\n"
+        )
+        server = subprocess.Popen(
+            [sys.executable, "-m", "tests.replay.cli", "serve", "--no-browser", "--port", str(port)],
+            cwd=study,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+        )
+        api = f"http://127.0.0.1:{port}"
+        try:
+            if _serving(server, api, deadline=time.monotonic() + 60):
+                yield api, study
+                return
+            if server.poll() is None:
+                raise AssertionError(f"the replay server on {api} did not answer within 60 s")
+            out = server.stdout.read().decode(errors="replace") if server.stdout else ""
+            tried.append(f"port {port}: exited {server.returncode}: {out[-300:]}")
+        finally:
+            if server.poll() is None:
+                server.terminate()
+                server.wait(timeout=10)
+    raise AssertionError("the replay server did not start:\n" + "\n".join(tried))
+
+
+def _serving(server: subprocess.Popen, api: str, deadline: float) -> bool:
+    """Whether ``server`` itself answers at ``api`` before ``deadline`` (False once it has exited)."""
+    while time.monotonic() < deadline:
+        if server.poll() is not None:
+            return False
+        try:
+            r = httpx.get(f"{api}/api/papers", headers={"x-e2er-token": "replay-session"}, timeout=1)
+            if r.status_code == 200:
+                return server.poll() is None  # an answer from a server that has exited is someone else's
+        except httpx.HTTPError:
+            pass
+        time.sleep(0.25)
+    return False
 
 
 def _approve_to_the_end(api: str, pid: str) -> tuple[dict, list[str]]:
@@ -663,3 +685,10 @@ def test_the_iterative_mode_replays_to_the_end_through_the_server(tmp_path: Path
     out = subprocess.run([*cli, "verify", str(bundle)], cwd=study, env=env, capture_output=True, text=True, timeout=300)
     assert out.returncode == 0, out.stdout + out.stderr
     assert "[PASS] numbers" in out.stdout
+
+
+def test_a_server_that_exits_before_it_answers_is_not_taken_for_serving():
+    """The retry in _replay_server rests on this: another process's answer on the port is not ours."""
+    server = subprocess.Popen([sys.executable, "-c", "raise SystemExit(3)"])
+    server.wait(timeout=30)
+    assert _serving(server, "http://127.0.0.1:9", deadline=time.monotonic() + 5) is False

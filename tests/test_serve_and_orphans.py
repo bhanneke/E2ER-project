@@ -18,20 +18,14 @@ import pytest
 from src import __main__ as cli
 
 
-def _free_port() -> int:
-    s = socket.socket()
-    s.bind(("127.0.0.1", 0))
-    port = s.getsockname()[1]
-    s.close()
-    return port
-
-
 def test_a_foreign_process_on_the_port_is_a_failure(monkeypatch):
     """It exited 0 while serving nothing, so scripts saw success."""
-    port = _free_port()
+    # The holder takes a port the system picks and keeps it: picking a free port, releasing it and binding
+    # it again raced with every other process on the machine.
     holder = socket.socket()
-    holder.bind(("127.0.0.1", port))
+    holder.bind(("127.0.0.1", 0))
     holder.listen(1)
+    port = holder.getsockname()[1]
     try:
         monkeypatch.setattr(cli, "_already_serving", lambda h, p: False)
         code = cli._serve(host="127.0.0.1", port=port, reload=False, no_browser=True)

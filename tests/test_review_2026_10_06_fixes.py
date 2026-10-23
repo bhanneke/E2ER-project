@@ -15,6 +15,7 @@ import hashlib
 import json
 import os
 import signal
+import subprocess
 import sys
 import threading
 import time
@@ -194,6 +195,26 @@ def test_someone_elses_code_runs_without_the_researchers_keys(monkeypatch, tmp_p
 # ── CLI processes: killed with everything they started ───────────────────────
 
 
+def _gone(pid: int, within: float) -> bool:
+    """Whether ``pid`` exits within ``within`` seconds, polled; a zombie not yet reaped counts as gone.
+
+    The test slept 0.2 s and then expected ``os.kill(pid, 0)`` to raise; the child is not ours to
+    ``waitpid``, and until init reaps it a killed process still answers, so it failed under load.
+    """
+    deadline = time.monotonic() + within
+    while True:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return True
+        state = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True).stdout
+        if state.strip().startswith("Z"):
+            return True  # killed, waiting to be reaped
+        if time.monotonic() > deadline:
+            return False
+        time.sleep(0.05)
+
+
 @pytest.mark.skipif(sys.platform == "win32", reason="process groups")
 def test_a_cancel_kills_the_cli_and_its_children(tmp_path: Path):
     pidfile = tmp_path / "child.pid"
@@ -227,9 +248,7 @@ def test_a_cancel_kills_the_cli_and_its_children(tmp_path: Path):
         return int(pidfile.read_text())
 
     child = asyncio.run(scenario())
-    time.sleep(0.2)
-    with pytest.raises(ProcessLookupError):
-        os.kill(child, 0)  # the CLI's child is gone too
+    assert _gone(child, within=10.0)  # the CLI's child is gone too
     try:
         os.kill(child, signal.SIGKILL)
     except ProcessLookupError:
