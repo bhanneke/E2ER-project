@@ -765,6 +765,10 @@ def build(
         if recipe is not None and requirements is not None and requirements.is_file():
             as_of = _as_of(prov)
             text, note = (locker or uv_lock)(requirements, python_minor, as_of)
+            if text and anonymous:
+                from ..secret_scan import strip_local_paths
+
+                text = strip_local_paths(text)
             if text:
                 lock = staging / "requirements.lock.txt"
                 header = (
@@ -831,9 +835,13 @@ def build(
             entries.append((rel, src))
         study = _study(folder, prov)
         if anonymous:
-            # The file for a journal's double-blind review (`e2er pack --blind`): no author, no folder name.
+            # The file for a journal's double-blind review (`e2er pack --blind`): no author, no folder name, and
+            # no path of this computer in what the packing notes say.
+            from ..secret_scan import strip_local_paths
+
             study["authors"] = []
             study["folder"] = "anonymous"
+            environment = strip_local_paths(environment)
         manifest: dict[str, Any] = {
             "format": FORMAT,
             "e2er_version": __version__,
@@ -850,6 +858,10 @@ def build(
             "wheels": wheels,
             "notes": notes,
         }
+        if anonymous:
+            from ..secret_scan import strip_local_paths
+
+            manifest = strip_local_paths(manifest)  # the study's folder named in a note, for instance
         manifest_bytes = (json.dumps(manifest, indent=2, ensure_ascii=False, sort_keys=True) + "\n").encode()
         target.parent.mkdir(parents=True, exist_ok=True)
         partial = target.with_name(f".{target.name}.partial")

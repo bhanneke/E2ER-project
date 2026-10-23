@@ -225,6 +225,10 @@ def publish_blind(
             print("error: the anonymised copy could not be prepared; nothing was sent")
             return rc or 1
         body = cp.request_body(manifest, copy)
+        # An anonymous version names no repository, not even an empty one.
+        body.pop("repository", None)
+        if not body["manifest"].get("repository"):
+            body["manifest"].pop("repository", None)
         body["blind"] = {"code": code}
         refusals = cp.problems(body)
         if refusals:

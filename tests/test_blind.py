@@ -487,7 +487,8 @@ def test_publish_blind_sends_an_anonymous_version_and_leaves_the_folder(study, p
     assert len(code) == 32 and set(code) <= set("abcdefghijklmnopqrstuvwxyz234567")
     assert set(body["blind"]) == {"code"}
     m = body["manifest"]
-    assert m["id"] == f"anonymous/{code}" and m["contributors"] == [] and not m.get("repository")
+    assert m["id"] == f"anonymous/{code}" and m["contributors"] == []
+    assert "repository" not in m and "repository" not in body
     assert m["dossier"]["url"] == f"{URL}/r/{code}" and "access" not in m
     assert grep(json.dumps(body, ensure_ascii=False)) == [] and grep(json.dumps(body)) == []
     copy = cli_blind.copy_path(study, code)
