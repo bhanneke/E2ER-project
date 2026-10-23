@@ -15,10 +15,21 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+
+def _e2er_version() -> str:
+    try:
+        from .. import __version__
+
+        return __version__
+    except Exception:  # noqa: BLE001
+        return "unknown"
+
+
 #: The workspace's record of every script run (by `e2er-run` and by the runner), one JSON line each:
-#: ``{script, sha256, started_at, exit_code, by, python, packages, outputs, tables}``; ``tables`` names the
-#: tables of data.db the run created, changed or dropped (:func:`written_tables`); ``outputs`` maps every
-#: result-type file the run wrote (:data:`OUTPUT_SUFFIXES`) to its SHA-256 after the run, so a results
+#: ``{script, sha256, started_at, exit_code, by, e2er_version, python, packages, outputs, tables}``;
+#: ``tables`` names the tables of data.db the run created, changed or dropped (:func:`written_tables`);
+#: ``e2er_version`` is the e2er that ran it (logs since 0.18.0); ``outputs`` maps every result-type file
+#: the run wrote (:data:`OUTPUT_SUFFIXES`) to its SHA-256 after the run, so a results
 #: file can be traced to the run of the script that wrote it (:func:`results_writer`). Export reads it
 #: to rerun the scripts in the order the run ran them (reproduce.json) and to pin the packages they
 #: loaded. A dotfile: internal, never exported.
@@ -299,6 +310,7 @@ def record_script_run(
             "started_at": started_at,
             "exit_code": exit_code,
             "by": by,
+            "e2er_version": _e2er_version(),
         }
         if before is not None:
             line["outputs"] = written_outputs(Path(workspace), before)

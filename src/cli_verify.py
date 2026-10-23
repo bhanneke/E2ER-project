@@ -1359,34 +1359,46 @@ def _check_results_from_code(bundle: Path, left_out: set[str] | None = None) -> 
     output hash, the run must have succeeded with the script as the study ships
     it, and the folder must carry the script. A results file no recorded run
     wrote fails ("the results have no script that computes them"), and so does
-    a results file (estimation, robustness) the record has no entry for. SKIP
-    for a run that predates output records only when provenance.json was written
-    by e2er 0.16.0 or earlier; from a later e2er, which records the run, a missing
-    record or "predates output records" fails. None for a bundle without a
-    results file.
+    a results file (estimation, robustness) the record has no entry for.
+
+    "The run predates output records" (or no record at all) is a SKIP only when
+    the e2er that RAN the study is 0.16.0 or earlier: script logs record the
+    files a run writes since 0.16.1. The run's version is read from
+    provenance.json (``run.e2er_version_run``, written at export since 0.18.0),
+    else from the published dossier in e2er.json (``e2er.segments``: the
+    version of each part of the run), else it is the exporting version when
+    that is 0.16.0 or earlier. A later run version, or none that the folder
+    records, fails. None for a bundle without a results file.
     """
     from .core.export.provenance import RESULTS_FROM_CODE
 
     prov = _load_json(bundle / "provenance.json")
     run = prov.get("run") if isinstance(prov, dict) else None
     record = run.get("results_from_code") if isinstance(run, dict) else None
-    version = str((run or {}).get("e2er_version") or "") if isinstance(run, dict) else ""
-    # Output records came with e2er 0.17.0: provenance.json of an earlier e2er cannot have them, any later one
-    # records the run that wrote each results file, so "predates output records" is no reason there.
-    old = _version_at_most(version, (0, 16, 0))
-    newer = f"provenance.json was written by e2er {version or '(no version)'}, which records the run"
+    ran, source = _run_version(bundle, run if isinstance(run, dict) else {})
+    old = ran is not None and _version_at_most(ran, (0, 16, 0))
+    if ran is None:
+        newer = (
+            "nothing in the folder records which e2er ran the study (provenance.json run.e2er_version_run, or "
+            "e2er.segments in the published dossier, e2er.json), so the claim cannot be checked"
+        )
+    else:
+        newer = f"the study ran with e2er {ran} ({source}), whose script log records the files each run writes"
+    # Fixed words: publish writes the verdict into e2er.json, and the same files must make the same commit, while
+    # the dossier the version may be read from is written by that publish.
+    predates = "not checked: the run predates output records (it ran with e2er 0.16.0 or earlier)"
     present = [rel for rel in RESULTS_FROM_CODE if (bundle / rel).is_file() or rel in ((prov or {}).get("files") or {})]
     if not isinstance(record, dict) or not record:
         if not present:
             return None
         if old:
-            # Exported by e2er up to 0.16.0: the run recorded no script outputs.
-            return Check("results from code", SKIP, "not checked: the run predates output records")
+            # Run by e2er up to 0.16.0: the run recorded no script outputs.
+            return Check("results from code", SKIP, predates)
         return Check(
             "results from code",
             FAIL,
             f"provenance.json records no run that wrote {', '.join(p.rsplit('/', 1)[-1] for p in present)}, but "
-            f"{newer} that wrote each results file",
+            f"{newer}",
         )
     problems: list[str] = []
     traced: list[str] = []
@@ -1446,13 +1458,33 @@ def _check_results_from_code(bundle: Path, left_out: set[str] | None = None) -> 
                 + ("it" if len(left) == 1 else "them")
                 + " again",
             )
-        return Check("results from code", SKIP, "not checked: the run predates output records")
+        return Check("results from code", SKIP, predates)
     detail = "written by the last run of the shipped script: " + ", ".join(traced)
     if skipped:
-        detail += f"; not checked (the run predates output records): {', '.join(skipped)}"
+        detail += f"; not checked (the run predates output records, e2er 0.16.0 or earlier): {', '.join(skipped)}"
     if left:
         detail += f"; not checked (left out under a source's terms): {', '.join(left)}"
     return Check("results from code", PASS, detail)
+
+
+def _run_version(bundle: Path, run: dict[str, Any]) -> tuple[str | None, str]:
+    """(the newest e2er version that ran the study, where the folder says so), or (None, "")."""
+    v = run.get("e2er_version_run")
+    if isinstance(v, str) and re.search(r"\d", v):
+        return v, "provenance.json run.e2er_version_run"
+    manifest = _load_json(bundle / "e2er.json")
+    doc = ((manifest or {}).get("dossier") or {}).get("doc") if isinstance(manifest, dict) else None
+    e2er = (doc or {}).get("e2er") if isinstance(doc, dict) else None
+    if isinstance(e2er, dict):
+        found = [s.get("version") for s in e2er.get("segments") or [] if isinstance(s, dict)]
+        versions = [x for x in found if isinstance(x, str) and re.search(r"\d", x)]
+        if versions:
+            newest = max(versions, key=lambda x: tuple(int(n) for n in re.findall(r"\d+", x)[:3]))
+            return newest, "the run's parts in the published dossier, e2er.json e2er.segments"
+    exported = run.get("e2er_version")
+    if isinstance(exported, str) and _version_at_most(exported, (0, 16, 0)):
+        return exported, f"exported with e2er {exported}, so run with it or earlier"
+    return None, ""
 
 
 def _version_at_most(version: str, limit: tuple[int, ...]) -> bool:

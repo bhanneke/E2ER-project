@@ -114,7 +114,14 @@ where that record's `content_sha256` is the recipe's own.
 
 `provenance.json` records under `run.results_from_code` which run of which
 script wrote each results file (the script log's output hashes); `e2er verify`
-checks the folder against it ("results from code").
+checks the folder against it ("results from code"). Export also records the e2er
+that ran the study, from the run's `run_identity` events: `run.e2er_version_run`
+(the newest version any part of the run used), `run.e2er_versions_run` and
+`run.e2er_commit_run`. An entry "the run predates output records" (or no record)
+is accepted only for a run of e2er 0.16.0 or earlier (script logs record outputs
+since 0.16.1); verify reads the run's version from `run.e2er_version_run`, else
+from the published dossier's `e2er.segments`, else from an exporting e2er of 0.16.0
+or earlier, and fails when none of them says.
 
 ### The .e2er package (format `e2er-package/1`)
 

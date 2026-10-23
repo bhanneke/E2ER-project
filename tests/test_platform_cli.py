@@ -26,7 +26,7 @@ ARGS = dict(owner="ada-lab", project="showcase", github="ada-lab", name="Ada Lov
 
 def _predates(check) -> bool:
     """The showcase was exported before e2er recorded script outputs: verify says it did not check that."""
-    return check.name == "results from code" and check.detail == "not checked: the run predates output records"
+    return check.name == "results from code" and check.detail.startswith("not checked: the run predates output records")
 
 
 @pytest.fixture
