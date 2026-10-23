@@ -19,8 +19,10 @@ For a study exported (or published) before the abstract had a step of its own
    ``report.html``;
 5. records an amendment per changed file in provenance.json
    (``kind: "abstract_rewritten"``, the model, the e2er version, the reason,
-   the fingerprints before and after), which the next ``e2er publish`` puts in
-   the dossier;
+   the fingerprints before and after; for paper.tex also the text the new
+   abstract replaced and the fingerprint of the old abstract, from which verify
+   rebuilds the paper and checks that nothing outside the abstract changed),
+   which the next ``e2er publish`` puts in the dossier;
 6. runs the checks of ``e2er verify``; when they fail, every file is put back.
 """
 
@@ -42,8 +44,8 @@ from typing import Any
 
 from .core import abstract as ab
 
-#: The files the command may change, with provenance.json last.
-_CHANGED = ("paper/abstract.tex", "paper/paper.tex", "paper/paper.pdf", "report.html")
+#: The files the command may change (provenance.json is written last).
+_CHANGED = ab.CHANGED_FILES
 
 
 class AbstractError(Exception):
@@ -312,6 +314,10 @@ def rewrite(
                 "e2er_version": __version__,
                 "bytes_before": (meta or {}).get("bytes") if old is not None else None,
             }
+            if rel == ab.PAPER_FILE and old is not None:
+                # The text the new abstract replaced: verify rebuilds the paper from it and checks that
+                # nothing outside the abstract changed.
+                entry["abstract_before"] = ab.paper_change(old, data)
             listed[rel] = {"sha256": entry["sha256_after"], "bytes": len(data)}
             prov.setdefault("amendments", []).append(entry)
             written.append(entry)

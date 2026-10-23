@@ -231,6 +231,8 @@ def _amendment_problems(prov: dict[str, Any]) -> list[str]:
     Per path, the amendments must link up (each ``sha256_before`` is the
     previous ``sha256_after``) and end at the fingerprint the file has now.
     """
+    from .core.abstract import AMENDMENT_KINDS, CHANGED_FILES
+
     out: list[str] = []
     last: dict[str, str | None] = {}
     for a in prov.get("amendments") or []:
@@ -238,6 +240,9 @@ def _amendment_problems(prov: dict[str, Any]) -> list[str]:
         if not isinstance(path, str) or not isinstance(after, str):
             out.append("an amendment in provenance.json names no file or no new fingerprint")
             continue
+        if a.get("kind") in AMENDMENT_KINDS and path not in CHANGED_FILES:
+            # e2er abstract changes the abstract, the paper, its PDF and report.html: nothing else.
+            out.append(f"{path}: recorded as an abstract amendment, but e2er abstract never changes that file")
         if path in last and last[path] != before:
             out.append(f"the amendments of {path} do not link up")
         last[path] = after
@@ -248,7 +253,12 @@ def _amendment_problems(prov: dict[str, Any]) -> list[str]:
 
 
 def _redaction_problems(bundle: Path, prov: dict[str, Any]) -> list[str]:
-    """A redaction recorded as a file's last change must match the file: the replacement at every offset."""
+    """A redaction recorded as a file's last change must match the file: the replacement at every offset.
+
+    An abstract amendment of paper/paper.tex recorded as its last change must too: rebuilt with the
+    recorded old abstract, the paper is the one before, unchanged outside the abstract.
+    """
+    from .core import abstract as ab
     from .core import redact as rd
 
     last: dict[str, dict[str, Any]] = {}
@@ -259,6 +269,12 @@ def _redaction_problems(bundle: Path, prov: dict[str, Any]) -> list[str]:
 
     out = []
     for path, a in last.items():
+        if a.get("kind") in ab.AMENDMENT_KINDS and path == ab.PAPER_FILE and "abstract_before" in a:
+            f = bundle / path
+            why, _before = ab.paper_problem(a, f.read_bytes() if f.is_file() else None)
+            if why:
+                out.append(why)
+            continue
         if a.get("kind") not in (rd.KIND, an.KIND):
             continue
         f = bundle / path
@@ -440,8 +456,14 @@ def _anchor_before_redactions(bundle: Path) -> Check | None:
     """
     from .core import redact as rd
 
-    texts, n = rd.provenance_before_redactions(bundle)
+    texts, n, why = rd.rollback(bundle)
     if not texts:
+        if why:
+            return Check(
+                "anchor",
+                FAIL,
+                "e2er.json describes the folder before its latest amendments, and they cannot be checked: " + why,
+            )
         return None
     for text in texts:
         with tempfile.TemporaryDirectory() as td:

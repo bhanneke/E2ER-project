@@ -345,59 +345,107 @@ def redact(
 def provenance_before_redactions(folder: Path) -> tuple[list[str], int]:
     """provenance.json's text as it was before the redactions at the end of its amendments, and their number.
 
-    The abstract rewritten after publishing (``e2er abstract``, kind ``abstract_rewritten``) is rolled back
-    the same way: each such amendment records the size the file had (``bytes_before``), or that it was new.
+    The abstract rewritten after publishing (``e2er abstract``, kinds ``abstract_rewritten`` and
+    ``abstract_edited_by_researcher``) is rolled back the same way: each such amendment records the size the
+    file had (``bytes_before``), or that it was new. Only the files ``e2er abstract`` changes count
+    (abstract.CHANGED_FILES), and the paper itself only with the record of the text the new abstract
+    replaced: rebuilt from it, the paper must be the one before, unchanged outside its abstract
+    (abstract.paper_problem). Each redaction must match the file as it was after it, where that is known
+    (:func:`record_problem`).
 
     Several texts when the redactions added the "amendments" list itself (with and without an empty list):
     the caller compares each with an earlier publish's content id. ([], 0) when the last amendment is not a
-    redaction or a redaction lacks the size the file had.
+    redaction or an abstract amendment, or one of them cannot be checked.
     """
+    texts, n, _why = rollback(folder)
+    return texts, n
+
+
+def rollback(folder: Path) -> tuple[list[str], int, str | None]:
+    """:func:`provenance_before_redactions`, and why an amendment at the end cannot be rolled back (or None)."""
     from .export.provenance import dump
 
+    folder = Path(folder)
     try:
-        prov = json.loads((Path(folder) / "provenance.json").read_text(encoding="utf-8"))
+        prov = json.loads((folder / "provenance.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return [], 0
+        return [], 0, None
     if not isinstance(prov, dict) or not isinstance(prov.get("files"), dict):
-        return [], 0
-    from .abstract import AMENDMENT_KINDS as ABSTRACT_KINDS
+        return [], 0, None
+    from . import abstract as ab
 
     amendments = list(prov.get("amendments") or [])
     files = dict(prov["files"])
+    # Each file's bytes after the amendment being rolled back: the file as it is, then as rebuilt from an
+    # abstract amendment's record (None: missing). A file in ``unknown`` was redacted later: its earlier bytes
+    # cannot be rebuilt without the text.
+    current: dict[str, bytes | None] = {}
+    unknown: set[str] = set()
+
+    def now(rel: str) -> bytes | None:
+        if rel not in current:
+            p = folder / rel
+            current[rel] = p.read_bytes() if p.is_file() and not p.is_symlink() else None
+        return current[rel]
+
     n = 0
-    while amendments and isinstance(amendments[-1], dict) and amendments[-1].get("kind") in (KIND, *ABSTRACT_KINDS):
+    while amendments and isinstance(amendments[-1], dict) and amendments[-1].get("kind") in (KIND, *ab.AMENDMENT_KINDS):
         a = amendments.pop()
-        if a.get("kind") in ABSTRACT_KINDS:
-            # The abstract rewritten after publishing (`e2er abstract`): the file as it was, or none.
-            if not isinstance(a.get("path"), str):
-                return [], 0
-            if a.get("sha256_before") is None:
-                files.pop(a["path"], None)
-            elif isinstance(a.get("sha256_before"), str) and isinstance(a.get("bytes_before"), int):
-                files[a["path"]] = {"sha256": a["sha256_before"], "bytes": a["bytes_before"]}
+        rel = a.get("path")
+        if not isinstance(rel, str):
+            return [], 0, "an amendment names no file"
+        if a.get("kind") in ab.AMENDMENT_KINDS:
+            if rel not in ab.CHANGED_FILES:
+                return [], 0, f"{rel}: an abstract amendment of a file e2er abstract never changes"
+            if rel == ab.PAPER_FILE and a.get("sha256_before") is not None:
+                if rel in unknown:
+                    return [], 0, f"{rel}: the abstract amendment comes before a later change that cannot be undone"
+                why, before = ab.paper_problem(a, now(rel))
+                if why or before is None:
+                    return [], 0, why
+                if len(before) != a.get("bytes_before"):
+                    return [], 0, f"{rel}: the abstract amendment records another size before than its old text gives"
+                current[rel] = before
             else:
-                return [], 0
+                unknown.add(rel)
+            # The file as it was, or none.
+            if a.get("sha256_before") is None:
+                files.pop(rel, None)
+            elif isinstance(a.get("sha256_before"), str) and isinstance(a.get("bytes_before"), int):
+                files[rel] = {"sha256": a["sha256_before"], "bytes": a["bytes_before"]}
+            else:
+                return [], 0, f"{rel}: the abstract amendment records no fingerprint or size before"
             n += 1
             continue
         size = (a.get("redaction") or {}).get("bytes_before") if isinstance(a.get("redaction"), dict) else None
-        if not isinstance(a.get("path"), str) or not isinstance(a.get("sha256_before"), str) or size is None:
-            return [], 0
-        files[a["path"]] = {"sha256": a["sha256_before"], "bytes": size}
+        if not isinstance(a.get("sha256_before"), str) or size is None:
+            return [], 0, f"{rel}: the redaction records no fingerprint or size before"
+        known = rel not in unknown
+        data = now(rel) if known else None
+        why = record_problem(a, data, size_after=(files.get(rel) or {}).get("bytes"), bytes_known=known)
+        if why is not None:
+            return [], 0, why
+        unknown.add(rel)  # the redacted text is not known: the file before cannot be rebuilt
+        files[rel] = {"sha256": a["sha256_before"], "bytes": size}
         n += 1
     if not n:
-        return [], 0
+        return [], 0, None
     prov["files"] = files
     prov["amendments"] = amendments
     texts = [dump(prov)]
     if not amendments:
         texts.append(dump({k: v for k, v in prov.items() if k != "amendments"}))
-    return texts, n
+    return texts, n, None
 
 
-def record_problem(entry: dict[str, Any], data: bytes | None) -> str | None:
-    """Why a redaction amendment does not describe the file ``data`` (its current bytes), or None.
+def record_problem(
+    entry: dict[str, Any], data: bytes | None, *, size_after: int | None = None, bytes_known: bool = True
+) -> str | None:
+    """Why a redaction amendment does not describe the file ``data`` (its bytes after the redaction), or None.
 
-    Checks the record's shape and that the replacement sits at every recorded offset.
+    Checks the record's shape and that the replacement sits at every recorded offset. ``bytes_known=False``:
+    the file after this redaction is not known (a later redaction changed it again), and only the record
+    itself is checked.
     """
     red = entry.get("redaction")
     path = entry.get("path")
@@ -434,6 +482,8 @@ def record_problem(entry: dict[str, Any], data: bytes | None) -> str | None:
         and removed > 0
     ):
         return f"{path}: the redaction record is incomplete"
+    if not bytes_known:
+        return None
     if data is None:
         return f"{path} is missing"
     r = rep.encode("utf-8")
