@@ -335,3 +335,40 @@ def test_an_input_outside_the_paper_folder_is_not_read(tmp_path: Path):
     (tmp_path / "secret.tex").write_text("\\cite{outside}")
     b = _paper(tmp_path, "\\input{../../secret}\n", {})
     assert "outside" not in _inlined(b / "paper" / "paper.tex", b / "paper")
+
+
+# ── 11. the abstract gate: results, not statistics; signs count ──────────────
+
+
+def test_the_abstract_number_check_leaves_statistics_out_and_keeps_signs():
+    """The reviewer's repro: "fell by 4 percent" matched a standard error of 0.04, "rose by 1.2" matched -1.2."""
+    from src.core import abstract as ab
+
+    sources = {
+        "estimation_results.json#main.x.estimate": -1.2,
+        "estimation_results.json#main.x.se": 0.04,
+        "estimation_results.json#main.x.p_value": 0.03,
+        "estimation_results.json#main.x.ci_lower": 0.25,
+        "summary_statistics.json#treated.share": 0.37,
+        "summary_statistics.json#n_countries": 0.5,
+    }
+    assert not ab._is_result("4", 4.0, True, sources), "a standard error times 100 is no result"
+    assert not ab._is_result("3", 3.0, True, sources), "nor is a p-value"
+    assert not ab._is_result("0.25", 0.25, False, sources), "nor an interval bound"
+    assert not ab._is_result("1.2", 1.2, False, sources), "the sign counts"
+    assert ab._is_result("-1.2", -1.2, False, sources)
+    assert ab._is_result("37", 37.0, True, sources), "a share as a percentage"
+    assert not ab._is_result("50", 50.0, True, sources), "x 100 only for a share or an estimate"
+    check = ab.check(
+        "\\begin{abstract}\nWe ask whether X matters. Enrolment fell by 4 percent. X raised enrolment.\n"
+        "\\end{abstract}",
+        sources=sources,
+    )
+    assert any("4 is no value of the study's results" in p for p in check.problems)
+    design = ab.check(
+        "\\begin{abstract}\nWe ask whether X matters. Enrolment fell by -5 points. X raised enrolment.\n"
+        "\\end{abstract}",
+        sources={},
+        design={5.0},
+    )
+    assert any("-5 is no value" in p for p in design.problems), "a design setting matches with its sign"

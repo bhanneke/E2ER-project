@@ -138,7 +138,7 @@ def test_plain_significance_words_are_allowed():
 
 
 def test_at_most_three_numbers_each_a_result():
-    sources = {"r#a": 22.07, "r#b": 13.0, "r#c": 0.39, "r#d": 47}
+    sources = {"r#a": 22.07, "r#b": 13.0, "r#reached.share": 0.39, "r#d": 47}
     ok = _problems(
         "We ask whether fees matter. Enrolment rose by 22 percentage points and net enrolment by 13 points, "
         "and the reform reached 39 percent of children. Fee abolition widened access to school.",
