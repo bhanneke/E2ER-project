@@ -412,9 +412,15 @@ def main() -> None:
     prereg_sub = prereg_p.add_subparsers(dest="prereg_command")
     dep_p = prereg_sub.add_parser("deposit", help="Deposit the frozen pre-registration with your own account (DOI).")
     dep_p.add_argument("target", help="Paper UUID, or an exported study folder.")
-    dep_p.add_argument("--zenodo", action="store_true", help="Deposit on Zenodo (token in ZENODO_TOKEN).")
+    dep_p.add_argument(
+        "--zenodo", action="store_true", help="Deposit on Zenodo (token from `e2er zenodo login`, or ZENODO_TOKEN)."
+    )
     dep_p.add_argument("--osf", action="store_true", help="OSF Registries (not built yet; says what to do instead).")
-    dep_p.add_argument("--sandbox", action="store_true", help="Use Zenodo's sandbox (token in ZENODO_SANDBOX_TOKEN).")
+    dep_p.add_argument(
+        "--sandbox",
+        action="store_true",
+        help="Use Zenodo's sandbox (`e2er zenodo login --sandbox`, or ZENODO_SANDBOX_TOKEN).",
+    )
 
     # Superseded by `e2er skills sync`. Kept working because it is in the
     # README, in shell history, and in whatever people have scripted — renaming
@@ -756,10 +762,13 @@ def main() -> None:
     publish_p.add_argument(
         "--zenodo",
         action="store_true",
-        help="Deposit the public data and code on Zenodo with your own token (ZENODO_TOKEN) and record the DOIs.",
+        help="Deposit the public data and code on Zenodo with your own token (`e2er zenodo login`, or "
+        "ZENODO_TOKEN) and record the DOIs.",
     )
     publish_p.add_argument(
-        "--zenodo-sandbox", action="store_true", help="Use sandbox.zenodo.org (token in ZENODO_SANDBOX_TOKEN)."
+        "--zenodo-sandbox",
+        action="store_true",
+        help="Use sandbox.zenodo.org (`e2er zenodo login --sandbox`, or ZENODO_SANDBOX_TOKEN).",
     )
     publish_p.add_argument(
         "--accept-data-terms",
@@ -835,6 +844,20 @@ def main() -> None:
     logout_p.add_argument("--url", default=None, help=url_help)
     whoami_p = subparsers.add_parser("whoami", help="Show the account the command line is signed in as.")
     whoami_p.add_argument("--url", default=None, help=url_help)
+    zenodo_p = subparsers.add_parser(
+        "zenodo", help="Your own Zenodo token for deposits (`e2er zenodo login`, `status`, `logout`)."
+    )
+    zenodo_sub = zenodo_p.add_subparsers(dest="zenodo_command", required=True)
+    sandbox_help = "sandbox.zenodo.org, Zenodo's test site (a separate account with its own tokens)."
+    zl = zenodo_sub.add_parser(
+        "login", help="Open Zenodo's new-token page, paste the token (not shown); it is checked and kept."
+    )
+    zl.add_argument("--sandbox", action="store_true", help=sandbox_help)
+    zl.add_argument("--no-browser", action="store_true", help="Do not open the browser; print the address only.")
+    zs = zenodo_sub.add_parser("status", help="Whether a Zenodo token is stored and works (it is not shown).")
+    zs.add_argument("--sandbox", action="store_true", help=sandbox_help)
+    zo = zenodo_sub.add_parser("logout", help="Remove the stored Zenodo token from this computer.")
+    zo.add_argument("--sandbox", action="store_true", help=sandbox_help)
     dossier_p = subparsers.add_parser("dossier", help="Dossier commands (`e2er dossier push`).")
     dossier_sub = dossier_p.add_subparsers(dest="dossier_command", required=True)
     push_p = dossier_sub.add_parser("push", help="Register the dossier alone, so a private study's footnote resolves.")
@@ -1035,6 +1058,15 @@ def main() -> None:
                 unblind=args.unblind,
             )
         )
+
+    if args.command == "zenodo":
+        from . import cli_zenodo
+
+        if args.zenodo_command == "login":
+            sys.exit(cli_zenodo.login(sandbox=args.sandbox, open_browser=not args.no_browser))
+        if args.zenodo_command == "logout":
+            sys.exit(cli_zenodo.logout(sandbox=args.sandbox))
+        sys.exit(cli_zenodo.status(sandbox=args.sandbox))
 
     if args.command in ("login", "logout", "whoami", "dossier", "token"):
         from . import cli_platform

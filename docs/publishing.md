@@ -38,7 +38,7 @@ run: e2er publish ./study --owner ada --project road-deaths --to https://e2er.or
 
 When e2er runs inside a test runner it never uses your own login and never publishes anywhere but a local test server. A test run is one with `PYTEST_CURRENT_TEST` set (pytest sets it for every test, and a command a test starts inherits it), `E2ER_TEST=1` (set it for any other runner, or for a shell script of tests), or `CI=true` together with a test command (pytest, unittest, nose2, tox, nox). In a test run:
 
-- e2er never reads or writes the system keychain or `~/.e2er/credentials.json`; the Zenodo token saved in Setup or the keychain is not read either. Only `E2ER_TOKEN`, `ZENODO_TOKEN` and a credentials file the test names itself (`E2ER_CREDENTIALS`) are used.
+- e2er never reads or writes the system keychain or `~/.e2er/credentials.json`; the Zenodo token saved in Setup, by `e2er zenodo login` or in the keychain is not read either. Only `E2ER_TOKEN`, `ZENODO_TOKEN` and a credentials file the test names itself (`E2ER_CREDENTIALS`) are used.
 - Every request to a platform or to Zenodo is refused before it is made unless it goes to `localhost`, `127.0.0.1` (or another loopback address), or the one address in `E2ER_TEST_SERVER`, for a local copy of the platform your tests run. `E2ER_TEST_SERVER` may never name e2er.org or one of its subdomains. The refusal says "e2er is running under a test runner … Nothing was sent."
 - `gh` is not run and nothing is pushed to GitHub (e2er's own tests run a fake `gh` and say so with `E2ER_TEST_GITHUB=fake`).
 
@@ -102,9 +102,13 @@ GitHub's Acceptable Use Policies (section 7, Information Usage Restrictions) all
 `--zenodo` deposits the public data and code on Zenodo with your own account and records the DOIs:
 
 ```
-export ZENODO_TOKEN=…   # a personal token from zenodo.org, scopes deposit:write and deposit:actions (publish)
+e2er zenodo login       # once: paste a personal token from zenodo.org
 e2er publish ./my-study … --data public --code public --zenodo
 ```
+
+`e2er zenodo login` opens Zenodo's page for a new personal token (`https://zenodo.org/account/settings/applications/tokens/new/`). Zenodo's form cannot be filled in from the address, so tick the two scopes yourself: `deposit:write` (upload) and `deposit:actions` (publish); any name will do, e.g. "e2er on <your computer>". Paste the token at the prompt; it is not shown, and e2er never prints or logs it (`pbpaste | e2er zenodo login` works too). e2er checks it with a request that changes nothing (`GET /api/deposit/depositions?size=1`) and stores it in the system keychain (service `zenodo.org`, username `token`), or, when there is no keychain (the `keyring` package is not installed, or there is no GUI session), in `~/.e2er/credentials.json` with mode 0600. A token Zenodo refuses is not stored. Zenodo does not tell which scopes a token has, and testing `deposit:write` or `deposit:actions` would create or publish a record, so they are not tested: if one is missing, Zenodo refuses the first deposit (403), nothing is published, and an unpublished draft may be left in your Zenodo uploads. `e2er zenodo status` says whether a token is stored and whether Zenodo accepts it, without showing it; `e2er zenodo logout` removes it from this computer (delete it on Zenodo too, under Applications, to revoke it). `--sandbox` does the same for sandbox.zenodo.org.
+
+In CI, or to override the stored token for one shell, set `ZENODO_TOKEN` (`ZENODO_SANDBOX_TOKEN` for the sandbox); the environment comes first, then the token saved in Setup, then the keychain, then the credentials file.
 
 The data files are deposited one by one (as one zip `<project>-data.zip` when there are more than the 100 files a Zenodo record takes, or two files whose flattened names collide), the code (`code/` and `replication/`) as one zip. Each deposit names the study's authors with their ORCID iDs, its licence, and links back to the study page and the dossier; the DOIs go into the dossier and the study page. The files go from your computer straight to Zenodo; the token is never sent to e2er.org. Private material is never deposited.
 
@@ -112,7 +116,7 @@ The DOIs are reserved first (drafts), everything that can still fail runs next (
 
 A new version of the study (publishing the folder again) keeps a deposit's DOI when its files are the ones deposited (their MD5 checksums, recorded in `.e2er/zenodo.json` and, for deposits made before e2er recorded them, read from Zenodo). When they changed, publish makes a new version of the same Zenodo record (`newversion`): a new DOI under the record's concept DOI, holding exactly the new files; the dossier and the study page name the new DOI, and `.e2er/zenodo.json` keeps the earlier ones (`earlier`). A rehearsal (`--dry-run`) says which deposits would get a new version.
 
-To try it first, use Zenodo's sandbox (`--zenodo-sandbox`, which implies `--zenodo`; token in `ZENODO_SANDBOX_TOKEN` from sandbox.zenodo.org, a separate account with its own tokens; its DOIs start with `10.5072/` and resolve nowhere, so the study links the sandbox's record; the sandbox reserves a draft's DOI as `10.5281/zenodo.N`, production's prefix, and publishes it as `10.5072/zenodo.N`, which is the DOI publish records), or add `--dry-run` to see what would be deposited without depositing anything. Sandbox and real deposits are kept apart: a folder deposited on the sandbox starts afresh on zenodo.org.
+To try it first, use Zenodo's sandbox (`--zenodo-sandbox`, which implies `--zenodo`; token from `e2er zenodo login --sandbox` or `ZENODO_SANDBOX_TOKEN`, from sandbox.zenodo.org, a separate account with its own tokens; its DOIs start with `10.5072/` and resolve nowhere, so the study links the sandbox's record; the sandbox reserves a draft's DOI as `10.5281/zenodo.N`, production's prefix, and publishes it as `10.5072/zenodo.N`, which is the DOI publish records), or add `--dry-run` to see what would be deposited without depositing anything. Sandbox and real deposits are kept apart: a folder deposited on the sandbox starts afresh on zenodo.org.
 
 ## The files in a public GitHub repository
 

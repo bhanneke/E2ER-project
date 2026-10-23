@@ -581,7 +581,9 @@ def _describe(
     if zenodo and not zenodo_plan_only:
         token = zen.load_token(zenodo_sandbox)
         if not token:
-            print(f"error: --zenodo needs your own Zenodo token: {zen.token_hint(zenodo_sandbox)}")
+            print(
+                f"error: --zenodo needs your own Zenodo token: {zen.token_hint(zenodo_sandbox)}. Nothing was changed."
+            )
             return 1, None
 
     # 3. Changes, each recorded as an amendment (the exported fingerprint is kept).

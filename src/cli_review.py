@@ -301,12 +301,11 @@ def deposit(target: str, *, zenodo: bool = False, osf: bool = False, sandbox: bo
     if not zenodo:
         print("e2er preregister: choose --zenodo (or --osf)", file=sys.stderr)
         return 1
-    token = (os.environ.get("ZENODO_SANDBOX_TOKEN" if sandbox else "ZENODO_TOKEN") or "").strip()
+    from .core import zenodo as zen
+
+    token = zen.load_token(sandbox)
     if not token:
-        print(
-            f"e2er preregister: set {'ZENODO_SANDBOX_TOKEN' if sandbox else 'ZENODO_TOKEN'} to your own Zenodo token",
-            file=sys.stderr,
-        )
+        print(f"e2er preregister: no Zenodo token: {zen.token_hint(sandbox)}", file=sys.stderr)
         return 1
     dep = deposit_zenodo(folder, token, base_url=ZENODO_SANDBOX_URL if sandbox else ZENODO_URL)
     print(f"✓ deposited on Zenodo: doi {dep.get('doi')}  {dep.get('url')}")

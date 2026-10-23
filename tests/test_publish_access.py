@@ -180,7 +180,8 @@ def test_zenodo_without_a_token_writes_nothing(bundle: Path, tmp_path: Path, mon
     monkeypatch.delenv("ZENODO_TOKEN", raising=False)
     monkeypatch.setattr(zen, "load_token", lambda sandbox=False: None)
     assert publish(str(bundle), **BASE, **REPO, code="public", zenodo=True, out=str(tmp_path / "e"), yes=True) == 1
-    assert "ZENODO_TOKEN" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "e2er zenodo login" in out and "ZENODO_TOKEN" in out
     assert not (bundle / "e2er.json").exists()
 
 

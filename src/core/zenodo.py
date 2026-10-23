@@ -18,13 +18,18 @@ concept DOI. The calls are those of Zenodo's deposit API
 in ``links.latest_draft``, ``GET``/``DELETE .../files``.
 
 The token comes from ``ZENODO_TOKEN`` (``ZENODO_SANDBOX_TOKEN`` for the
-sandbox), else from the system keychain (service ``zenodo.org`` or
-``sandbox.zenodo.org``, username ``token``).
+sandbox), else from the settings file Setup writes, else from the system
+keychain (service ``zenodo.org`` or ``sandbox.zenodo.org``, username
+``token``), else from the credentials file e2er's own login uses
+(``~/.e2er/credentials.json``, mode 0600, key ``zenodo.org`` or
+``sandbox.zenodo.org``). ``e2er zenodo login`` stores it in the keychain, or in
+that file when there is no keychain.
 """
 
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 from dataclasses import dataclass, field
 from typing import Any
@@ -71,42 +76,160 @@ def registered_doi(doi: str | None, base: str = ZENODO_URL) -> str | None:
     return doi
 
 
-def load_token(sandbox: bool = False) -> str | None:
-    """The researcher's Zenodo token: environment first, then the settings file Setup writes, then the keychain."""
-    env = (os.environ.get("ZENODO_SANDBOX_TOKEN" if sandbox else "ZENODO_TOKEN") or "").strip()
-    if env:
-        return env
-    from .test_guard import saved_logins_allowed
+def service(sandbox: bool = False) -> str:
+    """The keychain service (and credentials-file key) of the token: ``zenodo.org`` or ``sandbox.zenodo.org``."""
+    return "sandbox.zenodo.org" if sandbox else "zenodo.org"
 
-    if not saved_logins_allowed():
-        return None  # a test run reads no saved token (src/core/test_guard.py)
+
+#: The keychain username the token is stored under.
+KEYRING_USER = "token"
+
+
+def stored_token(sandbox: bool = False) -> tuple[str | None, str | None]:
+    """The token ``e2er zenodo login`` stored and where it is: the keychain, else the credentials file.
+
+    In a test run the keychain is never touched and only a credentials file the test names itself
+    (``E2ER_CREDENTIALS``) is read (src/core/test_guard.py).
+    """
+    from . import platform_client as pc
+
+    kr = pc._keyring()
+    if kr is not None:
+        try:
+            token = kr.get_password(service(sandbox), KEYRING_USER)
+        except Exception:  # noqa: BLE001 - locked or unavailable keychain
+            token = None
+        if token and token.strip():
+            return token.strip(), "the system keychain"
+    path = pc.credentials_path()
+    if path is not None and path.is_file():
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            data = {}
+        token = data.get(service(sandbox)) if isinstance(data, dict) else None
+        if isinstance(token, str) and token.strip():
+            return token.strip(), str(path)
+    return None, None
+
+
+def save_token(token: str, sandbox: bool = False) -> str:
+    """Store the token in the system keychain, else in the credentials file (mode 0600); returns where."""
+    from . import platform_client as pc
+
+    kr = pc._keyring()
+    if kr is not None:
+        try:
+            kr.set_password(service(sandbox), KEYRING_USER, token)
+            return "the system keychain"
+        except Exception:  # noqa: BLE001 - locked or unavailable keychain (no GUI session)
+            pass
+    try:
+        return str(pc._write_credentials(service(sandbox), token))
+    except pc.PlatformError as e:
+        raise ZenodoError(str(e)) from e
+
+
+def forget_token(sandbox: bool = False) -> list[str]:
+    """Remove the stored token from the keychain and the credentials file; returns where it was removed."""
+    from . import platform_client as pc
+
+    removed: list[str] = []
+    kr = pc._keyring()
+    if kr is not None:
+        try:
+            if kr.get_password(service(sandbox), KEYRING_USER):
+                kr.delete_password(service(sandbox), KEYRING_USER)
+                removed.append("the system keychain")
+        except Exception:  # noqa: BLE001 - nothing stored there, or the keychain is locked
+            pass
+    path = pc.credentials_path()
+    if path is not None and path.is_file():
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            data = None
+        if isinstance(data, dict) and data.pop(service(sandbox), None) is not None:
+            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(json.dumps(data, indent=2) + "\n")
+            path.chmod(0o600)
+            removed.append(str(path))
+    return removed
+
+
+def _settings_token(sandbox: bool) -> str:
     try:
         from ..config import get_settings
 
         settings = get_settings()
-        saved = (getattr(settings, "zenodo_sandbox_token" if sandbox else "zenodo_token", None) or "").strip()
+        return (getattr(settings, "zenodo_sandbox_token" if sandbox else "zenodo_token", None) or "").strip()
     except Exception:  # noqa: BLE001 - an unreadable settings file means "not saved there"
-        saved = ""
-    if saved:
-        return saved
-    try:
-        import keyring  # type: ignore[import-not-found]
-    except ImportError:
-        return None
-    try:
-        token: str | None = keyring.get_password("sandbox.zenodo.org" if sandbox else "zenodo.org", "token")
-    except Exception:  # noqa: BLE001 - locked or unavailable keychain
-        return None
-    return token
+        return ""
+
+
+def env_var(sandbox: bool = False) -> str:
+    return "ZENODO_SANDBOX_TOKEN" if sandbox else "ZENODO_TOKEN"
+
+
+def find_token(sandbox: bool = False) -> tuple[str | None, str | None]:
+    """The token publish uses and where it comes from: the environment, Setup's settings file, then what
+    ``e2er zenodo login`` stored (keychain, credentials file)."""
+    env = (os.environ.get(env_var(sandbox)) or "").strip()
+    if env:
+        return env, env_var(sandbox)
+    from .test_guard import saved_logins_allowed
+
+    if saved_logins_allowed():  # a test run reads no settings file (src/core/test_guard.py)
+        saved = _settings_token(sandbox)
+        if saved:
+            return saved, "the settings file Setup writes"
+    return stored_token(sandbox)
+
+
+def load_token(sandbox: bool = False) -> str | None:
+    """The researcher's Zenodo token: environment, settings file, keychain, credentials file."""
+    return find_token(sandbox)[0]
 
 
 def token_hint(sandbox: bool = False) -> str:
-    var = "ZENODO_SANDBOX_TOKEN" if sandbox else "ZENODO_TOKEN"
-    site = "sandbox.zenodo.org" if sandbox else "zenodo.org"
-    return (
-        f"set {var} to a personal token from {site} "
-        "(Applications → Personal access tokens, scopes deposit:write and deposit:actions)"
-    )
+    flag = " --sandbox" if sandbox else ""
+    return f"run `e2er zenodo login{flag}` once (in CI, set {env_var(sandbox)} instead)"
+
+
+@dataclass
+class TokenCheck:
+    """What a harmless authenticated request said about a token."""
+
+    works: bool
+    message: str
+
+
+def check_token(token: str, sandbox: bool = False, *, client: Any = None) -> TokenCheck:
+    """Ask Zenodo for one of the account's deposits (``GET /api/deposit/depositions?size=1``): it changes nothing.
+
+    Zenodo does not say which scopes a token has, and every request that would test deposit:write or
+    deposit:actions creates or publishes something, so only the token itself is checked.
+    """
+    base = base_url(sandbox)
+    try:
+        http = client or client_factory(base)
+        r = http.get("/api/deposit/depositions", params={"size": 1}, headers={"Authorization": f"Bearer {token}"})
+    except ZenodoError as e:
+        return TokenCheck(False, str(e))
+    except Exception as e:  # noqa: BLE001 - network error; the message names no token
+        return TokenCheck(False, f"could not reach {base} ({type(e).__name__}); nothing was checked")
+    if r.status_code == 200:
+        return TokenCheck(True, f"{base} accepted the token (it read your deposits; nothing was changed)")
+    if r.status_code == 401:
+        return TokenCheck(False, f"{base} does not accept this token (401): it is wrong, expired or was deleted")
+    if r.status_code == 403:
+        return TokenCheck(
+            False,
+            f"{base} knows the token but refused to show your deposits (403): it lacks a scope; "
+            "make a new one with deposit:write and deposit:actions",
+        )
+    return TokenCheck(False, f"{base} answered {r.status_code}; the token could not be checked")
 
 
 @dataclass
