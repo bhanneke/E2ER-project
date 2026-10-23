@@ -37,6 +37,7 @@ from pathlib import Path
 from typing import Any
 
 from ...logging_config import get_logger
+from .names import plain_filename
 
 logger = get_logger(__name__)
 
@@ -587,7 +588,7 @@ def render_tables(workspace: Path) -> RenderReport:
             report.errors.append("non-object entry in tables list")
             continue
         filename = str(table.get("filename", "")).strip()
-        if not filename or "/" in filename or not filename.endswith(".tex"):
+        if not plain_filename(filename, ".tex"):
             report.errors.append(f"invalid table filename: {filename!r}")
             continue
         try:
@@ -632,7 +633,7 @@ def _previously_rendered(workspace: Path) -> set[str]:
     rendered = rep.get("rendered") if isinstance(rep, dict) else None
     if not isinstance(rendered, list):
         return set()
-    return {r for r in rendered if isinstance(r, str) and r.endswith(".tex") and "/" not in r}
+    return {r for r in rendered if plain_filename(r, ".tex")}
 
 
 def _set_aside_stale(workspace: Path, names: list[str]) -> list[str]:

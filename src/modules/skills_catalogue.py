@@ -96,6 +96,10 @@ _RISE_TARBALL = "https://codeload.github.com/bhanneke/RISE/tar.gz/refs/heads/mai
 #: A downloaded copy older than this is fetched again.
 _REFRESH_SECONDS = 24 * 3600
 _MAX_TARBALL_BYTES = 200 * 1024 * 1024
+#: One pack manifest (skills/<pack>.yml): the largest in the catalogue is a few dozen KB.
+_MAX_MANIFEST_BYTES = 2 * 1024 * 1024
+#: Pack manifests read from one download (the catalogue holds a few dozen).
+_MAX_MANIFESTS = 2000
 
 
 def downloaded_catalogue_dir() -> Path:
@@ -120,6 +124,53 @@ def catalogue_path(explicit: str | Path | None = None) -> Path:
     return downloaded_catalogue_dir()
 
 
+def _fetch_tarball(url: str, max_bytes: int | None = None) -> bytes:
+    """The RISE tarball, streamed with a cap: the size is checked while the bytes arrive."""
+    import httpx
+
+    cap = _MAX_TARBALL_BYTES if max_bytes is None else max_bytes
+    body = bytearray()
+    with httpx.stream("GET", url, follow_redirects=True, timeout=60) as resp:
+        resp.raise_for_status()
+        for chunk in resp.iter_bytes():
+            body.extend(chunk)
+            if len(body) > cap:
+                raise CatalogueError("the RISE download is larger than expected")
+    return bytes(body)
+
+
+def _manifests_from_tarball(data: bytes) -> dict[str, bytes]:
+    """The pack manifests (``<repo>-main/skills/<pack>.yml``) of the RISE tarball, each read with a size cap.
+
+    A member's declared size is checked before it is read, and the read itself is bounded, so one
+    huge (or highly compressed) member cannot fill memory; past ``_MAX_MANIFESTS`` the rest are ignored.
+    """
+    import io
+    import tarfile
+
+    manifests: dict[str, bytes] = {}
+    with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tar:
+        for member in tar:
+            parts = member.name.split("/")
+            if not (member.isfile() and len(parts) == 3 and parts[1] == "skills" and parts[2].endswith(".yml")):
+                continue
+            if parts[2].startswith(".") or not safe_slug(parts[2][: -len(".yml")].lower()):
+                continue
+            if member.size > _MAX_MANIFEST_BYTES:
+                logger.warning("skipping %s in the RISE download: %d bytes", parts[2], member.size)
+                continue
+            fh = tar.extractfile(member)
+            if fh is None:
+                continue
+            blob = fh.read(_MAX_MANIFEST_BYTES + 1)
+            if len(blob) > _MAX_MANIFEST_BYTES:
+                continue
+            manifests[parts[2]] = blob
+            if len(manifests) >= _MAX_MANIFESTS:
+                break
+    return manifests
+
+
 def _download_catalogue(root: Path) -> None:
     """Fetch the pack manifests (skills/*.yml) of the public RISE catalogue into ``root``.
 
@@ -128,30 +179,14 @@ def _download_catalogue(root: Path) -> None:
     older copy is used with a warning; with no copy at all, the error says how to
     point e2er to a catalogue instead.
     """
-    import io
-    import tarfile
     import time
-
-    import httpx
 
     skills_dir = root / "skills"
     stamp = root / ".downloaded"
     if stamp.is_file() and time.time() - stamp.stat().st_mtime < _REFRESH_SECONDS and skills_dir.is_dir():
         return
     try:
-        resp = httpx.get(_RISE_TARBALL, follow_redirects=True, timeout=60)
-        resp.raise_for_status()
-        if len(resp.content) > _MAX_TARBALL_BYTES:
-            raise CatalogueError("the RISE download is larger than expected")
-        manifests: dict[str, bytes] = {}
-        with tarfile.open(fileobj=io.BytesIO(resp.content), mode="r:gz") as tar:
-            for member in tar.getmembers():
-                parts = member.name.split("/")
-                # <repo>-main/skills/<pack>.yml
-                if member.isfile() and len(parts) == 3 and parts[1] == "skills" and parts[2].endswith(".yml"):
-                    fh = tar.extractfile(member)
-                    if fh is not None and "/" not in parts[2] and not parts[2].startswith("."):
-                        manifests[parts[2]] = fh.read()
+        manifests = _manifests_from_tarball(_fetch_tarball(_RISE_TARBALL))
     except Exception as e:  # noqa: BLE001 — any failure ends in the same advice
         if skills_dir.is_dir() and any(skills_dir.glob("*.yml")):
             logger.warning("could not refresh the RISE catalogue from GitHub (%s); using the copy in %s", e, root)

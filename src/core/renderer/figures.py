@@ -37,6 +37,7 @@ from pathlib import Path
 from typing import Any
 
 from ...logging_config import get_logger
+from .names import plain_filename
 
 logger = get_logger(__name__)
 
@@ -319,7 +320,7 @@ def render_figures(workspace: Path) -> FigureRenderReport:
             report.errors.append("non-object entry in figures list")
             continue
         filename = str(fig_spec.get("filename", "")).strip()
-        if not filename or "/" in filename or not filename.endswith(".pdf"):
+        if not plain_filename(filename, ".pdf"):
             report.errors.append(f"invalid figure filename: {filename!r}")
             continue
         ftype = str(fig_spec.get("figure_type", ""))
