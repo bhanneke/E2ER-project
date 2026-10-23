@@ -130,3 +130,38 @@ After adding slow tests, refresh the durations:
 pytest tests/ -m "not e2e" --junitxml=/tmp/junit.xml
 python -m tests.parts /tmp/junit.xml   # rewrites tests/test_durations.json
 ```
+
+## 5. The workflows' supply chain: pinned actions, hashed installs, least permissions
+
+Every workflow in `.github/workflows/` (CI and release alike):
+
+- declares `permissions: contents: read` at the top; a job that writes says so itself
+  (`release` and `zenodo-doi`: `contents: write`; `publish`: `id-token: write` for PyPI's OIDC;
+  `schema-drift`: `issues: write`);
+- names every action by a full commit SHA, with its version in a comment
+  (`actions/checkout@11d5960a… # v4.4.0`), and checks out with `persist-credentials: false`;
+- installs from hash-pinned files: `.github/requirements/ci.txt` (the `dev` extra plus the
+  build tools, every package with its hashes, for Python 3.11–3.14 on every platform) with
+  `pip install --require-hashes`, then e2er itself with `pip install --no-deps --no-build-isolation -e .`;
+  the build jobs install `.github/requirements/build.txt` and run `python -m build --no-isolation`.
+  The release workflow keeps no pip cache.
+
+`tests/test_workflow_supply_chain.py` fails when one of these slips.
+
+Refresh the hashed files after changing a dependency in `pyproject.toml` (or to take newer
+versions), and commit them with the change:
+
+```bash
+uv pip compile pyproject.toml .github/requirements/build.in --extra dev --generate-hashes \
+    --universal --python-version 3.11 -o .github/requirements/ci.txt
+uv pip compile .github/requirements/build.in --generate-hashes \
+    --universal --python-version 3.11 -o .github/requirements/build.txt
+```
+
+To move an action to a newer version, resolve the tag to its commit (dereference an annotated tag)
+and replace both the SHA and the comment:
+
+```bash
+gh api repos/actions/checkout/git/ref/tags/v4.4.0 --jq '.object.type + " " + .object.sha'
+gh api repos/<owner>/<repo>/git/tags/<sha-of-the-tag-object> --jq .object.sha   # when the type is "tag"
+```
