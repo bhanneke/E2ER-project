@@ -367,7 +367,12 @@ def test_starting_or_steering_a_run_needs_the_session_token(monkeypatch):
     from src.api.app import app
 
     anonymous = TestClient(app, headers={"x-e2er-token": ""})
-    for path in ("/api/papers", "/api/papers/" + _ID + "/resume", "/api/papers/" + _ID + "/cancel", "/api/papers/" + _ID + "/review"):
+    for path in (
+        "/api/papers",
+        "/api/papers/" + _ID + "/resume",
+        "/api/papers/" + _ID + "/cancel",
+        "/api/papers/" + _ID + "/review",
+    ):
         r = anonymous.post(path, json={})
         assert r.status_code == 403 and "not signed in to e2er" in r.json()["detail"], path
     wrong = TestClient(app, headers={"x-e2er-token": "guessed"})
