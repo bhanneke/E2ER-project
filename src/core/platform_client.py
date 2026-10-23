@@ -51,13 +51,53 @@ def credentials_path() -> Path | None:
     return Path("~/.e2er/credentials.json").expanduser()
 
 
+def _loopback(host: str) -> bool:
+    import ipaddress
+
+    h = host.strip("[]").lower()
+    if h == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(h).is_loopback
+    except ValueError:
+        return False
+
+
+def check_platform_url(url: str) -> str:
+    """``url`` when a token may go there: https, or http to this computer only (a local test server)."""
+    from urllib.parse import urlsplit
+
+    parts = urlsplit(url)
+    host = parts.hostname or ""
+    if not host or parts.username or parts.password:
+        raise PlatformError(f"{url} is not a platform address")
+    if parts.scheme == "https" or (parts.scheme == "http" and _loopback(host)):
+        return url
+    raise PlatformError(f"refusing {url}: a platform is reached over https (http only for a server on this computer)")
+
+
+def _same_host(url: str, path: str) -> None:
+    """A request path stays on the platform the token belongs to (never an absolute URL elsewhere)."""
+    from urllib.parse import urlsplit
+
+    target = urlsplit(path)
+    if not target.scheme and not target.netloc:
+        if not path.startswith("/"):
+            raise PlatformError(f"refusing the request path {path[:80]!r}: not a path on {url}")
+        return
+    base = urlsplit(url)
+    if (target.scheme, target.hostname, target.port) != (base.scheme, base.hostname, base.port):
+        raise PlatformError(f"refusing to send the token for {url} to {target.scheme}://{target.hostname}")
+
+
 # Tests replace this with a client on an httpx.MockTransport.
 def client_factory(url: str) -> httpx.Client:
+    check_platform_url(url)
     try:
         test_guard.check_target(url)
     except test_guard.RefusedInTestError as e:
         raise PlatformError(str(e)) from e
-    return httpx.Client(base_url=url, timeout=30.0, headers={"user-agent": "e2er-cli"})
+    return httpx.Client(base_url=url, timeout=30.0, headers={"user-agent": "e2er-cli"}, follow_redirects=False)
 
 
 def _keyring():
@@ -215,6 +255,7 @@ def login(
 
     With ``study`` the token made from the approved sign-in can only publish new versions of that study.
     """
+    check_platform_url(url)
     with client_factory(url) as c:
         r = c.post("/api/auth/device/code", json={"client_id": CLIENT_ID})
         _raise(r, "Could not start the sign-in")
@@ -275,10 +316,13 @@ def create_study_token(url: str, token: str, study: str, name: str | None = None
 def request(
     url: str, method: str, path: str, *, token: str | None = None, body: Any = None
 ) -> tuple[int, dict[str, Any]]:
+    if token:
+        check_platform_url(url)
+        _same_host(url, path)
     headers = {"authorization": f"Bearer {token}"} if token else {}
     # Astro refuses a non-GET request without a JSON content type as a cross-site form post.
     if body is None and method != "GET":
         body = {}
     with client_factory(url) as c:
-        r = c.request(method, path, json=body, headers=headers)
+        r = c.request(method, path, json=body, headers=headers, follow_redirects=False)
     return r.status_code, _json(r)

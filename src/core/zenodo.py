@@ -33,7 +33,7 @@ import json
 import os
 from dataclasses import dataclass, field
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 #: Zenodo takes at most this many files in one record.
 MAX_FILES = 100
@@ -255,13 +255,39 @@ def client_factory(base: str) -> Any:
     return httpx.Client(base_url=base, timeout=120.0)
 
 
+#: The only hosts the token goes to (over https): Zenodo and its sandbox.
+TOKEN_HOSTS = frozenset({"zenodo.org", "sandbox.zenodo.org"})
+
+
 class Zenodo:
-    """A small client for Zenodo's deposit API (create, upload, describe, publish)."""
+    """A small client for Zenodo's deposit API (create, upload, describe, publish).
+
+    The token goes only to ``https://zenodo.org`` or ``https://sandbox.zenodo.org`` (the one of
+    ``base``): a link in Zenodo's answer (``links.bucket``, ``links.latest_draft``, a file's
+    ``links.self``) that names another scheme or host is refused before anything is sent to it.
+    """
 
     def __init__(self, token: str, *, base: str = ZENODO_URL, client: Any = None) -> None:
+        parts = urlsplit(base)
+        if parts.scheme != "https" or (parts.hostname or "").lower() not in TOKEN_HOSTS:
+            raise ZenodoError(f"refusing to send the Zenodo token to {base}: only https://zenodo.org or its sandbox")
         self.base = base
+        self._host = (parts.hostname or "").lower()
         self.http = client or client_factory(base)
         self.auth = {"Authorization": f"Bearer {token}"}
+
+    def _url(self, link: str) -> str:
+        """``link`` when it is a path on this Zenodo or an https URL on its host; else ZenodoError."""
+        parts = urlsplit(str(link))
+        if not parts.scheme and not parts.netloc:
+            if not str(link).startswith("/"):
+                raise ZenodoError(f"Zenodo answered with a link that is not a path: {str(link)[:120]}")
+            return str(link)
+        if parts.scheme != "https" or (parts.hostname or "").lower() != self._host or parts.port not in (None, 443):
+            raise ZenodoError(
+                f"Zenodo's answer points to {parts.scheme}://{parts.hostname}; the token is sent to {self._host} only"
+            )
+        return str(link)
 
     def _check(self, r: Any, what: str) -> Any:
         if r.status_code >= 400:
@@ -299,7 +325,7 @@ class Zenodo:
         answer = r.json()
         draft_url = (answer.get("links") or {}).get("latest_draft")
         if draft_url:
-            draft = self._check(self.http.get(draft_url, headers=self.auth), "read the new version").json()
+            draft = self._check(self.http.get(self._url(draft_url), headers=self.auth), "read the new version").json()
         elif str(answer.get("id")) != str(published_id):
             draft = answer  # a Zenodo that answers with the draft itself
         else:
@@ -326,11 +352,14 @@ class Zenodo:
         """Remove every file of a draft (those a new version starts with, or a failed attempt's)."""
         for f in self.files(dep.id):
             url = (f.get("links") or {}).get("self") or f"/api/deposit/depositions/{dep.id}/files/{f.get('id')}"
-            self._check(self.http.delete(url, headers=self.auth), f"remove {f.get('filename')} from the draft")
+            self._check(
+                self.http.delete(self._url(url), headers=self.auth), f"remove {f.get('filename')} from the draft"
+            )
 
     def upload(self, dep: Deposit, name: str, data: bytes) -> None:
         self._check(
-            self.http.put(f"{dep.bucket}/{quote(name, safe='')}", content=data, headers=self.auth), f"upload {name}"
+            self.http.put(self._url(f"{dep.bucket}/{quote(name, safe='')}"), content=data, headers=self.auth),
+            f"upload {name}",
         )
         dep.files.append(name)
 
