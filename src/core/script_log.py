@@ -26,10 +26,11 @@ def _e2er_version() -> str:
 
 
 #: The workspace's record of every script run (by `e2er-run` and by the runner), one JSON line each:
-#: ``{script, sha256, started_at, exit_code, by, e2er_version, python, packages, outputs, tables}``;
-#: ``tables`` names the tables of data.db the run created, changed or dropped (:func:`written_tables`);
-#: ``e2er_version`` is the e2er that ran it (logs since 0.18.0); ``outputs`` maps every result-type file
-#: the run wrote (:data:`OUTPUT_SUFFIXES`) to its SHA-256 after the run, so a results
+#: ``{script, sha256, started_at, exit_code, by, e2er_version, python, packages, outputs, outputs_unhashed,
+#: tables}``; ``e2er_version`` is the e2er that ran it (logs since 0.18.0); ``outputs_unhashed`` lists the
+#: files it wrote that were too large to fingerprint; ``tables`` names the tables of data.db the run created,
+#: changed or dropped (:func:`written_tables`); ``outputs`` maps every result-type file the run wrote
+#: (:data:`OUTPUT_SUFFIXES`) to its SHA-256 after the run, so a results
 #: file can be traced to the run of the script that wrote it (:func:`results_writer`). Export reads it
 #: to rerun the scripts in the order the run ran them (reproduce.json) and to pin the packages they
 #: loaded. A dotfile: internal, never exported.
@@ -116,12 +117,51 @@ def script_record(path: Path) -> dict[str, object] | None:
     return out
 
 
-#: Files a script run may write that the log fingerprints (results, tables of numbers).
-OUTPUT_SUFFIXES = frozenset({".json", ".csv", ".tsv"})
+#: Files a script run may write that the log records: results and tables of numbers, and every file that can
+#: hold data (derived_data.OUTPUT_SUFFIXES, copied here: this module is standard library only). A script that
+#: read a source with terms and wrote ``results/regions.gpkg`` or a parquet file went unrecorded, so the data
+#: terms check never saw the file (review of 2026-10-23).
+OUTPUT_SUFFIXES = frozenset(
+    {
+        ".json",
+        ".csv",
+        ".tsv",
+        ".db",
+        ".sqlite",
+        ".sqlite3",
+        ".parquet",
+        ".xlsx",
+        ".jsonl",
+        ".dta",
+        ".geojson",
+        ".txt",
+        ".dat",
+        ".npy",
+        ".npz",
+        ".pkl",
+        ".pickle",
+        ".feather",
+        ".arrow",
+        ".h5",
+        ".hdf5",
+        ".xls",
+        ".ods",
+        ".gpkg",
+        ".shp",
+        ".nc",
+        ".rds",
+        ".rdata",
+        ".sav",
+        ".joblib",
+    }
+)
 #: Folders never searched for outputs (environments, caches, e2er's own run folders).
 _SKIP_DIRS = frozenset({".git", ".venv", "venv", "__pycache__", "node_modules", "sandbox", "literature"})
-#: A file larger than this is not fingerprinted (a data export, not a results file).
+#: A file larger than this is not fingerprinted (a data export, not a results file); its path is still
+#: recorded (``outputs_unhashed``).
 _MAX_OUTPUT_BYTES = 64 * 1024 * 1024
+#: Files of the study's database: its tables are recorded instead (``tables``).
+_DATABASE_FILES = frozenset({"data.db", "data.db-wal", "data.db-shm", "data.db-journal"})
 
 #: The study's database, whose tables a run may write (``df.to_sql(name, ...)`` with a name the code computes).
 DATABASE = "data.db"
@@ -149,7 +189,7 @@ def _candidates(workspace: Path) -> list[Path]:
     except OSError:
         return out
     for p in top:
-        if p.name.startswith("."):
+        if p.name.startswith(".") or p.name in _DATABASE_FILES:
             continue
         if p.is_dir():
             if p.name in _SKIP_DIRS:
@@ -267,20 +307,30 @@ def output_snapshot(workspace: Path) -> Snapshot:
     return snap
 
 
-def written_outputs(workspace: Path, before: Snapshot) -> dict[str, str]:
-    """{path: SHA-256} of the candidate outputs created or rewritten since ``before``."""
+def written_outputs(workspace: Path, before: Snapshot, unhashed: list[str] | None = None) -> dict[str, str]:
+    """{path: SHA-256} of the candidate outputs created or rewritten since ``before``.
+
+    A file too large to fingerprint (over 64 MB) is not in the answer; its path is appended to ``unhashed``,
+    so the log still says the run wrote it (a parquet export of a source with terms is data all the same).
+    """
     out: dict[str, str] = {}
     for p in _candidates(workspace):
         try:
             st = p.stat()
-            if not p.is_file() or st.st_size > _MAX_OUTPUT_BYTES:
+            if not p.is_file():
                 continue
             rel = p.relative_to(workspace).as_posix()
             if before.get(rel) == (st.st_mtime_ns, st.st_size):
                 continue
+            if st.st_size > _MAX_OUTPUT_BYTES:
+                if unhashed is not None:
+                    unhashed.append(rel)
+                continue
             out[rel] = hashlib.sha256(p.read_bytes()).hexdigest()
         except OSError:
             continue
+    if unhashed is not None:
+        unhashed.sort()
     return dict(sorted(out.items()))
 
 
@@ -313,7 +363,11 @@ def record_script_run(
             "e2er_version": _e2er_version(),
         }
         if before is not None:
-            line["outputs"] = written_outputs(Path(workspace), before)
+            unhashed: list[str] = []
+            line["outputs"] = written_outputs(Path(workspace), before, unhashed)
+            if unhashed:
+                # Written but too large to fingerprint: the path counts for the data terms (derived_data.py).
+                line["outputs_unhashed"] = unhashed
             tables = written_tables(Path(workspace), before.db) if isinstance(before, Snapshot) else None
             if tables is not None:
                 line["tables"] = tables

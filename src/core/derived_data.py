@@ -63,6 +63,7 @@ OUTPUT_SUFFIXES = DATA_SUFFIXES | frozenset(
         ".rds",
         ".rdata",
         ".sav",
+        ".joblib",
     }
 )
 #: Where in an exported folder a script's outputs are kept (scripts, design and reviews are not outputs).
@@ -79,13 +80,53 @@ _WRITE_METHODS = frozenset(
         "to_pickle",
         "to_hdf",
         "to_json",
+        "to_file",  # geopandas: g.to_file("results/regions.gpkg")
+        "to_netcdf",  # xarray
+        "to_zarr",
         "savetxt",
-        "write_csv",
+        "write_csv",  # polars, DuckDB relations, pyarrow.csv.write_csv(table, path)
+        "write_parquet",  # polars, DuckDB relations
+        "write_json",
+        "write_ndjson",
+        "write_ipc",
+        "write_excel",
+        "write_avro",
+        "write_table",  # pyarrow.parquet.write_table(table, path)
+        "write_feather",  # pyarrow.feather.write_feather(df, path)
         "write_text",
         "write_bytes",
         "save",
         "savez",
         "savez_compressed",
+        "dump",  # joblib.dump(obj, path); json.dump/pickle.dump(obj, open(path, "w")) through open()
+        "copy",  # shutil.copy(src, dst): dst holds src's data
+        "copy2",
+        "copyfile",
+        "copytree",
+        "move",
+    }
+)
+#: The write calls whose path is the last argument that names one (the data come first).
+_PATH_LAST = frozenset(
+    {"write_table", "write_feather", "dump", "copy", "copy2", "copyfile", "copytree", "move", "write_csv"}
+)
+#: The copy calls: the first argument is read, the second written.
+_COPIES = frozenset({"copy", "copy2", "copyfile", "copytree", "move"})
+#: Keyword names of the path a write call writes to.
+_PATH_KEYWORDS = frozenset(
+    {
+        "path_or_buf",
+        "path",
+        "fname",
+        "excel_writer",
+        "where",
+        "filename",
+        "file",
+        "dst",
+        "destination",
+        "output_file",
+        "sink",
+        "store",
     }
 )
 #: Calls that read the file their first argument names (or, for a path's method, the path itself).
@@ -123,6 +164,10 @@ class Script:
     #: Files the script opens for reading (``pd.read_csv(p)``, ``open(p)``, ``json.load(open(p))``,
     #: ``Path(p).read_text()``): a file it names and writes is read too only when it is in here.
     reads: set[str] = field(default_factory=set)
+    #: Writes whose path the scan cannot work out (``df.to_parquet(out_path)`` with a computed path, an
+    #: f-string with a loop variable, ``COPY … TO`` with a computed target), as "line N: call". A script that
+    #: reads restricted data and has one counts as writing every new output file (:func:`derived`).
+    unresolved_writes: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -174,8 +219,55 @@ def _resolve(node: ast.AST, consts: dict[str, str]) -> str | None:
             return None
         return f"{left}/{right}" if left else right
     if isinstance(node, ast.JoinedStr):
-        return None
+        # f"{OUT}/clean.csv", f"data/gmd_{YEAR}.csv": a path when every part is known.
+        pieces: list[str] = []
+        for v in node.values:
+            if isinstance(v, ast.Constant) and isinstance(v.value, str):
+                pieces.append(v.value)
+            elif isinstance(v, ast.FormattedValue) and v.format_spec is None:
+                piece = _resolve(v.value, consts)
+                if piece is None:
+                    return None
+                pieces.append(piece)
+            else:
+                return None
+        return "".join(pieces)
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        left, right = _resolve(node.left, consts), _resolve(node.right, consts)
+        return left + right if left is not None and right is not None else None
     return None
+
+
+#: SQL that writes a file: DuckDB's ``COPY … TO 'path'``.
+_COPY_TO = re.compile(r"\bCOPY\b.+?\bTO\s+['\"]([^'\"]+)['\"]", re.I | re.S)
+#: A fragment of a SQL text ending in ``COPY … TO '``: the path is computed (an f-string's or a "+"'s rest).
+_COPY_TO_OPEN = re.compile(r"\bCOPY\b.+?\bTO\s*['\"]?\s*$", re.I | re.S)
+
+
+def _opens(node: ast.AST | None) -> bool:
+    """``open(…)``, ``Path(…).open(…)``, ``gzip.open(…)``: a call that opens a file."""
+    if not isinstance(node, ast.Call):
+        return False
+    f = node.func
+    return (isinstance(f, ast.Name) and f.id == "open") or (isinstance(f, ast.Attribute) and f.attr == "open")
+
+
+def _is_name_in(node: ast.AST, names: set[str]) -> bool:
+    return isinstance(node, ast.Name) and node.id in names
+
+
+def _handle_names(tree: ast.AST) -> set[str]:
+    """Names bound to an open file (``with open(p, "w") as fh``, ``fh = open(p, "w")``): the open call is what
+    the scan follows, so ``json.dump(obj, fh)`` or ``df.to_csv(fh)`` is no unresolved write."""
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.With | ast.AsyncWith):
+            for item in node.items:
+                if _opens(item.context_expr) and isinstance(item.optional_vars, ast.Name):
+                    names.add(item.optional_vars.id)
+        elif isinstance(node, ast.Assign) and _opens(node.value):
+            names |= {t.id for t in node.targets if isinstance(t, ast.Name)}
+    return names
 
 
 def analyse(rel: str, source: str) -> Script:
@@ -188,6 +280,7 @@ def analyse(rel: str, source: str) -> Script:
         out.strings = set(re.findall(r"""["']([^"'\n]{1,200})["']""", source))
         return out
     consts: dict[str, str] = {}
+    handles = _handle_names(tree)
     for stmt in tree.body:
         if isinstance(stmt, ast.Assign) and len(stmt.targets) == 1 and isinstance(stmt.targets[0], ast.Name):
             value = _resolve(stmt.value, consts)
@@ -209,20 +302,35 @@ def analyse(rel: str, source: str) -> Script:
         if name in ("write_text", "write_bytes") and isinstance(func, ast.Attribute):
             # Path(p).write_text(…), OUT.write_text(…): the path is the object the method is called on.
             target = _resolve(func.value, consts)
+            if target is None:
+                out.unresolved_writes.append(f"line {node.lineno}: {name}()")
         elif name in _PATH_READS and isinstance(func, ast.Attribute):
             read = _resolve(func.value, consts)
             if read:
                 out.reads.add(_norm(read))
         elif name in _WRITE_METHODS:
-            arg = (
-                node.args[0]
-                if node.args
-                else next(
-                    (k.value for k in node.keywords if k.arg in ("path_or_buf", "path", "fname", "excel_writer")), None
-                )
-            )
-            # np.savetxt(path, …) is a function call; df.to_csv(path) a method: the first argument is the path.
+            keyword = next((k.value for k in node.keywords if k.arg in _PATH_KEYWORDS), None)
+            if name in _COPIES and node.args:
+                src = _resolve(node.args[0], consts)
+                if src:
+                    out.reads.add(_norm(src))
+            arg: ast.AST | None
+            if keyword is not None:
+                arg = keyword
+            elif name in _PATH_LAST and len(node.args) >= 2:
+                arg = node.args[1]  # joblib.dump(obj, path), pq.write_table(table, path), shutil.copy(src, dst)
+            elif name in _PATH_LAST and name != "write_csv":
+                arg = None  # json.dump(obj) with no file: nothing the scan can follow (and nothing written)
+            else:
+                # np.savetxt(path, …) is a function call; df.to_csv(path) a method: the first argument is the path.
+                arg = node.args[0] if node.args else None
             target = _resolve(arg, consts) if arg is not None else None
+            if name == "copytree" and target:
+                # Every file of the folder is written: none can be named.
+                out.unresolved_writes.append(f"line {node.lineno}: {name}() into {target}")
+                target = None
+            elif target is None and arg is not None and not (_opens(arg) or _is_name_in(arg, handles)):
+                out.unresolved_writes.append(f"line {node.lineno}: {name}()")
         elif name == "open" and isinstance(func, ast.Name) and node.args:
             mode_node = (
                 node.args[1] if len(node.args) > 1 else next((k.value for k in node.keywords if k.arg == "mode"), None)
@@ -230,6 +338,8 @@ def analyse(rel: str, source: str) -> Script:
             mode = _resolve(mode_node, consts) if mode_node is not None else "r"
             if mode and any(c in mode for c in "wax"):
                 target = _resolve(node.args[0], consts)
+                if target is None:
+                    out.unresolved_writes.append(f"line {node.lineno}: open(…, {mode!r})")
             else:
                 read = _resolve(node.args[0], consts)
                 if read:
@@ -247,6 +357,12 @@ def analyse(rel: str, source: str) -> Script:
             out.writes.add(_norm(target))
     for value in consts.values():
         out.strings.add(value)
+    # DuckDB's COPY … TO 'file' writes a file; a COPY … TO whose path is computed cannot be followed.
+    for s in list(out.strings):
+        for m in _COPY_TO.finditer(s):
+            out.writes.add(_norm(m.group(1)))
+        if _COPY_TO_OPEN.search(s) and not _COPY_TO.search(s):
+            out.unresolved_writes.append("COPY … TO with a computed path")
     # CREATE TABLE x AS … / INSERT INTO x in SQL strings.
     for s in list(out.strings):
         for m in re.finditer(
@@ -348,6 +464,70 @@ def _all_in_folder(folder: Path, named: str, known: set[str]) -> list[str]:
     return out
 
 
+#: e2er's own records at the top of a workspace: written by e2er, never by a study's script.
+_WORKSPACE_RECORDS = frozenset(
+    {
+        "manifest.json",
+        "contributions.json",
+        "events.json",
+        "usage.json",
+        "data_sources.json",
+        "data_dictionary.json",
+        "sandbox_log.json",
+        "reproduction_report.json",
+        "reproduction_check.json",
+        "table_render_report.json",
+        "number_verification.json",
+        "citation_integrity.json",
+        "requirements.txt",
+    }
+)
+#: Folders of a workspace that hold no output of a study's script.
+_NOT_OUTPUT_DIRS = frozenset(
+    {"code", "design", "reviews", "literature", "sandbox", "replication", "__pycache__", "venv", ".venv"}
+)
+
+
+def _new_outputs(folder: Path, script_rel: str) -> list[str]:
+    """Output files of ``folder`` (OUTPUT_SUFFIXES) written at or after the script was: in an exported folder,
+    those under OUTPUT_DIRS (export keeps the run's times); in a workspace, those at its top and in its
+    folders, without e2er's own records and the folders that hold no output (hidden folders never)."""
+    import os
+
+    folder = Path(folder)
+    try:
+        since = (folder / script_rel).stat().st_mtime_ns
+    except OSError:
+        since = 0
+    exported = (folder / "code").is_dir()
+    out: list[str] = []
+    for dirpath, dirnames, filenames in os.walk(folder):
+        here = Path(dirpath)
+        top = here == folder
+        dirnames[:] = sorted(
+            d
+            for d in dirnames
+            if not d.startswith(".")
+            and not (top and (f"{d}/" not in OUTPUT_DIRS if exported else d in _NOT_OUTPUT_DIRS))
+        )
+        for name in sorted(filenames):
+            p = here / name
+            rel = p.relative_to(folder).as_posix()
+            if name.startswith(".") or Path(name).suffix.lower() not in OUTPUT_SUFFIXES:
+                continue
+            try:
+                if p.is_symlink() or p.stat().st_mtime_ns < since:
+                    continue
+            except OSError:
+                continue
+            if exported:
+                if is_output(rel):
+                    out.append(rel)
+            elif rel not in _WORKSPACE_RECORDS:
+                out.append(rel)
+    return out
+
+
 def is_output(rel: str) -> bool:
     """A file of an exported folder that a script may have written with data in it (OUTPUT_SUFFIXES/DIRS)."""
     return rel.startswith(OUTPUT_DIRS) and rel not in DATA_RECORDS and Path(rel).suffix.lower() in OUTPUT_SUFFIXES
@@ -390,9 +570,11 @@ def derived(folder: Path, restricted: set[str] | None = None, known: set[str] | 
         outputs = run.get("outputs")
         if not isinstance(outputs, dict):
             continue
+        # Files too large to fingerprint are recorded by path only (script_log.written_outputs).
+        unhashed = [p for p in run.get("outputs_unhashed") or [] if isinstance(p, str)]
         for s in scripts:
             if s.rel == run.get("script"):
-                s.writes |= {_norm(str(p)) for p in outputs}
+                s.writes |= {_norm(str(p)) for p in outputs} | {_norm(p) for p in unhashed}
     writers: dict[str, set[str]] = {}
     changed = True
     while changed:
@@ -421,6 +603,28 @@ def derived(folder: Path, restricted: set[str] | None = None, known: set[str] | 
                     tables[t] = before | reads
                     files.setdefault("data.db", set()).update(reads)
                     changed = True
+    # The cautious default: a script that reads restricted data and writes a path the scan cannot work out
+    # (a computed path, an f-string with a loop variable, COPY … TO with a computed target) counts as writing
+    # every output file of the folder that is newer than the script. A file wrongly counted is checked for
+    # the source's rows (or left out under data/); a file wrongly missed would be published.
+    load_paths = {_norm(str(e["saved_to"])) for e in _loads(folder) if isinstance(e.get("saved_to"), str)}
+    for s in scripts:
+        if not s.unresolved_writes:
+            continue
+        reads = set()
+        for f, cs in list(files.items()):
+            if _names_file(s, f):
+                reads |= cs
+        for t, cs in list(tables.items()):
+            if _names_table(s, t):
+                reads |= cs
+        if not reads:
+            continue
+        for rel in _new_outputs(folder, s.rel):
+            if rel in roots or rel in load_paths or rel == "data.db":
+                continue
+            writers.setdefault(rel, set()).add(s.rel)
+            files[rel] = files.get(rel, set()) | reads
     out: list[Derived] = []
     # What export recorded from the run (provenance.json run.derived_data): also files whose script is not shipped.
     prov_doc = _read_json(folder / "provenance.json")
