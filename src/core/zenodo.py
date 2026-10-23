@@ -29,7 +29,6 @@ that file when there is no keychain.
 from __future__ import annotations
 
 import hashlib
-import json
 import os
 from dataclasses import dataclass, field
 from typing import Any
@@ -102,12 +101,8 @@ def stored_token(sandbox: bool = False) -> tuple[str | None, str | None]:
         if token and token.strip():
             return token.strip(), "the system keychain"
     path = pc.credentials_path()
-    if path is not None and path.is_file():
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            data = {}
-        token = data.get(service(sandbox)) if isinstance(data, dict) else None
+    if path is not None:
+        token = pc._read_credentials(path).get(service(sandbox))
         if isinstance(token, str) and token.strip():
             return token.strip(), str(path)
     return None, None
@@ -121,13 +116,21 @@ def save_token(token: str, sandbox: bool = False) -> str:
     if kr is not None:
         try:
             kr.set_password(service(sandbox), KEYRING_USER, token)
-            return "the system keychain"
         except Exception:  # noqa: BLE001 - locked or unavailable keychain (no GUI session)
             pass
+        else:
+            pc._remove_credential(service(sandbox))  # no older copy stays in the file
+            return "the system keychain"
     try:
-        return str(pc._write_credentials(service(sandbox), token))
+        where = str(pc._write_credentials(service(sandbox), token))
     except pc.PlatformError as e:
         raise ZenodoError(str(e)) from e
+    if kr is not None:
+        try:
+            kr.delete_password(service(sandbox), KEYRING_USER)  # no older copy stays in the keychain
+        except Exception:  # noqa: BLE001 - nothing stored there, or the keychain is locked
+            pass
+    return where
 
 
 def forget_token(sandbox: bool = False) -> list[str]:
@@ -143,18 +146,9 @@ def forget_token(sandbox: bool = False) -> list[str]:
                 removed.append("the system keychain")
         except Exception:  # noqa: BLE001 - nothing stored there, or the keychain is locked
             pass
-    path = pc.credentials_path()
-    if path is not None and path.is_file():
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            data = None
-        if isinstance(data, dict) and data.pop(service(sandbox), None) is not None:
-            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                f.write(json.dumps(data, indent=2) + "\n")
-            path.chmod(0o600)
-            removed.append(str(path))
+    gone = pc._remove_credential(service(sandbox))
+    if gone is not None:
+        removed.append(str(gone))
     return removed
 
 
@@ -385,6 +379,18 @@ class Zenodo:
         }
 
 
+def refuse_secrets(files: list[tuple[str, bytes]]) -> None:
+    """ZenodoError naming every file of a deposit that holds a key or token."""
+    from .secret_scan import scan_bytes
+
+    hits = [f"{name}: looks like a {kind}" for name, data in files for kind in scan_bytes(data)]
+    if hits:
+        raise ZenodoError(
+            "a file of the deposit holds something that looks like a key or token; nothing was sent:\n  "
+            + "\n  ".join(hits[:20])
+        )
+
+
 def deposit_files(
     files: list[tuple[str, bytes]],
     metadata: dict[str, Any],
@@ -393,7 +399,11 @@ def deposit_files(
     base: str = ZENODO_URL,
     client: Any = None,
 ) -> dict[str, Any]:
-    """Create, upload, describe and publish in one go; returns {service, doi, url}."""
+    """Create, upload, describe and publish in one go; returns {service, doi, url}.
+
+    Nothing is sent when a file holds a key or token (secret_scan, the check pack and the GitHub push run).
+    """
+    refuse_secrets(files)
     z = Zenodo(token, base=base, client=client)
     dep = z.create(reserve_doi=False)
     for name, data in files:

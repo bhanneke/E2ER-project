@@ -127,6 +127,53 @@ def _keyring():
     return keyring
 
 
+def _warn(message: str) -> None:
+    import sys
+
+    print(f"warning: {message}", file=sys.stderr)
+
+
+def _read_credentials(p: Path) -> dict[str, Any]:
+    """The credentials file's tokens; {} when it is missing, and {} with a warning when it is damaged."""
+    if not p.is_file():
+        return {}
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        _warn(f"{p} cannot be read ({type(e).__name__}); its tokens are ignored. Sign in again to replace it.")
+        return {}
+    if not isinstance(data, dict):
+        _warn(f"{p} is not a JSON object; its tokens are ignored. Sign in again to replace it.")
+        return {}
+    return data
+
+
+def _store_credentials(p: Path, data: dict[str, Any]) -> None:
+    """Write the file owner-only from the first byte: a 0600 temporary file in the same folder, then os.replace.
+
+    The folder (``~/.e2er``) is made 0700 when e2er makes it. A reader never sees a half-written file.
+    """
+    import tempfile
+
+    folder = p.parent
+    if not folder.exists():
+        folder.mkdir(parents=True, mode=0o700, exist_ok=True)
+        os.chmod(folder, 0o700)
+    elif folder == Path("~/.e2er").expanduser():
+        os.chmod(folder, 0o700)  # e2er's own folder: other users see nothing in it
+    fd, tmp = tempfile.mkstemp(prefix=".credentials-", suffix=".tmp", dir=folder)  # mode 0600
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(json.dumps(data, indent=2) + "\n")
+            f.flush()
+            os.fsync(f.fileno())
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, p)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
+
+
 def _write_credentials(url: str, token: str) -> Path:
     p = credentials_path()
     if p is None:
@@ -134,28 +181,53 @@ def _write_credentials(url: str, token: str) -> Path:
             f"e2er is running under a test runner ({test_guard.why_test_run()}): it keeps no login in the keychain "
             "or in ~/.e2er/credentials.json. Set E2ER_CREDENTIALS to a file of the test, or E2ER_TOKEN."
         )
-    p.parent.mkdir(parents=True, exist_ok=True)
-    data = json.loads(p.read_text(encoding="utf-8")) if p.is_file() else {}
+    data = _read_credentials(p)
+    if p.is_file() and not data and p.stat().st_size > 0:
+        # A damaged file is kept beside the new one (owner-only), not overwritten unread.
+        kept = p.with_name(p.name + ".damaged")
+        os.replace(p, kept)
+        os.chmod(kept, 0o600)
+        _warn(f"the damaged credentials file was kept as {kept}")
     data[url] = token
-    # Created owner-only from the start, so the token is never readable by others.
-    fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        f.write(json.dumps(data, indent=2) + "\n")
-    p.chmod(0o600)
+    _store_credentials(p, data)
+    return p
+
+
+def _remove_credential(key: str) -> Path | None:
+    """Remove ``key`` from the credentials file; the file when something was removed."""
+    p = credentials_path()
+    if p is None or not p.is_file():
+        return None
+    data = _read_credentials(p)
+    if data.pop(key, None) is None:
+        return None
+    _store_credentials(p, data)
     return p
 
 
 def save_token(url: str, token: str) -> str:
     """Store the token in the system keychain; fall back to the credentials file
-    when there is no keyring or the keychain refuses (e.g. no GUI session)."""
+    when there is no keyring or the keychain refuses (e.g. no GUI session).
+
+    The other store's copy is removed afterwards, so an old token never stays behind in the file
+    once the keychain holds the new one (or the other way round).
+    """
     kr = _keyring()
     if kr is not None:
         try:
             kr.set_password(KEYRING_SERVICE, url, token)
-            return "the system keychain"
         except Exception:  # noqa: BLE001 - locked or unavailable keychain
             pass
-    return str(_write_credentials(url, token))
+        else:
+            _remove_credential(url)
+            return "the system keychain"
+    where = str(_write_credentials(url, token))
+    if kr is not None:
+        try:
+            kr.delete_password(KEYRING_SERVICE, url)
+        except Exception:  # noqa: BLE001 - nothing stored there, or the keychain is locked
+            pass
+    return where
 
 
 def load_token(url: str) -> str | None:
@@ -170,8 +242,9 @@ def load_token(url: str) -> str | None:
         if t:
             return t
     p = credentials_path()
-    if p is not None and p.is_file():
-        return json.loads(p.read_text(encoding="utf-8")).get(url)
+    if p is not None:
+        value = _read_credentials(p).get(url)
+        return value if isinstance(value, str) else None
     return None
 
 
@@ -182,11 +255,7 @@ def forget_token(url: str) -> None:
             kr.delete_password(KEYRING_SERVICE, url)
         except Exception:  # noqa: BLE001 - nothing stored there
             pass
-    p = credentials_path()
-    if p is not None and p.is_file():
-        data = json.loads(p.read_text(encoding="utf-8"))
-        if data.pop(url, None) is not None:
-            p.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    _remove_credential(url)
 
 
 def _json(r: httpx.Response) -> dict[str, Any]:

@@ -301,6 +301,28 @@ def _copy_matches(
             already.add(src.name)
         except OSError as e:  # noqa: PERF203 — per-file tolerance
             logger.warning("export: could not copy %s: %s", src.name, e)
+            continue
+        if dest_dir.name == "scratch":
+            _redact_secrets(target, notes)
+
+
+def _redact_secrets(target: Path, notes: list[str] | None) -> None:
+    """A scratch log or script holds what the model printed (an environment dump, a request URL with its
+    ``api_key=``): every key or token in it is replaced (secret_scan, the check pack and publishing run)."""
+    from ..secret_scan import redact_text
+
+    try:
+        text = target.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return
+    cleaned, kinds = redact_text(text)
+    if not kinds:
+        return
+    target.write_text(cleaned, encoding="utf-8")
+    msg = f"`code/scratch/{target.name}`: removed what looked like a {', '.join(kinds)} from the export's copy"
+    logger.warning("export: %s", msg)
+    if notes is not None:
+        notes.append(msg)
 
 
 #: A rebuilt output larger than this is left out of the bundle (and logged).

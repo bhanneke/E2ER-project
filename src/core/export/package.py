@@ -840,6 +840,21 @@ def build(
                 }
             )
             entries.append((rel, src))
+        # The shared check (secret_scan): no file of the study holding a key or token leaves in a package.
+        from ..secret_scan import scan_file
+
+        shown = [
+            f"{rel}: looks like a {kind}"
+            for rel, src in entries
+            if not rel.startswith(PACKAGE_DIR + "/")
+            for kind in scan_file(src)
+        ]
+        if shown:
+            raise PackageError(
+                "a file holds something that looks like a key or token; nothing was packed. Remove it "
+                "(`e2er redact <folder> --text <text>` takes text out of a frozen file) and pack again:\n  "
+                + "\n  ".join(shown[:20])
+            )
         study = _study(folder, prov)
         if anonymous:
             # The file for a journal's double-blind review (`e2er pack --blind`): no author, no folder name, and

@@ -680,6 +680,8 @@ def _describe(
         zrec.setdefault("sandbox", bool(zenodo_sandbox))
         reserved = zrec.setdefault("deposits", {})
         try:
+            for item in deposits:  # before Zenodo is asked anything: no key or token in a deposit
+                zen.refuse_secrets(deposits[item]["files"])
             for item in deposits:
                 if item not in reserved and z is not None:
                     dep = z.create(reserve_doi=True)
@@ -855,6 +857,7 @@ def _describe(
                 if rec.get("state") == "published":
                     continue
                 dep = zen.Deposit(id=rec["id"], bucket=rec["bucket"], doi=rec.get("doi"))
+                zen.refuse_secrets(deposits[item]["files"])
                 z.clear_files(dep)  # a new version starts with the earlier files; a retry with its own
                 for fname, data_bytes in deposits[item]["files"]:
                     z.upload(dep, fname, data_bytes)

@@ -45,8 +45,6 @@ RECORD = ".e2er/github.json"
 _OWNER = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$")
 _REPO = re.compile(r"^[A-Za-z0-9._-]{1,100}$")
 _SEGMENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$")
-#: A study's text files larger than this are not scanned for keys (data, PDFs and figures are not text).
-_SCAN_LIMIT = 20 * 1024 * 1024
 
 NO_GH = (
     "--github pushes the files with your own GitHub login through the GitHub command line tool (gh), "
@@ -250,24 +248,13 @@ def kept_out(bundle: Path, staged: Staged) -> list[str]:
 
 
 def secrets_in(staged: Staged) -> list[str]:
-    """``path: kind`` for every staged text file that holds a key or token in a provider's own format.
+    """``path: kind`` for every staged file that holds a key or token (secret_scan.scan_files, the shared check).
 
-    The formats of the request check (secret_scan.PATTERNS); not its NAME=value rule, which a script's
-    ``RNG = np.random.default_rng(…)`` would trip.
+    Every file, whatever its size or encoding (read in chunks; bytes that are not UTF-8 are replaced).
     """
-    from .secret_scan import PATTERNS
+    from .secret_scan import scan_files
 
-    hits: list[str] = []
-    for rel in staged.files:
-        p = staged.root / rel
-        if p.stat().st_size > _SCAN_LIMIT:
-            continue
-        try:
-            text = p.read_text(encoding="utf-8")
-        except (UnicodeDecodeError, OSError):
-            continue
-        hits += [f"{rel}: looks like a {kind}" for kind, rx in PATTERNS if rx.search(text)]
-    return hits
+    return scan_files(staged.root, staged.files)
 
 
 def too_large(staged: Staged) -> list[str]:
