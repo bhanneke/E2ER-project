@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.0] — 2026-10-23
+
 ### Added
 - **One release command: `scripts/release.py X.Y.Z`** (`make release VERSION=X.Y.Z`). It makes every version edit of a release: `pyproject.toml`, `src/__init__.py`, `CITATION.cff` (`version`, `date-released`, the preferred citation's version and year), the README's BibTeX entry (version and year) and the CHANGELOG (`## [Unreleased]` becomes `## [X.Y.Z] — date` under a new empty Unreleased, and the link references follow); `--commit` commits them, `--dry-run` writes nothing. It refuses a tree with uncommitted changes, a version that is not X.Y.Z or not greater than the current one, an empty Unreleased section and a place it cannot find, and then writes nothing; a document naming a coming version that is not the one released is printed as a warning. `--check --tag vX.Y.Z` is now the release workflow's version check (it compared only `pyproject.toml` and `src/__init__.py`). docs/RELEASING.md describes the release.
 - **`release-facts.json` on every GitHub release** (`scripts/release_facts.py`): `{version, date, tag_url, concept_doi, doi, counts: {templates, specialists, skills, data_sources, tests}}`, every count computed from the code (the `pipelines/*.toml` files, the specialist registry, the `skills/files/**/*.md` files, the connectors, the tests the release runs). e2er.org reads it. The Zenodo version DOI is minted by Zenodo after the release exists, so a job of the release workflow asks Zenodo's public records API for up to 30 minutes for the version named like the tag and uploads the file again with `doi` filled in; without one `doi` stays null and readers use the concept DOI. The format is fixed in docs/RELEASING.md.
@@ -3890,5 +3892,6 @@ which were tied to internal infrastructure.
 - Audit bundle export (`.tar.gz`) includes `usage.json` with full cost
   breakdown.
 
-[Unreleased]: https://github.com/bhanneke/E2ER-project/compare/v3.0.0...HEAD
+[Unreleased]: https://github.com/bhanneke/E2ER-project/compare/v0.18.0...HEAD
+[0.18.0]: https://github.com/bhanneke/E2ER-project/releases/tag/v0.18.0
 [3.0.0]: https://github.com/bhanneke/E2ER-project/releases/tag/v3.0.0
