@@ -275,15 +275,19 @@ def test_a_declaration_the_folders_own_records_support_is_accepted(tmp_path):
     assert "1 data file(s) left out of the package (data/gaia_clean.csv)" in check.detail
 
 
-def test_a_no_data_package_verifies_but_its_unpacked_folder_does_not(tmp_path, capsys, monkeypatch):
+def test_a_no_data_package_is_not_verified_and_neither_is_its_unpacked_folder(tmp_path, capsys, monkeypatch):
+    """--no-data is the packer's choice, not a record of the study's (review 2026-10-23): the package's own
+    declaration counts no more than in a folder."""
     from .test_package import _export
 
     monkeypatch.setattr(pkg, "uv_lock", lambda r, p, a: (None, "offline in the tests"))
     folder = _export(tmp_path)
     packed = pkg.build(folder, tmp_path / "nd.e2er", no_data=True)
     capsys.readouterr()
-    verify(str(packed.path))
-    assert "[PASS] integrity" in capsys.readouterr().out, "the package's checked manifest counts"
+    assert verify(str(packed.path)) == 1
+    out = capsys.readouterr().out
+    assert "[FAIL] integrity" in out and "declared left out by e2er-package.json" in out
+    assert "packed with --no-data" in out
     dest = tmp_path / "unpacked"
     pkg.open_package(packed.path, dest)
     assert _check_integrity(dest).status == "FAIL", "in a folder, --no-data is not a record of the study's"

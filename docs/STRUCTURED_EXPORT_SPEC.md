@@ -142,7 +142,11 @@ package's own files under `e2er-package/`:
 **Data.** A data file (under `data/`, with a data ending: `.db`, `.csv`, `.parquet`, …)
 from a source whose terms do not allow passing the data on (`data_terms.uses`: the GMD,
 Yahoo Finance, the WHO GHO, Gaia, …) is left out; `--no-data` leaves out every data file
-and every input the recipe lists. **Data built from such data are restricted too**
+and every input the recipe lists. `e2er verify` counts a declaration of `e2er-package.json`,
+in a package as in a folder, only where the study's own records support it (a source's
+terms, or a file provenance.json records larger than the host takes): a file left out with
+`--no-data` or under a declaration nothing supports is missing, and the integrity check
+fails and says so. **Data built from such data are restricted too**
 (`src/core/derived_data.py`): a data file a script writes after reading a restricted file or
 table (directly or through module-level constants, `os.path.join`, `Path / "x"`; and, in a
 workspace, every file its script-log runs recorded as `outputs`) inherits the restriction,

@@ -118,3 +118,42 @@ def test_a_table_of_a_left_out_file_is_skipped_and_any_other_that_differs_fails(
     shutil.rmtree(ws / "tables")
     c = _check_tables(bundle, ws, left)
     assert c.status == FAIL and "est.tex" in c.detail and "sum.tex" not in c.detail
+
+
+# ── 4. a package's declarations are not taken on its word ────────────────────
+
+
+def test_a_package_that_declares_a_results_file_left_out_without_support_fails(tmp_path: Path, monkeypatch, capsys):
+    """The reviewer's repro: a .e2er whose manifest declares results/estimation_results.json left out (under
+    terms no record of the study's names) verified with the file missing."""
+    import zipfile
+
+    from src.cli_verify import verify
+    from src.core.export import package as pkg
+    from tests.test_package import _export
+
+    monkeypatch.setattr(pkg, "uv_lock", lambda r, p, a: (None, "offline in the tests"))
+    folder = _export(tmp_path)
+    packed = pkg.build(folder, tmp_path / "s.e2er")
+    forged = tmp_path / "forged.e2er"
+    rel = "results/estimation_results.json"
+    with zipfile.ZipFile(packed.path) as src, zipfile.ZipFile(forged, "w") as dst:
+        for info in src.infolist():
+            name = info.filename
+            if name.endswith(rel):
+                continue
+            data = src.read(info)
+            if name.endswith(pkg.MANIFEST):
+                doc = json.loads(data)
+                doc["contents"] = [c for c in doc["contents"] if c["path"] != rel]
+                doc.setdefault("left_out", []).append(
+                    {"path": rel, "kind": "terms", "source": "gaia", "reason": "under Gaia's terms"}
+                )
+                doc["fingerprint"] = pkg.fingerprint(doc["contents"])
+                data = json.dumps(doc).encode()
+            dst.writestr(info, data)
+    capsys.readouterr()
+    code = verify(str(forged))
+    out = capsys.readouterr().out + capsys.readouterr().err
+    assert code == 1 and "[FAIL] integrity" in out, out
+    assert "declared left out by e2er-package.json" in out and "estimation_results.json" in out

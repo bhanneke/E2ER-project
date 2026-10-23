@@ -120,10 +120,10 @@ def _check_integrity(bundle: Path, package_left_out: dict[str, dict[str, Any]] |
     files: dict[str, dict[str, Any]] = prov["files"]
     listing = walk(bundle)
     on_disk = {rel: p for rel, p in listing.files.items() if not not_evidence(rel)}
-    # Data files a .e2er package left out (a source's terms, --no-data, too large for GitHub). From a package
-    # that verify opened, its manifest is checked against the archive and counts. In a folder, an
-    # e2er-package.json is only a file: a declaration counts only for a file the folder's own records say a
-    # source's terms keep out, or that provenance.json records as larger than the host takes.
+    # Data files a .e2er package left out (a source's terms, too large for GitHub). A declaration in
+    # e2er-package.json, in a package verify opened or in a folder, counts only for a file the study's own
+    # records say a source's terms keep out, or that provenance.json records as larger than the host takes
+    # (--no-data is the packer's choice, not a record of the study's).
     declared = package_left_out if package_left_out is not None else supported_left_out(bundle)
     missing: list[str] = []
     mismatched: list[str] = []
@@ -155,7 +155,21 @@ def _check_integrity(bundle: Path, package_left_out: dict[str, dict[str, Any]] |
         odd = sorted(set(resized) - set(mismatched))
         bits.append(f"{len(odd)} with a size other than provenance.json lists ({', '.join(odd[:3])})")
     if missing:
-        bits.append(f"{len(missing)} missing ({', '.join(missing[:3])})")
+        from .core.export.package import declared_left_out
+
+        claimed = declared_left_out(bundle)
+        unsupported = [rel for rel in missing if rel in claimed]
+        if unsupported:
+            reasons = sorted({str(claimed[rel].get("reason") or "no reason") for rel in unsupported})
+            bits.append(
+                f"{len(unsupported)} missing ({', '.join(unsupported[:3])}), declared left out by e2er-package.json "
+                f"({'; '.join(reasons[:2])}) without support in the study's records (no source's terms keep them "
+                "out, and provenance.json does not record them larger than the host takes): the checks cannot see "
+                "them, so the folder is not verified"
+            )
+        rest = [rel for rel in missing if rel not in claimed]
+        if rest:
+            bits.append(f"{len(rest)} missing ({', '.join(rest[:3])})")
     if "report.html" in extra:
         extra.remove("report.html")
         bits.append(
@@ -1659,7 +1673,9 @@ def verify(
                 )
             )
             bundle_path = opened.root
-            left_out = pkg.declared_left_out(bundle_path)
+            # The manifest's declarations are the packer's word: only those the study's own records support
+            # count (a source's terms, larger than the host takes), as in a folder.
+            left_out = pkg.supported_left_out(bundle_path)
         elif not bundle_path.is_dir():
             print(f"e2er verify: {bundle} is not a folder or a .e2er package", file=sys.stderr)
             return 2
