@@ -20,9 +20,15 @@ paper is created; resume keeps it. e2er ships eleven:
 
 ## The abstract step
 
-Every template whose strategist plans a paper (empirical, empirical-preregistered,
+Every template whose paper is compiled has an `abstract` step after every step
+that writes the paper: after `revision` in empirical, empirical-preregistered,
 event-study-finance, policy-evaluation, spatial-analysis, descriptive-study,
-text-analysis, time-series-forecasting) has an `abstract` step after `revision`:
+text-analysis, time-series-forecasting and systematic-review, and after
+`review_draft` in field-map (which has no revision). Up to 0.18.0 the systematic
+review's and the field map's writers wrote the abstract themselves and it went
+into the paper unchecked; their writers now leave it out, as the drafter does.
+`tests/test_abstract_step.py` reads the templates in `pipelines/` and holds every
+one with `compile` in its `finalize` to this:
 
 ```toml
 [[steps]]
@@ -254,6 +260,7 @@ quote, the pitfalls); the results schema is `data/metaanalysis-results-schema`.
 | `review_draft` | researcher | Read the draft. |
 | `review` | reviewers | Number check, citation check, then `methods_reviewer` (1.5), `data_reviewer` (1.25), `technical_reviewer`, `plausibility_reviewer`, `writing_reviewer` (0.75). |
 | `revision` | specialists | As in the other templates. |
+| `abstract` | specialist | The abstract writer, from the final review, and the abstract check (see [The abstract step](#the-abstract-step)). |
 
 `e2er verify` on an exported review checks the results contract (pooled
 estimate recomputed, flow counts) and, as its method checks, that every effect
@@ -298,6 +305,7 @@ and the number-checked review. Hron's own implementation runs on Scopus
 | `write_review` | specialist | The review writer drafts `paper_draft.tex`, with every number from `field_map_results.json`. |
 | `number_check`, `citation_check` | checks `numbers`, `citations` | The number check and the citation check on the draft, as steps of their own. |
 | `review_draft` | researcher | Read the draft. |
+| `abstract` | specialist | The abstract writer, from the review as the researcher left it, and the abstract check (see [The abstract step](#the-abstract-step)). |
 
 Cycles: inside each group of papers that cite each other in a circle, only the
 citations from an earlier to a later paper (year, date, OpenAlex id) are kept;

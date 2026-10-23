@@ -407,28 +407,60 @@ def test_abstract_findings_ignore_the_score_floor(tmp_path):
     assert "eight numbers" in found[0].problem
 
 
-def test_the_strategists_abstract_writer_is_left_out_and_the_step_is_in_the_templates():
+#: The specialists that write or rewrite the whole paper; the abstract step comes after all of them.
+_PAPER_WRITERS = {
+    "paper_drafter",
+    "section_writer",
+    "revisor",
+    "patch_revisor",
+    "meta_review_writer",
+    "field_review_writer",
+}
+
+
+def _compiled_templates() -> list[str]:
+    from src.core.pipeline.spec import available, load_spec
+
+    return sorted(n for n, p in available().items() if "compile" in load_spec(p).finalize)
+
+
+def test_every_compiled_template_has_the_abstract_step():
+    """Every template whose paper is compiled writes its abstract in the abstract step, after every
+    writer. Up to 0.18.0 the systematic review and the field map compiled their writer's own abstract,
+    unchecked (2026-10-23 review); the list of templates is read from pipelines/, so a new one is held
+    to the same."""
     from src.core.pipeline.spec import find_spec
 
-    for name in (
-        "empirical",
-        "empirical-preregistered",
-        "event-study-finance",
-        "policy-evaluation",
-        "spatial-analysis",
-        "descriptive-study",
-        "text-analysis",
-        "time-series-forecasting",
-    ):
+    names = _compiled_templates()
+    assert {"empirical", "systematic-review", "field-map"} <= set(names)
+    for name in names:
         spec = find_spec(name)
-        names = [s.name for s in spec.steps]
-        assert names.index("revision") < names.index("abstract"), name
-        assert spec.step("abstract").run == ("abstract_writer",)
+        steps = [s.name for s in spec.steps]
+        assert "abstract" in steps, name
+        assert spec.step("abstract").run == ("abstract_writer",), name
+        writers = [i for i, s in enumerate(spec.steps) if set(s.run) & _PAPER_WRITERS]
+        assert writers and max(writers) < steps.index("abstract"), name
+        if spec.step("revision") is not None:
+            assert steps.index("revision") < steps.index("abstract"), name
         for s in spec.steps:
-            assert "abstract.tex" not in s.files  # the abstract is written after the draft review
+            assert "abstract.tex" not in s.files, name  # the abstract is written after the draft review
     from src.core.strategist import engine
 
     assert '"abstract_writer"' not in engine._STRATEGIST_SYSTEM
+
+
+@pytest.mark.parametrize("template", ["systematic-review", "field-map"])
+def test_the_template_writers_leave_the_abstract_to_its_step(template):
+    from src.core.pipeline.components import activate, deactivate
+    from src.core.pipeline.spec import find_spec
+    from src.core.specialists.base import _build_system_prompt
+
+    writer = {"systematic-review": "meta_review_writer", "field-map": "field_review_writer"}[template]
+    token = activate(find_spec(template))
+    try:
+        assert "Do not write an abstract" in _build_system_prompt(writer, "")
+    finally:
+        deactivate(token)
 
 
 def test_no_upstream_prompt_tells_a_specialist_what_to_state_in_the_abstract():
@@ -560,8 +592,8 @@ def test_the_strategists_abstract_writer_order_is_dropped(tmp_path):
         StrategistOrder(specialist="abstract_writer", focus="Abstract.", parallel_group=0),
     ]
     assert [o.specialist for o in runner._to_contract_orders(orders)] == ["paper_drafter"]
-    # A template without the step (field map) keeps what the strategist planned.
-    other = _runner(tmp_path, _Writer(ROAD), pipeline="field-map")
+    # A template without the step (replication) keeps what the strategist planned.
+    other = _runner(tmp_path, _Writer(ROAD), pipeline="replication")
     assert [o.specialist for o in other._to_contract_orders(orders)] == ["paper_drafter", "abstract_writer"]
 
 
@@ -589,7 +621,7 @@ def test_the_drafter_is_told_to_leave_the_abstract_out():
         assert "Do not write an abstract" not in _build_system_prompt("abstract_writer", "")
     finally:
         deactivate(token)
-    token = activate(find_spec("field-map"))
+    token = activate(find_spec("replication"))  # no abstract step: nothing to leave it to
     try:
         assert "Do not write an abstract" not in _build_system_prompt("paper_drafter", "")
     finally:

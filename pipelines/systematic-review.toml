@@ -46,6 +46,8 @@
 #   write_draft         the review writer drafts the review from the results
 #   review_draft        the researcher reads the draft
 #   review              number check, citation check, then the panel
+#   revision            the revisor answers the panel
+#   abstract            the abstract writer, from the final review; its check
 #
 # Maintained by the e2er authors.
 
@@ -299,3 +301,11 @@ run = [
 kind = "specialists"
 name = "revision"
 run  = ["revisor", "patch_revisor"]
+
+# The abstract, written last from the final review and the results it cites, and
+# checked (src/core/abstract.py), as in every template whose paper is compiled.
+# Up to 0.18.0 the review writer's own abstract went into the paper unchecked.
+[[steps]]
+kind = "specialists"
+name = "abstract"
+run  = ["abstract_writer"]

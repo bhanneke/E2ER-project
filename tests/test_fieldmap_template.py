@@ -243,6 +243,7 @@ def test_the_template_loads_in_the_order_of_a_field_map():
         "number_check",
         "citation_check",
         "review_draft",
+        "abstract",
     ]
     assert spec.sequence_for("iterative") == spec.sequence_for("single_pass")
     assert spec.checks() == [

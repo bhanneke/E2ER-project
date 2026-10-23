@@ -479,7 +479,7 @@ def test_the_template_loads_in_the_order_of_a_systematic_review():
     assert [s.name for s in spec.steps] == [
         "design_protocol", "search", "review_protocol", "preregister", "screen", "screening_check",
         "review_screening", "fulltext", "extract", "extraction_check", "review_extraction", "synthesis",
-        "write_draft", "review_draft", "polish", "review", "revision",
+        "write_draft", "review_draft", "polish", "review", "revision", "abstract",
     ]  # fmt: skip
     assert spec.optional_steps() == ["preregister", "review_extraction"]
     assert spec.results == "metaanalysis" and not spec.causal and spec.base_skill == "base/researcher"

@@ -175,6 +175,26 @@ def test_a_failed_compile_puts_everything_back(bundle: Path):
     assert _snapshot(bundle) == before
 
 
+def test_a_folder_that_does_not_verify_with_the_new_abstract_is_put_back(bundle: Path, monkeypatch):
+    """The last step: the checks of `e2er verify` on the amended folder. When they fail, every file,
+    provenance.json included, is put back as it was (no test held this, 2026-10-23 review)."""
+    from src import cli_verify
+
+    before = _snapshot(bundle)
+    seen: list[bool] = []
+
+    def failing(b: Path, strict: bool):
+        # Called with the folder amended: the new abstract and its amendments are in place.
+        seen.append("amendments" in json.loads((b / "provenance.json").read_text()))
+        return [cli_verify.Check("anchor", FAIL, "the folder is not what was exported")]
+
+    monkeypatch.setattr(cli_verify, "_run_checks", failing)
+    with pytest.raises(AbstractError, match="does not verify with the new abstract"):
+        _run(bundle, FakeWriter(GOOD))
+    assert seen == [True]
+    assert _snapshot(bundle) == before
+
+
 def test_after_a_publish_the_anchor_holds_and_publish_puts_the_amendments_in_the_dossier(
     bundle: Path, tmp_path: Path, monkeypatch
 ):

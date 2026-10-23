@@ -42,6 +42,7 @@
 #   number_check       every table value of the draft traced to the results
 #   citation_check     every citation in the bibliography and in an index
 #   review_draft       the researcher reads the draft
+#   abstract           the abstract writer, from the final review; its check
 #
 # No estimation, no estimation gate, no econometrics: nothing here is
 # estimated. No review panel: the draft is a description of computed results.
@@ -196,3 +197,11 @@ check = "citations"
 kind  = "researcher"
 name  = "review_draft"
 files = ["paper_draft.tex", "field_map_results.json", "reading_list.csv"]
+
+# The abstract, written last from the review the researcher read, and checked
+# (src/core/abstract.py), as in every template whose paper is compiled. Up to
+# 0.18.0 the review writer's own abstract went into the paper unchecked.
+[[steps]]
+kind = "specialists"
+name = "abstract"
+run  = ["abstract_writer"]
