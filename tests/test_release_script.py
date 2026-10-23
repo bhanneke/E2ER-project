@@ -44,6 +44,13 @@ def repo(tmp_path: Path, monkeypatch) -> Path:
     for f in FILES:
         (root / f).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(ROOT / f, root / f)
+    # Right after a release the repository's Unreleased section is empty, and a release of the copy
+    # would be refused: give the copy an entry then, so the tests do not depend on the CHANGELOG's state.
+    log = root / "CHANGELOG.md"
+    text = log.read_text()
+    body = rel.unreleased_body(text)
+    if not body.strip():
+        log.write_text(text.replace("## [Unreleased]" + body, "## [Unreleased]\n\n### Added\n- A test entry.\n\n", 1))
     _git(root, "init", "-q")
     _git(root, "add", ".")
     _git(root, "commit", "-q", "-m", "init")
