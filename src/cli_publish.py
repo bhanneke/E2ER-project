@@ -663,9 +663,9 @@ def _describe(
         # Recorded before e2er knew that the sandbox reserves 10.5281/ DOIs it publishes as 10.5072/.
         if isinstance(rec, dict):
             rec["doi"] = zen.registered_doi(rec.get("doi"), zen.base_url(zenodo_sandbox))
-            for e in rec.get("earlier") or []:
-                if isinstance(e, dict):
-                    e["doi"] = zen.registered_doi(e.get("doi"), zen.base_url(zenodo_sandbox))
+            for earlier_rec in rec.get("earlier") or []:
+                if isinstance(earlier_rec, dict):
+                    earlier_rec["doi"] = zen.registered_doi(earlier_rec.get("doi"), zen.base_url(zenodo_sandbox))
     z = zen.Zenodo(token, base=zen.base_url(zenodo_sandbox)) if deposits and token else None
     if deposits and zenodo_plan_only:
         _print_deposit_plan(deposits, manifest, availability, zenodo_sandbox, licensed)
