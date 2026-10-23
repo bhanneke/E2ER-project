@@ -1,4 +1,4 @@
-"""`e2er abstract <folder>`: a finished study's abstract written again by the abstract step (0.17.4).
+"""`e2er abstract <folder>`: a finished study's abstract written again by the abstract step (0.18.0).
 
 The backend is a fake: it writes abstract.tex through the file tool, as a
 specialist does. The PDF is "compiled" by a stand-in (no tectonic in tests).

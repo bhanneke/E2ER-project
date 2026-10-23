@@ -334,7 +334,7 @@ def combine_findings(*finding_lists: list[Finding]) -> list[Finding]:
 
 
 # ---------------------------------------------------------------------------
-# Findings on the abstract (0.17.4): whatever the reviewer's score
+# Findings on the abstract (0.18.0): whatever the reviewer's score
 # ---------------------------------------------------------------------------
 
 _ABSTRACT_RE = re.compile(r"\babstracts?\b", re.IGNORECASE)

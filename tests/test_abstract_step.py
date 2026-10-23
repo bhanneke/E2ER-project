@@ -1,4 +1,4 @@
-"""The abstract step (0.17.4): the check, putting the abstract into the paper, the step, the findings.
+"""The abstract step (0.18.0): the check, putting the abstract into the paper, the step, the findings.
 
 src/core/abstract.py. Up to 0.17.3 the abstract writer ran beside the drafter,
 its abstract.tex never reached the PDF, and no check read it.
