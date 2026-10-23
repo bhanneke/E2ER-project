@@ -575,6 +575,8 @@ SAME_ROWS = "same_rows"
 #: last binary digits (the Gaia demo of 2026-10-13: pandas wrote -0.0005179820886653808 in the run and
 #: -0.0005179820886653 in the rerun, from the same text in the reloaded rows).
 SAME_NUMBERS = "same_numbers"
+#: 12 significant digits: a relative difference below 1e-11, far under any printed precision and above the noise of
+#: a double written through text (15-17 digits). For input tables only; result values are compared by compare_value.
 NUMERIC_DIGITS = 12
 _DECIMAL = re.compile(r"^\s*[-+]?(?:\d+\.\d*|\.\d+|\d+(?:\.\d*)?[eE][-+]?\d+)\s*$")
 #: Table files fingerprinted by content.

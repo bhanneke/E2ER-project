@@ -103,7 +103,12 @@ same fingerprint with every decimal number written with 12 significant digits: a
 file the study's own preparation step builds again whose numbers differ only in
 their last digits (pandas writing a parsed float back) is reported as "the same
 rows, every decimal number equal to 12 significant digits" and counts as the
-study's input; integers and text are compared exactly. A recipe written before
+study's input; integers and text are compared exactly. Twelve significant digits is a
+relative difference below 10^-11, well under the last digit any study prints and above
+the noise of writing a float through text (a double holds 15 to 17): the rule absorbs a
+float written back, never a different number. It applies to input tables only; result
+values are compared as above (identical, the same at the published precision, small
+differences, differ), and a whole number must match exactly. A recipe written before
 this field gets it from the package's record of the left-out file (below), only
 where that record's `content_sha256` is the recipe's own.
 
