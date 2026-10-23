@@ -13,8 +13,10 @@ anything is sent:
    ``E2ER_AFFILIATION``);
 2. **anonymises the copy** (:func:`anonymise`), with the same machinery as ``e2er
    redact``: every change is recorded in provenance.json as an amendment of kind
-   ``"anonymised"`` that names the rules applied and where the replacements sit, never
-   the text that was taken out. The rules: the paper's author, affiliation and
+   ``"anonymised"`` that names the rules applied and how many replacements of each kind it
+   made (since 0.19.0 not where they sit: offsets and a fingerprint confirm a guess), never
+   the text that was taken out. Earlier amendments of ``e2er redact`` lose their offsets,
+   sizes and the fingerprint before (:func:`_blind_earlier_amendments`). The rules: the paper's author, affiliation and
    acknowledgement blocks become "Anonymous author(s)"; home-directory paths
    (``/Users/<name>``, ``/home/<name>``, ``C:\\Users\\<name>``) become ``~``; every
    identifier becomes ``[anonymised]``;
@@ -363,11 +365,16 @@ _ALNUM_BEFORE = r"(?<![A-Za-z0-9])"
 _ALNUM_AFTER = r"(?![A-Za-z0-9])"
 
 
+#: Between the words of a name in a file name, an identifier or CamelCase: "imogen_quarry", "imogen.quarry",
+#: "imogen-quarry", "ImogenQuarry" (security review 2026-10-23: all four were missed).
+_NAME_JOIN = r"(?:[\s~]|\\[ ,]|%20|\+|&nbsp;|\\u00a0|[_.\-])*"
+
+
 def _name_sources(value: str) -> list[str]:
     words = [w for w in re.split(r"[\s~]+", value) if w]
     if len(words) == 1:
         return [_LETTER_BEFORE + _word(words[0]) + _LETTER_AFTER]
-    fwd = _SEP.join(_word(w) for w in words)
+    fwd = _NAME_JOIN.join(_word(w) for w in words)
     last, first = words[-1], words[:-1]
     out = [fwd, _word(last) + r"\s*,\s*" + _SEP.join(_word(w) for w in first)]
     # Hyphenated over a line break: "Quar-\nry".
@@ -825,6 +832,14 @@ def anonymise(folder: Path, identifiers: list[Identifier], *, at: str | None = N
     except (OSError, ValueError) as e:
         raise AnonymiseError(f"provenance.json cannot be read: {e}") from e
     listed: dict[str, Any] = prov.get("files") or {}
+    links = sorted(p.relative_to(folder).as_posix() for p in folder.rglob("*") if p.is_symlink())
+    if links:
+        # A link's target is outside the copy: anonymising "the copy" wrote through it into the original file.
+        raise AnonymiseError(
+            "the folder holds symbolic links, which point outside it: "
+            + ", ".join(links[:10])
+            + ". Replace them with the files themselves (or take them out) and export again; nothing was changed."
+        )
     pats = Patterns(identifiers)
     result = Result()
     shutil.rmtree(folder / ".e2er", ignore_errors=True)
@@ -836,6 +851,7 @@ def anonymise(folder: Path, identifiers: list[Identifier], *, at: str | None = N
             result.removed.append(rel)
     frozen = prereg_paths(folder)
     when = at or _now()
+    _blind_earlier_amendments(prov, frozen, result)
     for rel in sorted(listed):
         path = folder / rel
         if not path.is_file():
@@ -856,23 +872,28 @@ def anonymise(folder: Path, identifiers: list[Identifier], *, at: str | None = N
         path.write_bytes(after)
         before = (listed.get(rel) or {}).get("sha256")
         keep = rel in frozen
+        earlier = [a for a in prov.get("amendments") or [] if isinstance(a, dict) and a.get("path") == rel]
         if keep:
             result.prereg.append(rel)
-        elif isinstance(before, str):
+        elif isinstance(before, str) and not earlier:
             result.withheld.add(before)
         entry = {
             "path": rel,
             "kind": KIND,
             # The fingerprint before could confirm a guess of the text taken out; a pre-registered file keeps it,
-            # since its frozen fingerprint is in design/preregistration.lock.json anyway.
-            "sha256_before": before if keep else None,
+            # since its frozen fingerprint is in design/preregistration.lock.json anyway. After an earlier
+            # amendment of the file, "before" is that amendment's "after" (already in the record): the chain links.
+            "sha256_before": before if keep or earlier else None,
             "sha256_after": _sha(after),
             "reason": REASON,
             "at": when,
             "anonymisation": {
                 "rules": rules,
                 "count": sum(len(v) for v in offsets.values()),
-                "replacements": [{"text": t, "offsets": o} for t, o in sorted(offsets.items())],
+                # Where each replacement sits is withheld too: with the offsets and a fingerprint, a guess of the
+                # text taken out can be put back and compared. Verify counts the replacements in the file.
+                "replacements": [{"text": t, "count": len(o)} for t, o in sorted(offsets.items())],
+                "offsets": "withheld: with them a guess of the text taken out could be put back in place",
                 **({} if keep else {"fingerprint_before": "withheld: it could confirm a guess of the text taken out"}),
             },
         }
@@ -884,9 +905,49 @@ def anonymise(folder: Path, identifiers: list[Identifier], *, at: str | None = N
     return result
 
 
+def _blind_earlier_amendments(prov: dict[str, Any], frozen: set[str], result: Result) -> None:
+    """Take out of the copy's earlier amendments what could confirm a guess of a text taken out before.
+
+    An earlier ``e2er redact`` recorded the file's fingerprint before, the replacement's offsets and the length of
+    the text: together they confirm a guessed author name in milliseconds. A file's first amendment loses its
+    fingerprint before (withheld from the dossier too) unless the file is pre-registered; a later one keeps it,
+    since it is the earlier amendment's "after", already in the record. Offsets and sizes go everywhere.
+    """
+    seen: set[str] = set()
+    for a in prov.get("amendments") or []:
+        if not isinstance(a, dict) or not isinstance(a.get("path"), str):
+            continue
+        rel = a["path"]
+        first = rel not in seen
+        seen.add(rel)
+        before = a.get("sha256_before")
+        if first and rel not in frozen and before is not None:
+            if isinstance(before, str) and not before.startswith("hmac-"):
+                result.withheld.add(before)
+            a["sha256_before"] = None
+            a["fingerprint_before"] = "withheld for double-blind review: it could confirm a guess of the text taken out"
+        a.pop("bytes_before", None)
+        red = a.get("redaction")
+        if isinstance(red, dict) and ("offsets" in red or "removed_bytes" in red or "bytes_before" in red):
+            for key in ("offsets", "removed_bytes", "bytes_before"):
+                red.pop(key, None)
+            red["withheld"] = "offsets and sizes, for double-blind review: they could confirm a guess"
+        anon = a.get("anonymisation")
+        if isinstance(anon, dict) and isinstance(anon.get("replacements"), list):
+            anon["replacements"] = [
+                {
+                    "text": r.get("text"),
+                    "count": len(r["offsets"]) if isinstance(r.get("offsets"), list) else r.get("count"),
+                }
+                for r in anon["replacements"]
+                if isinstance(r, dict)
+            ]
+
+
 def record_problem(entry: dict[str, Any], data: bytes | None) -> str | None:
     """Why an anonymisation amendment does not describe the file ``data`` (its current bytes), or None: each
-    replacement it records sits at each of its offsets."""
+    replacement it records sits at each of its offsets, or (offsets withheld, since 0.19.0) occurs in the file
+    at least as often as recorded."""
     path = entry.get("path")
     rec = entry.get("anonymisation")
     if not isinstance(rec, dict) or not isinstance(rec.get("replacements"), list):
@@ -895,6 +956,14 @@ def record_problem(entry: dict[str, Any], data: bytes | None) -> str | None:
         return f"{path} is missing"
     total = 0
     for r in rec["replacements"]:
+        if isinstance(r, dict) and "offsets" not in r and isinstance(r.get("count"), int) and r["count"] >= 0:
+            t = str(r.get("text") or "").encode("utf-8")
+            if t and data.count(t) < r["count"]:
+                return (
+                    f"{path}: the anonymisation record does not match the file (fewer {r.get('text')!r} than recorded)"
+                )
+            total += r["count"]
+            continue
         if not isinstance(r, dict) or not isinstance(r.get("offsets"), list):
             return f"{path}: the anonymisation record is incomplete"
         t = str(r.get("text") or "").encode("utf-8")
@@ -929,6 +998,9 @@ class Report:
     citations: list[Finding] = field(default_factory=list)
     #: Files the check could not read (a PDF without pdftotext, a compressed format): it refuses them too.
     unread: list[Finding] = field(default_factory=list)
+    #: Places that may name the author but may as well not (the surname alone, "Imogen Q."): shown to the author,
+    #: who confirms them as citations are confirmed (``--blind-ack-self-citations``).
+    confirm: list[Finding] = field(default_factory=list)
     searched: int = 0
 
     @property
@@ -936,42 +1008,182 @@ class Report:
         return not self.leaks and not self.unread
 
 
-def _scan_text(where: str, text: str, pats: Patterns, report: Report, refs_from: int | None = None) -> None:
+#: Characters that render as nothing: a name with one inside ("Im\u200bogen") reads as the name.
+_INVISIBLE = re.compile("[\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180f\u200b-\u200f\u202a-\u202e"
+                        "\u2060-\u206f\u3164\ufe00-\ufe0f\ufeff\uffa0]")  # fmt: skip
+
+
+def _readings(text: str) -> list[str]:
+    """Other ways ``text`` reads: NFKC (full-width letters), invisible characters taken out, HTML entities
+    and %-escapes undone. Only those that differ from ``text``."""
+    import html
+    from urllib.parse import unquote
+
+    out = []
+    plain = _INVISIBLE.sub("", unicodedata.normalize("NFKC", text))
+    for t in (plain, html.unescape(plain), unquote(plain)):
+        if t != text and t not in out:
+            out.append(t)
+    return out
+
+
+def _weak_patterns(identifiers: Iterable[Identifier]) -> list[tuple[Identifier, re.Pattern[str]]]:
+    """The surname alone and "First L." of every name with two words or more: places to confirm, not leaks."""
+    out = []
+    for i in identifiers:
+        if i.kind not in ("name",):
+            continue
+        words = [w for w in re.split(r"[\s~]+", i.value.strip()) if w]
+        if len(words) < 2 or len(words[-1]) < 3:
+            continue
+        first, last = words[:-1], words[-1]
+        srcs = [
+            _LETTER_BEFORE + _word(last) + _LETTER_AFTER,
+            _LETTER_BEFORE + _SEP.join(_word(w) for w in first) + _SEP + _word(last[0]) + r"\.",
+        ]
+        try:
+            out.append((i, re.compile("|".join(f"(?:{x})" for x in srcs), re.I)))
+        except re.error:
+            continue
+    return out
+
+
+def _scan_text(
+    where: str,
+    text: str,
+    pats: Patterns,
+    report: Report,
+    refs_from: int | None = None,
+    weak: list[tuple[Identifier, re.Pattern[str]]] | None = None,
+) -> None:
+    spans: list[tuple[int, int]] = []
     for s, e, i in pats.find(text):
         f = Finding(where, _line_of(text, s), i.label if i.kind != "home" else LABELS["home"])
         (report.citations if is_citation(where, text, s, e, i, refs_from) else report.leaks).append(f)
+        spans.append((s, e))
+    for reading in _readings(text):
+        hits = pats.find(reading)
+        if len(hits) <= len(spans):
+            continue  # the same places, read another way
+        for s, _e, i in hits:
+            label = (i.label if i.kind != "home" else LABELS["home"]) + " (written with escapes or hidden characters)"
+            report.leaks.append(Finding(where, _line_of(reading, s), label))
+    for i, rx in weak or []:
+        for m in rx.finditer(text):
+            if any(a <= m.start() < b for a, b in spans) or is_citation(where, text, m.start(), m.end(), i, refs_from):
+                continue
+            report.confirm.append(Finding(where, _line_of(text, m.start()), f"the surname or initial of {i.label}"))
 
 
 def _byte_hits(data: bytes, where: str, pats: Patterns) -> Iterable[Finding]:
-    for enc in ("utf-8", "utf-16-le", "latin-1"):
-        try:
-            text = data.decode(enc, errors="ignore") if enc != "latin-1" else data.decode("latin-1")
-        except LookupError:
-            continue
-        for s, _e, i in pats.find(text):
-            yield Finding(
-                where, 0, (i.label if i.kind != "home" else LABELS["home"]) + f" (in the file's bytes, {enc})"
-            )
+    for enc in ("utf-8", "utf-16-le", "utf-16-be", "latin-1"):
+        for shift in (0, 1) if enc.startswith("utf-16") else (0,):
+            try:
+                text = data[shift:].decode(enc, errors="ignore") if enc != "latin-1" else data.decode("latin-1")
+            except LookupError:
+                continue
+            for s, _e, i in pats.find(text):
+                yield Finding(
+                    where, 0, (i.label if i.kind != "home" else LABELS["home"]) + f" (in the file's bytes, {enc})"
+                )
 
 
 _COMPRESSED = (".parquet", ".feather", ".arrow", ".zst", ".bz2", ".xz", ".7z", ".rar", ".npz")
+_PDF_STREAM = re.compile(rb"stream\r?\n(.*?)\r?\nendstream", re.S)
+_PDF_HEX = re.compile(rb"<([0-9A-Fa-f\s]{8,})>")
 
 
-def _scan_bytes(where: str, data: bytes, pats: Patterns, report: Report, pdf: PdfText, depth: int = 0) -> None:
+def pdf_meta(path: Path) -> str | None:
+    """A PDF's document information and XMP metadata (pdfinfo, from poppler), or None without pdfinfo."""
+    exe = shutil.which("pdfinfo")
+    if exe is None:
+        return None
+    out = []
+    for args in ([exe, "-enc", "UTF-8", str(path)], [exe, "-meta", str(path)]):
+        try:
+            proc = subprocess.run(args, capture_output=True, timeout=120)
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+        out.append(proc.stdout.decode("utf-8", errors="replace"))
+    return "\n".join(out)
+
+
+def _pdf_inner(data: bytes) -> Iterable[bytes]:
+    """What a PDF holds out of plain sight: its compressed streams (Flate) and its hex strings (UTF-16BE titles)."""
+    import zlib
+
+    for m in _PDF_STREAM.finditer(data):
+        try:
+            yield zlib.decompressobj().decompress(m.group(1), 64 * 1024 * 1024)
+        except zlib.error:
+            continue
+    for m in _PDF_HEX.finditer(data):
+        raw = re.sub(rb"\s", b"", m.group(1))
+        try:
+            yield bytes.fromhex(raw.decode("ascii") + ("0" if len(raw) % 2 else ""))
+        except ValueError:
+            continue
+
+
+def _png_text(data: bytes) -> Iterable[bytes]:
+    """The text chunks of a PNG (tEXt, zTXt, iTXt), decompressed: an author or a path in the metadata."""
+    import struct
+    import zlib
+
+    pos = 8
+    while pos + 8 <= len(data):
+        (length,) = struct.unpack(">I", data[pos : pos + 4])
+        kind = data[pos + 4 : pos + 8]
+        body = data[pos + 8 : pos + 8 + length]
+        pos += 12 + length
+        if kind == b"tEXt":
+            yield body
+        elif kind == b"zTXt":
+            key, _, rest = body.partition(b"\x00")
+            try:
+                yield key + b" " + zlib.decompress(rest[1:])
+            except zlib.error:
+                yield key
+        elif kind == b"iTXt":
+            key, _, rest = body.partition(b"\x00")
+            flag = rest[:1]
+            parts = rest[2:].split(b"\x00", 2)
+            text = parts[2] if len(parts) == 3 else b""
+            if flag == b"\x01":
+                try:
+                    text = zlib.decompress(text)
+                except zlib.error:
+                    pass
+            yield key + b" " + b" ".join(parts[:2]) + b" " + text
+        elif kind == b"IEND":
+            break
+
+
+def _scan_bytes(
+    where: str,
+    data: bytes,
+    pats: Patterns,
+    report: Report,
+    pdf: PdfText,
+    depth: int = 0,
+    meta: PdfText | None = None,
+    weak: list[tuple[Identifier, re.Pattern[str]]] | None = None,
+) -> None:
     low = where.lower()
     if zipfile.is_zipfile(io.BytesIO(data)) and depth < 3:
         try:
             with zipfile.ZipFile(io.BytesIO(data)) as zf:
                 for info in zf.infolist():
+                    _scan_text(f"{where}!{info.filename} (its name)", info.filename, pats, report, weak=weak)
                     if info.is_dir():
                         continue
-                    _scan_bytes(f"{where}!{info.filename}", zf.read(info), pats, report, pdf, depth + 1)
+                    _scan_bytes(f"{where}!{info.filename}", zf.read(info), pats, report, pdf, depth + 1, meta, weak)
                 return
         except (zipfile.BadZipFile, OSError, RuntimeError):
             pass
     if data[:2] == b"\x1f\x8b" and depth < 3:
         try:
-            _scan_bytes(where.removesuffix(".gz"), gzip.decompress(data), pats, report, pdf, depth + 1)
+            _scan_bytes(where.removesuffix(".gz"), gzip.decompress(data), pats, report, pdf, depth + 1, meta, weak)
             return
         except (OSError, EOFError):
             pass
@@ -983,16 +1195,30 @@ def _scan_bytes(where: str, data: bytes, pats: Patterns, report: Report, pdf: Pd
             tf.write(data)
             tf.flush()
             text = pdf(Path(tf.name))
+            pdf_info = (meta or pdf_meta)(Path(tf.name))
         if text is None:
             report.unread.append(
                 Finding(where, 0, "a PDF whose text could not be read (install pdftotext, from poppler)")
             )
         else:
-            _scan_text(where, text, pats, report, references_start(text))
+            _scan_text(where, text, pats, report, references_start(text), weak=weak)
+        if pdf_info:
+            _scan_text(f"{where} (its metadata)", pdf_info, pats, report)
         report.leaks += list(_byte_hits(data, where, pats))
+        for inner in _pdf_inner(data):
+            report.leaks += [
+                Finding(f.where, 0, f.what.replace("the file's bytes", "the PDF's compressed or hex-coded content"))
+                for f in _byte_hits(inner, where, pats)
+            ]
         return
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        for chunk in _png_text(data):
+            report.leaks += [
+                Finding(f.where, 0, f.what.replace("the file's bytes", "the image's text metadata"))
+                for f in _byte_hits(chunk, where, pats)
+            ]
     if _is_text(data):
-        _scan_text(where, data.decode("utf-8"), pats, report)
+        _scan_text(where, data.decode("utf-8"), pats, report, weak=weak)
         return
     report.leaks += list(_byte_hits(data, where, pats))
     if low.endswith(_COMPRESSED):
@@ -1008,20 +1234,25 @@ def leak_check(
     texts: dict[str, str] | None = None,
     files: dict[str, bytes] | None = None,
     pdf: PdfText | None = None,
+    meta: PdfText | None = None,
 ) -> Report:
-    """Search every file of ``folder`` (.e2er/ records aside), every extra text (``texts``: the dossier, the request
-    body) and every extra file (``files``: a package's members) for every identifier and home path."""
+    """Search every file of ``folder`` (.e2er/ records aside), its file names, every extra text (``texts``: the
+    dossier, the request body) and every extra file (``files``: a package's members) for every identifier and
+    home path. ``meta`` reads a PDF's metadata (default: pdfinfo)."""
     pats = Patterns(identifiers)
+    weak = _weak_patterns(identifiers)
     report = Report()
     pdf = pdf or pdf_text
     if folder is not None:
         for rel in _files(Path(folder)):
-            _scan_bytes(rel, (Path(folder) / rel).read_bytes(), pats, report, pdf)
+            _scan_text(f"{rel} (its name)", rel, pats, report, weak=weak)
+            _scan_bytes(rel, (Path(folder) / rel).read_bytes(), pats, report, pdf, meta=meta, weak=weak)
     for where, data in (files or {}).items():
-        _scan_bytes(where, data, pats, report, pdf)
+        _scan_text(f"{where} (its name)", where, pats, report, weak=weak)
+        _scan_bytes(where, data, pats, report, pdf, meta=meta, weak=weak)
     for where, text in (texts or {}).items():
         report.searched += 1
-        _scan_text(where, text, pats, report)
+        _scan_text(where, text, pats, report, weak=weak)
         # A JSON text: also as its strings read (escapes undone), so \u00f6 and \/ are seen as the letters.
         try:
             value = json.loads(text)
@@ -1029,9 +1260,10 @@ def leak_check(
             continue
         plain = json.dumps(value, ensure_ascii=False, indent=1)
         if plain != text:
-            _scan_text(f"{where} (as read)", plain, pats, report)
+            _scan_text(f"{where} (as read)", plain, pats, report, weak=weak)
     report.leaks = _unique(report.leaks)
     report.citations = _unique(report.citations)
+    report.confirm = _unique(report.confirm)
     return report
 
 

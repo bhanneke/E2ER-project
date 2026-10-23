@@ -251,19 +251,31 @@ def publish_blind(
             )
             return 1
         cites = an.self_citations(copy, ids) + report.citations
-        if cites and not ack_self_citations:
-            _print_findings(
-                "error: the study may cite your own work. Whether a citation gives you away cannot be judged "
-                "mechanically: read these places (cite your work in the third person, or leave it out), then publish "
-                "again with --blind-ack-self-citations. Nothing was sent:",
-                cites,
-            )
+        if (cites or report.confirm) and not ack_self_citations:
+            if cites:
+                _print_findings(
+                    "error: the study may cite your own work. Whether a citation gives you away cannot be judged "
+                    "mechanically: read these places (cite your work in the third person, or leave it out), then "
+                    "publish again with --blind-ack-self-citations. Nothing was sent:",
+                    cites,
+                )
+            if report.confirm:
+                _print_findings(
+                    "error: these places hold your surname alone or your first name with an initial ('Imogen Q.'), "
+                    "which may name you or someone else. Read them, take out what names you, then publish again with "
+                    "--blind-ack-self-citations. Nothing was sent:",
+                    report.confirm,
+                )
             return 1
         for line in log.getvalue().splitlines():
             if line.startswith(("note:", "warning:", "WARNING:")):
                 print(line)
-        if cites:
-            _print_findings("note: you confirmed these places that may cite your own work:", cites, limit=20)
+        if cites or report.confirm:
+            _print_findings(
+                "note: you confirmed these places that may cite your own work or name you:",
+                cites + report.confirm,
+                limit=20,
+            )
         if result.prereg:
             print(
                 "warning: these pre-registered files were anonymised: "
@@ -396,6 +408,8 @@ def pack_blind(target: str, out: str | None, *, offline: bool = False, no_data: 
         print(f"note: {why_not}: the file is checked for the identifiers of this computer only")
     ids = an.collect(me, folders=[folder])
     report = an.leak_check(None, ids, files={packed.path.name: packed.path.read_bytes()})
+    if report.confirm:
+        _print_findings("note: your surname alone or with an initial is in these places; check them:", report.confirm)
     if not report.clean:
         packed.path.unlink(missing_ok=True)
         _print_findings("error: the file would identify you; it was deleted:", report.leaks + report.unread)

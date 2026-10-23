@@ -15,9 +15,16 @@ fingerprint. ``redact`` does the edit the supported way:
        "redaction": {"replacement", "count", "offsets", "removed_bytes"}}
 
   ``offsets`` are the byte offsets of the replacement in the new file and
-  ``removed_bytes`` the length of the text taken out: with the text, anyone can
-  rebuild the earlier file and check its fingerprint (``e2er redact --check``);
-  the record itself never holds the text, nor a hash of it;
+  ``removed_bytes`` the length of the text taken out. The record never holds
+  the text, nor a hash of it;
+* ``sha256_before`` is keyed (``hmac-sha256:<hex>``, an HMAC with a salt kept on
+  this computer in ``~/.e2er/redaction-salt``) unless the earlier fingerprint is
+  public anyway: a pre-registered plan file (its frozen fingerprint is in the lock
+  file) or a folder published before (its fingerprints are on the platform). A
+  plain SHA-256 of the earlier file, with the offsets, confirms a guess of a short
+  text: a phone number was recovered from the record in 0.02 s (security review of
+  2026-10-23). ``e2er redact --check`` on this computer still rebuilds the earlier
+  file and compares it;
 * before anything is written, the edit is proven: the new file, with the text
   put back at the offsets, has exactly the fingerprint the file had.
 
@@ -34,7 +41,10 @@ Text inside a binary file (a PDF, a database) cannot be replaced in place;
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
+import os
+import secrets
 import shutil
 import subprocess
 from dataclasses import dataclass, field
@@ -57,6 +67,53 @@ class RedactError(Exception):
 
 def _sha(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+#: The prefix of a keyed fingerprint (an HMAC-SHA256 with this computer's salt) in ``sha256_before``.
+KEYED = "hmac-sha256:"
+#: Below this many characters a redacted text can be guessed from the earlier file's fingerprint, where one is
+#: public (a pre-registered plan, a folder published before): a phone number, a postcode, an extension.
+SHORT_TEXT = 16
+
+
+def salt_file() -> Path:
+    return Path.home() / ".e2er" / "redaction-salt"
+
+
+def _salt() -> bytes:
+    """This computer's redaction salt (made once, mode 600 in a 700 folder). Never published."""
+    p = salt_file()
+    try:
+        raw = p.read_text(encoding="utf-8").strip()
+        if len(raw) >= 64:
+            return bytes.fromhex(raw)
+    except (OSError, ValueError):
+        pass
+    p.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    value = secrets.token_hex(32)
+    tmp = p.with_name(f".{p.name}.{os.getpid()}.tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(value + "\n")
+    os.replace(tmp, p)
+    return bytes.fromhex(value)
+
+
+def keyed(data: bytes) -> str:
+    """The keyed fingerprint of ``data``: confirms nothing to anyone without this computer's salt."""
+    return KEYED + hmac.new(_salt(), data, hashlib.sha256).hexdigest()
+
+
+def guessable(text: str) -> bool:
+    """Is ``text`` short enough to be guessed by trying (a phone number, an extension, a postcode)?"""
+    return len(text.strip()) < SHORT_TEXT
+
+
+def _public_before(folder: Path, rel: str) -> bool:
+    """Is the fingerprint ``rel`` has now public anyway? A pre-registered file, or a folder published before."""
+    from .anonymise import prereg_paths
+
+    return rel in prereg_paths(folder) or (folder / "e2er.json").is_file() or (folder / ".e2er" / "link.json").is_file()
 
 
 def _now() -> str:
@@ -242,11 +299,22 @@ def redact(
         return found, []
     at = _now()
     written: list[dict[str, Any]] = []
+    amendments = prov.setdefault("amendments", [])
     for rel, (before, after, offsets) in found.edits.items():
+        mine = [a for a in amendments if isinstance(a, dict) and a.get("path") == rel]
+        previous = mine[-1] if mine else None
+        # Keyed unless the fingerprint is public anyway, or an earlier amendment of another kind names it in plain.
+        key_it = not _public_before(folder, rel) and (
+            previous is None or (previous.get("kind") == KIND and previous.get("sha256_after") == _sha(before))
+        )
+        before_value = keyed(before) if key_it else _sha(before)
+        if key_it and previous is not None:
+            # The earlier redaction's "after" is this one's "before": keyed as well, so the chain still links.
+            previous["sha256_after"] = before_value
         entry = {
             "path": rel,
             "kind": KIND,
-            "sha256_before": _sha(before),
+            "sha256_before": before_value,
             "sha256_after": _sha(after),
             "reason": REASON,
             "at": at,
@@ -261,7 +329,7 @@ def redact(
             },
         }
         listed[rel] = {"sha256": entry["sha256_after"], "bytes": len(after)}
-        prov.setdefault("amendments", []).append(entry)
+        amendments.append(entry)
         written.append(entry)
     prov["files"] = dict(sorted(listed.items()))
     from .export.provenance import dump
@@ -341,6 +409,20 @@ def record_problem(entry: dict[str, Any], data: bytes | None) -> str | None:
         red.get("count"),
         red.get("removed_bytes"),
     )
+    if (
+        red.get("withheld")
+        and offsets is None
+        and isinstance(rep, str)
+        and rep
+        and isinstance(count, int)
+        and count > 0
+    ):
+        # A copy for double-blind review keeps no offsets (src/core/anonymise.py): the replacement is counted.
+        if data is None:
+            return f"{path} is missing"
+        if data.count(rep.encode("utf-8")) < count:
+            return f"{path}: the redaction record does not match the file (fewer {rep} than recorded)"
+        return None
     if not (
         isinstance(rep, str)
         and rep
@@ -412,7 +494,14 @@ def check(folder: Path, text: str) -> list[str]:
             out.append(f"✗ {rel}: the text is {len(t)} bytes long, the redaction removed {red['removed_bytes']}")
             continue
         before = restore(data, red["offsets"], red["replacement"].encode("utf-8"), t)
-        if _sha(before) == a.get("sha256_before"):
+        recorded = str(a.get("sha256_before") or "")
+        if recorded.startswith(KEYED) and not salt_file().is_file():
+            out.append(
+                f"· {rel}: its earlier fingerprint is keyed to the computer that redacted it "
+                "(~/.e2er/redaction-salt); run the check there"
+            )
+            continue
+        if (keyed(before) if recorded.startswith(KEYED) else _sha(before)) == recorded:
             out.append(
                 f"✓ {rel}: with the text put back, the file is exactly the earlier one ({red['count']} place(s))"
             )

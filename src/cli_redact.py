@@ -49,6 +49,19 @@ def redact(folder: str, texts: list[str], *, replacement: str, dry_run: bool = F
             total += len(found.edits)
             if written:
                 print(f'✓ Recorded {len(written)} amendment(s) in provenance.json (kind "{rd.KIND}": {rd.REASON})')
+            public = [e["path"] for e in written if not str(e.get("sha256_before") or "").startswith(rd.KEYED)]
+            if found.edits and rd.guessable(t):
+                where = (
+                    f" The earlier fingerprint of {', '.join(public)} is public (a pre-registered file, or a folder "
+                    "published before): with it, a guess can be confirmed."
+                    if public
+                    else " Its record keeps the earlier fingerprint keyed to this computer, so the record alone "
+                    "confirms no guess."
+                )
+                print(
+                    f"warning: {label} is short ({len(t.strip())} characters): a short text such as a phone number "
+                    f"can be guessed by trying.{where}"
+                )
     except rd.RedactError as e:
         print(f"error: {e}")
         return 1

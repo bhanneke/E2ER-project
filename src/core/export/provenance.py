@@ -320,12 +320,17 @@ def files_at_export(prov: dict[str, Any]) -> dict[str, dict[str, Any]]:
         path = a.get("path") if isinstance(a, dict) else None
         if isinstance(path, str) and path not in first:
             first[path] = a.get("sha256_before")
-            if a.get("kind") == "anonymised" and a.get("sha256_before") is None:
+            before = a.get("sha256_before")
+            # Withheld (an anonymised or blinded file: None) or keyed to the author's computer (a redaction,
+            # "hmac-sha256:…"): the fingerprint before is not known, so the file counts as exported as it is now.
+            if (a.get("kind") in ("anonymised", "redacted") and before is None) or (
+                isinstance(before, str) and before.startswith("hmac-sha256:")
+            ):
                 withheld.add(path)
     for path in withheld:
         last = None
         for a in prov.get("amendments") or []:
-            if isinstance(a, dict) and a.get("path") == path and a.get("kind") == "anonymised":
+            if isinstance(a, dict) and a.get("path") == path and a.get("kind") in ("anonymised", "redacted"):
                 last = a.get("sha256_after")
         first[path] = last
     for path, before in first.items():
