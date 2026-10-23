@@ -20,6 +20,7 @@ from pydantic import BaseModel
 from ..core.labels import status as status_words
 from ..db import studies as st
 from ..logging_config import get_logger
+from .guards import PaperId
 from .local_session import require_local_session
 
 logger = get_logger(__name__)
@@ -112,7 +113,7 @@ def _refused(e: st.StudyError) -> HTTPException:
 
 
 @router.post("/api/papers/{paper_id}/archive", dependencies=_GUARD)
-async def api_archive_attempt(paper_id: str) -> dict[str, Any]:
+async def api_archive_attempt(paper_id: PaperId) -> dict[str, Any]:
     try:
         a = await st.archive_attempt(paper_id)
     except st.StudyError as e:
@@ -121,7 +122,7 @@ async def api_archive_attempt(paper_id: str) -> dict[str, Any]:
 
 
 @router.post("/api/papers/{paper_id}/unarchive", dependencies=_GUARD)
-async def api_unarchive_attempt(paper_id: str) -> dict[str, Any]:
+async def api_unarchive_attempt(paper_id: PaperId) -> dict[str, Any]:
     try:
         a = await st.unarchive_attempt(paper_id)
     except st.StudyError as e:
@@ -175,7 +176,7 @@ async def api_archive_failed(body: BulkArchive) -> dict[str, Any]:
 
 
 @router.post("/api/papers/{paper_id}/cancel-attempt", dependencies=_GUARD)
-async def api_cancel_attempt(paper_id: str) -> dict[str, Any]:
+async def api_cancel_attempt(paper_id: PaperId) -> dict[str, Any]:
     """Cancel a paused attempt (see studies.cancel_attempt). The workspace stays."""
     try:
         a = await st.cancel_attempt(paper_id, via="dashboard")
@@ -189,7 +190,7 @@ class MoveRequest(BaseModel):
 
 
 @router.post("/api/papers/{paper_id}/move", dependencies=_GUARD)
-async def api_move_attempt(paper_id: str, body: MoveRequest) -> dict[str, Any]:
+async def api_move_attempt(paper_id: PaperId, body: MoveRequest) -> dict[str, Any]:
     try:
         dest = await st.move_attempt(paper_id, body.study)
     except st.StudyError as e:

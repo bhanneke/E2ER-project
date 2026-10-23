@@ -358,13 +358,16 @@ async def test_each_cli_keeps_its_own_sign_in_only(cfg, monkeypatch, backend, ow
 # ── the local API: steering a run needs this server's session token ─────────
 
 
+_ID = "7d3f0c52-6f0e-4b8a-9c1e-2b5a8f3d9e10"  # a run id (a path id that is not a UUID is a 404 first)
+
+
 def test_starting_or_steering_a_run_needs_the_session_token(monkeypatch):
     from fastapi.testclient import TestClient
 
     from src.api.app import app
 
     anonymous = TestClient(app, headers={"x-e2er-token": ""})
-    for path in ("/api/papers", "/api/papers/x/resume", "/api/papers/x/cancel", "/api/papers/x/review"):
+    for path in ("/api/papers", "/api/papers/" + _ID + "/resume", "/api/papers/" + _ID + "/cancel", "/api/papers/" + _ID + "/review"):
         r = anonymous.post(path, json={})
         assert r.status_code == 403 and "not signed in to e2er" in r.json()["detail"], path
     wrong = TestClient(app, headers={"x-e2er-token": "guessed"})

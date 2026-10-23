@@ -281,6 +281,29 @@ def remember_workspace(paper_id: str, folder: Path) -> None:
     _KNOWN[paper_id] = Path(folder)
 
 
+def is_run_id(paper_id: object) -> bool:
+    """A run id e2er makes: a UUID (canonical or hex form), never a path."""
+    import uuid
+
+    if not isinstance(paper_id, str) or not paper_id or len(paper_id) > 40:
+        return False
+    try:
+        uuid.UUID(paper_id)
+    except (ValueError, AttributeError, TypeError):
+        return False
+    return True
+
+
+#: What ``find_workspace`` accepts besides a UUID: one plain name (the prefix of an id that
+#: ``e2er export <prefix>`` looks up, a scratch id). Never ``.``, ``/`` or ``\``.
+_PLAIN_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,79}")
+
+
+def is_plain_id(paper_id: object) -> bool:
+    """A UUID or one plain name that cannot leave the folder it is joined to."""
+    return is_run_id(paper_id) or (isinstance(paper_id, str) and bool(_PLAIN_ID.fullmatch(paper_id)))
+
+
 def find_workspace(paper_id: str, root: str | Path | None = None) -> Path:
     """The folder of run ``paper_id``.
 
@@ -288,7 +311,9 @@ def find_workspace(paper_id: str, root: str | Path | None = None) -> Path:
     after the date and title with the id in its ``manifest.json``. A subprocess
     of a run gets its folder in ``E2ER_WORKSPACE``. Falls back to
     ``<root>/<id>`` when nothing is found (the caller decides what a missing
-    folder means).
+    folder means). An id that is neither a UUID nor one plain name (letters,
+    digits, ``-``, ``_``; never ``..`` or ``/``) raises ``ValueError``. The dashboard's
+    routes accept UUIDs only (src/api/guards.py).
     """
     known = _KNOWN.get(paper_id)
     if known is not None and known.is_dir():
@@ -296,6 +321,10 @@ def find_workspace(paper_id: str, root: str | Path | None = None) -> Path:
     env_ws = os.environ.get("E2ER_WORKSPACE", "").strip()
     if env_ws and os.environ.get("E2ER_PAPER_ID", "") == paper_id:
         return Path(env_ws)
+    if not is_plain_id(paper_id):
+        # The id becomes a folder name below: ``..`` or ``a/b`` would name a folder outside the
+        # workspaces (the dashboard served the studies folder's .env through /api/papers/%2E%2E/).
+        raise ValueError(f"not a run id: {paper_id!r}")
     if root is None:
         from .config import get_settings
 

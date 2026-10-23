@@ -27,6 +27,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 from ..logging_config import get_logger
+from .guards import PaperId
 from .local_session import local_problem, require_local_session
 
 logger = get_logger(__name__)
@@ -136,7 +137,7 @@ def _terms(bundle: Path | None) -> list[dict[str, Any]]:
 
 
 @router.get("/papers/{paper_id}/finish", response_class=HTMLResponse)
-async def finish_page(request: Request, paper_id: str) -> Any:
+async def finish_page(request: Request, paper_id: PaperId) -> Any:
     from ..config import get_settings
     from ..core.demonstration import study_purpose
     from .app import _with_outcome, templates
@@ -190,7 +191,7 @@ def _inputs(workspace: Path, request: Request) -> dict[str, Any] | None:
 
 
 @router.post("/api/papers/{paper_id}/export", dependencies=[Depends(require_local_session)])
-async def export_study(paper_id: str) -> dict[str, Any]:
+async def export_study(paper_id: PaperId) -> dict[str, Any]:
     from ..config import get_settings
     from ..core.export.current import export_current
 
@@ -218,7 +219,7 @@ async def export_study(paper_id: str) -> dict[str, Any]:
 
 
 @router.post("/api/papers/{paper_id}/package", dependencies=[Depends(require_local_session)])
-async def package_study(paper_id: str) -> dict[str, Any]:
+async def package_study(paper_id: PaperId) -> dict[str, Any]:
     """`e2er pack` on the study's current folder: one .e2er file next to it, for "Download package (.e2er)"."""
     from ..core.export import package as pkg
 
@@ -243,7 +244,7 @@ async def package_study(paper_id: str) -> dict[str, Any]:
 
 
 @router.get("/api/papers/{paper_id}/package", dependencies=[Depends(require_local_session)])
-async def download_package(paper_id: str) -> Any:
+async def download_package(paper_id: PaperId) -> Any:
     """The .e2er file written for the study's current folder (by the button above, or `e2er pack`)."""
     from fastapi.responses import FileResponse
 
@@ -293,7 +294,7 @@ def _folders_view(paper_id: str) -> dict[str, Any]:
 
 
 @router.post("/api/papers/{paper_id}/exports/remove-older", dependencies=[Depends(require_local_session)])
-async def remove_older_exports(paper_id: str) -> dict[str, Any]:
+async def remove_older_exports(paper_id: PaperId) -> dict[str, Any]:
     """Remove the earlier copies of the run's folder: never the current one, never a published one."""
     from ..config import get_settings
     from ..core.export.current import remove_older_copies
@@ -323,7 +324,7 @@ class VerifyRequest(BaseModel):
 
 
 @router.post("/api/papers/{paper_id}/verify", dependencies=[Depends(require_local_session)])
-async def verify_study(paper_id: str, req: VerifyRequest | None = None) -> dict[str, Any]:
+async def verify_study(paper_id: PaperId, req: VerifyRequest | None = None) -> dict[str, Any]:
     """`e2er verify` on the study's exported folder: the same checks, the same verdict."""
     from dataclasses import asdict
 
@@ -405,7 +406,7 @@ class PublishRequest(BaseModel):
 
 
 @router.post("/api/papers/{paper_id}/publish", dependencies=[Depends(require_local_session)])
-async def publish_study(paper_id: str, req: PublishRequest) -> dict[str, Any]:
+async def publish_study(paper_id: PaperId, req: PublishRequest) -> dict[str, Any]:
     """`e2er publish --to <platform>`: a dry run shows the request; otherwise it is sent once the page confirmed."""
     from ..cli_publish import publish
 
@@ -597,7 +598,7 @@ class DepositRequest(BaseModel):
 
 
 @router.post("/api/papers/{paper_id}/preregistration/deposit", dependencies=[Depends(require_local_session)])
-async def deposit_preregistration(paper_id: str, req: DepositRequest) -> dict[str, Any]:
+async def deposit_preregistration(paper_id: PaperId, req: DepositRequest) -> dict[str, Any]:
     """Deposit the study's frozen pre-registration on Zenodo with the researcher's own token."""
     from ..core.pipeline.preregistration import ZENODO_SANDBOX_URL, ZENODO_URL, deposit_zenodo, load_lock
 

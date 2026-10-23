@@ -25,22 +25,9 @@ from ..config import get_settings
 from ..core.run_owner import IN_FLIGHT
 from ..db.studies import study_key
 from ..logging_config import get_logger
+from .guards import PaperId, ids_in_path, validate_uuid
 
-
-def _validate_uuid(paper_id: str) -> str:
-    """Validate that paper_id is a syntactically valid UUID, else 404.
-
-    Without this, an invalid string flows into a `uuid` column and psycopg
-    raises InvalidTextRepresentation, which Starlette surfaces as 500 — not
-    helpful for a typo'd URL.
-    """
-    import uuid as _uuid
-
-    try:
-        _uuid.UUID(paper_id)
-    except (ValueError, AttributeError, TypeError) as e:
-        raise HTTPException(status_code=404, detail="Paper not found") from e
-    return paper_id
+_validate_uuid = validate_uuid  # the name older code and tests use
 
 
 def require_auth(request: Request, authorization: str | None = Header(default=None)) -> None:
@@ -79,7 +66,12 @@ _STATIC_DIR = _API_DIR / "static"
 _TEMPLATES_DIR = _API_DIR / "templates"
 
 logger = get_logger(__name__)
-app = FastAPI(title="e2er", version=_version, description="The API of the local e2er dashboard.")
+app = FastAPI(
+    title="e2er",
+    version=_version,
+    description="The API of the local e2er dashboard.",
+    dependencies=[Depends(ids_in_path)],
+)
 
 _cors_origins = [o.strip() for o in get_settings().cors_origins.split(",") if o.strip()]
 app.add_middleware(
@@ -1053,7 +1045,7 @@ async def list_papers() -> list[dict[str, Any]]:
 
 
 @app.get("/api/papers/{paper_id}")
-async def get_paper(paper_id: str = Depends(_validate_uuid)) -> dict[str, Any]:
+async def get_paper(paper_id: PaperId) -> dict[str, Any]:
     from ..db.client import fetch_one
 
     row = await fetch_one("SELECT * FROM papers WHERE id = %(id)s", {"id": paper_id})
@@ -1091,7 +1083,7 @@ def _how_to_continue(row: dict[str, Any]) -> dict[str, Any]:
 
 
 @app.get("/api/papers/{paper_id}/artifacts")
-async def list_artifacts(paper_id: str) -> dict[str, Any]:
+async def list_artifacts(paper_id: PaperId) -> dict[str, Any]:
 
     workspace = _workspace_of(paper_id)
     if not workspace.exists():
@@ -1127,7 +1119,7 @@ def _elsewhere_text(owner: dict[str, Any]) -> str:
 
 
 @app.post("/api/papers/{paper_id}/cancel", dependencies=[Depends(require_auth)])
-async def cancel_paper(paper_id: str) -> dict[str, Any]:
+async def cancel_paper(paper_id: PaperId) -> dict[str, Any]:
     """Cancel an in-flight pipeline run. The runner's CancelledError handler
     will save state and mark the paper as cancelled in the DB."""
     task = _RUNNING.get(paper_id)
@@ -1249,7 +1241,7 @@ def _sendable(workspace: Path, state: Any, pending: Any, spec: Any, ran: set[str
 
 
 @app.get("/api/papers/{paper_id}/review")
-async def get_review(paper_id: str = Depends(_validate_uuid)) -> dict[str, Any]:
+async def get_review(paper_id: PaperId) -> dict[str, Any]:
     """The researcher step a paused run is waiting at: its files, what can be sent back, past actions."""
     from ..db.events import fetch_events
 
@@ -1313,7 +1305,7 @@ async def get_review(paper_id: str = Depends(_validate_uuid)) -> dict[str, Any]:
 
 
 @app.post("/api/papers/{paper_id}/review", dependencies=[Depends(require_auth)])
-async def post_review(req: ReviewAction, paper_id: str = Depends(_validate_uuid)) -> dict[str, Any]:
+async def post_review(req: ReviewAction, paper_id: PaperId) -> dict[str, Any]:
     """Apply one researcher action; approve and send back continue the run unless resume=false."""
     from ..core.pipeline.researcher import ResearcherActionError, apply_action
     from ..db.events import log_event
@@ -1351,7 +1343,7 @@ class RerunRequest(BaseModel):
 
 
 @app.post("/api/papers/{paper_id}/rerun", dependencies=[Depends(require_auth)])
-async def rerun_paper(req: RerunRequest, paper_id: str = Depends(_validate_uuid)) -> dict[str, Any]:
+async def rerun_paper(req: RerunRequest, paper_id: PaperId) -> dict[str, Any]:
     """Send a study back to one of its steps: that step and every later one run again.
 
     For a study that is not running: completed, stopped by a check, failed,
@@ -1397,7 +1389,7 @@ async def rerun_paper(req: RerunRequest, paper_id: str = Depends(_validate_uuid)
 
 
 @app.post("/api/papers/{paper_id}/resume", dependencies=[Depends(require_auth)])
-async def resume_paper(paper_id: str, req: ResumeRequest | None = None) -> dict[str, Any]:
+async def resume_paper(paper_id: PaperId, req: ResumeRequest | None = None) -> dict[str, Any]:
     """Resume a paper whose runner is not actively running.
 
     The pipeline runner's PipelineState load logic skips phases that
@@ -1545,7 +1537,7 @@ async def resume_paper(paper_id: str, req: ResumeRequest | None = None) -> dict[
 
 
 @app.get("/api/papers/{paper_id}/failure-bundle")
-async def failure_bundle(paper_id: str) -> dict[str, Any]:
+async def failure_bundle(paper_id: PaperId) -> dict[str, Any]:
     """Single-call diagnostic for a paused/failed run.
 
     Returns everything the operator (or /diagnose-run agent) needs to
@@ -1659,7 +1651,7 @@ async def failure_bundle(paper_id: str) -> dict[str, Any]:
 
 
 @app.get("/api/papers/{paper_id}/data-queries")
-async def data_queries(paper_id: str) -> dict[str, Any]:
+async def data_queries(paper_id: PaperId) -> dict[str, Any]:
     """Return every Allium-style query the paper run submitted.
 
     The `data_query_records` table captures both SQL Explorer queries
@@ -1718,7 +1710,7 @@ async def data_queries(paper_id: str) -> dict[str, Any]:
 
 
 @app.get("/api/papers/{paper_id}/audit-bundle")
-async def audit_bundle(paper_id: str) -> StreamingResponse:
+async def audit_bundle(paper_id: PaperId) -> StreamingResponse:
     """ "Download all files": every file of the run's folder, and its records from the database
     (manifest.json, contributions.json, events.json, usage.json).
     """
@@ -1808,7 +1800,7 @@ async def audit_bundle(paper_id: str) -> StreamingResponse:
 
 
 @app.get("/api/papers/{paper_id}/pending-queries")
-async def get_pending_queries(paper_id: str) -> list[dict[str, Any]]:
+async def get_pending_queries(paper_id: PaperId) -> list[dict[str, Any]]:
     from ..db.client import fetch_all
 
     try:
@@ -1864,7 +1856,7 @@ async def approve_query(query_id: str, action: ApprovalAction):
 
 
 @app.get("/api/papers/{paper_id}/usage")
-async def get_paper_usage(paper_id: str) -> dict[str, Any]:
+async def get_paper_usage(paper_id: PaperId) -> dict[str, Any]:
     from ..modules.tracking.usage import get_paper_usage
 
     return await get_paper_usage(paper_id)
@@ -2515,7 +2507,7 @@ async def submit_new_paper(
 
 
 @app.get("/papers/{paper_id}", response_class=HTMLResponse)
-async def paper_detail(request: Request, paper_id: str = Depends(_validate_uuid)) -> Any:
+async def paper_detail(request: Request, paper_id: PaperId) -> Any:
     """Detail page for a single paper."""
     from ..db.client import fetch_one
 
@@ -3195,7 +3187,7 @@ def _failure_detail(workspace: Path, paper: dict[str, Any], events: list[dict[st
 
 
 @app.get("/htmx/papers/{paper_id}/live", response_class=HTMLResponse)
-async def paper_live_fragment(request: Request, paper_id: str = Depends(_validate_uuid)) -> Any:
+async def paper_live_fragment(request: Request, paper_id: PaperId) -> Any:
     """HTML fragment for the live-updating section of paper.html.
 
     HTMX polls this every 3s. Returns status badge, cost meter, recent events,
@@ -3309,7 +3301,7 @@ def _awaiting_review(paper: Any) -> str | None:
 
 
 @app.get("/papers/{paper_id}/review", response_class=HTMLResponse)
-async def review_page(request: Request, paper_id: str = Depends(_validate_uuid)) -> Any:
+async def review_page(request: Request, paper_id: PaperId) -> Any:
     """The researcher step in the dashboard: files in an editor, an instruction, send back, approve."""
     from ..core.pipeline.spec import find_spec
     from ..db.client import fetch_one
@@ -3359,7 +3351,7 @@ def _file_view(name: str, content: str) -> dict[str, Any]:
 
 
 @app.get("/api/papers/{paper_id}/events")
-async def list_events(paper_id: str, since: str | None = None) -> list[dict[str, Any]]:
+async def list_events(paper_id: PaperId, since: str | None = None) -> list[dict[str, Any]]:
     """JSON event log. Optional `since=<iso8601>` filter for incremental polling."""
     from ..db.events import fetch_events
 
@@ -3367,13 +3359,15 @@ async def list_events(paper_id: str, since: str | None = None) -> list[dict[str,
 
 
 @app.get("/api/papers/{paper_id}/artifacts/{path:path}")
-async def stream_artifact(paper_id: str, path: str) -> FileResponse:
+async def stream_artifact(paper_id: PaperId, path: str) -> FileResponse:
     """Serve a single artifact file from the paper workspace, mimetype-aware."""
     workspace = _workspace_of(paper_id)
     if not workspace.exists():
         raise HTTPException(status_code=404, detail="Workspace not found")
 
-    # Resolve and reject any path that escapes the workspace.
+    # Resolve and reject any path that escapes the workspace, and the hidden files the list leaves out.
+    if any(part.startswith(".") for part in Path(path).parts) or Path(path).is_absolute():
+        raise HTTPException(status_code=400, detail="Invalid artifact path")
     target = (workspace / path).resolve()
     try:
         target.relative_to(workspace.resolve())
@@ -3414,7 +3408,7 @@ _DATA_FILE_MAX_BYTES = _UPLOAD_MAX_BYTES
 
 
 @app.post("/api/papers/{paper_id}/files", dependencies=[Depends(require_auth)])
-async def upload_data_file(paper_id: str, file: UploadFile = File(...)) -> dict[str, Any]:
+async def upload_data_file(paper_id: PaperId, file: UploadFile = File(...)) -> dict[str, Any]:
     """Upload a researcher-supplied data file into the paper's workspace/data/.
 
     Specialists running with `DATA_MODULE_ENABLED=false` (no Allium key) can
