@@ -34,6 +34,16 @@ echo "ok  e2er --help"
 echo "== templates and skills"
 "$WORK/venv/bin/python" check_installed_package.py "$REPO"
 
+# keyring is a dependency (the tokens of `e2er login` and `e2er zenodo login`). On a computer with no
+# keychain behind it (this job's Linux runner) e2er must choose the credentials file, not fail.
+echo "== keyring"
+"$WORK/venv/bin/python" - <<'PY'
+import keyring  # noqa: F401  (declared in pyproject.toml; a wheel without it fails here)
+from src.core import platform_client as pc
+kr = pc._keyring()
+print("ok  keyring installed;", "a keychain backend is available" if kr else "no keychain backend: tokens go to ~/.e2er/credentials.json")
+PY
+
 echo "== e2er verify showcase"
 "$WORK/venv/bin/e2er" verify showcase
 

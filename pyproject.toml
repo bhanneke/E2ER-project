@@ -52,6 +52,10 @@ dependencies = [
     # without these the files were skipped with a warning nobody saw.
     "pyarrow>=14.0",
     "openpyxl>=3.1",
+    # The system keychain for the tokens of `e2er login` (e2er.org) and `e2er zenodo login`.
+    # Where it has no backend (a headless Linux server, CI), the tokens go to
+    # ~/.e2er/credentials.json with mode 0600 (src/core/platform_client.py `_keyring`).
+    "keyring>=25.0",
 ]
 
 [project.optional-dependencies]

@@ -2,9 +2,9 @@
 
 Sign-in follows the OAuth device flow (RFC 8628) against the platform's
 ``/api/auth/device/*``; the approved sign-in is exchanged for an ``e2er_``
-token (``POST /api/v1/tokens``). The token is kept in the OS keychain when the
-``keyring`` package is installed, otherwise in ``~/.e2er/credentials.json``
-(mode 0600); ``E2ER_TOKEN`` overrides both. AI provider keys are never read
+token (``POST /api/v1/tokens``). The token is kept in the OS keychain (``keyring``), or in
+``~/.e2er/credentials.json`` (mode 0600) when the computer has no keychain
+backend or it refuses; ``E2ER_TOKEN`` overrides both. AI provider keys are never read
 or sent here.
 
 In a test run (src/core/test_guard.py) the keychain and the default
@@ -61,11 +61,28 @@ def client_factory(url: str) -> httpx.Client:
 
 
 def _keyring():
+    """The ``keyring`` module when it has a usable backend, else None (then the credentials file is used).
+
+    ``keyring`` is a dependency of e2er, but a computer may have no keychain to back it: a headless
+    Linux server or a CI runner without a Secret Service selects keyring's ``fail`` backend (priority
+    0), whose every call raises. That counts as no keychain, as does a ``keyring`` that cannot be
+    imported or whose backend cannot be loaded (a broken ``PYTHON_KEYRING_BACKEND``).
+    """
     if not test_guard.saved_logins_allowed():
         return None  # a test run never touches the researcher's keychain
     try:
         import keyring  # type: ignore[import-not-found]
-    except ImportError:
+    except Exception:  # noqa: BLE001 - not installed, or a backend that fails at import
+        return None
+    get_keyring = getattr(keyring, "get_keyring", None)
+    if get_keyring is None:
+        return keyring
+    try:
+        backend = get_keyring()
+        priority = float(getattr(backend, "priority", 1))
+    except Exception:  # noqa: BLE001 - no backend can be loaded
+        return None
+    if priority <= 0:  # keyring.backends.fail / null: no keychain on this computer
         return None
     return keyring
 
