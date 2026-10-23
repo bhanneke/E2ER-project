@@ -133,4 +133,6 @@ def test_the_report_labels_it_and_the_verdict_is_unchanged(tmp_path: Path):
     text = render(b, recipe, None, [], inputs, [], None, "verdict")
     assert "  figure_spec.json: not compared: the study's copy comes from the figure step" in text
     assert "figure_spec.json: differs" not in text
-    assert rp.verdict([], None, [], inputs)[1] == 0, "left-out outputs never decide the verdict"
+    (run / "est.json").write_text('{"b": 1.5}')
+    same = rp.compare_json(run / "est.json", run / "est.json", "results/est.json", "est.json")
+    assert rp.verdict([same], None, [], inputs)[1] == 0, "left-out outputs never decide the verdict"

@@ -269,3 +269,21 @@ def test_a_whole_number_float_must_match_exactly():
     assert rp.compare_value(1234.0, 1234.4)[0] != rp.AT_PRECISION
     assert rp.compare_value(4321.0, 4321.0)[0] == rp.IDENTICAL
     assert rp.compare_value(1234.5678, 1234.56781)[0] == rp.AT_PRECISION
+
+
+# ── 9. nothing compared is nothing reproduced ────────────────────────────────
+
+
+def test_an_empty_compared_file_reproduces_nothing(tmp_path: Path):
+    """The reviewer's repro: results files emptied to {} on both sides gave "Reproduced"."""
+    from src.core import reproduce as rp
+
+    for doc in ({}, {"main": {}, "rows": []}):
+        pub, new = tmp_path / "p.json", tmp_path / "n.json"
+        pub.write_text(json.dumps(doc))
+        new.write_text(json.dumps(doc))
+        fc = rp.compare_json(pub, new, "results/p.json", "n.json")
+        assert fc.problem == rp.EMPTY and not fc.matches
+        text, code = rp.verdict([fc], None, [])
+        assert code == 1 and not text.startswith("Reproduced") and "no value was compared" in text
+    assert rp.verdict([], None, [])[1] == 1

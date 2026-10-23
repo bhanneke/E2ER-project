@@ -111,6 +111,8 @@ LABEL_WORDS = {
 
 #: A compared result file the rerun did not write.
 NOT_WRITTEN = "the rerun did not write it"
+#: A compared result file with no value in it: comparing it shows nothing.
+EMPTY = "the published file holds no value to compare"
 
 
 class RecipeError(Exception):
@@ -531,6 +533,10 @@ def compare_json(published_path: Path, produced_path: Path, published: str, prod
         fc.problem = f"the rerun wrote a file that is not JSON: {e}"
         return fc
     a, b = flatten(pub), flatten(new)
+    if not any(not isinstance(v, dict | list) for v in a.values()):
+        # Nothing to compare (an empty file, or empty lists and objects only): it reproduces nothing.
+        fc.problem = EMPTY
+        return fc
     for key in a:
         if key not in b:
             fc.counts[MISSING] += 1
@@ -1312,6 +1318,11 @@ def verdict(
 
     def count(label: str) -> int:
         return sum(f.counts[label] for f in compared)
+
+    if not sum(f.total for f in compared):
+        # "Reproduced" says that values matched: with none compared, nothing was reproduced.
+        named = ", ".join(f"{f.published} ({f.problem})" for f in files if f.problem) or "none"
+        return f"Not reproduced: no value was compared (result files: {named}).", 1
 
     bad_files = [f.published for f in files if f.problem]
     bad_tables = len((tables or {}).get("differ") or []) + len((tables or {}).get("not_shipped") or [])
