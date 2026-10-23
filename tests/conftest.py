@@ -540,6 +540,17 @@ def _no_real_platform(monkeypatch, tmp_path_factory):
 
 
 @pytest.fixture(autouse=True)
+def _no_real_approval_seals(monkeypatch, tmp_path_factory):
+    """The dashboard's approval seals (src/modules/data/approval_seal.py) go to a folder of the test,
+    never to this machine's ~/.e2er."""
+    from src.modules.data import approval_seal
+
+    folder = tmp_path_factory.mktemp("approval-seals")
+    monkeypatch.setattr(approval_seal, "_dir", lambda: folder)
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _isolate_the_cli_installs(monkeypatch, tmp_path_factory):
     """Never let the suite see this machine's AI CLIs outside PATH or Codex's model list.
 

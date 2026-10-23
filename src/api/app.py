@@ -1860,9 +1860,15 @@ async def get_pending_queries(paper_id: PaperId) -> list[dict[str, Any]]:
 
 @app.post("/api/queries/{query_id}/approve", dependencies=[Depends(require_auth)])
 async def approve_query(query_id: str, action: ApprovalAction):
-    from ..db.client import execute
+    from ..db.client import execute, fetch_one
+    from ..modules.data.approval_seal import is_query_id, seal
 
+    if not is_query_id(query_id):
+        raise HTTPException(status_code=404, detail="Query not found")
     try:
+        row = await fetch_one("SELECT query_sql FROM data_query_records WHERE id = %(id)s", {"id": query_id})
+        # The seal is what check_approval trusts (approval_seal.py); the database row alone is not.
+        seal(query_id, "approved" if action.approved else "rejected", str((row or {}).get("query_sql") or ""))
         if action.approved:
             await execute(
                 "UPDATE data_approval_requests SET status = 'approved', reviewed_at = NOW(), "

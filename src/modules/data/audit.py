@@ -104,8 +104,14 @@ async def get_approval_status(query_id: str) -> str:
 async def get_approval_status_with_note(query_id: str) -> tuple[str, str]:
     """Returns (status, note). The note carries the researcher's reason for
     rejection (or approval comment). Used by check_approval so the model can
-    actually learn from a rejection rather than guessing what's wrong."""
+    actually learn from a rejection rather than guessing what's wrong.
+
+    "approved" counts only with the dashboard's seal over the query's id and SQL
+    (approval_seal.py): a row a model wrote into the database stays "pending".
+    """
     from ...db.client import fetch_one
+    from ...logging_config import get_logger
+    from .approval_seal import is_sealed
 
     row = await fetch_one(
         "SELECT status, COALESCE(note, '') AS note FROM data_approval_requests "
@@ -114,7 +120,13 @@ async def get_approval_status_with_note(query_id: str) -> tuple[str, str]:
     )
     if not row:
         return ("pending", "")
-    return (row["status"], row.get("note") or "")
+    status = row["status"]
+    if status == "approved":
+        q = await fetch_one("SELECT query_sql FROM data_query_records WHERE id = %(qid)s", {"qid": query_id})
+        if not (q and is_sealed(query_id, "approved", str(q.get("query_sql") or ""))):
+            get_logger(__name__).warning("query %s: an approval without the dashboard's seal is ignored", query_id)
+            return ("pending", "")
+    return (status, row.get("note") or "")
 
 
 async def export_audit_log(paper_id: str) -> list[dict[str, Any]]:
