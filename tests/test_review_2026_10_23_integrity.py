@@ -257,3 +257,15 @@ def test_a_table_whose_results_were_not_rerun_is_not_compared(tmp_path: Path):
     fc = rp.compare_json(folder / "results" / "estimation_results.json", run_dir / "estimation_results.json", "e", "e")
     text, code = rp.verdict([fc], out, [])
     assert code == 0 and "1 table(s) not compared" in text and "sum.tex" in text
+
+
+# ── 8. a whole number is not a rounded one ───────────────────────────────────
+
+
+def test_a_whole_number_float_must_match_exactly():
+    """The reviewer's repro: 1234.0 published, 1234.4 rerun read as "the same at the published precision"."""
+    from src.core import reproduce as rp
+
+    assert rp.compare_value(1234.0, 1234.4)[0] != rp.AT_PRECISION
+    assert rp.compare_value(4321.0, 4321.0)[0] == rp.IDENTICAL
+    assert rp.compare_value(1234.5678, 1234.56781)[0] == rp.AT_PRECISION

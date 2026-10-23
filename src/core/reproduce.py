@@ -449,7 +449,10 @@ def _is_number(x: Any) -> bool:
 
 def _rounded(value: float) -> bool:
     """Was the published number stored rounded? Only a number with four or more significant digits counts:
-    ``0.00285433`` was rounded at 8 decimals, while ``1.0`` or ``0.5`` may well be exact."""
+    ``0.00285433`` was rounded at 8 decimals, while ``1.0`` or ``0.5`` may well be exact. A whole number
+    (``1234.0``, ``4321``) is never taken as rounded: a count or a total must match exactly."""
+    if float(value).is_integer():
+        return False
     text = repr(float(value)).lower().lstrip("-")
     mantissa = text.split("e")[0].replace(".", "").lstrip("0")
     return len(mantissa.rstrip("0") if "e" not in text and "." in text else mantissa) >= 4
