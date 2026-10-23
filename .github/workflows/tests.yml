@@ -29,6 +29,12 @@ jobs:
           cache: pip
           cache-dependency-path: .github/requirements/ci.txt
 
+      - name: Set up uv (the replay tests' `e2er reproduce` steps)
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
+        with:
+          version: "0.12.19"
+          enable-cache: false
+
       - name: Install dependencies
         run: |
           # Every dependency pinned with its hashes (.github/requirements/ci.txt; docs/RELEASING.md
@@ -46,6 +52,9 @@ jobs:
         run: mypy src/
 
       - name: Run tests
+        env:
+          # uv is installed above: the replay tests' reproduce steps fail instead of skipping (tests/replay/uv.py).
+          E2ER_REQUIRE_UV: "1"
         run: pytest tests/ -v --tb=short -m "not e2e"
 
   package:

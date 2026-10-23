@@ -21,6 +21,7 @@ from pathlib import Path
 import httpx
 import pytest
 
+from tests.replay import uv
 from tests.replay.backend import FIXTURES
 from tests.test_policy_evaluation_replay import TOKEN, _events, _gates
 from tests.test_replay_level import ROOT, _approve_to_the_end, _replay_server, _wait
@@ -136,23 +137,16 @@ def test_a_systematic_review_replays_from_the_protocol_to_a_reproduced_meta_anal
     )
     assert "[FAIL] method checks" in out.stdout and "not printed in its quote" in out.stdout, out.stdout
 
-    if shutil.which("uv") is None:
-        pytest.skip("uv is not installed")
-    uv_dirs = {}
-    for var, cmd in (("UV_CACHE_DIR", "cache"), ("UV_PYTHON_INSTALL_DIR", "python")):
-        found = subprocess.run(["uv", cmd, "dir"], capture_output=True, text=True, env={**os.environ, "NO_COLOR": "1"})
-        if found.returncode == 0 and found.stdout.strip():
-            uv_dirs[var] = found.stdout.strip()
+    uv_dirs = uv.reproduce_env()
     out = subprocess.run(
         [*cli, "reproduce", str(bundle), "--yes", "--no-sandbox"],
         cwd=study,
-        env={**env, "UV_OFFLINE": "1", **uv_dirs},
+        env={**env, **uv_dirs},
         capture_output=True,
         text=True,
         timeout=900,
     )
-    if "could not install" in out.stdout or "could not create the environment" in out.stdout:
-        pytest.skip("the requirements or Python are not in uv's cache (offline): " + out.stdout[-400:])
+    uv.check_installed(out.stdout)
     assert out.returncode == 0, out.stdout + out.stderr
     assert "Reproduced" in out.stdout, out.stdout
 
