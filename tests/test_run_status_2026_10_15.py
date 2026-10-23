@@ -173,7 +173,7 @@ async def test_completed_only_after_the_final_export(tmp_path: Path, monkeypatch
     r._best_effort_finalize = finalize
     out = await r.run()
     assert during_export == ["finishing"]
-    assert rows[-1] == ("completed", None) and out["status"] in ("finishing", "completed")
+    assert rows[-1] == ("completed", None) and out["status"] == "completed"
     assert [s for s, _ in rows].count("completed") == 1
 
 

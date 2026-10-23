@@ -483,6 +483,8 @@ class PipelineRunner:
             # Every step ran and the final export is written (the finally of _run): now it is complete.
             self._finishing_done = True
             await self._update_status(PaperStatus.COMPLETED)
+            if isinstance(result, dict) and result.get("status") == PaperStatus.FINISHING.value:
+                result = {**result, "status": PaperStatus.COMPLETED.value}  # what the database now says
         return result
 
     async def _log_quietly(self, kind: str, payload: dict[str, Any]) -> None:
