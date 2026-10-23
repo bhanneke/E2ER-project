@@ -154,7 +154,13 @@ def logout(url: str | None = None) -> int:
     if from_env:
         print(f"✓ Ended the token in E2ER_TOKEN on {base}. A login saved on this computer is unchanged.")
         return 0
-    pc.forget_token(base)
+    left = pc.forget_token(base)
+    if left:
+        print(f"error: the login for {base} could not be removed from {', '.join(left)}.")
+        print(
+            f"  Unlock the keychain and run `e2er logout` again, or remove its entry e2er.org (account {base}) there."
+        )
+        return 1
     print(f"✓ Signed out of {base}.")
     return 0
 

@@ -174,7 +174,21 @@ def _store_credentials(p: Path, data: dict[str, Any]) -> None:
         raise
 
 
-def _write_credentials(url: str, token: str) -> Path:
+#: The credentials file's list of keys whose token there is newer than a copy the keychain may still hold:
+#: saved while the keychain refused (locked), so the keychain's older copy could not be removed either.
+FILE_FIRST = "_newer_than_keychain"
+
+
+def file_first(key: str) -> bool:
+    """True when the credentials file's token for ``key`` is to be read before the keychain's."""
+    p = credentials_path()
+    if p is None or not p.is_file():
+        return False
+    listed = _read_credentials(p).get(FILE_FIRST)
+    return isinstance(listed, list) and key in listed
+
+
+def _write_credentials(url: str, token: str, *, newer_than_keychain: bool = False) -> Path:
     p = credentials_path()
     if p is None:
         raise PlatformError(
@@ -189,6 +203,13 @@ def _write_credentials(url: str, token: str) -> Path:
         os.chmod(kept, 0o600)
         _warn(f"the damaged credentials file was kept as {kept}")
     data[url] = token
+    listed = [k for k in data.get(FILE_FIRST) or [] if isinstance(k, str) and k != url]
+    if newer_than_keychain:
+        listed.append(url)
+    if listed:
+        data[FILE_FIRST] = listed
+    else:
+        data.pop(FILE_FIRST, None)
     _store_credentials(p, data)
     return p
 
@@ -199,7 +220,17 @@ def _remove_credential(key: str) -> Path | None:
     if p is None or not p.is_file():
         return None
     data = _read_credentials(p)
-    if data.pop(key, None) is None:
+    listed = data.get(FILE_FIRST)
+    if isinstance(listed, list) and key in listed:
+        listed = [k for k in listed if k != key]
+        if listed:
+            data[FILE_FIRST] = listed
+        else:
+            data.pop(FILE_FIRST)
+        if data.pop(key, None) is None:
+            _store_credentials(p, data)
+            return None
+    elif data.pop(key, None) is None:
         return None
     _store_credentials(p, data)
     return p
@@ -210,7 +241,9 @@ def save_token(url: str, token: str) -> str:
     when there is no keyring or the keychain refuses (e.g. no GUI session).
 
     The other store's copy is removed afterwards, so an old token never stays behind in the file
-    once the keychain holds the new one (or the other way round).
+    once the keychain holds the new one (or the other way round). A token that goes to the file because
+    the keychain refused it is marked newer than the keychain's (FILE_FIRST): a locked keychain cannot
+    remove its older copy either, and that copy must not win once it is unlocked.
     """
     kr = _keyring()
     if kr is not None:
@@ -221,7 +254,7 @@ def save_token(url: str, token: str) -> str:
         else:
             _remove_credential(url)
             return "the system keychain"
-    where = str(_write_credentials(url, token))
+    where = str(_write_credentials(url, token, newer_than_keychain=kr is not None))
     if kr is not None:
         try:
             kr.delete_password(KEYRING_SERVICE, url)
@@ -233,6 +266,11 @@ def save_token(url: str, token: str) -> str:
 def load_token(url: str) -> str | None:
     if os.environ.get("E2ER_TOKEN"):
         return os.environ["E2ER_TOKEN"]
+    p = credentials_path()
+    if p is not None and file_first(url):  # saved while the keychain refused: newer than its copy
+        value = _read_credentials(p).get(url)
+        if isinstance(value, str) and value:
+            return value
     kr = _keyring()
     if kr is not None:
         try:
@@ -248,14 +286,22 @@ def load_token(url: str) -> str | None:
     return None
 
 
-def forget_token(url: str) -> None:
+def forget_token(url: str) -> list[str]:
+    """Remove the saved login for ``url`` from the keychain and the credentials file.
+
+    Returns what could not be removed, for the researcher to see: a keychain that refused (locked, no
+    session) may still hold the token. Nothing stored is not a problem.
+    """
+    left: list[str] = []
     kr = _keyring()
     if kr is not None:
         try:
-            kr.delete_password(KEYRING_SERVICE, url)
-        except Exception:  # noqa: BLE001 - nothing stored there
-            pass
+            if kr.get_password(KEYRING_SERVICE, url):
+                kr.delete_password(KEYRING_SERVICE, url)
+        except Exception as e:  # noqa: BLE001 - locked or unavailable keychain
+            left.append(f"the system keychain (it refused: {type(e).__name__}; it may be locked)")
     _remove_credential(url)
+    return left
 
 
 def _json(r: httpx.Response) -> dict[str, Any]:

@@ -640,7 +640,10 @@ def main() -> None:
     )
     publish_p.add_argument("bundle", help="Path to an exported bundle directory (from `e2er export`).")
     publish_p.add_argument(
-        "--owner", default=None, help="Your handle on e2er.org (your GitHub login, lower case). Not with --blind."
+        "--owner",
+        default=None,
+        help="One of your account's handles on e2er.org (add them in account settings; publishing does not "
+        "create one). Not with --blind.",
     )
     publish_p.add_argument(
         "--project", default=None, help="Project name within your namespace, e.g. etf-comovement. Not with --blind."

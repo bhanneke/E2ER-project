@@ -161,3 +161,62 @@ def test_every_terminal_command_is_documented_in_the_readme():
     text = _readme()
     missing = [" ".join(p) for p in commands if not re.search(r"\be2er " + re.escape(" ".join(p)) + r"(?![\w-])", text)]
     assert not missing, "the README's terminal commands do not mention: " + ", ".join(f"e2er {m}" for m in missing)
+
+
+# ── what the README says about an option, `--help` says too ──────────────────
+
+
+def _help(*command: str) -> str:
+    import os
+    import subprocess
+    import sys
+
+    out = subprocess.run(
+        [sys.executable, "-m", "src", *command, "--help"],
+        capture_output=True,
+        text=True,
+        cwd=ROOT,
+        env={**os.environ, "COLUMNS": "400"},
+    )
+    assert out.returncode == 0, out.stderr
+    return " ".join(out.stdout.split())
+
+
+#: (command, option, what the README says it is, the words its --help must contain)
+_OPTION_CLAIMS = [
+    ("publish", "--owner", "`--owner` is one of your account's handles", "One of your account's handles"),
+    ("publish", "--unblind", "`--unblind <code>` says where", "says where to unblind"),
+]
+
+
+def test_the_help_says_what_the_readme_says_about_an_option():
+    """`--owner`'s help said "your GitHub login, lower case" while the README (and e2er.org) say a handle of the
+    account: publishing as one's GitHub login failed with "not your handle" (review 2026-10-23)."""
+    text = _readme()
+    for command, option, readme_words, help_words in _OPTION_CLAIMS:
+        assert readme_words in text, f"the README no longer says {readme_words!r}; update this test"
+        shown = _help(command)
+        assert option in shown and help_words in shown, f"e2er {command} --help: {option} does not say {help_words!r}"
+    assert "GitHub login, lower case" not in _help("publish")
+
+
+def test_every_publish_option_the_readme_names_exists():
+    """Each `--option` in the README's paragraphs on `e2er publish` is an option of the command it belongs to:
+    `e2er publish --help`, or the other command an inline span names (`e2er verify <file> --against …`)."""
+    text = _readme()
+    start = text.index("`e2er publish` checks the folder")
+    paragraphs = text[start : text.index("\n\n", text.index("`e2er publish --blind` is for journals"))]
+    wanted: dict[str, set[str]] = {}
+    for span in re.findall(r"`([^`]+)`", paragraphs):
+        words = span.split()
+        command = words[1] if len(words) > 1 and words[0] == "e2er" and not words[1].startswith("-") else "publish"
+        for option in re.findall(r"(?<![\w-])(--[a-z][a-z0-9-]+)", span):
+            wanted.setdefault(command, set()).add(option)
+    outside = re.sub(r"`[^`]+`", "", paragraphs)
+    wanted.setdefault("publish", set()).update(re.findall(r"(?<![\w-])(--[a-z][a-z0-9-]+)", outside))
+    assert len(wanted["publish"]) > 10, "the paragraphs name publish's options"
+    missing = []
+    for command, options in sorted(wanted.items()):
+        shown = _help(command)
+        missing += [f"e2er {command} {o}" for o in sorted(options) if not re.search(re.escape(o) + r"(?![\w-])", shown)]
+    assert not missing, f"the README names options that --help does not have: {missing}"

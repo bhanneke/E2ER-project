@@ -45,7 +45,7 @@ elif args[:2] == ["repo", "view"]:
         sys.exit(1)
     private = (bare / "PRIVATE").exists()
     print(json.dumps({"visibility": "PRIVATE" if private else "PUBLIC", "defaultBranchRef": {"name": "main"},
-                      "isArchived": False}))
+                      "isArchived": (bare / "ARCHIVED").exists()}))
 elif args[:2] == ["repo", "create"]:
     assert "--public" in args, args
     bare = root / (args[2] + ".git")
@@ -408,6 +408,17 @@ def test_a_private_repository_is_refused(who_study: Path, github: Path, tmp_path
         == 1
     )
     assert "public repository" in capsys.readouterr().out
+
+
+def test_an_archived_repository_is_refused(who_study: Path, github: Path, tmp_path: Path, capsys):
+    bare = _seed(github, "ada/demos", {"x.txt": "x\n"})
+    (bare / "ARCHIVED").write_text("")
+    before = _git("--git-dir", str(bare), "rev-parse", "main")
+    rc = publish(str(who_study), **ID, github_repo="ada/demos", github_path="who", out=str(tmp_path / "e"), yes=True)
+    out = capsys.readouterr().out
+    assert rc == 1 and "ada/demos is archived and takes no new commits" in out
+    assert _git("--git-dir", str(bare), "rev-parse", "main") == before, "nothing was pushed"
+    assert not (github / "registered.jsonl").exists()
 
 
 def test_a_file_that_holds_a_token_is_never_pushed(who_study: Path, github: Path, tmp_path: Path, capsys):

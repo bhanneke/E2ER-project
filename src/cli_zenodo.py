@@ -106,10 +106,17 @@ def status(*, sandbox: bool = False) -> int:
 
 def logout(*, sandbox: bool = False) -> int:
     site = zen.service(sandbox)
+    left: list[str] = []
     try:
-        removed = zen.forget_token(sandbox)
+        removed = zen.forget_token(sandbox, left=left)
     except OSError as e:
         print(f"error: could not remove the token: {e}")
+        return 1
+    if left:
+        if removed:
+            print(f"✓ Removed the {site} token from {' and '.join(removed)}.")
+        print(f"error: the {site} token could not be removed from {', '.join(left)}.")
+        print(f"  Unlock the keychain and run `e2er zenodo logout` again, or remove the entry {site} there.")
         return 1
     if removed:
         print(f"✓ Removed the {site} token from {' and '.join(removed)}.")

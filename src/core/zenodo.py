@@ -99,6 +99,11 @@ def stored_token(sandbox: bool = False) -> tuple[str | None, str | None]:
     """
     from . import platform_client as pc
 
+    path = pc.credentials_path()
+    if path is not None and pc.file_first(service(sandbox)):  # saved while the keychain refused: the newer one
+        token = pc._read_credentials(path).get(service(sandbox))
+        if isinstance(token, str) and token.strip():
+            return token.strip(), str(path)
     kr = pc._keyring()
     if kr is not None:
         try:
@@ -107,7 +112,6 @@ def stored_token(sandbox: bool = False) -> tuple[str | None, str | None]:
             token = None
         if token and token.strip():
             return token.strip(), "the system keychain"
-    path = pc.credentials_path()
     if path is not None:
         token = pc._read_credentials(path).get(service(sandbox))
         if isinstance(token, str) and token.strip():
@@ -129,7 +133,7 @@ def save_token(token: str, sandbox: bool = False) -> str:
             pc._remove_credential(service(sandbox))  # no older copy stays in the file
             return "the system keychain"
     try:
-        where = str(pc._write_credentials(service(sandbox), token))
+        where = str(pc._write_credentials(service(sandbox), token, newer_than_keychain=kr is not None))
     except pc.PlatformError as e:
         raise ZenodoError(str(e)) from e
     if kr is not None:
@@ -140,8 +144,11 @@ def save_token(token: str, sandbox: bool = False) -> str:
     return where
 
 
-def forget_token(sandbox: bool = False) -> list[str]:
-    """Remove the stored token from the keychain and the credentials file; returns where it was removed."""
+def forget_token(sandbox: bool = False, left: list[str] | None = None) -> list[str]:
+    """Remove the stored token from the keychain and the credentials file; returns where it was removed.
+
+    ``left`` gets what could not be removed: a keychain that refused (locked) may still hold the token.
+    """
     from . import platform_client as pc
 
     removed: list[str] = []
@@ -151,8 +158,9 @@ def forget_token(sandbox: bool = False) -> list[str]:
             if kr.get_password(service(sandbox), KEYRING_USER):
                 kr.delete_password(service(sandbox), KEYRING_USER)
                 removed.append("the system keychain")
-        except Exception:  # noqa: BLE001 - nothing stored there, or the keychain is locked
-            pass
+        except Exception as e:  # noqa: BLE001 - the keychain is locked or unavailable
+            if left is not None:
+                left.append(f"the system keychain (it refused: {type(e).__name__}; it may be locked)")
     gone = pc._remove_credential(service(sandbox))
     if gone is not None:
         removed.append(str(gone))
