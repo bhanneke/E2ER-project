@@ -115,7 +115,7 @@ def test_reproduce_a_study_that_reproduces(tmp_path: Path, capsys) -> None:
     folder = _study(tmp_path, {"main": {"estimate": 2.333333, "n": 3, "label": "ok"}})
     before = sorted(p.relative_to(folder) for p in folder.rglob("*"))
     out_json = tmp_path / "report.json"
-    assert reproduce(str(folder), json_out=str(out_json)) == 0
+    assert reproduce(str(folder), json_out=str(out_json), yes=True, sandbox=False) == 0
     text = capsys.readouterr().out
     assert "1 of 1 identical" in text
     assert "3 values: 3 identical" in text
@@ -129,7 +129,7 @@ def test_reproduce_a_study_that_reproduces(tmp_path: Path, capsys) -> None:
 
 def test_reproduce_reports_differences_and_exits_1(tmp_path: Path, capsys) -> None:
     folder = _study(tmp_path, {"main": {"estimate": 2.4, "n": 3, "label": "ok"}})
-    assert reproduce(str(folder)) == 1
+    assert reproduce(str(folder), yes=True, sandbox=False) == 1
     text = capsys.readouterr().out
     assert "main/estimate: published 2.4, rerun 2.333333" in text
     assert "Not reproduced exactly: 1 value(s) show small differences." in text
@@ -139,7 +139,7 @@ def test_reproduce_reports_differences_and_exits_1(tmp_path: Path, capsys) -> No
 def test_a_failing_step_exits_2_with_its_output(tmp_path: Path, capsys) -> None:
     folder = _study(tmp_path, {"main": {}})
     (folder / "code" / "run.py").write_text("raise SystemExit('no data here')\n", encoding="utf-8")
-    assert reproduce(str(folder)) == 2
+    assert reproduce(str(folder), yes=True, sandbox=False) == 2
     text = capsys.readouterr().out
     assert "FAILED (exit 1)" in text and "no data here" in text
     assert "Could not reproduce: the step `python run.py` failed." in text

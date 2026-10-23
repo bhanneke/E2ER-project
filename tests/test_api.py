@@ -181,7 +181,7 @@ def test_list_artifacts_workspace_not_found(client):
 
 
 def test_list_artifacts_returns_file_list(client, tmp_path):
-    paper_id = "test-paper-id"
+    paper_id = "0f1e2d3c-4b5a-4968-8776-a5b4c3d2e1f0"
     ws = tmp_path / "workspaces" / paper_id
     ws.mkdir(parents=True)
     (ws / "paper_plan.md").write_text("# Plan")
@@ -234,7 +234,7 @@ def test_reject_query(client):
 
 def test_pending_queries_empty(client):
     with patch("src.db.client.fetch_all", new_callable=AsyncMock, return_value=[]):
-        resp = client.get("/api/papers/paper-abc/pending-queries")
+        resp = client.get("/api/papers/0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d/pending-queries")
     assert resp.status_code == 200
     assert resp.json() == []
 
@@ -254,7 +254,7 @@ def test_pending_queries_returns_rows(client):
         }
     ]
     with patch("src.db.client.fetch_all", new_callable=AsyncMock, return_value=rows):
-        resp = client.get("/api/papers/paper-abc/pending-queries")
+        resp = client.get("/api/papers/0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d/pending-queries")
     assert resp.status_code == 200
     assert len(resp.json()) == 1
     assert resp.json()[0]["approval_status"] == "pending"

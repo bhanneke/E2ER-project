@@ -45,8 +45,6 @@ RECORD = ".e2er/github.json"
 _OWNER = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$")
 _REPO = re.compile(r"^[A-Za-z0-9._-]{1,100}$")
 _SEGMENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$")
-#: A study's text files larger than this are not scanned for keys (data, PDFs and figures are not text).
-_SCAN_LIMIT = 20 * 1024 * 1024
 
 NO_GH = (
     "--github pushes the files with your own GitHub login through the GitHub command line tool (gh), "
@@ -250,24 +248,13 @@ def kept_out(bundle: Path, staged: Staged) -> list[str]:
 
 
 def secrets_in(staged: Staged) -> list[str]:
-    """``path: kind`` for every staged text file that holds a key or token in a provider's own format.
+    """``path: kind`` for every staged file that holds a key or token (secret_scan.scan_files, the shared check).
 
-    The formats of the request check (secret_scan.PATTERNS); not its NAME=value rule, which a script's
-    ``RNG = np.random.default_rng(…)`` would trip.
+    Every file, whatever its size or encoding (read in chunks; bytes that are not UTF-8 are replaced).
     """
-    from .secret_scan import PATTERNS
+    from .secret_scan import scan_files
 
-    hits: list[str] = []
-    for rel in staged.files:
-        p = staged.root / rel
-        if p.stat().st_size > _SCAN_LIMIT:
-            continue
-        try:
-            text = p.read_text(encoding="utf-8")
-        except (UnicodeDecodeError, OSError):
-            continue
-        hits += [f"{rel}: looks like a {kind}" for kind, rx in PATTERNS if rx.search(text)]
-    return hits
+    return scan_files(staged.root, staged.files)
 
 
 def too_large(staged: Staged) -> list[str]:
@@ -372,6 +359,25 @@ def _claim(work: Path, t: Target, study_ids: set[str]) -> list[str]:
     return rel
 
 
+def _inside(root: Path, path: Path) -> bool:
+    """Does ``path`` (with every link on the way resolved) stay inside ``root`` (resolved)?"""
+    try:
+        return path.resolve().is_relative_to(root)
+    except (OSError, RuntimeError):
+        return False
+
+
+def _tracked_links(work: Path, path: str) -> list[str]:
+    """The symbolic links git tracks in the study's folder (mode 120000)."""
+    proc = _git(["ls-files", "-s", "-z", "--", path or "."], cwd=work)
+    out = []
+    for entry in proc.stdout.split("\0"):
+        meta, _, name = entry.partition("\t")
+        if name and meta.split(" ", 1)[0] == "120000":
+            out.append(name)
+    return sorted(out)
+
+
 def push(
     t: Target,
     staged: Staged,
@@ -394,7 +400,16 @@ def push(
         _git(["-c", "init.defaultBranch=main", "clone", "--quiet", "--depth", "1", t.remote, str(work)])
         branch = _git(["symbolic-ref", "--short", "HEAD"], cwd=work).stdout.strip() or "main"
         tracked = _claim(work, t, study_ids)
+        links = _tracked_links(work, t.path)
+        if links:
+            # A collaborator's committed link ("code" -> /Users/…/victim_dir) made e2er write the study's files
+            # outside the clone, on this computer (security review 2026-10-23).
+            raise GitHubError(
+                f"{t.full} holds symbolic links in the study's folder ({', '.join(links[:5])}); e2er does not write "
+                "through them. Remove them from the repository; nothing was pushed."
+            )
         folder = work / t.path if t.path else work
+        root = work.resolve()
         previous = _previous_files(folder) if tracked else set()
         new = set(staged.files)
         kept = [r for r in tracked if r not in new and r not in previous and not r.startswith("e2er-package/")]
@@ -403,10 +418,12 @@ def push(
                 _git(["rm", "--quiet", "--", f"{t.path}/{r}" if t.path else r], cwd=work)
         for r in staged.files:
             dst = folder / r
+            if not _inside(root, dst):
+                raise GitHubError(f"{t.full}: {r} would be written outside the clone; nothing was pushed")
             dst.parent.mkdir(parents=True, exist_ok=True)
-            if dst.is_symlink() or dst.is_dir():
+            if dst.is_symlink() or dst.is_dir() or not _inside(root, dst):
                 raise GitHubError(f"{t.full}: {r} in the study's folder is not a plain file; nothing was pushed")
-            shutil.copyfile(staged.root / r, dst)
+            shutil.copyfile(staged.root / r, dst, follow_symlinks=False)
         # The last word: no file a source's terms keep out is in the folder about to be committed.
         present = sorted(r for r in restricted if (folder / r).exists())
         if present:

@@ -133,7 +133,7 @@ class RecordedDocker:
         if argv[0] != "docker":
             raise AssertionError(f"the replay sandbox runs only docker, not {argv[0]}")
         if sub == "info":
-            return ok
+            return subprocess.CompletedProcess(argv, 0, b"27.0.0\n", b"")
         if sub == "image" and len(argv) > 2 and argv[2] == "inspect":
             if "--format" in argv:
                 return subprocess.CompletedProcess(argv, 0, json.dumps([self.digest]).encode(), b"")

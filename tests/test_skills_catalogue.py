@@ -270,7 +270,6 @@ def _tarball(files: dict[str, str]) -> bytes:
 
 
 def test_without_a_checkout_the_catalogue_comes_from_github(tmp_path, monkeypatch):
-    import httpx
 
     from src.modules import skills_catalogue as sc
 
@@ -278,12 +277,11 @@ def test_without_a_checkout_the_catalogue_comes_from_github(tmp_path, monkeypatc
     monkeypatch.setattr(sc, "downloaded_catalogue_dir", lambda: tmp_path / "cache")
     calls = []
 
-    def fake_get(url, **_kw):
+    def fake_fetch(url, max_bytes=None):
         calls.append(url)
-        body = _tarball({"RISE-main/skills/demo.yml": PACK_YML, "RISE-main/README.md": "x"})
-        return httpx.Response(200, content=body, request=httpx.Request("GET", url))
+        return _tarball({"RISE-main/skills/demo.yml": PACK_YML, "RISE-main/README.md": "x"})
 
-    monkeypatch.setattr(httpx, "get", fake_get)
+    monkeypatch.setattr(sc, "_fetch_tarball", fake_fetch)
     assert [p.slug for p in read_catalogue()] == ["demo"]
     assert calls and "bhanneke/RISE" in calls[0]
     read_catalogue()  # a fresh copy is reused
@@ -298,10 +296,10 @@ def test_no_network_and_no_copy_says_how_to_point_to_a_catalogue(tmp_path, monke
     monkeypatch.setattr(sc, "catalogue_path", lambda explicit=None: tmp_path / "cache")
     monkeypatch.setattr(sc, "downloaded_catalogue_dir", lambda: tmp_path / "cache")
 
-    def offline(url, **_kw):
+    def offline(url, max_bytes=None):
         raise httpx.ConnectError("offline")
 
-    monkeypatch.setattr(httpx, "get", offline)
+    monkeypatch.setattr(sc, "_fetch_tarball", offline)
     with pytest.raises(CatalogueError, match="RISE_PATH"):
         read_catalogue()
 
@@ -312,3 +310,42 @@ def test_the_default_path_is_not_a_personal_folder(monkeypatch):
     monkeypatch.setattr("src.config.get_settings", lambda: type("S", (), {"rise_path": None})())
     assert sc.catalogue_path() == sc.downloaded_catalogue_dir()
     assert "Documents" not in str(sc.catalogue_path())
+
+
+def test_a_huge_or_odd_member_of_the_rise_download_is_not_read(monkeypatch):
+    """Security review 2026-10-23: every member was read whole, whatever its size."""
+    from src.modules import skills_catalogue as sc
+
+    monkeypatch.setattr(sc, "_MAX_MANIFEST_BYTES", 1000)
+    body = _tarball(
+        {
+            "RISE-main/skills/demo.yml": PACK_YML,
+            "RISE-main/skills/huge.yml": "x" * 5000,
+            "RISE-main/skills/../evil.yml": PACK_YML,
+            "RISE-main/skills/.hidden.yml": PACK_YML,
+        }
+    )
+    assert sorted(sc._manifests_from_tarball(body)) == ["demo.yml"]
+
+
+def test_the_rise_download_is_capped_while_it_streams(monkeypatch):
+    import httpx
+
+    from src.modules import skills_catalogue as sc
+
+    sent = []
+
+    def handler(request):
+        def chunks():
+            for _ in range(100):
+                sent.append(1)
+                yield b"x" * 1024
+
+        return httpx.Response(200, content=chunks())
+
+    monkeypatch.setattr(
+        httpx, "stream", lambda m, u, **kw: httpx.Client(transport=httpx.MockTransport(handler)).stream(m, u)
+    )
+    with pytest.raises(CatalogueError, match="larger than expected"):
+        sc._fetch_tarball("https://codeload.github.com/x", max_bytes=10 * 1024)
+    assert len(sent) < 100

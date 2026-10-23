@@ -25,6 +25,53 @@
         },
         "e2er_version": { "type": "string" },
         "exported_at": { "type": "string" },
+        "template": {
+          "type": ["string", "null"],
+          "description": "The template the study was run with; `e2er publish` reads it from here."
+        },
+        "purpose": {
+          "type": "string",
+          "description": "The study's purpose as chosen when it started (\"demonstration\"); `e2er publish` honours it."
+        },
+        "preregistration": {
+          "type": "object",
+          "description": "The frozen pre-registration the bundle carries; `e2er verify` then requires its check, so a bundle whose lock file disappears fails.",
+          "required": ["file"],
+          "properties": {
+            "file": { "type": "string" },
+            "sha256": { "type": ["string", "null"] },
+            "frozen_at": { "type": ["string", "null"] }
+          }
+        },
+        "left_out": {
+          "type": "array",
+          "description": "Files of the run the export left out, each with why: a reproduction output larger than 200 MB (kind \"size\"); `e2er verify` cannot re-read the numbers compared from it and says so.",
+          "items": {
+            "type": "object",
+            "required": ["path", "kind"],
+            "properties": {
+              "path": { "type": "string" },
+              "kind": { "type": "string" },
+              "bytes": { "type": "integer", "minimum": 0 },
+              "reason": { "type": "string" }
+            }
+          }
+        },
+        "derived_data": {
+          "type": "array",
+          "description": "Files the run built from a source whose terms keep its data out of a published copy (src/core/derived_data.py): restricted like the source.",
+          "items": {
+            "type": "object",
+            "required": ["path", "connectors"],
+            "properties": {
+              "path": { "type": "string", "description": "Bundle path of the file." },
+              "named": { "type": "string", "description": "The path as the run's scripts name it." },
+              "connectors": { "type": "array", "items": { "type": "string" } },
+              "writers": { "type": "array", "items": { "type": "string" }, "description": "Bundle paths of the scripts that write it." },
+              "holds_rows": { "type": "boolean", "description": "Whether it holds the source's rows, not an aggregate of them (src/core/derived_rows.py)." }
+            }
+          }
+        },
         "results_from_code": {
           "type": "object",
           "description": "Which recorded script run wrote each results file (results/estimation_results.json, results/robustness_results.json), from the run's script log; `e2er verify` checks the bundle against it (\"results from code\"). Absent when the run recorded no script outputs (e2er up to 0.16.0).",
@@ -81,7 +128,37 @@
           "external_id": { "type": ["string", "null"] },
           "script": { "type": "string" },
           "log": { "type": "string" },
-          "queries": { "type": "string" }
+          "queries": { "type": "string" },
+          "sources": { "type": "string", "description": "A data edge: the bundle's record of every load from an external source (data/data_sources.json)." }
+        }
+      }
+    },
+    "amendments": {
+      "type": "array",
+      "description": "Changes made after export, in order: a redaction (`e2er redact`, kind \"redacted\"), an anonymisation for double-blind review (\"anonymised\"), a new abstract (`e2er abstract`: \"abstract_rewritten\", \"abstract_edited_by_researcher\"), the paper's stamp and the README `e2er publish` writes (\"stamp\", \"readme\"), or another change by publish (no kind). `files` holds each file's fingerprint after its last amendment; sha256_before -> sha256_after links each file's amendments back to its exported fingerprint. A folder with amendments is never rebuilt by a later export.",
+      "items": {
+        "type": "object",
+        "required": ["path", "sha256_after"],
+        "properties": {
+          "path": { "type": "string" },
+          "kind": { "type": "string" },
+          "sha256_before": {
+            "type": ["string", "null"],
+            "pattern": "^([0-9a-f]{64}|hmac-sha256:[0-9a-f]{64})$",
+            "description": "The fingerprint before the change: a plain SHA-256; keyed (\"hmac-sha256:...\", a redaction whose earlier fingerprint would confirm a guess of the text taken out); or null (a file the change added, or a fingerprint withheld for double-blind review)."
+          },
+          "sha256_after": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "reason": { "type": "string" },
+          "at": { "type": "string" },
+          "bytes_before": { "type": ["integer", "null"] },
+          "fingerprint_before": { "type": "string", "description": "Why sha256_before is withheld." },
+          "redaction": { "type": "object", "description": "`e2er redact`: replacement, count, offsets, removed_bytes, bytes_before, kept {salt, hmac_sha256}; in a copy for double-blind review the offsets and sizes are withheld." },
+          "anonymisation": { "type": "object", "description": "`e2er publish --blind`: rules, count, replacements; offsets withheld." },
+          "abstract_before": { "type": "object", "description": "`e2er abstract`: the text the new abstract replaced, so verify can rebuild the paper before it." },
+          "model": { "type": "string" },
+          "backend": { "type": "string" },
+          "edited_by": { "type": "string" },
+          "e2er_version": { "type": "string" }
         }
       }
     }

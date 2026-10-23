@@ -118,7 +118,9 @@ def export(paper_id: str, to: str | None = None, *, package: bool = False) -> in
     dest_root = Path(to).expanduser() if to else settings.resolved_output_root()
     date_str = datetime.now().strftime("%Y%m%d")
     try:
-        out = export_paper(workspace, dest_root, date_str=date_str, template=_recorded_template(paper_id))
+        out = export_paper(
+            workspace, dest_root, date_str=date_str, template=_recorded_template(paper_id), paper_id=paper_id
+        )
     except Exception as e:  # noqa: BLE001
         print(f"error: export failed: {e}")
         return 1

@@ -306,6 +306,13 @@ class PipelineRunner:
         self._deep_revision_count: int = 0
         # What the number check's automatic correction did this time, for the stop.
         self._number_patch_outcome: str = ""
+        # Every step of the template has run (the loop in _run ended): only then is the study
+        # "finishing (writing the export)"; a revision that completes before the abstract and the
+        # replication steps leaves it "in progress" while they run.
+        self._steps_done = False
+        # Why the final export failed (_best_effort_finalize), or None: a study is not "completed"
+        # with no export written.
+        self._export_error: str | None = None
 
     def _in_memory_spent(self) -> float:
         """Sum of all specialist contribution costs + strategist usage cost.
@@ -364,6 +371,10 @@ class PipelineRunner:
                 raise StepFailedError(status, "", "revision")
             await log_event(self._paper_id, "phase_end", stage="revision")
             state.last_status = status.value
+            # Kept for a rerun from a later step (abstract, replication): apply_rerun sets the
+            # state to in_progress, and the revision that decided the outcome does not run again.
+            if isinstance(getattr(state, "metadata", None), dict):
+                state.metadata["revision_status"] = status.value
             state.contributions_count = prior_contributions + len(self._contributions)
             state.mark_complete("revision")
             self._drop_accepted_skips("revision")
@@ -457,9 +468,23 @@ class PipelineRunner:
             await self._update_status(PaperStatus.FAILED, error=error)
             return {"status": "failed", "error": error}
         if getattr(self, "_completed_deferred", False):
+            export_error = getattr(self, "_export_error", None)
+            if export_error:
+                # Every step ran, the final export did not: the study is not complete. It pauses with
+                # the reason; Resume runs no step again and writes the export (2026-10-23 review: it
+                # read "completed" with no export folder).
+                text = (
+                    f"Every step finished, but the final export failed: {export_error[:1500]}. "
+                    "Fix the cause, then resume the run: it writes the export again."
+                )
+                await self._log_quietly("export_failed", {"error": export_error[:2000]})
+                await self._update_status(PaperStatus.PAUSED, error=text)
+                return {"status": "paused", "reason": "export_failed", "error": export_error}
             # Every step ran and the final export is written (the finally of _run): now it is complete.
             self._finishing_done = True
             await self._update_status(PaperStatus.COMPLETED)
+            if isinstance(result, dict) and result.get("status") == PaperStatus.FINISHING.value:
+                result = {**result, "status": PaperStatus.COMPLETED.value}  # what the database now says
         return result
 
     async def _log_quietly(self, kind: str, payload: dict[str, Any]) -> None:
@@ -589,6 +614,7 @@ class PipelineRunner:
                     # before anything later builds on the unchecked design.
                     await self._run_open_gates(state, [])
                 status = await self._run_spec_step(step, _phase, state, prior_contributions, status)
+            self._steps_done = True
 
             # Closes #6: when run() is called on a paper whose state.json
             # already has every stage marked complete (a resume on an
@@ -596,6 +622,18 @@ class PipelineRunner:
             # row would stay at `designing` (the state run() set on entry).
             # Mirror state.last_status — typically `completed` — back to
             # the DB so the dashboard reflects reality.
+            if (
+                state.last_status in ("", PaperStatus.IN_PROGRESS.value)
+                and self._spec.step("revision") is not None
+                and state.is_complete("revision")
+            ):
+                # A rerun from a step after the revision (abstract, replication, abstract_writer)
+                # set the state to in_progress; the revision, which decided the outcome, did not
+                # run again. Before, such a run stayed "in progress" for good (2026-10-23 review).
+                meta = getattr(state, "metadata", None)
+                recorded = meta.get("revision_status") if isinstance(meta, dict) else None
+                state.last_status = str(recorded or PaperStatus.COMPLETED.value)
+                state.save(self._workspace)
             if state.last_status in ("", PaperStatus.IN_PROGRESS.value) and self._spec.step("revision") is None:
                 # A template without a revision step (e.g. `replication`, whose
                 # product is a report and a dossier, not a reviewed paper) is
@@ -648,7 +686,8 @@ class PipelineRunner:
                     "last_error": (cb.last_error or "")[:2000],
                 },
             )
-            await self._best_effort_finalize()
+            # No finalize here: the finally below runs it (it ran twice: compile, audit export,
+            # GitHub push and the export all repeated; 2026-10-23 review).
             await self._update_status(
                 PaperStatus.PAUSED,
                 error=f"Stopped: {_labels.specialist(cb.specialist)} failed {cb.attempts} times in a row. "
@@ -812,10 +851,12 @@ class PipelineRunner:
             await self._run_github_push_phase()
         except Exception as e:
             logger.warning("Finalize: github push skipped: %s", e)
+        self._export_error = None
         try:
             await self._run_export_phase()
         except Exception as e:
             logger.warning("Finalize: structured export skipped: %s", e)
+            self._export_error = f"{type(e).__name__}: {e}"
 
     async def _run_export_phase(self) -> None:
         """Assemble the clean, structured project folder from the workspace.
@@ -1593,67 +1634,95 @@ class PipelineRunner:
         if not reruns:
             return
         sent_back = state.metadata.pop("sent_back", None)
-        # Checks that run at every start (a sequence gate with resumable=false,
-        # e.g. the replication template's fetch, which also picks up a paper the
-        # researcher supplied) run before a specialist is sent back to work, so
-        # it works on what they provide.
-        pending_at = state.pending_review_stage
-        # (A rerun of a study not stopped at a researcher step stops nowhere yet: the loop runs them in order.)
-        for s in self._spec.steps if pending_at else []:
-            if s.name == pending_at:
-                break
-            if s.kind == "gate" and not s.resumable and s.check in SEQUENCE_CHECKS and s.applies_to(self._mode):
-                await self._run_check_step(s, state)
-        if state.metadata.get("preregistration_blocked"):
-            # Sent back from a pre-registration that estimation output blocked:
-            # move that output aside (recorded, never deleted) before the rerun.
-            from ..pipeline.preregistration import estimation_outputs, set_aside
+        # The queues leave the state only once their work is done. A check that halts, a contract
+        # stop, a full disk or any other error on the way left them popped: the handler saved the
+        # state and the researcher's send-backs were gone (2026-10-23 review). What has not run yet
+        # goes back (the one that was running included) and the error goes on.
+        done_upto = 0
+        kept = False
+        try:
+            # Checks that run at every start (a sequence gate with resumable=false,
+            # e.g. the replication template's fetch, which also picks up a paper the
+            # researcher supplied) run before a specialist is sent back to work, so
+            # it works on what they provide.
+            pending_at = state.pending_review_stage
+            # (A rerun of a study not stopped at a researcher step stops nowhere yet: the loop runs them in order.)
+            for s in self._spec.steps if pending_at else []:
+                if s.name == pending_at:
+                    break
+                if s.kind == "gate" and not s.resumable and s.check in SEQUENCE_CHECKS and s.applies_to(self._mode):
+                    await self._run_check_step(s, state)
+            if state.metadata.get("preregistration_blocked"):
+                # Sent back from a pre-registration that estimation output blocked:
+                # move that output aside (recorded, never deleted) before the rerun.
+                from ..pipeline.preregistration import estimation_outputs, set_aside
 
-            found = estimation_outputs(self._workspace)
-            if found:
-                manifest = set_aside(self._workspace, found)
-                await log_event(
-                    self._paper_id, "estimation_set_aside", stage=state.pending_review_stage, payload=manifest
-                )
-        step_names = [s.name for s in self._spec.steps]
-        rerun_steps = False
-        sent_specialists: set[str] = set()
-        for i, r in enumerate(reruns):
-            target, remark = r["target"], r["remark"]
-            await log_event(self._paper_id, "researcher_rerun", stage=target, payload={"remark": remark})
-            if target in step_names:
-                # Re-run the step and everything after it; the loop stops again
-                # at the researcher step, which is still pending.
-                later = step_names[step_names.index(target) :]
-                state.completed_stages = [c for c in state.completed_stages if c not in later]
-                rerun_steps = True
-            else:
-                sent_specialists.add(target)
-                protected = await self._researcher_edited_files()
-                focus = f"Revise your output. The researcher sent it back with this remark: {remark}"
-                extra: dict[str, Any] = {}
-                if protected:
-                    # A send-back revises the specialist's work, not the
-                    # researcher's: files the researcher edited are neither
-                    # requested again nor left overwritten.
-                    focus += (
-                        " Do not change these files; the researcher edited them and they stand as they are: "
-                        + ", ".join(sorted(protected))
-                        + "."
+                found = estimation_outputs(self._workspace)
+                if found:
+                    manifest = set_aside(self._workspace, found)
+                    await log_event(
+                        self._paper_id, "estimation_set_aside", stage=state.pending_review_stage, payload=manifest
                     )
-                    extra["keep_files"] = sorted(protected)
-                order = WorkOrder(paper_id=self._paper_id, specialist=target, focus=focus, extra=extra)
-                before = {f: (self._workspace / f).read_bytes() for f in protected}
-                try:
-                    contributions = await self._execute_orders([order])
-                except PlanLimitReachedError:
-                    # The plan's limit or the API's credits ran out during the send-back: the run
-                    # pauses, and Resume sends this specialist (and the ones after it) back again.
+            step_names = [s.name for s in self._spec.steps]
+            rerun_steps = False
+            sent_specialists: set[str] = set()
+            for i, r in enumerate(reruns):
+                done_upto = i
+                target, remark = r["target"], r["remark"]
+                await log_event(self._paper_id, "researcher_rerun", stage=target, payload={"remark": remark})
+                if target in step_names:
+                    # Re-run the step and everything after it; the loop stops again
+                    # at the researcher step, which is still pending.
+                    later = step_names[step_names.index(target) :]
+                    state.completed_stages = [c for c in state.completed_stages if c not in later]
+                    rerun_steps = True
+                else:
+                    sent_specialists.add(target)
+                    protected = await self._researcher_edited_files()
+                    focus = f"Revise your output. The researcher sent it back with this remark: {remark}"
+                    extra: dict[str, Any] = {}
+                    if protected:
+                        # A send-back revises the specialist's work, not the
+                        # researcher's: files the researcher edited are neither
+                        # requested again nor left overwritten.
+                        focus += (
+                            " Do not change these files; the researcher edited them and they stand as they are: "
+                            + ", ".join(sorted(protected))
+                            + "."
+                        )
+                        extra["keep_files"] = sorted(protected)
+                    order = WorkOrder(paper_id=self._paper_id, specialist=target, focus=focus, extra=extra)
+                    before = {f: (self._workspace / f).read_bytes() for f in protected}
+                    # The send-back runs before the loop enters any step: the time limit is that of
+                    # the step that runs the specialist (its timeout_minutes), not none or the last
+                    # step's (2026-10-23 review).
+                    enter_step(self._step_running(target))
+                    try:
+                        contributions = await self._execute_orders([order])
+                    except PlanLimitReachedError:
+                        # The plan's limit or the API's credits ran out during the send-back: the run
+                        # pauses, and Resume sends this specialist (and the ones after it) back again.
+                        await self._restore_researcher_edits(before, target)
+                        self._keep_send_backs(state, reruns[i:], sent_back)
+                        kept = True
+                        raise
+                    except BaseException:
+                        await self._restore_researcher_edits(before, target)
+                        raise
+                    finally:
+                        enter_step(None)
+                    self._contributions.extend(contributions)
                     await self._restore_researcher_edits(before, target)
-                    self._keep_send_backs(state, reruns[i:], sent_back)
-                    raise
-                self._contributions.extend(contributions)
-                await self._restore_researcher_edits(before, target)
+        except BaseException:
+            if not kept:
+                try:
+                    self._keep_send_backs(state, reruns[done_upto:], sent_back)
+                except OSError:
+                    # The disk is full: kept in memory, the handler's own save writes them if it can.
+                    state.metadata["rerun"] = list(reruns[done_upto:])
+                    if sent_back is not None:
+                        state.metadata["sent_back"] = sent_back
+            raise
         if sent_specialists and not rerun_steps:
             await self._recheck_after_send_back(sent_specialists, state)
         state.save(self._workspace)
@@ -1683,6 +1752,18 @@ class PipelineRunner:
                 state.save(self._workspace)
                 return
             raise HumanReviewRequestedError(pending)
+
+    def _step_running(self, specialist: str) -> str | None:
+        """The step a sent-back specialist belongs to: the fixed step that runs it, else the
+        strategist step that dispatches the study's specialists (None when there is neither)."""
+        steps = [s for s in self._spec.steps if s.applies_to(self._mode)]
+        for s in steps:
+            if s.kind in ("specialists", "aggregate") and specialist in s.run:
+                return str(s.name)
+        for s in steps:
+            if s.kind == "strategist":
+                return str(s.name)
+        return None
 
     def _keep_send_backs(self, state: Any, left: list[dict[str, Any]], sent_back: Any) -> None:
         """Put the send-backs that have not run back into the state, so Resume runs them (a pause interrupted them).
@@ -3968,7 +4049,10 @@ class PipelineRunner:
             # reads "finishing (writing the export)" until run() has written them. Before, the status
             # said "completed" during the replication step, and a folder exported then was overwritten.
             self._completed_deferred = True
-            status = PaperStatus.FINISHING
+            # FINISHING only once the last step has run; a revision that completes before the
+            # abstract and replication steps leaves the study in progress while they run (it read
+            # "finishing" for the whole of those long steps).
+            status = PaperStatus.FINISHING if getattr(self, "_steps_done", False) else PaperStatus.IN_PROGRESS
         elif status != PaperStatus.FINISHING:
             self._completed_deferred = False  # a later pause, failure or cancel stands
         if status in (PaperStatus.FAILED, PaperStatus.REJECTED) and not (error or "").strip():

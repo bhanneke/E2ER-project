@@ -33,6 +33,7 @@ def _refuse_inside_a_specialist() -> None:
 
 def main() -> None:
     _refuse_inside_a_specialist()
+    _ask_about_the_folders_env()
     # `e2er corpus …` delegates wholesale to its own parser. Done before the
     # main parser sees anything, so `corpus search --limit 5` and
     # `corpus --help` reach cli_corpus intact instead of being claimed here.
@@ -412,9 +413,15 @@ def main() -> None:
     prereg_sub = prereg_p.add_subparsers(dest="prereg_command")
     dep_p = prereg_sub.add_parser("deposit", help="Deposit the frozen pre-registration with your own account (DOI).")
     dep_p.add_argument("target", help="Paper UUID, or an exported study folder.")
-    dep_p.add_argument("--zenodo", action="store_true", help="Deposit on Zenodo (token in ZENODO_TOKEN).")
+    dep_p.add_argument(
+        "--zenodo", action="store_true", help="Deposit on Zenodo (token from `e2er zenodo login`, or ZENODO_TOKEN)."
+    )
     dep_p.add_argument("--osf", action="store_true", help="OSF Registries (not built yet; says what to do instead).")
-    dep_p.add_argument("--sandbox", action="store_true", help="Use Zenodo's sandbox (token in ZENODO_SANDBOX_TOKEN).")
+    dep_p.add_argument(
+        "--sandbox",
+        action="store_true",
+        help="Use Zenodo's sandbox (`e2er zenodo login --sandbox`, or ZENODO_SANDBOX_TOKEN).",
+    )
 
     # Superseded by `e2er skills sync`. Kept working because it is in the
     # README, in shell history, and in whatever people have scripted — renaming
@@ -495,8 +502,9 @@ def main() -> None:
         "--against",
         default=None,
         metavar="URL",
-        help="Compare the folder with what e2er.org published: a study address (https://e2er.org/<owner>/<project>) "
-        "or a dossier address (https://e2er.org/d/<id>). Read with GET only. Without it, the folder is verified "
+        help="Compare the folder with what e2er.org published: a study address (https://e2er.org/<owner>/<project>), "
+        "an anonymous version's address (https://e2er.org/r/<code>) or a dossier address (https://e2er.org/d/<id>). "
+        "Read with GET only. Without it, the folder is verified "
         "against itself only.",
     )
     verify_p.add_argument(
@@ -511,8 +519,22 @@ def main() -> None:
         help="Run a study's code again in a new environment and compare the results with the published ones.",
         description="Runs the steps in the folder's reproduce.json in a run folder of its own, inside a new "
         "virtual environment with the study's pinned requirements, then compares every result value with the "
-        "published one and renders the paper's tables again. The study folder is not changed. Exit code 0: "
+        "published one and renders the paper's tables again. The steps are the author's code: they are listed "
+        "and asked about first, and run in a Docker container (no network, read-only, no folder of yours); "
+        "without Docker only with --no-sandbox. The study folder is not changed. Exit code 0: "
         "reproduced; 1: values or tables differ; 2: the code could not be run.",
+    )
+    reproduce_p.add_argument(
+        "--yes",
+        "-y",
+        action="store_true",
+        help="Run the listed commands without asking (a script, CI); also lets the steps that load inputs use the web.",
+    )
+    reproduce_p.add_argument(
+        "--no-sandbox",
+        action="store_true",
+        help="Run the steps on this computer as you, not in Docker (HOME points to an empty folder, no API key "
+        "is passed, but the code can read every file you can). Only for a study whose code you trust.",
     )
     reproduce_p.add_argument(
         "folder",
@@ -617,8 +639,15 @@ def main() -> None:
         help="Verify an exported bundle; write its research-object manifest (e2er.json) and registry entry.",
     )
     publish_p.add_argument("bundle", help="Path to an exported bundle directory (from `e2er export`).")
-    publish_p.add_argument("--owner", required=True, help="Registry namespace: your GitHub login, lower case.")
-    publish_p.add_argument("--project", required=True, help="Project name within your namespace, e.g. etf-comovement.")
+    publish_p.add_argument(
+        "--owner",
+        default=None,
+        help="One of your account's handles on e2er.org (add them in account settings; publishing does not "
+        "create one). Not with --blind.",
+    )
+    publish_p.add_argument(
+        "--project", default=None, help="Project name within your namespace, e.g. etf-comovement. Not with --blind."
+    )
     publish_p.add_argument(
         "--github",
         nargs="?",
@@ -751,10 +780,13 @@ def main() -> None:
     publish_p.add_argument(
         "--zenodo",
         action="store_true",
-        help="Deposit the public data and code on Zenodo with your own token (ZENODO_TOKEN) and record the DOIs.",
+        help="Deposit the public data and code on Zenodo with your own token (`e2er zenodo login`, or "
+        "ZENODO_TOKEN) and record the DOIs.",
     )
     publish_p.add_argument(
-        "--zenodo-sandbox", action="store_true", help="Use sandbox.zenodo.org (token in ZENODO_SANDBOX_TOKEN)."
+        "--zenodo-sandbox",
+        action="store_true",
+        help="Use sandbox.zenodo.org (`e2er zenodo login --sandbox`, or ZENODO_SANDBOX_TOKEN).",
     )
     publish_p.add_argument(
         "--accept-data-terms",
@@ -771,6 +803,36 @@ def main() -> None:
         action="store_true",
         help="Prepare the folder for publishing in the browser (e2er.org/publish): write the dossier and "
         "e2er.json, send nothing.",
+    )
+    publish_p.add_argument(
+        "--blind",
+        action="store_true",
+        help="Publish an anonymous version for double-blind review at an address nobody can guess "
+        "(e2er.org/r/<code>): a copy of the folder is anonymised and checked for anything that names you before "
+        "anything is sent; e2er.org shows no author and lists it nowhere. Needs no --owner or --project. GitHub, "
+        "Zenodo and public addresses are refused. `e2er pack --blind` then makes the file for the journal.",
+    )
+    publish_p.add_argument(
+        "--blind-identifier",
+        action="append",
+        default=None,
+        dest="blind_identifiers",
+        metavar="TEXT",
+        help="With --blind: one more thing that identifies you (a co-author, your institute, a project name), "
+        "taken out and checked like your name (repeatable; also E2ER_BLIND_IDENTIFIERS, separated by ;).",
+    )
+    publish_p.add_argument(
+        "--blind-ack-self-citations",
+        action="store_true",
+        help="With --blind: you read the places listed that may cite your own work, and they may stay.",
+    )
+    publish_p.add_argument(
+        "--unblind",
+        default=None,
+        metavar="CODE",
+        help="After the review: says where to unblind the anonymous version CODE (or its address …/r/CODE): "
+        "on your account page on e2er.org, signed in in the browser (a command-line token cannot). A named "
+        "export is then published as a normal new version of that study. Sends nothing.",
     )
 
     url_help = "Platform address (default: E2ER_URL, else https://e2er.org)."
@@ -800,6 +862,20 @@ def main() -> None:
     logout_p.add_argument("--url", default=None, help=url_help)
     whoami_p = subparsers.add_parser("whoami", help="Show the account the command line is signed in as.")
     whoami_p.add_argument("--url", default=None, help=url_help)
+    zenodo_p = subparsers.add_parser(
+        "zenodo", help="Your own Zenodo token for deposits (`e2er zenodo login`, `status`, `logout`)."
+    )
+    zenodo_sub = zenodo_p.add_subparsers(dest="zenodo_command", required=True)
+    sandbox_help = "sandbox.zenodo.org, Zenodo's test site (a separate account with its own tokens)."
+    zl = zenodo_sub.add_parser(
+        "login", help="Open Zenodo's new-token page, paste the token (not shown); it is checked and kept."
+    )
+    zl.add_argument("--sandbox", action="store_true", help=sandbox_help)
+    zl.add_argument("--no-browser", action="store_true", help="Do not open the browser; print the address only.")
+    zs = zenodo_sub.add_parser("status", help="Whether a Zenodo token is stored and works (it is not shown).")
+    zs.add_argument("--sandbox", action="store_true", help=sandbox_help)
+    zo = zenodo_sub.add_parser("logout", help="Remove the stored Zenodo token from this computer.")
+    zo.add_argument("--sandbox", action="store_true", help=sandbox_help)
     dossier_p = subparsers.add_parser("dossier", help="Dossier commands (`e2er dossier push`).")
     dossier_sub = dossier_p.add_subparsers(dest="dossier_command", required=True)
     push_p = dossier_sub.add_parser("push", help="Register the dossier alone, so a private study's footnote resolves.")
@@ -889,6 +965,12 @@ def main() -> None:
     pack_p.add_argument(
         "--no-data", action="store_true", help="Leave every data file out; `e2er reproduce` loads them again."
     )
+    pack_p.add_argument(
+        "--blind",
+        action="store_true",
+        help="Pack the anonymised copy `e2er publish --blind` made (the folder itself or its copy next to it): the "
+        "file for the journal names no author and is checked for anything that names you.",
+    )
 
     unpack_p = subparsers.add_parser(
         "unpack",
@@ -948,6 +1030,9 @@ def main() -> None:
     if args.command == "publish":
         from .cli_publish import publish as _publish
 
+        if not args.blind and not (args.owner and args.project):
+            publish_p.error("--owner and --project are required (an anonymous version with --blind needs neither)")
+
         sys.exit(
             _publish(
                 args.bundle,
@@ -985,8 +1070,21 @@ def main() -> None:
                 paper=args.paper,
                 paper_url=args.paper_url,
                 yes=args.yes,
+                blind=args.blind,
+                blind_identifiers=args.blind_identifiers,
+                blind_ack_self_citations=args.blind_ack_self_citations,
+                unblind=args.unblind,
             )
         )
+
+    if args.command == "zenodo":
+        from . import cli_zenodo
+
+        if args.zenodo_command == "login":
+            sys.exit(cli_zenodo.login(sandbox=args.sandbox, open_browser=not args.no_browser))
+        if args.zenodo_command == "logout":
+            sys.exit(cli_zenodo.logout(sandbox=args.sandbox))
+        sys.exit(cli_zenodo.status(sandbox=args.sandbox))
 
     if args.command in ("login", "logout", "whoami", "dossier", "token"):
         from . import cli_platform
@@ -1036,35 +1134,56 @@ def main() -> None:
     if args.command == "pack":
         from .cli_package import pack as _pack
 
+        if args.blind:
+            from .cli_blind import pack_blind
+
+            sys.exit(pack_blind(args.target, args.out, offline=args.offline, no_data=args.no_data))
         sys.exit(_pack(args.target, args.out, offline=args.offline, no_data=args.no_data))
 
     if args.command == "unpack":
         from .cli_package import unpack as _unpack
+        from .core.safe_text import printable_output
 
-        sys.exit(_unpack(args.package, args.dest))
+        with printable_output():
+            code = _unpack(args.package, args.dest)
+        sys.exit(code)
 
     if args.command == "inspect":
         from .cli_package import inspect as _inspect
+        from .core.safe_text import printable_output
 
-        sys.exit(_inspect(args.package))
+        with printable_output():
+            code = _inspect(args.package)
+        sys.exit(code)
 
     if args.command == "reproduce":
         from .cli_reproduce import reproduce as _reproduce
+        from .core.safe_text import printable_output
 
-        sys.exit(_reproduce(args.folder, keep=args.keep, json_out=args.json_out, allow_network=args.allow_network))
+        with printable_output():
+            code = _reproduce(
+                args.folder,
+                keep=args.keep,
+                json_out=args.json_out,
+                allow_network=args.allow_network,
+                yes=args.yes,
+                sandbox=False if args.no_sandbox else None,
+            )
+        sys.exit(code)
 
     if args.command == "verify":
         from .cli_verify import verify as _verify
+        from .core.safe_text import printable_output
 
-        sys.exit(
-            _verify(
+        with printable_output():  # a folder's or package's text: no terminal control sequences
+            code = _verify(
                 bundle=args.bundle,
                 online=args.online,
                 json_output=args.json,
                 against=args.against,
                 against_file=args.against_file,
             )
-        )
+        sys.exit(code)
 
     if args.command == "compare":
         from .core.compare import compare as _compare
@@ -1357,8 +1476,9 @@ def _already_serving(host: str, port: int) -> bool:
     try:
         import httpx
 
-        r = httpx.get(f"http://{host}:{port}/api/papers", timeout=1.5)
-        return r.status_code == 200
+        # /health answers without the session (the API itself needs it since 0.19.0).
+        r = httpx.get(f"http://{host}:{port}/health", timeout=1.5)
+        return r.status_code == 200 and (r.json() or {}).get("service") == "e2er-v3"
     except Exception:  # noqa: BLE001 — any failure means "not ours"
         return False
 
@@ -1399,6 +1519,38 @@ def _open_browser(url: str, delay: float = 1.2) -> None:
     threading.Thread(target=_later, daemon=True).start()
 
 
+def _loopback_host(host: str) -> bool:
+    import ipaddress
+
+    h = host.strip().strip("[]").lower()
+    if h == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(h).is_loopback
+    except ValueError:
+        return False
+
+
+def _settings_or_none() -> Any:
+    try:
+        from .config import get_settings
+
+        return get_settings()
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _ask_about_the_folders_env() -> None:
+    """A folder's .env that names a program to start or turns a sandbox off: ask at a terminal (env_trust.py)."""
+    try:
+        from .env_trust import ask
+        from .home import env_file
+
+        ask(env_file())
+    except Exception:  # noqa: BLE001 — never block a command on this question
+        pass
+
+
 def _serve(*, host: str, port: int, reload: bool, no_browser: bool) -> int:
     """Run the dashboard. Returns the process exit code.
 
@@ -1426,8 +1578,18 @@ def _serve(*, host: str, port: int, reload: bool, no_browser: bool) -> int:
                 pass
         return 0
 
-    token = os.environ.get(ls.ENV_TOKEN) or ls.stable_token()
+    if not _loopback_host(host) and not getattr(_settings_or_none(), "api_auth_token", None):
+        print(
+            f"Refusing to serve on {host}: the dashboard would answer other computers. Set API_AUTH_TOKEN "
+            "(every API request then needs `Authorization: Bearer <token>`) or serve on 127.0.0.1.",
+            file=sys.stderr,
+        )
+        return 2
+    # A new session token per start: the cookie of the last start no longer works (0.19.0).
+    ls.forget_stable_secret()
+    token = os.environ.get(ls.ENV_TOKEN) or ls.new_token()
     os.environ[ls.ENV_TOKEN] = token  # the uvicorn app (and a --reload worker) read it from here
+    os.environ[ls.ENV_SERVE_HOST] = host  # the Host allowlist adds the address served on
     from .home import ENV_PROJECT, project_dir
 
     if reload:

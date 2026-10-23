@@ -244,11 +244,14 @@ def test_heartbeat_loop_beats_only_live_tasks(monkeypatch):
 
     async def go():
         loop = asyncio.create_task(run_owner.heartbeat_loop({"a": _Task(False), "b": _Task(True)}, interval=0.01))
-        await asyncio.sleep(0.05)
+        # Wait for two beats with a deadline: a fixed 0.05 s sleep saw none on a loaded machine.
+        deadline = asyncio.get_running_loop().time() + 10
+        while len(beaten) < 2 and asyncio.get_running_loop().time() < deadline:
+            await asyncio.sleep(0.01)
         loop.cancel()
 
     _run(go())
-    assert beaten and all(ids == ["a"] for ids in beaten)
+    assert len(beaten) >= 2 and all(ids == ["a"] for ids in beaten)
 
 
 # ── the dashboard ────────────────────────────────────────────────────────────

@@ -27,6 +27,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 from ..logging_config import get_logger
+from .guards import PaperId
 from .local_session import local_problem, require_local_session
 
 logger = get_logger(__name__)
@@ -63,23 +64,12 @@ async def _paper(paper_id: str) -> dict[str, Any]:
 
 
 def find_export(paper_id: str) -> Path | None:
-    """The newest exported folder of this study (its provenance.json names the run)."""
+    """The newest exported folder of this study (its provenance.json names the run; newest by its ``-NN``)."""
     from ..config import get_settings
+    from ..core.export.current import exports_of
 
-    root = get_settings().resolved_output_root()
-    if not root.is_dir():
-        return None
-    found: list[Path] = []
-    for d in root.iterdir():
-        prov = d / "provenance.json"
-        if not prov.is_file():
-            continue
-        try:
-            if (json.loads(prov.read_text(encoding="utf-8")).get("run") or {}).get("paper_id") == paper_id:
-                found.append(d)
-        except (OSError, ValueError):
-            continue
-    return max(found, key=lambda p: p.stat().st_mtime) if found else None
+    mine = exports_of(get_settings().resolved_output_root(), paper_id)
+    return mine[-1] if mine else None
 
 
 def _slug(text: str) -> str:
@@ -136,7 +126,7 @@ def _terms(bundle: Path | None) -> list[dict[str, Any]]:
 
 
 @router.get("/papers/{paper_id}/finish", response_class=HTMLResponse)
-async def finish_page(request: Request, paper_id: str) -> Any:
+async def finish_page(request: Request, paper_id: PaperId) -> Any:
     from ..config import get_settings
     from ..core.demonstration import study_purpose
     from .app import _with_outcome, templates
@@ -190,7 +180,7 @@ def _inputs(workspace: Path, request: Request) -> dict[str, Any] | None:
 
 
 @router.post("/api/papers/{paper_id}/export", dependencies=[Depends(require_local_session)])
-async def export_study(paper_id: str) -> dict[str, Any]:
+async def export_study(paper_id: PaperId) -> dict[str, Any]:
     from ..config import get_settings
     from ..core.export.current import export_current
 
@@ -218,7 +208,7 @@ async def export_study(paper_id: str) -> dict[str, Any]:
 
 
 @router.post("/api/papers/{paper_id}/package", dependencies=[Depends(require_local_session)])
-async def package_study(paper_id: str) -> dict[str, Any]:
+async def package_study(paper_id: PaperId) -> dict[str, Any]:
     """`e2er pack` on the study's current folder: one .e2er file next to it, for "Download package (.e2er)"."""
     from ..core.export import package as pkg
 
@@ -243,7 +233,7 @@ async def package_study(paper_id: str) -> dict[str, Any]:
 
 
 @router.get("/api/papers/{paper_id}/package", dependencies=[Depends(require_local_session)])
-async def download_package(paper_id: str) -> Any:
+async def download_package(paper_id: PaperId) -> Any:
     """The .e2er file written for the study's current folder (by the button above, or `e2er pack`)."""
     from fastapi.responses import FileResponse
 
@@ -284,7 +274,7 @@ def _folders_view(paper_id: str) -> dict[str, Any]:
         did = str(link.get("dossier_id") or "")
         view["published"] = {
             "owner_project": link.get("owner_project"),
-            "version": link.get("version"),
+            "version": link.get("version") if not link.get("held") else "held: confirm it in your browser",
             "study_url": f"{base}/{link.get('owner_project')}" if base else "",
             "dossier_url": f"{base}/d/{did.removeprefix('sha256:')[:16]}" if base and did else "",
             "folder": str(pub),
@@ -293,7 +283,7 @@ def _folders_view(paper_id: str) -> dict[str, Any]:
 
 
 @router.post("/api/papers/{paper_id}/exports/remove-older", dependencies=[Depends(require_local_session)])
-async def remove_older_exports(paper_id: str) -> dict[str, Any]:
+async def remove_older_exports(paper_id: PaperId) -> dict[str, Any]:
     """Remove the earlier copies of the run's folder: never the current one, never a published one."""
     from ..config import get_settings
     from ..core.export.current import remove_older_copies
@@ -323,7 +313,7 @@ class VerifyRequest(BaseModel):
 
 
 @router.post("/api/papers/{paper_id}/verify", dependencies=[Depends(require_local_session)])
-async def verify_study(paper_id: str, req: VerifyRequest | None = None) -> dict[str, Any]:
+async def verify_study(paper_id: PaperId, req: VerifyRequest | None = None) -> dict[str, Any]:
     """`e2er verify` on the study's exported folder: the same checks, the same verdict."""
     from dataclasses import asdict
 
@@ -405,7 +395,7 @@ class PublishRequest(BaseModel):
 
 
 @router.post("/api/papers/{paper_id}/publish", dependencies=[Depends(require_local_session)])
-async def publish_study(paper_id: str, req: PublishRequest) -> dict[str, Any]:
+async def publish_study(paper_id: PaperId, req: PublishRequest) -> dict[str, Any]:
     """`e2er publish --to <platform>`: a dry run shows the request; otherwise it is sent once the page confirmed."""
     from ..cli_publish import publish
 
@@ -537,6 +527,10 @@ def _terms_missing(bundle: Path, req: PublishRequest) -> list[str]:
 def _published_links(output: str) -> dict[str, Any]:
     """Where the published study can be read, from what `e2er publish` printed: its page and its dossier."""
     links: dict[str, Any] = {}
+    held = re.search(r"Confirm or discard it, signed in in the browser: (https?://\S+)", output)
+    if held:  # e2er.org keeps the version back until the author confirms it (HTTP 202): not an error
+        links["held"] = True
+        links["confirm_url"] = held.group(1)
     page = re.search(r"published as [^:]+: (https?://\S+)", output)
     dossier = re.search(r"^\s*dossier (https?://\S+)", output, re.MULTILINE)
     if page:
@@ -597,7 +591,7 @@ class DepositRequest(BaseModel):
 
 
 @router.post("/api/papers/{paper_id}/preregistration/deposit", dependencies=[Depends(require_local_session)])
-async def deposit_preregistration(paper_id: str, req: DepositRequest) -> dict[str, Any]:
+async def deposit_preregistration(paper_id: PaperId, req: DepositRequest) -> dict[str, Any]:
     """Deposit the study's frozen pre-registration on Zenodo with the researcher's own token."""
     from ..core.pipeline.preregistration import ZENODO_SANDBOX_URL, ZENODO_URL, deposit_zenodo, load_lock
 

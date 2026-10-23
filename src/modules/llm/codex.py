@@ -143,6 +143,24 @@ class CodexBackend(LLMBackend):
         self._model = model or effective_codex_model(settings)
         self._effort = settings.codex_reasoning_effort
         self._sandbox = settings.codex_sandbox or "workspace-write"
+        if self._sandbox not in ("read-only", "workspace-write"):
+            if not getattr(settings, "codex_allow_full_access", False):
+                logger.warning(
+                    "CODEX_SANDBOX=%s is refused: the model's shell commands would run without any sandbox. "
+                    "Using workspace-write; set CODEX_ALLOW_FULL_ACCESS=true as well to really run unsandboxed.",
+                    self._sandbox,
+                )
+                self._sandbox = "workspace-write"
+            else:
+                logger.warning(
+                    "Codex runs WITHOUT a sandbox (%s): every shell command of the model runs as you.", self._sandbox
+                )
+        self._network = bool(getattr(settings, "codex_network_access", False))
+        if self._network:
+            logger.warning(
+                "CODEX_NETWORK_ACCESS=true: the model's shell commands can reach any address, "
+                "not only e2er-data's sources."
+            )
         self._cwd = settings.codex_cwd or os.getcwd()
 
     @property
@@ -179,13 +197,14 @@ class CodexBackend(LLMBackend):
             'approval_policy="never"',
             "-c",
             "allow_login_shell=false",
+            # The environment e2er passes is already an allowlist (run_env); Codex's own default excludes
+            # (names with KEY, SECRET, TOKEN) apply on top: the wrappers read their keys from the
+            # settings file (E2ER_PROJECT_DIR), the model's shell does not see them.
             "-c",
             'shell_environment_policy.inherit="all"',
-            "-c",
-            "shell_environment_policy.ignore_default_excludes=true",
         ]
         if self._sandbox == "workspace-write":
-            cmd += ["-c", "sandbox_workspace_write.network_access=true"]
+            cmd += ["-c", f"sandbox_workspace_write.network_access={'true' if self._network else 'false'}"]
             for d in extra_dirs:
                 cmd += ["--add-dir", d]
         if self._model:
@@ -209,7 +228,31 @@ class CodexBackend(LLMBackend):
         settings = get_settings()
         prompt = flatten_prompt(system, messages)
         cwd, root = workspace_cwd(settings, paper_id, self._cwd)
-        env = run_env(settings, paper_id=paper_id, specialist=specialist, workspace_root_abs=root, cli_keys=CLI_KEYS)
+        env = run_env(
+            settings,
+            paper_id=paper_id,
+            specialist=specialist,
+            workspace_root_abs=root,
+            cli_keys=CLI_KEYS,
+            cli_prefixes=("CODEX_", "NODE_", "NVM_"),
+        )
+        # The model's shell gets an empty HOME (no ~/.ssh, no other logins); Codex signs in from CODEX_HOME.
+        from ...core.child_env import empty_home
+        from ...home import project_dir
+
+        env["CODEX_HOME"] = str(_codex_home())
+        env.setdefault("E2ER_PROJECT_DIR", str(project_dir().resolve()))
+        home = empty_home("e2er-codex-home-")
+        for var in ("HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME"):
+            env[var] = str(home)
+        try:
+            return await self._call(prompt, cwd, env, settings)
+        finally:
+            import shutil
+
+            shutil.rmtree(home, ignore_errors=True)
+
+    async def _call(self, prompt: str, cwd: str, env: dict[str, str], settings: Any) -> ToolLoopResult:
         extra_dirs: list[str] = []
         db = db_path(settings)
         if db is not None and not _inside(db.parent, Path(cwd)):

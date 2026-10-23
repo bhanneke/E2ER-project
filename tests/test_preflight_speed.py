@@ -194,7 +194,7 @@ def fresh_cache(monkeypatch):
 
     async def fake_run():
         runs.append(1)
-        await asyncio.sleep(0.05)
+        await asyncio.sleep(0.05)  # in flight long enough that a second look joins it (no clock is read)
         return {
             "checks": [{"name": "data.fred.observations", "status": "FAIL", "detail": "transport error: x"}],
             "ready": True,
@@ -222,8 +222,9 @@ async def test_a_second_look_within_minutes_runs_nothing(fresh_cache):
 async def test_the_kept_result_expires(fresh_cache, monkeypatch):
     app_module, runs = fresh_cache
     await app_module._preflight()
-    monkeypatch.setattr(app_module, "PREFLIGHT_TTL", 0.0)
-    await asyncio.sleep(0.01)
+    # Made longer ago than the keep time: a 0.01 s sleep against a 0.0 TTL raced the
+    # clock's resolution (a coarse monotonic clock reads the same value twice).
+    app_module._preflight_cache["at"] -= app_module.PREFLIGHT_TTL + 1
     await app_module._preflight()
     assert len(runs) == 2
 

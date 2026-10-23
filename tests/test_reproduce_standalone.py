@@ -88,7 +88,7 @@ PUBLISHED = {"main": {"estimate": 2.333333, "n": 3}}
 
 def test_a_script_that_queries_data_db_with_e2er_data_reproduces(tmp_path: Path, capsys) -> None:
     folder = _study(tmp_path, QUERY_SCRIPT, PUBLISHED)
-    assert reproduce(str(folder)) == 0, capsys.readouterr().out
+    assert reproduce(str(folder), yes=True, sandbox=False) == 0, capsys.readouterr().out
     text = capsys.readouterr().out
     assert "Reproduced: every compared value is identical" in text
     assert "Inputs, compared with the study's own files (SHA-256):\n  1 of 1 identical" in text
@@ -112,7 +112,7 @@ def test_e2er_data_refuses_a_loader_in_a_rerun_step(tmp_path: Path, capsys) -> N
         "sys.exit(r.returncode)\n"
     )
     folder = _study(tmp_path, script, PUBLISHED)
-    assert reproduce(str(folder)) == 2
+    assert reproduce(str(folder), yes=True, sandbox=False) == 2
     text = capsys.readouterr().out
     assert "FAILED (exit 5)" in text
     assert "called `e2er-data yfinance history`, which loads data from the web" in text
@@ -138,7 +138,7 @@ json.dump({"main": {"estimate": 2.333333, "n": 3}}, open("estimation_results.jso
 
 def test_an_estimation_step_that_reaches_the_web_is_stopped(tmp_path: Path, capsys) -> None:
     folder = _study(tmp_path, WEB_SCRIPT, PUBLISHED)
-    assert reproduce(str(folder)) == 2
+    assert reproduce(str(folder), yes=True, sandbox=False) == 2
     text = capsys.readouterr().out
     assert "this step may not use the network (it tried to reach 192.0.2.1)" in text
     assert (
@@ -151,7 +151,7 @@ def test_an_estimation_step_that_reaches_the_web_is_stopped(tmp_path: Path, caps
 
 def test_allow_network_lets_it_through_and_says_so(tmp_path: Path, capsys) -> None:
     folder = _study(tmp_path, WEB_SCRIPT, PUBLISHED)
-    assert reproduce(str(folder), allow_network=True) == 0
+    assert reproduce(str(folder), allow_network=True, yes=True, sandbox=False) == 0
     text = capsys.readouterr().out
     assert "It read from the web (allowed with --allow-network): 192.0.2.1." in text
     assert "the study's code read from the web while it ran (192.0.2.1)" in text
@@ -163,10 +163,14 @@ def test_the_reload_step_may_use_the_web(tmp_path: Path) -> None:
     assert not rp.is_reload_step({"run": "python run_estimation.py"}, recipe)
 
 
-def test_inputs_are_listed_when_the_environment_cannot_be_made(tmp_path: Path, capsys) -> None:
+def test_inputs_are_listed_when_the_environment_cannot_be_made(tmp_path: Path, capsys, monkeypatch) -> None:
     folder = _study(tmp_path, QUERY_SCRIPT, PUBLISHED)
-    (folder / "code" / "requirements.txt").write_text("this is === not a requirement\n", encoding="utf-8")
-    assert reproduce(str(folder)) == 2
+    # A plain requirement that cannot be installed (offline, and no such package); a malformed line is refused
+    # before anything is installed (tests/test_security_reproduce.py).
+    monkeypatch.setenv("UV_OFFLINE", "1")
+    monkeypatch.setenv("PIP_NO_INDEX", "1")
+    (folder / "code" / "requirements.txt").write_text("e2er-no-such-package-xyz==0.0.1\n", encoding="utf-8")
+    assert reproduce(str(folder), yes=True, sandbox=False) == 2
     text = capsys.readouterr().out
     assert "error: could not install" in text
     assert "Inputs, compared with the study's own files (SHA-256):\n  1 of 1 identical" in text

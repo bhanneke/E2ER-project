@@ -86,7 +86,7 @@ def test_a_read_excel_study_gets_openpyxl_pinned_and_reproduces(tmp_path: Path, 
     assert "pandas needs it to read Excel files" in pins["openpyxl"]
     assert pins["pandas"] == f"pandas=={md.version('pandas')}"
 
-    code = reproduce(str(out))
+    code = reproduce(str(out), yes=True, sandbox=False)
     report = capsys.readouterr().out
     assert code == 0, report
 
@@ -250,7 +250,7 @@ def test_reproduce_says_which_package_the_recipe_left_out(tmp_path: Path, this_p
     }
     (folder / "reproduce.json").write_text(json.dumps(recipe), encoding="utf-8")
 
-    assert reproduce(str(folder)) == 2
+    assert reproduce(str(folder), yes=True, sandbox=False) == 2
     report = capsys.readouterr().out
     sentence = "The recipe does not pin e2er_no_such_backend, which pandas needs."
     assert sentence in report

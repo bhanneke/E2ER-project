@@ -120,10 +120,10 @@ def _check_integrity(bundle: Path, package_left_out: dict[str, dict[str, Any]] |
     files: dict[str, dict[str, Any]] = prov["files"]
     listing = walk(bundle)
     on_disk = {rel: p for rel, p in listing.files.items() if not not_evidence(rel)}
-    # Data files a .e2er package left out (a source's terms, --no-data, too large for GitHub). From a package
-    # that verify opened, its manifest is checked against the archive and counts. In a folder, an
-    # e2er-package.json is only a file: a declaration counts only for a file the folder's own records say a
-    # source's terms keep out, or that provenance.json records as larger than the host takes.
+    # Data files a .e2er package left out (a source's terms, too large for GitHub). A declaration in
+    # e2er-package.json, in a package verify opened or in a folder, counts only for a file the study's own
+    # records say a source's terms keep out, or that provenance.json records as larger than the host takes
+    # (--no-data is the packer's choice, not a record of the study's).
     declared = package_left_out if package_left_out is not None else supported_left_out(bundle)
     missing: list[str] = []
     mismatched: list[str] = []
@@ -155,7 +155,21 @@ def _check_integrity(bundle: Path, package_left_out: dict[str, dict[str, Any]] |
         odd = sorted(set(resized) - set(mismatched))
         bits.append(f"{len(odd)} with a size other than provenance.json lists ({', '.join(odd[:3])})")
     if missing:
-        bits.append(f"{len(missing)} missing ({', '.join(missing[:3])})")
+        from .core.export.package import declared_left_out
+
+        claimed = declared_left_out(bundle)
+        unsupported = [rel for rel in missing if rel in claimed]
+        if unsupported:
+            reasons = sorted({str(claimed[rel].get("reason") or "no reason") for rel in unsupported})
+            bits.append(
+                f"{len(unsupported)} missing ({', '.join(unsupported[:3])}), declared left out by e2er-package.json "
+                f"({'; '.join(reasons[:2])}) without support in the study's records (no source's terms keep them "
+                "out, and provenance.json does not record them larger than the host takes): the checks cannot see "
+                "them, so the folder is not verified"
+            )
+        rest = [rel for rel in missing if rel not in claimed]
+        if rest:
+            bits.append(f"{len(rest)} missing ({', '.join(rest[:3])})")
     if "report.html" in extra:
         extra.remove("report.html")
         bits.append(
@@ -209,8 +223,9 @@ def _check_integrity(bundle: Path, package_left_out: dict[str, dict[str, Any]] |
     redacted = sorted({a["path"] for a in amendments if a.get("kind") == "redacted"})
     if redacted:
         notes += (
-            f"; {len(redacted)} file(s) redacted by the researcher, personal contact details only "
-            f"({', '.join(redacted[:3])})"
+            f"; {len(redacted)} file(s) recorded as redacted by the researcher ({', '.join(redacted[:3])}): the "
+            "records match the files; what was taken out is not in the folder (personal contact details, the "
+            "records say)"
         )
     if listing.junk:
         notes += (
@@ -231,6 +246,8 @@ def _amendment_problems(prov: dict[str, Any]) -> list[str]:
     Per path, the amendments must link up (each ``sha256_before`` is the
     previous ``sha256_after``) and end at the fingerprint the file has now.
     """
+    from .core.abstract import AMENDMENT_KINDS, CHANGED_FILES
+
     out: list[str] = []
     last: dict[str, str | None] = {}
     for a in prov.get("amendments") or []:
@@ -238,6 +255,9 @@ def _amendment_problems(prov: dict[str, Any]) -> list[str]:
         if not isinstance(path, str) or not isinstance(after, str):
             out.append("an amendment in provenance.json names no file or no new fingerprint")
             continue
+        if a.get("kind") in AMENDMENT_KINDS and path not in CHANGED_FILES:
+            # e2er abstract changes the abstract, the paper, its PDF and report.html: nothing else.
+            out.append(f"{path}: recorded as an abstract amendment, but e2er abstract never changes that file")
         if path in last and last[path] != before:
             out.append(f"the amendments of {path} do not link up")
         last[path] = after
@@ -248,19 +268,33 @@ def _amendment_problems(prov: dict[str, Any]) -> list[str]:
 
 
 def _redaction_problems(bundle: Path, prov: dict[str, Any]) -> list[str]:
-    """A redaction recorded as a file's last change must match the file: the replacement at every offset."""
+    """A redaction recorded as a file's last change must match the file: the replacement at every offset.
+
+    An abstract amendment of paper/paper.tex recorded as its last change must too: rebuilt with the
+    recorded old abstract, the paper is the one before, unchanged outside the abstract.
+    """
+    from .core import abstract as ab
     from .core import redact as rd
 
     last: dict[str, dict[str, Any]] = {}
     for a in prov.get("amendments") or []:
         if isinstance(a, dict) and isinstance(a.get("path"), str):
             last[a["path"]] = a
+    from .core import anonymise as an
+
     out = []
     for path, a in last.items():
-        if a.get("kind") != rd.KIND:
+        if a.get("kind") in ab.AMENDMENT_KINDS and path == ab.PAPER_FILE and "abstract_before" in a:
+            f = bundle / path
+            why, _before = ab.paper_problem(a, f.read_bytes() if f.is_file() else None)
+            if why:
+                out.append(why)
+            continue
+        if a.get("kind") not in (rd.KIND, an.KIND):
             continue
         f = bundle / path
-        why = rd.record_problem(a, f.read_bytes() if f.is_file() else None)
+        check = rd.record_problem if a.get("kind") == rd.KIND else an.record_problem
+        why = check(a, f.read_bytes() if f.is_file() else None)
         if why:
             out.append(why)
     return out
@@ -382,6 +416,7 @@ def _check_anchor(bundle: Path) -> Check:
     prov, _ = _load_provenance(bundle)
     problems: list[str] = []
     manifest: Any = None
+    later = ""
     if e2er_path.exists():
         manifest, why = load_json_strict(e2er_path)
         problems += [why] if why else _manifest_problems(manifest, prov, content_id)
@@ -394,11 +429,24 @@ def _check_anchor(bundle: Path) -> Check:
         elif not isinstance(link, dict):
             problems.append(".e2er/link.json is not a JSON object")
         else:
-            if link.get("content_id") != content_id:
-                problems.append(".e2er/link.json names another content than provenance.json")
             named = ((manifest or {}).get("dossier") or {}).get("id") if isinstance(manifest, dict) else None
-            if link.get("dossier_id") != named:
-                problems.append(".e2er/link.json names another dossier than e2er.json")
+            here = link.get("described_here")
+            if (
+                named
+                and isinstance(here, dict)
+                and here.get("content_id") == content_id
+                and here.get("dossier_id") == named
+            ):
+                # Described again after the version on the platform (a publish without --to, or a send that
+                # failed): the link names that version and records the description e2er.json now holds.
+                later = (
+                    f"; e2er.json describes it again since version {link.get('version')} on {link.get('platform_url')}"
+                )
+            else:
+                if link.get("content_id") != content_id:
+                    problems.append(".e2er/link.json names another content than provenance.json")
+                if link.get("dossier_id") != named:
+                    problems.append(".e2er/link.json names another dossier than e2er.json")
     if problems:
         before = _anchor_before_redactions(bundle)
         if before is not None:
@@ -409,7 +457,8 @@ def _check_anchor(bundle: Path) -> Check:
     return Check(
         "anchor",
         PASS,
-        f"e2er.json{has_link} describe this folder (content {str(content_id)[:19]}…) and the dossier hashes to its id",
+        f"e2er.json{has_link} describe this folder (content {str(content_id)[:19]}…) and the dossier hashes to its id"
+        f"{later}",
     )
 
 
@@ -422,8 +471,14 @@ def _anchor_before_redactions(bundle: Path) -> Check | None:
     """
     from .core import redact as rd
 
-    texts, n = rd.provenance_before_redactions(bundle)
+    texts, n, why = rd.rollback(bundle)
     if not texts:
+        if why:
+            return Check(
+                "anchor",
+                FAIL,
+                "e2er.json describes the folder before its latest amendments, and they cannot be checked: " + why,
+            )
         return None
     for text in texts:
         with tempfile.TemporaryDirectory() as td:
@@ -442,7 +497,10 @@ def _anchor_before_redactions(bundle: Path) -> Check | None:
                     what = f"the abstract was rewritten ({n} file(s): e2er abstract)"
                     again = "publish again to publish the new abstract"
                 else:
-                    what = f"the researcher redacted {n} file(s) (personal contact details only)"
+                    what = (
+                        f"{n} change(s) recorded as redactions by the researcher (personal contact details, the "
+                        "record says)"
+                    )
                     again = "publish again to publish the redacted folder"
                 return Check("anchor", PASS, f"e2er.json describes this folder as published, before {what}; {again}")
     return None
@@ -468,13 +526,16 @@ def _fetch_published(spec: str) -> tuple[str, Any]:
     base = f"{u.scheme}://{u.netloc}"
     if len(parts) >= 2 and parts[0] == "d":
         kind, path = "dossier", f"/api/v1/dossiers/{parts[1]}"
+    elif len(parts) >= 2 and parts[0] == "r":
+        # An anonymous version for double-blind review (e2er publish --blind): its record lists the one version.
+        kind, path = "study", f"/api/v1/blind/{parts[1]}"
     elif len(parts) >= 4 and parts[:2] == ["api", "v1"] and parts[2] in ("studies", "dossiers"):
         kind = "study" if parts[2] == "studies" else "dossier"
         path = "/" + "/".join(parts)
     elif len(parts) >= 2:
         kind, path = "study", f"/api/v1/studies/{parts[0]}/{parts[1]}"
     else:
-        raise AgainstError(f"{spec} names neither a study (…/<owner>/<project>) nor a dossier (…/d/<id>)")
+        raise AgainstError(f"{spec} names neither a study (…/<owner>/<project>, …/r/<code>) nor a dossier (…/d/<id>)")
     try:
         with pc.client_factory(base) as client:
             resp = client.get(path, headers={"accept": "application/json"})
@@ -628,7 +689,32 @@ def _check_statistics(ws: Path) -> tuple[list[str], str]:
     return report.problems, report.summary() if report.checked or report.not_analytic else ""
 
 
-def _check_numbers(bundle: Path, ws: Path) -> Check:
+def _left_out_cells(bundle: Path, left: dict[str, dict[str, Any]]) -> dict[tuple[str, str], str]:
+    """(table context, cell value) → the left-out results file provenance.json traces the cell to.
+
+    The derivation edges are recomputed by the integrity check, so a cell counts only where the study's own
+    record ties it to a file a published copy left out.
+    """
+    if not left:
+        return {}
+    prov = _load_json(bundle / "provenance.json")
+    edges = prov.get("edges") if isinstance(prov, dict) else None
+    out: dict[tuple[str, str], str] = {}
+    for e in edges if isinstance(edges, list) else []:
+        if isinstance(e, dict) and e.get("type") == "table_cell" and e.get("source") in left:
+            out[(str(e.get("table_context")), str(e.get("cell_value")))] = str(e["source"])
+    return out
+
+
+def _check_numbers(bundle: Path, ws: Path, left: dict[str, dict[str, Any]] | None = None) -> Check:
+    """Every table cell a source value at the precision shown; t and p consistent in the results.
+
+    ``left``: results files a published copy left out. A failure is skipped for them only where it is theirs:
+    a cell whose recorded source is a left-out file, or no cell checked because the files the numbers are
+    traced to are left out. The statistics (p-value and t) of the files that are here always count.
+    """
+    left = left or {}
+    left_json = sorted(p for p in left if p.endswith(".json") and p.count("/") == 1)
     stats_problems, stats_note = _check_statistics(ws)
     if stats_problems:
         more = f"; and {len(stats_problems) - 3} more" if len(stats_problems) > 3 else ""
@@ -646,7 +732,11 @@ def _check_numbers(bundle: Path, ws: Path) -> Check:
     # (the run's gate let values within 10% pass as "major" and cells with no
     # value nearby pass as "unverifiable").
     report = verify_numbers(tex, ws, rounding=True)
+    sources_left = [p for p in left_json if p.rsplit("/", 1)[-1] in set(report.source_files_missing)]
     if report.skipped_reason and not report.tables_conclusive:
+        if sources_left and not report.source_files_found:
+            # Every file the numbers are traced to is left out: nothing here to check them against.
+            return _needs("numbers", left, sources_left)
         if _bundle_has_rendered_tables(bundle):
             return Check(
                 "numbers",
@@ -670,18 +760,27 @@ def _check_numbers(bundle: Path, ws: Path) -> Check:
             f"the results and the researcher continued with them at the number check (recorded in the dossier): "
             f"{shown}{note}{_prose_note(report)}",
         )
-    if report.mismatches:
+    if open_:
+        # A cell whose recorded source is a left-out file cannot be checked here; any other differing cell fails.
+        cells = _left_out_cells(bundle, left)
+        theirs = [m for m in open_ if (m.table_context, m.draft_value) in cells]
+        rest = [m for m in open_ if m not in theirs]
+        if not rest:
+            return _needs("numbers", left, sorted({cells[(m.table_context, m.draft_value)] for m in theirs}))
         first = "; ".join(
             f"{m.draft_value} ({m.table_context}; nearest source value {m.source_value}, {m.source_key})"
-            for m in report.mismatches[:3]
+            for m in rest[:3]
         )
         return Check(
             "numbers",
             FAIL,
-            f"{len(report.mismatches)} of {report.total_values_in_tables} table cell(s) are no source value at the "
+            f"{len(rest)} of {report.total_values_in_tables} table cell(s) are no source value at the "
             f"precision shown: {first}",
         )
     if not report.tables_conclusive:
+        if sources_left and _left_out_cells(bundle, left):
+            # The tables' cells are traced to left-out files only: nothing here to check them against.
+            return _needs("numbers", left, sources_left)
         if _bundle_has_rendered_tables(bundle):
             # The paper ships rendered tables and the check traced no cell in any of
             # them. That is not a pass: it is the gate failing to run on the one
@@ -794,8 +893,21 @@ def _included_tables(bundle: Path) -> set[str]:
     return names
 
 
-def _check_tables(bundle: Path, ws: Path) -> Check:
-    """Re-render the declared tables and compare them byte for byte."""
+def _table_sources(ws: Path) -> dict[str, set[str]]:
+    from .core.renderer.tables import table_sources
+
+    return table_sources(ws)
+
+
+def _check_tables(bundle: Path, ws: Path, left: dict[str, dict[str, Any]] | None = None) -> Check:
+    """Re-render the declared tables and compare them byte for byte.
+
+    ``left``: results files a published copy left out. A table that differs is skipped only when it reads one
+    of them; every other table that differs fails.
+    """
+    left = left or {}
+    if "results/table_spec.json" in left:
+        return _needs("tables", left, ["results/table_spec.json"])
     if not (ws / "table_spec.json").is_file():
         return Check("tables", SKIP, "no results/table_spec.json in bundle")
 
@@ -818,6 +930,13 @@ def _check_tables(bundle: Path, ws: Path) -> Check:
         elif shipped.read_bytes() != fresh.read_bytes():
             differing.append(name)
 
+    if differing and left:
+        reads = _table_sources(ws)
+        gone = {p.rsplit("/", 1)[-1]: p for p in left if p.count("/") == 1}
+        theirs = {n: sorted(gone[f] for f in reads.get(n, set()) if f in gone) for n in differing}
+        if not missing and all(theirs.values()):
+            return _needs("tables", left, sorted({p for ps in theirs.values() for p in ps}))
+        differing = [n for n in differing if not theirs[n]] or differing
     if differing or missing:
         bits = []
         if differing:
@@ -940,11 +1059,13 @@ def _check_citations_offline(bundle: Path) -> Check:
         return Check("citations", SKIP, "no paper/paper.tex")
     from .core.pipeline.verify_citations import load_bib, parse_bibitem_keys, parse_cite_keys
 
-    text = tex.read_text(encoding="utf-8", errors="replace")
+    # The paper with the files it \input or \include: a citation in a section file counts as one in the paper.
+    text = _inlined(tex, bundle / "paper")
     keys = parse_cite_keys(text)
     from .core.bibliography import bibliography_names
 
-    absent = [n for n in bibliography_names(text) if not (bundle / "paper" / f"{n}.bib").is_file()]
+    names = bibliography_names(text)
+    absent = [n for n in names if not _inside(bundle / "paper" / f"{n}.bib", bundle)]
     if keys and absent:
         return Check(
             "citations",
@@ -952,8 +1073,13 @@ def _check_citations_offline(bundle: Path) -> Check:
             f"paper.tex uses {', '.join(n + '.bib' for n in absent)}, which is not in the bundle; "
             "compiled from the bundle, every citation would be unresolved",
         )
-    refs = bundle / "paper" / "refs.bib"
-    bib = load_bib(refs) if refs.is_file() else {}
+    # Every database \bibliography{…} names (refs.bib when it names none).
+    bibs = [bundle / "paper" / f"{n}.bib" for n in names] or [bundle / "paper" / "refs.bib"]
+    bib: dict[str, dict] = {}
+    for f in bibs:
+        if _inside(f, bundle):
+            bib.update({k: v for k, v in load_bib(f).items() if k not in bib})
+    shown_bibs = ", ".join(f.name for f in bibs)
     missing = [k for k in keys if k not in bib]
 
     # Consistency of the bundled registry snapshot: recomputed status counts
@@ -968,7 +1094,7 @@ def _check_citations_offline(bundle: Path) -> Check:
         snapshot = f"; snapshot: {ci.get('verified', 0)} verified, {ci.get('unverifiable', 0)} unverifiable at run time"
 
     if missing:
-        return Check("citations", FAIL, f"{len(missing)} cited key(s) not in refs.bib: {', '.join(missing[:5])}")
+        return Check("citations", FAIL, f"{len(missing)} cited key(s) not in {shown_bibs}: {', '.join(missing[:5])}")
     if not keys and not parse_bibitem_keys(text):
         # The template's method sources are citable, never required: they do not count here.
         literature = [k for k, f in bib.items() if f.get("e2er_source") != "template"]
@@ -976,7 +1102,7 @@ def _check_citations_offline(bundle: Path) -> Check:
             # The paper ignores the bibliography it ships: nothing it says is
             # tied to a source (the 2026-10-10 Haiku paper, 21 entries, 0 cites).
             return Check(
-                "citations", FAIL, f"paper.tex cites none of the {len(literature)} work(s) in refs.bib{snapshot}"
+                "citations", FAIL, f"paper.tex cites none of the {len(literature)} work(s) in {shown_bibs}{snapshot}"
             )
         return Check(
             "citations",
@@ -985,7 +1111,35 @@ def _check_citations_offline(bundle: Path) -> Check:
         )
     if not keys:
         return Check("citations", SKIP, f"paper.tex cites nothing, so there is no citation to check{snapshot}")
-    return Check("citations", PASS, f"{len(keys)} cite key(s) resolve in refs.bib{snapshot}")
+    return Check("citations", PASS, f"{len(keys)} cite key(s) resolve in {shown_bibs}{snapshot}")
+
+
+_INCLUDE_RE = re.compile(r"\\(?:input|include|subfile)\s*\{([^}]+)\}")
+
+
+def _inside(path: Path, bundle: Path) -> bool:
+    """A regular file inside the bundle, not reached through a link."""
+    try:
+        return path.is_file() and not path.is_symlink() and path.resolve().is_relative_to(bundle.resolve())
+    except OSError:
+        return False
+
+
+def _inlined(tex: Path, base: Path, depth: int = 0) -> str:
+    """``tex`` with each \\input / \\include / \\subfile replaced by the file's text (comments dropped first,
+    files inside the bundle's paper folder only, five levels at most). A file that is not there stays as it is."""
+    text = _strip_tex_comments(tex.read_text(encoding="utf-8", errors="replace"))
+    if depth >= 5:
+        return text
+
+    def one(m: re.Match[str]) -> str:
+        ref = m.group(1).strip()
+        for cand in (tex.parent / ref, tex.parent / f"{ref}.tex", base / ref, base / f"{ref}.tex"):
+            if _inside(cand, base):
+                return _inlined(cand, base, depth + 1)
+        return m.group(0)
+
+    return _INCLUDE_RE.sub(one, text)
 
 
 # ── check 4b: citations (online) ─────────────────────────────────────────────
@@ -1051,7 +1205,7 @@ def _check_preregistration(bundle: Path, required: str | None = None) -> Check |
     approved_note = [f"deviation approved by the researcher: {d}" for d in approved]
     from .core.redact import PREREG_WORDS
 
-    approved_note += [f"{d['file']} {PREREG_WORDS}" for d in redacted]
+    approved_note += [f"{d['file']} {_redaction_words(bundle, d['file'], PREREG_WORDS)}" for d in redacted]
     problems, notes = _preregistered_results(bundle, lock)
     if problems:
         return Check(
@@ -1064,6 +1218,23 @@ def _check_preregistration(bundle: Path, required: str | None = None) -> Check |
     return Check("preregistration", PASS, f"{head} (frozen {when}){extra}")
 
 
+def _redaction_words(bundle: Path, name: str, redacted_words: str) -> str:
+    """What verify says about a pre-registered plan file changed after the freeze by redaction or anonymisation."""
+    from .core import anonymise as an
+
+    prov = _load_json(bundle / "provenance.json")
+    kinds = {
+        a.get("kind")
+        for a in ((prov or {}).get("amendments") or [] if isinstance(prov, dict) else [])
+        if isinstance(a, dict) and a.get("path") == f"design/{name}"
+    }
+    if an.KIND in kinds and "redacted" not in kinds:
+        return (
+            "recorded as anonymised for double-blind review after registration (identifying details, the record says)"
+        )
+    return redacted_words
+
+
 def _only_redacted(bundle: Path, d: dict[str, Any]) -> bool:
     """Is the deviation ``d`` (preregistration.deviation_details) explained by redactions alone, each recorded
     in provenance.json and the last one matching the file?"""
@@ -1074,11 +1245,13 @@ def _only_redacted(bundle: Path, d: dict[str, Any]) -> bool:
         return False
     rel = f"design/{d['file']}"
     amendments = [a for a in prov.get("amendments") or [] if isinstance(a, dict)]
-    if not rd.explains(amendments, rel, d.get("sha256_frozen"), d.get("sha256_now")):
+    links = rd.chain(amendments, rel, d.get("sha256_frozen"), d.get("sha256_now"))
+    if not links:
         return False
-    mine = [a for a in amendments if a.get("path") == rel]
     f = bundle / rel
-    return bool(mine) and rd.record_problem(mine[-1], f.read_bytes() if f.is_file() else None) is None
+    # Each record holds: the sizes add up, the replacement sits at its offsets, the kept bytes are the ones
+    # recorded, no more than contact details' length taken out at a place.
+    return rd.chain_problem(links, f.read_bytes() if f.is_file() else None) is None
 
 
 def _preregistered_results(bundle: Path, lock: dict[str, Any]) -> tuple[list[str], list[str]]:
@@ -1153,6 +1326,13 @@ def _check_reproduction(bundle: Path, required: str | None = None) -> Check | No
     reasons = [*doc["reasons"], *report_text_reasons(md_text, report if isinstance(report, dict) else {}, log)]
     if reasons:
         shown = "; ".join(reasons[:3]) + (f"; and {len(reasons) - 3} more" if len(reasons) > 3 else "")
+        # Outputs the export left out for their size (provenance.json run.left_out): the folder says why.
+        prov_doc = _load_json(bundle / "provenance.json")
+        run_doc = prov_doc.get("run") if isinstance(prov_doc, dict) else None
+        listed = run_doc.get("left_out") if isinstance(run_doc, dict) else None
+        big = [i for i in listed or [] if isinstance(i, dict) and i.get("kind") == "size"]
+        if big:
+            shown += "; left out of the export for their size: " + ", ".join(str(i.get("path")) for i in big[:3])
         return Check("reproduction", FAIL, f"{len(reasons)} problem(s): {shown}")
     stats = doc["stats"]
     parts = []
@@ -1185,29 +1365,65 @@ def _check_results_from_code(bundle: Path, left_out: set[str] | None = None) -> 
     ``run.results_from_code``. The bundle's results file must have that run's
     output hash, the run must have succeeded with the script as the study ships
     it, and the folder must carry the script. A results file no recorded run
-    wrote fails ("the results have no script that computes them"). SKIP for a
-    run that predates output records (e2er up to 0.16.0); None for a bundle
-    without a results file.
+    wrote fails ("the results have no script that computes them"), and so does
+    a results file (estimation, robustness) the record has no entry for.
+
+    "The run predates output records" (or no record at all) is a SKIP only when
+    the e2er that RAN the study is 0.16.0 or earlier: script logs record the
+    files a run writes since 0.16.1. The run's version is read from
+    provenance.json (``run.e2er_version_run``, written at export since 0.18.0),
+    else from the published dossier in e2er.json (``e2er.segments``: the
+    version of each part of the run), else it is the exporting version when
+    that is 0.16.0 or earlier. A later run version, or none that the folder
+    records, fails. None for a bundle without a results file.
     """
+    from .core.export.provenance import RESULTS_FROM_CODE
+
     prov = _load_json(bundle / "provenance.json")
     run = prov.get("run") if isinstance(prov, dict) else None
     record = run.get("results_from_code") if isinstance(run, dict) else None
+    ran, source = _run_version(bundle, run if isinstance(run, dict) else {})
+    old = ran is not None and _version_at_most(ran, (0, 16, 0))
+    if ran is None:
+        newer = (
+            "nothing in the folder records which e2er ran the study (provenance.json run.e2er_version_run, or "
+            "e2er.segments in the published dossier, e2er.json), so the claim cannot be checked"
+        )
+    else:
+        newer = f"the study ran with e2er {ran} ({source}), whose script log records the files each run writes"
+    # Fixed words: publish writes the verdict into e2er.json, and the same files must make the same commit, while
+    # the dossier the version may be read from is written by that publish.
+    predates = "not checked: the run predates output records (it ran with e2er 0.16.0 or earlier)"
+    present = [rel for rel in RESULTS_FROM_CODE if (bundle / rel).is_file() or rel in ((prov or {}).get("files") or {})]
     if not isinstance(record, dict) or not record:
-        if (bundle / "results" / "estimation_results.json").is_file():
-            # Exported by e2er up to 0.16.0: the run recorded no script outputs.
-            return Check("results from code", SKIP, "not checked: the run predates output records")
-        return None
+        if not present:
+            return None
+        if old:
+            # Run by e2er up to 0.16.0: the run recorded no script outputs.
+            return Check("results from code", SKIP, predates)
+        return Check(
+            "results from code",
+            FAIL,
+            f"provenance.json records no run that wrote {', '.join(p.rsplit('/', 1)[-1] for p in present)}, but "
+            f"{newer}",
+        )
     problems: list[str] = []
     traced: list[str] = []
     skipped: list[str] = []
     left: list[str] = []
+    for rel in present:
+        if rel not in record:
+            problems.append(f"{rel.rsplit('/', 1)[-1]}: provenance.json records no run that wrote it")
     for rel, entry in sorted(record.items()):
         name = str(rel).rsplit("/", 1)[-1]
         if not isinstance(entry, dict):
             problems.append(f"{name}: the record is unreadable")
             continue
         if entry.get("outcome") == "not_recorded":
-            skipped.append(name)
+            if old:
+                skipped.append(name)
+            else:
+                problems.append(f"{name}: the record says the run predates output records, but {newer}")
             continue
         path = bundle / str(rel)
         if not path.is_file() and str(rel) in (left_out or set()):
@@ -1249,13 +1465,42 @@ def _check_results_from_code(bundle: Path, left_out: set[str] | None = None) -> 
                 + ("it" if len(left) == 1 else "them")
                 + " again",
             )
-        return Check("results from code", SKIP, "not checked: the run predates output records")
+        return Check("results from code", SKIP, predates)
     detail = "written by the last run of the shipped script: " + ", ".join(traced)
     if skipped:
-        detail += f"; not checked (the run predates output records): {', '.join(skipped)}"
+        detail += f"; not checked (the run predates output records, e2er 0.16.0 or earlier): {', '.join(skipped)}"
     if left:
         detail += f"; not checked (left out under a source's terms): {', '.join(left)}"
     return Check("results from code", PASS, detail)
+
+
+def _run_version(bundle: Path, run: dict[str, Any]) -> tuple[str | None, str]:
+    """(the newest e2er version that ran the study, where the folder says so), or (None, "")."""
+    v = run.get("e2er_version_run")
+    if isinstance(v, str) and re.search(r"\d", v):
+        return v, "provenance.json run.e2er_version_run"
+    manifest = _load_json(bundle / "e2er.json")
+    doc = ((manifest or {}).get("dossier") or {}).get("doc") if isinstance(manifest, dict) else None
+    e2er = (doc or {}).get("e2er") if isinstance(doc, dict) else None
+    if isinstance(e2er, dict):
+        found = [s.get("version") for s in e2er.get("segments") or [] if isinstance(s, dict)]
+        versions = [x for x in found if isinstance(x, str) and re.search(r"\d", x)]
+        if versions:
+            newest = max(versions, key=lambda x: tuple(int(n) for n in re.findall(r"\d+", x)[:3]))
+            return newest, "the run's parts in the published dossier, e2er.json e2er.segments"
+    exported = run.get("e2er_version")
+    if isinstance(exported, str) and _version_at_most(exported, (0, 16, 0)):
+        return exported, f"exported with e2er {exported}, so run with it or earlier"
+    return None, ""
+
+
+def _version_at_most(version: str, limit: tuple[int, ...]) -> bool:
+    """Whether the e2er version ``version`` ("0.16.0", "0.17.0rc1") is ``limit`` or earlier. A provenance.json
+    without a version is not: every e2er writes one, so a missing version proves no age."""
+    nums = re.findall(r"\d+", version)[:3]
+    if not nums:
+        return False
+    return tuple(int(n) for n in nums) <= limit
 
 
 def _required_checks(bundle: Path) -> dict[str, str]:
@@ -1364,20 +1609,11 @@ def _run_checks(bundle: Path, online: bool, package_left_out: dict[str, dict[str
     # Results files a published copy left out (they hold a restricted source's rows): a check that needs one
     # is skipped and says which, instead of failing on a file that is missing for a reason.
     left = {p: i for p, i in _left_out_here(bundle, package_left_out).items() if p.startswith("results/")}
-    left_json = sorted(p for p in left if p.endswith(".json") and p.count("/") == 1)
     with tempfile.TemporaryDirectory() as td:
         ws = Path(td)
         _reconstruct_workspace(bundle, ws)
-        numbers = _check_numbers(bundle, ws)
-        if left_json and numbers.status != PASS:
-            numbers = _needs("numbers", left, left_json)
-        checks.append(numbers)
-        tables = _check_tables(bundle, ws)
-        if "results/table_spec.json" in left or (left_json and tables.status == FAIL):
-            tables = _needs(
-                "tables", left, ["results/table_spec.json"] if "results/table_spec.json" in left else left_json
-            )
-        checks.append(tables)
+        checks.append(_check_numbers(bundle, ws, left))
+        checks.append(_check_tables(bundle, ws, left))
         if "results/estimation_results.json" in left:
             checks.append(_needs("spec", left, ["results/estimation_results.json"]))
         else:
@@ -1532,7 +1768,9 @@ def verify(
                 )
             )
             bundle_path = opened.root
-            left_out = pkg.declared_left_out(bundle_path)
+            # The manifest's declarations are the packer's word: only those the study's own records support
+            # count (a source's terms, larger than the host takes), as in a folder.
+            left_out = pkg.supported_left_out(bundle_path)
         elif not bundle_path.is_dir():
             print(f"e2er verify: {bundle} is not a folder or a .e2er package", file=sys.stderr)
             return 2

@@ -144,7 +144,12 @@ def test_a_forecasting_study_replays_to_the_end_with_its_hold_out_frozen_before_
     assert out.returncode == 0, out.stdout + out.stderr
     assert "[PASS] numbers" in out.stdout and "[PASS] results contract" in out.stdout, out.stdout
     out = subprocess.run(
-        [*cli, "reproduce", str(bundle)], cwd=study, env=env, capture_output=True, text=True, timeout=600
+        [*cli, "reproduce", str(bundle), "--yes", "--no-sandbox"],
+        cwd=study,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=600,
     )
     assert out.returncode == 0, out.stdout + out.stderr
     assert "Reproduced" in out.stdout, out.stdout
@@ -191,7 +196,9 @@ def test_a_model_fitted_on_the_hold_out_stops_the_run_until_the_analysis_is_redo
             stops = []
             for _ in range(4):
                 p = _wait(api, pid)
-                pending = httpx.get(f"{api}/api/papers/{pid}/review", timeout=10).json()["pending"]
+                pending = httpx.get(
+                    f"{api}/api/papers/{pid}/review", headers={"x-e2er-token": "replay-session"}, timeout=10
+                ).json()["pending"]
                 assert pending, (p.get("status"), p.get("last_error"), stops)
                 stops.append(pending["stage"])
                 if pending["stage"] == "forecasts_before_draft":

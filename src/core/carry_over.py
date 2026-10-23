@@ -89,16 +89,27 @@ def fetch_previous(bundle: Path, owner_project: str, request: Any = None) -> Pre
     if not isinstance(manifest, dict):
         raise CarryOverError("e2er.json is missing or unreadable, so the earlier version cannot be checked")
     named = (manifest.get("dossier") or {}).get("id")
-    if named != did:
+    here = link.get("described_here")
+    if named != did and not (isinstance(here, dict) and here.get("dossier_id") == named):
+        # (described_here: e2er.json was written again after the platform's version, by a send that failed or a
+        # deposit without --to; the link still names the platform's version, which is the one carried over.)
         raise CarryOverError(f"e2er.json names the dossier {named}, .e2er/link.json {did}")
     base = str(link.get("platform_url") or "https://e2er.org").rstrip("/")
     try:
         code, study = request_(base, "GET", f"/api/v1/studies/{owner_project}")
     except Exception as e:  # noqa: BLE001 - a network error is the researcher's to see
         raise CarryOverError(f"could not reach {base} to fetch the earlier dossier: {e}") from e
+    latest = (study.get("latest") or {}) if code == 200 and isinstance(study, dict) else {}
+    if link.get("held") and latest.get("dossier_id") != did:
+        # The version this folder sent last waits for the author's confirmation (HTTP 202): it is not public,
+        # so its dossier is not carried over until it is confirmed.
+        where = link.get("confirm_url") or f"{base}/account"
+        raise CarryOverError(
+            f"the version this folder sent last is held on {base}, waiting for your confirmation; confirm it "
+            f"in the browser ({where}), then publish again"
+        )
     if code != 200:
         raise CarryOverError(f"{base} has no study {owner_project} (HTTP {code})")
-    latest = study.get("latest") or {}
     if latest.get("dossier_id") != did:
         raise CarryOverError(
             f"the latest version on {base} (version {latest.get('number')}) has the dossier "
@@ -120,7 +131,7 @@ def fetch_previous(bundle: Path, owner_project: str, request: Any = None) -> Pre
     if got != did:
         raise CarryOverError(f"the dossier {base} returned hashes to {got}, not {did}; it is not carried over")
     local = (manifest.get("dossier") or {}).get("doc")
-    if isinstance(local, dict) and dossier_id(local) != did:
+    if isinstance(local, dict) and dossier_id(local) != named:
         raise CarryOverError("the dossier in e2er.json does not hash to its id")
     version = latest.get("number")
     if not isinstance(version, int):

@@ -93,6 +93,12 @@ class GeminiBackend(LLMBackend):
         self._timeout = settings.gemini_timeout
         self._model = model or settings.gemini_model
         self._cwd = settings.gemini_cwd or os.getcwd()
+        self._yolo = bool(getattr(settings, "gemini_yolo", False))
+        if self._yolo:
+            logger.warning(
+                "GEMINI_YOLO=true: the Gemini CLI runs every shell command the model asks for without asking "
+                "(inside its --sandbox)."
+            )
 
     @property
     def model(self) -> str:
@@ -107,8 +113,13 @@ class GeminiBackend(LLMBackend):
         }
 
     def build_cmd(self, approval_mode: bool, output_format: bool) -> list[str]:
-        cmd: list[str] = [self._cli_path]
-        cmd += ["--approval-mode", "yolo"] if approval_mode else ["--yolo"]
+        # Always in the CLI's sandbox (a container, or macOS's sandbox-exec). Its shell tool runs
+        # commands without asking only with GEMINI_YOLO=true (security review 2026-10-23).
+        cmd: list[str] = [self._cli_path, "--sandbox"]
+        if self._yolo:
+            cmd += ["--approval-mode", "yolo"] if approval_mode else ["--yolo"]
+        elif approval_mode:
+            cmd += ["--approval-mode", "auto_edit"]
         if output_format:
             cmd += ["--output-format", "json"]
         if self._model:
@@ -130,7 +141,14 @@ class GeminiBackend(LLMBackend):
         settings = get_settings()
         prompt = flatten_prompt(system, messages)
         cwd, root = workspace_cwd(settings, paper_id, self._cwd)
-        env = run_env(settings, paper_id=paper_id, specialist=specialist, workspace_root_abs=root, cli_keys=CLI_KEYS)
+        env = run_env(
+            settings,
+            paper_id=paper_id,
+            specialist=specialist,
+            workspace_root_abs=root,
+            cli_keys=CLI_KEYS,
+            cli_prefixes=("GEMINI_", "GOOGLE_CLOUD_", "NODE_", "NVM_"),
+        )
         # The probe is a blocking subprocess; keep it off the event loop.
         approval_mode, output_format = await asyncio.to_thread(_probe_gemini_flags, self._cli_path)
         cmd = self.build_cmd(approval_mode, output_format)

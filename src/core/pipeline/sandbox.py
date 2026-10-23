@@ -327,7 +327,9 @@ def _docker_up(runner: Runner, docker: str) -> str | None:
         cp = runner([docker, "info", "--format", "{{.ServerVersion}}"], capture_output=True, timeout=30)
     except (OSError, subprocess.TimeoutExpired) as e:
         return f"Docker is not available: {e}"
-    if cp.returncode != 0:
+    version = cp.stdout.decode("utf-8", "replace") if isinstance(cp.stdout, bytes) else (cp.stdout or "")
+    # `docker info --format` exits 0 with an empty version when the daemon is down (Docker 27).
+    if cp.returncode != 0 or not version.strip():
         return "Docker is not running (docker info failed); start Docker Desktop, then resume"
     return None
 

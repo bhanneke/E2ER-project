@@ -30,6 +30,8 @@ from ..skills.loader import skill_component
 
 SCHEMA = "e2er-research-object/0.1"
 MANIFEST_NAME = "e2er.json"
+#: The owner of an anonymous version for double-blind review: its id is anonymous/<code> (e2er publish --blind).
+ANONYMOUS = "anonymous"
 _ID = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,38})$")
 _PROJECT = re.compile(r"^[a-z0-9][a-z0-9._-]{0,99}$")
 
@@ -188,7 +190,8 @@ def build_manifest(
         raise PublishError(f"owner {owner!r} must be a GitHub login in lower case")
     if not _PROJECT.match(project):
         raise PublishError(f"project {project!r} must be lower case: letters, digits, '.', '_' or '-'")
-    if not contributors:
+    # An anonymous version for double-blind review (`e2er publish --blind`, id anonymous/<code>) names nobody.
+    if not contributors and owner != ANONYMOUS:
         raise PublishError("name at least one author (--github and/or --orcid)")
 
     run = prov.get("run", {})

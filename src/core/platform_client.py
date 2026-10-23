@@ -2,9 +2,9 @@
 
 Sign-in follows the OAuth device flow (RFC 8628) against the platform's
 ``/api/auth/device/*``; the approved sign-in is exchanged for an ``e2er_``
-token (``POST /api/v1/tokens``). The token is kept in the OS keychain when the
-``keyring`` package is installed, otherwise in ``~/.e2er/credentials.json``
-(mode 0600); ``E2ER_TOKEN`` overrides both. AI provider keys are never read
+token (``POST /api/v1/tokens``). The token is kept in the OS keychain (``keyring``), or in
+``~/.e2er/credentials.json`` (mode 0600) when the computer has no keychain
+backend or it refuses; ``E2ER_TOKEN`` overrides both. AI provider keys are never read
 or sent here.
 
 In a test run (src/core/test_guard.py) the keychain and the default
@@ -51,59 +51,226 @@ def credentials_path() -> Path | None:
     return Path("~/.e2er/credentials.json").expanduser()
 
 
+def _loopback(host: str) -> bool:
+    import ipaddress
+
+    h = host.strip("[]").lower()
+    if h == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(h).is_loopback
+    except ValueError:
+        return False
+
+
+def check_platform_url(url: str) -> str:
+    """``url`` when a token may go there: https, or http to this computer only (a local test server)."""
+    from urllib.parse import urlsplit
+
+    parts = urlsplit(url)
+    host = parts.hostname or ""
+    if not host or parts.username or parts.password:
+        raise PlatformError(f"{url} is not a platform address")
+    if parts.scheme == "https" or (parts.scheme == "http" and _loopback(host)):
+        return url
+    raise PlatformError(f"refusing {url}: a platform is reached over https (http only for a server on this computer)")
+
+
+def _same_host(url: str, path: str) -> None:
+    """A request path stays on the platform the token belongs to (never an absolute URL elsewhere)."""
+    from urllib.parse import urlsplit
+
+    target = urlsplit(path)
+    if not target.scheme and not target.netloc:
+        if not path.startswith("/"):
+            raise PlatformError(f"refusing the request path {path[:80]!r}: not a path on {url}")
+        return
+    base = urlsplit(url)
+    if (target.scheme, target.hostname, target.port) != (base.scheme, base.hostname, base.port):
+        raise PlatformError(f"refusing to send the token for {url} to {target.scheme}://{target.hostname}")
+
+
 # Tests replace this with a client on an httpx.MockTransport.
 def client_factory(url: str) -> httpx.Client:
+    check_platform_url(url)
     try:
         test_guard.check_target(url)
     except test_guard.RefusedInTestError as e:
         raise PlatformError(str(e)) from e
-    return httpx.Client(base_url=url, timeout=30.0, headers={"user-agent": "e2er-cli"})
+    return httpx.Client(base_url=url, timeout=30.0, headers={"user-agent": "e2er-cli"}, follow_redirects=False)
 
 
 def _keyring():
+    """The ``keyring`` module when it has a usable backend, else None (then the credentials file is used).
+
+    ``keyring`` is a dependency of e2er, but a computer may have no keychain to back it: a headless
+    Linux server or a CI runner without a Secret Service selects keyring's ``fail`` backend (priority
+    0), whose every call raises. That counts as no keychain, as does a ``keyring`` that cannot be
+    imported or whose backend cannot be loaded (a broken ``PYTHON_KEYRING_BACKEND``).
+    """
     if not test_guard.saved_logins_allowed():
         return None  # a test run never touches the researcher's keychain
     try:
         import keyring  # type: ignore[import-not-found]
-    except ImportError:
+    except Exception:  # noqa: BLE001 - not installed, or a backend that fails at import
+        return None
+    get_keyring = getattr(keyring, "get_keyring", None)
+    if get_keyring is None:
+        return keyring
+    try:
+        backend = get_keyring()
+        priority = float(getattr(backend, "priority", 1))
+    except Exception:  # noqa: BLE001 - no backend can be loaded
+        return None
+    if priority <= 0:  # keyring.backends.fail / null: no keychain on this computer
         return None
     return keyring
 
 
-def _write_credentials(url: str, token: str) -> Path:
+def _warn(message: str) -> None:
+    import sys
+
+    print(f"warning: {message}", file=sys.stderr)
+
+
+def _read_credentials(p: Path) -> dict[str, Any]:
+    """The credentials file's tokens; {} when it is missing, and {} with a warning when it is damaged."""
+    if not p.is_file():
+        return {}
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        _warn(f"{p} cannot be read ({type(e).__name__}); its tokens are ignored. Sign in again to replace it.")
+        return {}
+    if not isinstance(data, dict):
+        _warn(f"{p} is not a JSON object; its tokens are ignored. Sign in again to replace it.")
+        return {}
+    return data
+
+
+def _store_credentials(p: Path, data: dict[str, Any]) -> None:
+    """Write the file owner-only from the first byte: a 0600 temporary file in the same folder, then os.replace.
+
+    The folder (``~/.e2er``) is made 0700 when e2er makes it. A reader never sees a half-written file.
+    """
+    import tempfile
+
+    folder = p.parent
+    if not folder.exists():
+        folder.mkdir(parents=True, mode=0o700, exist_ok=True)
+        os.chmod(folder, 0o700)
+    elif folder == Path("~/.e2er").expanduser():
+        os.chmod(folder, 0o700)  # e2er's own folder: other users see nothing in it
+    fd, tmp = tempfile.mkstemp(prefix=".credentials-", suffix=".tmp", dir=folder)  # mode 0600
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(json.dumps(data, indent=2) + "\n")
+            f.flush()
+            os.fsync(f.fileno())
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, p)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
+
+
+#: The credentials file's list of keys whose token there is newer than a copy the keychain may still hold:
+#: saved while the keychain refused (locked), so the keychain's older copy could not be removed either.
+FILE_FIRST = "_newer_than_keychain"
+
+
+def file_first(key: str) -> bool:
+    """True when the credentials file's token for ``key`` is to be read before the keychain's."""
+    p = credentials_path()
+    if p is None or not p.is_file():
+        return False
+    listed = _read_credentials(p).get(FILE_FIRST)
+    return isinstance(listed, list) and key in listed
+
+
+def _write_credentials(url: str, token: str, *, newer_than_keychain: bool = False) -> Path:
     p = credentials_path()
     if p is None:
         raise PlatformError(
             f"e2er is running under a test runner ({test_guard.why_test_run()}): it keeps no login in the keychain "
             "or in ~/.e2er/credentials.json. Set E2ER_CREDENTIALS to a file of the test, or E2ER_TOKEN."
         )
-    p.parent.mkdir(parents=True, exist_ok=True)
-    data = json.loads(p.read_text(encoding="utf-8")) if p.is_file() else {}
+    data = _read_credentials(p)
+    if p.is_file() and not data and p.stat().st_size > 0:
+        # A damaged file is kept beside the new one (owner-only), not overwritten unread.
+        kept = p.with_name(p.name + ".damaged")
+        os.replace(p, kept)
+        os.chmod(kept, 0o600)
+        _warn(f"the damaged credentials file was kept as {kept}")
     data[url] = token
-    # Created owner-only from the start, so the token is never readable by others.
-    fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        f.write(json.dumps(data, indent=2) + "\n")
-    p.chmod(0o600)
+    listed = [k for k in data.get(FILE_FIRST) or [] if isinstance(k, str) and k != url]
+    if newer_than_keychain:
+        listed.append(url)
+    if listed:
+        data[FILE_FIRST] = listed
+    else:
+        data.pop(FILE_FIRST, None)
+    _store_credentials(p, data)
+    return p
+
+
+def _remove_credential(key: str) -> Path | None:
+    """Remove ``key`` from the credentials file; the file when something was removed."""
+    p = credentials_path()
+    if p is None or not p.is_file():
+        return None
+    data = _read_credentials(p)
+    listed = data.get(FILE_FIRST)
+    if isinstance(listed, list) and key in listed:
+        listed = [k for k in listed if k != key]
+        if listed:
+            data[FILE_FIRST] = listed
+        else:
+            data.pop(FILE_FIRST)
+        if data.pop(key, None) is None:
+            _store_credentials(p, data)
+            return None
+    elif data.pop(key, None) is None:
+        return None
+    _store_credentials(p, data)
     return p
 
 
 def save_token(url: str, token: str) -> str:
     """Store the token in the system keychain; fall back to the credentials file
-    when there is no keyring or the keychain refuses (e.g. no GUI session)."""
+    when there is no keyring or the keychain refuses (e.g. no GUI session).
+
+    The other store's copy is removed afterwards, so an old token never stays behind in the file
+    once the keychain holds the new one (or the other way round). A token that goes to the file because
+    the keychain refused it is marked newer than the keychain's (FILE_FIRST): a locked keychain cannot
+    remove its older copy either, and that copy must not win once it is unlocked.
+    """
     kr = _keyring()
     if kr is not None:
         try:
             kr.set_password(KEYRING_SERVICE, url, token)
-            return "the system keychain"
         except Exception:  # noqa: BLE001 - locked or unavailable keychain
             pass
-    return str(_write_credentials(url, token))
+        else:
+            _remove_credential(url)
+            return "the system keychain"
+    where = str(_write_credentials(url, token, newer_than_keychain=kr is not None))
+    if kr is not None:
+        try:
+            kr.delete_password(KEYRING_SERVICE, url)
+        except Exception:  # noqa: BLE001 - nothing stored there, or the keychain is locked
+            pass
+    return where
 
 
 def load_token(url: str) -> str | None:
     if os.environ.get("E2ER_TOKEN"):
         return os.environ["E2ER_TOKEN"]
+    p = credentials_path()
+    if p is not None and file_first(url):  # saved while the keychain refused: newer than its copy
+        value = _read_credentials(p).get(url)
+        if isinstance(value, str) and value:
+            return value
     kr = _keyring()
     if kr is not None:
         try:
@@ -113,23 +280,28 @@ def load_token(url: str) -> str | None:
         if t:
             return t
     p = credentials_path()
-    if p is not None and p.is_file():
-        return json.loads(p.read_text(encoding="utf-8")).get(url)
+    if p is not None:
+        value = _read_credentials(p).get(url)
+        return value if isinstance(value, str) else None
     return None
 
 
-def forget_token(url: str) -> None:
+def forget_token(url: str) -> list[str]:
+    """Remove the saved login for ``url`` from the keychain and the credentials file.
+
+    Returns what could not be removed, for the researcher to see: a keychain that refused (locked, no
+    session) may still hold the token. Nothing stored is not a problem.
+    """
+    left: list[str] = []
     kr = _keyring()
     if kr is not None:
         try:
-            kr.delete_password(KEYRING_SERVICE, url)
-        except Exception:  # noqa: BLE001 - nothing stored there
-            pass
-    p = credentials_path()
-    if p is not None and p.is_file():
-        data = json.loads(p.read_text(encoding="utf-8"))
-        if data.pop(url, None) is not None:
-            p.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+            if kr.get_password(KEYRING_SERVICE, url):
+                kr.delete_password(KEYRING_SERVICE, url)
+        except Exception as e:  # noqa: BLE001 - locked or unavailable keychain
+            left.append(f"the system keychain (it refused: {type(e).__name__}; it may be locked)")
+    _remove_credential(url)
+    return left
 
 
 def _json(r: httpx.Response) -> dict[str, Any]:
@@ -198,6 +370,7 @@ def login(
 
     With ``study`` the token made from the approved sign-in can only publish new versions of that study.
     """
+    check_platform_url(url)
     with client_factory(url) as c:
         r = c.post("/api/auth/device/code", json={"client_id": CLIENT_ID})
         _raise(r, "Could not start the sign-in")
@@ -258,10 +431,13 @@ def create_study_token(url: str, token: str, study: str, name: str | None = None
 def request(
     url: str, method: str, path: str, *, token: str | None = None, body: Any = None
 ) -> tuple[int, dict[str, Any]]:
+    if token:
+        check_platform_url(url)
+        _same_host(url, path)
     headers = {"authorization": f"Bearer {token}"} if token else {}
     # Astro refuses a non-GET request without a JSON content type as a cross-site form post.
     if body is None and method != "GET":
         body = {}
     with client_factory(url) as c:
-        r = c.request(method, path, json=body, headers=headers)
+        r = c.request(method, path, json=body, headers=headers, follow_redirects=False)
     return r.status_code, _json(r)

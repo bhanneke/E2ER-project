@@ -100,7 +100,14 @@ def inspect(package: str) -> int:
     except pkg.PackageError as e:
         print(f"error: {e}")
         return 1
-    print(f"{path.name}\n")
-    print(pkg.summary(manifest, path.stat().st_size), end="")
+    from .core.safe_text import printable
+
+    try:
+        print(f"{printable(path.name, newlines=False)}\n")
+        print(pkg.summary(manifest, path.stat().st_size), end="")
+    except (TypeError, ValueError, AttributeError, KeyError) as e:
+        print(f"error: the package's list of files is malformed ({type(e).__name__})")
+        return 1
+    print("\n" + "\n".join(pkg.archive_steps(path)))
     print("\nRead from the package's list of files; `e2er verify` checks every file against it.")
     return 0

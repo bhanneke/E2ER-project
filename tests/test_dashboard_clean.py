@@ -20,7 +20,6 @@ from __future__ import annotations
 import io
 import json
 import os
-import stat
 import sys
 import tarfile
 from pathlib import Path
@@ -93,17 +92,22 @@ def test_the_finish_page_publishes_without_a_terminal():
 # ── a tab left open across a restart ────────────────────────────────────────
 
 
-def test_one_session_secret_per_computer(home):
-    a = ls.stable_token()
-    assert len(a) >= 24 and ls.stable_token() == a, "the same token after every start"
-    assert stat.S_IMODE(ls.secret_file().stat().st_mode) == 0o600
+def test_a_new_session_secret_per_start_and_the_old_file_goes(home):
+    """Since 0.19.0 the token lives only as long as one start of e2er (security review 2026-10-23)."""
+    ls.secret_file().parent.mkdir(parents=True, exist_ok=True)
+    ls.secret_file().write_text("x" * 32)
+    assert ls.new_token() != ls.new_token()
+    ls.forget_stable_secret()
+    assert not ls.secret_file().exists()
+    assert not hasattr(ls, "stable_token")
 
 
-def test_the_session_cookie_lasts_and_works_on_every_port(monkeypatch):
+def test_the_session_cookie_ends_with_the_browser_and_works_on_every_port(monkeypatch):
     monkeypatch.setenv(ls.ENV_TOKEN, TOKEN)
     r = _client(cookie=False).get(f"/?t={TOKEN}", follow_redirects=False)
     cookies = r.headers.get_list("set-cookie")
-    assert any(c.startswith("e2er_session_8290=") and "Max-Age=31536000" in c for c in cookies)
+    assert any(c.startswith("e2er_session_8290=") for c in cookies)
+    assert not any("max-age" in c.lower() or "expires" in c.lower() for c in cookies), cookies
     assert any(c.startswith("e2er_session=") for c in cookies)
     # A tab on another port of the same computer carries the shared cookie.
     from src.api.app import app

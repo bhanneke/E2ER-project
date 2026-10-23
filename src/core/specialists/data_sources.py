@@ -105,7 +105,9 @@ def _norm(source: Any) -> str:
 
 def _has_file(wanted: str, files: tuple[str, ...]) -> bool:
     """Is the named file in the data folder? By its path there (``raw/x.csv`` or ``data/raw/x.csv``) or its name."""
-    w = wanted.replace("\\", "/").strip().lstrip("./")
+    w = wanted.replace("\\", "/").strip()
+    while w.startswith("./"):  # the prefix, not the characters (".env.csv" stays as it is)
+        w = w[2:]
     if w.startswith("data/"):
         w = w[len("data/") :]
     return any(f == w or f.endswith("/" + w) for f in files) or Path(w).name in {Path(f).name for f in files}

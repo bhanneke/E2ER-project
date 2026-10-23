@@ -26,6 +26,12 @@ The default `pytest` invocation skips real-LLM tests (`-m 'not e2e'`). To run th
 ANTHROPIC_API_KEY=sk-ant-... pytest tests/e2e/test_haiku_smoke.py -v -m e2e
 ```
 
+Four replay tests (policy evaluation, spatial analysis, text analysis, systematic review) end with
+`e2er reproduce`, which builds an environment with [uv](https://docs.astral.sh/uv/). Locally that step
+runs offline from uv's cache and is skipped when uv is missing or the cache lacks a requirement. CI
+installs uv and sets `E2ER_REQUIRE_UV=1`: there the step runs online and fails instead of skipping
+(`tests/replay/uv.py`). Set the variable yourself to run the step as CI does.
+
 ### Pre-commit hooks (recommended)
 
 `make hooks` installs git pre-commit hooks that run `ruff check`, `ruff format --check`, and `mypy` before every commit — catching the same issues CI would, locally, in seconds. Skip a single commit's hooks with `git commit --no-verify` (rarely a good idea). Run all hooks against the whole tree with `pre-commit run --all-files`.

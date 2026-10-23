@@ -28,6 +28,8 @@ def test_the_published_description_matches_the_sites_format(bundle: Path, tmp_pa
     sent: list[dict] = []
 
     def server(base, method, path, token=None, body=None):
+        if path == "/api/v1/me":  # the sign-in check before anything is sent
+            return 200, {"name": "Test"}
         sent.append(body)
         oid = body["manifest"]["id"]
         return 201, {
@@ -65,6 +67,8 @@ def test_publishing_to_another_platform_names_its_dossier_address(
     sent: list[dict] = []
 
     def server(base, method, path, token=None, body=None):
+        if path == "/api/v1/me":  # the sign-in check before anything is sent
+            return 200, {"name": "Test"}
         sent.append(body)
         oid = body["manifest"]["id"]
         return 201, {"id": oid, "owner_project": oid, "version": 1, "study_url": f"{base}/{oid}", "dossier_url": "x"}
@@ -87,6 +91,8 @@ def test_coauthors_from_the_terminal_reach_the_description(bundle: Path, tmp_pat
     sent: list[dict] = []
 
     def server(base, method, path, token=None, body=None):
+        if path == "/api/v1/me":  # the sign-in check before anything is sent
+            return 200, {"name": "Test"}
         sent.append(body)
         oid = body["manifest"]["id"]
         return 201, {

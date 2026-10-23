@@ -147,6 +147,8 @@ def test_a_refused_publish_names_the_status_and_the_body(tmp_path: Path, monkeyp
     make_run_db(bundle.parent, paper_id_of(bundle))
 
     def fake(req: httpx.Request) -> httpx.Response:
+        if req.url.path == "/api/v1/me":  # the sign-in check passes; the registration is refused
+            return httpx.Response(200, json={"name": "Ada Lovelace", "handles": ["ada-lab"]})
         return response
 
     monkeypatch.setattr(

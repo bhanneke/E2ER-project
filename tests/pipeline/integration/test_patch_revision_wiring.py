@@ -329,8 +329,9 @@ async def test_failed_edits_complete_the_run_and_record_why(tmp_path, mock_llm, 
 
     assert result == PaperStatus.COMPLETED
     assert not [s for s, _e in seen if s == "rejected"]
-    # The phase ends the steps; run() writes "completed" once the final export is written.
-    assert seen[-1][0] == "finishing"
+    # Steps follow the revision (abstract, replication): the study stays in progress; run() writes
+    # "finishing" after the last step and "completed" once the final export is written.
+    assert seen[-1][0] == "in_progress"
     # The event names the failure
     [(_, payload)] = [e for e in events if e[0] == "revision_not_applied"]
     assert "[section:identification]" in payload

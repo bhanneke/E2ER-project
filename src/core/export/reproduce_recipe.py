@@ -358,7 +358,10 @@ def _saved(entry: dict[str, Any]) -> str | None:
     s = entry.get("saved_to")
     if not isinstance(s, str) or not s.strip():
         return None
-    s = s.strip().lstrip("./")
+    s = s.strip()
+    # The prefix "./", never the characters: lstrip("./") turned ".hidden.csv" into "hidden.csv".
+    while s.startswith("./"):
+        s = s[2:]
     return s if s.startswith("data/") else f"data/{s}"
 
 
@@ -739,7 +742,20 @@ def _reloads(
             out.append({"table": table, "args": [*args, "--table", table], "what": what, **_rows(e)})
         if saved and saved in inputs:
             out.append({"file": saved, "args": [*args, "--save-to", saved[len("data/") :]], "what": what})
-    return out, undated
+    return _last_load_each(out), undated
+
+
+def _last_load_each(reloads: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """One reload per table and per file: the last load the run made into it.
+
+    e2er-data replaces a table (and a file) it loads into, so the study used the last load; get_data.py
+    reloaded the first and then skipped the second as present."""
+    last: dict[tuple[str, str], int] = {}
+    for i, item in enumerate(reloads):
+        key = ("table", str(item["table"])) if item.get("table") else ("file", str(item.get("file")))
+        last[key] = i
+    keep = set(last.values())
+    return [item for i, item in enumerate(reloads) if i in keep]
 
 
 GET_DATA = '''"""Load again the inputs this study does not ship, with e2er-data.
@@ -800,6 +816,16 @@ def count(here: Path, item: dict) -> int:
 
 
 def present(here: Path, item: dict) -> bool:
+    """The item is in the folder whole: a table with at least the rows the run's load wrote (when it recorded
+    them; a table a load stopped early is loaded again), a file that exists."""
+    if item.get("table"):
+        rows = item.get("rows")
+        return count(here, item) >= (rows if isinstance(rows, int) and rows > 0 else 1)
+    return (here / item["file"]).is_file()
+
+
+def loaded(here: Path, item: dict) -> bool:
+    """The load wrote something (a table with rows, a file): whether all of it is checked after."""
     if item.get("table"):
         return count(here, item) > 0
     return (here / item["file"]).is_file()
@@ -813,7 +839,7 @@ def load(here: Path, env: dict, item: dict) -> str:
         result = json.loads(out.stdout)
     except ValueError:
         result = {{"error": (out.stderr or out.stdout).strip()[-300:]}}
-    if out.returncode != 0 or result.get("error") or not present(here, item):
+    if out.returncode != 0 or result.get("error") or not loaded(here, item):
         return str(result.get("error") or "nothing was loaded")
     return ""
 
@@ -838,7 +864,7 @@ def main() -> int:
         why = ""
         for attempt in range(1, ATTEMPTS + 1):
             why = load(here, env, item)
-            if not why or present(here, item):
+            if not why or loaded(here, item):
                 break
             if attempt < ATTEMPTS:
                 print(f"{{target}}: not loaded ({{why}}); trying again in {{PAUSE_SECONDS}} s", file=sys.stderr)
@@ -1111,7 +1137,9 @@ def _rewrite_workspace_paths(path: Path, workspace: Path) -> bool:
     text = _read(path)
     new = text
     for root in sorted({str(workspace.resolve()), str(workspace)}, key=len, reverse=True):
-        new = new.replace(root + "/", "").replace(root, ".")
+        # Only the folder itself: "/x/ws" in "/x/ws_other" or "/x/ws.bak" is another folder (it became "._other").
+        new = re.sub(re.escape(root) + r"/", "", new)
+        new = re.sub(re.escape(root) + r"(?![\w.\-])", ".", new)
     if new == text:
         return False
     path.write_text(new, encoding="utf-8")

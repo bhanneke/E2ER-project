@@ -214,13 +214,17 @@ def run_env(
     specialist: str | None,
     workspace_root_abs: Path | None,
     cli_keys: tuple[str, ...] = (),
+    cli_prefixes: tuple[str, ...] = (),
 ) -> dict[str, str]:
     """Environment for the CLI subprocess and the e2er-* wrappers it runs.
 
-    The model's shell commands run in it, so it holds only the credentials the
-    wrappers need (the data and literature keys in ``WRAPPER_KEYS``) and the
-    CLI's own sign-in (``cli_keys``): no other provider's API key, no GitHub,
-    Zenodo or e2er.org token, nothing else that looks like a credential.
+    The model's shell commands run in it, so it is an allowlist (src/core/child_env.py):
+    the system's basics, the user's home (the CLI signs in from it), e2er's run
+    variables and non-secret setting names, the credentials the wrappers need (the
+    data and literature keys in ``WRAPPER_KEYS``) and the CLI's own sign-in
+    (``cli_keys``), and its own configuration (``cli_prefixes``). No other provider's
+    API key, no GitHub, Zenodo or e2er.org token, no ssh agent, no database password:
+    the run database is passed only as a SQLite path (a server URL can carry its password).
 
     The wrappers are separate Python processes. They read their settings from
     the environment and from a `.env` in *their* working directory, which is
@@ -232,24 +236,28 @@ def run_env(
     """
     import sys
 
-    env = os.environ.copy()
+    from ...core.child_env import agent_env
+
+    source = os.environ.copy()
     try:
         from dotenv import dotenv_values
 
         from ...home import env_file
 
         for key, value in dotenv_values(env_file()).items():
-            if value is not None and key not in env:
-                env[key] = value
+            if value is not None and key not in source:
+                source[key] = value
     except Exception:  # noqa: BLE001 — a missing or unreadable .env is normal
         pass
     # What controls e2er itself (the dashboard's session, the API token, the
     # e2er.org sign-in) is not the specialists' business: no wrapper reads it,
-    # and under Codex or Gemini a model's shell command could use it.
-    for key in _CONTROL_VARS:
-        env.pop(key, None)
-    for key in [k for k in env if _CREDENTIAL_NAME.search(k) and k not in WRAPPER_KEYS and k not in cli_keys]:
-        env.pop(key)
+    # and under Codex or Gemini a model's shell command could use it (child_env.CONTROL_VARS).
+    env = agent_env(
+        source=source,
+        keys=WRAPPER_KEYS | set(cli_keys),
+        settings_names=_setting_names(),
+        cli_prefixes=cli_prefixes,
+    )
     db = db_path(settings)
     if db is not None:
         env["DATABASE_URL"] = f"sqlite:///{db}"
@@ -275,16 +283,18 @@ def run_env(
     return env
 
 
+def _setting_names() -> set[str]:
+    """e2er's setting names (LOCAL_DATA_DIR, WORKSPACE_ROOT, …): the wrappers read their settings from them."""
+    try:
+        from ...config import Settings
+
+        return {name.upper() for name in Settings.model_fields}
+    except Exception:  # noqa: BLE001
+        return set()
+
+
 #: Variables that control e2er (its API, the dashboard session, the e2er.org
 #: sign-in), kept from the CLI subprocess.
-_CONTROL_VARS = (
-    "E2ER_SESSION_TOKEN",
-    "E2ER_API_TOKEN",
-    "E2ER_API_URL",
-    "E2ER_CREDENTIALS",
-    "API_AUTH_TOKEN",
-)
-
 
 #: Credentials the e2er-* wrappers read from the environment (data and literature sources).
 WRAPPER_KEYS = frozenset(
@@ -294,7 +304,8 @@ WRAPPER_KEYS = frozenset(
         "SEMANTIC_SCHOLAR_API_KEY",
         "ZOTERO_API_KEY",
         "OPENALEX_API_KEY",  # e2er-fieldmap
-        "DB_PASSWORD",  # the run database (Postgres), where the wrappers record what they load
+        # Not DB_PASSWORD (since 0.19.0): with it a model's shell command could rewrite the approvals
+        # and the audit rows of a Postgres run database. The wrappers read it from the settings file.
     }
 )
 #: A variable that holds a credential, by its name (API keys, tokens, secrets, passwords).

@@ -481,7 +481,8 @@ SPECIALIST_DEFAULT_FOCUS: dict[str, str] = {
         "why. The researcher approves or edits the lanes before the map is drawn."
     ),
     "field_review_writer": (
-        "Write a short field review in LaTeX (`paper_draft.tex`: \\title, the abstract and the body, without "
+        "Write a short field review in LaTeX (`paper_draft.tex`: \\title and the body (the abstract is written after "
+        "you, in a step of its own), without "
         "\\documentclass or a bibliography command; e2er adds the preamble and the bibliography) from the "
         "field map, as your main-path-analysis skill describes. Read `field_map_results.json` (every number you "
         "may state), `main_path.md`, `robustness.md`, `completeness_report.md`, `field_lanes.json`, "
@@ -547,7 +548,8 @@ SPECIALIST_DEFAULT_FOCUS: dict[str, str] = {
         "not in its quote. Write `extraction.md`: what was extracted, the hard cases and every judgement call."
     ),
     "meta_review_writer": (
-        "Write the systematic review in LaTeX (`paper_draft.tex`: \\title, the abstract and the body, without "
+        "Write the systematic review in LaTeX (`paper_draft.tex`: \\title and the body (the abstract is written after "
+        "you, in a step of its own), without "
         "\\documentclass or a bibliography command; e2er adds the preamble and the bibliography), as your "
         "meta-analysis skill describes, following the PRISMA 2020 items. Read `estimation_results.json` (every "
         "number you may state), `review_protocol.json` and `review_protocol.md`, `search_log.json`, "

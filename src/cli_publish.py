@@ -69,6 +69,7 @@ import subprocess
 import sys
 import tempfile
 import zipfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -279,22 +280,127 @@ def _folder_problems(b: Path) -> list[str]:
     return [f"{c.name}: {c.detail}" for c in (_check_integrity(b), _check_anchor(b)) if c.status == FAIL]
 
 
+def _note_described_here(b: Path, manifest: dict[str, Any]) -> None:
+    """A folder published on a platform before and described again here: say so in .e2er/link.json.
+
+    The link names the version the platform holds; e2er.json now describes the folder as this
+    publish left it (a deposit on Zenodo without --to, or a send to the platform that failed).
+    ``described_here`` records that description, so the folder still verifies and the next publish
+    takes it; a publish with --to writes the link anew.
+    """
+    from .cli_platform import read_link, write_link
+
+    try:
+        link = read_link(b)
+    except (OSError, ValueError):
+        return
+    if not isinstance(link, dict):
+        return
+    did = (manifest.get("dossier") or {}).get("id")
+    if link.get("content_id") == manifest.get("content_id") and link.get("dossier_id") == did:
+        link.pop("described_here", None)
+    else:
+        link["described_here"] = {"content_id": manifest.get("content_id"), "dossier_id": did, "at": _now()}
+    write_link(b, link)
+
+
+def _carried_at(b: Path, previous: co.Previous) -> str:
+    """When the dossier of ``previous`` was carried over: recorded in .e2er/link.json the first time.
+
+    The time is part of the carried dossier (its amendment on e2er.json), so a fresh time on every run gave
+    a retry, or the run after a rehearsal, another dossier id. So is the fingerprint of the earlier e2er.json
+    (``sha256_before``), which a failed send rewrote: it is recorded with the time. The record names the
+    dossier carried over; a publish that registers the new version writes the link anew, so the next
+    carry-over gets its own.
+    """
+    from .cli_platform import read_link, write_link
+
+    try:
+        link = read_link(b)
+    except (OSError, ValueError):
+        link = None
+    if not isinstance(link, dict):
+        return _now()
+    rec = link.get("carried_over")
+    if isinstance(rec, dict) and rec.get("from_dossier") == previous.dossier_id and isinstance(rec.get("at"), str):
+        if isinstance(rec.get("manifest_sha256"), str):
+            previous.manifest_sha256 = rec["manifest_sha256"]
+        return str(rec["at"])
+    at = _now()
+    link["carried_over"] = {"from_dossier": previous.dossier_id, "at": at, "manifest_sha256": previous.manifest_sha256}
+    write_link(b, link)
+    return at
+
+
 # ── Zenodo deposits, reused on a retry ───────────────────────────────────────
 
 
-def _zenodo_record(b: Path) -> dict[str, Any]:
+def _zenodo_records(b: Path) -> dict[str, dict[str, Any]]:
+    """``.e2er/zenodo.json`` as {host: record}: the deposits on zenodo.org and on sandbox.zenodo.org, apart.
+
+    e2er up to 0.19 kept one record with ``"sandbox": true|false``; a sandbox run then replaced the
+    production deposits' record (and the next production publish reserved new DOIs). Such a file is read
+    as the record of its one host.
+    """
     p = b / ZENODO_RECORD
     try:
         data = json.loads(p.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
-    return data if isinstance(data, dict) else {}
+    if not isinstance(data, dict):
+        return {}
+    hosts = data.get("hosts")
+    if isinstance(hosts, dict):
+        return {str(h): r for h, r in hosts.items() if isinstance(r, dict)}
+    if "deposits" in data:  # the format before 0.20: one host, named by "sandbox"
+        rec = {k: v for k, v in data.items() if k != "sandbox"}
+        return {zen.service(bool(data.get("sandbox"))): rec}
+    return {}
 
 
-def _save_zenodo_record(b: Path, record: dict[str, Any]) -> None:
+def _zenodo_record(b: Path, sandbox: bool = False) -> dict[str, Any]:
+    """The record of the deposits on one Zenodo (production or the sandbox) of this folder."""
+    return _zenodo_records(b).get(zen.service(sandbox), {})
+
+
+def _save_zenodo_record(b: Path, record: dict[str, Any], sandbox: bool = False) -> None:
+    """Write the record of one Zenodo; the other host's record stays as it is."""
     p = b / ZENODO_RECORD
+    hosts = _zenodo_records(b)
+    hosts[zen.service(sandbox)] = {k: v for k, v in record.items() if k != "sandbox"}
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+    tmp = p.with_name(p.name + ".tmp")
+    tmp.write_text(json.dumps({"hosts": hosts}, indent=2) + "\n", encoding="utf-8")
+    os.replace(tmp, p)
+
+
+def _drop_deleted_draft(z: zen.Zenodo, reserved: dict[str, Any], item: str) -> None:
+    """A draft an earlier attempt reserved that is gone from Zenodo (deleted on its website): forget it.
+
+    Every deposit failed on it with 404 before. A first deposit is then reserved again; a new version of a
+    published deposit starts again from that published version.
+    """
+    rec = reserved[item]
+    try:
+        z.get(rec["id"])
+    except zen.ZenodoError as e:
+        if e.status not in (404, 410):
+            raise
+    else:
+        return
+    earlier = [r for r in rec.get("earlier") or [] if isinstance(r, dict) and r.get("id")]
+    print(
+        f"note: zenodo {item}: the draft {rec['id']} (doi {rec.get('doi')}) reserved by an earlier publish is gone "
+        "from Zenodo (deleted on its website?); a new one is reserved"
+    )
+    if earlier:
+        last = earlier[-1]
+        # files None: Zenodo's own checksums of that version decide whether a new version is needed.
+        reserved[item] = {"id": last["id"], "doi": last.get("doi"), "state": "published", "earlier": earlier[:-1]}
+        if not reserved[item]["earlier"]:
+            del reserved[item]["earlier"]
+    else:
+        del reserved[item]
 
 
 _ORCID = re.compile(r"^\d{4}-\d{4}-\d{4}-\d{3}[\dX]$")
@@ -379,8 +485,18 @@ def _describe(
     github_target: gf.Target | None = None,
     github_mode: str = "",
     github_user: dict[str, Any] | None = None,
+    blind: dict[str, Any] | None = None,
+    deposits_after: list[Callable[[], str | None]] | None = None,
 ) -> tuple[int, dict[str, Any] | None]:
     """Describe, stamp and verify the bundle; write e2er.json.
+
+    ``deposits_after`` (a publish on a platform): the Zenodo drafts are reserved and named in e2er.json, but
+    publishing them (which mints the DOIs) is appended to this list, for the caller to run once the platform
+    has registered the study. Without it the deposits are published here, before e2er.json is written.
+
+    ``blind`` ({code, url, withheld}): an anonymous version for double-blind review of an anonymised copy
+    (src/cli_blind.py): it names no author, its dossier's address is ``url`` (e2er.org/r/<code>) and the
+    fingerprints ``withheld`` (files before their anonymisation) are taken out of the dossier.
 
     ``github_target`` hosts the files in a public GitHub repository; ``github_mode`` is ``push`` (push them),
     ``plan`` (list what would go up, push nothing: --dry-run) or ``rehearse`` (push nothing, list nothing).
@@ -552,7 +668,9 @@ def _describe(
     if zenodo and not zenodo_plan_only:
         token = zen.load_token(zenodo_sandbox)
         if not token:
-            print(f"error: --zenodo needs your own Zenodo token: {zen.token_hint(zenodo_sandbox)}")
+            print(
+                f"error: --zenodo needs your own Zenodo token: {zen.token_hint(zenodo_sandbox)}. Nothing was changed."
+            )
             return 1, None
 
     # 3. Changes, each recorded as an amendment (the exported fingerprint is kept).
@@ -590,8 +708,8 @@ def _describe(
     if contributor:
         contributor["roles"] = roles or ["conceptualization", "investigation"]
     # Co-authors (`--coauthor`), after the publisher; e2er.org asks each to confirm the credit.
-    people = [contributor] if contributor else []
-    for c in listed:
+    people = [contributor] if contributor and blind is None else []
+    for c in listed if blind is None else []:
         same = any(
             (c.get("github") and str(p.get("github") or "").lower() == c["github"].lower())
             or (c.get("orcid") and p.get("orcid") == c["orcid"])
@@ -632,21 +750,30 @@ def _describe(
     # 4. Zenodo, reversible part: reserve the DOIs (drafts), reusing the deposits
     # an earlier attempt for this folder reserved or published.
     site_url = (site or os.environ.get("E2ER_URL") or "https://e2er.org").rstrip("/")
-    zrec = _zenodo_record(b)
-    if zrec and zrec.get("sandbox") != bool(zenodo_sandbox):
-        zrec = {}
+    zrec = _zenodo_record(b, zenodo_sandbox)
+    for rec in (zrec.get("deposits") or {}).values():
+        # Recorded before e2er knew that the sandbox reserves 10.5281/ DOIs it publishes as 10.5072/.
+        if isinstance(rec, dict):
+            rec["doi"] = zen.registered_doi(rec.get("doi"), zen.base_url(zenodo_sandbox))
+            for earlier_rec in rec.get("earlier") or []:
+                if isinstance(earlier_rec, dict):
+                    earlier_rec["doi"] = zen.registered_doi(earlier_rec.get("doi"), zen.base_url(zenodo_sandbox))
     z = zen.Zenodo(token, base=zen.base_url(zenodo_sandbox)) if deposits and token else None
     if deposits and zenodo_plan_only:
         _print_deposit_plan(deposits, manifest, availability, zenodo_sandbox, licensed)
     if deposits:
-        zrec.setdefault("sandbox", bool(zenodo_sandbox))
         reserved = zrec.setdefault("deposits", {})
         try:
+            for item in deposits:  # before Zenodo is asked anything: no key or token in a deposit
+                zen.refuse_secrets(deposits[item]["files"])
             for item in deposits:
+                if z is not None and (reserved.get(item) or {}).get("state") == "draft":
+                    _drop_deleted_draft(z, reserved, item)
+                    _save_zenodo_record(b, zrec, zenodo_sandbox)
                 if item not in reserved and z is not None:
                     dep = z.create(reserve_doi=True)
                     reserved[item] = {"id": dep.id, "bucket": dep.bucket, "doi": dep.doi, "state": "draft"}
-                    _save_zenodo_record(b, zrec)
+                    _save_zenodo_record(b, zrec, zenodo_sandbox)
                 elif reserved.get(item, {}).get("state") == "published":
                     # A new version of the study: unchanged files keep their DOI; changed ones
                     # become a new version of the same Zenodo record (a new DOI, the same concept).
@@ -672,17 +799,17 @@ def _describe(
                                 "state": "draft",
                                 "earlier": earlier,
                             }
-                            _save_zenodo_record(b, zrec)
+                            _save_zenodo_record(b, zrec, zenodo_sandbox)
                             print(f"zenodo {item}: the files changed since doi {rec.get('doi')}; new version {dep.doi}")
-                    elif z is None:
+                    else:
                         print(f"zenodo {item}: unchanged since doi {rec.get('doi')}; nothing new is deposited")
                 got = reserved.get(item)
                 if got and got.get("doi"):
+                    record = got.get("record") or f"{zen.base_url(zenodo_sandbox)}/records/{got['id']}"
                     availability[item]["doi"] = got["doi"]
-                    availability[item].setdefault("url", f"https://doi.org/{got['doi']}")
-                    availability[item]["zenodo"] = (
-                        got.get("record") or f"{zen.base_url(zenodo_sandbox)}/records/{got['id']}"
-                    )
+                    # The sandbox's test DOIs (10.5072/) resolve nowhere: its record is the address.
+                    availability[item].setdefault("url", record if zenodo_sandbox else f"https://doi.org/{got['doi']}")
+                    availability[item]["zenodo"] = record
         except zen.ZenodoError as e:
             print(f"error: {e}")
             return 1, None
@@ -706,13 +833,18 @@ def _describe(
             purpose=purpose,
             kind=kind,
             github=github_target is not None,
-            at=_now(),
+            at=_carried_at(b, previous),
             e2er_version=__version__,
         )
     else:
         manifest["amendments"] = _amendments_for_dossier(b)
         doc = build_dossier(manifest, db=run_db, bundle=b, availability=copy.deepcopy(availability), run=run_record)
         del manifest["amendments"]
+    if blind is not None:
+        from .core.anonymise import withhold
+
+        # The run recorded the files before they were anonymised: those fingerprints could confirm a guess.
+        doc = withhold(doc, set(blind.get("withheld") or ()))
     leaks = find_local_paths(doc)
     if leaks:
         print("error: the dossier names a path on this machine; nothing was written:")
@@ -720,11 +852,22 @@ def _describe(
             print(f"  {p}")
         return 1, None
     did = dossier_id(doc)
+    address = str(blind["url"]) if blind is not None else dossier_url(did, site_url)
 
     # 6. The paper's first page: the dossier link (and the disclaimer); the author line with --name.
     if stamp and tex.is_file():
         try:
-            changed = _stamp_and_compile(b, name, did, purpose=purpose, kind=kind, doc=doc, site=site_url)
+            changed = _stamp_and_compile(
+                b,
+                None if blind is not None else name,
+                did,
+                purpose=purpose,
+                kind=kind,
+                doc=doc,
+                site=site_url,
+                address=address if blind is not None else None,
+                rebuild_pdf=blind is not None,
+            )
         except PublishError as e:
             print(f"error: {e}")
             return 1, None
@@ -757,7 +900,7 @@ def _describe(
         manifest["access"] = copy.deepcopy(access)
     # The amendments stay in provenance.json (fixed by content_id) and in the dossier;
     # e2er.org's research-object format has no field for them.
-    manifest["dossier"] = {"id": did, "url": dossier_url(did, site_url), "doc": doc}
+    manifest["dossier"] = {"id": did, "url": address, "doc": doc}
     leaks = problems(request_body(manifest, b))
     if leaks:
         print("error: the description would carry something that must not leave this machine; nothing was written:")
@@ -793,14 +936,18 @@ def _describe(
         else:
             print("note: the folder has no paper/paper.pdf, so the paper has no public address")
 
-    # 7. Zenodo, irreversible part: last, after everything that can fail.
-    if deposits and z is not None:
+    # 7. Zenodo, irreversible part: last, after everything that can fail. With a platform (``deposits_after``)
+    # the caller publishes them only after the platform registered the study: a DOI, once minted, stays.
+    def publish_deposits() -> str | None:
+        """Upload, describe and publish the reserved drafts; the error, or None."""
+        assert z is not None
         try:
             for item in deposits:
                 rec = zrec["deposits"][item]
                 if rec.get("state") == "published":
                     continue
                 dep = zen.Deposit(id=rec["id"], bucket=rec["bucket"], doi=rec.get("doi"))
+                zen.refuse_secrets(deposits[item]["files"])
                 z.clear_files(dep)  # a new version starts with the earlier files; a retry with its own
                 for fname, data_bytes in deposits[item]["files"]:
                     z.upload(dep, fname, data_bytes)
@@ -817,19 +964,29 @@ def _describe(
                 )
                 done = z.publish(dep)
                 rec.update(state="published", published_url=done.get("url"), files=zen.md5s(deposits[item]["files"]))
-                _save_zenodo_record(b, zrec)
+                _save_zenodo_record(b, zrec, zenodo_sandbox)
                 if rec.get("doi") and done.get("doi") and done["doi"] != rec["doi"]:
                     print(f"warning: Zenodo published the {item} as doi {done['doi']}, not the reserved {rec['doi']}")
                 print(f"✓ Deposited the {item} on Zenodo: doi {rec.get('doi')}  {done.get('url')}")
         except zen.ZenodoError as e:
-            print(f"error: {e}")
-            print(
-                "  e2er.json was not written; the deposits stay as drafts in your Zenodo account and the next "
-                f"publish reuses them ({ZENODO_RECORD})"
-            )
-            return 1, None
+            return str(e)
+        return None
+
+    if deposits and z is not None:
+        if deposits_after is not None:
+            deposits_after.append(publish_deposits)
+        else:
+            failed = publish_deposits()
+            if failed:
+                print(f"error: {failed}")
+                print(
+                    "  e2er.json was not written; the deposits stay as drafts in your Zenodo account and the next "
+                    f"publish reuses them ({ZENODO_RECORD})"
+                )
+                return 1, None
 
     written = write_manifest(b, manifest)
+    _note_described_here(b, manifest)
     # The registry-entry file is for a pull request; publishing to a platform needs none unless asked for.
     entry: Path | None = None
     if out or not remote:
@@ -848,7 +1005,7 @@ def _describe(
     )
     steps = len(doc.get("workflow") or [])
     researcher = sum(1 for s in doc.get("workflow") or [] if s.get("type") == "researcher")
-    print(f"✓ Dossier {did[:23]}…  {dossier_url(did, site_url)}  ({steps} steps, {researcher} researcher actions)")
+    print(f"✓ Dossier {did[:23]}…  {address}  ({steps} steps, {researcher} researcher actions)")
     if previous is not None:
         print(
             f"  dossier carried over from version {previous.version} ({previous.dossier_id[:23]}…): the run "
@@ -967,6 +1124,35 @@ def publish(
     interactive = kw.pop("interactive", None)
     if interactive is None:
         interactive = sys.stdin.isatty()
+    # Double-blind review (src/cli_blind.py): an anonymous version, or a version with authors after the review.
+    blind = kw.pop("blind", False)
+    blind_ids = kw.pop("blind_identifiers", None)
+    blind_ack = kw.pop("blind_ack_self_citations", False)
+    unblind_spec = kw.pop("unblind", None)
+    if blind and unblind_spec:
+        print("error: --blind publishes an anonymous version, --unblind names its authors after the review; use one")
+        return 2
+    if blind:
+        from . import cli_blind
+
+        if offline:
+            print("error: --blind cannot go with --offline: the anonymous version is published from the command line")
+            return 2
+        return cli_blind.publish_blind(
+            str(b),
+            to_url=to_url,
+            dry_run=dry_run,
+            yes=yes,
+            interactive=interactive,
+            identifiers=blind_ids,
+            ack_self_citations=blind_ack,
+            **kw,
+        )
+    if (blind_ids or blind_ack) and not blind:
+        print("error: --blind-identifier and --blind-ack-self-citations go with --blind")
+        return 2
+    if unblind_spec:
+        return _unblind(b, str(unblind_spec), to_url=to_url)
     # Something leaves this machine: the description (--to), the deposits (--zenodo), the files (--github).
     sends = not dry_run and not offline and bool(to_url or kw.get("zenodo") or kw.get("github_repo") is not None)
     if sends and not yes and not interactive:
@@ -976,6 +1162,7 @@ def publish(
         )
         return 1
     # --github: the files go to a public GitHub repository with the researcher's own gh login.
+    checked = False  # the platform's sign-in, the handle and the token's study
     gh_spec = kw.pop("github_repo", None)
     gh_path = kw.pop("github_path", None)
     if gh_path and gh_spec is None:
@@ -1006,10 +1193,11 @@ def publish(
             if not to_url:
                 to_url, where = _platform_for_github(b)
                 print(f"note: --github publishes on {to_url} ({where}); --to names another platform")
-            why = _platform_not_ready(to_url)
+            why = _platform_not_ready(to_url, kw.get("owner"), kw.get("project"))
             if why:
                 print(f"error: {why}; nothing was pushed")
                 return 1
+            checked = True
     # The run's database and the study folder belong to the real folder: found here, so the
     # rehearsal in a scratch copy (somewhere else on disk) uses the same ones.
     if (b / "provenance.json").is_file() and not kw.get("no_db"):
@@ -1102,15 +1290,74 @@ def publish(
             for p in found:
                 print(f"  {p}")
             return 1
+    if sends and to_url and not checked:
+        # Before anything leaves this machine (a DOI reserved or minted on Zenodo): the platform will take it.
+        # After the rehearsal, which asks no server, so a folder that cannot be published says so first.
+        why = _platform_not_ready(to_url, kw.get("owner"), kw.get("project"))
+        if why:
+            print(f"error: {why}; nothing was sent")
+            return 1
     if sends and not _confirmed(b, rehearsed, to_url, kw, yes=yes):
         print("Not published: nothing was sent or pushed.")
         return 1
     if kw.get("github_target") is not None:
         kw["github_mode"] = "push"
-    code, manifest = _describe(str(b), **kw, remote=bool(to_url))
+    after: list[Callable[[], str | None]] = []
+    code, manifest = _describe(str(b), **kw, remote=bool(to_url), deposits_after=after if to_url else None)
     if code or manifest is None or not to_url:
         return code
-    return _send(b, manifest, to_url)
+    rc, held = _send(b, manifest, to_url)
+    if not after:
+        return rc
+    if rc != 0:
+        print(
+            "  Nothing was deposited on Zenodo: the deposits stay as drafts in your Zenodo account (no DOI is "
+            f"minted) and the next publish reuses them ({ZENODO_RECORD})."
+        )
+        return rc
+    if held:
+        print(
+            "  The Zenodo deposits stay drafts (no DOI is minted) until you confirm the version: confirm it in "
+            "the browser, then run the same command again to deposit them."
+        )
+        return rc
+    failed = after[0]()
+    if failed:
+        print(f"error: {failed}")
+        print(
+            f"  The study is registered on {to_url}; the deposits stay as drafts in your Zenodo account. Run the "
+            f"same command again to deposit them: it reuses the drafts ({ZENODO_RECORD}) and the registration."
+        )
+        return 1
+    return 0
+
+
+def _unblind(b: Path, spec: str, *, to_url: str | None) -> int:
+    """`e2er publish <folder> --unblind <code>`: says where unblinding happens; sends nothing.
+
+    e2er.org unblinds an anonymous version only in the browser, signed in (since 2026-10-23 a command-line
+    token cannot: a leaked or CI token must not be able to put the author's name on an anonymous version).
+    A named export of the study is then published as a normal new version of the study that unblinding made.
+    """
+    from . import cli_blind
+    from .core import platform_client as pc
+
+    code = cli_blind.parse_code(spec)
+    if code is None:
+        print(f"error: --unblind {spec!r}: give the anonymous version's code or its address (…/r/<code>)")
+        return 2
+    base = pc.base_url(to_url or (spec.split("/r/")[0] if "/r/" in spec else None))
+    print(f"Unblinding happens on your account page on {base}, signed in in the browser: {base}/account#blind")
+    print(
+        f"  There you choose the handle and the study's name for {base}/r/{code}; e2er.org publishes a version with "
+        "your name and the anonymous version stays as it was published. A command-line token cannot unblind."
+    )
+    print(
+        f"  To publish a named export afterwards, publish it as a normal new version of that study:\n"
+        f"    e2er publish {b} --owner <handle> --project <name> --to {base}"
+    )
+    print("Nothing was sent.")
+    return 1
 
 
 def confirm_question(
@@ -1173,13 +1420,16 @@ def _platform_for_github(b: Path) -> tuple[str, str]:
     return pc.base_url(None), "the default platform"
 
 
-def _platform_not_ready(to_url: str) -> str | None:
-    """Why the platform would not take the registration (not signed in, unreachable), or None.
+def _platform_not_ready(to_url: str, owner: str | None = None, project: str | None = None) -> str | None:
+    """Why the platform would not take the registration, or None: asked before anything leaves this machine.
 
-    Asked before anything is pushed. What the platform checks only when it receives the request (the
-    study's owner, a dossier of another study) can still refuse it after the push: then the files are on
-    GitHub at a commit no study names yet, and the same command, run again, registers them without a new
-    commit (the files are already there) — see :func:`_send`.
+    Not signed in, unreachable, a sign-in the platform refuses; a token for one study (`e2er login --scope`)
+    that is not this study's; an ``owner`` that is not one of the account's handles. Asked before a DOI is
+    minted on Zenodo (``--zenodo``) or a file is pushed (``--github``). What the platform checks only when
+    it receives the request (a dossier of another study) can still refuse it afterwards: the registration
+    then goes first and the Zenodo deposits are published only after it (see :func:`publish`); files on
+    GitHub are at a commit no study names yet, and the same command, run again, registers them without a
+    new commit — see :func:`_send`.
     """
     from .core import platform_client as pc
 
@@ -1193,6 +1443,24 @@ def _platform_not_ready(to_url: str) -> str | None:
         return f"could not reach {base}: {e}"
     if code // 100 != 2:
         return f"{base} did not accept the sign-in ({pc.error_text(code, body)}); run `e2er login --url {base}`"
+    if not isinstance(body, dict) or not owner:
+        return None
+    here = f"{owner}/{project}".lower() if project else None
+    study = body.get("study")
+    if isinstance(study, str) and study:
+        if here and study.lower() != here:
+            return (
+                f"the token for {base} can only publish new versions of {study}, not {owner}/{project}; "
+                f"sign in with your personal login (`e2er login --url {base}`) or use that study's token"
+            )
+        return None
+    handles = body.get("handles")
+    if isinstance(handles, list) and owner.lower() not in {str(h).lower() for h in handles}:
+        listed = ", ".join(str(h) for h in handles) or "none yet"
+        return (
+            f"--owner {owner} is not one of your account's handles on {base} (yours: {listed}); "
+            f"add it in account settings on {base}, or give one of yours"
+        )
     return None
 
 
@@ -1218,7 +1486,13 @@ def _github_conflicts(kw: dict[str, Any], *, offline: bool) -> str | None:
     return None
 
 
-def _send(b: Path, manifest: dict[str, Any], to_url: str) -> int:
+def _send(b: Path, manifest: dict[str, Any], to_url: str) -> tuple[int, bool]:
+    """Register the study on the platform: (exit code, held).
+
+    ``held``: the platform took the request but keeps it back until the author confirms it in the browser
+    (HTTP 202, e2er.org's hold of a burst of publications). That is a success: the confirm address is printed,
+    .e2er/link.json records the version as held, and the command exits 0.
+    """
     from .cli_platform import write_link
     from .core import platform_client as pc
 
@@ -1229,49 +1503,62 @@ def _send(b: Path, manifest: dict[str, Any], to_url: str) -> int:
         print("error: the request contains something that must not leave this machine; nothing was sent:")
         for p in found:
             print(f"  {p}")
-        return 1
+        return 1, False
     token = pc.load_token(base)
     if not token:
         print(f"error: not signed in to {base}; run `e2er login --url {base}`")
-        return 1
+        return 1, False
     try:
         code, resp = pc.request(base, "POST", "/api/v1/studies", token=token, body=body)
     except Exception as e:  # noqa: BLE001 - network errors are the user's to see
         print(f"error: could not reach {base}: {e}")
         _unregistered(manifest, base)
-        return 1
-    if code not in (200, 201):
+        return 1, False
+    held = code == 202 and bool(resp.get("held"))
+    if code not in (200, 201) and not held:
         print(f"error: {pc.error_text(code, resp)}")
         for p in resp.get("problems") or []:
             print(f"  {p}")
         if resp.get("claim"):
             print(f"  {base}{resp['claim']}")
         _unregistered(manifest, base)
-        return 1
-    link = write_link(
-        b,
-        {
-            "platform_url": base,
-            "id": resp["id"],
-            "owner_project": resp["owner_project"],
-            "version": resp["version"],
-            "dossier_id": body["dossier"]["id"],
-            "content_id": manifest.get("content_id"),
-            "published_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            **(
-                {"files": _files_url(manifest["repository"])}
-                if (manifest.get("repository") or {}).get("host") == "github"
-                else {}
-            ),
-        },
-    )
+        return 1, False
+    record: dict[str, Any] = {
+        "platform_url": base,
+        "id": resp.get("id") or resp.get("owner_project"),
+        "owner_project": resp.get("owner_project") or resp.get("id"),
+        "version": resp.get("version"),
+        "dossier_id": body["dossier"]["id"],
+        "content_id": manifest.get("content_id"),
+        "published_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        **(
+            {"files": _files_url(manifest["repository"])}
+            if (manifest.get("repository") or {}).get("host") == "github"
+            else {}
+        ),
+    }
+    if held:
+        record |= {
+            "held": True,
+            **({"hold": resp["hold"]} if resp.get("hold") else {}),
+            **({"confirm_url": resp["confirm_url"]} if resp.get("confirm_url") else {}),
+        }
+    link = write_link(b, record)
+    if held:
+        print(f"✓ Held on {base}: {resp.get('status') or 'confirm it in your browser'}")
+        if resp.get("message"):
+            print(f"  {resp['message']}")
+        print(f"  Confirm or discard it, signed in in the browser: {resp.get('confirm_url') or base + '/account'}")
+        print(f"  It is published as {record['owner_project']} once you confirm it; nothing else is needed.")
+        print(f"  link written to {link.relative_to(b)} (held)")
+        return 0, True
     word = "already published as" if resp.get("existing") else "published as"
     print(f"✓ {word} {resp['owner_project']}, version {resp['version']}: {resp['study_url']}")
     print(f"  dossier {resp['dossier_url']}")
     if (manifest.get("repository") or {}).get("host") == "github":
         print(f"  files {_files_url(manifest['repository'])}")
     print(f"  link written to {link.relative_to(b)}")
-    return 0
+    return 0, False
 
 
 def _unregistered(manifest: dict[str, Any], base: str) -> None:
@@ -1327,7 +1614,7 @@ def recompile_paper(bundle: Path) -> None:
         # As the run compiled it (renderer/compiler.py): tectonic continues past
         # non-fatal errors (a package option xetex ignores, a missing figure).
         run = subprocess.run(
-            ["tectonic", "--keep-intermediates", "-Z", "continue-on-errors", "paper.tex"],
+            ["tectonic", "--untrusted", "--keep-intermediates", "-Z", "continue-on-errors", "paper.tex"],
             cwd=work,
             capture_output=True,
             text=True,
@@ -1351,8 +1638,13 @@ def _stamp_and_compile(
     kind: str | None = None,
     doc: dict[str, Any] | None = None,
     site: str | None = None,
+    address: str | None = None,
+    rebuild_pdf: bool = False,
 ) -> bool:
     """Stamp paper.tex and recompile paper.pdf with tectonic when it is installed.
+
+    ``rebuild_pdf`` (an anonymous version): a paper.pdf the folder has must be built again from the stamped,
+    anonymised paper.tex; without tectonic PublishError is raised and nothing is changed.
 
     The paper is pointed at the bibliography the bundle ships (refs.bib). A
     recompile that leaves any citation unresolved is refused: paper.tex is
@@ -1362,9 +1654,24 @@ def _stamp_and_compile(
     """
     tex = bundle / "paper" / "paper.tex"
     old = tex.read_text(encoding="utf-8")
-    new = stamp_paper(point_bibliography(old, tex.parent), author, did, purpose=purpose, kind=kind, doc=doc, site=site)
+    new = stamp_paper(
+        point_bibliography(old, tex.parent),
+        author,
+        did,
+        purpose=purpose,
+        kind=kind,
+        doc=doc,
+        site=site,
+        address=address,
+    )
     if new == old:
         return False
+    if rebuild_pdf and (tex.parent / "paper.pdf").is_file() and not shutil.which("tectonic"):
+        raise PublishError(
+            "paper/paper.pdf must be built again from the anonymised paper/paper.tex, and tectonic (the LaTeX "
+            "engine e2er uses) is not installed. Install it (https://tectonic-typesetting.github.io) and publish "
+            "again; nothing was sent."
+        )
     tex.write_text(new, encoding="utf-8")
     rels = ["paper/paper.tex"]
     if shutil.which("tectonic"):

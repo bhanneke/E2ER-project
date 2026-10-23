@@ -9,8 +9,9 @@ and never publishes anywhere but a local test server:
 - **No saved login**: the system keychain is never read or written, nor the
   default credentials file (``~/.e2er/credentials.json``). Only ``E2ER_TOKEN``
   and a credentials file the test names itself (``E2ER_CREDENTIALS``) are used.
-  The same holds for the Zenodo token: only ``ZENODO_TOKEN`` /
-  ``ZENODO_SANDBOX_TOKEN`` from the environment.
+  The same holds for the Zenodo token (``e2er zenodo login``): only
+  ``ZENODO_TOKEN`` / ``ZENODO_SANDBOX_TOKEN`` from the environment and the
+  credentials file the test names.
 - **Local targets only**: a request to e2er.org, a staging copy or Zenodo is
   refused before it is made. Allowed are ``localhost``, ``127.0.0.1`` (and
   the rest of 127.0.0.0/8), ``::1``, and the one address in ``E2ER_TEST_SERVER``

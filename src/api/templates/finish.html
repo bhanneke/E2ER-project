@@ -96,8 +96,8 @@
   <p class="card-note">Publishing sends the study's description, its record and the fingerprints of its files to
     <code>{{ platform }}</code>. The files themselves stay on this computer. You see the exact request first.</p>
   <p class="done-box" id="published-box" {% if not published %}hidden{% endif %}>
-    <span>Published as <a id="published-link" href="{{ published.study_url if published else '' }}" target="_blank" rel="noopener">{{ published.owner_project if published else '' }}</a>, version <span id="published-version">{{ published.version if published else '' }}</span>.</span>
-    <a class="btn" id="published-dossier" href="{{ published.dossier_url if published else '' }}" target="_blank" rel="noopener">Open its dossier</a>
+    <span>Published as <a id="published-link" href="{{ (published.study_url if published else '') | http_url }}" target="_blank" rel="noopener">{{ published.owner_project if published else '' }}</a>, version <span id="published-version">{{ published.version if published else '' }}</span>.</span>
+    <a class="btn" id="published-dossier" href="{{ (published.dossier_url if published else '') | http_url }}" target="_blank" rel="noopener">Open its dossier</a>
   </p>
 
   <div class="field-grid">
@@ -160,7 +160,7 @@
       <div class="pf-banner terms" data-connector="{{ t.connector }}">
         <p>The study uses data from {{ t.the_label }}. Its terms {{ t.reason }}:</p>
         <ul>{% for line in t.plain %}<li>{{ line }}</li>{% endfor %}</ul>
-        <p class="small">{% if t.citation %}Citation: {{ t.citation }} · {% endif %}<a href="{{ t.terms_url }}" target="_blank" rel="noopener">Full terms</a></p>
+        <p class="small">{% if t.citation %}Citation: {{ t.citation }} · {% endif %}<a href="{{ t.terms_url | http_url }}" target="_blank" rel="noopener">Full terms</a></p>
         <label class="check">
           <input type="checkbox" class="confirm-terms" value="{{ t.connector }}">
           <span>Publish the {{ t.short }} data with the study {{ t.confirm }} (needed when the data are public).</span>
@@ -212,6 +212,8 @@
 (function () {
   const pid = '{{ paper.id }}';
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  // A link from a platform's or a source's answer: http(s) only, so a javascript: URL never runs here.
+  const httpUrl = (s) => { try { const u = new URL(String(s || '')); return (u.protocol === 'https:' || u.protocol === 'http:') ? u.href : ''; } catch (e) { return ''; } };
   const call = (method, url, body) => e2er.call(method, url, body);
   const card = (id, state, status) => { const c = document.getElementById(id); c.dataset.state = state; if (status) c.querySelector('.card-status').textContent = status; };
 
@@ -238,9 +240,9 @@
     const p = d.published;
     document.getElementById('published-box').hidden = !p;
     if (p) {
-      const a = document.getElementById('published-link'); a.href = p.study_url; a.textContent = p.owner_project;
+      const a = document.getElementById('published-link'); a.href = httpUrl(p.study_url); a.textContent = p.owner_project;
       document.getElementById('published-version').textContent = p.version;
-      document.getElementById('published-dossier').href = p.dossier_url;
+      document.getElementById('published-dossier').href = httpUrl(p.dossier_url);
       document.getElementById('publish-status').textContent = 'Published, version ' + p.version;
     }
     document.getElementById('publish-why').hidden = !currentPublished;
@@ -312,7 +314,7 @@
     document.getElementById('terms-box').innerHTML = (terms || []).map((t) =>
       '<div class="pf-banner terms" data-connector="' + esc(t.connector) + '"><p>The study uses data from ' + esc(t.the_label) + '. Its terms ' + esc(t.reason) + ':</p><ul>' +
       t.plain.map((l) => '<li>' + esc(l) + '</li>').join('') + '</ul><p class="small">' + (t.citation ? 'Citation: ' + esc(t.citation) + ' · ' : '') +
-      '<a href="' + esc(t.terms_url) + '" target="_blank" rel="noopener">Full terms</a></p><label class="check"><input type="checkbox" class="confirm-terms" value="' +
+      '<a href="' + esc(httpUrl(t.terms_url)) + '" target="_blank" rel="noopener">Full terms</a></p><label class="check"><input type="checkbox" class="confirm-terms" value="' +
       esc(t.connector) + '"><span>Publish the ' + esc(t.short) + ' data with the study ' + esc(t.confirm) + ' (needed when the data are public).</span></label>' +
       '<p class="terms-missing error" hidden>Tick this box to publish the data as public, or keep the data private.</p></div>').join('');
   };
@@ -358,10 +360,11 @@
     try {
       const d = await call('POST', '/api/papers/' + pid + '/publish', { ...f, dry_run: false, confirm: true });
       markTerms(d.terms_missing);
-      const links = (d.study_url ? '<p><a class="btn-primary" href="' + esc(d.study_url) + '" target="_blank" rel="noopener">Open the study on e2er.org</a> ' : '<p>') +
-        (d.dossier_url ? '<a class="btn" href="' + esc(d.dossier_url) + '" target="_blank" rel="noopener">Open its dossier</a>' : '') + '</p>';
+      const held = d.held ? '<p>Held on e2er.org until you confirm it, signed in in the browser: <a class="btn-primary" href="' + esc(httpUrl(d.confirm_url)) + '" target="_blank" rel="noopener">Confirm it on e2er.org</a></p>' : '';
+      const links = held + (d.study_url ? '<p><a class="btn-primary" href="' + esc(httpUrl(d.study_url)) + '" target="_blank" rel="noopener">Open the study on e2er.org</a> ' : '<p>') +
+        (d.dossier_url ? '<a class="btn" href="' + esc(httpUrl(d.dossier_url)) + '" target="_blank" rel="noopener">Open its dossier</a>' : '') + '</p>';
       document.getElementById('pub-out').innerHTML = d.ok ? links + folded(d.output) : refused(d);
-      pubMsg.textContent = d.ok ? 'Published.' : 'Not published; see below.';
+      pubMsg.textContent = d.ok ? (d.held ? 'Held: confirm it in your browser.' : 'Published.') : 'Not published; see below.';
       card('card-publish', d.ok ? 'ok' : 'bad', d.ok ? 'Published' : 'Not published');
       if (d.ok) {
         showFolders(d);
@@ -379,7 +382,7 @@
     const poll = async () => {
       let d; try { d = await call('GET', '/api/platform/login'); } catch (e) { out.innerHTML = '<p class="error">' + esc(e.message) + '</p>'; return; }
       if (d.state === 'waiting') {
-        out.innerHTML = '<p>Open <a href="' + esc(d.verify_url) + '" target="_blank" rel="noopener">' + esc(d.verify_url) + '</a> and confirm this code:</p><div class="code-box">' + esc(d.code) + '</div><p class="muted">Waiting for your approval…</p>';
+        out.innerHTML = '<p>Open <a href="' + esc(httpUrl(d.verify_url)) + '" target="_blank" rel="noopener">' + esc(d.verify_url) + '</a> and confirm this code:</p><div class="code-box">' + esc(d.code) + '</div><p class="muted">Waiting for your approval…</p>';
       } else if (d.state === 'done' || d.signed_in) {
         out.innerHTML = '<p>' + esc(d.message || 'Signed in.') + '</p>';
         document.getElementById('signin').hidden = true; document.getElementById('signed-in-note').hidden = false; pubBtn.disabled = !previewOk;

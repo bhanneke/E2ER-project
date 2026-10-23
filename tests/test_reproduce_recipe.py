@@ -105,7 +105,7 @@ def test_the_fomc_replay_export_gets_a_recipe_and_reproduces(tmp_path: Path, thi
     assert str(ws) in (ws / "run_estimation.py").read_text(encoding="utf-8"), "the workspace is not changed"
     assert "e2er reproduce ." in (out / "README.md").read_text(encoding="utf-8")
 
-    code = reproduce(str(out))
+    code = reproduce(str(out), yes=True, sandbox=False)
     report = capsys.readouterr().out
     assert code == 0, report
     assert "1 of 1 identical" in report
@@ -187,7 +187,7 @@ def test_a_study_on_the_researchers_own_data_reproduces(tmp_path: Path, this_pyt
     assert any("full path" in n for n in recipe["notes"])
     assert not find_local_paths(recipe)
 
-    code = reproduce(str(out))
+    code = reproduce(str(out), yes=True, sandbox=False)
     report = capsys.readouterr().out
     assert code == 0, report
     assert "2 of 2 identical" in report and "Reproduced:" in report
@@ -203,7 +203,7 @@ def test_a_study_without_an_estimation_script_says_why_there_is_no_recipe(tmp_pa
     assert not (out / "reproduce.json").exists()
     readme = (out / "README.md").read_text(encoding="utf-8")
     assert "the study has no estimation script: no script of the run writes estimation_results.json" in readme
-    assert reproduce(str(out)) == 2
+    assert reproduce(str(out), yes=True, sandbox=False) == 2
     said = capsys.readouterr().out
     assert "This study has no estimation script: none of its code writes estimation_results.json" in said
 
@@ -215,7 +215,7 @@ def test_a_study_without_estimation_results_says_so(tmp_path: Path, capsys):
     out = export_paper(ws, tmp_path / "exports", date_str="20261010")
     assert not (out / "reproduce.json").exists()
     assert "the study has no estimation results" in (out / "README.md").read_text(encoding="utf-8")
-    assert reproduce(str(out)) == 2
+    assert reproduce(str(out), yes=True, sandbox=False) == 2
     assert "This study has no estimation results" in capsys.readouterr().out
 
 
@@ -403,7 +403,7 @@ def test_the_recipe_follows_the_recorded_order_when_file_times_disagree(tmp_path
     assert [s["run"][-1] for s in recipe["steps"]] == ["run_estimation.py", "zz_revise.py", "aa_patch.py"]
     assert "in the order the run ran them (its script log)" in recipe["about"]
     assert not any("file times" in n for n in recipe["notes"])
-    assert reproduce(str(out)) == 0, capsys.readouterr().out
+    assert reproduce(str(out), yes=True, sandbox=False) == 0, capsys.readouterr().out
 
 
 def test_without_a_script_log_the_recipe_says_the_order_comes_from_file_times(tmp_path: Path):

@@ -323,7 +323,9 @@ def test_github_push_directory_idempotent_on_resume(tmp_path):
     def _get_contents(path, ref="main"):
         if path in pushed_files:
             return _FakeContents(sha=f"sha-{path}")
-        raise Exception(f"404: {path} not found")
+        from github import UnknownObjectException
+
+        raise UnknownObjectException(404, {"message": f"{path} not found"}, None)
 
     create_calls: list[str] = []
     update_calls: list[str] = []

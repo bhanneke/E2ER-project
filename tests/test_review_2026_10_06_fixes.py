@@ -15,6 +15,7 @@ import hashlib
 import json
 import os
 import signal
+import subprocess
 import sys
 import threading
 import time
@@ -139,7 +140,7 @@ def test_a_script_that_writes_nothing_does_not_reproduce(tmp_path: Path, capsys,
     from src.cli_reproduce import reproduce
 
     folder = _study(tmp_path, "print('nothing written')\n", files=files)
-    assert reproduce(str(folder)) == 1
+    assert reproduce(str(folder), yes=True, sandbox=False) == 1
     out = capsys.readouterr().out
     assert "Not reproduced: the study's code ran but wrote none of the result files" in out
     assert "Reproduced:" not in out
@@ -148,7 +149,7 @@ def test_a_script_that_writes_nothing_does_not_reproduce(tmp_path: Path, capsys,
 def test_a_script_that_writes_its_results_reproduces(tmp_path: Path, capsys):
     from src.cli_reproduce import reproduce
 
-    assert reproduce(str(_study(tmp_path, WRITES))) == 0
+    assert reproduce(str(_study(tmp_path, WRITES)), yes=True, sandbox=False) == 0
     assert "Reproduced:" in capsys.readouterr().out
 
 
@@ -194,6 +195,26 @@ def test_someone_elses_code_runs_without_the_researchers_keys(monkeypatch, tmp_p
 # ── CLI processes: killed with everything they started ───────────────────────
 
 
+def _gone(pid: int, within: float) -> bool:
+    """Whether ``pid`` exits within ``within`` seconds, polled; a zombie not yet reaped counts as gone.
+
+    The test slept 0.2 s and then expected ``os.kill(pid, 0)`` to raise; the child is not ours to
+    ``waitpid``, and until init reaps it a killed process still answers, so it failed under load.
+    """
+    deadline = time.monotonic() + within
+    while True:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return True
+        state = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True).stdout
+        if state.strip().startswith("Z"):
+            return True  # killed, waiting to be reaped
+        if time.monotonic() > deadline:
+            return False
+        time.sleep(0.05)
+
+
 @pytest.mark.skipif(sys.platform == "win32", reason="process groups")
 def test_a_cancel_kills_the_cli_and_its_children(tmp_path: Path):
     pidfile = tmp_path / "child.pid"
@@ -227,9 +248,7 @@ def test_a_cancel_kills_the_cli_and_its_children(tmp_path: Path):
         return int(pidfile.read_text())
 
     child = asyncio.run(scenario())
-    time.sleep(0.2)
-    with pytest.raises(ProcessLookupError):
-        os.kill(child, 0)  # the CLI's child is gone too
+    assert _gone(child, within=10.0)  # the CLI's child is gone too
     try:
         os.kill(child, signal.SIGKILL)
     except ProcessLookupError:
@@ -358,13 +377,21 @@ async def test_each_cli_keeps_its_own_sign_in_only(cfg, monkeypatch, backend, ow
 # ── the local API: steering a run needs this server's session token ─────────
 
 
+_ID = "7d3f0c52-6f0e-4b8a-9c1e-2b5a8f3d9e10"  # a run id (a path id that is not a UUID is a 404 first)
+
+
 def test_starting_or_steering_a_run_needs_the_session_token(monkeypatch):
     from fastapi.testclient import TestClient
 
     from src.api.app import app
 
     anonymous = TestClient(app, headers={"x-e2er-token": ""})
-    for path in ("/api/papers", "/api/papers/x/resume", "/api/papers/x/cancel", "/api/papers/x/review"):
+    for path in (
+        "/api/papers",
+        "/api/papers/" + _ID + "/resume",
+        "/api/papers/" + _ID + "/cancel",
+        "/api/papers/" + _ID + "/review",
+    ):
         r = anonymous.post(path, json={})
         assert r.status_code == 403 and "not signed in to e2er" in r.json()["detail"], path
     wrong = TestClient(app, headers={"x-e2er-token": "guessed"})

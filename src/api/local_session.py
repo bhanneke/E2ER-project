@@ -22,10 +22,16 @@ The token lives in the process environment (``E2ER_SESSION_TOKEN``) so the
 uvicorn worker sees the one `e2er` printed, and in ``~/.e2er/session-<port>.json``
 (mode 600) so a second `e2er` can open the running dashboard with it.
 
-Since 0.14.0 `e2er` takes the token from ``~/.e2er/session-secret`` (mode 600,
-made once per computer) and the cookie lasts a year, so a tab left open across
-a restart of e2er keeps working. A second cookie without the port in its name
-lets the link to a dashboard on another port work in the same browser.
+From 0.14.0 to 0.18.x the token was kept for good in ``~/.e2er/session-secret`` and the cookie
+lasted a year. Since 0.19.0 every start of e2er makes a new token and the cookie lasts until
+the browser closes: a token that leaked once (a shared screen, a shell history) is worth
+nothing after the next start. The old file is removed at start.
+
+Two checks apply to every request, not only to the local endpoints (``guard_request``):
+the ``Host`` header must name this computer (127.0.0.1, localhost, [::1], or a host
+configured with ``--host``/``HOST``/``E2ER_ALLOWED_HOSTS``), so a page that points its own
+domain at 127.0.0.1 (DNS rebinding) reaches nothing; and every ``/api/`` route needs the
+session token or the ``API_AUTH_TOKEN`` bearer token.
 """
 
 from __future__ import annotations
@@ -42,8 +48,10 @@ from fastapi import HTTPException, Request
 ENV_TOKEN = "E2ER_SESSION_TOKEN"
 #: The cookie shared by every e2er dashboard on this computer (cookies ignore ports).
 SHARED_COOKIE = "e2er_session"
-#: How long the session cookie lasts: a year, so an open tab survives restarts.
-COOKIE_MAX_AGE = 365 * 24 * 3600
+#: Hosts that name every computer's own address; ``HOST``, ``--host`` and ``E2ER_ALLOWED_HOSTS`` add more.
+ENV_SERVE_HOST = "E2ER_SERVE_HOST"
+ENV_ALLOWED_HOSTS = "E2ER_ALLOWED_HOSTS"
+_WILDCARD_HOSTS = {"", "0.0.0.0", "::", "[::]", "*"}
 HEADER = "x-e2er-token"
 QUERY = "t"
 
@@ -71,30 +79,12 @@ def secret_file() -> Path:
     return Path.home() / ".e2er" / "session-secret"
 
 
-def stable_token() -> str:
-    """This computer's session secret: made once, kept in ``~/.e2er/session-secret`` (mode 600).
-
-    The same token after every start of e2er, so an open dashboard tab and its
-    cookie stay valid across restarts. Falls back to a fresh token when the
-    file cannot be written (the dashboard then works until the next restart).
-    """
-    p = secret_file()
+def forget_stable_secret() -> None:
+    """Remove ``~/.e2er/session-secret``, the token 0.14.0-0.18.x kept across starts."""
     try:
-        token = p.read_text(encoding="utf-8").strip()
-        if len(token) >= 24:
-            return token
+        secret_file().unlink()
     except OSError:
         pass
-    token = new_token()
-    try:
-        p.parent.mkdir(parents=True, exist_ok=True)
-        fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            fh.write(token + "\n")
-        os.chmod(p, 0o600)
-    except OSError:
-        pass
-    return token
 
 
 def cookie_name(request: Request) -> str:
@@ -102,13 +92,98 @@ def cookie_name(request: Request) -> str:
     return f"e2er_session_{port}"
 
 
-def _host_is_local(host_header: str) -> bool:
+def _host_name(host_header: str) -> str:
+    """``Host: 127.0.0.1:8280`` -> ``127.0.0.1``; ``[::1]:8280`` -> ``[::1]``."""
     host = host_header.strip().lower()
     if host.startswith("["):  # [::1]:8280
         host = host[: host.find("]") + 1] if "]" in host else host
     elif host.count(":") == 1:
         host = host.split(":", 1)[0]
-    return host in _LOCAL_HOSTNAMES
+    return host
+
+
+def _host_is_local(host_header: str) -> bool:
+    return _host_name(host_header) in _LOCAL_HOSTNAMES
+
+
+def allowed_hosts() -> set[str]:
+    """The host names this server answers to: this computer's, plus the ones configured.
+
+    ``e2er serve --host <name>`` (``E2ER_SERVE_HOST``), ``HOST`` in the settings and the
+    comma-separated ``E2ER_ALLOWED_HOSTS`` add a name; a wildcard bind (0.0.0.0) adds none.
+    """
+    names = set(_LOCAL_HOSTNAMES)
+    raw = [os.environ.get(ENV_SERVE_HOST, ""), *os.environ.get(ENV_ALLOWED_HOSTS, "").split(",")]
+    try:
+        from ..config import get_settings
+
+        s = get_settings()
+        for value in (getattr(s, "host", ""), getattr(s, "allowed_hosts", "")):
+            if isinstance(value, str):
+                raw.extend(value.split(","))
+    except Exception:  # noqa: BLE001 — a settings error must not open the server
+        pass
+    for value in raw:
+        h = value.strip().lower()
+        if h in _WILDCARD_HOSTS:
+            continue
+        names.add(h)
+        if ":" in h and not h.startswith("["):
+            names.add(f"[{h}]")  # an IPv6 address arrives in brackets
+    return names
+
+
+def host_allowed(request: Request) -> bool:
+    """Does the ``Host`` header name this server? (No header at all: refused.)"""
+    host = request.headers.get("host", "")
+    return bool(host) and _host_name(host) in allowed_hosts()
+
+
+def _bearer_configured() -> bool:
+    try:
+        from ..config import get_settings
+
+        expected = getattr(get_settings(), "api_auth_token", None)
+    except Exception:  # noqa: BLE001
+        return False
+    return isinstance(expected, str) and bool(expected)
+
+
+def bearer_ok(request: Request) -> bool | None:
+    """True/False for an ``Authorization: Bearer`` header when ``API_AUTH_TOKEN`` is set; None otherwise."""
+    try:
+        from ..config import get_settings
+
+        expected = getattr(get_settings(), "api_auth_token", None)
+    except Exception:  # noqa: BLE001
+        expected = None
+    auth = request.headers.get("authorization") or ""
+    if not (isinstance(expected, str) and expected and auth.startswith("Bearer ")):
+        return None
+    return secrets.compare_digest(auth[len("Bearer ") :].strip(), expected)
+
+
+#: ``/api/`` paths that answer without the session (none today; /health is outside /api/).
+OPEN_API_PATHS: frozenset[str] = frozenset()
+
+
+def guard_request(request: Request) -> tuple[int, str] | None:
+    """The checks every request passes: a known Host, and the session on ``/api/``. None = pass."""
+    if not host_allowed(request):
+        return 400, "Invalid Host header: e2er answers at 127.0.0.1 or localhost (or a host set with --host)."
+    path = request.url.path
+    if path.startswith("/api/") and path not in OPEN_API_PATHS and request.method != "OPTIONS":
+        bearer = bearer_ok(request)
+        if bearer is False:
+            return 401, "Invalid bearer token"
+        if not bearer and not has_session(request):
+            if _bearer_configured():
+                return 401, "Missing bearer token"
+            return 403, (
+                "This browser tab is not signed in to e2er. Run `e2er` in a terminal: it opens the dashboard "
+                "signed in. Scripts use the e2er commands."
+            )
+    return None
 
 
 def _client_is_loopback(request: Request) -> bool:
@@ -164,7 +239,8 @@ def session_file(port: int) -> Path:
 def set_session_cookies(response: Any, request: Request, token: str) -> None:
     """The cookies that carry the session: one for this port, one shared by every port."""
     for name in (cookie_name(request), SHARED_COOKIE):
-        response.set_cookie(name, token, httponly=True, samesite="strict", path="/", max_age=COOKIE_MAX_AGE)
+        # No max_age: the cookie ends with the browser session (the token ends with this start of e2er).
+        response.set_cookie(name, token, httponly=True, samesite="strict", path="/")
 
 
 def write_session_file(port: int, token: str, *, pid: int | None = None) -> Path:

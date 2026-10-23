@@ -233,6 +233,14 @@ def _skip(src: Path, workspace: Path) -> str | None:
 
     if never_exported(src.name):
         return "a dotfile, key file or operating-system file"
+    try:
+        parts = src.relative_to(workspace).parts[:-1]
+    except ValueError:
+        parts = ()
+    if any(part.startswith(".") for part in parts):
+        # sandbox/run/.cache/x.json: pack leaves out every path with a hidden folder, so export does too
+        # (the package lacked a file provenance.json listed).
+        return "in a hidden folder"
     if is_leftover(src.name):
         return "a backup, lock file or earlier version of an output"
     if _leaves_workspace(src, workspace):
@@ -301,13 +309,35 @@ def _copy_matches(
             already.add(src.name)
         except OSError as e:  # noqa: PERF203 — per-file tolerance
             logger.warning("export: could not copy %s: %s", src.name, e)
+            continue
+        if dest_dir.name == "scratch":
+            _redact_secrets(target, notes)
+
+
+def _redact_secrets(target: Path, notes: list[str] | None) -> None:
+    """A scratch log or script holds what the model printed (an environment dump, a request URL with its
+    ``api_key=``): every key or token in it is replaced (secret_scan, the check pack and publishing run)."""
+    from ..secret_scan import redact_text
+
+    try:
+        text = target.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return
+    cleaned, kinds = redact_text(text)
+    if not kinds:
+        return
+    target.write_text(cleaned, encoding="utf-8")
+    msg = f"`code/scratch/{target.name}`: removed what looked like a {', '.join(kinds)} from the export's copy"
+    logger.warning("export: %s", msg)
+    if notes is not None:
+        notes.append(msg)
 
 
 #: A rebuilt output larger than this is left out of the bundle (and logged).
 MAX_OUTPUT_BYTES = 200 * 1024 * 1024
 
 
-def _copy_reproduction_outputs(workspace: Path, out: Path) -> None:
+def _copy_reproduction_outputs(workspace: Path, out: Path, left_out: list[dict] | None = None) -> None:
     """Copy the sandbox's logs and the output files its run wrote into the bundle.
 
     ``sandbox/logs/`` goes in whole. From the run folder (``sandbox_log.json``
@@ -342,12 +372,67 @@ def _copy_reproduction_outputs(workspace: Path, out: Path) -> None:
             continue
         if _skip(run_dir / rel, workspace):
             continue
-        if src_path.stat().st_size > MAX_OUTPUT_BYTES:
+        size = src_path.stat().st_size
+        if size > MAX_OUTPUT_BYTES:
+            dest_rel = (dest_run / rel).relative_to(out).as_posix()
             logger.warning("export: %s is larger than %d bytes; left out of the bundle", rel, MAX_OUTPUT_BYTES)
+            if left_out is not None:
+                left_out.append(
+                    {
+                        "path": dest_rel,
+                        "kind": "size",
+                        "bytes": size,
+                        "reason": f"an output of the reproduction larger than {MAX_OUTPUT_BYTES // (1024 * 1024)} MB",
+                    }
+                )
             continue
         dest = dest_run / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src_path, dest)
+
+
+def _copy_data_folder(workspace: Path, out: Path, notes: list[str]) -> None:
+    """Copy ``workspace/data/`` into ``data/``: every file a source's terms let the study pass on, with the
+    recipe's rules (no link out of the workspace unless the run recorded it as the researcher's file, at most
+    200 MB, no hidden or leftover file). A file already there (data.db, the records) is kept."""
+    from .reproduce_recipe import MAX_INPUT_BYTES, _loads, _restricted, _saved
+
+    src_root = workspace / "data"
+    if not src_root.is_dir() or src_root.is_symlink():
+        return
+    loads = _loads(workspace)
+    restricted = _restricted()
+    unshippable = {x for e in loads if e.get("connector") in restricted and (x := _saved(e))}
+    recorded = {
+        f.get("path"): f.get("sha256")
+        for e in loads
+        if e.get("connector") == "data-folder"
+        for f in e.get("files") or []
+        if isinstance(f, dict)
+    }
+    for src in sorted(src_root.rglob("*")):
+        rel = src.relative_to(workspace).as_posix()
+        if src.is_dir() or rel in unshippable:
+            continue
+        target = out / rel
+        outside = _leaves_workspace(src, workspace)
+        if target.exists() or (_skip(src, workspace) and not outside):
+            continue
+        try:
+            if outside:
+                import hashlib
+
+                if not src.is_file() or recorded.get(rel) != hashlib.sha256(src.read_bytes()).hexdigest():
+                    logger.warning("export: left out %s: a link to something outside the workspace", rel)
+                    continue
+            size = src.stat().st_size
+            if size > MAX_INPUT_BYTES:
+                notes.append(f"`{rel}` ({size / (1024 * 1024):.0f} MB) is left out: larger than 200 MB")
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(src, target)
+        except OSError as e:  # noqa: PERF203 — per-file tolerance
+            logger.warning("export: could not copy %s: %s", rel, e)
 
 
 def _read_json(path: Path) -> dict:
@@ -484,8 +569,17 @@ def _drop_unused_tables(workspace: Path, out: Path) -> None:
             path.unlink()
 
 
+_UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+
+
 def export_paper(
-    workspace: Path, dest_root: Path, *, date_str: str, slug: str | None = None, template: str | None = None
+    workspace: Path,
+    dest_root: Path,
+    *,
+    date_str: str,
+    slug: str | None = None,
+    template: str | None = None,
+    paper_id: str | None = None,
 ) -> Path:
     """Assemble the structured project folder. Returns the created directory.
 
@@ -493,14 +587,23 @@ def export_paper(
     ``template`` is the template the study was run with (the papers row's
     ``pipeline``); without it, the one manifest.json records. It is written to
     provenance.json (``run.template``), where ``e2er publish`` reads it.
+    ``paper_id`` is the run's id, for a manifest.json without one (runs before
+    0.14 wrote none, and their folder is named by the id): provenance.json's
+    ``run.paper_id`` is how the finish page and the next export find the folder.
     """
     workspace = Path(workspace)
     dest_root = Path(dest_root)
     dest_root.mkdir(parents=True, exist_ok=True)
 
     manifest = _read_json(workspace / "manifest.json")
+    if not isinstance(manifest, dict):
+        manifest = {}
     if template:
         manifest = {**manifest, "pipeline": template}
+    if not manifest.get("paper_id"):
+        recorded = paper_id or (workspace.name if _UUID.match(workspace.name) else None)
+        if recorded:
+            manifest = {**manifest, "paper_id": recorded}
     title = manifest.get("title") or workspace.name
     if slug:
         out = dest_root / slug
@@ -559,8 +662,19 @@ def export_paper(
 
     # A reproduction: what the sandbox run wrote, so `e2er verify` can re-read
     # every compared number offline (see _copy_reproduction_outputs).
+    left_out: list[dict] = []
     if (workspace / "reproduction_report.json").is_file():
-        _copy_reproduction_outputs(workspace, out)
+        _copy_reproduction_outputs(workspace, out, left_out)
+    for item in left_out:
+        notes.append(
+            f"`{item['path']}` ({item['bytes'] / (1024 * 1024):.0f} MB) is left out: {item['reason']}; "
+            "`e2er verify` cannot re-read the numbers compared from it"
+        )
+
+    # The study's data folder (e2er-data --save-to files, the researcher's own files). The recipe copies the
+    # inputs its scripts read; a template without a working recipe (a systematic review, a field map, a text
+    # study, a run whose recipe failed) shipped data_sources.json naming files the folder lacked.
+    _copy_data_folder(workspace, out, notes)
 
     # misc/ — top-level files we didn't map (no silent loss), minus internal ones.
     for src in sorted(workspace.iterdir()):
@@ -601,14 +715,31 @@ def export_paper(
     except Exception as e:  # noqa: BLE001 — best-effort; publish and pack still read the folder's scripts
         logger.warning("export: the data built from restricted sources were not recorded: %s", e)
         derived_record = []
+    from .provenance import recorded_run_identity
+
+    ran_with = recorded_run_identity(manifest.get("paper_id"))
     write_report(
         out,
         manifest,
         build_provenance(
-            out, manifest, exported_at=date_str, results_from_code=code_record, derived_data=derived_record
+            out,
+            manifest,
+            exported_at=date_str,
+            results_from_code=code_record,
+            derived_data=derived_record,
+            ran_with=ran_with,
+            left_out=left_out,
         ),
     )
-    write_provenance(out, manifest, exported_at=date_str, results_from_code=code_record, derived_data=derived_record)
+    write_provenance(
+        out,
+        manifest,
+        exported_at=date_str,
+        results_from_code=code_record,
+        derived_data=derived_record,
+        ran_with=ran_with,
+        left_out=left_out,
+    )
 
     logger.info("Exported paper %s → %s", workspace.name, out)
     return out

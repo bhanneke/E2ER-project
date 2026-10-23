@@ -175,6 +175,26 @@ def test_a_failed_compile_puts_everything_back(bundle: Path):
     assert _snapshot(bundle) == before
 
 
+def test_a_folder_that_does_not_verify_with_the_new_abstract_is_put_back(bundle: Path, monkeypatch):
+    """The last step: the checks of `e2er verify` on the amended folder. When they fail, every file,
+    provenance.json included, is put back as it was (no test held this, 2026-10-23 review)."""
+    from src import cli_verify
+
+    before = _snapshot(bundle)
+    seen: list[bool] = []
+
+    def failing(b: Path, strict: bool):
+        # Called with the folder amended: the new abstract and its amendments are in place.
+        seen.append("amendments" in json.loads((b / "provenance.json").read_text()))
+        return [cli_verify.Check("anchor", FAIL, "the folder is not what was exported")]
+
+    monkeypatch.setattr(cli_verify, "_run_checks", failing)
+    with pytest.raises(AbstractError, match="does not verify with the new abstract"):
+        _run(bundle, FakeWriter(GOOD))
+    assert seen == [True]
+    assert _snapshot(bundle) == before
+
+
 def test_after_a_publish_the_anchor_holds_and_publish_puts_the_amendments_in_the_dossier(
     bundle: Path, tmp_path: Path, monkeypatch
 ):
@@ -247,3 +267,110 @@ def test_a_researchers_abstract_must_pass_the_check_and_give_a_reason(bundle: Pa
     with pytest.raises(AbstractError, match="9.137 is no value"):
         rewrite(bundle, from_file=mine, reason="x", compile_pdf=_fake_pdf)
     assert _snapshot(bundle) == before
+
+
+# ── an abstract amendment changes the abstract only (review 2026-10-23) ──────
+
+
+def _published(bundle: Path, tmp_path: Path, monkeypatch) -> None:
+    from src.cli_publish import publish
+    from src.db import client
+    from tests.run_db import make_run_db, paper_id_of
+
+    real = client._sqlite_path
+    monkeypatch.setattr(client, "_sqlite_path", lambda url: str(tmp_path / "home.db") if not url else real(url))
+    cwd = tmp_path / "cwd"
+    cwd.mkdir(exist_ok=True)
+    monkeypatch.chdir(cwd)
+    make_run_db(tmp_path / "study", paper_id_of(bundle))
+    args = dict(owner="bhanneke", project="demo", github="bhanneke", commit="abc1234", data="private", code="private")
+    assert publish(str(bundle), **args, out=str(tmp_path / "e"), yes=True) == 0
+    assert _check_anchor(bundle).status == PASS
+
+
+def _amend(bundle: Path, rel: str, data: bytes, kind: str = ab.AMENDMENT_KIND, **extra) -> dict:
+    """Change ``rel`` and record it as an abstract amendment, consistently (what a forger writes)."""
+    from src.core.export.provenance import dump
+
+    prov = json.loads((bundle / "provenance.json").read_text())
+    old = (bundle / rel).read_bytes()
+    (bundle / rel).write_bytes(data)
+    entry = {
+        "path": rel,
+        "kind": kind,
+        "sha256_before": prov["files"][rel]["sha256"],
+        "sha256_after": hashlib.sha256(data).hexdigest(),
+        "reason": ab.AMENDMENT_REASON,
+        "at": "2026-10-23T00:00:00Z",
+        "bytes_before": len(old),
+        **extra,
+    }
+    prov["files"][rel] = {"sha256": entry["sha256_after"], "bytes": len(data)}
+    prov.setdefault("amendments", []).append(entry)
+    (bundle / "provenance.json").write_text(dump(prov))
+    return entry
+
+
+def test_the_paper_amendment_records_the_old_abstract(bundle: Path):
+    old_tex = (bundle / "paper" / "paper.tex").read_bytes()
+    _run(bundle, FakeWriter(GOOD))
+    prov = json.loads((bundle / "provenance.json").read_text())
+    entry = next(a for a in prov["amendments"] if a["path"] == "paper/paper.tex")
+    rec = entry["abstract_before"]
+    span = ab.block_span(old_tex.decode())
+    assert span is not None
+    assert rec["sha256"] == hashlib.sha256(old_tex.decode()[span[0] : span[1]].encode()).hexdigest()
+    why, before = ab.paper_problem(entry, (bundle / "paper" / "paper.tex").read_bytes())
+    assert why is None and before == old_tex
+
+
+def test_a_results_file_recorded_as_an_abstract_amendment_fails(bundle: Path, tmp_path: Path, monkeypatch):
+    """The reviewer's laundering: any file changed after publishing, recorded as an abstract amendment."""
+    _published(bundle, tmp_path, monkeypatch)
+    rel = "results/estimation_results.json"
+    doc = json.loads((bundle / rel).read_text())
+    _amend(bundle, rel, json.dumps({**doc, "laundered": 1.0}).encode())
+    checks = {c.name: c for c in _run_checks(bundle, False)}
+    assert checks["integrity"].status == FAIL and "e2er abstract never changes that file" in checks["integrity"].detail
+    assert checks["anchor"].status == FAIL and "never changes" in checks["anchor"].detail
+
+
+def test_a_paper_changed_outside_its_abstract_fails(bundle: Path, tmp_path: Path, monkeypatch):
+    _published(bundle, tmp_path, monkeypatch)
+    rel = "paper/paper.tex"
+    old = (bundle / rel).read_bytes()
+    text = old.decode()
+    span = ab.block_span(text)
+    assert span is not None
+    # The abstract rewritten and, further on, a sentence of the paper changed: the record is honest about both.
+    new = ab.insert(text, GOOD)
+    tail = new.index("\\section")
+    new = new[:tail] + new[tail:].replace("Bitcoin", "Ethereum", 1)
+    entry = _amend(bundle, rel, new.encode(), abstract_before=ab.paper_change(old, new.encode()))
+    why = ab.paper_problem(entry, new.encode())[0]
+    assert why == f"{rel}: the abstract amendment changed the paper outside its abstract"
+    checks = {c.name: c for c in _run_checks(bundle, False)}
+    assert checks["integrity"].status == FAIL and "outside its abstract" in checks["integrity"].detail
+    assert checks["anchor"].status == FAIL
+
+
+def test_a_forged_old_abstract_fails(bundle: Path, tmp_path: Path, monkeypatch):
+    _published(bundle, tmp_path, monkeypatch)
+    rel = "paper/paper.tex"
+    old = (bundle / rel).read_bytes()
+    new = ab.insert(old.decode(), GOOD).replace("\\section", "\\section", 1).encode()
+    rec = ab.paper_change(old, new)
+    rec["text"] = rec["text"].replace("a", "e", 1)  # not the text that stood there
+    _amend(bundle, rel, new, abstract_before=rec)
+    checks = {c.name: c for c in _run_checks(bundle, False)}
+    assert checks["integrity"].status == FAIL and "not the one before the amendment" in checks["integrity"].detail
+
+
+def test_an_abstract_amendment_without_the_old_text_does_not_roll_back(bundle: Path, tmp_path: Path, monkeypatch):
+    """A record from e2er 0.18.0 (no abstract_before): the folder may say it was published before it, unchecked."""
+    _published(bundle, tmp_path, monkeypatch)
+    rel = "paper/paper.tex"
+    old = (bundle / rel).read_bytes()
+    _amend(bundle, rel, ab.insert(old.decode(), GOOD).encode())
+    anchor = _check_anchor(bundle)
+    assert anchor.status == FAIL and "does not record the text it replaced" in anchor.detail

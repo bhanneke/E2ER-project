@@ -40,12 +40,26 @@ every table of a SQLite database, order of rows aside) has the same content.
 When the study ships rendered tables and their spec, the tables are
 rendered again from the rerun's results and compared with the paper's.
 
-The study's code runs on its own: it gets no API key and no e2er setting, but it
-does get e2er's read-only access to its own database (``e2er-data query sql`` and
-``e2er-data query tables`` read the run folder's ``data.db``). Only the steps that
-load inputs again (``"reload"``, e.g. ``get_data.py``) may load data from the web;
-in every other step a connection to another machine fails with a plain message
-(``--allow-network`` lets it through), and the report says which steps tried.
+The study's code is someone else's. ``e2er reproduce`` lists every step's command and the
+requirements before it runs anything and asks (``--yes`` in a script). It runs the steps in a
+Docker container when Docker is there (src/core/reproduce_sandbox.py: no network, a read-only
+system, no capabilities, an unprivileged user, only the run folder mounted); without Docker
+only with ``--no-sandbox``, and then on this computer as the user, with ``HOME`` and the
+``XDG_*`` folders pointed at an empty folder and no API key, token or e2er setting. It does get
+e2er's read-only access to its own database (``e2er-data query sql`` and ``e2er-data query
+tables`` read the run folder's ``data.db``). Only the steps that load inputs again (``"reload"``,
+e.g. ``get_data.py``) may load data from the web, after their own question, and without keys.
+
+The network guard (reproduce_netguard.py) is a report, not a protection: it sees the
+connections Python makes and records them, and in a step that may not use the network it
+makes them fail with a plain message. Code that wants to get past it can (a raw socket, a
+subprocess). The protection is the container's ``--network none``.
+
+Before anything runs, the folder is refused when it holds a symbolic link (a copy would read
+the file it points to, ``~/.ssh`` included), and the requirements are refused when a line is
+an installer option (``--index-url``, ``-e``, ``-r``) or a URL or VCS requirement; packages
+install from wheels only (``--only-binary=:all:``) on this computer, and inside the container
+only fall back to building a source package.
 """
 
 from __future__ import annotations
@@ -97,6 +111,8 @@ LABEL_WORDS = {
 
 #: A compared result file the rerun did not write.
 NOT_WRITTEN = "the rerun did not write it"
+#: A compared result file with no value in it: comparing it shows nothing.
+EMPTY = "the published file holds no value to compare"
 
 
 class RecipeError(Exception):
@@ -111,6 +127,88 @@ def _safe_rel(path: Any) -> bool:
         return False
     p = Path(path)
     return not p.is_absolute() and ".." not in p.parts and not path.startswith(("/", "\\"))
+
+
+#: A requirement line: a name with extras, version specifiers and markers. No URL, path or VCS reference.
+_REQUIREMENT = re.compile(
+    r"^[A-Za-z0-9][A-Za-z0-9._-]*(\[[A-Za-z0-9._,\s-]*\])?\s*"
+    r"((===?|~=|!=|<=|>=|<|>)\s*[A-Za-z0-9.*+!_-]+\s*(,\s*(===?|~=|!=|<=|>=|<|>)\s*[A-Za-z0-9.*+!_-]+\s*)*)?"
+    r"(;\s*[^@]+)?$"
+)
+#: The only option a requirement line may carry: the hash of the file to install (a lock file's).
+_HASH_OPTION = re.compile(r"^--hash[=\s]+(sha256|sha384|sha512):[0-9a-fA-F]+$")
+
+
+def requirement_lines(path: Path) -> list[str]:
+    """The requirement lines of a requirements file, continuations joined, comments and hashes dropped."""
+    text = path.read_text(encoding="utf-8", errors="replace")
+    joined = re.sub(r"\\\r?\n", " ", text)
+    out = []
+    for raw in joined.splitlines():
+        line = re.sub(r"(^|\s)#.*$", "", raw).strip()
+        if line:
+            out.append(" ".join(t for t in line.split() if not t.startswith("--hash")).strip())
+    return [x for x in out if x]
+
+
+def requirements_problems(path: Path) -> list[str]:
+    """Why the requirements file may not be installed ([] when every line is a plain pinned requirement).
+
+    Someone else's requirements file can point the installer elsewhere: ``--index-url`` or
+    ``--extra-index-url`` (another package index), ``-f``/``--find-links``, ``--trusted-host``,
+    ``-e``/``-r``/``-c`` (editable installs, other files), and a URL, path or VCS requirement
+    (``pkg @ https://…``, ``git+https://…``, ``./pkg``) all fetch or build code the lock never
+    pinned. Only ``name[extras] <specifiers> ; markers`` with ``--hash`` options passes.
+    """
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError as e:
+        return [f"cannot be read ({e})"]
+    problems = []
+    joined = re.sub(r"\\\r?\n", " ", text)
+    for n, raw in enumerate(joined.splitlines(), 1):
+        line = re.sub(r"(^|\s)#.*$", "", raw).strip()
+        if not line:
+            continue
+        tokens = line.split()
+        if tokens[0].startswith("-"):
+            problems.append(f"line {n}: the installer option {tokens[0]!r} is not allowed")
+            continue
+        options = [t for t in tokens if t.startswith("-")]
+        spec = " ".join(t for t in tokens if not t.startswith("-"))
+        bad_option = next((o for o in options if not _HASH_OPTION.match(o)), None)
+        if bad_option is not None:
+            problems.append(f"line {n}: the option {bad_option!r} is not allowed (only --hash)")
+        elif "@" in spec or "://" in spec or spec.startswith((".", "/", "~", "\\")) or not _REQUIREMENT.match(spec):
+            problems.append(f"line {n}: {spec[:80]!r} is not a plain package requirement (no URL, path or VCS)")
+    return problems
+
+
+def links_in(folder: Path, limit: int = 5) -> list[str]:
+    """Symbolic links inside ``folder`` (relative paths, at most ``limit``), without following any."""
+    found: list[str] = []
+    for dirpath, dirnames, filenames in os.walk(folder, followlinks=False):
+        for name in [*dirnames, *filenames]:
+            p = Path(dirpath) / name
+            if p.is_symlink():
+                found.append(p.relative_to(folder).as_posix())
+                if len(found) >= limit:
+                    return found
+    return found
+
+
+def check_foreign(folder: Path, recipe: dict[str, Any]) -> None:
+    """Refuse what must never run: a symbolic link in the folder, an installer option or URL requirement."""
+    links = links_in(folder)
+    if links:
+        raise RecipeError(
+            "the folder holds symbolic links (" + ", ".join(links) + "); a copy of the study would read the "
+            "files they point to. Replace each link with the file itself."
+        )
+    req = folder / str(recipe["requirements"])
+    problems = requirements_problems(req)
+    if problems:
+        raise RecipeError(f"{recipe['requirements']} is refused: " + "; ".join(problems[:5]))
 
 
 def load_recipe(folder: Path, rebuild: list[dict[str, Any]] | None = None) -> dict[str, Any]:
@@ -353,7 +451,10 @@ def _is_number(x: Any) -> bool:
 
 def _rounded(value: float) -> bool:
     """Was the published number stored rounded? Only a number with four or more significant digits counts:
-    ``0.00285433`` was rounded at 8 decimals, while ``1.0`` or ``0.5`` may well be exact."""
+    ``0.00285433`` was rounded at 8 decimals, while ``1.0`` or ``0.5`` may well be exact. A whole number
+    (``1234.0``, ``4321``) is never taken as rounded: a count or a total must match exactly."""
+    if float(value).is_integer():
+        return False
     text = repr(float(value)).lower().lstrip("-")
     mantissa = text.split("e")[0].replace(".", "").lstrip("0")
     return len(mantissa.rstrip("0") if "e" not in text and "." in text else mantissa) >= 4
@@ -432,6 +533,10 @@ def compare_json(published_path: Path, produced_path: Path, published: str, prod
         fc.problem = f"the rerun wrote a file that is not JSON: {e}"
         return fc
     a, b = flatten(pub), flatten(new)
+    if not any(not isinstance(v, dict | list) for v in a.values()):
+        # Nothing to compare (an empty file, or empty lists and objects only): it reproduces nothing.
+        fc.problem = EMPTY
+        return fc
     for key in a:
         if key not in b:
             fc.counts[MISSING] += 1
@@ -470,6 +575,8 @@ SAME_ROWS = "same_rows"
 #: last binary digits (the Gaia demo of 2026-10-13: pandas wrote -0.0005179820886653808 in the run and
 #: -0.0005179820886653 in the rerun, from the same text in the reloaded rows).
 SAME_NUMBERS = "same_numbers"
+#: 12 significant digits: a relative difference below 1e-11, far under any printed precision and above the noise of
+#: a double written through text (15-17 digits). For input tables only; result values are compared by compare_value.
 NUMERIC_DIGITS = 12
 _DECIMAL = re.compile(r"^\s*[-+]?(?:\d+\.\d*|\.\d+|\d+(?:\.\d*)?[eE][-+]?\d+)\s*$")
 #: Table files fingerprinted by content.
@@ -691,21 +798,29 @@ def add_numeric_fingerprints(recipe: dict[str, Any], recorded: dict[str, dict[st
 
 
 def compare_tables(folder: Path, run_dir: Path, compare: list[dict[str, Any]]) -> dict[str, Any] | None:
-    """Render the paper's tables again from the rerun's results; None when the study ships none."""
+    """Render the paper's tables again from the rerun's results; None when the study ships none.
+
+    Only the rerun's own outputs go in (and the table spec): a table that reads a results file the rerun did
+    not write again is not compared (``not_compared``), never rendered from the published file.
+    """
     spec = folder / "results" / "table_spec.json"
     shipped = folder / "paper" / "tables"
     if not spec.is_file() or not shipped.is_dir():
         return None
-    from .renderer.tables import render_tables
+    from .renderer.tables import render_tables, table_sources
 
     ws = run_dir / ".e2er-tables"
     ws.mkdir(exist_ok=True)
-    for f in (folder / "results").glob("*.json"):
-        shutil.copy2(f, ws / f.name)
+    shutil.copy2(spec, ws / "table_spec.json")
+    rerun: set[str] = set()
     for c in compare:
         produced = run_dir / c["produced"]
         if produced.is_file() and c["published"].startswith("results/"):
-            shutil.copy2(produced, ws / Path(c["published"]).name)
+            name = Path(c["published"]).name
+            shutil.copy2(produced, ws / name)
+            rerun.add(name)
+    published = {p.name for p in (folder / "results").glob("*.json")}
+    reads = table_sources(ws)
     quiet = logging.getLogger("src.core.renderer.tables")
     level = quiet.level
     quiet.setLevel(logging.WARNING)  # the renderer's progress line is not part of the report
@@ -715,16 +830,24 @@ def compare_tables(folder: Path, run_dir: Path, compare: list[dict[str, Any]]) -
         quiet.setLevel(level)
     if report.skipped_reason:
         return {"skipped": report.skipped_reason}
-    identical, differ, not_shipped = [], [], []
+    identical, differ, not_shipped, not_compared = [], [], [], []
     for name in report.rendered:
         old = shipped / name
-        if not old.is_file():
+        if (reads.get(name, set()) & published) - rerun:
+            not_compared.append(name)  # it reads a published results file the rerun did not write again
+        elif not old.is_file():
             not_shipped.append(name)
         elif old.read_bytes() == (ws / "tables" / name).read_bytes():
             identical.append(name)
         else:
             differ.append(name)
-    return {"rendered": len(report.rendered), "identical": identical, "differ": differ, "not_shipped": not_shipped}
+    return {
+        "rendered": len(report.rendered) - len(not_compared),
+        "identical": identical,
+        "differ": differ,
+        "not_shipped": not_shipped,
+        "not_compared": not_compared,
+    }
 
 
 # ── running ──────────────────────────────────────────────────────────────────
@@ -753,6 +876,8 @@ def make_environment(run_dir: Path, recipe: dict[str, Any], folder: Path, logs: 
     """A new virtual environment with the pinned requirements; (its python, what was installed)."""
     venv = run_dir / ".venv"
     requirements = (folder / recipe["requirements"]).resolve()
+    if not requirements.is_relative_to(folder.resolve()):
+        raise RecipeError(f"{recipe['requirements']} is outside the study folder")
     wanted = str(recipe.get("python") or "").strip()
     uv = shutil.which("uv")
     # A .e2er package with wheels for this computer (``e2er pack --offline``): installed without the internet.
@@ -762,7 +887,7 @@ def make_environment(run_dir: Path, recipe: dict[str, Any], folder: Path, logs: 
         base = getattr(sys, "_base_executable", None) or sys.executable  # the interpreter, not e2er's own venv
         create = [uv, "venv", "--quiet", "--python", wanted or base, str(venv)]
         install = [uv, "pip", "install", "--quiet", "--python", str(_venv_python(venv)), *offline,
-                   "-r", str(requirements)]  # fmt: skip
+                   "--only-binary", ":all:", "-r", str(requirements)]  # fmt: skip
     else:
         if wanted and not f"{sys.version_info.major}.{sys.version_info.minor}".startswith(wanted):
             raise RecipeError(
@@ -770,13 +895,17 @@ def make_environment(run_dir: Path, recipe: dict[str, Any], folder: Path, logs: 
                 "fetch another Python) is not installed: install uv, or run e2er on Python " + wanted
             )
         create = [sys.executable, "-m", "venv", str(venv)]
-        install = [str(_venv_python(venv)), "-m", "pip", "install", "--quiet", *offline, "-r", str(requirements)]
+        install = [str(_venv_python(venv)), "-m", "pip", "install", "--quiet", *offline, "--only-binary=:all:",
+                   "-r", str(requirements)]  # fmt: skip
     code, tail = _run(create, cwd=run_dir, env=minimal_env(), timeout=600, log=logs / "environment-create.log")
     if code != 0:
         raise RecipeError(f"could not create the environment: {tail}")
     code, tail = _run(install, cwd=run_dir, env=minimal_env(), timeout=1800, log=logs / "environment-install.log")
     if code != 0:
-        raise RecipeError(f"could not install {recipe['requirements']}: {tail}")
+        raise RecipeError(
+            f"could not install {recipe['requirements']} from wheels (on this computer e2er installs no source "
+            f"package: building one runs its code; the Docker sandbox can): {tail}"
+        )
     py = _venv_python(venv)
     probe = (
         "import json, sys, importlib.metadata as m; "
@@ -817,12 +946,30 @@ _CREDENTIAL = re.compile(r"TOKEN|PASSWORD|SECRET|KEY|AUTH|CREDENTIAL", re.I)
 
 
 def minimal_env() -> dict[str, str]:
-    """The environment someone else's code (and the installation of its packages) runs with."""
+    """The environment someone else's code (and the installation of its packages) runs with.
+
+    A proxy setting that carries a user and password (``http://user:pass@proxy``) is left out.
+    """
     return {
         k: v
         for k, v in os.environ.items()
-        if k in _PASSED_ON or (k.startswith(_INSTALLER_PREFIXES) and not _CREDENTIAL.search(k))
+        if (k in _PASSED_ON or (k.startswith(_INSTALLER_PREFIXES) and not _CREDENTIAL.search(k)))
+        and not ("proxy" in k.lower() and "@" in v)
     }
+
+
+#: The folders a program finds its user's settings in: pointed at an empty folder for the steps.
+_HOME_VARS = (
+    "HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME", "XDG_RUNTIME_DIR",
+    "USERPROFILE", "APPDATA", "LOCALAPPDATA",
+)  # fmt: skip
+
+
+def empty_home(run_dir: Path) -> Path:
+    """An empty folder that stands in for the user's home in the steps (``<run>/.e2er-home``)."""
+    home = run_dir / ".e2er-home"
+    home.mkdir(exist_ok=True)
+    return home
 
 
 #: Set in every step: e2er-data knows it runs inside a rerun (no audit record in e2er's own database).
@@ -851,6 +998,14 @@ def step_env(venv_python: Path, run_dir: Path | None = None) -> dict[str, str]:
     if e2er_data:
         env["E2ER_DATA"] = e2er_data
     if run_dir is not None:
+        # Never the user's home: ~/.ssh, ~/.e2er/credentials.json, ~/.netrc, the CLIs' logins.
+        home = str(empty_home(run_dir))
+        for var in _HOME_VARS:
+            if var in env or var in ("HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME"):
+                env[var] = home
+        env.pop("XDG_RUNTIME_DIR", None)
+        # e2er-data finds no settings of this computer (no .env, no API key): its studies folder is the empty home.
+        env["E2ER_PROJECT_DIR"] = home
         env["E2ER_PAPER_ID"] = run_dir.name
         env["E2ER_WORKSPACE"] = str(run_dir)
         env["E2ER_WORKSPACE_ROOT"] = str(run_dir.parent)
@@ -886,17 +1041,22 @@ def lay_out(folder: Path, run_dir: Path, recipe: dict[str, Any]) -> list[str]:
     """
     files = recipe.get("files")
     if not files:
-        shutil.copytree(folder, run_dir, dirs_exist_ok=True, ignore=shutil.ignore_patterns(".git", ".venv"))
+        # symlinks=True: a link is copied as a link, never as the file it points to (check_foreign refuses links).
+        shutil.copytree(
+            folder, run_dir, dirs_exist_ok=True, symlinks=True, ignore=shutil.ignore_patterns(".git", ".venv", ".env")
+        )
     else:
         for dst, src in files.items():
             source, target = folder / src, run_dir / dst
             if not source.exists():
                 continue  # an input the folder does not ship; a step loads it again (load_recipe checked)
             target.parent.mkdir(parents=True, exist_ok=True)
+            if source.is_symlink() or not source.resolve().is_relative_to(folder.resolve()):
+                raise RecipeError(f'"files": {src} is a link or leads outside the study folder')
             if source.is_dir():
-                shutil.copytree(source, target, dirs_exist_ok=True)
+                shutil.copytree(source, target, dirs_exist_ok=True, symlinks=True)
             else:
-                shutil.copy2(source, target)
+                shutil.copy2(source, target, follow_symlinks=False)
     removed = []
     for c in recipe.get("compare") or []:
         produced = run_dir / c["produced"]
@@ -1023,21 +1183,37 @@ def missing_dependency(output: str) -> str:
     return f"The recipe does not pin {dist}{need}."
 
 
+#: How a step runs: (argv, env, timeout seconds, log file, may use the network, step number) -> (exit, tail).
+StepRunner = Any
+
+
 def run_steps(
     run_dir: Path,
     recipe: dict[str, Any],
     env: dict[str, str],
     logs: Path,
-    python: Path,
+    python: Path | str,
     *,
     allow_network: bool = False,
+    allow_reload: bool = True,
+    runner: StepRunner = None,
+    log_path: Any = None,
 ) -> list[StepResult]:
     """Run the steps in order; stop at the first that fails. ``python`` runs every ``python …`` step.
 
-    A step that loads inputs again may use the web and every e2er-data command. Every other step
-    gets e2er-data's read-only queries only, and no network unless ``allow_network`` (then its
-    connections are recorded).
+    A step that loads inputs again may use the web and every e2er-data command, unless
+    ``allow_reload`` is False (the researcher said no): then it runs like any other step. Every
+    other step gets e2er-data's read-only queries only, and no network unless ``allow_network``
+    (then its connections are recorded). ``runner`` runs one step (default: a process on this
+    computer; the Docker sandbox passes its own), ``log_path`` turns a log file on this computer
+    into the path the step sees (inside a container).
     """
+    if runner is None:
+
+        def runner(argv: list[str], step_env: dict[str, str], timeout: float, log: Path, network: bool, i: int):
+            return _run(argv, cwd=run_dir, env=step_env, timeout=timeout, log=log)
+
+    seen_as = log_path or str
     results = []
     # What the folder did not ship (before any step loads it again): a step marked "when_missing" (the data
     # preparation after get_data.py) runs only when one of its inputs had to be loaded again.
@@ -1064,13 +1240,14 @@ def run_steps(
         log = logs / f"step-{i}.log"
         net_log = logs / f"step-{i}-network.jsonl"
         reload = is_reload_step(step, recipe)
+        web = reload and allow_reload
         step_environment = dict(env)
-        if not reload:
+        if not web:
             step_environment[DATA_READ_ONLY_ENV] = "1"
             step_environment[NETWORK_ENV] = "record" if allow_network else "block"
-            step_environment[NETWORK_LOG_ENV] = str(net_log)
+            step_environment[NETWORK_LOG_ENV] = seen_as(net_log)
         started = time.monotonic()
-        code, tail = _run(argv, cwd=run_dir, env=step_environment, timeout=timeout, log=log)
+        code, tail = runner(argv, step_environment, timeout, log, web or allow_network, i)
         results.append(
             StepResult(
                 command=shlex.join(step_argv(step)),
@@ -1144,6 +1321,11 @@ def verdict(
     def count(label: str) -> int:
         return sum(f.counts[label] for f in compared)
 
+    if not sum(f.total for f in compared):
+        # "Reproduced" says that values matched: with none compared, nothing was reproduced.
+        named = ", ".join(f"{f.published} ({f.problem})" for f in files if f.problem) or "none"
+        return f"Not reproduced: no value was compared (result files: {named}).", 1
+
     bad_files = [f.published for f in files if f.problem]
     bad_tables = len((tables or {}).get("differ") or []) + len((tables or {}).get("not_shipped") or [])
     # Left-out outputs the rerun built again (a figure's data) are reported apart: they are not what the
@@ -1158,6 +1340,12 @@ def verdict(
         and not (other or absent)
     ):
         tail = " and every table renders the same" if tables and tables.get("rendered") else ""
+        skipped = (tables or {}).get("not_compared") or []
+        if skipped:
+            tail += (
+                f"; {len(skipped)} table(s) not compared, since they read results the rerun did not write again "
+                f"({', '.join(sorted(skipped)[:3])})"
+            )
         close = [i["path"] for i in inputs or [] if i.get("status") == SAME_NUMBERS]
         if close:
             tail += (

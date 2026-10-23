@@ -45,7 +45,7 @@ elif args[:2] == ["repo", "view"]:
         sys.exit(1)
     private = (bare / "PRIVATE").exists()
     print(json.dumps({"visibility": "PRIVATE" if private else "PUBLIC", "defaultBranchRef": {"name": "main"},
-                      "isArchived": False}))
+                      "isArchived": (bare / "ARCHIVED").exists()}))
 elif args[:2] == ["repo", "create"]:
     assert "--public" in args, args
     bare = root / (args[2] + ".git")
@@ -410,6 +410,17 @@ def test_a_private_repository_is_refused(who_study: Path, github: Path, tmp_path
     assert "public repository" in capsys.readouterr().out
 
 
+def test_an_archived_repository_is_refused(who_study: Path, github: Path, tmp_path: Path, capsys):
+    bare = _seed(github, "ada/demos", {"x.txt": "x\n"})
+    (bare / "ARCHIVED").write_text("")
+    before = _git("--git-dir", str(bare), "rev-parse", "main")
+    rc = publish(str(who_study), **ID, github_repo="ada/demos", github_path="who", out=str(tmp_path / "e"), yes=True)
+    out = capsys.readouterr().out
+    assert rc == 1 and "ada/demos is archived and takes no new commits" in out
+    assert _git("--git-dir", str(bare), "rev-parse", "main") == before, "nothing was pushed"
+    assert not (github / "registered.jsonl").exists()
+
+
 def test_a_file_that_holds_a_token_is_never_pushed(who_study: Path, github: Path, tmp_path: Path, capsys):
     _add(who_study, "code/settings.py", b'TOKEN = "ghp_' + b"a1B2c3D4e5F6g7H8i9J0k1L2m3N4" + b'"\n')
     assert (
@@ -668,6 +679,31 @@ def test_a_refused_sign_in_pushes_nothing(who_study: Path, github: Path, tmp_pat
     assert not (github / "ada").exists()
 
 
+@pytest.mark.parametrize(
+    "me, words",
+    [
+        ({"name": "Ada", "handles": ["ada-lab"]}, "--owner ada is not one of your account's handles"),
+        ({"name": "Ada", "study": "ada/other"}, "can only publish new versions of ada/other"),
+    ],
+)
+def test_a_handle_or_token_the_platform_would_refuse_pushes_nothing(
+    who_study: Path, github: Path, monkeypatch, capsys, me, words
+):
+    """Checked before the push: the owner is a handle of the account, and a study token is this study's."""
+    from src.core import platform_client as pc
+
+    def request(base, method, path, token=None, body=None):
+        if method == "GET" and path == "/api/v1/me":
+            return 200, me
+        raise AssertionError(f"{method} {path} before the check passed")
+
+    monkeypatch.setattr(pc, "request", request)
+    rc = publish(str(who_study), **ID, github_repo="ada/demos", github_path="who", yes=True)
+    out = capsys.readouterr().out
+    assert rc == 1 and words in out and "nothing was pushed" in out
+    assert not (github / "ada").exists(), "no repository was made and nothing was pushed"
+
+
 def test_a_registration_refused_after_the_push_rolls_forward_when_run_again(
     who_study: Path, github: Path, tmp_path: Path, monkeypatch, capsys
 ):
@@ -720,7 +756,7 @@ def test_a_published_study_redacted_afterwards_verifies_and_publishes_again_with
     rd.redact(who_study, email)
     checks = {c.name: c for c in _run_checks(who_study, online=False)}
     assert checks["anchor"].status != FAIL, checks["anchor"].detail
-    assert "before the researcher redacted 1 file(s)" in checks["anchor"].detail
+    assert "before 1 change(s) recorded as redactions by the researcher" in checks["anchor"].detail
     capsys.readouterr()
     assert publish(str(who_study), **args, yes=True) == 0, capsys.readouterr().out
     bodies = [json.loads(line) for line in (github / "registered.jsonl").read_text().splitlines()]

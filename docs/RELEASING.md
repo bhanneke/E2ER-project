@@ -27,7 +27,10 @@ version:
 
 It refuses, and writes nothing, when the tree has uncommitted changes, the version is not
 `X.Y.Z` or not greater than the current one, the Unreleased section is empty, or a place is not
-where the script expects it (a renamed BibTeX key, a moved `version` line).
+where the script expects it (a renamed BibTeX key, a moved `version` line). It checks the new
+content before it writes anything, writes each file to a temporary file beside it and then renames
+them all, and puts back the files already renamed when a rename fails: a release is written whole
+or not at all.
 
 Every other version in the repository is history and stays: "up to 0.17.3" in the CHANGELOG and in
 code comments, the `e2er_version` a study recorded (`examples/showcase/`), the schema examples in
@@ -47,7 +50,8 @@ git tag v0.18.0 && git push origin main v0.18.0
 ```
 
 The tag starts the release workflow: version check (`scripts/release.py --check --tag`), tests,
-build, GitHub release (notes from the CHANGELOG section), PyPI (trusted publishing), and the release
+build, GitHub release (notes from the CHANGELOG section whose heading starts with `## [X.Y.Z]`,
+matched literally), PyPI (trusted publishing), and the release
 facts below. Do not create the GitHub release by hand; a run that failed after the release was
 created is re-run with `gh run rerun <id>` (every job is idempotent).
 
@@ -129,4 +133,39 @@ After adding slow tests, refresh the durations:
 ```bash
 pytest tests/ -m "not e2e" --junitxml=/tmp/junit.xml
 python -m tests.parts /tmp/junit.xml   # rewrites tests/test_durations.json
+```
+
+## 5. The workflows' supply chain: pinned actions, hashed installs, least permissions
+
+Every workflow in `.github/workflows/` (CI and release alike):
+
+- declares `permissions: contents: read` at the top; a job that writes says so itself
+  (`release` and `zenodo-doi`: `contents: write`; `publish`: `id-token: write` for PyPI's OIDC;
+  `schema-drift`: `issues: write`);
+- names every action by a full commit SHA, with its version in a comment
+  (`actions/checkout@11d5960a… # v4.4.0`), and checks out with `persist-credentials: false`;
+- installs from hash-pinned files: `.github/requirements/ci.txt` (the `dev` extra plus the
+  build tools, every package with its hashes, for Python 3.11–3.14 on every platform) with
+  `pip install --require-hashes`, then e2er itself with `pip install --no-deps --no-build-isolation -e .`;
+  the build jobs install `.github/requirements/build.txt` and run `python -m build --no-isolation`.
+  The release workflow keeps no pip cache.
+
+`tests/test_workflow_supply_chain.py` fails when one of these slips.
+
+Refresh the hashed files after changing a dependency in `pyproject.toml` (or to take newer
+versions), and commit them with the change:
+
+```bash
+uv pip compile pyproject.toml .github/requirements/build.in --extra dev --generate-hashes \
+    --universal --python-version 3.11 -o .github/requirements/ci.txt
+uv pip compile .github/requirements/build.in --generate-hashes \
+    --universal --python-version 3.11 -o .github/requirements/build.txt
+```
+
+To move an action to a newer version, resolve the tag to its commit (dereference an annotated tag)
+and replace both the SHA and the comment:
+
+```bash
+gh api repos/actions/checkout/git/ref/tags/v4.4.0 --jq '.object.type + " " + .object.sha'
+gh api repos/<owner>/<repo>/git/tags/<sha-of-the-tag-object> --jq .object.sha   # when the type is "tag"
 ```

@@ -77,10 +77,31 @@ def test_claude_limit_wording(text, resets):
     assert isinstance(limit, PlanLimitReachedError) and limit.resets == resets
 
 
-def test_claude_unix_reset_time_is_shown_as_local_time():
-    ts = int(datetime.now().replace(hour=14, minute=30, second=0, microsecond=0).timestamp())
+def _frozen_now(monkeypatch, now: datetime) -> None:
+    """plan_limit's clock stops at ``now``: the test read the clock twice and failed across midnight."""
+    from src.modules.llm import plan_limit
+
+    class _Frozen(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return now if tz is None else now.astimezone(tz)
+
+    monkeypatch.setattr(plan_limit, "datetime", _Frozen)
+
+
+def test_claude_unix_reset_time_is_shown_as_local_time(monkeypatch):
+    now = datetime(2026, 10, 23, 23, 59, 59, 999999)  # one tick before midnight
+    _frozen_now(monkeypatch, now)
+    ts = int(now.replace(hour=14, minute=30, second=0, microsecond=0).timestamp())
     limit = detect("claude_code", f"Claude AI usage limit reached|{ts}")
     assert limit is not None and limit.resets == "at 14:30"
+
+
+def test_claude_unix_reset_time_on_another_day_names_the_day(monkeypatch):
+    _frozen_now(monkeypatch, datetime(2026, 10, 23, 23, 59, 59))
+    ts = int(datetime(2026, 10, 24, 9, 0).timestamp())
+    limit = detect("claude_code", f"Claude AI usage limit reached|{ts}")
+    assert limit is not None and limit.resets == "at 24 Oct 09:00"
 
 
 def test_gemini_daily_quota_is_a_limit_a_rate_limit_is_not():

@@ -29,6 +29,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from ..core import labels
 from ..logging_config import get_logger
 from ..modules.literature.discovery import WEB_SEARCH_FILE
+from .guards import PaperId
 from .local_session import local_problem, require_local_session
 
 logger = get_logger(__name__)
@@ -212,7 +213,7 @@ async def _workspace_of(paper_id: str) -> Path | None:
 
 
 @router.get("/htmx/papers/{paper_id}/inputs", response_class=HTMLResponse)
-async def inputs_panel(request: Request, paper_id: str) -> Any:
+async def inputs_panel(request: Request, paper_id: PaperId) -> Any:
     """The run page's "Data and papers" panel."""
     from .app import templates
 

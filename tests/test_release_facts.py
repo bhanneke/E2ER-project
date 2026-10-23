@@ -53,6 +53,34 @@ def test_the_counts_come_from_the_code():
     assert f"**{counts['specialists']}** specialists" in (ROOT / "docs" / "SPECIALISTS.md").read_text()
 
 
+def test_the_counts_agree_with_an_independent_count():
+    """The test above repeats the script's own formulas, so a wrong formula passed it. These counts
+    come another way: what git tracks, the source modules' own definitions, the README's generated
+    table (written when the sources changed, not now)."""
+    import re
+    import subprocess
+
+    counts = rf.facts(ROOT, tests=1)["counts"]
+
+    def tracked(*specs: str) -> list[str]:
+        out = subprocess.run(["git", "ls-files", "--", *specs], cwd=ROOT, capture_output=True, text=True)
+        if out.returncode != 0:
+            pytest.skip("not a git checkout")
+        return [line for line in out.stdout.splitlines() if line]
+
+    templates = tracked("pipelines/*.toml")
+    assert counts["templates"] == len(templates), templates
+    assert counts["skills"] == len([f for f in tracked("skills/files") if f.endswith(".md")])
+    sources = (ROOT / "src/modules/data/sources").glob("*.py")
+    defined = [p for p in sources if re.search(r"(?m)^SOURCE = Source\(", p.read_text())]
+    assert counts["data_sources"] == len(defined) + 1  # + Allium, which is no kit source
+    readme = (ROOT / "README.md").read_text()
+    block = readme.split("<!-- sources:start -->", 1)[1].split("<!-- sources:end -->", 1)[0]
+    rows = [line for line in block.splitlines() if line.startswith("| ") and not line.startswith("| Source |")]
+    assert counts["data_sources"] == len(rows)
+    assert f"on {counts['data_sources']} sources" in block
+
+
 def test_version_and_date_are_the_release_script_s():
     doc = rf.facts(ROOT, tests=1)
     from src import __version__

@@ -157,7 +157,12 @@ def test_a_descriptive_study_replays_to_the_end_without_regression_or_identifica
 
     # `e2er reproduce` reruns the analysis script on the shipped data and finds the same results.
     out = subprocess.run(
-        [*cli, "reproduce", str(bundle)], cwd=study, env=env, capture_output=True, text=True, timeout=600
+        [*cli, "reproduce", str(bundle), "--yes", "--no-sandbox"],
+        cwd=study,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=600,
     )
     assert out.returncode == 0, out.stdout + out.stderr
     assert "Reproduced" in out.stdout, out.stdout

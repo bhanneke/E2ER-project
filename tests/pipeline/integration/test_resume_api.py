@@ -54,6 +54,18 @@ def test_resume_404_when_paper_not_found(tmp_path):
 
 def test_resume_409_when_already_running(tmp_path):
     """A paper with an in-flight task cannot be resumed — must cancel first."""
+    import gc
+    import warnings
+
+    with warnings.catch_warnings(record=True) as seen:
+        warnings.simplefilter("always")
+        _resume_409_when_already_running(tmp_path)
+        gc.collect()
+    unawaited = [str(w.message) for w in seen if "never awaited" in str(w.message)]
+    assert not unawaited, unawaited  # the test's own task leaked into the next test before
+
+
+def _resume_409_when_already_running(tmp_path):
     import asyncio
 
     from src.api import app as app_mod
@@ -77,6 +89,10 @@ def test_resume_409_when_already_running(tmp_path):
         assert "already running" in resp.json().get("detail", "")
     finally:
         task.cancel()
+        # Run the cancelled task to its end before closing the loop: closed with the task never started,
+        # its coroutine was destroyed unawaited ("coroutine '_never_finishes' was never awaited"), a
+        # warning that surfaced in whichever test the garbage collector ran in next.
+        loop.run_until_complete(asyncio.gather(task, return_exceptions=True))
         app_mod._RUNNING.pop(paper_id, None)
         loop.close()
 

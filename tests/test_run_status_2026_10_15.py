@@ -173,13 +173,14 @@ async def test_completed_only_after_the_final_export(tmp_path: Path, monkeypatch
     r._best_effort_finalize = finalize
     out = await r.run()
     assert during_export == ["finishing"]
-    assert rows[-1] == ("completed", None) and out["status"] in ("finishing", "completed")
+    assert rows[-1] == ("completed", None) and out["status"] == "completed"
     assert [s for s, _ in rows].count("completed") == 1
 
 
 async def test_a_pause_after_the_steps_is_not_turned_into_completed(tmp_path: Path, monkeypatch, db):
     rows, _events = db
     r = _runner(tmp_path, PipelineState(paper_id=PID, mode="single_pass"))
+    r._steps_done = True  # every step has run: the export is what is left
     await r._update_status(PaperStatus.COMPLETED)
     assert rows[-1][0] == "finishing"
     await r._update_status(PaperStatus.PAUSED, error="Stopped for you")

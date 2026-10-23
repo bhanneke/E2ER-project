@@ -90,7 +90,9 @@ class PoliteClient:
             self._retries = 0
         self._client = httpx.AsyncClient(
             timeout=timeout,
-            follow_redirects=True,
+            # Redirects are followed by hand (get): a key in a custom header (NOAA's ``token``) must not
+            # follow a redirect to another host, and httpx only strips ``Authorization``.
+            follow_redirects=False,
             headers=headers,
             transport=_TRANSPORT.get(),
         )
@@ -136,7 +138,7 @@ class PoliteClient:
             request = self._client.build_request("GET", url, params=clean or None, headers=headers)
             self.requests.append(str(request.url))
             try:
-                resp = await self._client.send(request)
+                resp = await self._follow(request, headers)
             except httpx.HTTPError as e:
                 if attempt < self._retries and isinstance(e, httpx.TransportError):
                     attempt += 1
@@ -151,6 +153,30 @@ class PoliteClient:
                 body = " ".join(resp.text[:300].split())
                 raise FetchError(f"{request.url}: HTTP {resp.status_code}" + (f": {body}" if body else ""))
             return resp
+
+    async def _follow(self, request: httpx.Request, headers: dict[str, str] | None) -> httpx.Response:
+        """Send ``request`` and follow up to 10 redirects; another origin gets only plain headers."""
+        from ...fetch.http import origin_of, redirect_headers
+
+        assert self._client is not None
+        extra = dict(headers or {})
+        for _ in range(10):
+            resp = await self._client.send(request)
+            if not resp.is_redirect or "location" not in resp.headers:
+                return resp
+            nxt = str(request.url.join(resp.headers["location"]))
+            same = origin_of(nxt) == origin_of(str(request.url))
+            if not same:
+                extra = redirect_headers(extra, same_origin=False)
+                if urlsplit(nxt).scheme.lower() not in ("http", "https"):
+                    raise FetchError(f"{request.url}: redirected to a URL that is not http(s)")
+            request = self._client.build_request("GET", nxt, headers=extra)
+            if not same:
+                # The client's own headers (polite.headers may hold a key) go only to the first origin.
+                for name in list(request.headers):
+                    if name.lower() not in ("user-agent", "accept", "accept-language", "accept-encoding", "host"):
+                        del request.headers[name]
+        raise FetchError(f"{request.url}: more than 10 redirects")
 
     async def _backoff(self, attempt: int, retry_after: str | None) -> None:
         if not PACING or _TRANSPORT.get() is not None:

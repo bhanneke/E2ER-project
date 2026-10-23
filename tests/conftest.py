@@ -16,6 +16,28 @@ from src.modules.llm.base import LLMBackend, TokenUsage, ToolHandler, ToolLoopRe
 # The dashboard sends a first-time user to /setup while no settings exist. Tests
 # of other pages run without a .env; tests of the setup page delete this.
 os.environ.setdefault("E2ER_SKIP_SETUP_REDIRECT", "1")
+
+
+def _loopback_test_clients() -> None:
+    """Every TestClient talks to 127.0.0.1 unless a test names another base_url.
+
+    The server answers only to a Host that names this computer (local_session.guard_request);
+    TestClient's own default, "testserver", is not one. Patched here, at import, so module-scoped
+    clients made before any function fixture get it too.
+    """
+    from starlette.testclient import TestClient
+
+    real = TestClient.__init__
+
+    def init(self, *args, **kwargs):
+        if len(args) < 2:
+            kwargs.setdefault("base_url", "http://127.0.0.1")
+        real(self, *args, **kwargs)
+
+    TestClient.__init__ = init  # type: ignore[method-assign]
+
+
+_loopback_test_clients()
 # Tests run in pytest's temporary folders with nothing set up: e2er would otherwise use the
 # default studies folder (~/e2er-studies) instead of a temporary current folder (src/home.py).
 os.environ.setdefault("E2ER_TEMPORARY_FOLDER_OK", "1")
@@ -518,6 +540,17 @@ def _no_real_platform(monkeypatch, tmp_path_factory):
 
 
 @pytest.fixture(autouse=True)
+def _no_real_approval_seals(monkeypatch, tmp_path_factory):
+    """The dashboard's approval seals (src/modules/data/approval_seal.py) go to a folder of the test,
+    never to this machine's ~/.e2er."""
+    from src.modules.data import approval_seal
+
+    folder = tmp_path_factory.mktemp("approval-seals")
+    monkeypatch.setattr(approval_seal, "_dir", lambda: folder)
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _isolate_the_cli_installs(monkeypatch, tmp_path_factory):
     """Never let the suite see this machine's AI CLIs outside PATH or Codex's model list.
 
@@ -585,21 +618,69 @@ def _block_real_db_pool(monkeypatch):
     `with patch(...)` chain in those tests runs after this fixture
     and takes precedence).
     """
-    monkeypatch.setattr("src.db.client.execute", AsyncMock(return_value=None))
-    monkeypatch.setattr(
-        "src.db.client.fetch_one",
-        AsyncMock(return_value=None),
-    )
-    monkeypatch.setattr(
-        "src.db.client.fetch_all",
-        AsyncMock(return_value=[]),
-    )
+    stub = DBStub()
+    monkeypatch.setattr("src.db.client.execute", stub.execute)
+    monkeypatch.setattr("src.db.client.fetch_one", stub.fetch_one)
+    monkeypatch.setattr("src.db.client.fetch_all", stub.fetch_all)
+    _DB_STUBS.append(stub)
     # Note: write_audit_csv / write_data_queries_sql intentionally NOT mocked
     # here — they call the patched fetch_all internally and degrade to an
     # empty CSV / SQL file, which is the right behavior for runner tests.
     # Tests that exercise audit-module logic directly (test_audit.py) get
     # the real fetch_all mock that returns canned rows.
     yield
+    _DB_STUBS.remove(stub)
+
+
+class DBStub:
+    """The no-op database of every test, which records what was written.
+
+    ``execute``, ``fetch_one`` and ``fetch_all`` are AsyncMocks (None, None, []), so a test can still
+    replace them or assert on their calls. A runner test that does not use a database fixture of its
+    own can now see a status or event write go missing: ``db_stub.statuses()`` lists the statuses
+    written to the papers row, ``db_stub.writes(fragment)`` every statement that contains ``fragment``.
+    """
+
+    def __init__(self) -> None:
+        self.execute = AsyncMock(return_value=None)
+        self.fetch_one = AsyncMock(return_value=None)
+        self.fetch_all = AsyncMock(return_value=[])
+
+    def writes(self, fragment: str = "") -> list[tuple[str, Any]]:
+        out = []
+        for call in self.execute.await_args_list:
+            sql = call.args[0] if call.args else call.kwargs.get("sql", "")
+            params = call.args[1] if len(call.args) > 1 else call.kwargs.get("params")
+            if fragment in sql:
+                out.append((sql, params))
+        return out
+
+    def statuses(self) -> list[str]:
+        return [
+            params["s"]
+            for sql, params in self.writes("UPDATE papers SET status")
+            if isinstance(params, dict) and "s" in params
+        ]
+
+
+_DB_STUBS: list[DBStub] = []
+
+
+@pytest.fixture
+def db_stub() -> DBStub:
+    """The recording database stub of this test (see DBStub)."""
+    return _DB_STUBS[-1]
+
+
+@pytest.fixture(autouse=True)
+def _fresh_settings():
+    """``get_settings`` is cached: without a reset, a test that sets the environment and forgets to clear
+    the cache got the settings of the test before it (30 files cleared it themselves)."""
+    from src.config import get_settings
+
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
 
 
 #: The session token the test API server runs with; the TestClient sends it as the `e2er` commands do.

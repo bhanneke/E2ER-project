@@ -188,7 +188,7 @@ def test_a_study_too_large_for_github_goes_up_without_it_and_a_clone_verifies_an
     integrity = next(c for c in checks if c.name == "integrity")
     assert "left out" in integrity.detail and "data/data.db" in integrity.detail
 
-    assert reproduce(str(clone)) == 0
+    assert reproduce(str(clone), yes=True, sandbox=False) == 0
     report = capsys.readouterr().out
     assert "python get_data.py" in report and "clean_rates.py (data preparation" in report
     assert "Reproduced: every compared value is identical" in report

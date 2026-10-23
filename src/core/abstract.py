@@ -32,7 +32,9 @@ The check's rules (``RULES``):
 * at most ``MAX_NUMBERS`` numbers; years, the base of a rate ("per 100,000")
   and digits that belong to a name (Gaia DR3, NUTS-2) are not counted;
 * every counted number is a result: a value of the study's results files at
-  the precision the abstract shows (``unmatched``);
+  the precision the abstract shows, with its sign (``unmatched``). Standard
+  errors, p-values, t statistics and interval bounds are no results here, and
+  a percentage matches a value times 100 only for a share or an estimate;
 * no coefficient or estimate quoted as a raw number: a number next to an
   estimate word (estimate, coefficient, shift, effect, beta, slope) needs a
   plain unit (percentage points, percent, times, deaths per 100,000, Earth
@@ -74,6 +76,10 @@ AMENDMENT_REASON = (
 EDITED_KIND = "abstract_edited_by_researcher"
 #: Both kinds: the abstract changed after export; verify's anchor rolls them back like redactions.
 AMENDMENT_KINDS = (AMENDMENT_KIND, EDITED_KIND)
+#: The only files ``e2er abstract`` changes: an abstract amendment of any other file is not one.
+CHANGED_FILES = ("paper/abstract.tex", "paper/paper.tex", "paper/paper.pdf", "report.html")
+#: The paper whose change ``e2er verify`` checks: everything outside the abstract stays byte for byte.
+PAPER_FILE = "paper/paper.tex"
 
 MAX_WORDS = 160
 MAX_NUMBERS = 3
@@ -396,13 +402,48 @@ def source_values(workspace: Path) -> dict[str, float]:
     return values
 
 
+#: Result keys an abstract never quotes (the rules forbid test statistics): their values are not results here.
+_STATISTIC_LEAF = re.compile(
+    r"^(?:se|std_?err(?:or)?|standard_error|p|p_?val(?:ue)?|pvalue|t|t_?stat(?:istic)?|t_?value|z|z_?stat|"
+    r"ci|ci_.*|.*_ci|conf(?:idence)?_?int(?:erval)?.*|lower|upper|lo|hi)$",
+    re.IGNORECASE,
+)
+#: Result keys whose value is a share or an estimate: only these may be quoted as a percentage (x 100).
+_SHARE_TOKENS = frozenset(
+    {"share", "shares", "proportion", "fraction", "frac", "prop", "estimate", "est", "coef", "coefficient", "beta",
+     "effect", "att", "ate", "rate", "pct", "percent", "percentage"}
+)  # fmt: skip
+
+
+def _leaf(key: str) -> str:
+    """The last name of a dotted result key (``estimation_results.json#main.x.estimate`` → ``estimate``)."""
+    tail = key.split("#", 1)[-1]
+    if tail.endswith("#key"):
+        return ""  # a key that is itself a number (a grid point, a year): no name
+    tail = re.sub(r"\[\d+\]", "", tail)
+    return tail.rsplit(".", 1)[-1]
+
+
+def _is_statistic(key: str) -> bool:
+    return bool(_STATISTIC_LEAF.match(_leaf(key)))
+
+
+def _is_share(key: str) -> bool:
+    return bool(_SHARE_TOKENS & set(re.split(r"[_\W]+", _leaf(key).lower())))
+
+
 def _is_result(num_str: str, value: float, is_percent: bool, sources: dict[str, float]) -> bool:
+    """Is the abstract's number a value of the results at the precision shown? Signs count (no absolute values);
+    standard errors, p-values, t statistics and interval bounds are left out; a percentage is a share or an
+    estimate times 100."""
     from .pipeline import verify_numbers as vn
 
-    for sv in sources.values():
+    for key, sv in sources.items():
+        if _is_statistic(key):
+            continue
         if vn._values_match(value, sv) or vn._matches_rounded(num_str, sv):
             return True
-        if is_percent and abs(sv) <= 1 and vn._matches_rounded(num_str, sv * 100):
+        if is_percent and -1 <= sv <= 1 and _is_share(key) and vn._matches_rounded(num_str, sv * 100):
             return True
     return False
 
@@ -453,7 +494,7 @@ def check(
     unmatched: list[str] = []
     if sources is not None:
         for num_str, value, is_percent in nums:
-            if _is_result(num_str, value, is_percent, sources) or abs(value) in design:
+            if _is_result(num_str, value, is_percent, sources) or value in design:
                 continue
             unmatched.append(num_str)
         if unmatched:
@@ -614,6 +655,124 @@ def insert_into_file(paper: Path, abstract: Path) -> bool:
         return False
     paper.write_text(after, encoding="utf-8")
     return True
+
+
+# ── the record of a change to the paper (e2er abstract) and its check ───────
+
+
+def block_span(tex: str) -> tuple[int, int] | None:
+    """Where the paper's abstract is: its environment, the comment lines right after it (``% src:``) and a
+    keywords / JEL paragraph that follows it (the part :func:`insert` replaces). None without one."""
+    m = environment(tex)
+    if m is None:
+        return None
+    pos = m.end()
+    while True:
+        c = re.match(r"[ \t]*\n[ \t]*%[^\n]*", tex[pos:])
+        if c is None:
+            break
+        pos += c.end()
+    tail = tex[pos:]
+    dropped = _drop_following_keywords(tail)
+    if dropped != tail:
+        pos = len(tex) - (len(dropped) - 1)
+    return m.start(), pos
+
+
+def _sha(data: bytes) -> str:
+    import hashlib
+
+    return hashlib.sha256(data).hexdigest()
+
+
+def paper_change(before: bytes, after: bytes) -> dict[str, Any]:
+    """The record of the paper's change (``abstract_before`` of the amendment): where the bytes differ, the text
+    that stood there before, how long the new text is, and the fingerprint of the abstract before.
+
+    With it, ``e2er verify`` rebuilds the paper as it was (:func:`paper_problem`); the old text was
+    published with the paper, so recording it reveals nothing.
+    """
+    n = min(len(before), len(after))
+    p = 0
+    while p < n and before[p] == after[p]:
+        p += 1
+    s = 0
+    while s < n - p and before[len(before) - 1 - s] == after[len(after) - 1 - s]:
+        s += 1
+    # Whole characters: the cut never falls inside a UTF-8 sequence.
+    while 0 < p < len(before) and before[p] & 0xC0 == 0x80:
+        p -= 1
+    while s > 0 and before[len(before) - s] & 0xC0 == 0x80:
+        s -= 1
+    old = before.decode("utf-8", errors="replace")
+    span = block_span(old)
+    return {
+        "offset": p,
+        "text": before[p : len(before) - s].decode("utf-8"),
+        "length_after": len(after) - p - s,
+        "sha256": _sha(old[span[0] : span[1]].encode("utf-8")) if span else None,
+    }
+
+
+def _outside(tex: str) -> tuple[str, str] | None:
+    span = block_span(tex)
+    if span is None:
+        return None
+    return tex[: span[0]].rstrip(), tex[span[1] :].lstrip()
+
+
+def paper_problem(entry: dict[str, Any], now: bytes | None) -> tuple[str | None, bytes | None]:
+    """Check an abstract amendment of paper/paper.tex against the paper as it is now: (why not, or None; the
+    paper as it was before the amendment, rebuilt from the record, or None).
+
+    The paper rebuilt with the recorded old text must have the fingerprint the amendment names, and
+    everything outside the abstract (its environment, its ``% src:`` lines and keywords paragraph, the
+    blank lines around it) must be byte for byte the same before and after. A record without
+    ``abstract_before`` (e2er before this check) cannot be checked.
+    """
+    path = entry.get("path")
+    rec = entry.get("abstract_before")
+    if not isinstance(rec, dict):
+        why = f"{path}: the abstract amendment does not record the text it replaced, so the change cannot be checked"
+        return why, None
+    off, text, length = rec.get("offset"), rec.get("text"), rec.get("length_after")
+    if not (
+        isinstance(off, int)
+        and not isinstance(off, bool)
+        and off >= 0
+        and isinstance(text, str)
+        and isinstance(length, int)
+        and not isinstance(length, bool)
+        and length >= 0
+    ):
+        return f"{path}: the abstract amendment's record is incomplete", None
+    if now is None:
+        return f"{path} is missing", None
+    if off + length > len(now):
+        return f"{path}: the abstract amendment's record does not fit the file", None
+    before = now[:off] + text.encode("utf-8") + now[off + length :]
+    if _sha(before) != entry.get("sha256_before"):
+        return f"{path}: rebuilt with the recorded old abstract, the paper is not the one before the amendment", None
+    try:
+        old, new = before.decode("utf-8"), now.decode("utf-8")
+    except UnicodeDecodeError:
+        return f"{path} is not UTF-8 text", None
+    old_span, new_out = block_span(old), _outside(new)
+    if new_out is None:
+        return f"{path}: the paper has no abstract after the abstract amendment", None
+    if old_span is None:
+        # The abstract was added where none was: the old paper is the new one without it.
+        head, tail = new_out
+        ok = old.startswith(head) and old.endswith(tail) and not old[len(head) : len(old) - len(tail)].strip()
+        sha_ok = rec.get("sha256") is None
+    else:
+        ok = _outside(old) == new_out
+        sha_ok = rec.get("sha256") == _sha(old[old_span[0] : old_span[1]].encode("utf-8"))
+    if not ok:
+        return f"{path}: the abstract amendment changed the paper outside its abstract", None
+    if not sha_ok:
+        return f"{path}: the recorded fingerprint of the old abstract is not the old paper's abstract", None
+    return None, before
 
 
 # ── what the abstract writer reads ───────────────────────────────────────────

@@ -5,17 +5,25 @@ How the code is run is the study's own ``reproduce.json`` (see
 runs in a run folder of its own, in a new virtual environment with the
 study's pinned requirements. Exit codes: 0 reproduced, 1 differences,
 2 could not run.
+
+The steps are the author's code. Before anything runs the command lists each
+step's exact command and the requirements, says how they run (in the Docker
+sandbox, or with ``--no-sandbox`` on this computer as the user), and asks;
+``--yes`` answers for a script. Steps that load inputs from the web ask on their
+own. Without Docker nothing runs unless ``--no-sandbox`` is given.
 """
 
 from __future__ import annotations
 
 import json
+import shlex
 import shutil
 import tempfile
 from pathlib import Path
 from typing import Any
 
 from .core import reproduce as rp
+from .core.safe_text import printable
 
 
 def _fmt(v: Any) -> str:
@@ -149,11 +157,51 @@ def render(
                 lines.append(f"  {len(tables['differ'])} differ: {', '.join(sorted(tables['differ']))}")
             if tables["not_shipped"]:
                 lines.append(f"  {len(tables['not_shipped'])} not in the paper: {', '.join(tables['not_shipped'])}")
+            if tables.get("not_compared"):
+                lines.append(
+                    f"  {len(tables['not_compared'])} not compared (they read results the rerun did not write "
+                    f"again): {', '.join(sorted(tables['not_compared']))}"
+                )
     notes = [n for n in recipe.get("notes") or [] if isinstance(n, str)]
     if notes:
         lines += ["", "Notes from the study's reproduce.json:"] + [f"  - {n}" for n in notes]
     lines += ["", verdict]
     return "\n".join(lines) + "\n"
+
+
+def _integrity_first(root: Path, recipe: dict[str, Any]) -> tuple[str | None, str | None]:
+    """(a qualifier for the verdict, or why the folder is not run): the folder must be the study as exported.
+
+    A folder whose files are not the ones provenance.json lists (reproduce.json included) is not the study, and a
+    rerun of it says nothing about the study: refused. Files may be absent where the study's own records say
+    why and the rerun gets them back: a source's terms keep them out (data_terms.restricted_paths), a supported
+    package declaration, or an input the recipe loads or builds again. A folder without provenance.json runs,
+    and the verdict says that nothing ties it to a study.
+    """
+    if not (root / "provenance.json").exists():
+        return (
+            "This folder has no provenance.json, so nothing ties its files (reproduce.json included) to a "
+            "published study: the rerun says only what this folder's code produces.",
+            None,
+        )
+    from .cli_verify import FAIL, _check_integrity
+    from .core.data_terms import restricted_paths
+    from .core.export import package as pkg
+
+    files: dict[str, Any] = recipe["files"] if isinstance(recipe.get("files"), dict) else {}
+    absent_ok: dict[str, dict[str, Any]] = dict(pkg.supported_left_out(root))
+    for rel, why in restricted_paths(root).items():
+        absent_ok.setdefault(rel, {"path": rel, "reason": why})
+    for run_path in rp.optional_inputs(recipe):
+        rel = str(files.get(run_path, run_path))
+        absent_ok.setdefault(rel, {"path": rel, "reason": "the study's code loads or builds it again"})
+    integrity = _check_integrity(root, absent_ok)
+    if integrity.status == FAIL:
+        return None, (
+            f"error: the folder is not the study as exported, so it is not run: {integrity.detail}. "
+            "`e2er verify` shows what changed."
+        )
+    return None, None
 
 
 def _inputs_only(recipe: dict[str, Any], inputs: list[dict[str, Any]]) -> str:
@@ -163,14 +211,81 @@ def _inputs_only(recipe: dict[str, Any], inputs: list[dict[str, Any]]) -> str:
     return "\n" + text[start:].rstrip() + "\n" if start >= 0 else ""
 
 
-def reproduce(folder: str, *, keep: bool = False, json_out: str | None = None, allow_network: bool = False) -> int:
+def _interactive() -> bool:
+    import sys
+
+    try:
+        return sys.stdin.isatty() and sys.stdout.isatty()
+    except (AttributeError, ValueError):
+        return False
+
+
+def _ask(question: str) -> bool:
+    try:
+        return input(question).strip().lower() in ("y", "yes")
+    except EOFError:
+        return False
+
+
+def plan_text(root: Path, recipe: dict[str, Any], *, sandboxed: bool, base: str = "") -> str:
+    """What will run, before it runs: every step's exact command, the requirements, and as whom."""
+    lines = ["", "The study's reproduce.json runs these commands, in this order:"]
+    for i, step in enumerate(recipe["steps"], 1):
+        cmd = printable(shlex.join(rp.step_argv(step)), newlines=False)
+        tags = []
+        if rp.is_reload_step(step, recipe):
+            tags.append("loads inputs from the web")
+        if isinstance(step.get("when_missing"), list) and step["when_missing"]:
+            tags.append("only when the folder lacks " + ", ".join(map(str, step["when_missing"])))
+        about = f"  ({printable(step.get('about'), newlines=False)})" if step.get("about") else ""
+        lines.append(f"  {i}. {cmd}{about}" + (f"  [{'; '.join(tags)}]" if tags else ""))
+    req = root / str(recipe["requirements"])
+    try:
+        pins = rp.requirement_lines(req)
+    except OSError:
+        pins = []
+    shown = ", ".join(printable(x, newlines=False) for x in pins[:40]) or "no packages"
+    more = f" and {len(pins) - 40} more" if len(pins) > 40 else ""
+    lines.append(f"Requirements ({printable(recipe['requirements'], newlines=False)}): {shown}{more}")
+    if sandboxed:
+        lines += [
+            "",
+            f"These commands are the author's code. They run in a Docker container ({base}): no network, a",
+            "read-only system, no folder of yours but the run folder, no API key or token.",
+        ]
+    else:
+        lines += [
+            "",
+            "These commands are the author's code, and with --no-sandbox they run on this computer AS YOU:",
+            "they can read and change every file you can. e2er points HOME at an empty folder and passes no",
+            "API key or token, but that is not a sandbox. Run a study from someone you do not know in Docker.",
+        ]
+    return "\n".join(lines) + "\n"
+
+
+def reproduce(
+    folder: str,
+    *,
+    keep: bool = False,
+    json_out: str | None = None,
+    allow_network: bool = False,
+    yes: bool = False,
+    sandbox: bool | None = None,
+    allow_reload: bool | None = None,
+) -> int:
     """`e2er reproduce`. The run folder and an unpacked package are temporary: removed when the command ends,
-    also after a failure, unless ``keep`` (then the report says where they are)."""
+    also after a failure, unless ``keep`` (then the report says where they are).
+
+    ``sandbox``: None runs the steps in Docker when Docker answers and refuses otherwise; False is
+    ``--no-sandbox`` (on this computer, as the user); True requires Docker. ``yes`` answers the
+    question before the steps run; ``allow_reload`` the one for the steps that load inputs from
+    the web (None: asked, or ``yes``)."""
+    opts: dict[str, Any] = {"yes": yes, "sandbox": sandbox, "allow_reload": allow_reload}
     from .core.export import package as pkg
 
     path = Path(folder).expanduser().resolve()
     if not pkg.is_package(path):
-        return _reproduce_folder(path, keep=keep, json_out=json_out, allow_network=allow_network)
+        return _reproduce_folder(path, keep=keep, json_out=json_out, allow_network=allow_network, **opts)
     # A .e2er package: unpacked into a folder of its own, every file checked against the manifest first.
     unpacked = Path(tempfile.mkdtemp(prefix="e2er-package-"))
     try:
@@ -180,11 +295,13 @@ def reproduce(folder: str, *, keep: bool = False, json_out: str | None = None, a
             print(f"error: the package is not intact: {e}")
             return 2
         print(
-            f"Unpacked {path.name} into {opened.root}: {opened.files} file(s) match {pkg.MANIFEST} "
-            f"(fingerprint {opened.manifest.get('fingerprint')}).",
+            f"Unpacked {printable(path.name, newlines=False)} into {opened.root}: {opened.files} file(s) match "
+            f"{pkg.MANIFEST} (fingerprint {printable(opened.manifest.get('fingerprint'), newlines=False)}).",
             flush=True,
         )
-        code = _reproduce_folder(opened.root, keep=keep, json_out=json_out, allow_network=allow_network, package=True)
+        code = _reproduce_folder(
+            opened.root, keep=keep, json_out=json_out, allow_network=allow_network, package=True, **opts
+        )
         if keep:
             print(f"The unpacked package is kept: {opened.root}")
         return code
@@ -194,7 +311,15 @@ def reproduce(folder: str, *, keep: bool = False, json_out: str | None = None, a
 
 
 def _reproduce_folder(
-    root: Path, *, keep: bool, json_out: str | None, allow_network: bool, package: bool = False
+    root: Path,
+    *,
+    keep: bool,
+    json_out: str | None,
+    allow_network: bool,
+    package: bool = False,
+    yes: bool = False,
+    sandbox: bool | None = None,
+    allow_reload: bool | None = None,
 ) -> int:
     from .core.export import package as pkg
 
@@ -205,7 +330,11 @@ def _reproduce_folder(
     try:
         recipe = rp.load_recipe(root, rebuild=rebuild)
     except rp.RecipeError as e:
-        print(f"error: {e}")
+        print(f"error: {printable(e)}")
+        return 2
+    qualifier, refused = _integrity_first(root, recipe)
+    if refused:
+        print(refused)
         return 2
     # A left-out output the step only updates (figure_spec.json, produced by the figure step): not compared.
     from .core.derived_data import not_produced_by_step
@@ -240,9 +369,59 @@ def _reproduce_folder(
         if source.get("wheelhouse_skipped"):
             print(f"Note: {source['wheelhouse_skipped']}.")
 
+    try:
+        rp.check_foreign(root, recipe)
+    except rp.RecipeError as e:
+        print(f"error: {printable(e)}")
+        return 2
+
+    # Where the steps run: the Docker sandbox when it answers; on this computer only with --no-sandbox.
+    from .core import reproduce_sandbox as rs
+
+    docker: str | None = None
+    if sandbox is not False:
+        docker, why = rs.available()
+        if docker is None:
+            print(
+                f"error: nothing was run. {why}.\ne2er reproduce runs the study's code in a Docker sandbox: start "
+                "Docker (or install it: https://docs.docker.com/get-docker/) and run the command again. --no-sandbox "
+                "runs the code on this computer as you instead: only for a study whose code you trust."
+            )
+            return 2
+    base = f"python:{rs.python_version(recipe)}-slim"
+    print(plan_text(root, recipe, sandboxed=docker is not None, base=base), end="")
+    if not yes:
+        if not _interactive():
+            print("Nothing was run: without a terminal to ask in, --yes runs these commands.")
+            return 2
+        if not _ask("Run them? [y/N] "):
+            print("Nothing was run.")
+            return 2
+    reloads = [i for i, st in enumerate(recipe["steps"], 1) if rp.is_reload_step(st, recipe)]
+    if allow_reload is None:
+        if yes or not reloads:
+            allow_reload = True
+        else:
+            allow_reload = _ask(
+                f"Step(s) {', '.join(map(str, reloads))} load inputs from the web again. Let them use the network "
+                "(without your API keys)? [y/N] "
+            )
+    if reloads and not allow_reload:
+        print("The steps that load inputs run without the network; they fail when they need it.")
+
     run_dir = Path(tempfile.mkdtemp(prefix="e2er-reproduce-"))
     try:
-        return _run_in(root, recipe, run_dir, keep=keep, json_out=json_out, allow_network=allow_network)
+        return _run_in(
+            root,
+            recipe,
+            run_dir,
+            keep=keep,
+            json_out=json_out,
+            allow_network=allow_network,
+            docker=docker,
+            allow_reload=bool(allow_reload),
+            qualifier=qualifier,
+        )
     finally:
         if keep:
             print(f"The run folder is kept: {run_dir}")
@@ -251,7 +430,16 @@ def _reproduce_folder(
 
 
 def _run_in(
-    root: Path, recipe: dict[str, Any], run_dir: Path, *, keep: bool, json_out: str | None, allow_network: bool
+    root: Path,
+    recipe: dict[str, Any],
+    run_dir: Path,
+    *,
+    keep: bool,
+    json_out: str | None,
+    allow_network: bool,
+    docker: str | None = None,
+    allow_reload: bool = True,
+    qualifier: str | None = None,
 ) -> int:
     logs = run_dir / ".e2er-logs"
     logs.mkdir()
@@ -264,10 +452,34 @@ def _run_in(
     tables: dict[str, Any] | None = None
     try:
         rp.lay_out(root, run_dir, recipe)  # without the results it is to write: the rerun must write them
-        python, env_info = rp.make_environment(run_dir, recipe, root, logs)
-        steps = rp.run_steps(run_dir, recipe, rp.step_env(python, run_dir), logs, python, allow_network=allow_network)
+        if docker is not None:
+            from .core import reproduce_sandbox as rs
+
+            box, env_info = rs.prepare(run_dir, recipe, root, logs, docker=docker)
+            steps = rp.run_steps(
+                run_dir,
+                recipe,
+                rs.step_env(box, run_dir),
+                logs,
+                f"{rs.STUDY_VENV}/bin/python",
+                allow_network=allow_network,
+                allow_reload=allow_reload,
+                runner=rs.step_runner(box, run_dir),
+                log_path=lambda p: rs.in_box(p, run_dir),
+            )
+        else:
+            python, env_info = rp.make_environment(run_dir, recipe, root, logs)
+            steps = rp.run_steps(
+                run_dir,
+                recipe,
+                rp.step_env(python, run_dir),
+                logs,
+                python,
+                allow_network=allow_network,
+                allow_reload=allow_reload,
+            )
     except rp.RecipeError as e:
-        print(f"error: {e}")
+        print(f"error: {printable(e)}")
         inputs = rp.compare_inputs(run_dir, recipe.get("inputs") or [])
         print(_inputs_only(recipe, inputs), end="")
         return 2
@@ -281,8 +493,10 @@ def _run_in(
         ]
         tables = rp.compare_tables(root, run_dir, recipe["compare"])
     verdict, code = rp.verdict(files, tables, steps, inputs)
+    if qualifier:
+        verdict = f"{qualifier} {verdict}"
     print()
-    print(render(root, recipe, env_info, steps, inputs, files, tables, verdict, kept=keep), end="")
+    print(printable(render(root, recipe, env_info, steps, inputs, files, tables, verdict, kept=keep)), end="")
     if json_out:
         doc = {
             "schema": "e2er-reproduce-report/1",
@@ -291,6 +505,7 @@ def _run_in(
             "steps": [s.as_dict() for s in steps],
             "inputs": inputs,
             "allow_network": allow_network,
+            "sandbox": (env_info or {}).get("sandbox") if docker is not None else None,
             "results": [f.as_dict() for f in files],
             "tables": tables,
             "verdict": verdict,

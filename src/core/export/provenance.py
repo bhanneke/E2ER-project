@@ -230,6 +230,8 @@ def results_code_record(workspace: Path, bundle: Path) -> dict[str, Any] | None:
                     "output_sha256": (writer.get("outputs") or {}).get(name),
                     "ran_at": writer.get("started_at"),
                     "exit_code": writer.get("exit_code"),
+                    # The e2er that ran the script (logs since 0.18.0 record it).
+                    **({"e2er_version": writer["e2er_version"]} if writer.get("e2er_version") else {}),
                 }
             )
             shipped = _bundle_script(bundle, script)
@@ -248,6 +250,8 @@ def build_provenance(
     exported_at: str,
     results_from_code: dict[str, Any] | None = None,
     derived_data: list[dict[str, Any]] | None = None,
+    ran_with: dict[str, Any] | None = None,
+    left_out: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     run: dict[str, Any] = {
         "paper_id": manifest.get("paper_id"),
@@ -272,12 +276,81 @@ def build_provenance(
     if derived_data:
         # Data files the run built from a source's data whose terms keep it out (derived_data.py): restricted too.
         run["derived_data"] = derived_data
+    if ran_with and ran_with.get("version"):
+        # The e2er that RAN the study (its run_identity events), not the one exporting it: verify accepts "the
+        # run predates output records" only from a run of e2er 0.16.0 or earlier.
+        run["e2er_version_run"] = ran_with["version"]
+        if ran_with.get("versions"):
+            run["e2er_versions_run"] = ran_with["versions"]
+        if ran_with.get("commit"):
+            run["e2er_commit_run"] = ran_with["commit"]
+    if left_out:
+        # Files of the run the export left out (a reproduction output over 200 MB: kind "size"), so the folder
+        # says why a compared number cannot be re-read.
+        run["left_out"] = left_out
     return {
         "schema": SCHEMA_ID,
         "run": run,
         "files": inventory(bundle),
         "edges": _edges(bundle),
     }
+
+
+def _version_key(v: str) -> tuple[int, ...]:
+    import re
+
+    return tuple(int(n) for n in re.findall(r"\d+", v)[:3])
+
+
+def recorded_run_identity(paper_id: str | None) -> dict[str, Any] | None:
+    """The e2er versions and commit that ran the paper, from its ``run_identity`` events in the run database.
+
+    {"version": the newest version any part of the run used, "versions": each part's, in order,
+    "commit": the last part's commit}, or None when the database is not reachable or holds no such event.
+    Read in a thread of its own, so it works also when the caller runs inside an event loop.
+    """
+    if not paper_id:
+        return None
+    import asyncio
+    import concurrent.futures
+
+    from ...db.client import fetch_all
+
+    def query() -> list[dict[str, Any]]:
+        return list(
+            asyncio.run(
+                fetch_all(
+                    "SELECT payload FROM pipeline_events WHERE paper_id = %(id)s AND event_type = 'run_identity' "
+                    "ORDER BY created_at",
+                    {"id": paper_id},
+                )
+            )
+            or []
+        )
+
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            rows = pool.submit(query).result(timeout=30)
+    except Exception:  # noqa: BLE001 — no database: the export records nothing, verify says what is missing
+        return None
+    versions: list[str] = []
+    commit = None
+    for row in rows:
+        data = row.get("payload") if isinstance(row, dict) else None
+        if isinstance(data, str):
+            try:
+                data = json.loads(data)
+            except ValueError:
+                continue
+        if not isinstance(data, dict):
+            continue
+        v = data.get("package_version")
+        if isinstance(v, str) and _version_key(v):
+            versions.append(v)
+        commit = data.get("git_sha") or commit
+    if not versions:
+        return None
+    return {"version": max(versions, key=_version_key), "versions": versions, "commit": commit}
 
 
 def dump(prov: dict[str, Any]) -> str:
@@ -292,12 +365,20 @@ def write_provenance(
     exported_at: str,
     results_from_code: dict[str, Any] | None = None,
     derived_data: list[dict[str, Any]] | None = None,
+    ran_with: dict[str, Any] | None = None,
+    left_out: list[dict[str, Any]] | None = None,
 ) -> Path:
     """Write ``<bundle>/provenance.json`` and return its path. Call AFTER every
     other bundle file exists (README and report.html included) so the inventory is complete."""
     out = bundle / PROVENANCE_FILE
     prov = build_provenance(
-        bundle, manifest, exported_at=exported_at, results_from_code=results_from_code, derived_data=derived_data
+        bundle,
+        manifest,
+        exported_at=exported_at,
+        results_from_code=results_from_code,
+        derived_data=derived_data,
+        ran_with=ran_with,
+        left_out=left_out,
     )
     out.write_text(dump(prov), encoding="utf-8")
     return out
@@ -309,14 +390,35 @@ def files_at_export(prov: dict[str, Any]) -> dict[str, dict[str, Any]]:
     A file publish changed gets its exported fingerprint back (the first
     amendment's ``sha256_before``); a file publish added (``sha256_before``
     None) is left out. The size of a changed file is not kept, so it is None.
+    A file anonymised for double-blind review (``e2er publish --blind``, kind
+    ``anonymised``) has no fingerprint before (it is withheld): it counts as
+    exported as it is now, after its anonymisation.
     """
     files = {k: dict(v) for k, v in (prov.get("files") or {}).items()}
     first: dict[str, Any] = {}
+    withheld: set[str] = set()
     for a in prov.get("amendments") or []:
         path = a.get("path") if isinstance(a, dict) else None
         if isinstance(path, str) and path not in first:
             first[path] = a.get("sha256_before")
+            before = a.get("sha256_before")
+            # Withheld (an anonymised or blinded file: None) or keyed to the author's computer (a redaction,
+            # "hmac-sha256:…"): the fingerprint before is not known, so the file counts as exported as it is now.
+            if (a.get("kind") in ("anonymised", "redacted") and before is None) or (
+                isinstance(before, str) and before.startswith("hmac-sha256:")
+            ):
+                withheld.add(path)
+    for path in withheld:
+        last = None
+        for a in prov.get("amendments") or []:
+            if isinstance(a, dict) and a.get("path") == path and a.get("kind") in ("anonymised", "redacted"):
+                last = a.get("sha256_after")
+        first[path] = last
     for path, before in first.items():
+        if path in withheld:
+            if before is not None and path in files:
+                files[path] = {"sha256": before, "bytes": None}
+            continue
         if before is None:
             files.pop(path, None)
         elif path in files:

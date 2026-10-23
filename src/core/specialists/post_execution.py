@@ -55,8 +55,8 @@ Properties:
 from __future__ import annotations
 
 import json
-import os
 import re
+import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -65,6 +65,7 @@ from pathlib import Path
 from typing import Any
 
 from ...logging_config import get_logger
+from ..child_env import empty_home, run_in_own_session, script_env
 
 logger = get_logger(__name__)
 
@@ -313,16 +314,15 @@ def maybe_execute_specialist_script(workspace: Path, specialist: str) -> Executi
     # Through the script log's bootstrap, which records the packages the script loaded (reproduce.json pins them).
     argv, extra, packages_file = script_command(sys.executable, script_path)
     before = output_snapshot(workspace)  # the script log records what the run wrote
+    # The script is AI-written: no key or token, no ssh agent, an empty HOME (src/core/child_env.py).
+    home = empty_home()
     try:
-        completed = subprocess.run(
+        completed = run_in_own_session(
             argv,
             cwd=str(workspace),
             # Plain tracebacks for the model that reads them (Python 3.13+ colours them under FORCE_COLOR).
-            env={**os.environ, "PYTHON_COLORS": "0", **extra},
-            capture_output=True,
-            text=True,
+            env=script_env(home=home, extra=extra),
             timeout=convention.timeout_seconds,
-            check=False,
         )
         rc = completed.returncode
         stdout = completed.stdout
@@ -349,6 +349,8 @@ def maybe_execute_specialist_script(workspace: Path, specialist: str) -> Executi
             reason=f"subprocess launch failed: {e!r}",
             discovered=discovered,
         )
+    finally:
+        shutil.rmtree(home, ignore_errors=True)
 
     # If the script wrote a populated alternate output but not the canonical
     # sidecar, copy it across so M4.3 (which keys on the canonical name) sees it.
@@ -653,15 +655,10 @@ def _run_recorded(workspace: Path, script_path: Path, timeout: int, *, by: str) 
     started = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     argv, extra, packages_file = script_command(sys.executable, script_path)
     before = output_snapshot(workspace)
+    home = empty_home()  # AI-written: no key or token, an empty HOME (src/core/child_env.py)
     try:
-        rc: int | None = subprocess.run(
-            argv,
-            cwd=str(workspace),
-            env={**os.environ, "PYTHON_COLORS": "0", **extra},
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            check=False,
+        rc: int | None = run_in_own_session(
+            argv, cwd=str(workspace), env=script_env(home=home, extra=extra), timeout=timeout
         ).returncode
     except subprocess.TimeoutExpired:
         rc = None
@@ -669,6 +666,8 @@ def _run_recorded(workspace: Path, script_path: Path, timeout: int, *, by: str) 
         script_record(packages_file)
         logger.warning("results check: %s could not start: %s", script_path.name, e)
         return None
+    finally:
+        shutil.rmtree(home, ignore_errors=True)
     record_script_run(
         workspace,
         script_path.relative_to(workspace).as_posix(),

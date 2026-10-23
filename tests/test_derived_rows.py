@@ -320,7 +320,7 @@ def test_the_package_leaves_the_point_array_out_and_the_rerun_builds_it(tmp_path
     assert fig["output"] and fig["after"] == "clean_gaia.py" and fig["sha256"]
     assert "builds it again with code/scratch/make_figures.py" in pkg.rerun_words(left["results/figure_spec.json"])
     capsys.readouterr()
-    assert reproduce(str(packed.path)) == 0
+    assert reproduce(str(packed.path), yes=True, sandbox=False) == 0
     report = capsys.readouterr().out
     assert "python make_figures.py (data preparation: builds figure_spec.json again" in report
     assert "figure_spec.json: identical to the study's file" in report
@@ -347,7 +347,7 @@ def test_a_clone_with_left_out_results_verifies_and_reproduces(tmp_path, rerun_h
     checks = _run_checks(clone, online=False)
     assert not [c for c in checks if c.status == FAIL], [(c.name, c.detail) for c in checks]
     capsys.readouterr()
-    assert reproduce(str(clone)) == 0
+    assert reproduce(str(clone), yes=True, sandbox=False) == 0
     report = capsys.readouterr().out
     assert "python build_units.py (data preparation: builds units.csv, weights.csv again" in report
     assert "lags.csv: identical to the study's file" in report
@@ -429,5 +429,5 @@ def test_publish_to_github_keeps_row_level_results_out(tmp_path, rerun_here, mon
     checks = _run_checks(clone / "regions", online=False)
     assert not [c for c in checks if c.status == FAIL], [(c.name, c.detail) for c in checks]
     capsys.readouterr()
-    assert reproduce(str(clone / "regions")) == 0
+    assert reproduce(str(clone / "regions"), yes=True, sandbox=False) == 0
     assert "Reproduced: every compared value is identical" in capsys.readouterr().out

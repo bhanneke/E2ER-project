@@ -202,7 +202,7 @@ def test_a_package_verifies_and_reproduces_like_its_folder(tmp_path, offline_loc
     assert package_checks[0]["name"] == "package" and package_checks[0]["status"] == "PASS"
     assert [(c["name"], c["status"]) for c in package_checks[1:]] == [(c["name"], c["status"]) for c in folder_checks]
 
-    assert reproduce(str(packed.path)) == 0
+    assert reproduce(str(packed.path), yes=True, sandbox=False) == 0
     report = capsys.readouterr().out
     assert "match e2er-package.json" in report
     assert "Reproduced: every compared value is identical" in report
@@ -233,7 +233,7 @@ def test_a_study_with_restricted_data_packs_without_it_and_reproduces_by_rebuild
     out = capsys.readouterr().out
     assert "[PASS] integrity" in out and "1 data file(s) left out of the package (data/data.db)" in out
 
-    assert reproduce(str(packed.path)) == 0
+    assert reproduce(str(packed.path), yes=True, sandbox=False) == 0
     report = capsys.readouterr().out
     assert "python get_data.py" in report and "2. python clean_rates.py (data preparation" in report
     assert "not run" not in report.split("Steps:")[1].split("Inputs")[0], "the preparation ran: data.db was rebuilt"
@@ -365,7 +365,7 @@ def test_a_tampered_package_is_refused_naming_the_file(tmp_path, offline_lock, c
     assert verify(str(bad)) == 1
     err = capsys.readouterr().err
     assert "the package is not intact" in err and words in err
-    assert reproduce(str(bad)) == 2
+    assert reproduce(str(bad), yes=True, sandbox=False) == 2
     assert words in capsys.readouterr().out
     assert unpack(str(bad), str(tmp_path / "u")) == 1
     assert not (tmp_path / "u").exists(), "a refused package leaves nothing behind"
@@ -488,7 +488,7 @@ def test_offline_packs_the_wheels_for_this_computer_and_the_rerun_installs_from_
     assert verify(str(packed.path)) in (0, 1)
     assert "unlisted" not in capsys.readouterr().out, "the package's own files are not the study's"
 
-    assert reproduce(str(packed.path)) == 0
+    assert reproduce(str(packed.path), yes=True, sandbox=False) == 0
     assert rerun_here[-1]["wheelhouse"] == f"{pkg.WHEELS}/{key}"
 
 
@@ -498,7 +498,7 @@ def test_wheels_for_another_computer_are_not_used(tmp_path, offline_lock, rerun_
     packed = pkg.build(folder, offline=True, downloader=download)
     monkeypatch.setattr(pkg, "platform_key", lambda python_minor: "win32-x86_64-py" + python_minor)
     capsys.readouterr()
-    assert reproduce(str(packed.path)) == 0
+    assert reproduce(str(packed.path), yes=True, sandbox=False) == 0
     assert "the packages are downloaded" in capsys.readouterr().out
     assert "wheelhouse" not in rerun_here[-1]
 
@@ -546,7 +546,7 @@ def test_a_wheelhouse_named_in_reproduce_json_is_ignored(tmp_path, rerun_here, c
         ),
         encoding="utf-8",
     )
-    assert reproduce(str(folder)) == 0
+    assert reproduce(str(folder), yes=True, sandbox=False) == 0
     assert "wheelhouse" not in rerun_here[-1]
 
 
@@ -681,19 +681,22 @@ def test_reproduce_removes_its_temporary_folders_also_after_a_failure(
 
     folder = _export(tmp_path)
     packed = pkg.build(folder)
-    if tamper:  # the rerun differs from the published results: a failure
+    if tamper:  # the rerun differs from the published results (recorded as a change): a failure
+        from src.core.export.provenance import amend
+
         res = folder / "results" / "estimation_results.json"
         doc = json.loads(res.read_text(encoding="utf-8"))
         doc["main"]["mean"] += 1
         res.write_text(json.dumps(doc), encoding="utf-8")
+        amend(folder, "results/estimation_results.json", "edited", at="x")
     tmp = Path(tempfile.gettempdir())
-    assert reproduce(str(packed.path)) == 0
-    assert reproduce(str(folder)) == (1 if tamper else 0)
+    assert reproduce(str(packed.path), yes=True, sandbox=False) == 0
+    assert reproduce(str(folder), yes=True, sandbox=False) == (1 if tamper else 0)
     out = capsys.readouterr().out
     assert _leftovers(tmp) == [], out
     assert "is kept" not in out and "--keep keeps it" in out
     bad = _rewrite(packed.path, tmp_path / "bad.e2er", replace={"README.md": b"# other\n"})
-    assert reproduce(str(bad)) == 2
+    assert reproduce(str(bad), yes=True, sandbox=False) == 2
     assert _leftovers(tmp) == []
 
 
@@ -702,7 +705,7 @@ def test_keep_keeps_both_folders_and_says_where(tmp_path, offline_lock, rerun_he
 
     folder = _export(tmp_path)
     packed = pkg.build(folder)
-    assert reproduce(str(packed.path), keep=True) == 0
+    assert reproduce(str(packed.path), keep=True, yes=True, sandbox=False) == 0
     out = capsys.readouterr().out
     left = _leftovers(Path(tempfile.gettempdir()))
     assert len(left) == 2 and "The run folder is kept:" in out and "The unpacked package is kept:" in out

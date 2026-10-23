@@ -30,7 +30,10 @@ untouched.
 ├── data/
 │   ├── data.db          the per-paper SQLite warehouse (copy or symlink — see D3)
 │   ├── data_summary.md
-│   └── data_dictionary.json
+│   ├── data_dictionary.json
+│   └── …                the workspace's data/ folder (e2er-data --save-to files, the researcher's own
+│                        files): every file a source's terms let the study pass on, at most 200 MB, no link
+│                        out of the study unless recorded as the researcher's file, no hidden file
 ├── results/
 │   ├── estimation_results.json
 │   ├── robustness_results.json
@@ -103,13 +106,25 @@ same fingerprint with every decimal number written with 12 significant digits: a
 file the study's own preparation step builds again whose numbers differ only in
 their last digits (pandas writing a parsed float back) is reported as "the same
 rows, every decimal number equal to 12 significant digits" and counts as the
-study's input; integers and text are compared exactly. A recipe written before
+study's input; integers and text are compared exactly. Twelve significant digits is a
+relative difference below 10^-11, well under the last digit any study prints and above
+the noise of writing a float through text (a double holds 15 to 17): the rule absorbs a
+float written back, never a different number. It applies to input tables only; result
+values are compared as above (identical, the same at the published precision, small
+differences, differ), and a whole number must match exactly. A recipe written before
 this field gets it from the package's record of the left-out file (below), only
 where that record's `content_sha256` is the recipe's own.
 
 `provenance.json` records under `run.results_from_code` which run of which
 script wrote each results file (the script log's output hashes); `e2er verify`
-checks the folder against it ("results from code").
+checks the folder against it ("results from code"). Export also records the e2er
+that ran the study, from the run's `run_identity` events: `run.e2er_version_run`
+(the newest version any part of the run used), `run.e2er_versions_run` and
+`run.e2er_commit_run`. An entry "the run predates output records" (or no record)
+is accepted only for a run of e2er 0.16.0 or earlier (script logs record outputs
+since 0.16.1); verify reads the run's version from `run.e2er_version_run`, else
+from the published dossier's `e2er.segments`, else from an exporting e2er of 0.16.0
+or earlier, and fails when none of them says.
 
 ### The .e2er package (format `e2er-package/1`)
 
@@ -131,7 +146,10 @@ no `..` or `.` segment, no empty segment, no backslash, no control character
 
 **Contents.** The exported folder as `e2er verify` reads it (`bundle_files.walk`), without
 dotfiles, operating-system clutter and `.e2er/` (local publishing records), plus the
-package's own files under `e2er-package/`:
+package's own files under `e2er-package/`. Export itself leaves out every file under a hidden
+folder (`sandbox/run/.cache/x.json`), so the folder lists nothing the package drops; a reproduction
+output over 200 MB is left out of the export and recorded in `provenance.json` (`run.left_out`,
+kind `size`) and the README, and `e2er verify`'s reproduction check names it:
 
 | Path | What |
 |---|---|
@@ -142,11 +160,24 @@ package's own files under `e2er-package/`:
 **Data.** A data file (under `data/`, with a data ending: `.db`, `.csv`, `.parquet`, …)
 from a source whose terms do not allow passing the data on (`data_terms.uses`: the GMD,
 Yahoo Finance, the WHO GHO, Gaia, …) is left out; `--no-data` leaves out every data file
-and every input the recipe lists. **Data built from such data are restricted too**
+and every input the recipe lists. `e2er verify` counts a declaration of `e2er-package.json`,
+in a package as in a folder, only where the study's own records support it (a source's
+terms, or a file provenance.json records larger than the host takes): a file left out with
+`--no-data` or under a declaration nothing supports is missing, and the integrity check
+fails and says so. **Data built from such data are restricted too**
 (`src/core/derived_data.py`): a data file a script writes after reading a restricted file or
-table (directly or through module-level constants, `os.path.join`, `Path / "x"`; and, in a
-workspace, every file its script-log runs recorded as `outputs`) inherits the restriction,
-transitively. Export records them in `provenance.json` (`run.derived_data`: path, the
+table (directly or through module-level constants, `os.path.join`, `Path / "x"`, f-strings and `+`
+of known parts; and, in a workspace, every file its script-log runs recorded as `outputs` or, too
+large to fingerprint, as `outputs_unhashed`) inherits the restriction, transitively. The writes
+it follows: pandas `to_*` (`to_csv`, `to_parquet`, …), geopandas `to_file`, xarray `to_netcdf`,
+polars and DuckDB `write_csv`/`write_parquet`/`write_json`/`write_ipc`, pyarrow `write_table` and
+`write_feather`, NumPy `save*`/`savetxt`, `joblib.dump`, `open(…, "w")`, `Path.write_text`,
+`shutil.copy`/`copy2`/`copyfile`/`move` (the copy holds its source's data), DuckDB's
+`COPY … TO 'file'` and `to_sql`/`CREATE TABLE`/`INSERT INTO` for tables. **The cautious default:**
+a script that reads restricted data and writes a path the scan cannot work out (a computed path,
+an f-string with a loop variable, `shutil.copytree`, `COPY … TO` with a computed target) counts as
+writing every output file of the folder newer than itself. The script log records every file of a
+data format the run wrote (not only `.json`/`.csv`/`.tsv`), and the path of one over 64 MB too. Export records them in `provenance.json` (`run.derived_data`: path, the
 connectors, the scripts that write them), so the record holds also when a script is not
 shipped; pack, publish and verify read that record and the folder's scripts. Such a file is
 left out with the reason "built from ESA Gaia Data Release 3 (Gaia) data, whose terms do not
@@ -197,7 +228,11 @@ rerun wrote them"); it does not change the verdict. In a folder that lacks such 
 `e2er verify` counts it as left out (not missing) when the folder's own records say it
 holds restricted rows; a check that needs it is skipped and says so: "needs
 results/spatial_units.csv, left out under GISCO terms; run `e2er reproduce` to rebuild it"
-(or "no recorded step rebuilds it").
+(or "no recorded step rebuilds it"). A failure is skipped only where it is the left-out
+file's: a table cell whose recorded source (provenance.json's `table_cell` edge) is that
+file, a rendered table that reads it, or no cell checked because every file the numbers are
+traced to is left out. Every other differing cell or table, and every p-value/t
+inconsistency, still fails.
 
 **`e2er-package.json`.**
 
@@ -255,8 +290,10 @@ valid JSON without duplicate keys, in format `e2er-package/1`, and its fingerpri
 match its own contents list. Then, before anything is written: every entry name is checked
 (see Paths), a link entry is refused, every entry must be listed in the manifest with its
 size and every listed file must be present, a file that unpacks to more than 1000 times
-its packed size (and more than 1 MB) is refused, and so are more than 200,000 entries or
-more than 64 GB in all (`E2ER_PACKAGE_MAX_BYTES`). Files are then written one by one into
+its packed size (and more than 1 MB) is refused, and so are more than 200,000 entries,
+more than 4 GiB in all (`E2ER_PACKAGE_MAX_BYTES` raises it), a package that unpacks to more
+than 200 times its packed size (above 64 MiB in all: many small files of zeros pass the
+per-file check), and a package larger than the free disk space minus 512 MiB. Files are then written one by one into
 a new or empty folder (never executable, never following a link), hashed as they are
 written; a file larger than listed or with another SHA-256 stops the unpacking with its
 name ("README.md does not match e2er-package.json: it was changed after packing") and the
@@ -307,7 +344,14 @@ Mapping lives in one dict so it's trivial to re-shape; anything unmatched falls 
 - **D4 — When it runs.** Both: **auto** at terminal status (completed, stopped by a check, or failed), plus a
   manual CLI `e2er export <paper_id> [--to DIR]` for on-demand / re-export.
 - **D5 — Re-export.** Handled by D2's `NN` version counter — each export is a fresh `-NN` folder; nothing
-  is overwritten.
+  is overwritten. The run's own exports and the finish page keep one current folder
+  (`src/core/export/current.py`): unchanged, it is used again; changed, the newest folder (the highest
+  `-YYYYMMDD-NN`, not the newest modification time) is rebuilt under its name, unless it was published or
+  changed after export (amendments in its `provenance.json`: a redaction, a new abstract, the stamp),
+  which is kept and gets a new `-NN` folder. The rebuild happens in a hidden temporary folder beside the
+  exports and is renamed into place only when complete, one export per run at a time (a lock file
+  `.e2er-export-<run>.lock`). A run from before 0.14 (no `paper_id` in manifest.json) gets its id in
+  `run.paper_id` from the export.
 - **D6 — Folder names.** As proposed: `paper/ code/ (+code/scratch/) data/ results/ design/ reviews/`.
   Probe scripts kept under `code/scratch/` for reproducibility.
 - **D7 — Partial runs.** Yes — best-effort over whatever artifacts exist, so a stopped/failed run still

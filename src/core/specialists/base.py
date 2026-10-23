@@ -747,7 +747,9 @@ def _build_system_prompt(
 
 
 #: Writers of the whole draft, who leave the abstract to the abstract step (src/core/abstract.py).
-_NO_ABSTRACT_WRITERS = frozenset({"paper_drafter", "revisor"})
+# The template writers that draft the whole paper (the systematic review's and the field map's)
+# leave the abstract out too where an abstract step follows.
+_NO_ABSTRACT_WRITERS = frozenset({"paper_drafter", "revisor", "meta_review_writer", "field_review_writer"})
 
 
 def _abstract_step_follows() -> bool:
