@@ -506,8 +506,17 @@ def _drop_unused_tables(workspace: Path, out: Path) -> None:
             path.unlink()
 
 
+_UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+
+
 def export_paper(
-    workspace: Path, dest_root: Path, *, date_str: str, slug: str | None = None, template: str | None = None
+    workspace: Path,
+    dest_root: Path,
+    *,
+    date_str: str,
+    slug: str | None = None,
+    template: str | None = None,
+    paper_id: str | None = None,
 ) -> Path:
     """Assemble the structured project folder. Returns the created directory.
 
@@ -515,14 +524,23 @@ def export_paper(
     ``template`` is the template the study was run with (the papers row's
     ``pipeline``); without it, the one manifest.json records. It is written to
     provenance.json (``run.template``), where ``e2er publish`` reads it.
+    ``paper_id`` is the run's id, for a manifest.json without one (runs before
+    0.14 wrote none, and their folder is named by the id): provenance.json's
+    ``run.paper_id`` is how the finish page and the next export find the folder.
     """
     workspace = Path(workspace)
     dest_root = Path(dest_root)
     dest_root.mkdir(parents=True, exist_ok=True)
 
     manifest = _read_json(workspace / "manifest.json")
+    if not isinstance(manifest, dict):
+        manifest = {}
     if template:
         manifest = {**manifest, "pipeline": template}
+    if not manifest.get("paper_id"):
+        recorded = paper_id or (workspace.name if _UUID.match(workspace.name) else None)
+        if recorded:
+            manifest = {**manifest, "paper_id": recorded}
     title = manifest.get("title") or workspace.name
     if slug:
         out = dest_root / slug

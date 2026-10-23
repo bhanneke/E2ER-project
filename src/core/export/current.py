@@ -11,7 +11,15 @@ researcher could not tell which one counts.
   again (nothing is copied);
 * it has changed, and the newest folder was never published: that folder is
   replaced, under the same name;
-* the newest folder was published: it stays as it is, and a new folder is made.
+* the newest folder was published, or changed after export (``e2er redact``,
+  ``e2er abstract``, the stamp: amendments in its provenance.json): it stays as it
+  is, and a new folder is made. Replacing it would silently undo a redaction.
+
+A replaced folder is built next to the old one first (a hidden temporary folder in
+the exports folder) and moved into place only when it is complete, so a failed
+export leaves the earlier folder as it was. One export per run at a time: a lock
+file per run (``.e2er-export-<run>.lock``) keeps two exports of the same run (the
+run's own and "Prepare the folder") from building over each other.
 
 What "changed" means is a fingerprint of the run's working folder (every file's
 path, size and modification time), kept for each exported folder in
@@ -22,10 +30,15 @@ request.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import os
+import re
 import shutil
+import tempfile
+import threading
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -72,8 +85,28 @@ def _write_index(dest_root: Path, data: dict[str, Any]) -> None:
     os.replace(tmp, p)
 
 
+_NUMBERED = re.compile(r"-(\d{8})-(\d{2,})$")
+
+
+def export_order(folder: Path) -> tuple[str, int, float, str]:
+    """Sort key of exported folders, oldest first: the date and number in the name (``…-YYYYMMDD-NN``).
+
+    Not the modification time: redacting, stamping or copying an older folder changes its time, which
+    made it "the newest" (and the next export replaced the wrong one). A folder without the numbered name
+    sorts by its time, before the numbered ones of the same date.
+    """
+    m = _NUMBERED.search(folder.name)
+    try:
+        mtime = folder.stat().st_mtime
+    except OSError:
+        mtime = 0.0
+    if m:
+        return (m.group(1), int(m.group(2)), mtime, folder.name)
+    return ("", -1, mtime, folder.name)
+
+
 def exports_of(dest_root: Path, paper_id: str) -> list[Path]:
-    """The exported folders of one run, oldest first (their provenance.json names the run)."""
+    """The exported folders of one run, oldest first (their provenance.json names the run; see :func:`export_order`)."""
     root = Path(dest_root)
     if not root.is_dir():
         return []
@@ -87,11 +120,50 @@ def exports_of(dest_root: Path, paper_id: str) -> list[Path]:
                 found.append(d)
         except (OSError, ValueError):
             continue
-    return sorted(found, key=lambda p: (p.stat().st_mtime, p.name))
+    return sorted(found, key=export_order)
 
 
 def is_published(folder: Path) -> bool:
     return (Path(folder) / ".e2er" / "link.json").is_file()
+
+
+def is_amended(folder: Path) -> bool:
+    """The folder changed after export (amendments in its provenance.json: a redaction, an abstract, a stamp)."""
+    try:
+        prov = json.loads((Path(folder) / "provenance.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    return isinstance(prov, dict) and bool(prov.get("amendments"))
+
+
+def is_kept(folder: Path) -> bool:
+    """A folder export never replaces or removes: published, or changed after export."""
+    return is_published(folder) or is_amended(folder)
+
+
+_THREAD_LOCKS: dict[str, threading.Lock] = {}
+_THREAD_LOCKS_GUARD = threading.Lock()
+
+
+@contextlib.contextmanager
+def export_lock(dest_root: Path, paper_id: str) -> Iterator[None]:
+    """One export of the run at a time, in this process (a thread lock) and across processes (a lock file)."""
+    key = f"{Path(dest_root).resolve()}\0{paper_id}"
+    with _THREAD_LOCKS_GUARD:
+        tlock = _THREAD_LOCKS.setdefault(key, threading.Lock())
+    safe = re.sub(r"[^A-Za-z0-9_-]", "_", paper_id)[:80] or "run"
+    with tlock:
+        fh = open(Path(dest_root) / f".e2er-export-{safe}.lock", "a+")  # noqa: SIM115 - held for the block
+        try:
+            try:
+                import fcntl
+            except ImportError:  # Windows: the thread lock only
+                fcntl = None  # type: ignore[assignment]
+            if fcntl is not None:
+                fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+            yield
+        finally:
+            fh.close()  # closing releases the lock file
 
 
 def published_link(folder: Path) -> dict[str, Any] | None:
@@ -113,26 +185,76 @@ def export_current(
     """The run's current exported folder, made or brought up to date.
 
     Returns the folder and what happened: ``unchanged`` (the newest folder is
-    still current), ``replaced`` (the newest folder was rewritten in place) or
-    ``new`` (a new folder; the newest one was published, or there was none).
+    still current), ``replaced`` (the newest folder was rebuilt under its name)
+    or ``new`` (a new folder; the newest one was published or amended, or there
+    was none).
     """
-    from .structured import export_paper
-
     dest_root = Path(dest_root)
     dest_root.mkdir(parents=True, exist_ok=True)
-    fingerprint = workspace_fingerprint(Path(workspace))
+    with export_lock(dest_root, paper_id):
+        return _export_current(Path(workspace), dest_root, paper_id=paper_id, date_str=date_str, template=template)
+
+
+def _build_aside(
+    workspace: Path, dest_root: Path, name: str, *, paper_id: str, date_str: str, template: str | None
+) -> tuple[Path, Path]:
+    """Export into a hidden temporary folder beside the exports: (the built folder, its temporary parent)."""
+    from .structured import export_paper
+
+    tmp_parent = Path(tempfile.mkdtemp(prefix=".e2er-building-", dir=dest_root))
+    try:
+        built = export_paper(workspace, tmp_parent, date_str=date_str, slug=name, template=template, paper_id=paper_id)
+    except BaseException:
+        shutil.rmtree(tmp_parent, ignore_errors=True)
+        raise
+    return built, tmp_parent
+
+
+def _export_current(
+    workspace: Path, dest_root: Path, *, paper_id: str, date_str: str, template: str | None
+) -> tuple[Path, str]:
+    from .structured import create_versioned_folder
+
+    fingerprint = workspace_fingerprint(workspace)
     index = _read_index(dest_root)
     mine = exports_of(dest_root, paper_id)
     latest = mine[-1] if mine else None
     if latest is not None and (index.get(latest.name) or {}).get("fingerprint") == fingerprint:
         return latest, "unchanged"
-    if latest is not None and not is_published(latest):
+    if latest is not None and not is_kept(latest):
         name = latest.name
-        shutil.rmtree(latest)
-        out = export_paper(workspace, dest_root, date_str=date_str, slug=name, template=template)
+        built, tmp_parent = _build_aside(
+            workspace, dest_root, name, paper_id=paper_id, date_str=date_str, template=template
+        )
+        try:
+            # The old folder moves aside only now that the new one is complete, and comes back if the move fails.
+            old = tmp_parent / ".old"
+            os.rename(latest, old)
+            try:
+                os.rename(built, latest)
+            except BaseException:
+                os.rename(old, latest)
+                raise
+        finally:
+            shutil.rmtree(tmp_parent, ignore_errors=True)
+        out = latest
         state = "replaced"
     else:
-        out = export_paper(workspace, dest_root, date_str=date_str, template=template)
+        manifest = _manifest(workspace)
+        reserved = create_versioned_folder(dest_root, manifest.get("title") or workspace.name, date_str)
+        try:
+            built, tmp_parent = _build_aside(
+                workspace, dest_root, reserved.name, paper_id=paper_id, date_str=date_str, template=template
+            )
+        except BaseException:
+            reserved.rmdir()
+            raise
+        try:
+            reserved.rmdir()
+            os.rename(built, reserved)
+        finally:
+            shutil.rmtree(tmp_parent, ignore_errors=True)
+        out = reserved
         state = "new"
     index = _read_index(dest_root)
     index[out.name] = {"paper_id": paper_id, "fingerprint": fingerprint}
@@ -140,10 +262,18 @@ def export_current(
     return out, state
 
 
+def _manifest(workspace: Path) -> dict[str, Any]:
+    try:
+        data = json.loads((workspace / "manifest.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
 def older_copies(dest_root: Path, paper_id: str) -> list[Path]:
-    """Earlier exported folders of the run that may go: never the newest, never a published one."""
+    """Earlier exported folders of the run that may go: never the newest, never a published or amended one."""
     mine = exports_of(dest_root, paper_id)
-    return [d for d in mine[:-1] if not is_published(d)]
+    return [d for d in mine[:-1] if not is_kept(d)]
 
 
 def remove_older_copies(dest_root: Path, paper_id: str) -> list[str]:

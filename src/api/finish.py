@@ -64,23 +64,12 @@ async def _paper(paper_id: str) -> dict[str, Any]:
 
 
 def find_export(paper_id: str) -> Path | None:
-    """The newest exported folder of this study (its provenance.json names the run)."""
+    """The newest exported folder of this study (its provenance.json names the run; newest by its ``-NN``)."""
     from ..config import get_settings
+    from ..core.export.current import exports_of
 
-    root = get_settings().resolved_output_root()
-    if not root.is_dir():
-        return None
-    found: list[Path] = []
-    for d in root.iterdir():
-        prov = d / "provenance.json"
-        if not prov.is_file():
-            continue
-        try:
-            if (json.loads(prov.read_text(encoding="utf-8")).get("run") or {}).get("paper_id") == paper_id:
-                found.append(d)
-        except (OSError, ValueError):
-            continue
-    return max(found, key=lambda p: p.stat().st_mtime) if found else None
+    mine = exports_of(get_settings().resolved_output_root(), paper_id)
+    return mine[-1] if mine else None
 
 
 def _slug(text: str) -> str:
