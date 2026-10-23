@@ -106,27 +106,20 @@ class GitHubClient:
         else:
             encoded = content
 
+        from github import UnknownObjectException
+
         try:
             existing = repo.get_contents(file_path, ref=branch)
-            # get_contents returns ContentFile | list[ContentFile] (the latter
-            # for directories). For a single-file path it's the scalar — bail
-            # to create_file if PyGithub returned a list.
-            if isinstance(existing, list):
-                raise RuntimeError("get_contents returned a list; expected scalar")
-            repo.update_file(
-                path=file_path,
-                message=commit_message,
-                content=encoded,
-                sha=existing.sha,
-                branch=branch,
-            )
-        except Exception:
-            repo.create_file(
-                path=file_path,
-                message=commit_message,
-                content=encoded,
-                branch=branch,
-            )
+        except UnknownObjectException:
+            # 404: the file is not there yet. Any other error (401, 403, a rate limit, a 5xx) is raised:
+            # the catch-all here turned every failure, including a failed update, into a create_file that
+            # failed with a misleading "sha wasn't supplied" or, worse, hid the first error.
+            repo.create_file(path=file_path, message=commit_message, content=encoded, branch=branch)
+            return
+        if isinstance(existing, list):
+            # get_contents returns a list for a directory: a file cannot replace it.
+            raise ValueError(f"{file_path!r} is a directory in the repository")
+        repo.update_file(path=file_path, message=commit_message, content=encoded, sha=existing.sha, branch=branch)
 
     def push_directory(
         self,

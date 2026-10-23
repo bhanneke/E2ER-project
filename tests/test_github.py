@@ -100,7 +100,7 @@ def test_create_paper_repo_slug_from_title():
 
 def test_push_file_creates_when_not_exists():
     mock_gh_cls, mock_user, mock_repo = _make_mock_github()
-    mock_repo.get_contents.side_effect = Exception("404 Not Found")
+    mock_repo.get_contents.side_effect = _not_found()
 
     with patch("github.Github", mock_gh_cls):
         from src.modules.github.client import GitHubClient
@@ -108,9 +108,10 @@ def test_push_file_creates_when_not_exists():
         client = GitHubClient("fake-token", "fake-user")
         client.push_file("my-repo", "main.tex", "\\documentclass{article}", "feat: add draft")
 
-    mock_repo.create_file.assert_called_once()
-    args = mock_repo.create_file.call_args
-    assert args[1]["path"] == "main.tex" or args[0][0] == "main.tex"
+    mock_repo.create_file.assert_called_once_with(
+        path="main.tex", message="feat: add draft", content=b"\\documentclass{article}", branch="main"
+    )
+    mock_repo.update_file.assert_not_called()
 
 
 def test_push_file_updates_when_exists():
@@ -125,14 +126,72 @@ def test_push_file_updates_when_exists():
         client = GitHubClient("fake-token", "fake-user")
         client.push_file("my-repo", "main.tex", "Updated content", "update: revision")
 
-    mock_repo.update_file.assert_called_once()
-    update_args = mock_repo.update_file.call_args[1]
-    assert update_args["sha"] == "sha-abc-123"
+    mock_repo.update_file.assert_called_once_with(
+        path="main.tex", message="update: revision", content=b"Updated content", sha="sha-abc-123", branch="main"
+    )
+    mock_repo.create_file.assert_not_called()
+
+
+def _not_found():
+    from github import UnknownObjectException
+
+    return UnknownObjectException(404, {"message": "Not Found"}, None)
+
+
+def test_push_file_raises_an_error_that_is_not_a_404():
+    """A 403 (no access, a rate limit) is not "the file is missing": the catch-all created the file then."""
+    import pytest
+    from github import GithubException
+
+    mock_gh_cls, mock_user, mock_repo = _make_mock_github()
+    mock_repo.get_contents.side_effect = GithubException(403, {"message": "Resource not accessible"}, None)
+
+    with patch("github.Github", mock_gh_cls):
+        from src.modules.github.client import GitHubClient
+
+        client = GitHubClient("fake-token", "fake-user")
+        with pytest.raises(GithubException):
+            client.push_file("my-repo", "main.tex", "x", "m")
+    mock_repo.create_file.assert_not_called()
+
+
+def test_a_failed_update_is_raised_not_turned_into_a_create():
+    """update_file failing (a 409 conflict) went to create_file, which failed with another error."""
+    import pytest
+    from github import GithubException
+
+    mock_gh_cls, mock_user, mock_repo = _make_mock_github()
+    mock_repo.get_contents.return_value = MagicMock(sha="old")
+    mock_repo.update_file.side_effect = GithubException(409, {"message": "sha does not match"}, None)
+
+    with patch("github.Github", mock_gh_cls):
+        from src.modules.github.client import GitHubClient
+
+        client = GitHubClient("fake-token", "fake-user")
+        with pytest.raises(GithubException, match="409"):
+            client.push_file("my-repo", "main.tex", "x", "m")
+    mock_repo.create_file.assert_not_called()
+
+
+def test_a_directory_at_the_path_is_refused():
+    import pytest
+
+    mock_gh_cls, mock_user, mock_repo = _make_mock_github()
+    mock_repo.get_contents.return_value = [MagicMock(), MagicMock()]
+
+    with patch("github.Github", mock_gh_cls):
+        from src.modules.github.client import GitHubClient
+
+        client = GitHubClient("fake-token", "fake-user")
+        with pytest.raises(ValueError, match="directory"):
+            client.push_file("my-repo", "figures", "x", "m")
+    mock_repo.create_file.assert_not_called()
+    mock_repo.update_file.assert_not_called()
 
 
 def test_push_file_accepts_bytes():
     mock_gh_cls, mock_user, mock_repo = _make_mock_github()
-    mock_repo.get_contents.side_effect = Exception("404")
+    mock_repo.get_contents.side_effect = _not_found()
 
     with patch("github.Github", mock_gh_cls):
         from src.modules.github.client import GitHubClient
@@ -141,6 +200,7 @@ def test_push_file_accepts_bytes():
         client.push_file("my-repo", "figure.pdf", b"\x25\x50\x44\x46", "feat: add figure")
 
     mock_repo.create_file.assert_called_once()
+    assert mock_repo.create_file.call_args.kwargs["content"] == b"%PDF"
 
 
 # ---------------------------------------------------------------------------
@@ -154,7 +214,7 @@ def test_push_directory_pushes_all_files(tmp_path: Path):
     (tmp_path / "estimation.py").write_text("import pandas as pd")
 
     mock_gh_cls, mock_user, mock_repo = _make_mock_github()
-    mock_repo.get_contents.side_effect = Exception("404")
+    mock_repo.get_contents.side_effect = _not_found()
 
     with patch("github.Github", mock_gh_cls):
         from src.modules.github.client import GitHubClient
@@ -172,7 +232,7 @@ def test_push_directory_respects_extension_filter(tmp_path: Path):
     (tmp_path / "ignored.json").write_text("{}")
 
     mock_gh_cls, mock_user, mock_repo = _make_mock_github()
-    mock_repo.get_contents.side_effect = Exception("404")
+    mock_repo.get_contents.side_effect = _not_found()
 
     with patch("github.Github", mock_gh_cls):
         from src.modules.github.client import GitHubClient
@@ -187,7 +247,7 @@ def test_push_directory_with_remote_prefix(tmp_path: Path):
     (tmp_path / "estimation.py").write_text("# code")
 
     mock_gh_cls, mock_user, mock_repo = _make_mock_github()
-    mock_repo.get_contents.side_effect = Exception("404")
+    mock_repo.get_contents.side_effect = _not_found()
 
     with patch("github.Github", mock_gh_cls):
         from src.modules.github.client import GitHubClient
@@ -206,7 +266,7 @@ def test_push_directory_continues_on_individual_file_error(tmp_path: Path):
     (tmp_path / "file_c.tex").write_text("content c")
 
     mock_gh_cls, mock_user, mock_repo = _make_mock_github()
-    mock_repo.get_contents.side_effect = Exception("404")
+    mock_repo.get_contents.side_effect = _not_found()
     # Second create_file call raises an error
     mock_repo.create_file.side_effect = [None, Exception("API error"), None]
 
@@ -227,7 +287,7 @@ def test_push_directory_continues_on_individual_file_error(tmp_path: Path):
 
 def test_ensure_replication_scaffold_creates_gitkeeps():
     mock_gh_cls, mock_user, mock_repo = _make_mock_github()
-    mock_repo.get_contents.side_effect = Exception("404")
+    mock_repo.get_contents.side_effect = _not_found()
 
     with patch("github.Github", mock_gh_cls):
         from src.modules.github.client import GitHubClient

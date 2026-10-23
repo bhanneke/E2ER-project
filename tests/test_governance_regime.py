@@ -178,8 +178,16 @@ async def test_estimation_gate_repairs_reliability_even_under_off(tmp_path: Path
 async def test_estimation_gate_skips_non_empirical():
     r = _bare_runner("off")
     r._methodology = "theoretical"
-    # Returns immediately, before touching has_data_db.
-    await r._enforce_estimation_gate()
+    # Returns immediately, before touching has_data_db (the test asserted nothing and could not fail).
+    with (
+        patch("src.db.paper_data_db.has_data_db", return_value=True) as has_db,
+        patch("src.core.specialists.contract_check.check_specialist_artifacts", return_value=[]) as chk,
+        patch("src.core.specialists.dispatcher.execute_work_order", new=AsyncMock()) as dispatch,
+        patch("src.db.events.log_event", new=AsyncMock()) as le,
+    ):
+        await r._enforce_estimation_gate()
+    assert not has_db.called and not chk.called
+    assert dispatch.await_count == 0 and le.await_count == 0
 
 
 async def test_estimation_gate_runs_for_mixed(tmp_path: Path):
