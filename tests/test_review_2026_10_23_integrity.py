@@ -157,3 +157,59 @@ def test_a_package_that_declares_a_results_file_left_out_without_support_fails(t
     out = capsys.readouterr().out + capsys.readouterr().err
     assert code == 1 and "[FAIL] integrity" in out, out
     assert "declared left out by e2er-package.json" in out and "estimation_results.json" in out
+
+
+# ── 5. reproduce checks the folder first ─────────────────────────────────────
+
+
+def _exported_study(tmp_path: Path) -> Path:
+    from src.core.export.provenance import write_provenance
+    from tests.test_reproduce import _study
+
+    folder = _study(tmp_path, {"main": {"estimate": 2.333333, "n": 3, "label": "ok"}})
+    write_provenance(folder, {"paper_id": "p5", "governance": "full"}, exported_at="20261023")
+    return folder
+
+
+def test_reproduce_runs_the_study_as_exported(tmp_path: Path, capsys):
+    from src.cli_reproduce import reproduce
+
+    folder = _exported_study(tmp_path)
+    assert reproduce(str(folder), yes=True, sandbox=False) == 0
+    out = capsys.readouterr().out
+    assert "Reproduced: every compared value is identical" in out and "no provenance.json" not in out
+
+
+def test_reproduce_refuses_an_edited_recipe(tmp_path: Path, capsys):
+    """The reviewer's repro: reproduce.json edited after export (another step, another compared file) ran and
+    reported "Reproduced"."""
+    from src.cli_reproduce import reproduce
+
+    folder = _exported_study(tmp_path)
+    recipe = json.loads((folder / "reproduce.json").read_text())
+    recipe["steps"][0]["about"] = "something else"
+    (folder / "reproduce.json").write_text(json.dumps(recipe))
+    assert reproduce(str(folder), yes=True, sandbox=False) == 2
+    out = capsys.readouterr().out
+    assert "not the study as exported" in out and "reproduce.json" in out and "Reproduced" not in out
+
+
+def test_reproduce_refuses_an_unlisted_recipe_and_edited_results(tmp_path: Path, capsys):
+    from src.cli_reproduce import reproduce
+
+    folder = _exported_study(tmp_path)
+    prov = json.loads((folder / "provenance.json").read_text())
+    del prov["files"]["reproduce.json"]
+    (folder / "provenance.json").write_text(json.dumps(prov))
+    assert reproduce(str(folder), yes=True, sandbox=False) == 2
+    assert "unlisted (reproduce.json)" in capsys.readouterr().out
+
+
+def test_reproduce_of_a_folder_without_provenance_says_so(tmp_path: Path, capsys):
+    from src.cli_reproduce import reproduce
+    from tests.test_reproduce import _study
+
+    folder = _study(tmp_path, {"main": {"estimate": 2.333333, "n": 3, "label": "ok"}})
+    assert reproduce(str(folder), yes=True, sandbox=False) == 0
+    out = capsys.readouterr().out
+    assert "no provenance.json, so nothing ties its files" in out and "Reproduced:" in out

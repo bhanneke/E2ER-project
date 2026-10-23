@@ -164,6 +164,41 @@ def render(
     return "\n".join(lines) + "\n"
 
 
+def _integrity_first(root: Path, recipe: dict[str, Any]) -> tuple[str | None, str | None]:
+    """(a qualifier for the verdict, or why the folder is not run): the folder must be the study as exported.
+
+    A folder whose files are not the ones provenance.json lists (reproduce.json included) is not the study, and a
+    rerun of it says nothing about the study: refused. Files may be absent where the study's own records say
+    why and the rerun gets them back: a source's terms keep them out (data_terms.restricted_paths), a supported
+    package declaration, or an input the recipe loads or builds again. A folder without provenance.json runs,
+    and the verdict says that nothing ties it to a study.
+    """
+    if not (root / "provenance.json").exists():
+        return (
+            "This folder has no provenance.json, so nothing ties its files (reproduce.json included) to a "
+            "published study: the rerun says only what this folder's code produces.",
+            None,
+        )
+    from .cli_verify import FAIL, _check_integrity
+    from .core.data_terms import restricted_paths
+    from .core.export import package as pkg
+
+    files: dict[str, Any] = recipe["files"] if isinstance(recipe.get("files"), dict) else {}
+    absent_ok: dict[str, dict[str, Any]] = dict(pkg.supported_left_out(root))
+    for rel, why in restricted_paths(root).items():
+        absent_ok.setdefault(rel, {"path": rel, "reason": why})
+    for run_path in rp.optional_inputs(recipe):
+        rel = str(files.get(run_path, run_path))
+        absent_ok.setdefault(rel, {"path": rel, "reason": "the study's code loads or builds it again"})
+    integrity = _check_integrity(root, absent_ok)
+    if integrity.status == FAIL:
+        return None, (
+            f"error: the folder is not the study as exported, so it is not run: {integrity.detail}. "
+            "`e2er verify` shows what changed."
+        )
+    return None, None
+
+
 def _inputs_only(recipe: dict[str, Any], inputs: list[dict[str, Any]]) -> str:
     """The inputs section alone, for a run that stopped before its steps."""
     text = render(Path(""), {**recipe, "steps": []}, None, [], inputs, [], None, "")
@@ -292,6 +327,10 @@ def _reproduce_folder(
     except rp.RecipeError as e:
         print(f"error: {printable(e)}")
         return 2
+    qualifier, refused = _integrity_first(root, recipe)
+    if refused:
+        print(refused)
+        return 2
     # A left-out output the step only updates (figure_spec.json, produced by the figure step): not compared.
     from .core.derived_data import not_produced_by_step
 
@@ -376,6 +415,7 @@ def _reproduce_folder(
             allow_network=allow_network,
             docker=docker,
             allow_reload=bool(allow_reload),
+            qualifier=qualifier,
         )
     finally:
         if keep:
@@ -394,6 +434,7 @@ def _run_in(
     allow_network: bool,
     docker: str | None = None,
     allow_reload: bool = True,
+    qualifier: str | None = None,
 ) -> int:
     logs = run_dir / ".e2er-logs"
     logs.mkdir()
@@ -447,6 +488,8 @@ def _run_in(
         ]
         tables = rp.compare_tables(root, run_dir, recipe["compare"])
     verdict, code = rp.verdict(files, tables, steps, inputs)
+    if qualifier:
+        verdict = f"{qualifier} {verdict}"
     print()
     print(printable(render(root, recipe, env_info, steps, inputs, files, tables, verdict, kept=keep)), end="")
     if json_out:

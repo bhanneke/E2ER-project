@@ -681,11 +681,14 @@ def test_reproduce_removes_its_temporary_folders_also_after_a_failure(
 
     folder = _export(tmp_path)
     packed = pkg.build(folder)
-    if tamper:  # the rerun differs from the published results: a failure
+    if tamper:  # the rerun differs from the published results (recorded as a change): a failure
+        from src.core.export.provenance import amend
+
         res = folder / "results" / "estimation_results.json"
         doc = json.loads(res.read_text(encoding="utf-8"))
         doc["main"]["mean"] += 1
         res.write_text(json.dumps(doc), encoding="utf-8")
+        amend(folder, "results/estimation_results.json", "edited", at="x")
     tmp = Path(tempfile.gettempdir())
     assert reproduce(str(packed.path), yes=True, sandbox=False) == 0
     assert reproduce(str(folder), yes=True, sandbox=False) == (1 if tamper else 0)

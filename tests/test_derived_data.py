@@ -155,6 +155,10 @@ def test_an_older_export_gets_the_rebuild_step_from_the_package(tmp_path, rerun_
     for i in recipe["inputs"]:
         i.pop("rebuild", None)
     path.write_text(json.dumps(recipe), encoding="utf-8")
+    from src.core.export.provenance import write_provenance
+
+    prov = json.loads((folder / "provenance.json").read_text(encoding="utf-8"))
+    write_provenance(folder, {**prov["run"], "pipeline": prov["run"].get("template")}, exported_at="20261014")
     packed = pkg.build(folder)
     assert packed.manifest["rebuild"] == [
         {"path": "data/gaia_clean.csv", "script": "clean_gaia.py", "from": "code/scratch/clean_gaia.py"}
