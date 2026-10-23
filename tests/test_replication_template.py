@@ -446,7 +446,12 @@ class FakeDocker:
         sub = argv[1]
         ok = subprocess.CompletedProcess(argv, 0, b"", b"")
         if sub == "info":
-            return ok if self.up else subprocess.CompletedProcess(argv, 1, b"", b"Cannot connect")
+            # A server version: `docker info --format` exits 0 with an empty one when the daemon is down.
+            return (
+                subprocess.CompletedProcess(argv, 0, b"27.0.0\n", b"")
+                if self.up
+                else subprocess.CompletedProcess(argv, 1, b"", b"Cannot connect")
+            )
         if sub == "image" and argv[2] == "inspect":
             if "--format" in argv:
                 return subprocess.CompletedProcess(argv, 0, b'["rocker/r-ver@sha256:abc"]', b"")

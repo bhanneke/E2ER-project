@@ -288,7 +288,7 @@ def test_export_records_the_data_preparation_and_a_folder_without_data_db_reprod
     shutil.copytree(folder, clone)
     (clone / "data" / "data.db").unlink()
     capsys.readouterr()
-    assert reproduce(str(clone)) == 0
+    assert reproduce(str(clone), yes=True, sandbox=False) == 0
     report = capsys.readouterr().out
     assert "python build_data.py (data preparation" in report
     assert "Reproduced: every compared value is identical" in report
@@ -297,7 +297,7 @@ def test_export_records_the_data_preparation_and_a_folder_without_data_db_reprod
 
     # With data.db in the folder nothing is loaded and the preparation does not run.
     rerun_offline.unlink()
-    assert reproduce(str(folder)) == 0
+    assert reproduce(str(folder), yes=True, sandbox=False) == 0
     report = capsys.readouterr().out
     assert "not run" in report and "Reproduced: every compared value is identical" in report
     assert not rerun_offline.exists() or not rerun_offline.read_text(encoding="utf-8").strip()

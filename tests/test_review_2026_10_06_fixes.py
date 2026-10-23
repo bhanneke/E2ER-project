@@ -139,7 +139,7 @@ def test_a_script_that_writes_nothing_does_not_reproduce(tmp_path: Path, capsys,
     from src.cli_reproduce import reproduce
 
     folder = _study(tmp_path, "print('nothing written')\n", files=files)
-    assert reproduce(str(folder)) == 1
+    assert reproduce(str(folder), yes=True, sandbox=False) == 1
     out = capsys.readouterr().out
     assert "Not reproduced: the study's code ran but wrote none of the result files" in out
     assert "Reproduced:" not in out
@@ -148,7 +148,7 @@ def test_a_script_that_writes_nothing_does_not_reproduce(tmp_path: Path, capsys,
 def test_a_script_that_writes_its_results_reproduces(tmp_path: Path, capsys):
     from src.cli_reproduce import reproduce
 
-    assert reproduce(str(_study(tmp_path, WRITES))) == 0
+    assert reproduce(str(_study(tmp_path, WRITES)), yes=True, sandbox=False) == 0
     assert "Reproduced:" in capsys.readouterr().out
 
 

@@ -144,7 +144,7 @@ def test_a_systematic_review_replays_from_the_protocol_to_a_reproduced_meta_anal
         if found.returncode == 0 and found.stdout.strip():
             uv_dirs[var] = found.stdout.strip()
     out = subprocess.run(
-        [*cli, "reproduce", str(bundle)],
+        [*cli, "reproduce", str(bundle), "--yes", "--no-sandbox"],
         cwd=study,
         env={**env, "UV_OFFLINE": "1", **uv_dirs},
         capture_output=True,

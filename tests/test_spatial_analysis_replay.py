@@ -140,7 +140,7 @@ def test_a_spatial_study_replays_to_the_end_with_its_geometry_weights_and_maps_c
         if found.returncode == 0 and found.stdout.strip():
             uv_dirs[var] = found.stdout.strip()
     out = subprocess.run(
-        [*cli, "reproduce", str(bundle)],
+        [*cli, "reproduce", str(bundle), "--yes", "--no-sandbox"],
         cwd=study,
         env={**env, "UV_OFFLINE": "1", **uv_dirs},
         capture_output=True,

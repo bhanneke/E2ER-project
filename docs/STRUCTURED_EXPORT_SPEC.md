@@ -255,8 +255,10 @@ valid JSON without duplicate keys, in format `e2er-package/1`, and its fingerpri
 match its own contents list. Then, before anything is written: every entry name is checked
 (see Paths), a link entry is refused, every entry must be listed in the manifest with its
 size and every listed file must be present, a file that unpacks to more than 1000 times
-its packed size (and more than 1 MB) is refused, and so are more than 200,000 entries or
-more than 64 GB in all (`E2ER_PACKAGE_MAX_BYTES`). Files are then written one by one into
+its packed size (and more than 1 MB) is refused, and so are more than 200,000 entries,
+more than 4 GiB in all (`E2ER_PACKAGE_MAX_BYTES` raises it), a package that unpacks to more
+than 200 times its packed size (above 64 MiB in all: many small files of zeros pass the
+per-file check), and a package larger than the free disk space minus 512 MiB. Files are then written one by one into
 a new or empty folder (never executable, never following a link), hashed as they are
 written; a file larger than listed or with another SHA-256 stops the unpacking with its
 name ("README.md does not match e2er-package.json: it was changed after packing") and the

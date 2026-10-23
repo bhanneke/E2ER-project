@@ -518,8 +518,22 @@ def main() -> None:
         help="Run a study's code again in a new environment and compare the results with the published ones.",
         description="Runs the steps in the folder's reproduce.json in a run folder of its own, inside a new "
         "virtual environment with the study's pinned requirements, then compares every result value with the "
-        "published one and renders the paper's tables again. The study folder is not changed. Exit code 0: "
+        "published one and renders the paper's tables again. The steps are the author's code: they are listed "
+        "and asked about first, and run in a Docker container (no network, read-only, no folder of yours); "
+        "without Docker only with --no-sandbox. The study folder is not changed. Exit code 0: "
         "reproduced; 1: values or tables differ; 2: the code could not be run.",
+    )
+    reproduce_p.add_argument(
+        "--yes",
+        "-y",
+        action="store_true",
+        help="Run the listed commands without asking (a script, CI); also lets the steps that load inputs use the web.",
+    )
+    reproduce_p.add_argument(
+        "--no-sandbox",
+        action="store_true",
+        help="Run the steps on this computer as you, not in Docker (HOME points to an empty folder, no API key "
+        "is passed, but the code can read every file you can). Only for a study whose code you trust.",
     )
     reproduce_p.add_argument(
         "folder",
@@ -1124,31 +1138,48 @@ def main() -> None:
 
     if args.command == "unpack":
         from .cli_package import unpack as _unpack
+        from .core.safe_text import printable_output
 
-        sys.exit(_unpack(args.package, args.dest))
+        with printable_output():
+            code = _unpack(args.package, args.dest)
+        sys.exit(code)
 
     if args.command == "inspect":
         from .cli_package import inspect as _inspect
+        from .core.safe_text import printable_output
 
-        sys.exit(_inspect(args.package))
+        with printable_output():
+            code = _inspect(args.package)
+        sys.exit(code)
 
     if args.command == "reproduce":
         from .cli_reproduce import reproduce as _reproduce
+        from .core.safe_text import printable_output
 
-        sys.exit(_reproduce(args.folder, keep=args.keep, json_out=args.json_out, allow_network=args.allow_network))
+        with printable_output():
+            code = _reproduce(
+                args.folder,
+                keep=args.keep,
+                json_out=args.json_out,
+                allow_network=args.allow_network,
+                yes=args.yes,
+                sandbox=False if args.no_sandbox else None,
+            )
+        sys.exit(code)
 
     if args.command == "verify":
         from .cli_verify import verify as _verify
+        from .core.safe_text import printable_output
 
-        sys.exit(
-            _verify(
+        with printable_output():  # a folder's or package's text: no terminal control sequences
+            code = _verify(
                 bundle=args.bundle,
                 online=args.online,
                 json_output=args.json,
                 against=args.against,
                 against_file=args.against_file,
             )
-        )
+        sys.exit(code)
 
     if args.command == "compare":
         from .core.compare import compare as _compare

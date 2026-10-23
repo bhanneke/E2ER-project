@@ -144,7 +144,12 @@ def test_a_forecasting_study_replays_to_the_end_with_its_hold_out_frozen_before_
     assert out.returncode == 0, out.stdout + out.stderr
     assert "[PASS] numbers" in out.stdout and "[PASS] results contract" in out.stdout, out.stdout
     out = subprocess.run(
-        [*cli, "reproduce", str(bundle)], cwd=study, env=env, capture_output=True, text=True, timeout=600
+        [*cli, "reproduce", str(bundle), "--yes", "--no-sandbox"],
+        cwd=study,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=600,
     )
     assert out.returncode == 0, out.stdout + out.stderr
     assert "Reproduced" in out.stdout, out.stdout

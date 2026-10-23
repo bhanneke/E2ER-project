@@ -139,7 +139,7 @@ def test_the_package_leaves_derived_data_out_and_the_rerun_builds_it_again(tmp_p
     assert left["data/gaia_clean.csv"]["reason"].startswith("built from ")
     assert left["data/gaia_clean.csv"]["rebuilt_by"]["by"] == "code/scratch/clean_gaia.py"
     capsys.readouterr()
-    assert reproduce(str(packed.path)) == 0
+    assert reproduce(str(packed.path), yes=True, sandbox=False) == 0
     report = capsys.readouterr().out
     assert "2. python clean_gaia.py (data preparation: builds data/gaia_clean.csv again" in report
     assert "2 of 2 identical" in report
@@ -160,7 +160,7 @@ def test_an_older_export_gets_the_rebuild_step_from_the_package(tmp_path, rerun_
         {"path": "data/gaia_clean.csv", "script": "clean_gaia.py", "from": "code/scratch/clean_gaia.py"}
     ]
     capsys.readouterr()
-    assert reproduce(str(packed.path)) == 0
+    assert reproduce(str(packed.path), yes=True, sandbox=False) == 0
     assert "Reproduced: every compared value is identical" in capsys.readouterr().out
 
 

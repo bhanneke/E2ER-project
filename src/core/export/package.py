@@ -60,11 +60,18 @@ SUFFIX = ".e2er"
 #: The timestamp every entry carries (the earliest a zip can hold), so the bytes do not depend on when it was packed.
 _ZIP_TIME = (1980, 1, 1, 0, 0, 0)
 #: Limits when a package is opened: all files together, one file, the number of files, the manifest.
-MAX_TOTAL_BYTES = int(os.environ.get("E2ER_PACKAGE_MAX_BYTES", str(64 * 1024**3)))
+#: 4 GiB unless E2ER_PACKAGE_MAX_BYTES says otherwise (was 64 GiB: a package could fill a disk).
+MAX_TOTAL_BYTES = int(os.environ.get("E2ER_PACKAGE_MAX_BYTES", str(4 * 1024**3)))
 MAX_ENTRIES = 200_000
 MAX_MANIFEST_BYTES = 32 * 1024 * 1024
 #: A file that unpacks to more than this many times its packed size is refused (a "zip bomb").
 MAX_RATIO = 1000
+#: The whole package may unpack to at most this many times its packed size (above 64 MiB unpacked):
+#: thousands of 1 MiB files of zeros passed the per-file check one by one.
+MAX_PACKAGE_RATIO = 200
+_RATIO_FLOOR = 64 * 1024 * 1024
+#: Room left on the disk after unpacking.
+FREE_DISK_MARGIN = 512 * 1024 * 1024
 #: Above this, the wheels make the package large enough to say so.
 LARGE_WHEELS = 200 * 1024 * 1024
 #: Files that are data, as the recipe counts them (reproduce_recipe.DATA_SUFFIXES).
@@ -907,6 +914,66 @@ def read_manifest(path: Path) -> dict[str, Any]:
         raise PackageError(f"{Path(path).name} is not a readable .e2er package ({e})") from e
 
 
+def read_member(path: Path, name: str, limit: int = 1024 * 1024) -> bytes | None:
+    """One small file of the package, read without unpacking (None when absent, unlisted or too large)."""
+    try:
+        with zipfile.ZipFile(path) as zf:
+            manifest = _manifest_of(zf)
+            if name not in {c["path"] for c in manifest["contents"]}:
+                return None
+            info = zf.getinfo(name)
+            if info.file_size > limit or _is_link(info):
+                return None
+            data = zf.read(name)
+            return data if len(data) <= limit else None
+    except (KeyError, zipfile.BadZipFile, OSError, PackageError):
+        return None
+
+
+def archive_steps(path: Path) -> list[str]:
+    """What `e2er inspect` shows of the package's own reproduce.json: the exact commands and requirements.
+
+    The manifest's ``recipe`` summary is written by whoever made the package; the steps that
+    `e2er reproduce` runs are the ones in the archive's reproduce.json, so those are shown.
+    """
+    from ..safe_text import printable
+
+    raw = read_member(path, "reproduce.json")
+    if raw is None:
+        return ["Commands: the package has no readable reproduce.json; `e2er reproduce` cannot run it."]
+    try:
+        recipe = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        return ["Commands: reproduce.json cannot be read."]
+    if not isinstance(recipe, dict):
+        return ["Commands: reproduce.json is not a JSON object."]
+    import shlex
+
+    lines = ["Commands `e2er reproduce` runs (from the package's reproduce.json, the author's code):"]
+    raw_steps = recipe.get("steps")
+    steps: list[Any] = raw_steps if isinstance(raw_steps, list) else []
+    for i, step in enumerate(steps, 1):
+        run = step.get("run") if isinstance(step, dict) else None
+        if isinstance(run, list) and all(isinstance(a, str) for a in run):
+            cmd = shlex.join(run)
+        elif isinstance(run, str):
+            cmd = run
+        else:
+            cmd = "(no command)"
+        lines.append(f"  {i}. {printable(cmd, newlines=False)}")
+    if not steps:
+        lines.append("  (none)")
+    req = recipe.get("requirements")
+    if isinstance(req, str):
+        data = read_member(path, req)
+        if data is not None:
+            names = [ln.split()[0] for ln in data.decode("utf-8", "replace").splitlines() if ln.strip() and
+                     not ln.lstrip().startswith(("#", "--hash"))]  # fmt: skip
+            shown = ", ".join(printable(n, newlines=False) for n in names[:40]) or "no packages"
+            lines.append(f"Requirements ({printable(req, newlines=False)}): {shown}")
+    return lines
+
+
 def _manifest_of(zf: zipfile.ZipFile) -> dict[str, Any]:
     try:
         info = zf.getinfo(MANIFEST)
@@ -957,6 +1024,7 @@ def check_entries(zf: zipfile.ZipFile, manifest: dict[str, Any], max_total: int 
     listed = {c["path"]: c for c in manifest["contents"]}
     seen: set[str] = set()
     total = 0
+    packed = 0
     for info in infos:
         name = info.filename
         why = _name_problem(name)
@@ -980,8 +1048,16 @@ def check_entries(zf: zipfile.ZipFile, manifest: dict[str, Any], max_total: int 
         if info.file_size > (1 << 20) and info.file_size > max(info.compress_size, 1) * MAX_RATIO:
             raise PackageError(f"{name} unpacks to more than {MAX_RATIO} times its packed size; refused")
         total += info.file_size
+        packed += max(info.compress_size, 0)
         if total > max_total:
-            raise PackageError(f"the package unpacks to more than {human_size(max_total)}; refused")
+            raise PackageError(
+                f"the package unpacks to more than {human_size(max_total)}; refused (E2ER_PACKAGE_MAX_BYTES raises it)"
+            )
+    if total > _RATIO_FLOOR and total > max(packed, 1) * MAX_PACKAGE_RATIO:
+        raise PackageError(
+            f"the package unpacks to {human_size(total)} from {human_size(packed)}, more than {MAX_PACKAGE_RATIO} "
+            "times its packed size; refused"
+        )
     for path in listed:
         why = _name_problem(path)
         if why:
@@ -1009,6 +1085,13 @@ def open_package(path: Path, dest: Path, *, max_total: int = MAX_TOTAL_BYTES) ->
         with zf:
             manifest = _manifest_of(zf)
             check_entries(zf, manifest, max_total)
+            need = sum(i.file_size for i in zf.infolist() if not i.is_dir())
+            probe = dest if dest.exists() else next((p for p in dest.parents if p.exists()), Path("."))
+            free = shutil.disk_usage(probe).free
+            if need + FREE_DISK_MARGIN > free:
+                raise PackageError(
+                    f"the package unpacks to {human_size(need)}, and {probe} has {human_size(free)} free; refused"
+                )
             dest.mkdir(parents=True, exist_ok=True)
             root = dest.resolve()
             for item in sorted(manifest["contents"], key=lambda c: c["path"]):
@@ -1139,8 +1222,15 @@ def summary(manifest: dict[str, Any], size: int | None = None) -> str:
     study = manifest.get("study") or {}
     lines = [f"Title: {study.get('title') or '(no title)'}"]
     authors = study.get("authors") or []
+    if not isinstance(authors, list):
+        authors = [authors]
     lines.append(
-        "Authors: " + (", ".join(authors) if authors else "not named (authors are added when the study is published)")
+        "Authors: "
+        + (
+            ", ".join(str(a) for a in authors)
+            if authors
+            else "not named (authors are added when the study is published)"
+        )
     )
     if study.get("id"):
         lines.append(f"Study id: {study['id']}")
@@ -1180,7 +1270,10 @@ def summary(manifest: dict[str, Any], size: int | None = None) -> str:
     recipe = manifest.get("recipe") or {}
     if recipe.get("present"):
         steps = recipe.get("steps") or []
-        lines.append(f"Reproduce: {len(steps)} step(s), `e2er reproduce` on the package runs them again")
+        lines.append(
+            f"Reproduce: {len(steps) if isinstance(steps, list) else '?'} step(s) per the package's summary; "
+            "the commands below are what `e2er reproduce` runs"
+        )
     else:
         lines.append(f"Reproduce: not possible ({recipe.get('why') or 'no reproduce.json'})")
     lines.append("")
@@ -1190,4 +1283,6 @@ def summary(manifest: dict[str, Any], size: int | None = None) -> str:
     lines.append(f"Fingerprint: {manifest.get('fingerprint')}")
     for n in manifest.get("notes") or []:
         lines.append(f"Note: {n}")
-    return "\n".join(lines) + "\n"
+    from ..safe_text import printable
+
+    return "\n".join(printable(line, newlines=False) for line in lines) + "\n"

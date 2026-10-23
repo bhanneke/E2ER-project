@@ -157,7 +157,7 @@ def test_a_study_shipped_without_its_restricted_data_reproduces(tmp_path: Path, 
     ws = _workspace(tmp_path)
     out = export_paper(ws, tmp_path / "exports", date_str="20261014")
     (out / "data" / "data.db").unlink()  # the WHO's terms: the published folder leaves the data out
-    code = reproduce(str(out))
+    code = reproduce(str(out), yes=True, sandbox=False)
     report = capsys.readouterr().out
     assert code == 0, report
     assert "2. python clean_rates.py (data preparation" in report and "done" in report
@@ -169,7 +169,7 @@ def test_a_study_shipped_without_its_restricted_data_reproduces(tmp_path: Path, 
 def test_with_its_data_the_preparation_does_not_run_again(tmp_path: Path, rerun_here, capsys):
     ws = _workspace(tmp_path)
     out = export_paper(ws, tmp_path / "exports", date_str="20261014")
-    code = reproduce(str(out))
+    code = reproduce(str(out), yes=True, sandbox=False)
     report = capsys.readouterr().out
     assert code == 0, report
     assert (
@@ -329,7 +329,7 @@ def test_an_unpacked_package_without_its_restricted_data_reproduces(tmp_path: Pa
     out = export_paper(_workspace(tmp_path), tmp_path / "exports", date_str="20261014")
     folder = pkg.open_package(pkg.build(out, tmp_path / "who.e2er").path, tmp_path / "clone").root
     assert not (folder / "data" / "data.db").exists()
-    code = reproduce(str(folder))
+    code = reproduce(str(folder), yes=True, sandbox=False)
     report = capsys.readouterr().out
     assert code == 0, report
     assert "2. python clean_rates.py (data preparation" in report

@@ -165,10 +165,11 @@ A journal with double-blind review must not learn who wrote a study, and neither
 
 ```bash
 e2er verify anonymous-<code>.e2er --against https://e2er.org/r/<code>
+e2er inspect anonymous-<code>.e2er
 e2er reproduce anonymous-<code>.e2er
 ```
 
-`--against` compares the file's content id with the anonymous version e2er.org published.
+`--against` compares the file's content id with the anonymous version e2er.org published. The code in an anonymous package is a stranger's code: `e2er inspect` lists the commands `e2er reproduce` would run, and `e2er reproduce` lists them again and asks before it runs them, in a Docker container without network and without any folder of the reviewer's. Without Docker it runs nothing; `--no-sandbox` would run the code as the reviewer, and is not for an anonymous package.
 
 **After the review.** `e2er publish <anonymised copy> --unblind <code> --owner <handle> --project <name> --to https://e2er.org` (or the button on your account page) publishes a new version with your name at `e2er.org/<handle>/<name>`: the same files, with you as the author (`--name`, `--orcid`, `--github-login`, `--coauthor` as for any publish). With a named export of the study in place of the copy, that export, with your name in it, becomes the new version and is checked as any version is. The anonymous version stays exactly as it was published, labelled "blinded", and its page links to the new version, which is labelled "unblinded" and links back. Nothing is ever unblinded without you.
 

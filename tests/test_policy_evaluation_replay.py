@@ -165,7 +165,7 @@ def test_a_staggered_did_study_replays_to_the_end_with_its_design_and_results_ch
         if found.returncode == 0 and found.stdout.strip():
             uv_dirs[var] = found.stdout.strip()
     out = subprocess.run(
-        [*cli, "reproduce", str(bundle)],
+        [*cli, "reproduce", str(bundle), "--yes", "--no-sandbox"],
         cwd=study,
         env={**env, "UV_OFFLINE": "1", **uv_dirs},
         capture_output=True,

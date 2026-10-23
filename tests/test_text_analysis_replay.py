@@ -171,7 +171,16 @@ def test_a_text_study_replays_to_the_end_with_its_corpus_counts_and_validation_c
         found = subprocess.run(["uv", cmd, "dir"], capture_output=True, text=True, env={**os.environ, "NO_COLOR": "1"})
         if found.returncode == 0 and found.stdout.strip():
             uv_dirs[var] = found.stdout.strip()
-    out = _cli(tmp_path, study, "reproduce", str(bundle), timeout=900, extra={"UV_OFFLINE": "1", **uv_dirs})
+    out = _cli(
+        tmp_path,
+        study,
+        "reproduce",
+        str(bundle),
+        "--yes",
+        "--no-sandbox",
+        timeout=900,
+        extra={"UV_OFFLINE": "1", **uv_dirs},
+    )
     if "could not install" in out.stdout or "could not create the environment" in out.stdout:
         pytest.skip("the requirements or Python are not in uv's cache (offline): " + out.stdout[-400:])
     assert out.returncode == 0, out.stdout + out.stderr
