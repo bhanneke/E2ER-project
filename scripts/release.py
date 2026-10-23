@@ -32,7 +32,9 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import os
 import re
+import shutil
 import subprocess
 import sys
 from collections.abc import Callable
@@ -127,14 +129,22 @@ def _sub(text: str, f: Field, new: str) -> str:
     return text[: m.start(1)] + new + text[m.end(1) :]
 
 
-def read_fields(root: Path) -> dict[tuple[str, str], str]:
-    """Every versioned value as the files hold it now: (file, label) -> value."""
+def read_fields(root: Path, texts: dict[str, str] | None = None) -> dict[tuple[str, str], str]:
+    """Every versioned value as the files hold it now: (file, label) -> value.
+
+    With ``texts`` (file -> content), a file named there is read from it instead of the disk: the
+    release checks its new content this way before it writes anything.
+    """
     out: dict[tuple[str, str], str] = {}
     for f in FIELDS:
-        p = root / f.file
-        if not p.is_file():
-            raise ReleaseError(f"{f.file} is missing")
-        m = f.pattern.search(p.read_text(encoding="utf-8"))
+        if texts is not None and f.file in texts:
+            text = texts[f.file]
+        else:
+            p = root / f.file
+            if not p.is_file():
+                raise ReleaseError(f"{f.file} is missing")
+            text = p.read_text(encoding="utf-8")
+        m = f.pattern.search(text)
         if not m:
             raise ReleaseError(f"{f.file}: {f.label} not found where release.py expects it")
         out[(f.file, f.label)] = m.group(1)
@@ -253,14 +263,14 @@ def release(
     current = current_version(root)
     texts = plan(root, version, date)
     files = [name for name, text in texts.items() if (root / name).read_text(encoding="utf-8") != text]
-    if dry_run:
-        return files
-    for name in files:
-        (root / name).write_text(texts[name], encoding="utf-8")
-    after = read_fields(root)
+    # Checked on the new content before anything is written: a wrong pattern leaves no half release.
+    after = read_fields(root, texts)
     wrong = [f"{file} {label}" for (file, label), v in after.items() if _expected(file, label, version, date) != v]
     if wrong:  # cannot happen unless a pattern is wrong; say so rather than leave a half release
-        raise ReleaseError(f"after the edit these places do not name {version}: {', '.join(wrong)}")
+        raise ReleaseError(f"after the edit these places would not name {version}: {', '.join(wrong)}")
+    if dry_run:
+        return files
+    _write_all(root, {name: texts[name] for name in files})
     if commit:
         _git(root, "add", "--", *files)
         _git(
@@ -272,6 +282,36 @@ def release(
             f"Version edits by scripts/release.py ({current} -> {version}).",
         )
     return files
+
+
+def _write_all(root: Path, texts: dict[str, str]) -> None:
+    """Write every file or none: each goes to a temporary file beside it first, then all are renamed.
+
+    A failure while writing the temporary files leaves every file as it was; a failure during the
+    renames puts the files already renamed back to their earlier content.
+    """
+    temps: dict[str, Path] = {}
+    originals = {name: (root / name).read_bytes() for name in texts}
+    try:
+        for name, text in texts.items():
+            tmp = (root / name).with_name(f".{(root / name).name}.release-tmp")
+            temps[name] = tmp
+            tmp.write_text(text, encoding="utf-8")
+            shutil.copymode(root / name, tmp)
+        done: list[str] = []
+        try:
+            for name, tmp in temps.items():
+                os.replace(tmp, root / name)
+                done.append(name)
+        except BaseException:
+            for name in done:
+                (root / name).write_bytes(originals[name])
+            raise
+    except OSError as e:
+        raise ReleaseError(f"could not write the release ({e}); every file is as it was") from e
+    finally:
+        for tmp in temps.values():
+            tmp.unlink(missing_ok=True)
 
 
 def _expected(file: str, label: str, version: str, date: str) -> str:

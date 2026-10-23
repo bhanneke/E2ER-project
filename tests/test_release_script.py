@@ -179,3 +179,70 @@ def test_warns_about_a_version_that_is_neither_history_nor_the_release(repo: Pat
     assert rel.future_mentions(repo, current, patch) == []  # releasing that version: fine
     warned = rel.future_mentions(repo, current, f"{a}.{b + 1}.0")
     assert warned == [f"docs/x.md:1: This comes in {patch}."]
+
+
+def test_a_wrong_pattern_writes_nothing(repo: Path, monkeypatch):
+    """The check after the edit runs on the new content, before any file is written (it ran after)."""
+    before = {f: (repo / f).read_text() for f in FILES}
+    real = rel._expected
+    monkeypatch.setattr(
+        rel, "_expected", lambda f, label, v, d: "0.0.0" if label == "BibTeX version" else real(f, label, v, d)
+    )
+    with pytest.raises(rel.ReleaseError, match="BibTeX version"):
+        rel.release(repo, _bump(rel.current_version(repo)), "2027-01-05")
+    assert {f: (repo / f).read_text() for f in FILES} == before
+    assert not list(repo.rglob("*.release-tmp"))
+
+
+def test_a_failed_write_puts_every_file_back(repo: Path, monkeypatch):
+    """A rename that fails halfway (disk full, a file held open) leaves no half release."""
+    before = {f: (repo / f).read_text() for f in FILES}
+    real = rel.os.replace
+    calls = []
+
+    def replace(src, dst):
+        calls.append(dst)
+        if len(calls) == 3:
+            raise OSError(28, "No space left on device")
+        real(src, dst)
+
+    monkeypatch.setattr(rel.os, "replace", replace)
+    with pytest.raises(rel.ReleaseError, match="every file is as it was"):
+        rel.release(repo, _bump(rel.current_version(repo)), "2027-01-05")
+    assert len(calls) == 3
+    assert {f: (repo / f).read_text() for f in FILES} == before
+    assert not list(repo.rglob("*.release-tmp"))
+
+
+def _release_notes_awk() -> str:
+    """The awk program of release.yml's "Create release" step, as the workflow runs it."""
+    import re
+
+    wf = (ROOT / ".github/workflows/release.yml").read_text()
+    m = re.search(r"awk -v ver=\"\$VERSION\" '(.*?)' CHANGELOG\.md", wf, re.S)
+    assert m, "release.yml no longer pulls the notes with awk; update this test"
+    return m.group(1)
+
+
+@pytest.mark.skipif(shutil.which("awk") is None, reason="needs awk")
+def test_release_notes_take_exactly_the_version_s_section(tmp_path: Path):
+    """The match was an unanchored regex: 0.1.1 took 0.1.10's section (the first heading it matched)
+    and a dot matched any character."""
+    log = tmp_path / "CHANGELOG.md"
+    log.write_text(
+        "# Changelog\n\n## [Unreleased]\n\n- next\n\n"
+        "## [0.1.10] — 2027-02-01\n\n- ten\n\n"
+        "## [0x1y1] — 2027-01-15\n\n- not a version\n\n"
+        "## [0.1.1] — 2027-01-01\n\n- one\n\n"
+        "## [0.1.0] — 2026-12-01\n\n- zero\n"
+    )
+
+    def notes(ver: str) -> str:
+        return subprocess.run(
+            ["awk", "-v", f"ver={ver}", _release_notes_awk(), str(log)], check=True, capture_output=True, text=True
+        ).stdout.strip()
+
+    assert notes("0.1.1") == "- one"
+    assert notes("0.1.10") == "- ten"
+    assert notes("0.1.0") == "- zero"
+    assert notes("0.2.0") == ""

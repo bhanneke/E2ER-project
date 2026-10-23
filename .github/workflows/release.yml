@@ -195,7 +195,8 @@ jobs:
           awk -v ver="$VERSION" '
             /^## / {
               if (capturing) exit;
-              if ($0 ~ "\\[?"ver"\\]?") capturing=1;
+              # The heading itself, literally: "## [0.1.1]" never matches "## [0.1.10]" or "## [0x1y1]".
+              if (index($0, "## [" ver "]") == 1) capturing=1;
               next
             }
             capturing { print }

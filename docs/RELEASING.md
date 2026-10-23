@@ -27,7 +27,10 @@ version:
 
 It refuses, and writes nothing, when the tree has uncommitted changes, the version is not
 `X.Y.Z` or not greater than the current one, the Unreleased section is empty, or a place is not
-where the script expects it (a renamed BibTeX key, a moved `version` line).
+where the script expects it (a renamed BibTeX key, a moved `version` line). It checks the new
+content before it writes anything, writes each file to a temporary file beside it and then renames
+them all, and puts back the files already renamed when a rename fails: a release is written whole
+or not at all.
 
 Every other version in the repository is history and stays: "up to 0.17.3" in the CHANGELOG and in
 code comments, the `e2er_version` a study recorded (`examples/showcase/`), the schema examples in
@@ -47,7 +50,8 @@ git tag v0.18.0 && git push origin main v0.18.0
 ```
 
 The tag starts the release workflow: version check (`scripts/release.py --check --tag`), tests,
-build, GitHub release (notes from the CHANGELOG section), PyPI (trusted publishing), and the release
+build, GitHub release (notes from the CHANGELOG section whose heading starts with `## [X.Y.Z]`,
+matched literally), PyPI (trusted publishing), and the release
 facts below. Do not create the GitHub release by hand; a run that failed after the release was
 created is re-run with `gh run rerun <id>` (every job is idempotent).
 
