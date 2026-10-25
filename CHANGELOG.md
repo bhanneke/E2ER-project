@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.1] — 2026-10-25
+
 ### Fixed
 
 Five fixes from the live test of 2026-10-25.
@@ -4000,7 +4002,8 @@ which were tied to internal infrastructure.
 - Audit bundle export (`.tar.gz`) includes `usage.json` with full cost
   breakdown.
 
-[Unreleased]: https://github.com/bhanneke/E2ER-project/compare/v0.19.0...HEAD
+[Unreleased]: https://github.com/bhanneke/E2ER-project/compare/v0.19.1...HEAD
+[0.19.1]: https://github.com/bhanneke/E2ER-project/releases/tag/v0.19.1
 [0.19.0]: https://github.com/bhanneke/E2ER-project/releases/tag/v0.19.0
 [0.18.0]: https://github.com/bhanneke/E2ER-project/releases/tag/v0.18.0
 [3.0.0]: https://github.com/bhanneke/E2ER-project/releases/tag/v3.0.0
