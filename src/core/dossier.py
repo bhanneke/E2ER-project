@@ -1007,6 +1007,128 @@ def build_dossier(
             doc["kind"] = manifest["kind"]
     if manifest.get("amendments"):
         doc["amendments"] = copy.deepcopy(manifest["amendments"])
+    if recorded:
+        prov = _bundle_provenance(bundle)
+        amendments = prov.get("amendments") if prov else manifest.get("amendments")
+        current = (prov or {}).get("files") or {
+            f["path"]: {"sha256": f["sha256"]}
+            for f in [*manifest.get("data", []), *manifest.get("outputs", [])]
+            if isinstance(f, dict) and f.get("path")
+        }
+        withhold_earlier_fingerprints(doc, amendments or [], current)
+    return doc
+
+
+#: Amendments after which a file's earlier fingerprints are withheld from the dossier, with the words it gives.
+#: The run recorded the SHA-256 of each file a step wrote; for a file whose text was later taken out (``e2er
+#: redact``, the anonymisation for double-blind review) such a fingerprint confirms a guess of the text taken
+#: out: put the guess back where the replacement sits and hash. The abstract's amendments are listed too, so a
+#: paper whose text changed after its steps shows every earlier version the same way.
+WITHHELD_AFTER = {
+    "redacted": "redacted after the step",
+    "anonymised": "anonymised after the step",
+    "abstract_rewritten": "abstract rewritten after the step",
+    "abstract_edited_by_researcher": "abstract edited after the step",
+}
+
+_HEX64 = re.compile(r"^(?:sha256:)?([0-9a-f]{64})$")
+
+
+def _bundle_provenance(bundle: Path | None) -> dict[str, Any] | None:
+    if bundle is None or not (bundle / "provenance.json").is_file():
+        return None
+    try:
+        prov = json.loads((bundle / "provenance.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return prov if isinstance(prov, dict) else None
+
+
+def withhold_earlier_fingerprints(
+    doc: dict[str, Any], amendments: list[dict[str, Any]], files: dict[str, Any]
+) -> dict[str, Any]:
+    """Withhold, in place, the step fingerprints of file versions that a later redaction, anonymisation or
+    abstract change replaced (:data:`WITHHELD_AFTER`); returns ``doc``.
+
+    For each such file every fingerprint the workflow gives it (a step's output, ``sha256_at_export``, a file
+    the researcher supplied) becomes ``"sha256": null`` with ``"withheld": "<why>"``, and the same value
+    anywhere else in the workflow, the events or the rounds goes too. Kept: the file as it is published
+    (``files``, provenance.json's listing), the pre-registration's frozen fingerprints (public in its lock
+    file: anyone checks the deposited plan with them) and the fingerprints the amendments give in plain (a
+    folder published before, a pre-registered plan file). Nothing else changes, so a study without such an
+    amendment keeps exactly its dossier and its address. verify does not use the step fingerprints: it checks
+    the folder against provenance.json and the amendments' own (salted) records.
+    """
+    why: dict[str, str] = {}
+    for a in amendments:
+        if isinstance(a, dict) and isinstance(a.get("path"), str) and a.get("kind") in WITHHELD_AFTER:
+            why.setdefault(a["path"], WITHHELD_AFTER[str(a["kind"])])
+    if not why:
+        return doc
+
+    def bare(v: Any) -> str | None:
+        m = _HEX64.match(v) if isinstance(v, str) else None
+        return m.group(1) if m else None
+
+    public: set[str] = set()
+    for f in files.values():
+        if isinstance(f, dict) and bare(f.get("sha256")):
+            public.add(str(bare(f.get("sha256"))))
+    prereg = doc.get("preregistration") or {}
+    for v in [prereg.get("sha256"), *(prereg.get("plan_files") or {}).values()]:
+        if bare(v):
+            public.add(str(bare(v)))
+    for a in doc.get("amendments") or []:
+        for k in ("sha256_before", "sha256_after"):
+            if isinstance(a, dict) and bare(a.get(k)):
+                public.add(str(bare(a.get(k))))
+
+    withheld: dict[str, str] = {}  # fingerprint → why
+
+    def take(value: Any, reason: str) -> None:
+        h = bare(value)
+        if h and h not in public:
+            withheld.setdefault(h, reason)
+
+    for step in doc.get("workflow") or []:
+        if not isinstance(step, dict):
+            continue
+        outs = [o for o in [step.get("output"), *(step.get("outputs") or [])] if isinstance(o, dict)]
+        for o in outs:
+            if o.get("exported") is False or o.get("file") not in why:
+                continue
+            take(o.get("sha256"), why[o["file"]])
+            take(o.get("sha256_at_export"), why[o["file"]])
+        if step.get("type") == "researcher" and isinstance(step.get("file"), str):
+            rel = _bundle_file(_workspace_name(step["file"], None), files) or step["file"]
+            if rel in why:
+                for k in ("sha256", "replaces_sha256", "sha256_before", "sha256_after"):
+                    take(step.get(k), why[rel])
+    if not withheld:
+        return doc
+
+    def sweep(node: Any) -> None:
+        if isinstance(node, list):
+            for v in node:
+                sweep(v)
+            return
+        if not isinstance(node, dict):
+            return
+        for k in list(node):
+            h = bare(node[k])
+            if h in withheld:
+                if k == "sha256_at_export":
+                    del node[k]  # a hash or absent, in the dossier format
+                else:
+                    node[k] = None
+                node.setdefault("withheld", withheld[h])
+            else:
+                sweep(node[k])
+
+    sweep(doc.get("workflow"))
+    run = doc.get("run") or {}
+    sweep(run.get("events"))
+    sweep(run.get("rounds"))
     return doc
 
 

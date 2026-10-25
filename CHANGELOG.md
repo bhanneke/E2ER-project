@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **The dossier no longer publishes the step fingerprints of a file redacted after the step.** The run records the SHA-256 of every file a step wrote; for a file `e2er redact` (or the anonymisation for double-blind review) changed later, that fingerprint confirmed a guess of the text taken out, although the redaction record itself is keyed since 0.19.0. For every file with an amendment of kind `redacted`, `anonymised`, `abstract_rewritten` or `abstract_edited_by_researcher`, each fingerprint of an earlier version in the workflow (a step's output, `sha256_at_export`, a file the researcher supplied) becomes `"sha256": null` with `"withheld": "redacted after the step"`, and the same value in the events and rounds goes too (`dossier.withhold_earlier_fingerprints`). The file as published, the pre-registration's frozen fingerprints and fingerprints an amendment gives in plain stay; every other file keeps its fingerprints, and a dossier without such an amendment is unchanged (same address). The blind publication's withheld fingerprints carry the same marker (`anonymised after the step`). This applies from the next publication on; dossiers already published stay as they are: the school-fee demo's versions 1 to 3 give the earlier fingerprints of `design/paper_plan.md` and `design/preregistration.md` (docs/publishing.md). e2er.org shows the marker as "hash value withheld" (e2er-site branch `withheld-fingerprints`).
+
 ## [0.19.0] — 2026-10-23
 
 ### Security
