@@ -1000,7 +1000,13 @@ def withhold(doc: Any, fingerprints: set[str]) -> Any:
     if isinstance(doc, list):
         return [withhold(v, fingerprints) for v in doc]
     if isinstance(doc, dict):
-        return {k: withhold(v, fingerprints) for k, v in doc.items()}
+        out = {k: withhold(v, fingerprints) for k, v in doc.items()}
+        if any(isinstance(doc.get(k), str) and out[k] is None for k in ("sha256", "sha256_at_export")):
+            # A step's output (or a file supplied) says why it has no fingerprint (dossier.WITHHELD_AFTER).
+            if out.get("sha256_at_export", "") is None:
+                del out["sha256_at_export"]  # a hash or absent, in the dossier format
+            out.setdefault("withheld", "anonymised after the step")
+        return out
     return doc
 
 

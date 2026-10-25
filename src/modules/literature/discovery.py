@@ -17,6 +17,7 @@ import asyncio
 import math
 import re
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from ...config import Settings
 from ...logging_config import get_logger
@@ -24,6 +25,9 @@ from ..local_corpus import PDF_EXTENSIONS, iter_corpus_files
 from .local_pdf_meta import extract_pdf_metadata
 from .local_zotero import detect_zotero, read_zotero_sqlite
 from .models import PaperMetadata
+
+if TYPE_CHECKING:
+    from .corpus_context import CorpusEvidence
 
 logger = get_logger(__name__)
 
@@ -289,6 +293,15 @@ def is_relevant(paper: PaperMetadata, question: frozenset[str]) -> bool:
     return len(title) >= need
 
 
+def shares_enough(text: str, question: frozenset[str]) -> bool:
+    """Does a Library paper's text (its title with its abstract or claims) bear on the question? It shares as many
+    of the question's content words as a web hit's title and abstract must (a third, 2 to 4); a question with no
+    content words keeps every paper. No title rule: a Library title is often a file name."""
+    n = len(question)
+    need = min(n, RELEVANCE_CAP_ABSTRACT, max(RELEVANCE_FLOOR, math.ceil(RELEVANCE_SHARE_ABSTRACT * n)))
+    return len(question & question_terms(text)) >= need
+
+
 def search_notice(refusal: str, kept: int) -> str:
     """What the run says about a refused search source, given how many web hits the search kept."""
     from .openalex import BUDGET_SPENT
@@ -358,6 +371,36 @@ def _same_paper(paper: PaperMetadata, marks: set[str]) -> bool:
     )
 
 
+def relevant_evidence(evidence: CorpusEvidence, question: frozenset[str], own: set[str]) -> CorpusEvidence:
+    """The corpus evidence a study without a choice of papers keeps: the claims of its own papers (``own``: the
+    DOIs and titles of :func:`_bib_marks`) and of the Library papers that bear on the question.
+
+    A Library paper bears on it when its title and its matched claims together share as many of the question's
+    content words as a web hit's title and abstract must (:func:`is_relevant`: a third of them, 2 to 4). The
+    title alone need not share two: a Library title is often a file name ("untitled", "438988_1_En_Print.indd").
+    The corpus search matches single words, so a paper that shares one or two common words with a long
+    question is no evidence for it, and never filler for the bibliography.
+    """
+    from .corpus_context import CorpusEvidence
+
+    claims: dict[str, list[str]] = {}
+    for h in evidence.hits:
+        claims.setdefault(h.key, []).append(h.text)
+    keep: set[str] = set()
+    for key, row in evidence.papers.items():
+        meta = PaperMetadata(title=row.title or "", doi=row.doi or "")
+        if (own and _same_paper(meta, own)) or shares_enough(" ".join([meta.title, *claims.get(key, [])]), question):
+            keep.add(key)
+    left_out = len(evidence.papers) - len(keep)
+    if left_out:
+        logger.info("corpus evidence: %d Library paper(s) left out as unrelated to the question", left_out)
+    return CorpusEvidence(
+        hits=[h for h in evidence.hits if h.key in keep],
+        papers={k: v for k, v in evidence.papers.items() if k in keep},
+        queries=evidence.queries,
+    )
+
+
 async def acquire_literature(
     workspace: Path,
     paper_id: str,
@@ -416,11 +459,17 @@ async def acquire_literature(
     # Then the corpus: offline, free, and already checked. Degrades to nothing
     # when no corpus has been built.
     evidence = corpus_context.gather(wanted)
+    question = question_terms(" ".join(wanted))
     if chosen is not None:
         # The researcher chose this study's papers: the Library's other papers are not among them.
         # (The 2026-10-10 live run without this: a search of the whole Library for a mortgage question
         # brought 25 unrelated papers, NFT and stablecoin studies, into the bibliography as "your papers".)
         evidence = corpus_context.with_chosen(evidence, chosen, only=True)
+    else:
+        # No choice: the study's own papers (already in literature.bib) and the Library papers that bear on
+        # the question, by the rule web hits pass. The 2026-10-25 live test without this: an unemployment
+        # study with an empty literature folder got 20 crypto, NFT and neuroscience papers as "your papers".
+        evidence = relevant_evidence(evidence, question, _bib_marks(workspace))
     corpus_context.write_evidence(workspace, evidence)
 
     existing = bib_entry_count(workspace)
@@ -447,7 +496,6 @@ async def acquire_literature(
     # evidence file quotes. Seeded first, so a web hit for the same paper does
     # not displace the entry whose claims are already on disk.
     found: dict[str, PaperMetadata] = {p.bibtex_key: p for p in evidence.as_metadata() if p.title}
-    question = question_terms(" ".join(wanted))
     left_out: list[str] = []
     refusals: list[str] = []
     for query in wanted:

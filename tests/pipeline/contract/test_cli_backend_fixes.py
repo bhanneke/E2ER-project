@@ -661,6 +661,57 @@ async def test_claude_code_loads_no_settings_no_mcp_and_refuses_the_sensitive_to
     assert not any(a in ("Bash", "Bash(*)") for a in allowed)
 
 
+#: Claude Code's tools that reach beyond the study's folder or outlive the call (names as Claude Code 2.1.310
+#: defines them), refused for every specialist since 0.19.1.
+_BEYOND = (
+    "CronCreate", "CronDelete", "CronList", "RemoteTrigger", "ScheduleWakeup", "Workflow", "SendMessage",
+    "PushNotification", "Skill", "Agent", "Task", "TaskCreate", "TaskStop", "EnterWorktree", "NotebookEdit",
+    "Monitor", "PowerShell", "REPL", "Artifact", "ToolSearch", "ListMcpResourcesTool", "ReadMcpResourceTool",
+    "mcp__*",
+)  # fmt: skip
+
+
+async def test_claude_code_refuses_the_tools_that_reach_beyond_the_call(cfg, tmp_path):
+    from src.modules.llm.claude_code import ClaudeCodeBackend
+
+    (tmp_path / "workspaces" / "p1").mkdir(parents=True)
+    fake, calls = _fake_proc(_CLAUDE_OK)
+    with patch("src.modules.llm.claude_code.asyncio.create_subprocess_exec", new=fake):
+        await _call(ClaudeCodeBackend(), paper_id="p1", specialist="literature_scanner")
+    cmd = calls["cmd"]
+    denied = cmd[cmd.index("--disallowedTools") + 1].split(",")
+    for tool in _BEYOND:
+        assert tool in denied, tool
+    allowed = cmd[cmd.index("--allowedTools") + 1].split(",")
+    assert not set(allowed) & set(denied), "a tool a specialist needs is refused"
+    for needed in ("Read", "Write", "Edit", "Glob", "Grep", "Bash(e2er-lit:*)", "Bash(e2er-data:*)"):
+        assert needed in allowed and needed not in denied, needed
+
+
+async def test_a_refused_tool_call_is_named_in_the_log(cfg, tmp_path, caplog):
+    """The 2026-10-25 literature scanner's searches were refused, and only the CLI's own session said so."""
+    import logging
+
+    from src.modules.llm.claude_code import ClaudeCodeBackend, refused_commands
+
+    refused = {
+        "type": "result", "subtype": "success", "is_error": False, "result": "DONE",
+        "permission_denials": [
+            {"tool_name": "Bash", "tool_use_id": "t1",
+             "tool_input": {"command": '(e2er-lit search "a" 2>&1 | head -40; e2er-lit search "b")'}},
+        ],
+    }  # fmt: skip
+    assert refused_commands(refused) == ['Bash: (e2er-lit search "a" 2>&1 | head -40; e2er-lit search "b")']
+    assert refused_commands({"permission_denials": ["junk", None]}) == []
+    (tmp_path / "workspaces" / "p1").mkdir(parents=True)
+    fake, _calls = _fake_proc(json.dumps(refused).encode())
+    spawn = patch("src.modules.llm.claude_code.asyncio.create_subprocess_exec", new=fake)
+    with caplog.at_level(logging.WARNING), spawn:
+        await _call(ClaudeCodeBackend(), paper_id="p1", specialist="literature_scanner")
+    assert "refused 1 tool call(s) of literature_scanner" in caplog.text
+    assert "e2er-lit search" in caplog.text
+
+
 async def test_codex_runs_without_network_with_an_empty_home_and_no_key_bypass(cfg, tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path / "realhome"))
     (tmp_path / "workspaces" / "p1").mkdir(parents=True)

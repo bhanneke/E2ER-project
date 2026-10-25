@@ -711,3 +711,33 @@ def test_keep_keeps_both_folders_and_says_where(tmp_path, offline_lock, rerun_he
     assert len(left) == 2 and "The run folder is kept:" in out and "The unpacked package is kept:" in out
     for name in left:
         shutil.rmtree(Path(tempfile.gettempdir()) / name)
+
+
+# ── the paper's authors and title, read from paper.tex ──────────────────────
+
+
+def _paper(tmp_path: Path, head: str) -> Path:
+    folder = tmp_path / "study"
+    (folder / "paper").mkdir(parents=True)
+    (folder / "paper" / "paper.tex").write_text(
+        "\\documentclass{article}\n" + head + "\n\\begin{document}\n\\maketitle\n\\end{document}\n", encoding="utf-8"
+    )
+    return folder
+
+
+def test_an_empty_author_is_no_author(tmp_path):
+    """The 2026-10-25 live test: `e2er inspect` showed "Authors: date" for `\\author{}` followed by `\\date{}`."""
+    folder = _paper(tmp_path, "\\title{Unemployment, 2015--2024}\n\\author{}\n\\date{}")
+    assert pkg._authors(folder) == []
+    assert "Authors: not named" in pkg.summary({"study": {"authors": pkg._authors(folder)}})
+
+
+def test_named_authors_are_read_with_their_notes_dropped(tmp_path):
+    head = "\\title{T}\n\\author{Ada Lovelace\\thanks{Analytical Engine} \\and Alan Turing}\n\\date{}"
+    folder = _paper(tmp_path, head)
+    assert pkg._authors(folder) == ["Ada Lovelace", "Alan Turing"]
+
+
+def test_an_empty_title_is_no_title(tmp_path):
+    folder = _paper(tmp_path, "\\title{}\n\\author{}\n\\date{}")
+    assert "author" not in pkg._study(folder, {})["title"]

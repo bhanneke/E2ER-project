@@ -158,6 +158,64 @@ def test_at_most_three_numbers_each_a_result():
     assert any("25 is no value of the study's results" in p for p in invented)
 
 
+@pytest.mark.parametrize(
+    "sentence",
+    [
+        "Between 2015 and 2024 the gap fell by 10.7 percentage points.",
+        "Between 2015 and 2024 the gap declined by 10.7 percentage points.",
+        "Between 2015 and 2024 the gap narrowed by 10.7 percentage points.",
+        "Between 2015 and 2024 the gap decreased 10.7 points.",
+        "Between 2015 and 2024 the gap dropped by 10.7 points.",
+        "In 2024 the gap was 10.7 percentage points lower than in 2015.",
+    ],
+)
+def test_a_direction_word_carries_the_sign_of_a_magnitude(sentence):
+    """The 2026-10-25 live test: the result was -10.7, the text said the gap narrowed by 10.7, and the gate
+    called 10.7 no value of the results."""
+    sources = {"estimation_results.json#change.range_pp": -10.7}
+    text = f"We ask how far apart five countries were. {sentence} We find that unemployment converged over the decade."
+    assert _problems(text, sources=sources) == []
+
+
+@pytest.mark.parametrize(
+    "sentence",
+    [
+        "Between 2015 and 2024 the gap rose by 10.7 percentage points.",
+        "Between 2015 and 2024 the gap widened by 10.7 percentage points.",
+        "In 2024 the gap was 10.7 percentage points higher than in 2015.",
+    ],
+)
+def test_a_direction_word_that_contradicts_the_sign_fails(sentence):
+    sources = {"estimation_results.json#change.range_pp": -10.7}
+    text = f"We ask how far apart five countries were. {sentence} We find that unemployment converged over the decade."
+    res = ab.check(_env(text), sources=sources)
+    assert not res.passed
+    assert any("10.7 is said to rise, but the result is -10.7" in p for p in res.problems)
+    assert res.unmatched == ["10.7"]
+
+
+def test_a_magnitude_without_a_direction_word_still_needs_its_sign():
+    sources = {"estimation_results.json#change.range_pp": -10.7}
+    text = (
+        "We ask how far apart five countries were. The gap changed by 10.7 percentage points. "
+        "We find that unemployment converged."
+    )
+    assert any("10.7 is no value of the study's results" in p for p in _problems(text, sources=sources))
+    # A direction word in another clause does not carry the sign.
+    other = (
+        "We ask how far apart five countries were. Unemployment fell in Spain, and the gap moved by 10.7 "
+        "percentage points. We find that unemployment converged."
+    )
+    assert any("10.7 is no value of the study's results" in p for p in _problems(other, sources=sources))
+    # A level that is a result as it stands is unaffected: "fell from 17.7 to 8.5".
+    levels = {"r#start": 17.7, "r#end": 8.5}
+    fell = (
+        "We ask how far apart five countries were. The gap fell from 17.7 to 8.5 points. "
+        "We find that unemployment converged."
+    )
+    assert _problems(fell, sources=levels) == []
+
+
 def test_years_rate_bases_names_and_sample_bounds_are_not_counted():
     nums = ab.counted_numbers(
         "Between 1994 and 2005, magnitude 5 and larger earthquakes in NUTS-2 regions and the S\\&P 500 killed "

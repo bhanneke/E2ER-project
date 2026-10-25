@@ -318,7 +318,9 @@ def test_a_pre_registered_plan_keeps_its_fingerprint_and_still_verifies(tmp_path
 def test_withhold_takes_the_old_fingerprints_out_of_the_dossier():
     h = "a" * 64
     doc = {"workflow": [{"output": {"file": "x", "sha256": f"sha256:{h}"}}, {"sha256": h}], "keep": "b" * 64}
-    assert an.withhold(doc, {h}) == {"workflow": [{"output": {"file": "x", "sha256": None}}, {"sha256": None}],
+    why = "anonymised after the step"
+    assert an.withhold(doc, {h}) == {"workflow": [{"output": {"file": "x", "sha256": None, "withheld": why}},
+                                                  {"sha256": None, "withheld": why}],
                                      "keep": "b" * 64}  # fmt: skip
 
 

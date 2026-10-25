@@ -609,6 +609,11 @@ def _as_of(prov: dict[str, Any]) -> str:
 # ── the study, in a few fields ───────────────────────────────────────────────
 
 
+#: ``\author{...}`` with its braces balanced (two levels deep: ``\thanks{\url{...}}``).
+_AUTHOR_RE = re.compile(r"\\author\{((?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*)\}")
+_TITLE_RE = re.compile(r"\\title\{((?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*)\}")
+
+
 def _authors(folder: Path) -> list[str]:
     doc = _read_json(folder / "e2er.json")
     names: list[str] = []
@@ -624,8 +629,9 @@ def _authors(folder: Path) -> list[str]:
         return names
     tex = folder / "paper" / "paper.tex"
     if tex.is_file():
-        m = re.search(r"\\author\{(.+?)\}\s*\n", tex.read_text(encoding="utf-8", errors="replace"), re.S)
-        if m:
+        # Balanced braces: "\author{}\n\date{}" is an empty author, not one named "date" (2026-10-25 live test).
+        m = _AUTHOR_RE.search(tex.read_text(encoding="utf-8", errors="replace"))
+        if m and m.group(1).strip():
             text = re.sub(r"\\(thanks|footnote)\{[^}]*\}", "", m.group(1))
             parts = re.split(r"\\and|\\\\|,", text)
             names = [re.sub(r"\s+", " ", re.sub(r"[{}\\]", "", p)).strip() for p in parts]
@@ -639,8 +645,8 @@ def _study(folder: Path, prov: dict[str, Any]) -> dict[str, Any]:
     question, title = _question_and_title(folder)
     tex = folder / "paper" / "paper.tex"
     if tex.is_file():  # the paper's own title, when abstract.tex has none (README's heading is cut short)
-        m = re.search(r"\\title\{(.+?)\}\s*\n", tex.read_text(encoding="utf-8", errors="replace"), re.S)
-        if m and (not title or title.endswith("...") or title == question):
+        m = _TITLE_RE.search(tex.read_text(encoding="utf-8", errors="replace"))
+        if m and m.group(1).strip() and (not title or title.endswith("...") or title == question):
             title = re.sub(r"\s+", " ", m.group(1).replace("\\\\", " ").replace("--", "–")).strip()
     run: dict[str, Any] = prov["run"] if isinstance(prov.get("run"), dict) else {}
     return {

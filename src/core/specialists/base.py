@@ -67,6 +67,7 @@ async def run_specialist(
         has_data_db=has_data_db,
         max_turns=_MAX_TURNS,
         sidecars=work_order.sidecar_artifacts,
+        shell=backend_name in _CLI_TOOL_ALIASES_BY_BACKEND,
     )
     set_aside = set_aside_previous_outputs(workspace, work_order)
     user_prompt = _build_user_prompt(work_order)
@@ -497,6 +498,39 @@ def _translate_tool_names_for_cli(text: str, backend_name: str = "claude_code") 
     return text
 
 
+def wrapper_rules(specialist: str) -> list[str]:
+    """How a CLI specialist runs e2er's commands: one plain command per call.
+
+    The 2026-10-25 live test: the literature scanner wrapped two searches in one line,
+    ``(e2er-lit search "…" 2>&1 | head -40; e2er-lit search "…" 2>&1 | head -40)``. Claude Code
+    refused it ("This command can't be checked before it runs"), and the scanner wrote its review
+    without a single search. A command is allowed by its name (``Bash(e2er-lit:*)``); a subshell,
+    pipe, chain, redirection or heredoc around it is a command Claude Code cannot match, so it is refused.
+    """
+    from ...modules.llm.claude_code import allowed_tools_for
+
+    names = [t[len("Bash(") : -len(":*)")] for t in allowed_tools_for(specialist) if t.startswith("Bash(")]
+    names = [n for n in names if n != "e2er-allium-query"]  # the old name of `e2er-data allium`
+    lit = "e2er-lit" in names
+    example = '`e2er-lit search "unemployment convergence euro area"`' if lit else "`e2er-data query tables`"
+    short = ['`e2er-lit search "<query>" --limit 5`'] if lit else []
+    short += ['a `LIMIT` in `e2er-data query sql "SELECT ... LIMIT 20"`', "`--save-to <file.csv>` on a data download"]
+    return [
+        "## Running e2er's commands: one plain command per call",
+        f"Your shell runs e2er's own commands ({', '.join(f'`{n}`' for n in names)}) and refuses any "
+        "command it cannot check before it runs. Run each as a single plain command:",
+        f"- One command per call, e.g. {example}. For two commands, make two calls.",
+        "- No subshell `( ... )`, no pipe `|`, no `;`, `&&` or `||`, no redirection (`>`, `2>&1`, `<`), "
+        "no heredoc (`<<`), no `$( ... )`, no `cd` in front of the command.",
+        "- Keep output short with the command's own options, never with `head` or `tail`: "
+        f"{', '.join(short)}. Read a long file with the Read tool.",
+        "- A refused command did not run. When the shell answers \"This command can't be checked before it "
+        'runs", "requires approval" or "contains multiple operations", run the same e2er command again at once, '
+        "alone and plain. Never skip the step or write as if it had run.",
+        "",
+    ]
+
+
 def _build_system_prompt(
     specialist: str,
     skills_text: str,
@@ -504,7 +538,10 @@ def _build_system_prompt(
     has_data_db: bool = False,
     max_turns: int = 80,
     sidecars: list[str] | tuple[str, ...] = (),
+    shell: bool = False,
 ) -> str:
+    """The specialist's system prompt. ``shell``: a CLI backend, whose shell runs e2er's commands
+    (:func:`wrapper_rules`)."""
     from ..specialists.registry import SPECIALIST_ARTIFACTS
 
     name = specialist.replace("_", " ").title()
@@ -550,6 +587,8 @@ def _build_system_prompt(
         "  to the artifact, then page only if the analysis genuinely requires it.",
         "",
     ]
+    if shell:
+        lines.extend(wrapper_rules(specialist))
     # Output discipline. The single-artifact rule below is the right rule for
     # writers, reviewers and polish specialists. It is FALSE for a specialist
     # whose work order carries sidecars (and, for the script writers, an

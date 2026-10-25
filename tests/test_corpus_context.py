@@ -371,6 +371,68 @@ async def test_an_existing_bibliography_is_kept_and_the_library_papers_join_it_a
     assert (workspace / "literature" / "corpus_evidence.md").is_file()
 
 
+#: A question the corpus search matches on one common word ("controls") and that the Library paper does not
+#: bear on: the 2026-10-25 live test, where an unemployment study got 20 crypto and NFT papers this way.
+UNRELATED = "How did annual unemployment rates evolve in Germany, France and Italy, with controls for age?"
+
+
+def _acquire_offline(monkeypatch, db_path):
+    monkeypatch.setattr("src.modules.literature.corpus_context.corpus_path", lambda explicit=None: db_path)
+    monkeypatch.setattr("src.modules.literature.registry.search_sources", lambda s: [])
+
+    async def _no_store(item, paper_id):
+        return None
+
+    monkeypatch.setattr("src.modules.literature.storage.store_paper", _no_store)
+
+
+async def test_a_library_paper_unrelated_to_the_question_is_no_filler(db_path, tmp_path, monkeypatch):
+    from src.config import get_settings
+    from src.modules.literature.discovery import acquire_literature
+
+    assert corpus_context.gather([UNRELATED], db=db_path).ok, "the corpus search must match it for the test to bite"
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    _acquire_offline(monkeypatch, db_path)
+
+    await acquire_literature(workspace, "paper-1", [UNRELATED], get_settings())
+
+    bib = workspace / "literature.bib"
+    assert not bib.is_file() or "Spot ETFs" not in bib.read_text()
+    assert not (workspace / "literature" / "corpus_evidence.md").exists()
+
+
+async def test_the_studys_own_paper_keeps_its_claims_whatever_the_question(db_path, tmp_path, monkeypatch):
+    """A study that supplies its papers (prepare_papers wrote them into literature.bib first) keeps their
+    evidence, related to the question's words or not."""
+    from src.config import get_settings
+    from src.modules.literature.discovery import acquire_literature
+
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    (workspace / "literature.bib").write_text(
+        "@article{author2024spot,\n  title = {Spot ETFs and bitcoin},\n  doi = {10.1/a},\n"
+        "  e2er_source = {researcher},\n}\n"
+    )
+    _acquire_offline(monkeypatch, db_path)
+
+    await acquire_literature(workspace, "paper-1", [UNRELATED], get_settings())
+
+    assert FINDING in (workspace / "literature" / "corpus_evidence.md").read_text()
+
+
+def test_relevance_reads_the_title_and_the_matched_claims():
+    from src.modules.literature.discovery import question_terms, relevant_evidence
+
+    hit = corpus.ClaimHit(field="key_findings", text="No change in equity loading.", quote=FINDING, locator="",
+                          key="k1", title="untitled", year=2024, doi="")  # fmt: skip
+    row = corpus.PaperRow(key="k1", doi="", title="untitled", authors=[], year=2024, source="pdf", n_claims=1)
+    ev = corpus_context.CorpusEvidence(hits=[hit], papers={"k1": row}, queries=["q"])
+    # A file-name title: the claims carry the paper's subject.
+    assert relevant_evidence(ev, question_terms("Did the listing change the equity loading?"), set()).papers
+    assert not relevant_evidence(ev, question_terms(UNRELATED), set()).papers
+
+
 async def test_a_corpus_failure_does_not_stop_acquisition(tmp_path, monkeypatch):
     from src.config import get_settings
     from src.modules.literature.discovery import acquire_literature
@@ -404,3 +466,34 @@ async def test_a_limit_of_zero_sends_no_literature_request(tmp_path, monkeypatch
     monkeypatch.setattr("src.modules.literature.corpus_context.gather", lambda *a, **k: corpus_context.CorpusEvidence())
     written = await acquire_literature(workspace, "paper-1", ["equity loading bitcoin"], get_settings(), limit=0)
     assert written == 0 and not (workspace / "literature.bib").exists()
+
+
+async def test_the_lit_search_keeps_only_library_papers_on_the_query_and_asks_the_web_otherwise(monkeypatch, tmp_path):
+    """The 2026-10-25 live test: `e2er-lit search "shocks and institutions European unemployment"` answered with
+    ten crypto and NFT papers of the local library, and the web search never ran."""
+    import json
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from src.modules.literature import tools
+    from src.modules.literature.models import PaperMetadata, SearchResult
+
+    rows = [
+        {"title": "Mapping the NFT revolution: market trends", "abstract": "NFT sales in Europe.", "doi": "10.1/n"},
+        {"title": "Shocks, institutions and European unemployment", "abstract": "", "doi": "10.1/u"},
+    ]
+    monkeypatch.setattr("src.modules.literature.storage.search_literature", AsyncMock(return_value=rows))
+    monkeypatch.setattr("src.home.paper_id_of", lambda ws: "p1")
+    web_hit = PaperMetadata(title="Labour market institutions and unemployment in Europe", doi="10.1/w")
+    web = SimpleNamespace(name="openalex", search=AsyncMock(return_value=SearchResult([web_hit], "openalex", "q")))
+    monkeypatch.setattr("src.modules.literature.registry.search_sources", lambda s: [web])
+    monkeypatch.setattr("src.config.get_settings", lambda: SimpleNamespace(literature_local_enabled=True))
+    handler = tools.LiteratureToolHandler(tmp_path)
+
+    out = json.loads(await handler._search({"query": "shocks and institutions European unemployment"}))
+    assert out["source"] == "local_library"
+    assert [p["title"] for p in out["papers"]] == ["Shocks, institutions and European unemployment"]
+
+    rows.pop()
+    out = json.loads(await handler._search({"query": "shocks and institutions European unemployment"}))
+    assert out["source"] == "openalex", "no library paper on the query: the web is asked"
