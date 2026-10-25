@@ -233,6 +233,13 @@ class LiteratureToolHandler(ToolHandler):
             except Exception as e:  # noqa: BLE001
                 logger.debug("local literature search failed: %s", e)
                 local = []
+            # The keyword search matches any word of the query, so keep only the papers that bear on it; none
+            # left goes to the web. (2026-10-25 live test: ten crypto and NFT papers answered "shocks and
+            # institutions European unemployment", and the web was never asked.)
+            from .discovery import question_terms, shares_enough
+
+            terms = question_terms(query)
+            local = [r for r in local if shares_enough(f"{r.get('title') or ''} {r.get('abstract') or ''}", terms)]
             if local:
                 return json.dumps(
                     {
