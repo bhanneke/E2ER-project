@@ -32,7 +32,9 @@ The check's rules (``RULES``):
 * at most ``MAX_NUMBERS`` numbers; years, the base of a rate ("per 100,000")
   and digits that belong to a name (Gaia DR3, NUTS-2) are not counted;
 * every counted number is a result: a value of the study's results files at
-  the precision the abstract shows, with its sign (``unmatched``). Standard
+  the precision the abstract shows, with its sign (``unmatched``); a direction
+  word next to an unsigned magnitude may carry the sign ("narrowed by 10.7" for
+  -10.7), and one that contradicts it fails ("rose by 10.7"). Standard
   errors, p-values, t statistics and interval bounds are no results here, and
   a percentage matches a value times 100 only for a share or an estimate;
 * no coefficient or estimate quoted as a raw number: a number next to an
@@ -387,6 +389,46 @@ def _is_name_digit(prose: str, num_str: str) -> bool:
     )
 
 
+#: Words that carry a magnitude's sign: "the gap narrowed by 10.7 points" states -10.7 (2026-10-25 live test).
+_DOWN_RE = re.compile(
+    r"\b(?:fell|fall(?:s|ing|en)?|declin(?:e|es|ed|ing)|decreas(?:e|es|ed|ing)|narrow(?:s|ed|ing)?|drop(?:s|ped|ping)?"
+    r"|lower|reduc(?:e|es|ed|ing|tion)|shr(?:ank|unk|inks?|inking))\b",
+    re.IGNORECASE,
+)
+_UP_RE = re.compile(
+    r"\b(?:rose|ris(?:e|es|en|ing)|increas(?:e|es|ed|ing)|widen(?:s|ed|ing)?|higher|gr(?:ew|ows?|own|owing))\b",
+    re.IGNORECASE,
+)
+#: What ends the stretch of prose a direction word may stand in: a clause or sentence boundary.
+_CLAUSE_END_RE = re.compile(r"[,;:.!?()]")
+#: How many words next to a number may carry its direction ("fell by 10.7", "10.7 percentage points lower").
+_DIRECTION_WORDS = 4
+
+
+def direction(prose: str, num_str: str) -> int:
+    """The sign a direction word next to the number gives it: -1 (fell, declined, narrowed, lower ...),
+    +1 (rose, increased, widened, higher ...), 0 for none or both.
+
+    Only the few words right before the number and right after it count, and only in its own clause:
+    "fell from 17.7 to 8.5" is not read as a fall of 8.5 here, because a level matches as it stands.
+    """
+    signs: set[int] = set()
+    for m in _spots(prose, num_str):
+        before = prose[max(0, m.start() - 80) : m.start()]
+        cut = max((c.end() for c in _CLAUSE_END_RE.finditer(before)), default=0)
+        before = " ".join(before[cut:].split()[-_DIRECTION_WORDS:])
+        after = prose[m.end() : m.end() + 80]
+        stop = _CLAUSE_END_RE.search(after)
+        after = " ".join(after[: stop.start() if stop else len(after)].split()[:_DIRECTION_WORDS])
+        near = f"{before} {after}"
+        down, up = bool(_DOWN_RE.search(near)), bool(_UP_RE.search(near))
+        if down != up:
+            signs.add(-1 if down else 1)
+        else:
+            signs.add(0)
+    return signs.pop() if len(signs) == 1 else 0
+
+
 def source_values(workspace: Path) -> dict[str, float]:
     """Every numeric value of the study's results files (those the number check reads), by dotted key."""
     from .pipeline import verify_numbers as vn
@@ -492,16 +534,36 @@ def check(
             "magnitudes and say the rest in words"
         )
     unmatched: list[str] = []
+    contradicted: list[str] = []
     if sources is not None:
+        from .pipeline import verify_numbers as vn
+
+        prose = vn._strip_latex_machinery(text_tex)
         for num_str, value, is_percent in nums:
             if _is_result(num_str, value, is_percent, sources) or value in design:
                 continue
-            unmatched.append(num_str)
+            # An unsigned magnitude whose sign a direction word carries: "narrowed by 10.7" for -10.7.
+            negative = (
+                value > 0 and not num_str.startswith("+") and _is_result(f"-{num_str}", -value, is_percent, sources)
+            )
+            sign = direction(prose, num_str) if negative else 0
+            if sign < 0:
+                continue
+            if sign > 0:
+                contradicted.append(num_str)
+            else:
+                unmatched.append(num_str)
         if unmatched:
             problems.append(
                 f"{', '.join(unmatched)} {'is' if len(unmatched) == 1 else 'are'} no value of the study's results "
                 "at the precision shown: state only numbers the results files hold, each with its % src: line"
             )
+        for num_str in contradicted:
+            problems.append(
+                f"{num_str} is said to rise, but the result is -{num_str}: say that it fell (declined, narrowed) "
+                "by that much, or give the sign"
+            )
+        unmatched += contradicted
 
     for num_str, near in raw_estimates(text_tex):
         problems.append(
