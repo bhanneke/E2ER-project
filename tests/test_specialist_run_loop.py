@@ -138,3 +138,50 @@ def test_surfaces_the_traceback_so_the_model_can_fix_it(sandbox: Path):
 )
 def test_guards_reject(sandbox: Path, args):
     assert _run(sandbox, *args).returncode == 2
+
+
+# ── one plain command per call (the 2026-10-25 live test) ───────────────────
+
+
+@pytest.mark.parametrize(
+    "specialist",
+    sorted(_LITERATURE_SPECIALISTS | _SCRIPT_WRITING_SPECIALISTS | _SPEC_WRITING_SPECIALISTS | {"review_methods"}),
+)
+def test_every_cli_specialist_is_told_to_run_e2ers_commands_plainly(specialist):
+    """The literature scanner wrapped its searches in `( ... 2>&1 | head; ... )`; Claude Code refused the line and
+    the scanner wrote its review without a search. Every specialist on a CLI backend gets the rule."""
+    prompt = _build_system_prompt(specialist, skills_text="", shell=True)
+    assert "one plain command per call" in prompt
+    for banned in ("subshell", "pipe `|`", "`&&`", "`2>&1`", "heredoc"):
+        assert banned in prompt, banned
+    assert "can't be checked before it runs" in prompt and "run the same e2er command again" in prompt
+    assert "Read tool" in prompt
+    shell = [t for t in allowed_tools_for(specialist) if t.startswith("Bash(") and t != "Bash(e2er-allium-query:*)"]
+    granted = [t[5:-3] for t in shell]
+    for name in granted:
+        assert f"`{name}`" in prompt, name
+    if "e2er-lit" not in granted:
+        assert "e2er-lit" not in prompt, "no example of a command the specialist cannot run"
+
+
+def test_the_sdk_backends_get_no_shell_rule():
+    assert "one plain command per call" not in _build_system_prompt("literature_scanner", skills_text="")
+
+
+async def test_run_specialist_passes_the_rule_to_a_cli_backend_only(monkeypatch, tmp_path):
+    from src.core.specialists import base
+
+    seen: dict[str, bool] = {}
+
+    def spy(*args, **kwargs):
+        seen["shell"] = kwargs.get("shell", False)
+        raise RuntimeError("stop here")
+
+    monkeypatch.setattr(base, "_build_system_prompt", spy)
+    from src.core.specialists.contracts import WorkOrder
+
+    order = WorkOrder(paper_id="p1", specialist="literature_scanner", focus="f", output_file="literature_review.md")
+    for backend, expected in (("claude_code", True), ("codex", True), ("anthropic", False)):
+        with pytest.raises(RuntimeError, match="stop here"):
+            await base.run_specialist(order, None, tmp_path, "m", backend_name=backend)  # type: ignore[arg-type]
+        assert seen["shell"] is expected, backend

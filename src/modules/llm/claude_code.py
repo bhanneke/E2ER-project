@@ -168,13 +168,29 @@ def _clip(text: str, limit: int = _MAX_ERROR_CHARS) -> str:
 
 #: Tools a specialist never gets, whatever the user's settings allow: the web outside e2er's wrappers,
 #: notebooks, sub-agents, and the files of this computer that hold logins and keys.
+#:
+#: Since 0.19.1 also every other tool of Claude Code that reaches beyond the study's folder or outlives the
+#: call (names as Claude Code 2.1.310 defines them): scheduling and remote triggers, workflows, messages
+#: and notifications, background tasks and their shells, worktrees, skills, plan mode and questions to a
+#: user who is not there, code runners besides e2er's (PowerShell, REPL, Monitor), claude.ai artifacts,
+#: tool search, and every MCP tool (``mcp__*``) and resource. A specialist needs Read, Write, Edit, Glob,
+#: Grep and e2er's commands.
 _SENSITIVE_PATHS = (
     "~/.ssh/**", "~/.e2er/**", "~/.aws/**", "~/.gnupg/**", "~/.config/gh/**", "~/.config/gcloud/**",
     "~/.codex/**", "~/.docker/**", "~/.kube/**", "~/.netrc", "~/.pgpass", "~/.git-credentials",
     "**/.env", "**/.env.*",
 )  # fmt: skip
+_BEYOND_THE_CALL = (
+    "CronCreate", "CronDelete", "CronList", "RemoteTrigger", "ScheduleWakeup", "Workflow",
+    "SendMessage", "SendUserMessage", "SendUserFile", "PushNotification",
+    "TaskCreate", "TaskGet", "TaskList", "TaskUpdate", "TaskStop", "TaskOutput", "KillShell",
+    "TeamCreate", "TeamDelete", "EnterWorktree", "ExitWorktree", "Skill",
+    "EnterPlanMode", "ExitPlanMode", "AskUserQuestion", "PowerShell", "REPL", "Monitor",
+    "Artifact", "ArtifactComments", "ArtifactData", "ToolSearch",
+    "ListMcpResourcesTool", "ReadMcpResourceTool", "mcp__*",
+)  # fmt: skip
 DISALLOWED_TOOLS = (
-    "WebFetch", "WebSearch", "NotebookEdit", "Task", "Agent",
+    "WebFetch", "WebSearch", "NotebookEdit", "Task", "Agent", *_BEYOND_THE_CALL,
     *(f"{tool}({path})" for tool in ("Read", "Edit", "Write") for path in _SENSITIVE_PATHS),
 )  # fmt: skip
 
@@ -534,6 +550,7 @@ async def _invoke_cli(
     output_text = _extract_text(raw, stdout)
     usage = _extract_usage(raw)
     tool_calls_made = _count_tool_calls(raw)
+    _warn_on_refusals(raw, specialist)
 
     # error_max_turns: process exits 0 but the agent didn't finish. The
     # CLI returns subtype="error_max_turns" or is_error=True.
@@ -567,6 +584,28 @@ async def _invoke_cli(
         duration_seconds=duration,
         stop_reason="end_turn",
     )
+
+
+def refused_commands(raw: dict[str, Any]) -> list[str]:
+    """The tool calls Claude Code refused in this call (its result's ``permission_denials``), each in short."""
+    out: list[str] = []
+    for d in raw.get("permission_denials") or []:
+        if not isinstance(d, dict):
+            continue
+        given = d["tool_input"] if isinstance(d.get("tool_input"), dict) else {}
+        what = given.get("command") or given.get("file_path") or given.get("pattern") or ""
+        out.append(f"{d.get('tool_name') or '?'}: {_clip(' '.join(str(what).split()), 200)}")
+    return out
+
+
+def _warn_on_refusals(raw: dict[str, Any], specialist: str | None) -> None:
+    """Say in the log which of a specialist's tool calls Claude Code refused: the 2026-10-25 literature scanner's
+    searches were refused, and nothing outside the CLI's own session said so."""
+    refused = refused_commands(raw)
+    if refused:
+        logger.warning(
+            "Claude Code refused %d tool call(s) of %s: %s", len(refused), specialist or "a call", "; ".join(refused)
+        )
 
 
 #: An exit-0 answer that is nothing but the plan-limit notice (older Claude Code versions).
