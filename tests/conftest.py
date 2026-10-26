@@ -533,6 +533,10 @@ def _no_real_platform(monkeypatch, tmp_path_factory):
     monkeypatch.setattr(
         zen, "client_factory", lambda base: httpx.Client(base_url=base, transport=httpx.MockTransport(refuse))
     )
+    # The study package's download (`e2er fetch`): refused unless a test fakes it.
+    from src.core import study_package as sp
+
+    monkeypatch.setattr(sp, "download_client", lambda: httpx.Client(transport=httpx.MockTransport(refuse)))
     for var in ("ZENODO_TOKEN", "ZENODO_SANDBOX_TOKEN", "GH_TOKEN", "GITHUB_TOKEN", "E2ER_TEST_SERVER"):
         monkeypatch.delenv(var, raising=False)
     monkeypatch.setenv("GH_CONFIG_DIR", str(tmp_path_factory.mktemp("no-gh-config")))

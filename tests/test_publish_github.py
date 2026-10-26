@@ -52,6 +52,54 @@ elif args[:2] == ["repo", "create"]:
     bare.parent.mkdir(parents=True, exist_ok=True)
     subprocess.run(["git", "init", "--quiet", "--bare", "-b", "main", str(bare)], check=True)
     print("https://github.com/" + args[2])
+elif args[:1] == ["api"] and "/git/ref/tags/" in args[1]:
+    full, tag = args[1].removeprefix("repos/").split("/git/ref/tags/")
+    bare = root / (full + ".git")
+    got = subprocess.run(["git", "--git-dir", str(bare), "rev-parse", "--verify", "-q", "refs/tags/" + tag],
+                         capture_output=True, text=True)
+    if got.returncode != 0:
+        print("gh: Not Found (HTTP 404)", file=sys.stderr)
+        sys.exit(1)
+    print(json.dumps({"ref": "refs/tags/" + tag, "object": {"sha": got.stdout.strip(), "type": "commit"}}))
+elif args[:1] == ["release"]:
+    # Releases of the fake GitHub: <root>/<owner>/<repo>.releases/<tag>/{release.json, assets/<name>}
+    full = args[args.index("--repo") + 1]
+    tag = args[2]
+    rel = root / (full + ".releases") / tag
+    if os.environ.get("FAKE_GH_RELEASE_FAILS") and args[1] in ("create", "upload"):
+        print("HTTP 422: Validation Failed", file=sys.stderr)
+        sys.exit(1)
+    if args[1] == "view":
+        if not (rel / "release.json").is_file():
+            print("release not found", file=sys.stderr)
+            sys.exit(1)
+        meta = json.loads((rel / "release.json").read_text())
+        assets = [{"name": a.name, "size": a.stat().st_size} for a in sorted((rel / "assets").glob("*"))]
+        print(json.dumps({"tagName": tag, "isDraft": meta.get("draft", False), "assets": assets, "url": "x"}))
+    elif args[1] == "create":
+        bare = root / (full + ".git")
+        if "--target" in args:
+            target = args[args.index("--target") + 1]
+            subprocess.run(["git", "--git-dir", str(bare), "tag", tag, target], check=True)
+        elif "--verify-tag" not in args:
+            print("fake gh: create without --target or --verify-tag", file=sys.stderr)
+            sys.exit(2)
+        (rel / "assets").mkdir(parents=True)
+        (rel / "release.json").write_text(json.dumps({"latest": "--latest=false" not in args, "argv": args}))
+        src = Path(args[3])
+        (rel / "assets" / src.name).write_bytes(src.read_bytes())
+    elif args[1] == "upload":
+        src = Path(args[3])
+        if (rel / "assets" / src.name).exists():
+            print("asset under the same name already exists", file=sys.stderr)
+            sys.exit(1)
+        (rel / "assets" / src.name).write_bytes(src.read_bytes())
+    elif args[1] == "download":
+        name = args[args.index("--pattern") + 1]
+        out = Path(args[args.index("--dir") + 1])
+        (out / name).write_bytes((rel / "assets" / name).read_bytes())
+    else:
+        sys.exit(2)
 else:
     print("fake gh: unexpected " + " ".join(args), file=sys.stderr)
     sys.exit(2)
@@ -95,7 +143,12 @@ def github(tmp_path: Path, monkeypatch) -> Path:
 
 
 def _fake_platform(root: Path, refuse: str | None = None):
-    """pc.request for a platform that signs in and registers every study (or refuses it: ``refuse``)."""
+    """pc.request for a platform that signs in and registers every study (or refuses it: ``refuse``).
+
+    It numbers the versions as e2er.org does (the same content is the same version) and answers the study's
+    record (GET /api/v1/studies/<owner>/<project>), so publish names the study package's release after it.
+    """
+    studies: dict[str, list[dict]] = {}
 
     def request(base, method, path, token=None, body=None):
         with open(root / "platform.log", "a") as f:
@@ -107,13 +160,26 @@ def _fake_platform(root: Path, refuse: str | None = None):
                 return 409, {"error": refuse}
             oid = body["manifest"]["id"]
             (root / "registered.jsonl").open("a").write(json.dumps(body) + "\n")
+            versions = studies.setdefault(oid, [])
+            same = next((v for v in versions if v["content_id"] == body["manifest"]["content_id"]), None)
+            if same is None:
+                same = {
+                    "number": len(versions) + 1,
+                    "content_id": body["manifest"]["content_id"],
+                    "dossier_id": body["dossier"]["id"],
+                    "package": body["manifest"].get("package"),
+                }
+                versions.append(same)
             return 201, {
                 "id": oid,
                 "owner_project": oid,
-                "version": 1,
+                "version": same["number"],
                 "study_url": f"{base}/{oid}",
                 "dossier_url": "x",
             }
+        if method == "GET" and path.startswith("/api/v1/studies/") and path.removeprefix("/api/v1/studies/") in studies:
+            versions = studies[path.removeprefix("/api/v1/studies/")]
+            return 200, {"versions": versions, "latest": versions[-1]}
         return 404, {"error": "not found"}
 
     return request

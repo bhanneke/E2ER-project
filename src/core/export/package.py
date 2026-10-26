@@ -901,6 +901,68 @@ def build(
     return Packed(path=target, manifest=manifest, size=target.stat().st_size, notes=notes)
 
 
+def repack(folder: Path, out: Path) -> Packed:
+    """An unpacked package written into its ``.e2er`` file again, from the folder's own e2er-package.json.
+
+    The folder of a study that ``e2er publish --github`` pushed is its package, opened: e2er-package.json
+    lists every file with its SHA-256 and size. That list is kept as it is (the same fingerprint, the same
+    files left out), every file it lists must be in the folder with exactly its SHA-256 and size, and the
+    entries are written in the list's order with the zip settings :func:`build` uses, so the file is the
+    package the folder was opened from (byte for byte where zlib compresses alike). Files of the folder the
+    list does not name (a README another tool added) are not taken, and are named in the notes.
+    """
+    folder = Path(folder).expanduser().resolve()
+    manifest_path = folder / MANIFEST
+    if not manifest_path.is_file():
+        raise PackageError(f"{folder} has no {MANIFEST}: it is not an unpacked package")
+    manifest_bytes = manifest_path.read_bytes()
+    if len(manifest_bytes) > MAX_MANIFEST_BYTES:
+        raise PackageError(f"{MANIFEST} is larger than e2er reads")
+    try:
+        manifest = json.loads(manifest_bytes)
+    except ValueError as e:
+        raise PackageError(f"{MANIFEST} is not JSON: {e}") from e
+    if not isinstance(manifest, dict) or not str(manifest.get("format") or "").startswith("e2er-package/"):
+        raise PackageError(f"{MANIFEST} is not the list of a .e2er package")
+    contents = manifest.get("contents")
+    if not isinstance(contents, list) or not contents:
+        raise PackageError(f"{MANIFEST} lists no files")
+    if fingerprint(contents) != manifest.get("fingerprint"):
+        raise PackageError(f"{MANIFEST}'s fingerprint does not match its own list of files")
+    entries: list[tuple[str, Path]] = []
+    problems: list[str] = []
+    for item in contents:
+        rel = item.get("path") if isinstance(item, dict) else None
+        if not isinstance(rel, str) or _name_problem(rel) or rel == MANIFEST:
+            raise PackageError(f"{MANIFEST} lists a path e2er does not write: {rel!r}")
+        src = folder / rel
+        if src.is_symlink() or not src.is_file():
+            problems.append(f"{rel}: missing")
+        elif src.stat().st_size != item.get("bytes") or _sha256(src) != item.get("sha256"):
+            problems.append(f"{rel}: not the file the list names (SHA-256 or size differs)")
+        entries.append((rel, src))
+    if problems:
+        raise PackageError(
+            "the folder is not the package its list describes; nothing was written:\n  " + "\n  ".join(problems[:20])
+        )
+    listed = {rel for rel, _ in entries} | {MANIFEST}
+    from .bundle_files import walk
+
+    extra = sorted(r for r in walk(folder).files if r not in listed)
+    notes = [f"{r} is in the folder but not in the package's list; it was not taken" for r in extra]
+    target = Path(out).expanduser().resolve()
+    if target.is_relative_to(folder):
+        raise PackageError("the package cannot be written into the folder it packs; choose another place")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    partial = target.with_name(f".{target.name}.partial")
+    try:
+        _write_zip(partial, manifest_bytes, entries)
+        os.replace(partial, target)
+    finally:
+        partial.unlink(missing_ok=True)
+    return Packed(path=target, manifest=manifest, size=target.stat().st_size, notes=notes)
+
+
 # ── reading ──────────────────────────────────────────────────────────────────
 
 

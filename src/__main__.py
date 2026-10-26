@@ -991,6 +991,24 @@ def main() -> None:
     )
     inspect_p.add_argument("package", help="The .e2er file.")
 
+    fetch_p = subparsers.add_parser(
+        "fetch",
+        help="Download a published study's package (.e2er) from where its authors keep it, and check it.",
+        description="Reads the study package e2er.org records for a study or dossier (its address, size and "
+        "SHA-256; e2er.org keeps no copy), downloads the file from GitHub or Zenodo, checks its size and SHA-256 "
+        "against the record, and prints the commands that inspect, verify and reproduce it. Nothing is run.",
+    )
+    fetch_p.add_argument(
+        "address",
+        help="A study's address (https://e2er.org/<owner>/<project>) or a dossier's (https://e2er.org/d/<id>).",
+    )
+    fetch_p.add_argument(
+        "-o", "--out", default=None, metavar="PATH", help="Where to save it (a folder, or a file name; default: here)."
+    )
+    fetch_p.add_argument(
+        "--version", type=int, default=None, help="With a study's address: this version (default: the latest)."
+    )
+
     # Declared so it appears in `e2er --help`; never parsed here. `corpus` owns
     # a subcommand tree of its own and is intercepted before parse_args below —
     # nargs=REMAINDER cannot hold a leading `--help` or `--limit`, which argparse
@@ -1154,6 +1172,14 @@ def main() -> None:
 
         with printable_output():
             code = _inspect(args.package)
+        sys.exit(code)
+
+    if args.command == "fetch":
+        from .cli_fetch import fetch as _fetch
+        from .core.safe_text import printable_output
+
+        with printable_output():
+            code = _fetch(args.address, args.out, version=args.version)
         sys.exit(code)
 
     if args.command == "reproduce":

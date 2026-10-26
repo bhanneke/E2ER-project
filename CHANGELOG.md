@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Every study published with `--github` or `--zenodo` gets its study package.** `e2er publish` builds the `.e2er` file with `e2er pack`'s own logic (the same files and left-out rules; data a source's terms keep out are never in it) and keeps it next to the study's files: with `--github` as the file of a release of the study's repository, one per study version (tag `<project>-v<N>`, file `<project>-v<N>.e2er`, at the pushed commit, never marked latest; an existing tag is used only at the same commit and an existing file only with the same bytes: nothing is moved, forced or overwritten), with `--zenodo` as one more file in the code deposit (only with a public paper and public code; without the data when they are private). The publish request and `e2er.json` record `package: {url, sha256, bytes, host, fingerprint}`; e2er.org records it next to the dossier (the dossier document holds the package's own e2er.json, so it cannot name it) and stores no file. In double-blind mode nothing is hosted. Needs e2er.org with the `package` field (e2er-site branch `study-package`): an older e2er.org refuses a request that carries it, so the site goes first.
+- **`e2er fetch <study or dossier address>`** downloads the package e2er.org records (https only, every redirect checked), checks its size and SHA-256 against the record, keeps nothing that does not match, and prints the `e2er inspect`, `e2er verify … --against` and `e2er reproduce` commands; it runs nothing. `--version N` takes an earlier version, `-o` a folder or file name.
+- **`e2er verify <file.e2er> --against <address>`** also compares the package's fingerprint with the one e2er.org records for that version (check `package published`; SKIP when none is recorded).
+- `scripts/backfill_packages.py` prepares the packages of studies published before (packed from their files at the published commit), a dry run unless `--run`.
+
 ## [0.19.1] — 2026-10-25
 
 ### Fixed

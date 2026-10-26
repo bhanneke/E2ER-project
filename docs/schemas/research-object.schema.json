@@ -343,6 +343,46 @@
         }
       }
     },
+    "package": {
+      "type": "object",
+      "description": "The study as one .e2er file (what e2er pack writes), hosted by its authors: a GitHub release asset, or a file of the study's code deposit on Zenodo. e2er.org records only this, never the file; readers fetch it with e2er fetch, and e2er verify <file> --against <study address> compares its fingerprint with this one.",
+      "required": [
+        "url",
+        "sha256",
+        "bytes",
+        "host",
+        "fingerprint"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "url": {
+          "type": "string",
+          "pattern": "^https://",
+          "description": "https://github.com/<owner>/<repository>/releases/download/<tag>/<name>.e2er, or https://zenodo.org/records/<id>/files/<name>.e2er."
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "SHA-256 of the file's bytes."
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The file's size in bytes."
+        },
+        "host": {
+          "enum": [
+            "github",
+            "zenodo"
+          ]
+        },
+        "fingerprint": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "description": "The package's fingerprint, as its e2er-package.json gives it: SHA-256 over the list of its files with their SHA-256 and size."
+        }
+      }
+    },
     "license": {
       "type": [
         "string",
