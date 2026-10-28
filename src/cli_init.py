@@ -128,8 +128,9 @@ _BACKEND_CHOICES: list[tuple[str, str]] = [
     ("anthropic", "Anthropic SDK (per-token API)"),
     ("openrouter", "OpenRouter (per-token, 200+ models)"),
     ("codex", "ChatGPT Plus/Pro ($0/token)"),
-    # Other providers (not tested). Google ended Gemini CLI sign-in for
-    # individual accounts in October 2026; the backend needs GEMINI_API_KEY.
+    # Other providers (not tested). Google ended the Gemini CLI for AI Pro/Ultra
+    # plans and free individual accounts on 18 June 2026; the backend needs a
+    # paid GEMINI_API_KEY.
     ("gemini", "Other provider, not tested: Gemini CLI with a Gemini API key (per-token, billed by Google)"),
 ]
 
@@ -188,8 +189,9 @@ def _check_backend_prereqs(backend: str) -> tuple[bool, list[str]]:
         else:
             ready = False
             notes.append("  ✗ GEMINI_API_KEY not set")
-            notes.append("     Google ended Gemini CLI sign-in for individual accounts in October 2026,")
-            notes.append("     so the Gemini backend needs a key: https://aistudio.google.com/apikey")
+            notes.append("     Google ended the Gemini CLI for AI Pro/Ultra plans and free individual accounts")
+            notes.append("     on 18 June 2026, so the Gemini backend needs a paid Gemini API key:")
+            notes.append("     https://aistudio.google.com/apikey")
         notes.append("  · not tested: full runs are tested on Claude Code and Codex only")
 
     return ready, notes

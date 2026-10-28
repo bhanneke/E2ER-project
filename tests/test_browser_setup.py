@@ -362,7 +362,7 @@ def test_setup_page_offers_backends_docker_and_instructions(project, session, mo
 
 
 def test_setup_lists_gemini_apart_as_not_tested(project, session, monkeypatch):
-    """Google ended Gemini CLI sign-in for individual accounts (October 2026): the page
+    """Google ended the Gemini CLI for Pro/Ultra plans and free accounts (18 June 2026): the page
     offers Gemini under "Other providers (not tested)" with a key field, no sign-in, and
     no longer says it runs on a subscription."""
     monkeypatch.setattr("shutil.which", lambda name: "/usr/local/bin/" + name)
@@ -370,7 +370,9 @@ def test_setup_lists_gemini_apart_as_not_tested(project, session, monkeypatch):
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
     html = _client().get("/setup").text
     assert "Other providers (not tested)" in html
-    assert "Google ended Gemini CLI sign-in for individual accounts in October 2026" in html
+    assert "Google ended the Gemini CLI for AI Pro/Ultra plans and free individual" in html
+    assert "accounts on 18 June 2026" in html and "<strong>paid</strong> Gemini API key" in html
+    assert "October 2026" not in html
     assert "Claude Code, Codex and Gemini run on your own subscription" not in html
     assert "Claude Code and Codex run on your own subscription" in html
     assert "Google AI subscription" not in html
@@ -441,10 +443,11 @@ def test_setup_keeps_stored_keys_and_unmanaged_settings(project, session):
 
 def test_setup_refuses_unusable_literature_and_unknown_backend(project, session, tmp_path):
     c = _client()
-    empty = project.parent / "empty"
-    empty.mkdir()
-    r = c.post("/api/setup/save", json={"backend": "claude_code", "literature": str(empty)})
-    assert r.status_code == 422 and "no .bib file and no PDFs" in r.json()["detail"]
+    notes = project.parent / "Data" / "notes.docx"
+    r = c.post("/api/setup/save", json={"backend": "claude_code", "literature": str(notes)})
+    assert r.status_code == 422 and "Expected a .bib file" in r.json()["detail"]
+    r = c.post("/api/setup/save", json={"backend": "claude_code", "literature": str(project.parent / "nowhere")})
+    assert r.status_code == 422 and "Nothing found" in r.json()["detail"]
     assert c.post("/api/setup/save", json={"backend": "gpt"}).status_code == 422
     assert not (project / ".env").exists()
 
@@ -818,3 +821,171 @@ def test_the_review_is_offered_only_once_the_run_task_has_stopped():
     finally:
         appmod._RUNNING.pop("p-1", None)
     assert asyncio.iscoroutinefunction(appmod.post_review)
+
+
+# ── tester findings, 2026-10-27 ─────────────────────────────────────────────
+
+
+def _folder_card(html: str) -> str:
+    return html.split('id="card-folder"', 1)[1].split("</section>", 1)[0]
+
+
+def test_setup_offers_the_folder_e2er_was_started_in(project, session):
+    """A fresh project folder was shown ~/e2er-studies, and Save remembered that instead."""
+    from src import home as h
+
+    card = _folder_card(_client().get("/setup").text)
+    assert f'id="folder-path">{project}<' in card
+    assert f'name="studies_folder" value="{project}"' in card
+    assert "the folder you started e2er in" in card
+    r = _client().post(
+        "/api/setup/save", json={"backend": "claude_code", "studies_folder": str(project)}, headers={"origin": BASE}
+    )
+    assert r.status_code == 200, r.text
+    assert (project / ".env").is_file()
+    assert h.remembered_studies_folder() == project.resolve()
+
+
+def test_started_in_the_home_folder_setup_offers_the_default(home, session, monkeypatch):
+    """The home folder (where a terminal opens) chooses nothing: the default stays."""
+    monkeypatch.chdir(home)
+    card = _folder_card(_client().get("/setup").text)
+    assert f'id="folder-path">{home / "e2er-studies"}<' in card
+    assert "the folder you started e2er in" not in card
+
+
+def test_started_in_another_folder_setup_names_it_and_can_keep_it(project, session):
+    """With a studies folder remembered, e2er started in a folder of its own says so and can use it."""
+    from src import home as h
+
+    studies = project.parent / "studies"
+    studies.mkdir()
+    (studies / ".env").write_text("LLM_BACKEND=claude_code\nFRED_API_KEY=fred-kept-1234567890\n")
+    h.remember_studies_folder(studies)
+    assert h.project_dir() == studies.resolve()
+
+    html = _client().get("/setup").text
+    assert f'You started e2er in <code class="path">{project}</code>' in html
+    assert 'name="use_launch_folder"' in html
+    r = _client().post(
+        "/api/setup/save", json={"backend": "claude_code", "use_launch_folder": True}, headers={"origin": BASE}
+    )
+    assert r.status_code == 200, r.text
+    assert "FRED_API_KEY=fred-kept-1234567890" in (project / ".env").read_text()
+    assert h.project_dir() == project, "e2er started here now uses this folder"
+    assert h.remembered_studies_folder() == studies.resolve(), "the studies folder stays for other folders"
+
+
+def test_started_in_the_studies_folder_offers_nothing_more(project, session):
+    from src import home as h
+
+    (project / ".env").write_text("LLM_BACKEND=claude_code\n")
+    h.remember_studies_folder(project)
+    assert 'name="use_launch_folder"' not in _client().get("/setup").text
+
+
+def test_the_folder_browser_cuts_windows_paths_too():
+    """`/\\/[^/]*$/` left C:\\Users\\kim\\e2er-studies whole: the browser opened nowhere."""
+    import re
+
+    page = (Path(__file__).parents[1] / "src" / "api" / "templates" / "setup.html").read_text()
+    assert "replace(/\\/[^/]*$/, '')" not in page
+    assert "replace(/[\\\\/][^\\\\/]*$/, '')" in page
+    cut = re.compile(r"[\\/][^\\/]*$")  # the same pattern
+    assert cut.sub("", "C:\\Users\\kim\\e2er-studies") == "C:\\Users\\kim"
+    assert cut.sub("", "/home/kim/e2er-studies") == "/home/kim"
+
+
+def test_an_empty_literature_folder_does_not_lose_the_other_settings(project, session):
+    """ "Create folders" stored an empty literature folder; every later save was refused (422),
+    and the provider, GitHub login and Zenodo key were lost with it."""
+    c = _client()
+    first = {"backend": "claude_code", "create_folders": True, "studies_folder": str(project)}
+    assert c.post("/api/setup/save", json=first, headers={"origin": BASE}).status_code == 200
+    lit = project / "literature"
+    assert inspect_literature(lit).kind == "empty"
+    assert f'name="literature" value="{lit}"' in c.get("/setup").text  # sent back on the next save
+
+    second = {
+        "backend": "codex",
+        "literature": str(lit),
+        "data_dir": str(project / "data"),
+        "github_login": "Kim-Dash",
+        "keys": {"ZENODO_TOKEN": "zenodo-token-1234567890"},
+    }
+    r = c.post("/api/setup/save", json=second, headers={"origin": BASE})
+    assert r.status_code == 200, r.text
+    assert any("no .bib file and no PDFs" in n and "kept" in n for n in r.json()["notes"])
+    from src.config import Settings, get_settings
+
+    get_settings.cache_clear()
+    s = Settings()
+    assert s.llm_backend == "codex" and s.github_username == "kim-dash"
+    assert s.zenodo_token == "zenodo-token-1234567890"
+    assert s.literature_dir == str(lit)
+
+
+def test_a_new_empty_literature_folder_is_saved_with_a_note(project, session):
+    empty = project.parent / "new-library"
+    empty.mkdir()
+    r = _client().post(
+        "/api/setup/save",
+        json={"backend": "claude_code", "literature": str(empty), "studies_folder": str(project)},
+        headers={"origin": BASE},
+    )
+    assert r.status_code == 200, r.text
+    assert any("has no .bib file and no PDFs yet" in n for n in r.json()["notes"])
+    from src.config import Settings
+
+    assert Settings().literature_dir == str(empty)
+
+
+def test_a_saved_data_folder_that_is_gone_does_not_block_saving(project, session):
+    gone = project.parent / "gone-data"
+    (project / ".env").write_text(f"LLM_BACKEND=claude_code\nLOCAL_DATA_DIR={gone}\n")
+    r = _client().post(
+        "/api/setup/save",
+        json={"backend": "claude_code", "data_dir": str(gone), "github_login": "kim"},
+        headers={"origin": BASE},
+    )
+    assert r.status_code == 200, r.text
+    assert any(n.startswith("Data folder: Nothing found") for n in r.json()["notes"])
+    assert "GITHUB_USERNAME=kim" in (project / ".env").read_text()
+
+
+@pytest.mark.parametrize("login", ["kim_dash", "kim.dash"])
+def test_a_github_login_with_underscore_or_dot_is_refused_with_the_rule(project, session, login):
+    """GitHub logins are letters, digits and hyphens only; the refusal says so and what to do."""
+    r = _client().post(
+        "/api/setup/save",
+        json={"backend": "claude_code", "github_login": login, "studies_folder": str(project)},
+        headers={"origin": BASE},
+    )
+    assert r.status_code == 422
+    detail = r.json()["detail"]
+    assert "no _ or ." in detail and "github.com/<login>" in detail and "Leave the field empty" in detail
+
+
+def test_a_refused_save_is_shown_prominently_and_stays(project, session):
+    page = _client().get("/setup").text
+    assert '<div class="pf-banner bad" id="save-error" role="alert" hidden></div>' in page
+    script = page.split("// ── save ──", 1)[1]
+    assert "errorBox.hidden = false" in script and "scrollIntoView" in script
+    assert "catch (e) { refused(e.message); return; }" in script
+    # The notes of a save (an empty folder kept, the studies folder) survive the reload.
+    assert "sessionStorage.setItem('e2er-setup-notes'" in script
+
+
+def test_the_live_panel_keeps_open_details_open_across_polls():
+    """#live re-renders every 3 s; "What happened" and "Technical details" closed on each poll."""
+    import re
+
+    root = Path(__file__).parents[1] / "src" / "api"
+    live = (root / "templates" / "_live.html").read_text()
+    for id_ in ("live-events", "live-failure-details", "live-error-details"):
+        assert f'id="{id_}"' in live
+    no_id = [m for m in re.findall(r"<details[^>]*>", live) if "id=" not in m]
+    assert not no_id, f"a <details> in the polled panel without a stable id: {no_id}"
+    js = (root / "static" / "e2er.js").read_text()
+    assert "htmx:beforeSwap" in js and "htmx:afterSwap" in js
+    assert "details[id][open]" in js and "d.open = true" in js

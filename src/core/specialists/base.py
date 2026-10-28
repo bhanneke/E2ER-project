@@ -266,6 +266,10 @@ async def run_specialist(
                 existing = (result.error or "").strip()
                 prefix = f"{existing} | " if existing else ""
                 result.error = f"{prefix}contract violation: {block_summary}"
+                if result.diagnostic:
+                    # Why the backend wrote nothing (Codex: its sandbox refused), for the researcher;
+                    # not in the feedback below, which goes to the model.
+                    result.error += f" | {result.diagnostic}"
                 # Persist the violation for the NEXT attempt's prompt (consumed
                 # once by read_contract_feedback above) — without this the retry
                 # is blind and just re-fails until the circuit breaker pauses.

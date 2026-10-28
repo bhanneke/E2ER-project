@@ -12,6 +12,9 @@
 {% if not session_ok %}
   <div class="pf-banner bad" id="session-note">{{ session_problem | ticks }}</div>
 {% endif %}
+{# Why a save did not go through: stays until the next save, so it cannot be missed (tester report, 2026-10-27). #}
+<div class="pf-banner bad" id="save-error" role="alert" hidden></div>
+<div class="pf-banner ok" id="save-notes" role="status" hidden></div>
 
 <form id="setup" class="setup" onsubmit="return false">
 
@@ -32,14 +35,24 @@
       </label>
     {% else %}
       <p class="card-note">Your settings, your studies and the folders you export are kept here. e2er uses this
-        folder from any folder you start it in.</p>
+        folder from any folder you start it in.{% if proposed_is_launch %} It is the folder you started e2er in;
+        choose another one to keep your studies elsewhere.{% endif %}</p>
+      {% if launch_folder %}
+        <p class="card-note" id="launch-note">You started e2er in <code class="path">{{ launch_folder }}</code>, which has no
+          settings of its own, so e2er uses your studies folder.</p>
+        <label class="check">
+          <input type="checkbox" name="use_launch_folder">
+          <span>Keep this folder's settings and studies in <code class="path">{{ launch_folder }}</code> instead
+            (your studies folder stays in use from every other folder)</span>
+        </label>
+      {% endif %}
       <div class="picked">
-        <code class="path" id="folder-path">{{ studies_folder or default_studies_folder }}</code>
+        <code class="path" id="folder-path">{{ studies_folder or proposed_studies_folder }}</code>
         <button type="button" class="btn" data-browse="folder">{% if folder_kind == 'studies' %}Change…{% else %}Choose another…{% endif %}</button>
       </div>
       {% if folder_kind == 'studies' %}<p class="small muted">Studies you already made stay where they are and keep working.</p>{% endif %}
       <div class="fb" id="fb-folder" hidden></div>
-      <input type="hidden" name="studies_folder" value="{{ '' if folder_kind == 'studies' else default_studies_folder }}">
+      <input type="hidden" name="studies_folder" value="{{ '' if folder_kind == 'studies' else proposed_studies_folder }}">
     {% endif %}
   </section>
 
@@ -116,8 +129,9 @@
       <details class="more-providers" id="more-providers" {% if chosen in other_backends | map(attribute='name') | list %}open{% endif %}>
         <summary>Other providers (not tested)</summary>
         <p class="card-note">
-          No full study has been run on these. Google ended Gemini CLI sign-in for individual accounts in October 2026,
-          so Gemini needs a Gemini API key (<code class="tick">GEMINI_API_KEY</code>).
+          No full study has been run on these. Google ended the Gemini CLI for AI Pro/Ultra plans and free individual
+          accounts on 18 June 2026 (its replacement, the Antigravity CLI, is not supported), so Gemini works only with a
+          <strong>paid</strong> Gemini API key (<code class="tick">GEMINI_API_KEY</code>); a subscription sign-in no longer does.
           Install the <a href="{{ backend_help.gemini.url }}" target="_blank" rel="noopener">Gemini CLI</a>, then paste a key from
           <a href="{{ backend_help.gemini.key_url }}" target="_blank" rel="noopener">Google AI Studio</a> below.
         </p>
@@ -220,7 +234,7 @@
 
   <div class="save-row">
     <button type="button" class="btn-primary" id="save" {% if not session_ok %}disabled{% endif %}>Save and check</button>
-    <span class="form-note" id="save-msg" role="status"></span>
+    <span class="form-note" id="save-msg" role="status" aria-live="polite"></span>
   </div>
 </form>
 
@@ -331,8 +345,9 @@
   document.querySelectorAll('[data-browse]').forEach((b) => b.addEventListener('click', () => {
     const which = b.dataset.browse;
     // A studies folder may not exist yet: the browser opens at the folder that holds it.
-    const cur = which === 'folder' ? document.getElementById('folder-path').textContent.replace(/\/[^/]*$/, '') : cfg[which].input.value;
-    open(which, cur ? cur.replace(/\/[^/]*\.(bib|pdf)$/i, '') : '');
+    // Both separators: a Windows path (C:\Users\kim\e2er-studies) has no forward slash to cut at.
+    const cur = which === 'folder' ? document.getElementById('folder-path').textContent.replace(/[\\/][^\\/]*$/, '') : cfg[which].input.value;
+    open(which, cur ? cur.replace(/[\\/][^\\/]*\.(bib|pdf)$/i, '') : '');
   }));
   document.querySelectorAll('[data-clear]').forEach((b) => b.addEventListener('click', () => {
     const which = b.dataset.clear, c = cfg[which];
@@ -355,24 +370,50 @@
 
   // ── save ──
   const msg = document.getElementById('save-msg');
+  const errorBox = document.getElementById('save-error');
+  const notesBox = document.getElementById('save-notes');
+  // A refused save is said at the top of the page and next to the button, and stays there:
+  // nothing was written, so every field still holds what was typed.
+  function refused(text) {
+    const said = 'Nothing was saved. ' + text;
+    errorBox.textContent = said;
+    errorBox.hidden = false;
+    msg.textContent = said;
+    msg.classList.add('error');
+    errorBox.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }
+  // The notes of the last save (a kept or empty folder, the studies folder), shown after the reload.
+  try {
+    const kept = sessionStorage.getItem('e2er-setup-notes');
+    if (kept) {
+      sessionStorage.removeItem('e2er-setup-notes');
+      const notes = JSON.parse(kept);
+      if (notes.length) { notesBox.innerHTML = notes.map((n) => '<p>' + esc(n) + '</p>').join(''); notesBox.hidden = false; }
+    }
+  } catch (e) { /* no session storage: the notes are not shown again */ }
   document.getElementById('save').addEventListener('click', async () => {
     const backend = (form.querySelector('input[name=backend]:checked') || {}).value;
-    if (!backend) { msg.textContent = 'Choose an AI provider first.'; return; }
+    if (!backend) { refused('Choose an AI provider first.'); return; }
     const model = form.querySelector('[name=model-' + backend + ']');
     const apikey = form.querySelector('[name=apikey-' + backend + ']');
     const keys = {};
     form.querySelectorAll('input[name^="key-"]').forEach((i) => { if (i.value.trim()) keys[i.name.slice(4)] = i.value.trim(); });
     msg.textContent = 'Saving…';
+    msg.classList.remove('error');
+    errorBox.hidden = true;
+    let saved;
     try {
-      await e2er.call('POST', '/api/setup/save', {
+      saved = await e2er.call('POST', '/api/setup/save', {
         backend, model: model ? model.value : '', api_key: apikey ? apikey.value : '',
         literature: form.literature.value, data_dir: form.data_dir.value, keys,
         create_folders: form.create_folders.checked,
         studies_folder: form.studies_folder ? form.studies_folder.value : '',
         make_studies_folder: form.make_studies_folder ? form.make_studies_folder.checked : false,
+        use_launch_folder: form.use_launch_folder ? form.use_launch_folder.checked : false,
         github_login: form.github_login.value,
       });
-    } catch (e) { msg.textContent = e.message; return; }
+    } catch (e) { refused(e.message); return; }
+    try { sessionStorage.setItem('e2er-setup-notes', JSON.stringify((saved && saved.notes) || [])); } catch (e) { /* shown only now */ }
     location.href = '/setup?saved=1';
   });
 })();

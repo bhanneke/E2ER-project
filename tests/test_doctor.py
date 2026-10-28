@@ -376,7 +376,7 @@ def test_gemini_sign_in_file_no_longer_counts(tmp_path, monkeypatch):
     (tmp_path / ".gemini" / "oauth_creds.json").write_text("{}")
     signed, note = cli_signed_in("gemini", home=tmp_path)
     assert signed is False
-    assert "GEMINI_API_KEY" in note and "October 2026" in note
+    assert "GEMINI_API_KEY" in note and "18 June 2026" in note and "paid" in note
     monkeypatch.setenv("GEMINI_API_KEY", "k")
     assert cli_signed_in("gemini", home=tmp_path)[0] is True
 

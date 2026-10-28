@@ -8,10 +8,11 @@ JSON shape below follow the CLI's documented headless mode and are covered by
 mocked tests only. Full runs are tested on Claude Code and Codex.
 
 Install: ``npm install -g @google/gemini-cli`` and set GEMINI_API_KEY. Google
-ended Gemini CLI sign-in for individual accounts in October 2026: gemini
-0.63.0 answers "This client is no longer supported for Gemini Code Assist for
-individuals" and points to Antigravity. So the backend runs with a Gemini API
-key only, and that path has not been tested.
+ended the Gemini CLI for AI Pro/Ultra plans and free individual accounts on
+18 June 2026 (replaced by its Antigravity CLI, ``agy``, which e2er does not
+support): gemini 0.63.0 answers "This client is no longer supported for Gemini Code Assist for
+individuals" and points to Antigravity. So the backend runs with a paid Gemini
+API key only, and that path has not been tested.
 
 Like Codex, the Gemini CLI has no per-run command allowlist: with
 ``--approval-mode yolo`` its shell tool can run any command. See
@@ -171,8 +172,9 @@ class GeminiBackend(LLMBackend):
                 output="",
                 error=(
                     f"Gemini CLI not found at: {self._cli_path}. Install it with "
-                    "`npm install -g @google/gemini-cli` and set GEMINI_API_KEY (Google ended Gemini CLI "
-                    "sign-in for individual accounts in October 2026); set GEMINI_PATH if it is not on PATH."
+                    "`npm install -g @google/gemini-cli` and set GEMINI_API_KEY to a paid key (Google ended the "
+                    "Gemini CLI for AI Pro/Ultra plans and free accounts on 18 June 2026); set GEMINI_PATH "
+                    "if it is not on PATH."
                 ),
                 duration_seconds=time.monotonic() - start,
             )

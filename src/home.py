@@ -15,10 +15,16 @@ it. The rules, in order:
    project folder keeps working as a project of its own, and an existing user
    sees no change until they choose to make it their studies folder.
 3. The remembered studies folder.
-4. Nothing set up yet: the current folder (Setup then offers the default),
-   unless it is a temporary folder (``/tmp``, ``$TMPDIR``): then the default
-   studies folder, so a study never lands where the operating system deletes
-   files on its own (five demos' run databases went that way on 2026-10-19).
+4. Nothing set up yet: the current folder (Setup then offers it as the studies
+   folder, or the default when e2er was started in the home folder), unless it
+   is a temporary folder (``/tmp``, ``$TMPDIR``): then the default studies
+   folder, so a study never lands where the operating system deletes files on
+   its own (five demos' run databases went that way on 2026-10-19).
+
+Started in another folder of its own (:func:`launch_folder`) while a studies
+folder is remembered, e2er still uses the studies folder, and Setup names the
+folder it was started in and offers to keep that folder's settings and studies
+there (a project folder of its own, rule 2).
 
 A folder the researcher chose in a temporary folder is used, with a warning
 (:func:`storage_warnings`): the operating system may delete it.
@@ -209,6 +215,33 @@ def project_dir() -> Path:
         # Nothing set up, started in a temporary folder: the default, never a folder the OS empties.
         return default_studies_folder()
     return cwd
+
+
+def launch_folder() -> Path | None:
+    """The folder e2er was started in, when the researcher started it there on purpose; else None.
+
+    The home folder, a folder above it (``/``, ``/Users``) and a temporary folder are where a
+    terminal opens or the operating system empties: starting e2er there chooses nothing, and the
+    studies folder (or the default) is offered as before. Any other folder is one the researcher
+    went to, so Setup offers it (tester report, 2026-10-27: a fresh project folder was shown
+    ``~/e2er-studies`` and Save remembered that instead).
+    """
+    cwd = Path.cwd()
+    here = _resolved(cwd)
+    home = _resolved(Path.home())
+    if here == home or here in home.parents or here.parent == here:
+        return None
+    if not os.environ.get(ENV_TEMPORARY_OK) and temporary_root(here) is not None:
+        return None
+    return cwd
+
+
+def offered_launch_folder() -> Path | None:
+    """:func:`launch_folder` when it is not the folder in use now and has no settings of its own."""
+    here = launch_folder()
+    if here is None or (here / ".env").is_file() or _same(here, project_dir()):
+        return None
+    return here
 
 
 def env_file() -> Path:
