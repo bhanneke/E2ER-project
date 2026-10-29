@@ -101,7 +101,9 @@ def test_init_defaults_in_a_temporary_folder_warns(nothing_set_up: Path, monkeyp
 def test_setup_says_a_chosen_studies_folder_is_temporary(nothing_set_up: Path, tmp_path: Path, monkeypatch):
     from src.api import setup
 
-    req = types.SimpleNamespace(studies_folder=str(tmp_path / "studies"), make_studies_folder=False)
+    req = types.SimpleNamespace(
+        studies_folder=str(tmp_path / "studies"), make_studies_folder=False, use_launch_folder=False
+    )
     target, note = setup._choose_folder(req)  # type: ignore[arg-type]
     assert target == (tmp_path / "studies").resolve()
     assert "Warning: this folder," in note and "may delete it" in note

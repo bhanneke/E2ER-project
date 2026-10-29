@@ -476,6 +476,7 @@ ul.fb-list { list-style: none; margin: 0; padding: 4px 0; max-height: 300px; ove
 
 .save-row { display: flex; align-items: center; gap: 14px; margin: 18px 0; flex-wrap: wrap; }
 .form-note { font-size: 13.5px; color: var(--muted); }
+.form-note.error { color: var(--danger); }
 
 /* template cards on the new-study page */
 .tpl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; margin: 6px 0 4px; }

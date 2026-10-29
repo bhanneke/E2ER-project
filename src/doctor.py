@@ -73,8 +73,8 @@ BACKEND_HELP: dict[str, dict[str, str]] = {
         "label": "Gemini API key, through the Gemini CLI (not tested)",
         "how": (
             "Install the Gemini CLI and set GEMINI_API_KEY to a key from Google AI Studio. "
-            "Google ended Gemini CLI sign-in for individual accounts in October 2026, and e2er "
-            "has not been tested with a Gemini API key."
+            "Google ended the Gemini CLI for AI Pro/Ultra plans and free individual accounts on "
+            "18 June 2026: only a paid Gemini API key works, and e2er has not been tested with one."
         ),
         "url": "https://github.com/google-gemini/gemini-cli",
         "key_url": "https://aistudio.google.com/apikey",
@@ -87,8 +87,8 @@ UNTESTED_BACKENDS = frozenset({"gemini"})
 
 #: Why Gemini has no sign-in option, in one sentence for the setup page, doctor and init.
 GEMINI_NO_SIGNIN = (
-    "Google ended Gemini CLI sign-in for individual accounts in October 2026, "
-    "so Gemini needs a Gemini API key (GEMINI_API_KEY)"
+    "Google ended the Gemini CLI for AI Pro/Ultra plans and free individual accounts on 18 June 2026, "
+    "so Gemini works only with a paid Gemini API key (GEMINI_API_KEY)"
 )
 
 #: The models the setup page offers per backend: (value, label). The first
@@ -227,8 +227,8 @@ def cli_signed_in(backend: str, home: Path | None = None) -> tuple[bool | None, 
             return True, "signed in"
         return False, "not signed in: run `codex login`"
     if backend == "gemini":
-        # Only a key counts: Google ended Gemini CLI sign-in for individual
-        # accounts in October 2026 (gemini 0.63.0 refuses it), so a sign-in
+        # Only a key counts: Google ended the Gemini CLI for AI Pro/Ultra plans and
+        # free individual accounts on 18 June 2026 (gemini 0.63.0 refuses them), so a sign-in
         # file left from before no longer lets a study run.
         if os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY") or _env_file_has("GEMINI_API_KEY"):
             return True, "a Gemini API key is set"

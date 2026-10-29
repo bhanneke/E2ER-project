@@ -68,13 +68,26 @@ e2er
 
 `uv tool upgrade e2er` updates an installation.
 
-With your own Python installation, install e2er into a virtual environment, for example on a Mac:
+With your own Python installation, install e2er into a virtual environment, on a Mac or Linux:
 
 ```bash
 python3.12 -m venv .venv && source .venv/bin/activate
 pip install e2er
 e2er
 ```
+
+On Windows, in PowerShell (in the Command Prompt, activate with `.venv\Scripts\activate.bat`):
+
+```powershell
+py -3.12 -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install e2er
+e2er
+```
+
+If PowerShell refuses to run `Activate.ps1`, allow scripts for your account once with `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`.
+
+From an editor such as VS Code or a JetBrains IDE (PyCharm): open your project folder, choose the `.venv` interpreter (VS Code: "Python: Select Interpreter"; PyCharm: Settings > Python Interpreter), and run `e2er` in the editor's integrated terminal, which then has the environment active. The first time, e2er offers the folder you started it in as your studies folder.
 
 `e2er --no-browser` starts the page without opening the browser and prints its address. The page runs on port 8280 unless `--port` sets another one.
 
@@ -86,7 +99,7 @@ e2er works with one of the following. The setup page shows which of them it find
 - An API key from [Anthropic](https://console.anthropic.com/settings/keys) or [OpenRouter](https://openrouter.ai/keys), billed per use. You paste the key on the setup page.
 - The [Codex CLI](https://github.com/openai/codex) with a ChatGPT plan (the ChatGPT desktop app includes it). e2er hands it the same work as Claude Code, but Codex cannot be limited to e2er's own commands the way Claude Code is; [docs/BACKENDS.md](docs/BACKENDS.md) says what it may do.
 
-Full runs are tested on Claude (Claude Code) and OpenAI (Codex CLI with a ChatGPT plan). Google ended Gemini CLI sign-in for individual accounts in October 2026, so the Gemini backend needs a Gemini API key (`GEMINI_API_KEY`) and is not tested. The setup page lists it under "Other providers (not tested)".
+Full runs are tested on Claude (Claude Code) and OpenAI (Codex CLI with a ChatGPT plan). On 18 June 2026 Google ended the Gemini CLI for AI Pro/Ultra plans and free individual accounts (replaced by its Antigravity CLI, which e2er does not support), so the Gemini backend works only with a paid Gemini API key (`GEMINI_API_KEY`) and is not tested. The setup page lists it under "Other providers (not tested)".
 
 In the terminal, the setting `LLM_BACKEND` selects the access: `claude_code`, `codex`, `anthropic` or `openrouter`, and `gemini` for the untested Gemini backend.
 
@@ -105,7 +118,7 @@ e2er skills sync         # copies e2er's skill files to the CLIs' skills folders
 e2er --version           # prints the installed version
 ```
 
-`e2er init` asks which AI access to use and checks that it is installed. The command then creates the folders `data/` and `literature/` and writes the settings to `.env` in the current folder; `--force` overwrites an existing `.env`. For Claude Code, Codex or Gemini (not tested) it asks before copying e2er's skill files into that CLI's skills folder (`~/.claude/skills`, `~/.codex/skills` or `~/.gemini/skills`); `--defaults` copies them into `~/.claude/skills` only. Other CLIs' folders are left alone. The setup page in the browser writes the same file; the first time, it asks for a studies folder (default `~/e2er-studies`) and remembers it, so `e2er` started from any folder uses that folder's settings, studies and exports. A folder with its own `.env` keeps working as a project of its own; the settings in it that choose a program e2er starts (`CLAUDE_CODE_PATH`, `CODEX_PATH`, `GEMINI_PATH`, their working folders) or switch a sandbox off (`CODEX_SANDBOX`, `CODEX_ALLOW_FULL_ACCESS`, `CODEX_NETWORK_ACCESS`, `GEMINI_YOLO`) are used only after `e2er` asked at a terminal and you said yes (a downloaded folder's `.env` could otherwise pick them). `e2er doctor` reports the AI access, the database and the data and literature it finds. `e2er serve` starts the dashboard at http://127.0.0.1:8280 (`--port` another port, `--host` another address, which needs `API_AUTH_TOKEN`, `--no-browser` without opening the browser); `e2er` alone does the same. `e2er skills sync` copies e2er's own skill files into the skills folder of each installed CLI again, for example after an update (`--backend` names one, `--force` overwrites files that exist); `e2er install-skills` is its former name and still works.
+`e2er init` asks which AI access to use and checks that it is installed. The command then creates the folders `data/` and `literature/` and writes the settings to `.env` in the current folder; `--force` overwrites an existing `.env`. For Claude Code, Codex or Gemini (not tested) it asks before copying e2er's skill files into that CLI's skills folder (`~/.claude/skills`, `~/.codex/skills` or `~/.gemini/skills`); `--defaults` copies them into `~/.claude/skills` only. Other CLIs' folders are left alone. The setup page in the browser writes the same file; the first time, it asks for a studies folder (it offers the folder `e2er` was started in, or `~/e2er-studies` when started in the home folder or a temporary folder) and remembers it, so `e2er` started from any folder uses that folder's settings, studies and exports. Started later in another folder without settings of its own, the setup page names that folder and offers to keep its settings and studies there instead. A folder with its own `.env` keeps working as a project of its own; the settings in it that choose a program e2er starts (`CLAUDE_CODE_PATH`, `CODEX_PATH`, `GEMINI_PATH`, their working folders) or switch a sandbox off (`CODEX_SANDBOX`, `CODEX_ALLOW_FULL_ACCESS`, `CODEX_NETWORK_ACCESS`, `GEMINI_YOLO`) are used only after `e2er` asked at a terminal and you said yes (a downloaded folder's `.env` could otherwise pick them). `e2er doctor` reports the AI access, the database and the data and literature it finds. `e2er serve` starts the dashboard at http://127.0.0.1:8280 (`--port` another port, `--host` another address, which needs `API_AUTH_TOKEN`, `--no-browser` without opening the browser); `e2er` alone does the same. `e2er skills sync` copies e2er's own skill files into the skills folder of each installed CLI again, for example after an update (`--backend` names one, `--force` overwrites files that exist); `e2er install-skills` is its former name and still works.
 
 Studies are recorded in a SQLite database at `~/.e2er/papers.db`. Setting `DATABASE_URL` to a Postgres address switches e2er to Postgres, and `e2er migrate` then creates the tables.
 
