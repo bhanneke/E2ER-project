@@ -297,7 +297,12 @@ def _git_env() -> dict[str, str]:
 
 def _git(args: list[str], cwd: Path | None = None, *, check: bool = True) -> subprocess.CompletedProcess:
     # The researcher's own gh login answers git's request for credentials; nothing is stored.
-    cmd = ["git", "-c", "credential.helper=", "-c", "credential.helper=!gh auth git-credential", *args]
+    # core.autocrlf=false: the files go up and come back byte for byte (their SHA-256s are the study's record),
+    # whatever line-ending conversion this computer's Git is set to (Git for Windows: autocrlf=true).
+    cmd = [
+        "git", "-c", "core.autocrlf=false", "-c", "core.safecrlf=false",
+        "-c", "credential.helper=", "-c", "credential.helper=!gh auth git-credential", *args,
+    ]  # fmt: skip
     proc = _run(cmd, cwd=cwd, env=_git_env())
     if check and proc.returncode != 0:
         raise GitHubError(f"git {args[0]} failed: {_last_line(proc)}")

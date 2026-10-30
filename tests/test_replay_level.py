@@ -296,11 +296,15 @@ def _replay_server(tmp_path: Path, scenario: str, settings: list[str]):
             encoding="utf-8",
             newline="\n",
         )
+        # The server's output goes to a file: a pipe nobody reads while it runs fills up (4 KB on Windows),
+        # and the server then stops at its next log line and answers no request.
+        log_path = tmp_path / f"replay-server-{port}.log"
+        log = log_path.open("wb")
         server = subprocess.Popen(
             [sys.executable, "-m", "tests.replay.cli", "serve", "--no-browser", "--port", str(port)],
             cwd=study,
             env=env,
-            stdout=subprocess.PIPE,
+            stdout=log,
             stderr=subprocess.STDOUT,
         )
         api = f"http://127.0.0.1:{port}"
@@ -310,12 +314,14 @@ def _replay_server(tmp_path: Path, scenario: str, settings: list[str]):
                 return
             if server.poll() is None:
                 raise AssertionError(f"the replay server on {api} did not answer within 60 s")
-            out = server.stdout.read().decode(errors="replace") if server.stdout else ""
+            log.flush()
+            out = log_path.read_bytes().decode(errors="replace")
             tried.append(f"port {port}: exited {server.returncode}: {out[-300:]}")
         finally:
             if server.poll() is None:
                 server.terminate()
                 server.wait(timeout=10)
+            log.close()
     raise AssertionError("the replay server did not start:\n" + "\n".join(tried))
 
 

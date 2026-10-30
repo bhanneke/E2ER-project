@@ -22,7 +22,8 @@ from src.core import study_package as sp
 
 
 def _stream(encoding: str) -> io.TextIOWrapper:
-    return io.TextIOWrapper(io.BytesIO(), encoding=encoding, errors="strict")
+    # newline="": no translation, so the bytes compare alike on Windows (where "\n" would go out as CRLF)
+    return io.TextIOWrapper(io.BytesIO(), encoding=encoding, errors="strict", newline="")
 
 
 def test_a_code_page_stdout_is_switched_to_utf8(monkeypatch):
@@ -67,7 +68,8 @@ def test_the_e2er_command_prints_utf8_into_a_pipe(tmp_path):
         capture_output=True, cwd=Path(__file__).resolve().parents[1], timeout=120,
     )  # fmt: skip
     assert proc.returncode == 1
-    assert proc.stdout.decode("utf-8") == f"error: {tmp_path / 'Prüfung 文献.e2er'} is not a file\n"
+    out = proc.stdout.decode("utf-8").replace("\r\n", "\n")  # Windows ends lines with CRLF
+    assert out == f"error: {tmp_path / 'Prüfung 文献.e2er'} is not a file\n"
 
 
 # ── commands e2er prints for the reader to paste ────────────────────────────
@@ -503,3 +505,22 @@ def test_e2er_names_utf8_and_lf_for_every_text_file_it_reads_or_writes():
     checks compared (2026-10-30), and reading a UTF-8 file raised UnicodeDecodeError."""
     found = _io_calls_without_explicit_text_settings(Path(__file__).resolve().parents[1] / "src")
     assert found == [], "\n".join(found)
+
+
+def test_export_finds_the_workspace_however_a_script_on_windows_spells_it(tmp_path, monkeypatch):
+    """C:/Users/…, r"C:\\Users\\…" and "C:\\\\Users\\\\…" are one folder: each becomes the run folder."""
+    from src.core.export import reproduce_recipe as rr
+
+    win = r"C:\Users\Ann Lee\e2er-studies\2026-10-30-sales"
+    monkeypatch.setattr(rr, "workspace_spellings", lambda ws: {win, win.replace("\\", "/"), win.replace("\\", "\\\\")})
+    script = tmp_path / "run.py"
+    script.write_text(
+        f'A = "{win.replace(chr(92), "/")}/data.db"\n'
+        f'B = r"{win}\\data.db"\n'
+        f'C = "{win.replace(chr(92), chr(92) * 2)}\\\\data.db"\n'
+        f'D = r"{win}"\n',
+        encoding="utf-8",
+        newline="\n",
+    )
+    assert rr._rewrite_workspace_paths(script, tmp_path) is True
+    assert script.read_text(encoding="utf-8") == 'A = "data.db"\nB = r"data.db"\nC = "data.db"\nD = r"."\n'

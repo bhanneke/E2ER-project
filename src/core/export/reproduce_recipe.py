@@ -291,9 +291,26 @@ def written_files(scripts: list[Path]) -> set[str]:
     return out
 
 
+def workspace_spellings(workspace: Path) -> set[str]:
+    """The ways a script's source may spell the workspace's full path.
+
+    On Linux and macOS one (and its resolved form). On Windows a script writes ``C:/Users/…``, ``r"C:\\Users\\…"``
+    or, escaped in an ordinary string, ``"C:\\\\Users\\\\…"``: each is the same folder.
+    """
+    out: set[str] = set()
+    for p in (Path(workspace), Path(workspace).resolve()):
+        native = str(p)
+        out |= {native, p.as_posix(), native.replace("\\", "\\\\")}
+    return {s for s in out if s}
+
+
+#: What follows the workspace's path before a file name: / or a backslash (escaped or not).
+_SEP = r"(?:/|\\{1,2})"
+
+
 def referenced_files(workspace: Path, scripts: list[Path]) -> list[str]:
     """Workspace-relative paths of the files the scripts name (relative, by the workspace's full path, or by glob)."""
-    roots = {str(workspace), str(workspace.resolve())}
+    roots = workspace_spellings(workspace)
     found: set[str] = set()
     for script in scripts:
         source = _read(script)
@@ -303,9 +320,10 @@ def referenced_files(workspace: Path, scripts: list[Path]) -> list[str]:
             text = lit.strip()
             if not text or len(text) > 300 or "\n" in text:
                 continue
-            for root in roots:
-                if text.startswith(root + "/"):
-                    text = text[len(root) + 1 :]
+            for root in sorted(roots, key=len, reverse=True):
+                m = re.match(re.escape(root) + _SEP, text)
+                if m:
+                    text = text[m.end() :].replace("\\\\", "/").replace("\\", "/")
                     break
             else:
                 if names_root and text.startswith("/") and (workspace / text[1:]).is_file():
@@ -1136,9 +1154,9 @@ def _rewrite_workspace_paths(path: Path, workspace: Path) -> bool:
     """Replace the workspace's full path in an exported script by the run folder; True when it named it."""
     text = _read(path)
     new = text
-    for root in sorted({str(workspace.resolve()), str(workspace)}, key=len, reverse=True):
+    for root in sorted(workspace_spellings(workspace), key=len, reverse=True):
         # Only the folder itself: "/x/ws" in "/x/ws_other" or "/x/ws.bak" is another folder (it became "._other").
-        new = re.sub(re.escape(root) + r"/", "", new)
+        new = re.sub(re.escape(root) + _SEP, "", new)
         new = re.sub(re.escape(root) + r"(?![\w.\-])", ".", new)
     if new == text:
         return False

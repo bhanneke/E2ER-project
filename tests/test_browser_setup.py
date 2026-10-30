@@ -423,7 +423,10 @@ def test_setup_writes_env_mode_600_and_masks_keys(project, session):
     assert owner_only(env)
     text = env.read_text(encoding="utf-8")
     assert "LLM_BACKEND=claude_code" in text and "CLAUDE_CODE_MODEL=haiku" in text
-    assert f"LITERATURE_BIBTEX_FILE='{lib / 'My Library.bib'}'" in text
+    from dotenv import dotenv_values
+
+    # As python-dotenv reads it back (a Windows path's backslashes are escaped in the file).
+    assert dotenv_values(env)["LITERATURE_BIBTEX_FILE"] == str(lib / "My Library.bib")
     assert "FRED_API_KEY=fredkey-1234567890abcd" in text
     assert (project / "data").is_dir() and (project / "literature").is_dir()
 

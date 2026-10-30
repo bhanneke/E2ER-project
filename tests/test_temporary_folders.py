@@ -70,13 +70,17 @@ def test_a_temporary_folder_the_researcher_chose_is_used_with_a_warning(nothing_
 
 
 def test_run_database_workspaces_and_exports_in_a_temporary_folder_are_each_named(nothing_set_up: Path):
+    import tempfile
+
+    base = Path(tempfile.gettempdir()) / "e2er-demos"  # /tmp/… on Linux and macOS, %TEMP%\… on Windows
+    db = base / "studies" / "papers.db"
     settings = types.SimpleNamespace(
-        workspace_root="/tmp/e2er-demos/studies/workspaces",
-        resolved_database_url="sqlite:////tmp/e2er-demos/studies/papers.db",
-        output_dir="/tmp/e2er-demos/exports",
+        workspace_root=str(base / "studies" / "workspaces"),
+        resolved_database_url=f"sqlite:///{db}",
+        output_dir=str(base / "exports"),
     )
     found = home.storage_warnings(settings)
-    assert any("the run database (DATABASE_URL) /tmp/e2er-demos/studies/papers.db" in w for w in found)
+    assert any(f"the run database (DATABASE_URL) {db}" in w for w in found), found
     assert any("WORKSPACE_ROOT" in w for w in found)
     assert any("OUTPUT_DIR" in w for w in found)
 

@@ -169,7 +169,7 @@ def _byod_workspace(tmp_path: Path) -> Path:
     (ws / "data_sources.json").write_text(
         json.dumps({"loads": [panel_load, weights_load]}), encoding="utf-8", newline="\n"
     )
-    (ws / "run_estimation.py").write_text(BYOD_SCRIPT.format(ws=ws), encoding="utf-8", newline="\n")
+    (ws / "run_estimation.py").write_text(BYOD_SCRIPT.format(ws=ws.as_posix()), encoding="utf-8", newline="\n")
     # The runner runs the script in the workspace (post_execution), as in a real run.
     subprocess.run([sys.executable, "run_estimation.py"], cwd=ws, check=True)
     return ws
@@ -358,6 +358,8 @@ def test_the_yfinance_command_records_its_request(tmp_path: Path, monkeypatch):
 # ── the order comes from what the run ran, not from file times ──────────────
 
 WRAPPER = checkout_command("e2er-run")
+#: bash runs the checkout's wrapper; on Windows the console script runs itself (bash there is WSL's).
+RUN_WRAPPER = [str(WRAPPER)] if sys.platform == "win32" else ["bash", str(WRAPPER)]
 ORDERED_SCRIPTS = {
     # writes the first results
     "run_estimation.py": 'import json\njson.dump({"main": {"b": 1.0}}, open("estimation_results.json", "w"))\n',
@@ -381,7 +383,7 @@ def _ordered_workspace(tmp_path: Path) -> Path:
     env = {**os.environ, "E2ER_PYTHON": sys.executable}
     for name in ORDERED_SCRIPTS:
         r = subprocess.run(
-            ["bash", str(WRAPPER), name], cwd=ws, env=env, capture_output=True, encoding="utf-8", errors="replace"
+            [*RUN_WRAPPER, name], cwd=ws, env=env, capture_output=True, encoding="utf-8", errors="replace"
         )
         assert r.returncode == 0, r.stderr
     assert json.loads((ws / "estimation_results.json").read_text(encoding="utf-8"))["main"]["b"] == 20.0
@@ -400,7 +402,7 @@ def test_e2er_run_records_every_run_in_the_workspace(tmp_path: Path):
     assert [r["script"] for r in runs] == list(ORDERED_SCRIPTS)
     assert all(r["exit_code"] == 0 and r["by"] == "e2er-run" and len(r["sha256"]) == 64 for r in runs)
     (ws / "bad.py").write_text("raise SystemExit(3)\n", encoding="utf-8", newline="\n")
-    r = subprocess.run(["bash", str(WRAPPER), "bad.py"], cwd=ws, env={**os.environ, "E2ER_PYTHON": sys.executable})
+    r = subprocess.run([*RUN_WRAPPER, "bad.py"], cwd=ws, env={**os.environ, "E2ER_PYTHON": sys.executable})
     assert r.returncode == 3 and read_script_runs(ws)[-1]["exit_code"] == 3  # the exit code is passed on
 
 

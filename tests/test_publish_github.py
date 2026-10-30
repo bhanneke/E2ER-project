@@ -186,7 +186,13 @@ def _fake_platform(root: Path, refuse: str | None = None):
 
 def _git(*args: str, cwd: Path | None = None) -> str:
     return subprocess.run(
-        ["git", *args], cwd=cwd, capture_output=True, encoding="utf-8", errors="replace", check=True
+        # A clone as docs/REVIEWING.md tells a reviewer to make it: byte for byte (Git for Windows converts by default).
+        ["git", "-c", "core.autocrlf=false", *args],
+        cwd=cwd,
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        check=True,
     ).stdout.strip()
 
 
