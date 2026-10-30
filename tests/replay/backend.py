@@ -268,7 +268,9 @@ class ReplayBackend(LLMBackend):
             shutil.copyfile(src, dest)
             return
         text = src.read_text(encoding="utf-8")
-        text = text.replace("@@WORKSPACE@@", str(workspace.resolve())).replace("@@PAPER_ID@@", paper_id)
+        # Forward slashes: the recorded files put the path into Python strings and JSON, where a Windows path's
+        # backslashes are escapes (C:\\Users: "truncated \\UXXXXXXXX escape"); Windows takes C:/Users/… as well.
+        text = text.replace("@@WORKSPACE@@", workspace.resolve().as_posix()).replace("@@PAPER_ID@@", paper_id)
         for old, new in replace:
             if old not in text:
                 raise AssertionError(f"replay override: {old!r} not found in {specialist}/{rel}")
