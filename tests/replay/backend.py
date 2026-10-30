@@ -255,6 +255,14 @@ class ReplayBackend(LLMBackend):
             return own
         return self.base_root / "files" / specialist / rel
 
+    def _recorded_files(self, specialist: str) -> list[str]:
+        """The files the recording of ``specialist`` lists, in this scenario or the one it builds on."""
+        own = (self.scenario.get("specialists", {}).get(specialist) or {}).get("files")
+        if own or self.base_root is None:
+            return list(own or [])
+        base = json.loads((self.base_root / "scenario.json").read_text(encoding="utf-8"))
+        return list((base.get("specialists", {}).get(specialist) or {}).get("files") or [])
+
     def _write(self, workspace: Path, specialist: str, rel: str, paper_id: str, replace: list[list[str]]) -> None:
         src = self._source(specialist, rel)
         dest = workspace / rel
@@ -278,7 +286,7 @@ class ReplayBackend(LLMBackend):
         # A recording's JSON next to its scripts is a script's output (estimation_results.json): written in this
         # system's text mode, as the script writes it (CRLF on Windows), or e2er's script log sees it "changed
         # after the script last wrote it". Everything else as the specialist wrote it, with LF.
-        files = (self.scenario.get("specialists", {}).get(specialist) or {}).get("files") or []
+        files = self._recorded_files(specialist)
         script_output = rel.endswith(".json") and any(str(f).endswith(".py") for f in files)
         dest.write_text(text, encoding="utf-8", newline=None if script_output else "\n")
 
